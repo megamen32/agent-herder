@@ -727,6 +727,63 @@ async function currentLaunchPolicyRevision(
   }
 }
 
+/**
+ * The window of the list of the sessions.
+ *
+ * The window is asked for by the panel: the whole list of the mesh is
+ * megabytes of JSON, and a browser cannot parse it on the first paint. The
+ * window is bounded, so a request cannot ask for the whole list by accident,
+ * and a request without a window keeps the whole list as before.
+ */
+const MAX_SESSION_LIST_WINDOW = 500;
+
+/**
+ * The window of the quick list when the caller names none.
+ *
+ * The quick list is the one the panel reads. The whole list of the mesh is
+ * megabytes of JSON, so the quick branch answers a window by default and
+ * says that it is a window: the answer carries `truncated`, `total` and
+ * `limit`, so a caller that needs the rest asks for more.
+ */
+const DEFAULT_SESSION_LIST_WINDOW = 100;
+
+/**
+ * The budget of the answer of the list, in bytes.
+ *
+ * The size of a session is not uniform: a session with a long history is
+ * much heavier than a fresh one. The window is bounded by the bytes as well
+ * as by the count, so the answer of the panel stays inside the budget
+ * whatever the data of the node looks like.
+ */
+const SESSION_LIST_BYTE_BUDGET = 300 * 1024;
+
+function sessionListLimit(raw: string | null): number | undefined {
+  if (raw === null || raw.trim() === "") return undefined;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  return Math.min(Math.floor(value), MAX_SESSION_LIST_WINDOW);
+}
+
+/**
+ * The window of the list that the panel receives.
+ *
+ * The window is at most the asked count of sessions and at most the byte
+ * budget: a session that does not fit ends the window, and the rest of the
+ * list is loaded by the next request.
+ */
+function sessionListWindow<T>(sessions: T[], limit: number): T[] {
+  const visible: T[] = [];
+  let bytes = 0;
+  for (const session of sessions) {
+    if (visible.length >= limit) break;
+    const size = Buffer.byteLength(JSON.stringify(session) ?? "");
+    if (visible.length > 0 && bytes + size > SESSION_LIST_BYTE_BUDGET) break;
+    visible.push(session);
+    bytes += size;
+  }
+  return visible;
+}
+
 /** How a native session is reached: ordinary, project-scoped or refused. */
 type SessionRoute =
   | { kind: "ordinary"; adapters: Map<string, HarnessAdapter> }
@@ -2152,13 +2209,33 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       status: url.searchParams.get("status") || undefined,
       cwd: url.searchParams.get("cwd") || undefined,
     };
+    // The window of the list. The panel asks for a window and the answer
+    // carries the window and the counter of the whole list, so the panel
+    // knows that the list is longer than it shows. A request without a
+    // window keeps the old answer: the whole list, as before.
+    const asked = sessionListLimit(url.searchParams.get("limit"));
     if (url.searchParams.get("quick") === "1") {
       const snapshot = supervisor.listSessionsFast(filters);
+      const total = snapshot.sessions.length;
+      // The quick branch answers a window by default. The answer says that
+      // it is a window: `truncated`, `total` and `limit` travel with it, so
+      // the caller knows that the list is longer and can ask for more.
+      const limit = asked ?? DEFAULT_SESSION_LIST_WINDOW;
+      const visible = sessionListWindow(snapshot.sessions, limit);
+      const truncated = visible.length < total;
       return sendJson(response, 200, url.searchParams.get("inventory") === "1"
-        ? { sessions: projectSessionInventory(snapshot.sessions), warming: snapshot.warming } : snapshot);
+        ? { sessions: projectSessionInventory(visible), warming: snapshot.warming, total, limit, truncated }
+        : { ...snapshot, sessions: visible, total, limit, truncated });
     }
     const sessions = await supervisor.listSessions(filters);
-    sendJson(response, 200, { sessions: url.searchParams.get("inventory") === "1" ? projectSessionInventory(sessions) : sessions, warming: false });
+    const total = sessions.length;
+    const visible = asked === undefined ? sessions : sessionListWindow(sessions, asked);
+    sendJson(response, 200, {
+      sessions: url.searchParams.get("inventory") === "1" ? projectSessionInventory(visible) : visible,
+      warming: false,
+      total,
+      ...(asked === undefined ? {} : { limit: asked, truncated: visible.length < total }),
+    });
     return;
   }
   if (request.method === "GET" && url.pathname === "/api/health/remediation") {

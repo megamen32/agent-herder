@@ -178,6 +178,15 @@ const jobStateLabel = (state: HerderJobState) => ({
   interrupted: "Прервана",
 }[state] ?? state);
 const SHOW_DEBUG_TIMINGS = new URLSearchParams(window.location.search).has("debug");
+/**
+ * The window of the list of the sessions that the panel asks for.
+ *
+ * The whole list of the mesh is megabytes of JSON, and a browser that
+ * parses it on the first paint does not come alive. The panel asks for a
+ * window and shows the counter of the whole list, so the owner knows that
+ * the list is longer than the window and can load more.
+ */
+const SESSION_LIST_WINDOW = 100;
 
 const stripServiceMarkers = (raw: string): { text: string; attachments: number } => {
   let text = raw;
@@ -610,7 +619,7 @@ function AutomationSettings({ section, state, draft, saving, error, saved, conti
   </section>;
 }
 
-function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, loading, refreshing, settings, settingsOpen, searchOpen, searchQuery, options, choicesBySession, choosingRequestId, choiceError, collapsedChildren, onSearchChange, onSearchToggle, onSettingsChange, onSettingsToggle, onToggleChildren, onSelect, onChoose, onNewSession, onMachines, onAdvancedSearch, cacheSettings, onCacheSettings, onCacheClear, directoryStatus, onLoadMore, onAutomationSettings, }: {
+function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, loading, refreshing, settings, settingsOpen, searchOpen, searchQuery, options, choicesBySession, choosingRequestId, choiceError, collapsedChildren, onSearchChange, onSearchToggle, onSettingsChange, onSettingsToggle, onToggleChildren, onSelect, onChoose, onNewSession, onMachines, onAdvancedSearch, cacheSettings, onCacheSettings, onCacheClear, directoryStatus, onLoadMore, onAutomationSettings, shownCount, total, onLoadMoreSessions, }: {
   entries: SessionListEntry[];
   pins:readonly string[]; pinScope:string; onPin:(key:string)=>void; pinError:string;
   activeKey?: string;
@@ -637,11 +646,15 @@ function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, load
   onMachines: () => void;
   onAdvancedSearch: (query: string) => void;
   onAutomationSettings: (section: "autocontinue" | "autopilot" | "launch-policy") => void;
+  /** How many sessions the panel holds and how many the mesh has. */
+  shownCount: number;
+  total?: number;
+  onLoadMoreSessions?: () => void;
 }) {
   const [windowSize,setWindowSize]=React.useState(150);
   React.useEffect(()=>setWindowSize(150),[settings.hostId,settings.harness,settings.cwd,settings.project,settings.sort,settings.showAll,searchQuery]);
   return <nav className="sessions-pane" aria-label="Сессии">
-    <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Чаты {refreshing && <span className="inline-loading-dot" role="status" aria-label="Обновление сессий" />}</h1></div><div className="sessions-heading-actions"><button type="button" className="quiet-button sessions-machines-button" onClick={onMachines}>Машины</button><button type="button" className="icon-button" aria-label="Новая сессия" title="Новая сессия" onClick={onNewSession}>+</button><button className={`icon-button ${searchOpen ? "selected-icon" : ""}`} aria-label="Поиск сессий" aria-expanded={searchOpen} onClick={onSearchToggle}>⌕</button><button className={`icon-button ${settingsOpen ? "selected-icon" : ""}`} aria-label="Настройки списка" title="Фильтры и сортировка списка сессий" aria-expanded={settingsOpen} onClick={onSettingsToggle}>≡</button></div></div>
+    <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Чаты {refreshing && <span className="inline-loading-dot" role="status" aria-label="Обновление сессий" />}</h1>{total!==undefined&&<small className="directory-status" role="status">показано {shownCount} из {total}</small>}</div><div className="sessions-heading-actions"><button type="button" className="quiet-button sessions-machines-button" onClick={onMachines}>Машины</button><button type="button" className="icon-button" aria-label="Новая сессия" title="Новая сессия" onClick={onNewSession}>+</button><button className={`icon-button ${searchOpen ? "selected-icon" : ""}`} aria-label="Поиск сессий" aria-expanded={searchOpen} onClick={onSearchToggle}>⌕</button><button className={`icon-button ${settingsOpen ? "selected-icon" : ""}`} aria-label="Настройки списка" title="Фильтры и сортировка списка сессий" aria-expanded={settingsOpen} onClick={onSettingsToggle}>≡</button></div></div>
     <div className="session-automation-links" aria-label="Общие настройки автоматизации"><button className="quiet-button" onClick={() => onAutomationSettings("autopilot")}>Автопилот</button><button className="quiet-button" onClick={() => onAutomationSettings("autocontinue")}>Автопродолжение</button><button className="quiet-button" onClick={() => onAutomationSettings("launch-policy")}>Запуск сессий</button></div>
     {searchOpen && <div className="session-search"><input autoFocus value={searchQuery} onChange={(event) => onSearchChange(event.target.value)} placeholder="Название, агент, папка или текст…" aria-label="Поиск по сессиям" /><button type="button" className="rag-advanced-link" onClick={() => onAdvancedSearch(searchQuery)}>Расширенный поиск →</button></div>}
     {settings.harness && <small className="directory-status">Фильтр среды: {settings.harness}</small>}{settingsOpen && <div className="session-settings" aria-label="Настройки списка сессий">
@@ -678,6 +691,7 @@ function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, load
         </div>;
       })}
       {entries.length>windowSize&&<button className="quiet-button" onClick={()=>setWindowSize(n=>n+150)}>Показать ещё · всего {entries.length}</button>}
+      {total!==undefined&&total>shownCount&&<button className="quiet-button" onClick={()=>onLoadMoreSessions?.()}>Догрузить ещё с сервера · всего {total}</button>}
       {loading && entries.length === 0 && <div className="session-skeletons" aria-label="Загрузка сессий">{Array.from({ length: 8 }, (_, index) => <div className="session-skeleton" key={index}><span /><div><b /><i /><i /></div></div>)}</div>}
       {!loading && entries.length === 0 && <div className="empty-list">Нет сессий по этим настройкам.</div>}
     </div>
@@ -701,6 +715,9 @@ function App() {
   React.useEffect(()=>{void viewCache.prune();},[viewCache]);
   const changeCacheSettings=(next:ViewCacheSettings)=>{setViewCacheSettings(next);try{writeViewCacheSettings(window.localStorage,next);}catch{}void viewCache.prune();};
   const [sessions, setSessions] = React.useState<HerderSession[]>([]);
+  /** The window the panel asks the server for; the counter of the whole list. */
+  const sessionLimitRef = React.useRef(SESSION_LIST_WINDOW);
+  const [sessionsTotal, setSessionsTotal] = React.useState<number>();
   const [activeKey, setActiveKey] = React.useState<string | undefined>(() => readSessionFromHash() ?? window.localStorage.getItem("agent-herder.active-session") ?? undefined);
   const [linkedTurnId, setLinkedTurnId] = React.useState<string | undefined>(() => readTurnFromHash());
   const activeKeyRef = React.useRef(activeKey);
@@ -925,7 +942,7 @@ function App() {
     setSessionsRefreshing(true);
     try {
     const [result, choiceResult] = await Promise.all([
-      api<{ sessions: HerderSession[]; warming?: boolean }>("/api/sessions?quick=1"),
+      api<{ sessions: HerderSession[]; warming?: boolean; total?: number }>(`/api/sessions?quick=1&limit=${sessionLimitRef.current}`),
       api<{ choices: WebAutopilotChoiceCard[] }>("/api/autopilot/choices?status=pending").catch(() => ({ choices: [] })),
     ]);
     const sessionKeys = new Set(result.sessions.map(keyOf));
@@ -944,6 +961,7 @@ function App() {
       }));
     const nextSessions = [...result.sessions, ...decisionSessions];
     setSessions(nextSessions);
+    if (typeof result.total === "number") setSessionsTotal(result.total);
     setAutopilotChoices(choiceResult.choices);
     if (!foldedInitialized.current && result.sessions.length > 0) {
       const keys = new Set(result.sessions.flatMap((session) => session.meta?.parentSessionKey ? [session.meta.parentSessionKey] : []));
@@ -982,6 +1000,11 @@ function App() {
     void initial();
     const timer = window.setInterval(() => { if (!document.hidden && sessionListRefreshDelay(sessionsLastReadRef.current, Date.now()) === 0) void loadSessions().catch(() => {}); }, SESSION_LIST_REFRESH_MS);
     return () => { cancelled = true; window.clearInterval(timer); };
+  }, [loadSessions]);
+  /** The load of a wider window of the list: the owner asks for more. */
+  const loadMoreSessions = React.useCallback(async () => {
+    sessionLimitRef.current = Math.min(sessionLimitRef.current + SESSION_LIST_WINDOW, 500);
+    await loadSessions().catch(() => false);
   }, [loadSessions]);
   const loadJobs = React.useCallback(async () => {
     setJobsLoading(true);
@@ -1965,7 +1988,7 @@ function App() {
 
   return <main className={`oc-app ${mobileView === "chat" ? "mobile-chat-active" : "mobile-sessions-active"} ${(!showInspector || showStatistics || showJobs || showQuota || showSearch || showProjects || automationSettings || remoteSelection || showFleet || showCreateSession) ? "no-inspector" : ""}`}>
     <CodexNavigation onMachines={() => { setShowSearch(false); setFleetCreationMode(false);setShowFleet(true); setAutomationSettings(undefined); setShowProjects(false); }} onSearch={() => { setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowSessionSearch(false); setShowSearch(true); setShowProjects(false); setMobileView("chat"); }} active={showSearch ? "search" : showProjects ? "projects" : showFleet ? "machines" : showJobs ? "jobs" : showStatistics ? "statistics" : "chat"} onChat={() => { setShowSearch(false); setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(false); }} onNew={() => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(false); void openCreateSession(); }} onJobs={() => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(true); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(false); }} onStatistics={() => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(false); openStatistics(); }} onProjects={() => { setShowSearch(false); setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(true); setMobileView("chat"); }} />
-    <SessionList pins={sessionPins.pins} pinScope={directory.scope} onPin={sessionPins.toggle} pinError={sessionPins.error} onAdvancedSearch={(query) => { setAdvancedSearchQuery(query || undefined); setShowSessionSearch(false); setShowSearch(true); setMobileView("chat"); }} onMachines={() => { setShowSearch(false); setFleetCreationMode(false); setShowFleet(true); setAutomationSettings(undefined); }} onAutomationSettings={(section) => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(section); }} cacheSettings={viewCacheSettings} onCacheSettings={changeCacheSettings} onCacheClear={()=>{void viewCache.clear();if(cachedDetails)setDetails(null);setCacheEpoch(n=>n+1);}} directoryStatus={directory.error||(directory.pending?"Обновляются названия сессий…":directory.partial?"Часть машин ещё не передала полный список.":"")} onLoadMore={directory.more&&!directory.pending?()=>void directory.load(true):undefined} onNewSession={openCreateSession} entries={visibleSessionEntries} activeKey={remoteSelection?`mesh:${JSON.stringify([remoteSelection.hostId,remoteSelection.harness,remoteSelection.nativeSessionId])}`:activeKey} loading={loading} refreshing={sessionsRefreshing && !loading} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { setShowSearch(false); setShowFleet(false); const selected=displaySessions.find(s=>keyOf(s)===key);if(selected?.remote&&selected.hostId){setRemoteSelection({hostId:selected.hostId,harness:selected.harness,nativeSessionId:selected.id});setMobileView("chat");return;}setRemoteSelection(undefined);shouldFollowRef.current = true; setShowScrollToLatest(false); setShowStatistics(false); setShowJobs(false); selectSession(key); setMobileView("chat"); }} />
+    <SessionList pins={sessionPins.pins} pinScope={directory.scope} onPin={sessionPins.toggle} pinError={sessionPins.error} onAdvancedSearch={(query) => { setAdvancedSearchQuery(query || undefined); setShowSessionSearch(false); setShowSearch(true); setMobileView("chat"); }} onMachines={() => { setShowSearch(false); setFleetCreationMode(false); setShowFleet(true); setAutomationSettings(undefined); }} onAutomationSettings={(section) => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(section); }} cacheSettings={viewCacheSettings} onCacheSettings={changeCacheSettings} onCacheClear={()=>{void viewCache.clear();if(cachedDetails)setDetails(null);setCacheEpoch(n=>n+1);}} directoryStatus={directory.error||(directory.pending?"Обновляются названия сессий…":directory.partial?"Часть машин ещё не передала полный список.":"")} onLoadMore={directory.more&&!directory.pending?()=>void directory.load(true):undefined} onNewSession={openCreateSession} entries={visibleSessionEntries} activeKey={remoteSelection?`mesh:${JSON.stringify([remoteSelection.hostId,remoteSelection.harness,remoteSelection.nativeSessionId])}`:activeKey} loading={loading} refreshing={sessionsRefreshing && !loading} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} shownCount={sessions.length} total={sessionsTotal} onLoadMoreSessions={() => { void loadMoreSessions(); }} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { setShowSearch(false); setShowFleet(false); const selected=displaySessions.find(s=>keyOf(s)===key);if(selected?.remote&&selected.hostId){setRemoteSelection({hostId:selected.hostId,harness:selected.harness,nativeSessionId:selected.id});setMobileView("chat");return;}setRemoteSelection(undefined);shouldFollowRef.current = true; setShowScrollToLatest(false); setShowStatistics(false); setShowJobs(false); selectSession(key); setMobileView("chat"); }} />
     {showProjects && <SettingsScreen tab={settingsTab} onTabChange={setSettingsTab} onOpenLaunchSettings={() => { setShowProjects(false); setAutomationSettings("launch-policy"); }} />}
     {showSearch && <RagSearchView initialQuery={advancedSearchQuery} onInitialQueryApplied={consumeAdvancedSearchInitialQuery} onOpenSession={(harness, id) => { setShowSearch(false); setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); selectSession(`${harness}:${id}`); setMobileView("chat"); }} />}
 {showFleet && <div className="fleet-overlay" role="region" aria-label="Машины флота"><div className="fleet-overlay-panel"><button className="fleet-overlay-close quiet-button" aria-label="Закрыть машины флота" onClick={() => setShowFleet(false)}>Закрыть</button><FleetCabinet creationMode={fleetCreationMode} defaultHostId={selectedCreationHostId} onSelectedHostChange={setSelectedCreationHostId} /></div></div>}
