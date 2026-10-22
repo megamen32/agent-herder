@@ -278,8 +278,13 @@ export class AutomationDisarmStore {
         // the records that name exact works are replaced as a whole.
         records = records.filter((record) => !record.workKeys?.length);
         for (const key of canonical) {
+          // A work whose project is named and not a path belongs to the
+          // catch-all area. The catch-all is not a path, so it is never
+          // canonicalized as one: a scope of "<cwd>/*" covers nothing, and
+          // the blocked work would keep running.
+          const area = scopeOfWorkKey(key);
           records.push({
-            scope: await canonicalScopePath(scopeOfWorkKey(key)),
+            scope: area === ALL_SCOPES ? ALL_SCOPES : await canonicalScopePath(area),
             forbidden: true,
             workKeys: [key],
             createdAt: now,

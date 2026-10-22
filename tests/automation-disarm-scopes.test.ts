@@ -231,6 +231,27 @@ describe("the owner lever: the scope of a request", () => {
     const decision = await automationDisarmDecision(durable, [projectWorkKey(project)], "automation");
     expect(decision.allowed).toBe(false);
   });
+
+  it("keeps the blocked work of the earlier format blocked", async () => {
+    const durable = await store();
+    // The earlier format named the work and not a path, and a project that
+    // is named and not a path belongs to the catch-all area. The catch-all
+    // is not a path, so it must not be canonicalized as one: a scope of
+    // "<cwd>/*" covers nothing and the blocked work would keep running.
+    const named = projectWorkKey("omniroute-guard");
+    await durable.apply({ source: "owner", disarmed: false, workKeys: [named] });
+
+    const refused = await automationDisarmDecision(durable, [named], "automation");
+    expect(refused.allowed).toBe(false);
+    expect(refused.code).toBe(AUTOMATION_FORBIDDEN_CODE);
+    expect(refused.workKey).toBe(named);
+    // The area of a work without a path of its own is the catch-all.
+    expect(refused.routingReasonDetail).toBe("*");
+
+    // Another work of the same contour is not blocked by that one.
+    const other = await automationDisarmDecision(durable, [projectWorkKey("other-guard")], "automation");
+    expect(other.allowed).toBe(true);
+  });
 });
 
 describe("the owner lever: the machine-readable refusal", () => {
