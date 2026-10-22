@@ -161,12 +161,25 @@ def bundle_check(release: Path, sha: str) -> dict:
     manifest = json.loads(manifest_path.read_text())
     entries = release_rules.bundle_entries(release, exclude=("build-manifest.json",))
     fingerprint = release_rules.bundle_fingerprint(entries)
+    portable_entries = release_rules.payload_entries(release, exclude=("build-manifest.json",))
+    portable = release_rules.payload_fingerprint(portable_entries)
+    # the fingerprint of the whole bundle is the property of the node that
+    # carries the package farm; the build payload is the property of the build
+    # and is the same on every node
+    whole_ok = manifest.get("bundleFingerprint") == fingerprint
+    manifest_portable = manifest.get("payloadFingerprint")
+    payload_ok = (manifest_portable == portable) if manifest_portable else whole_ok
     return {
-        "ok": manifest.get("sourceSha") == sha and manifest.get("bundleFingerprint") == fingerprint,
+        "ok": manifest.get("sourceSha") == sha and payload_ok,
         "source_sha": manifest.get("sourceSha"),
         "source_sha_ok": manifest.get("sourceSha") == sha,
         "manifest_fingerprint": manifest.get("bundleFingerprint"),
         "recomputed_fingerprint": fingerprint,
+        "whole_ok": whole_ok,
+        "manifest_payload_fingerprint": manifest_portable,
+        "recomputed_payload_fingerprint": portable,
+        "payload_ok": payload_ok,
+        "payload_files": len(portable_entries),
         "files": len(entries),
         "built_at": manifest.get("builtAt"),
     }
@@ -482,10 +495,44 @@ def mcp_call(port: int, tool: str, arguments: dict, timeout: float = 30.0) -> di
     return answer
 
 
+def mesh_peer_hosts(answer: dict) -> list:
+    """The host ids the mesh of this node sees."""
+    hosts = set()
+
+    def collect(data):
+        if not isinstance(data, dict):
+            return
+        for entry in data.get("sessions", []) or []:
+            host = (entry.get("address") or {}).get("hostId") if isinstance(entry, dict) else None
+            if host:
+                hosts.add(host)
+        for entry in data.get("hosts", []) or []:
+            host = entry.get("hostId") if isinstance(entry, dict) else entry
+            if host:
+                hosts.add(host)
+
+    result = answer.get("result", {}) if isinstance(answer, dict) else {}
+    collect(result.get("structuredContent"))
+    for item in result.get("content", []) or []:
+        if isinstance(item, dict) and item.get("type") == "text":
+            try:
+                collect(json.loads(item.get("text", "")))
+            except Exception:
+                continue
+    return sorted(hosts)
+
+
 def peer_reachability(port: int, peer_host: str) -> dict:
-    """From this node to the second node: the two calls the guard does not touch."""
-    result = {"tools": {}, "peer_answers": False, "guard_blocked": False}
-    for tool, arguments in (("fleet_node_info", {}), ("fleet_session_page", {"limit": 5})):
+    """From this node to the second node: the calls the guard does not touch.
+
+    The name of the local node is not a proof that the peer is reached. The
+    peer must have answered: either the mesh of this node lists it, or the
+    ledger of the fleet names it with the time of its answer.
+    """
+    result = {"tools": {}, "peer_answers": False, "guard_blocked": False,
+              "mesh_peers": [], "peer_confirmed_at": None, "peer_status": None}
+    for tool, arguments in (("fleet_node_info", {}), ("fleet_session_page", {"limit": 5}),
+                            ("mesh_discover", {"limit": 12})):
         try:
             answer = mcp_call(port, tool, arguments)
         except Exception as error:
@@ -500,8 +547,17 @@ def peer_reachability(port: int, peer_host: str) -> dict:
         }
         if blocked:
             result["guard_blocked"] = True
-        if peer_host and peer_host in text:
-            result["peer_answers"] = True
+        if tool == "mesh_discover":
+            result["mesh_peers"] = mesh_peer_hosts(answer)
+    confirmation = fleet_confirmation(port)
+    nodes = confirmation.get("nodes") if isinstance(confirmation, dict) else None
+    if isinstance(nodes, list):
+        for node in nodes:
+            if node.get("hostId") == peer_host:
+                result["peer_confirmed_at"] = node.get("confirmedAt")
+                result["peer_status"] = node.get("status")
+    if peer_host:
+        result["peer_answers"] = (peer_host in result["mesh_peers"]) or bool(result["peer_confirmed_at"])
     return result
 
 
@@ -517,7 +573,7 @@ def fleet_confirmation(port: int) -> dict:
         return {"error": str(error)[:160]}
 
 
-def guard_policy(release: Path) -> dict:
+def guard_policy(release: Path, node_bin: str = "/usr/local/bin/node") -> dict:
     """The shipped guard: what it does to a session creation without a harness.
 
     The module of the release is asked, not the source of the repository: the
@@ -526,24 +582,30 @@ def guard_policy(release: Path) -> dict:
     module = release / "dist" / "codex-quota-guard.js"
     if not module.is_file():
         return {"ok": False, "error": f"the release carries no guard: {module}"}
+    # the specifier of an import must be a literal, so the module of the
+    # release is loaded by a dynamic import; no top-level await, so the same
+    # probe runs on the node 12 of a fleet node
     script = r"""
-import { assertRemoteCodexAdmission } from process.argv[2];
-const reader = async () => ({});
-const out = {};
-for (const [name, args] of [["without harness", {}], ["harness opencode", { harness: "opencode" }], ["harness codex", { harness: "codex" }]]) {
-  try {
-    await assertRemoteCodexAdmission("fleet_create_session", args, reader);
-    out[name] = { allowed: true };
-  } catch (error) {
-    out[name] = { allowed: false, code: error.code, message: String(error.message).slice(0, 200), decision: error.decision ? { allowed: error.decision.allowed, reason: error.decision.reason } : undefined };
+(async () => {
+  const module = await import(process.argv[2]);
+  const assertRemoteCodexAdmission = module.assertRemoteCodexAdmission;
+  const reader = async () => ({});
+  const out = {};
+  for (const [name, args] of [["without harness", {}], ["harness opencode", { harness: "opencode" }], ["harness codex", { harness: "codex" }]]) {
+    try {
+      await assertRemoteCodexAdmission("fleet_create_session", args, reader);
+      out[name] = { allowed: true };
+    } catch (error) {
+      out[name] = { allowed: false, code: error.code, message: String(error.message).slice(0, 200), decision: error.decision ? { allowed: error.decision.allowed, reason: error.decision.reason } : undefined };
+    }
   }
-}
-console.log(JSON.stringify(out));
+  console.log(JSON.stringify(out));
+})().catch((error) => { console.log(JSON.stringify({ error: String(error && error.message || error).slice(0, 200) })); });
 """
     path = Path("/tmp/acceptance-guard-probe.mjs")
     path.write_text(script, encoding="utf-8")
     try:
-        result = subprocess.run(["/usr/local/bin/node", str(path), str(module)],
+        result = subprocess.run([node_bin, str(path), str(module)],
                                 capture_output=True, text=True, check=False, timeout=30)
         data = json.loads(result.stdout.strip().splitlines()[-1])
     except Exception as error:
@@ -632,7 +694,7 @@ def main() -> int:
     management = management_check(arguments.port, arguments.kind)
     reachability = peer_reachability(arguments.port, arguments.peer_host) if arguments.peer_host else {}
     confirmation = fleet_confirmation(arguments.port)
-    guard = guard_policy(release)
+    guard = guard_policy(release, arguments.node_bin)
     panel = panel_session_creation(release)
     lever = lever_check(state_dir, release, arguments.node_bin)
     budget = budget_check(releases_root, rollback_root)
@@ -672,10 +734,16 @@ def main() -> int:
          f"payload={payload.get('payload_files')} actual={payload.get('actual_files')} "
          f"missing={len(payload.get('missing', []))} extra={len(payload.get('extra', []))} "
          f"mismatched={len(payload.get('mismatched', []))} index_ok={payload.get('index_ok')}"),
-        ("the bundle fingerprint of the manifest holds on the node",
-         bundle.get("ok", False),
+        ("the build payload of the release is the same on this node as on the builder",
+         bundle.get("payload_ok", False),
+         f"manifest={bundle.get('manifest_payload_fingerprint')} "
+         f"recomputed={bundle.get('recomputed_payload_fingerprint')} files={bundle.get('payload_files')}"),
+        ("the whole bundle of the node carries the fingerprint of the manifest",
+         bundle.get("whole_ok", False) if arguments.kind == "owner" else True,
          f"manifest={bundle.get('manifest_fingerprint')} recomputed={bundle.get('recomputed_fingerprint')} "
-         f"files={bundle.get('files')}"),
+         f"files={bundle.get('files')}"
+         + ("" if arguments.kind == "owner"
+            else " (the package farm of a fleet node is its own: the whole bundle is the property of the node)")),
         ("the manifest is the one of this head", bundle.get("source_sha_ok", False),
          f"{bundle.get('source_sha')} vs {arguments.sha}"),
         ("every import of the runtime resolves from the release", imports.get("ok", False),
@@ -703,13 +771,17 @@ def main() -> int:
          f"state={lever.get('state')} scope={lever.get('scope')} mechanism={lever.get('mechanism')} "
          f"changedBy={lever.get('changed_by')} live={lever.get('live_decision')}"
          + (f" error={lever.get('error')}" if lever.get("error") else "")),
-        ("from this node the second node is reachable (the two calls the guard does not touch)",
+        ("from this node the second node is reachable (the calls the guard does not touch)",
          bool(reachability) and all(tool.get("answered") for tool in reachability.get("tools", {}).values())
-         and not reachability.get("guard_blocked"),
+         and not reachability.get("guard_blocked")
+         and (not arguments.peer_host or reachability.get("peer_answers")),
          f"peer={arguments.peer_host or 'any'} tools="
          + " ".join(f"{name}:{'ok' if tool.get('answered') else tool.get('error', 'no')}"
                     for name, tool in reachability.get("tools", {}).items())
-         + f" guard_blocked={reachability.get('guard_blocked')}"),
+         + f" guard_blocked={reachability.get('guard_blocked')}"
+         + f" peer_answered={reachability.get('peer_answers')}"
+         + f" peer_confirmed_at={reachability.get('peer_confirmed_at')}"
+         + f" mesh_peers={reachability.get('mesh_peers')}"),
         ("the fleet names the nodes that hold the wanted revision",
          not confirmation.get("error") and bool(confirmation.get("nodes")),
          f"desiredRevision={confirmation.get('desiredRevision')} state={confirmation.get('state')} "

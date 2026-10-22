@@ -287,6 +287,8 @@ def write_bundle_manifest(sha: str, release: Path, catalog: Path, worktree: Path
     payload = dist_manifest["payload"]
     entries = release_rules.bundle_entries(release, exclude=(BUNDLE_MANIFEST,))
     fingerprint = release_rules.bundle_fingerprint(entries)
+    portable_entries = release_rules.payload_entries(release, exclude=(BUNDLE_MANIFEST,))
+    portable_fingerprint = release_rules.payload_fingerprint(portable_entries)
     size = release_rules.size_report(release)
     total_bytes = size["apparent_bytes"]
     package = release / "packages" / "agent-resume"
@@ -315,6 +317,8 @@ def write_bundle_manifest(sha: str, release: Path, catalog: Path, worktree: Path
         },
         "bundleFingerprint": fingerprint,
         "bundleFiles": len(entries),
+        "payloadFingerprint": portable_fingerprint,
+        "payloadFiles": len(portable_entries),
         "bundleBytes": total_bytes,
         "bundleSize": size,
         "supersedes": {

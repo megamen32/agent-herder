@@ -187,6 +187,23 @@ def bundle_entries(root: Path, exclude=()) -> dict:
     return entries
 
 
+def payload_entries(root: Path, exclude=("build-manifest.json",)) -> dict:
+    """The part of the release that is the same on every node.
+
+    The package farm of a node is the property of that node: every node keeps
+    its own store, so the whole bundle differs from node to node. The build
+    itself does not: its payload is the same everywhere.
+    """
+    entries = bundle_entries(root, exclude=exclude)
+    return {name: value for name, value in entries.items()
+            if not name.startswith("node_modules/")}
+
+
+def payload_fingerprint(entries: dict) -> str:
+    """The fingerprint of the build payload of a release."""
+    return bundle_fingerprint(entries)
+
+
 def bundle_fingerprint(entries: dict) -> str:
     payload = "".join(f"{name}\0{entries[name]}\n" for name in sorted(entries)).encode()
     return hashlib.sha256(payload).hexdigest()
