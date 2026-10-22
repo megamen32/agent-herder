@@ -11,11 +11,13 @@ import type {IntegratorFleetRuntime,IntegratorProjectReadinessSnapshot} from '..
 import {assertModelAllowedForDirectoryWithPolicy,type ProjectModelPolicyProvider} from '../project-model-gate.js';
 import { AutomationDisarmStore, buildAutomationDisarmSummary, humanWorkKeys, type AutomationDisarmRecord } from '../automation-disarm/index.js';
 import { sameSecret } from '../secret-compare.js';
+import { applySettingsValue, readSettings, rollbackSettingsValue } from '../settings-management.js';
+import type { SettingsStore } from '../web/settings-store.js';
 // One process generation across all MCP connections and authenticated contexts.
 let viewReads=0;
 const processGeneration=Date.now()-Math.floor(process.uptime()*1000);
 /** Attach to the existing local controller. No override, native activation, private writer or subprocess. */
-export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<string,HarnessAdapter>;inventorySnapshot?:()=>LocalInventorySnapshot;readSupervisor?:Pick<SessionSupervisor,'getSession'|'getSessionDetails'>;integratorRuntime?:IntegratorFleetRuntime;ownerJournal?:Pick<FleetCreateJournal,'once'>;launchPolicy?:ProjectModelPolicyProvider}):void{
+export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<string,HarnessAdapter>;inventorySnapshot?:()=>LocalInventorySnapshot;readSupervisor?:Pick<SessionSupervisor,'getSession'|'getSessionDetails'>;integratorRuntime?:IntegratorFleetRuntime;ownerJournal?:Pick<FleetCreateJournal,'once'>;launchPolicy?:ProjectModelPolicyProvider;settings?:SettingsStore}):void{
  const disarmRecordSchema=z.object({scope:z.string().min(1).max(4096),forbidden:z.boolean(),owner:z.string().max(200).optional(),reason:z.string().max(500).optional(),createdAt:z.string().max(64).optional(),policyRevision:z.string().max(128).optional(),workKeys:z.array(z.string().min(1).max(1024)).max(256).optional()}).strict();
  server.registerTool('automation_disarm',{description:'Hold or release the owner-level automation lever on this node. The state is durable on disk and survives a restart of the runtime. The caller must hold the owner token of this node (AGENT_HERDER_DISARM_TOKEN) and state an explicit owner action; a node without a configured token fails closed and never moves the lever. The records of the owner decision travel with the request and are the authority on this node; the flat lever and the flat list of works travel with them for a node of the earlier format. In read mode the node only reports the state it holds and changes nothing. The answer always names this node and the state it now holds, so a fleet answer can tell a confirmed node from an unreachable one.',inputSchema:z.object({mode:z.enum(['apply','read']).optional(),disarmed:z.boolean().optional(),workKeys:z.array(z.string().min(1).max(1024)).max(256).optional(),records:z.array(disarmRecordSchema).max(256).optional(),reason:z.string().max(500).optional(),decisionId:z.string().min(1).max(128).optional(),source:z.literal('owner').optional(),token:z.string().min(1).max(512).optional()}).strict()},async(request)=>{
   const refuse=(code:string,reason:string)=>{const refused={ok:false,hostId:hostname(),code,reason,decisionId:request.decisionId??null};return {structuredContent:refused,content:[{type:'text' as const,text:JSON.stringify(refused)}]};};
@@ -44,6 +46,24 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
   if(!change.ok)return refuse(change.code,change.reason);
   const payload={ok:true,hostId:hostname(),state:{...change.state,blockedWorkKeysHuman:humanWorkKeys(change.state.blockedWorkKeys)},summary:buildAutomationDisarmSummary({applied:true,disarmed:change.state.disarmed,nodes:[{hostId:hostname(),status:'confirmed'}]}),decisionId:request.decisionId??null};
   return {structuredContent:payload,content:[{type:'text' as const,text:JSON.stringify(payload)}]};
+ });
+ server.registerTool('settings',{description:'Read or change the settings of the herder on this node: the environment file and the configuration of the fleet node. The same store the web uses, so one truth about the settings. A change states the version of the value as it was read (ifMatch): without it the change is refused, and a value that changed in the meantime is not overwritten. The policy of the launch is not written here — it has its own endpoint and its own version check.',inputSchema:z.object({op:z.enum(['read','apply','rollback']).default('read'),entity:z.enum(['herder.env','node-config']).optional(),key:z.string().min(1).max(256).optional(),value:z.unknown().optional(),ifMatch:z.string().min(1).max(128).optional(),historyId:z.string().min(1).max(128).optional()}).strict()},async(request)=>{
+  const refuse=(code:string,error:string,current?:string)=>{const refused={ok:false,hostId:hostname(),code,error,...(current?{current}:{})};return {structuredContent:refused,content:[{type:'text' as const,text:JSON.stringify(refused)}]};};
+  if(!deps.settings)return refuse('not_available','The settings of this node are not available: the node has no settings store.');
+  if(request.op==='read'){
+   const view=await readSettings(deps.settings);
+   return {structuredContent:view,content:[{type:'text' as const,text:JSON.stringify(view)}]};
+  }
+  if(request.op==='apply'){
+   if(!request.entity||!request.key)return refuse('invalid_request','A change names the entity and the key of the setting.');
+   const result=await applySettingsValue(deps.settings,{entity:request.entity,key:request.key,value:request.value,ifMatch:request.ifMatch});
+   if(!result.ok)return refuse(result.code,result.error,result.current);
+   return {structuredContent:{...result,ok:true,hostId:hostname()},content:[{type:'text' as const,text:JSON.stringify(result)}]};
+  }
+  if(!request.entity||!request.key)return refuse('invalid_request','A rollback names the entity and the key of the setting.');
+  const rolled=await rollbackSettingsValue(deps.settings,{entity:request.entity,key:request.key,historyId:request.historyId});
+  if(!rolled.ok)return refuse(rolled.code,rolled.error,rolled.current);
+  return {structuredContent:{...rolled,ok:true,hostId:hostname()},content:[{type:'text' as const,text:JSON.stringify(rolled)}]};
  });
  server.registerTool('fleet_session_page',{description:'Read one page of the existing local session metadata snapshot, with native IDs, observation time and partial state. No history or native activation.',annotations:{readOnlyHint:true},inputSchema:z.object({cursor:z.string().max(2048).optional(),limit:z.number().int().min(1).max(100).default(100)}).strict()},async({cursor,limit})=>{
   const snapshot=deps.inventorySnapshot?.()??{sessions:[],warming:true,observedAt:null};
