@@ -58,6 +58,14 @@ export interface ProjectLaunchDispatchResult extends Partial<NamedSessionResult>
    * names the class of the decision and stays stable.
    */
   routingReasonCode?: string;
+  /**
+   * Stable ASCII class of the cause behind the routing decision.
+   *
+   * The code names the class of the decision itself; this field names the
+   * class of the cause inside it, so a forbidden automation is told from a
+   * blocked work without reading the wording of the reason.
+   */
+  routingReasonDetail?: string;
   attempts: ProjectLaunchAttempt[];
   outcome: LaunchOutcome | "human_hold" | "in_flight" | "no_harness";
   selectedHarness?: HarnessType;
@@ -212,6 +220,9 @@ export async function dispatchProjectLaunch(
       // The class of the refusal is the same one the owner gate names, so an
       // observer reads the class and not the wording of the reason.
       routingReasonCode: AUTOMATION_DISABLED_CODE,
+      // The class of the disarm decision itself: the whole automation is
+      // forbidden, or this one work is blocked.
+      ...(disarm.code ? { routingReasonDetail: disarm.code } : {}),
     };
   }
 

@@ -1,4 +1,7 @@
-import { automationDisarmDecision, projectWorkKey, sessionWorkKey, AutomationDisarmStore } from "../automation-disarm/index.js";
+import { appendFile, mkdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
+
+import { automationDisarmDecision, projectWorkKey, sessionWorkKey, AutomationDisarmStore, type AutomationDisarmDecision } from "../automation-disarm/index.js";
 
 /**
  * The machine-readable classes of the refusals of the health contour.
@@ -37,6 +40,18 @@ export interface HealthReasonRefusal {
   sessionId: string;
   /** The incident the refusal belongs to. */
   incidentId: string;
+  /**
+   * The stable ASCII class of the cause behind the refusal.
+   *
+   * The code names the class of the refusal itself; this field names the class
+   * of the cause inside it, so a reader tells a forbidden automation from a
+   * blocked work without reading the wording.
+   */
+  detail?: string;
+  /** The logical work key the refusal was made on, when one work is blocked. */
+  workKey?: string;
+  /** The harness of the refused run. */
+  harness?: string;
 }
 
 /** The decision of the owner-level lever for one automatic run. */
@@ -45,6 +60,16 @@ export interface HealthOwnerGateDecision {
   allowed: boolean;
   /** Why the run is forbidden, in the words of the owner state. */
   reason?: string;
+  /**
+   * The stable ASCII class of the disarm decision itself.
+   *
+   * The lever refuses in two ways: the whole automation is forbidden, or one
+   * concrete work is blocked. The class of the decision tells the two apart
+   * without reading the wording of the reason.
+   */
+  disarmCode?: AutomationDisarmDecision["code"];
+  /** The logical work key the refusal was made on. */
+  workKey?: string;
 }
 
 /**
@@ -69,11 +94,21 @@ export async function healthOwnerGate(options: {
       options.workKeys,
       "automation",
     );
-    return { allowed: decision.allowed, ...(decision.reason ? { reason: decision.reason } : {}) };
+    return {
+      allowed: decision.allowed,
+      ...(decision.reason ? { reason: decision.reason } : {}),
+      // The class of the decision travels with the wording: a reader counts the
+      // refusals by the class and never parses the reason.
+      ...(decision.code ? { disarmCode: decision.code } : {}),
+      ...(decision.workKey ? { workKey: decision.workKey } : {}),
+    };
   } catch (error) {
     return {
       allowed: false,
       reason: `Состояние запрета автоматики не прочитано: ${(error as Error).message}`,
+      // A state that cannot be read is the global lever, so the class of the
+      // decision is the class of the global lever.
+      disarmCode: "automation_disarmed",
     };
   }
 }
@@ -96,4 +131,30 @@ export function healthWorkKeys(input: {
     projectWorkKey(input.project),
     sessionWorkKey(input.harness, input.sessionId, input.cwd),
   ];
+}
+
+/**
+ * The durable trail of the refusals of the health contour.
+ *
+ * The trail lives in the state directory of the runtime, beside the owner
+ * state of the lever. It is a trail and not a gate: a failed write never
+ * fails the contour.
+ */
+export function healthRefusalAuditPath(stateDir: string): string {
+  return join(stateDir, "health-refusals.audit.jsonl");
+}
+
+/**
+ * Append one refusal to the durable trail.
+ *
+ * The record is one JSON object per line: a reader counts the refusals by
+ * their code with a JSON reader and never parses the wording.
+ */
+export async function appendHealthRefusalAudit(path: string, refusal: HealthReasonRefusal): Promise<void> {
+  try {
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+    await appendFile(path, `${JSON.stringify({ at: new Date().toISOString(), ...refusal })}\n`, { mode: 0o600 });
+  } catch {
+    // The trail must never break the health contour.
+  }
 }

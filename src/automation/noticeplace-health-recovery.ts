@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { parseNoticeIncident, type HealthPlanId, type NoticeIncidentBinding } from "../autopilot/notice-incident.js";
-import { AUTOMATION_DISABLED_CODE, NO_SELECTED_HEALTH_PLAN_CODE, healthOwnerGate, healthWorkKeys } from "./health-reason-codes.js";
+import { AUTOMATION_DISABLED_CODE, NO_SELECTED_HEALTH_PLAN_CODE, healthOwnerGate, healthWorkKeys, type HealthReasonRefusal } from "./health-reason-codes.js";
 
 /** One armed session of the durable autopilot store that carries an incident binding. */
 export interface NoticeplaceHealthRecoveryCandidate {
@@ -17,6 +17,14 @@ export interface NoticeplaceHealthRecoveryResult {
   skipped: number;
   /** Why each skipped session was skipped, for the operator's log. */
   reasons: string[];
+  /**
+   * The refusals of the recovery with their machine-readable class.
+   *
+   * The reasons are the wording an operator reads; these records are what a
+   * reader counts, so the class of a refusal never has to be parsed out of a
+   * free text.
+   */
+  refusals: HealthReasonRefusal[];
 }
 
 /**
@@ -87,7 +95,7 @@ export async function recoverNoticeplaceHealthObservation(options: {
 }): Promise<NoticeplaceHealthRecoveryResult> {
   const concurrency = Math.max(1, options.concurrency ?? 4);
   const batchDelayMs = Math.max(0, options.batchDelayMs ?? 250);
-  const result: NoticeplaceHealthRecoveryResult = { armed: 0, skipped: 0, reasons: [] };
+  const result: NoticeplaceHealthRecoveryResult = { armed: 0, skipped: 0, reasons: [], refusals: [] };
   for (let index = 0; index < options.candidates.length; index += concurrency) {
     const batch = options.candidates.slice(index, index + concurrency);
     await Promise.all(batch.map(async (candidate) => {
@@ -104,7 +112,19 @@ export async function recoverNoticeplaceHealthObservation(options: {
       });
       if (!gate.allowed) {
         result.skipped += 1;
-        result.reasons.push(`${candidate.sessionId}: ${gate.reason ?? "the owner forbids automation"} [${AUTOMATION_DISABLED_CODE}]`);
+        const reason = gate.reason ?? "the owner forbids automation";
+        result.reasons.push(`${candidate.sessionId}: ${reason} [${AUTOMATION_DISABLED_CODE}]`);
+        // The same refusal with its class: the wording stays for the operator,
+        // the record is what a reader counts.
+        result.refusals.push({
+          code: AUTOMATION_DISABLED_CODE,
+          reason: `${candidate.sessionId}: ${reason}`,
+          sessionId: candidate.sessionId,
+          incidentId: candidate.binding.incidentId,
+          harness: candidate.harness,
+          ...(gate.disarmCode ? { detail: gate.disarmCode } : {}),
+          ...(gate.workKey ? { workKey: gate.workKey } : {}),
+        });
         return;
       }
       let alive = false;
@@ -123,7 +143,15 @@ export async function recoverNoticeplaceHealthObservation(options: {
         // The observer publishes only for the selected plan of the incident:
         // an unknown plan is a refusal, never a guess.
         result.skipped += 1;
-        result.reasons.push(`${candidate.sessionId}: the incident ${candidate.binding.incidentId} has no selected health plan [${NO_SELECTED_HEALTH_PLAN_CODE}]`);
+        const reason = `the incident ${candidate.binding.incidentId} has no selected health plan`;
+        result.reasons.push(`${candidate.sessionId}: ${reason} [${NO_SELECTED_HEALTH_PLAN_CODE}]`);
+        result.refusals.push({
+          code: NO_SELECTED_HEALTH_PLAN_CODE,
+          reason: `${candidate.sessionId}: ${reason}`,
+          sessionId: candidate.sessionId,
+          incidentId: candidate.binding.incidentId,
+          harness: candidate.harness,
+        });
         return;
       }
       const outcome = await options.arm(planId === candidate.binding.planId

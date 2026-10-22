@@ -176,7 +176,17 @@ export class NoticeplaceHealthObserver {
       }),
     });
     if (decision.allowed) return false;
-    this.refuse(target, `Notice health observer refused ${target.sessionId} incident ${target.binding.incidentId}: ${decision.reason ?? "the owner forbids automation"}`, AUTOMATION_DISABLED_CODE);
+    this.refuse(
+      target,
+      `Notice health observer refused ${target.sessionId} incident ${target.binding.incidentId}: ${decision.reason ?? "the owner forbids automation"}`,
+      AUTOMATION_DISABLED_CODE,
+      {
+        // The class of the disarm decision itself: a forbidden automation and a
+        // blocked work are one class of refusal, but not the same cause.
+        ...(decision.disarmCode ? { detail: decision.disarmCode } : {}),
+        ...(decision.workKey ? { workKey: decision.workKey } : {}),
+      },
+    );
     return true;
   }
 
@@ -187,7 +197,7 @@ export class NoticeplaceHealthObserver {
    * next to it, so a reader counts the refusals without parsing the text. A
    * refusal without a known class stays a plain refusal.
    */
-  private refuse(target: NoticeplaceHealthTarget, message: string, code?: string): void {
+  private refuse(target: NoticeplaceHealthTarget, message: string, code?: string, cause?: { detail?: string; workKey?: string }): void {
     this.options.onError?.(code ? `${message} [${code}]` : message);
     if (!code) return;
     this.options.onRefused?.({
@@ -195,6 +205,11 @@ export class NoticeplaceHealthObserver {
       reason: message,
       sessionId: target.sessionId,
       incidentId: target.binding.incidentId,
+      harness: target.harness,
+      // The class of the cause travels with the class of the refusal, so the
+      // consumer counts both without reading the wording.
+      ...(cause?.detail ? { detail: cause.detail } : {}),
+      ...(cause?.workKey ? { workKey: cause.workKey } : {}),
     });
   }
 
