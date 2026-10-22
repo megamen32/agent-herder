@@ -6,16 +6,12 @@ Wants=network-online.target opencode.service
 [Service]
 Type=simple
 WorkingDirectory=%h/agents-projects/agent-herder
-EnvironmentFile=-%h/.config/openchamber/startup.env
 UnsetEnvironment=OPENCHAMBER_UI_PASSWORD OPENCODE_DISABLE_CHANNEL_DB
 Environment=OPENCODE_URL=http://127.0.0.1:4095
-EnvironmentFile=-%h/.config/agent-herder/opencode.env
 EnvironmentFile=-%h/.config/agent-herder/herder.env
-EnvironmentFile=-/etc/omniroute.env
 Environment=OPENAI_BASE_URL=http://127.0.0.1:20128/v1
 Environment=OPENAI_MODEL=minimax-combo-m3.1
 Environment=GRAPHIFY_OPENAI_MODEL=minimax-combo-m3.1
-EnvironmentFile=-%h/.config/minimax/env
 Environment=CODEX_BIN=%h/.local/bin/codex
 Environment=CODEX_CWD=%h/ServersAdministartion
 Environment=CODEX_TRANSPORT=app-server
@@ -46,7 +42,6 @@ Environment=AGENT_HERDER_UNFINISHED_RECONCILE_INTERVAL_MS=60000
 Environment=AGENT_HERDER_UNFINISHED_DISCOVERY_IDLE_MS=60000
 Environment=AGENT_HERDER_UNFINISHED_RESUMES_PER_CYCLE=8
 Environment=AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL=https://api.minimax.io/anthropic
-Environment=AGENT_HERDER_UNFINISHED_JUDGE_MODEL=MiniMax-M3.1-Flash
 ExecStart=/usr/local/bin/node %h/agents-projects/agent-herder/dist/index.js
 Restart=on-failure
 RestartSec=3
