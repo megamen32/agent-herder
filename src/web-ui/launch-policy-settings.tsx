@@ -10,6 +10,13 @@ export type ProjectLaunchRoute = {
   allowedModels?: string[];
   /** Model ids this project must never run on. A denial always wins. */
   deniedModels?: string[];
+  /**
+   * The identifier of the AI profile this project uses.
+   *
+   * The profile itself lives in the settings layer and is named here by a
+   * reference, so the panel keeps one truth about it and never a second copy.
+   */
+  profileId?: string;
 };
 
 export type LaunchPolicy = {
@@ -360,6 +367,10 @@ export function sameProjectRoute(left?: ProjectLaunchRoute, right?: ProjectLaunc
   if (!sameStringMap(left.models, right.models)) return false;
   if (!sameStringList(left.allowedModels, right.allowedModels)) return false;
   if (!sameStringList(left.deniedModels, right.deniedModels)) return false;
+  // The reference to the AI profile is a part of the route: a route that
+  // changed only its profile is a changed route, and a comparison that did
+  // not know about it would drop the change without saying so.
+  if ((left.profileId ?? undefined) !== (right.profileId ?? undefined)) return false;
   return sameStringList(left.aliases, right.aliases);
 }
 
@@ -371,7 +382,7 @@ export function sameProjectRoute(left?: ProjectLaunchRoute, right?: ProjectLaunc
  * route change made elsewhere, and the other way round. The model map is
  * compared per harness, so two harnesses do not conflict with each other.
  */
-export type ProjectRoutePart = "harnesses" | "aliases" | "allowedModels" | "deniedModels" | `model:${string}`;
+export type ProjectRoutePart = "harnesses" | "aliases" | "allowedModels" | "deniedModels" | "profileId" | `model:${string}`;
 
 export function changedProjectRouteParts(
   left?: ProjectLaunchRoute,
@@ -384,6 +395,7 @@ export function changedProjectRouteParts(
       parts.add("aliases");
       parts.add("allowedModels");
       parts.add("deniedModels");
+      parts.add("profileId");
       for (const harness of new Set([...Object.keys(left?.models ?? {}), ...Object.keys(right?.models ?? {})])) {
         parts.add(`model:${harness}`);
       }
@@ -395,6 +407,7 @@ export function changedProjectRouteParts(
   if (!sameStringList(left.aliases, right.aliases)) parts.add("aliases");
   if (!sameStringList(left.allowedModels, right.allowedModels)) parts.add("allowedModels");
   if (!sameStringList(left.deniedModels, right.deniedModels)) parts.add("deniedModels");
+  if ((left.profileId ?? undefined) !== (right.profileId ?? undefined)) parts.add("profileId");
   for (const harness of new Set([...Object.keys(left.models ?? {}), ...Object.keys(right.models ?? {})])) {
     if ((left.models ?? {})[harness] !== (right.models ?? {})[harness]) parts.add(`model:${harness}`);
   }
@@ -424,6 +437,10 @@ export function mergeProjectRouteParts(
     ...(fresh.aliases ? { aliases: [...fresh.aliases] } : {}),
     ...(fresh.allowedModels ? { allowedModels: [...fresh.allowedModels] } : {}),
     ...(fresh.deniedModels ? { deniedModels: [...fresh.deniedModels] } : {}),
+    // The reference to the AI profile travels with the route: a merge that
+    // rebuilt the route from a known set of fields would drop it, and the
+    // project would lose its profile without saying so.
+    ...(fresh.profileId ? { profileId: fresh.profileId } : {}),
   };
   let conflict = false;
   for (const part of draftParts) {
@@ -437,6 +454,7 @@ export function mergeProjectRouteParts(
       case "aliases": merged.aliases = draft.aliases ? [...draft.aliases] : undefined; break;
       case "allowedModels": merged.allowedModels = draft.allowedModels ? [...draft.allowedModels] : undefined; break;
       case "deniedModels": merged.deniedModels = draft.deniedModels ? [...draft.deniedModels] : undefined; break;
+      case "profileId": merged.profileId = draft.profileId; break;
       default: {
         const harness = part.slice("model:".length);
         const model = draft.models?.[harness];

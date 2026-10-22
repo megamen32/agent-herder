@@ -287,4 +287,40 @@ describe("the project model policy form", () => {
     expect(page).toContain("Выберите папку проекта");
     expect(page).toContain("/api/sessions?quick=1");
   });
+
+  it("keeps the reference to the AI profile when the route is merged", () => {
+    const base = policy({
+      projectRoutes: { "/workspace/one": { harnesses: ["opencode"], profileId: "profile-writing-2026" } },
+    });
+    const fresh = policy({
+      projectRoutes: { "/workspace/one": { harnesses: ["opencode"], profileId: "profile-writing-2026" } },
+    });
+    const draft = policy({
+      projectRoutes: { "/workspace/one": { harnesses: ["opencode", "codex"], profileId: "profile-writing-2026" } },
+    });
+
+    const result = mergeProjectRoutes({ base, fresh, draft, kept: {} });
+    expect(result.conflicts).toEqual([]);
+    // The reference travels with the route: a merge that rebuilt the route
+    // from a known set of parts would drop it, and the project would lose
+    // its profile without saying so.
+    expect(result.merged.projectRoutes?.["/workspace/one"]?.profileId).toBe("profile-writing-2026");
+    expect(result.merged.projectRoutes?.["/workspace/one"]?.harnesses).toEqual(["opencode", "codex"]);
+  });
+
+  it("carries a change of the profile reference made by the operator", () => {
+    const base = policy({
+      projectRoutes: { "/workspace/one": { harnesses: ["opencode"], profileId: "profile-writing-2026" } },
+    });
+    const fresh = policy({
+      projectRoutes: { "/workspace/one": { harnesses: ["opencode"], profileId: "profile-writing-2026" } },
+    });
+    const draft = policy({
+      projectRoutes: { "/workspace/one": { harnesses: ["opencode"], profileId: "profile-review-2026" } },
+    });
+
+    const result = mergeProjectRoutes({ base, fresh, draft, kept: {} });
+    expect(result.conflicts).toEqual([]);
+    expect(result.merged.projectRoutes?.["/workspace/one"]?.profileId).toBe("profile-review-2026");
+  });
 });
