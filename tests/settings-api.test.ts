@@ -140,11 +140,17 @@ async function readSettings(port: number): Promise<Record<string, any>> {
   return await response.json() as Record<string, any>;
 }
 
-/** A change of the owner. */
+/**
+ * A change of the owner.
+ *
+ * A browser sends the Origin of the page with every change, so the test
+ * sends it too: the origin of the loopback of the test is the origin of the
+ * request.
+ */
 async function putSettings(port: number, body: unknown): Promise<Response> {
   return await fetch(`http://127.0.0.1:${port}/api/settings`, {
     method: "PUT",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", origin: `http://127.0.0.1:${port}` },
     body: JSON.stringify(body),
   });
 }
@@ -153,7 +159,7 @@ async function putSettings(port: number, body: unknown): Promise<Response> {
 async function rollbackSettings(port: number, body: unknown): Promise<Response> {
   return await fetch(`http://127.0.0.1:${port}/api/settings/rollback`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", origin: `http://127.0.0.1:${port}` },
     body: JSON.stringify(body),
   });
 }
@@ -437,6 +443,62 @@ describe("the settings of the herder keep the access of the panel", () => {
     expect(crossOrigin.status).toBe(403);
     // The change of another origin never reached the file.
     expect(await readFile(envPath, "utf8")).toContain("NOTIFY_CENTER_PROJECT=agent-herder");
+  });
+
+  it("refuses a rollback of another origin even without a cookie of the owner", async () => {
+    const port = await startServer();
+    await putSettings(port, { environment: { NOTIFY_CENTER_PROJECT: "changed-project" } });
+    const before = await readFile(envPath, "utf8");
+
+    // A simple request of another site reaches the loopback without any
+    // credential of the owner: it carries no cookie and no authorization.
+    const response = await fetch(`http://127.0.0.1:${port}/api/settings/rollback`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://evil.example" },
+      body: JSON.stringify({ entity: "herder.env", key: "NOTIFY_CENTER_PROJECT" }),
+    });
+    expect(response.status).toBe(403);
+    // The rollback was not applied and the file of the product is untouched.
+    expect(await readFile(envPath, "utf8")).toBe(before);
+    expect((await readFile(envPath, "utf8")).includes("NOTIFY_CENTER_PROJECT=changed-project")).toBe(true);
+  });
+
+  it("refuses a rollback of the loopback that names no origin", async () => {
+    const port = await startServer();
+    await putSettings(port, { environment: { NOTIFY_CENTER_PROJECT: "changed-project" } });
+    const before = await readFile(envPath, "utf8");
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/settings/rollback`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ entity: "herder.env", key: "NOTIFY_CENTER_PROJECT" }),
+    });
+    expect(response.status).toBe(403);
+    expect(await readFile(envPath, "utf8")).toBe(before);
+  });
+
+  it("applies a rollback of the owner with the origin of the panel", async () => {
+    const port = await startServer();
+    await putSettings(port, { environment: { NOTIFY_CENTER_PROJECT: "changed-project" } });
+
+    const response = await rollbackSettings(port, { entity: "herder.env", key: "NOTIFY_CENTER_PROJECT" });
+    expect(response.status).toBe(200);
+    // The value before the change is back in the file of the product.
+    expect(await readFile(envPath, "utf8")).toContain("NOTIFY_CENTER_PROJECT=agent-herder");
+  });
+
+  it("refuses a change of another origin on the loopback too", async () => {
+    const port = await startServer();
+    const before = await readFile(envPath, "utf8");
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/settings`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", origin: "https://evil.example" },
+      body: JSON.stringify({ environment: { NOTIFY_CENTER_PROJECT: "crossed" } }),
+    });
+    expect(response.status).toBe(403);
+    // The file of the product is untouched.
+    expect(await readFile(envPath, "utf8")).toBe(before);
   });
 
   it("answers the routes of the settings only", async () => {
