@@ -164,12 +164,66 @@ def running_release(launchd_label: str) -> str:
     return linux_running_release()
 
 
-def disarm_state(fleet: Path) -> str:
-    for candidate in (fleet.parent / "state" / "agent-herder" / "fleet-node" / "automation-disarm.json",
-                      Path.home() / ".local/state/agent-herder/fleet-node/automation-disarm.json"):
-        if candidate.is_file():
-            return hashlib.sha256(candidate.read_bytes()).hexdigest()[:16]
-    return "absent"
+def disarm_state(fleet: Path, state_dir: str = "") -> str:
+    """A readable snapshot of the owner-level automation lever of this node.
+
+    The lever lives in the runtime state directory of the node, which the
+    service itself declares: AGENT_HERDER_AUTOPILOT_STATE_DIR. An absent
+    file is an armed runtime. That is a fact to name, not a confirmation of a
+    ban, so the snapshot says which file was read and what it contains.
+    """
+    candidates = []
+    if state_dir:
+        candidates.append(Path(state_dir).expanduser() / "automation-disarm.json")
+    candidates.append(Path.home() / ".local/state/agent-herder/fleet-node/autopilot/automation-disarm.json")
+    candidates.append(Path.home() / ".local/state/agent-herder/autopilot-live/automation-disarm.json")
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        raw = candidate.read_bytes()
+        try:
+            document = json.loads(raw)
+        except json.JSONDecodeError:
+            return f"unreadable:{candidate}:sha={hashlib.sha256(raw).hexdigest()[:16]}"
+        records = [r for r in (document.get("records") or []) if isinstance(r, dict)]
+        scopes = sorted(str(r.get("scope")) for r in records)
+        forbidden = sorted(str(r.get("scope")) for r in records if r.get("forbidden"))
+        return (f"file={candidate} disarmed={document.get('disarmed')}"
+                f" changedBy={document.get('changedBy')} changedAt={document.get('changedAt')}"
+                f" scopes={scopes or 'none'} forbidden={forbidden or 'none'}"
+                f" blockedWorkKeys={len(document.get('blockedWorkKeys') or [])}"
+                f" sha={hashlib.sha256(raw).hexdigest()[:16]}")
+    return "absent:no-lever-file:runtime-is-armed"
+
+
+def process_environment_value(unit: str, key: str) -> str:
+    """One environment value of the live node process, read from /proc."""
+    try:
+        pid = subprocess.run(["systemctl", "--user", "show", unit, "-p", "MainPID", "--value"],
+                             capture_output=True, text=True, check=False).stdout.strip()
+    except OSError:
+        return ""
+    if not pid.isdigit():
+        return ""
+    try:
+        raw = Path(f"/proc/{pid}/environ").read_bytes()
+    except OSError:
+        return ""
+    for item in raw.split(b"\0"):
+        if item.startswith(key.encode() + b"="):
+            return item.split(b"=", 1)[1].decode(errors="replace")
+    return ""
+
+
+def system_pause_state(unit: str) -> str:
+    """The state of a system unit, read without --user, as information only."""
+    try:
+        result = subprocess.run(["systemctl", "is-active", unit], capture_output=True,
+                                text=True, check=False).stdout.strip()
+    except OSError:
+        return "unknown"
+    return result or "unknown"
+
 
 
 def package_resolution(release: Path) -> str:
@@ -340,13 +394,24 @@ def main() -> int:
     parser.add_argument("--launchd-label", default="com.bezrabotnyi.agent-herder-fleet-node")
     parser.add_argument("--release-local-packages", action="store_true",
                         help="copy the root package store into this release and bind agent-resume-mcp to this release's packages/agent-resume")
+    parser.add_argument("--unit", default="agent-herder-fleet.service",
+                        help="the user unit of the node, used to read its live environment")
+    parser.add_argument("--state-dir", default="",
+                        help="the runtime state directory of the node; read from the live process when empty")
+    parser.add_argument("--pause-unit", default="noticeplace-ai-pause.service",
+                        help="the system unit of the emergency pause; reported, never changed")
     arguments = parser.parse_args()
 
     fleet = Path(arguments.fleet_dir).expanduser()
     release = fleet / "releases" / arguments.sha
     config_path = fleet / "node-config.json"
+    state_dir = arguments.state_dir or process_environment_value(arguments.unit,
+                                                                 "AGENT_HERDER_AUTOPILOT_STATE_DIR")
+    print("runtime state dir:", state_dir or "unknown")
+    print("emergency pause unit:", arguments.pause_unit,
+          "->", system_pause_state(arguments.pause_unit))
 
-    before = disarm_state(fleet)
+    before = disarm_state(fleet, state_dir)
     try:
         package_result = prepare_packages(fleet, arguments.sha, arguments.previous_sha,
                                           arguments.release_local_packages)
@@ -407,13 +472,13 @@ def main() -> int:
     sessions = http_status(f"http://127.0.0.1:{arguments.port}/api/sessions")
     policy = http_status(f"http://127.0.0.1:{arguments.port}/api/automation/launch-policy")
     mcp = mcp_status(arguments.port)
-    after = disarm_state(fleet)
+    after = disarm_state(fleet, state_dir)
     checks = [
         ("running process comes from the new release", live_sha == arguments.sha, live_sha or "unknown"),
         ("sessions answer", sessions == 200, str(sessions)),
         ("launch policy answers", policy == 200, str(policy)),
         ("mcp answers", mcp == 200, str(mcp)),
-        ("automation ban state unchanged", before == after, f"{before} -> {after}"),
+        ("automation lever unchanged", before == after, f"{before} -> {after}"),
     ]
     failed = 0
     for name, ok, detail in checks:
