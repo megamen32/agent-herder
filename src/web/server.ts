@@ -35,7 +35,7 @@ import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/sessi
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
 import type { AutoCompactService, AutoCompactStore } from "../autocontinue/auto-compact.js";
 import type { OperatorCohortEnrollmentTarget, OperatorContinuationEnrollmentTarget, SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
-import { AutomationLaunchPolicyStore, LaunchPolicyConflictError, MAX_MODEL_LENGTH, findProjectRoute, validateAutomationLaunchPolicy } from "../automation-launch-policy.js";
+import { AutomationLaunchPolicyStore, LaunchPolicyConflictError, MAX_MODEL_LENGTH, appendLaunchPolicyAudit, findProjectRoute, launchPolicyAuditRecord, validateAutomationLaunchPolicy } from "../automation-launch-policy.js";
 import { renderSessionGraph } from "../session-visualization.js";
 import { boundedCoordinationContext, coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
 import { markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
@@ -1117,7 +1117,12 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
           state: "precondition_required",
         });
       }
+      const previous = await automationLaunchPolicyStore.readDocument();
       const saved = await automationLaunchPolicyStore.replace(body, { ifMatch: expected });
+      // The trail of the change is appended next to the policy. It is written
+      // after the save and never blocks it.
+      await appendLaunchPolicyAudit(automationLaunchPolicyStore.filePath,
+        launchPolicyAuditRecord(previous.kind === "valid" ? previous.policy : undefined, saved.policy));
       response.setHeader("etag", saved.etag);
       response.setHeader("cache-control", "no-store");
       return sendJson(response, 200, saved.policy);

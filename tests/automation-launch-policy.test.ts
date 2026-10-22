@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { Server } from "node:http";
-import { mkdtemp, readFile, stat, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -157,6 +157,90 @@ describe("automation launch policy", () => {
       projectRoutes: { "/projects/restricted": { harnesses: ["opencode"] } },
     }, { ifMatch: initial.etag });
     expect(legacy.policy.projectRoutes?.["/projects/restricted"]?.operatorCohortRecovery).toBe("deny");
+  });
+
+  it("appends one audit line for a saved policy change", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-launch-policy-audit-"));
+    directories.push(root);
+    const store = new AutomationLaunchPolicyStore(join(root, "automation-launch-policy.json"));
+    const server = createWebServer({
+      adapters: new Map(),
+      converter: { async convert() { throw new Error("unused"); } },
+      automationLaunchPolicyStore: store,
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const url = `http://127.0.0.1:${address.port}/api/automation/launch-policy`;
+
+    const saved = await fetch(url, { method: "PUT", headers: { "content-type": "application/json", "if-match": ABSENT_LAUNCH_POLICY_ETAG }, body: JSON.stringify(policy) });
+    expect(saved.status).toBe(200);
+    const auditPath = join(root, "automation-launch-policy.audit.jsonl");
+    const lines = (await readFile(auditPath, "utf8")).trim().split("\n");
+    expect(lines).toHaveLength(1);
+    const record = JSON.parse(lines[0]!) as { at: string; changed: string[]; models: string[] };
+    expect(record.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect([...record.changed].sort()).toEqual(["allowedHarnesses", "models", "preferredHarness", "version"]);
+    expect(record.models).toContain("gpt-5.6-sol");
+    expect(record.models).toContain("account:zai-individual-coding-plan/GLM-5.3-Flash$high");
+    // The trail is appended, never rewritten.
+    const second = await fetch(url, { method: "PUT", headers: { "content-type": "application/json", "if-match": saved.headers.get("etag")! }, body: JSON.stringify({ ...policy, models: { ...policy.models, codex: "gpt-6.1-sol" } }) });
+    expect(second.status).toBe(200);
+    const appended = (await readFile(auditPath, "utf8")).trim().split("\n");
+    expect(appended).toHaveLength(2);
+    expect(JSON.parse(appended[1]!).changed).toEqual(["models"]);
+  });
+
+  it("saves the policy even when the audit trail cannot be written", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-launch-policy-audit-fail-"));
+    directories.push(root);
+    // A directory in the place of the trail makes the append fail.
+    await mkdir(join(root, "automation-launch-policy.audit.jsonl"), { recursive: true });
+    const store = new AutomationLaunchPolicyStore(join(root, "automation-launch-policy.json"));
+    const server = createWebServer({
+      adapters: new Map(),
+      converter: { async convert() { throw new Error("unused"); } },
+      automationLaunchPolicyStore: store,
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const url = `http://127.0.0.1:${address.port}/api/automation/launch-policy`;
+
+    const saved = await fetch(url, { method: "PUT", headers: { "content-type": "application/json", "if-match": ABSENT_LAUNCH_POLICY_ETAG }, body: JSON.stringify(policy) });
+    expect(saved.status).toBe(200);
+    await expect(store.load()).resolves.toMatchObject({ kind: "valid" });
+  });
+
+  it("keeps a hand-typed incident model through a save and a reload", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-launch-policy-incident-"));
+    directories.push(root);
+    const store = new AutomationLaunchPolicyStore(join(root, "automation-launch-policy.json"));
+    const server = createWebServer({
+      adapters: new Map(),
+      converter: { async convert() { throw new Error("unused"); } },
+      automationLaunchPolicyStore: store,
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const url = `http://127.0.0.1:${address.port}/api/automation/launch-policy`;
+
+    const document = {
+      version: 1,
+      allowedHarnesses: ["opencode"],
+      preferredHarness: "opencode",
+      models: { opencode: "omniroute/hand-typed-model" },
+      incidentExecution: { runtime: "opencode", provider: "omniroute", model: "omniroute/hand-typed-model", reasoning: "default", topic: "health" },
+    };
+    const saved = await fetch(url, { method: "PUT", headers: { "content-type": "application/json", "if-match": ABSENT_LAUNCH_POLICY_ETAG }, body: JSON.stringify(document) });
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toMatchObject({ incidentExecution: { model: "omniroute/hand-typed-model" } });
+    expect(await (await fetch(url)).json()).toMatchObject({ incidentExecution: { model: "omniroute/hand-typed-model" } });
+    expect(JSON.parse(await readFile(join(root, "automation-launch-policy.json"), "utf8"))).toMatchObject({ incidentExecution: { model: "omniroute/hand-typed-model" } });
   });
 
   it("fails closed when absent and validates HTTP writes before persistence", async () => {

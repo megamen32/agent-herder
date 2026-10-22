@@ -1,13 +1,38 @@
 export interface HealthExecutionProfile {
   runtime: "zcode" | "hermes" | "fast-agent" | "opencode";
   provider: "account:zai-individual-coding-plan" | "openai-codex" | "minimax" | "omniroute";
-  model: "GLM-5.3-Flash" | "gpt-5.6-luna" | "MiniMax-M3.1-Flash" | "minimax/MiniMax-M3.1-Flash" | "minimax-combo-m3.1";
+  model: string;
   reasoning: "high" | "default";
   topic: "health";
 }
 
+/** The longest model route a health execution may carry. */
+export const MAX_HEALTH_MODEL_LENGTH = 256;
+
+/** The OmniRoute gateway prefix of every approved health route. */
+const OMNIROUTE_ROUTE_PREFIX = "omniroute/";
+/** The MiniMax subscription provider: allowed, but never the first choice. */
+const MINIMAX_SUBSCRIPTION_ROUTE_PREFIX = "minimax-coding-plan/";
+
+/**
+ * True for a route the health work of an incident may run on.
+ *
+ * The route is a fully qualified OmniRoute gateway route. The owner picks it
+ * by hand, so the check is not a closed list: every gateway route is
+ * approved, and the MiniMax subscription route is approved too, as a fallback
+ * of the gateway route. Every other provider is refused.
+ */
+export function isApprovedHealthRoute(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  if (value.length === 0 || value.length > MAX_HEALTH_MODEL_LENGTH) return false;
+  if (value !== value.trim()) return false;
+  if (/[\u0000-\u001f\u007f]/u.test(value)) return false;
+  const model = value.toLocaleLowerCase("en-US");
+  return model.startsWith(OMNIROUTE_ROUTE_PREFIX) || model.startsWith(MINIMAX_SUBSCRIPTION_ROUTE_PREFIX);
+}
+
 const CANONICAL_PROFILES: Record<HealthExecutionProfile["runtime"], HealthExecutionProfile> = {
-  opencode: { runtime: "opencode", provider: "omniroute", model: "minimax-combo-m3.1", reasoning: "default", topic: "health" },
+  opencode: { runtime: "opencode", provider: "omniroute", model: "omniroute/minimax-combo-m3.1", reasoning: "default", topic: "health" },
   "fast-agent": { runtime: "fast-agent", provider: "minimax", model: "MiniMax-M3.1-Flash", reasoning: "default", topic: "health" },
   zcode: {
     runtime: "zcode",
@@ -32,7 +57,31 @@ function bounded(value: unknown, field: string, limit = 64): string {
   return value.trim();
 }
 
-/** Validate the exact execution profile selected by the health workflow. */
+/**
+ * Validate the model route of an OpenCode health execution.
+ *
+ * The model is picked by hand, so it is not pinned to one id: it is a bounded
+ * route string of the OmniRoute gateway, or of the MiniMax subscription
+ * provider as a fallback. Any other provider is a substitution and refused.
+ */
+function incidentModelRoute(value: unknown): string {
+  const model = bounded(value, "model", MAX_HEALTH_MODEL_LENGTH);
+  if (/[\u0000-\u001f\u007f]/u.test(model)) {
+    throw new Error("health execution model must not contain control characters");
+  }
+  if (model.includes("/") && !isApprovedHealthRoute(model)) {
+    throw new Error("health execution model must be an OmniRoute gateway route or the MiniMax subscription route");
+  }
+  return model;
+}
+
+/**
+ * Validate the execution profile selected by the health workflow.
+ *
+ * The provider, the reasoning and the topic stay pinned to the profile of the
+ * runtime. The OpenCode model is the one free value: the owner picks it by
+ * hand, so it is validated as a route instead of being compared to one id.
+ */
 export function normalizeHealthExecution(value: unknown): HealthExecutionProfile {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("health execution profile must be an object");
@@ -41,7 +90,7 @@ export function normalizeHealthExecution(value: unknown): HealthExecutionProfile
   const profile = {
     runtime: bounded(raw.runtime, "runtime"),
     provider: bounded(raw.provider, "provider"),
-    model: bounded(raw.model, "model"),
+    model: bounded(raw.model, "model", MAX_HEALTH_MODEL_LENGTH),
     reasoning: bounded(raw.reasoning, "reasoning", 16),
     topic: bounded(raw.topic, "topic"),
   };
@@ -49,10 +98,22 @@ export function normalizeHealthExecution(value: unknown): HealthExecutionProfile
     throw new Error("health execution runtime must be opencode, zcode, hermes, or fast-agent");
   }
   const canonical = CANONICAL_PROFILES[profile.runtime];
-  for (const [field, expected] of Object.entries(canonical)) {
-    if (profile[field as keyof typeof profile] !== expected) {
-      throw new Error(`health execution ${field} must be ${expected}`);
+  for (const field of ["provider", "reasoning", "topic"] as const) {
+    if (profile[field] !== canonical[field]) {
+      throw new Error(`health execution ${field} must be ${canonical[field]}`);
     }
+  }
+  if (profile.runtime === "opencode") {
+    return {
+      runtime: "opencode",
+      provider: canonical.provider,
+      model: incidentModelRoute(profile.model),
+      reasoning: canonical.reasoning,
+      topic: canonical.topic,
+    };
+  }
+  if (profile.model !== canonical.model) {
+    throw new Error(`health execution model must be ${canonical.model}`);
   }
   return { ...canonical };
 }
@@ -61,13 +122,17 @@ export function normalizeHealthExecution(value: unknown): HealthExecutionProfile
 export function healthModelForHarness(harness: string, execution: HealthExecutionProfile): string {
   if (harness === "fast-agent") return `anthropic.${execution.model}`;
   if (harness === "zcode") return `${execution.provider}/${execution.model}$${execution.reasoning}`;
-  return harness === "opencode" ? `${execution.provider}/${execution.model}` : execution.model;
+  if (harness !== "opencode") return execution.model;
+  // The OpenCode model is a route of the gateway already, or a bare model id
+  // that the approved provider carries.
+  return execution.model.includes("/") ? execution.model : `${execution.provider}/${execution.model}`;
 }
 
 /** Separate incident policy: no global model or provider fallback. */
 export const INCIDENT_EXECUTION: HealthExecutionProfile = { ...CANONICAL_PROFILES.opencode };
 export function normalizeIncidentExecution(value: unknown): HealthExecutionProfile {
   const profile = normalizeHealthExecution(value);
-  if (profile.runtime !== "opencode") throw new Error("Incident execution must use OpenCode / OmniRoute MiniMax M3.1 Flash; no provider fallback");
+  if (profile.runtime !== "opencode") throw new Error("Incident execution must use OpenCode; no provider fallback");
+  if (profile.provider !== "omniroute") throw new Error("Incident execution must use the OmniRoute provider; no provider fallback");
   return profile;
 }

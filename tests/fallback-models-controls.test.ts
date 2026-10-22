@@ -42,6 +42,20 @@ describe("OmniRoute fallback model controls", () => {
     expect(fallbackModelIssue("omniroute/test-provider/model")).toBeUndefined();
   });
 
+  it("accepts the two-segment form of a live OmniRoute id", () => {
+    expect(fallbackModelIssue("omniroute/minimax-combo-m3.1")).toBeUndefined();
+    expect(fallbackModelIssue("omniroute/test-provider/model")).toBeUndefined();
+    expect(fallbackModelsSaveIssue({ opencode: ["omniroute/minimax-combo-m3.1"] })).toBeUndefined();
+    expect(fallbackModelIssue("model-only")).toMatch(/провайдер\/модель/i);
+  });
+
+  it("allows the MiniMax subscription route in the fallback list and refuses a foreign provider", () => {
+    expect(fallbackModelIssue("minimax-coding-plan/MiniMax-M3.1-Flash")).toBeUndefined();
+    expect(fallbackModelIssue("omniroute/minimax-coding-plan/MiniMax-M3.1-Flash")).toBeUndefined();
+    expect(fallbackModelsSaveIssue({ opencode: ["minimax-coding-plan/MiniMax-M3.1-Flash"] })).toBeUndefined();
+    expect(fallbackModelIssue("zai/GLM-4.6")).toBeTruthy();
+  });
+
   it("loads fallback choices with the launch policy document version", async () => {
     const fetch = vi.fn(async () => new Response(JSON.stringify({
       version: 1,
