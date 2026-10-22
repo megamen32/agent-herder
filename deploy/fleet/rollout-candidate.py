@@ -28,6 +28,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -333,7 +334,10 @@ def main() -> int:
                     "--web-port", str(node["webPort"]),
                     "--unit", node["unit"],
                     "--state-dir", expand(node["stateDir"])]
-            command = ["ssh", "-o", "ConnectTimeout=30", "-p", ssh_port, host, " ".join(side)]
+            # the remote side takes a shell line: every argument is quoted, or
+            # a command with spaces arrives as several arguments
+            command = ["ssh", "-o", "ConnectTimeout=30", "-p", ssh_port, host,
+                       " ".join(shlex.quote(item) for item in side)]
         else:
             side = ["python3", str(Path(__file__).resolve()), "--node-side",
                     "--kind", "owner", "--sha", arguments.sha,
