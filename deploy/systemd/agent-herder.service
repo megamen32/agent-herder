@@ -10,7 +10,11 @@ EnvironmentFile=-%h/.config/openchamber/startup.env
 UnsetEnvironment=OPENCHAMBER_UI_PASSWORD OPENCODE_DISABLE_CHANNEL_DB
 Environment=OPENCODE_URL=http://127.0.0.1:4095
 EnvironmentFile=-%h/.config/agent-herder/opencode.env
-EnvironmentFile=-%h/.config/agent-herder/noticeplace.env
+EnvironmentFile=-%h/.config/agent-herder/herder.env
+EnvironmentFile=-/etc/omniroute.env
+Environment=OPENAI_BASE_URL=http://127.0.0.1:20128/v1
+Environment=OPENAI_MODEL=minimax-combo-m3.1
+Environment=GRAPHIFY_OPENAI_MODEL=minimax-combo-m3.1
 EnvironmentFile=-%h/.config/minimax/env
 Environment=CODEX_BIN=%h/.local/bin/codex
 Environment=CODEX_CWD=%h/ServersAdministartion
