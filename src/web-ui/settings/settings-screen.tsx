@@ -15,6 +15,7 @@ import {
   type SettingsView,
 } from "./settings-client.js";
 import { StopControl } from "./stop-control.js";
+import { HooksSection } from "../hooks-section.js";
 import { ConnectionsSection } from "./connections-section.js";
 import { RuntimeSection } from "./runtime-section.js";
 import { ProjectsSection } from "./projects-section.js";
@@ -405,6 +406,8 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
       <RuntimeSection />
       <ConnectionsSection />
       <StopControl />
+
+      <HooksSection />
 
       <FleetConfirmation />
 

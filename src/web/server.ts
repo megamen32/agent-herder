@@ -51,6 +51,7 @@ import {
   setAutomationDisarmRecord,
 } from "../automation-disarm/index.js";
 import { DirectFleetDisarmTransport } from "../automation-disarm/direct-transport.js";
+import { AUTOMATION_CANNOT_CHANGE_PROHIBITIONS_REASON, HOOK_KINDS, HooksService, isHookKind, type HookKind } from "../hooks/index.js";
 import type { FleetDisarmNodeResult, FleetDisarmTransport } from "../automation-disarm/service.js";
 import type { AutomationDisarmDocument } from "../automation-disarm/state.js";
 import { renderSessionGraph } from "../session-visualization.js";
@@ -1187,6 +1188,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
     if (groups.size === 0) groups.set(cwd, []);
 
+    // The tool-call hooks fired: the panel shows when they ran last.
+    const activityHook = typeof body.hook === "string" ? body.hook : "";
+    if (activityHook === "PreToolUse" || activityHook === "PostToolUse") {
+      await hooksServiceOf().recordActivity({ hook: activityHook, outcome: "fired", sessionId, harness });
+    }
     const blocks: string[] = [];
     const reservations: CoordinationNote[] = [];
     const conflicts: CoordinationConflict[] = [];
@@ -1267,6 +1273,94 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     markLifecycleEvent(harness, sessionId, event as SessionLifecycleEvent, typeof body.cwd === "string" ? body.cwd : undefined, events);
     if (event === "end") await coordinationNotes.endSession(sessionId);
     return sendJson(response, 200, { ok: true });
+  }
+  // The hooks of the product: the lever of the owner and what the hooks did.
+  // The lever belongs to the hooks alone: it never touches the automation
+  // lever, the emergency pause or the policy of the projects.
+  if (url.pathname === "/api/hooks" && request.method === "GET") {
+    const view = await hooksServiceOf().readView();
+    response.setHeader("etag", view.etag);
+    response.setHeader("cache-control", "no-store");
+    return sendJson(response, 200, view);
+  }
+  if (url.pathname === "/api/hooks/prohibitions" && request.method === "GET") {
+    // The light answer the hook scripts ask for before they forbid anything.
+    const read = await hooksServiceOf().readProhibitions();
+    response.setHeader("etag", read.etag);
+    response.setHeader("cache-control", "no-store");
+    return sendJson(response, 200, read);
+  }
+  if (url.pathname === "/api/hooks/prohibitions" && request.method === "POST") {
+    // Only an explicit action of the owner moves the lever.
+    if (!isHooksOwnerRequest(request)) {
+      return sendJson(response, 403, {
+        ok: false,
+        error: "Запреты хуков меняет только владелец панели.",
+      });
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = await readJson(request);
+    } catch (error) {
+      return sendJson(response, 400, { ok: false, error: `Некорректное тело запроса: ${(error as Error).message}` });
+    }
+    if (body.source !== "owner") {
+      return sendJson(response, 403, { ok: false, error: AUTOMATION_CANNOT_CHANGE_PROHIBITIONS_REASON });
+    }
+    const disabled = body.disabledHooks;
+    if (disabled !== undefined && (!Array.isArray(disabled) || disabled.some((kind) => !isHookKind(kind)))) {
+      return sendJson(response, 400, {
+        ok: false,
+        error: `Такого хука нет. Доступны: ${HOOK_KINDS.join(", ")}.`,
+      });
+    }
+    // The revision of the state the owner read: a state that moved on is a
+    // conflict, and nothing is written over it.
+    const ifMatchHeader = request.headers["if-match"];
+    const ifMatch = (Array.isArray(ifMatchHeader) ? ifMatchHeader[0] : ifMatchHeader)?.trim();
+    if (ifMatch) {
+      const current = await hooksServiceOf().prohibitions.readState();
+      const expected = ifMatch.replace(/^W\//, "").replace(/^"|"$/g, "");
+      const actual = current.etag.replace(/^"|"$/g, "");
+      if (expected !== actual) {
+        return sendJson(response, 412, {
+          ok: false,
+          error: "Состояние запретов хуков изменилось в другой вкладке. Обновите раздел и повторите.",
+          current: { etag: current.etag },
+        });
+      }
+    }
+    const result = await hooksServiceOf().applyProhibitions({
+      source: "owner",
+      actor: typeof body.actor === "string" && body.actor.trim() ? body.actor.trim() : "owner",
+      ...(typeof body.prohibitionsEnabled === "boolean" ? { prohibitionsEnabled: body.prohibitionsEnabled } : {}),
+      ...(Array.isArray(disabled) ? { disabledHooks: disabled as HookKind[] } : {}),
+      ...(typeof body.reason === "string" && body.reason.trim() ? { reason: body.reason.trim() } : {}),
+    });
+    if (!result.ok) {
+      return sendJson(response, 400, { ok: false, code: result.code, error: result.reason });
+    }
+    response.setHeader("etag", result.view.etag);
+    response.setHeader("cache-control", "no-store");
+    return sendJson(response, 200, { ...result.view, ok: true, changed: result.changed });
+  }
+  if (url.pathname === "/api/hooks/activity" && request.method === "POST") {
+    // What a hook did: the panel shows the last firing and the last refusal.
+    let body: Record<string, unknown>;
+    try {
+      body = await readJson(request);
+    } catch {
+      return sendJson(response, 400, { ok: false, error: "Некорректное тело запроса" });
+    }
+    const recorded = await hooksServiceOf().recordActivity({
+      hook: typeof body.hook === "string" ? body.hook : "",
+      outcome: body.outcome === "refused" ? "refused" : "fired",
+      ...(typeof body.reason === "string" ? { reason: body.reason } : {}),
+      ...(typeof body.sessionId === "string" ? { sessionId: body.sessionId } : {}),
+      ...(typeof body.harness === "string" ? { harness: body.harness } : {}),
+      ...(typeof body.at === "string" ? { at: body.at } : {}),
+    });
+    return sendJson(response, recorded ? 200 : 400, { ok: recorded });
   }
   if (url.pathname === "/api/autopilot/policy" && (request.method === "GET" || request.method === "PUT")) {
     if (!autopilotPolicyStore) return sendJson(response, 503, { error: "Autopilot policy store is disabled" });
@@ -2650,6 +2744,46 @@ function hasControlCharacters(value: string): boolean {
 
 function isAutopilotHarness(value: string): value is AutopilotHarness {
   return value === "codex" || value === "opencode" || value === "claude" || value === "hermes" || value === "zcode";
+}
+
+/**
+ * The service of the hooks of the product.
+ *
+ * One service per process, so the cache of the state of the lever is shared
+ * by every request instead of being rebuilt for each of them.
+ */
+let hooksService: HooksService | undefined;
+let hooksServiceDirectory = "";
+
+function hooksServiceOf(): HooksService {
+  // The service follows the runtime state directory: a node that moves its
+  // state must not keep a lever of another directory.
+  const directory = resolveAutopilotStateDir();
+  if (!hooksService || hooksServiceDirectory !== directory) {
+    hooksService = HooksService.forRuntime();
+    hooksServiceDirectory = directory;
+  }
+  return hooksService;
+}
+
+/**
+ * Whether the request may change the lever of the owner.
+ *
+ * The panel is served by the same origin it is addressed to, and the loopback
+ * of the node carries no credential of another site. A change from another
+ * origin is refused: the lever of the owner must not be movable from a page
+ * of somebody else.
+ */
+function isHooksOwnerRequest(request: IncomingMessage): boolean {
+  const origin = request.headers.origin;
+  if (typeof origin !== "string" || !origin) {
+    return ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(request.socket.remoteAddress ?? "");
+  }
+  try {
+    return new URL(origin).host.toLowerCase() === (request.headers.host ?? "").toLowerCase();
+  } catch {
+    return false;
+  }
 }
 
 async function readJson(request: IncomingMessage, maxBytes = 1_000_000): Promise<Record<string, unknown>> {
