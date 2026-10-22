@@ -15,6 +15,9 @@ import { HarnessAutomationSettings, withAutopilotHarness } from "./harness-autom
 import "./styles.css";
 import "./codex-theme.css";
 import "./interface-polish.css";
+// The stylesheet of the Projects screen goes last so that the mobile
+// navigation and the collapsed rows of the projects win the cascade.
+import "./projects-screen.css";
 import { CodexNavigation } from "./codex-navigation.js";
 import {useFleetDirectory} from './fleet/use-directory.js';
 import {SessionWorkTarget} from './session-work-target.js';
