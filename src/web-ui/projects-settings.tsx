@@ -784,7 +784,7 @@ export function ProjectModelPolicyEditor({
           // The answer of the environment is on the way: the screen says so
           // instead of blaming the model before anyone asked the environment.
           // One fact — one word. The state of the environment is the word of the
-          // catalog of OpenCode (рабочая / устаревшая / платная) and it is shown
+          // catalog of OpenCode (рабочая / устаревшая) and it is shown
           // once, in its own block. The chip of the verdict speaks about the
           // lists of the project and the rule of the owner, so it stays for the
           // verdicts of the policy and steps aside for the state of the
