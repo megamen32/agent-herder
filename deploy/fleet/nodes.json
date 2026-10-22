@@ -1,0 +1,69 @@
+{
+  "kind": "fleet-topology",
+  "note": "The nodes this branch owns. The mac nodes and the stand of line B are listed as excluded and are never touched.",
+  "nodes": [
+    {
+      "id": "44",
+      "kind": "fleet",
+      "hostId": "server-44",
+      "address": "192.168.2.5",
+      "sshPort": 22,
+      "sshUser": "roomhacker",
+      "unit": "agent-herder-fleet.service",
+      "webPort": 18791,
+      "fleetDir": "~/.local/share/agent-herder/fleet",
+      "stateDir": "~/.local/state/agent-herder/fleet-node/autopilot",
+      "restartCmd": "systemctl --user restart agent-herder-fleet.service",
+      "role": "fleet node"
+    },
+    {
+      "id": "88",
+      "kind": "fleet",
+      "hostId": "roomhacker-server-88",
+      "address": "192.168.2.75",
+      "sshPort": 22,
+      "sshUser": "roomhacker",
+      "unit": "agent-herder-fleet.service",
+      "webPort": 18791,
+      "fleetDir": "~/.local/share/agent-herder/fleet",
+      "stateDir": "~/.local/state/agent-herder/fleet-node/autopilot",
+      "restartCmd": "systemctl --user restart agent-herder-fleet.service",
+      "role": "fleet node"
+    },
+    {
+      "id": "100",
+      "kind": "owner",
+      "hostId": "server-100",
+      "address": "104.bezrabotnyi.com",
+      "sshPort": 22104,
+      "sshUser": "roomhacker",
+      "unit": "agent-herder.service",
+      "webPort": 18787,
+      "catalog": "~/agents-projects/.fleet-candidate",
+      "stateDir": "~/.local/state/agent-herder/autopilot-live",
+      "workingDirectory": "~/agents-projects/agent-herder",
+      "dropIn": "~/.config/systemd/user/agent-herder.service.d/10-release-exec.conf",
+      "restartCmd": "systemctl --user restart agent-herder.service",
+      "role": "owner node",
+      "note": "The working directory stays the checkout: the live data paths must not move. The emergency pause noticeplace-ai-pause.service is a system unit and is never touched."
+    }
+  ],
+  "excluded": [
+    {
+      "node": "mac-mini-2012",
+      "reason": "accepted and led by another session"
+    },
+    {
+      "node": "Mac M1",
+      "reason": "accepted and led by another session"
+    },
+    {
+      "node": "herder-stand-b",
+      "reason": "the stand of line B, separate netns, port 18897"
+    }
+  ],
+  "acceptance": {
+    "manifest": "source_sha == requested head; the payload of dist lists every build file; sha256(dist/index.js) == payload['index.js']; the bundle fingerprint of the release == the fingerprint of the manifest",
+    "node": "the running process comes from the release; require.resolve('agent-resume-mcp') inside the release resolves into the release and not into the store; sessions/launch-policy/MCP answer; the owner node answers /api/settings; the automation lever is named by state, scope and mechanism; releases <= 2 directories and <= 512 MiB, superseded releases in rollback/"
+  }
+}
