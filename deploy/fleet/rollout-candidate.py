@@ -169,6 +169,15 @@ def node_side_fleet(arguments) -> int:
     release = fleet / "releases" / sha
     trim_releases(fleet / "releases", fleet / "rollback", sha, arguments.previous_sha,
                   keep_pair=True)
+    if release.exists():
+        # an earlier attempt left a partial release: it is kept aside with its
+        # bytes, and the release is unpacked anew
+        trash = fleet / "trash" / f"{sha[:8]}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
+        trash.parent.mkdir(parents=True, exist_ok=True)
+        while trash.exists():
+            trash = trash.with_name(trash.name + "-x")
+        shutil.move(str(release), str(trash))
+        print("partial release kept aside:", trash)
     unpack_release(Path(arguments.archive), release)
     command = ["python3", str(HERE / "rollout-node.py"),
                "--fleet-dir", str(fleet),
