@@ -73,9 +73,15 @@ function isLoopbackOwnerRequest(request: IncomingMessage): boolean {
 /**
  * Whether the request comes from the same origin it is addressed to.
  *
- * A change with a cookie of the cabinet is refused when it comes from
- * another origin: the cookie of the owner is an ambient credential, and a
- * change of the settings must not be reachable from another site.
+ * A change of the settings is refused when it comes from another origin: the
+ * credential of the owner is an ambient credential of the browser, and a
+ * change must not be reachable from another site. The check does not depend
+ * on a cookie being present — a simple request of another site carries no
+ * cookie at all, and it reaches the loopback of the owner just the same.
+ *
+ * The rule is the rule of the panel: the origin of a change must name the
+ * host that serves the request. A change over the loopback names it with
+ * the scheme `http`, a change over the cabinet names it with `https`.
  */
 function isSameOrigin(request: IncomingMessage): boolean {
   const raw = request.headers.origin;
@@ -189,6 +195,14 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
       return true;
     }
 
+    // Every change of the settings must come from the origin it is addressed
+    // to. The rule is the rule of the panel and it holds for every changing
+    // method, with a cookie of the cabinet and without one.
+    if (isChangingMethod(request.method) && !isSameOrigin(request)) {
+      respond(response, 403, { ok: false, error: "Изменение доступно из своего кабинета" });
+      return true;
+    }
+
     try {
       if (request.method === "GET" && url.pathname === "/api/settings") {
         respond(response, 200, await readView());
@@ -204,12 +218,6 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
         return true;
       }
       if (request.method === "PUT" && url.pathname === "/api/settings") {
-        // A change with a credential of the browser must come from the
-        // cabinet of the owner itself.
-        if (request.headers.cookie && !isSameOrigin(request)) {
-          respond(response, 403, { ok: false, error: "Изменение доступно из своего кабинета" });
-          return true;
-        }
         const body = await readJson(request);
         if (body.launchPolicy !== undefined) {
           // The policy of the launch has one writer: the endpoint that owns
@@ -229,10 +237,6 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
         return true;
       }
       if (request.method === "POST" && url.pathname === "/api/settings/rollback") {
-        if (request.headers.cookie && !isSameOrigin(request)) {
-          respond(response, 403, { ok: false, error: "Изменение доступно из своего кабинета" });
-          return true;
-        }
         const body = await readJson(request);
         const entity = body.entity;
         const key = body.key;
@@ -254,6 +258,11 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
       return true;
     }
   };
+}
+
+/** Whether the method changes something. */
+function isChangingMethod(method: string | undefined): boolean {
+  return method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
 }
 
 /**
