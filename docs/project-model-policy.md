@@ -46,19 +46,40 @@ the global model of the harness decides, exactly as before this feature.
   refused.
 - **A project without a route keeps the global policy unchanged.** No new
   restriction is introduced for a project nobody configured.
-- **The route is found by path or by alias.** A project is recognized by its
-  absolute path, case-insensitively, and by any alias declared for the route.
-  A session that runs in a subdirectory of the project is governed by the route
-  of that project.
+- **One lookup finds the route of a directory.** The launch permission and the
+  model gate resolve the project of a session by the same rule, in this order:
+  1. the exact canonical folder of the route
+     (`/home/roomhacker/ServersAdministartion`);
+  2. the same folder in another case
+     (`/home/roomhacker/serversadministartion`);
+  3. a declared alias of the route (`omniroute-guard`);
+  4. and finally the route root that contains the directory
+     (`/home/roomhacker/ServersAdministartion/src` is governed by the route of
+     `/home/roomhacker/ServersAdministartion`).
+
+  A directory inside a routed project is therefore governed by the rules of
+  that project, and a session cannot escape them by starting in a
+  subdirectory. The nesting is matched literally, because the production paths
+  are case-sensitive, while the exact folder and the alias are matched
+  case-insensitively.
+- **The longest containing root wins.** When several route roots contain the
+  directory, the longest one governs it: the route of a subdirectory overrides
+  the route of its parent project.
 
 ## Where the gate applies
 
 One module decides, so a denied model cannot slip through another path:
-`src/project-model-policy.ts` holds the rules, and `src/project-model-gate.ts`
-is the single gate the callers use.
+`src/project-model-policy.ts` holds the rules and the one route lookup
+(`findProjectModelRoute`), and `src/project-model-gate.ts` is the single gate
+the callers use. The launch permission of `src/automation-launch-policy.ts`
+uses the same lookup, so a directory can never be launched by one rule and
+policed by another.
 
 1. **Automatic launch** (`resolveProjectLaunch` in
-   `src/automation-launch-policy.ts`). The effective model of a harness is
+   `src/automation-launch-policy.ts`). The route of the launch is the route
+   found by the one lookup above, so a launch of a directory inside a routed
+   project is governed by that project instead of falling back to the global
+   profile. The effective model of a harness is
    `route.models[harness] ?? policy.models[harness]`. When that model is not
    permitted, the harness is skipped and the route moves to the next harness —
    the same treatment as an unavailable harness. When no harness of the route

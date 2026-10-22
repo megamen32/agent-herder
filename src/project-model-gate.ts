@@ -16,6 +16,7 @@ import {
   effectiveModelForProject,
   findModelPolicyRoute,
   findModelPolicyRouteForPath,
+  findProjectModelRoute,
   modelMatchesEntry,
   modelPermittedForRoute,
   type ProjectModelPolicy,
@@ -28,12 +29,15 @@ export {
   conflictingModelEntries,
   findModelPolicyRoute,
   findModelPolicyRouteForPath,
+  findProjectModelRoute,
   modelMatchesEntry,
   modelPermittedForProject,
   modelPermittedForRoute,
   normalizeModelEntry,
   type ProjectModelPolicy,
   type ProjectModelRoute,
+  type ProjectRouteMatch,
+  type ProjectRouteMatchKind,
 } from "./project-model-policy.js";
 
 /**
@@ -107,7 +111,9 @@ export function policyRestrictsModels(policy: ProjectModelPolicy | undefined): b
  * Reject an explicitly requested model for a session working directory.
  *
  * A session may run in a subdirectory of its project, so the governing route is
- * the one that contains that directory.
+ * the one that contains that directory. The route is resolved by the one
+ * shared lookup, the same one the launch permission uses, so a directory can
+ * never be launched by one rule and policed by another.
  *
  * When the caller names no model, the model the project would run on for that
  * harness decides: a project that forbids its own model must not start a
