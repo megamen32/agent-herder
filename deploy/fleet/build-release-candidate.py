@@ -253,7 +253,15 @@ def assemble(sha: str, worktree: Path, catalog: Path) -> Path:
         "codexSocket": "<managed-codex-socket>",
         "codexBin": "<codex-binary>",
     }
-    (catalog / "node-config.json").write_text(json.dumps(node_config, indent=2) + "\n")
+    # The candidate template is a staging artifact: the working catalog of the
+    # node keeps its own config, the rollout writes the native values of the
+    # node into it. A build never overwrites the identity of a node.
+    node_config_path = catalog / "node-config.json"
+    before = node_config_path.read_bytes() if node_config_path.is_file() else None
+    (catalog / "node-config.candidate.json").write_text(json.dumps(node_config, indent=2) + "\n")
+    after = node_config_path.read_bytes() if node_config_path.is_file() else None
+    if before != after:
+        raise SystemExit("the build changed the config of the node")
     current = catalog / "current"
     if current.is_symlink() or current.exists():
         current.unlink()
@@ -398,7 +406,7 @@ def checks(sha: str, release: Path, catalog: Path) -> list:
     extra = sorted(set(payload) - set(actual))
     mismatched = sorted(name for name in set(payload) & set(actual) if payload[name] != actual[name])
     index_actual = sha256(release / "dist" / "index.js")
-    node_config = json.loads((catalog / "node-config.json").read_text())
+    node_config = json.loads((catalog / "node-config.candidate.json").read_text())
     packages = release / "node_modules"
     node_releases = Path.home() / ".local/share/agent-herder/fleet/releases"
     node_dirs = sorted(p.name for p in node_releases.iterdir() if p.is_dir()) if node_releases.is_dir() else []
@@ -425,7 +433,11 @@ def checks(sha: str, release: Path, catalog: Path) -> list:
         ("payload lists every build file", not missing and not extra and not mismatched,
          f"payload={len(payload)} files={len(actual)} missing={len(missing)} extra={len(extra)} mismatched={len(mismatched)}"),
         ("sha256(dist/index.js) == payload['index.js']", index_actual == payload.get("index.js"), index_actual),
-        ("node-config.sourceSha == manifest.source_sha", node_config["sourceSha"] == manifest["source_sha"], node_config["sourceSha"]),
+        ("the candidate template carries the source sha of the manifest", node_config["sourceSha"] == manifest["source_sha"], node_config["sourceSha"]),
+        ("the build did not touch the config of the node",
+         (not (catalog / "node-config.json").is_file())
+         or json.loads((catalog / "node-config.json").read_text()).get("sourceSha") in (None, manifest["source_sha"]),
+         "the working config of the node is not the template"),
         ("current points at the candidate release", os.readlink(catalog / "current") == f"releases/{sha}", os.readlink(catalog / "current")),
         ("packages dir is a real directory named node_modules", packages.name == "node_modules" and packages.is_dir() and not packages.is_symlink(), str(packages)),
         ("the release carries the full set of the store, nothing trimmed",

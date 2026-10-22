@@ -197,6 +197,21 @@ def node_side_owner(arguments) -> int:
     sha = arguments.sha
     release = catalog / "releases" / sha
     drop_in = Path(arguments.drop_in).expanduser()
+    # The config of the node is the node's own file: the rollout writes the
+    # native values of the node into it and only the source sha changes. The
+    # candidate template of the build never lands here.
+    if arguments.node_config:
+        native = json.loads(arguments.node_config)
+        config_path = catalog / "node-config.json"
+        if config_path.is_file():
+            backup = Path(f"{config_path}.bak-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}")
+            shutil.copy2(config_path, backup)
+            print("the config of the node is saved:", backup)
+        native["sourceSha"] = sha
+        native["candidate"] = False
+        native.pop("note", None)
+        config_path.write_text(json.dumps(native, indent=2) + "\n")
+        print("the native values of the node are written into", config_path)
     unit_dir = drop_in.parent
     previous = ""
     if drop_in.is_file():
@@ -271,6 +286,8 @@ def main() -> int:
     parser.add_argument("--working-directory", default="")
     parser.add_argument("--web-port", type=int, default=0)
     parser.add_argument("--unit", default="")
+    parser.add_argument("--node-config", default="",
+                        help="the native values of the node as JSON (the owner node writes them into its config)")
     arguments = parser.parse_args()
 
     if arguments.node_side:
@@ -326,7 +343,8 @@ def main() -> int:
             print("  1. superseded releases -> rollback/ until the budget holds")
             print("  2. unpack the release into releases/" + arguments.sha)
             if node["kind"] == "owner":
-                print("  3. write the drop-in, daemon-reload, restart " + node["unit"])
+                print("  3. write the native values of the node into node-config.json (sourceSha only changes)")
+                print("  4. write the drop-in, daemon-reload, restart " + node["unit"])
                 print("     working directory stays " + expand(node["workingDirectory"]))
             else:
                 print("  3. rollout-node.py: packages, payload, switch, restart, rollback proof")
@@ -371,7 +389,10 @@ def main() -> int:
                     "--drop-in", expand(node["dropIn"]),
                     "--working-directory", expand(node["workingDirectory"]),
                     "--web-port", str(node["webPort"]),
-                    "--unit", node["unit"]]
+                    "--unit", node["unit"],
+                    "--node-config", json.dumps({key: node[key] for key in
+                        ("hostId", "harnesses", "nodeBin", "webPort", "codexSocket", "codexBin")
+                        if key in node})]
             command = side
         result = subprocess.run(command, check=False)
         return result.returncode

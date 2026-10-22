@@ -1,6 +1,6 @@
 {
   "kind": "fleet-topology",
-  "note": "The nodes this branch owns. The mac nodes and the stand of line B are listed as excluded and are never touched.",
+  "note": "The nodes this branch owns. The mac nodes and the stand of line B are listed as excluded and are never touched. The native values of the node (harnesses, nodeBin, codexSocket, codexBin) belong here: the rollout writes them into the config of the node, the build never touches it.",
   "nodes": [
     {
       "id": "44",
@@ -45,7 +45,15 @@
       "dropIn": "~/.config/systemd/user/agent-herder.service.d/10-release-exec.conf",
       "restartCmd": "systemctl --user restart agent-herder.service",
       "role": "owner node",
-      "note": "The working directory stays the checkout: the live data paths must not move. The emergency pause noticeplace-ai-pause.service is a system unit and is never touched."
+      "note": "The working directory stays the checkout: the live data paths must not move. The emergency pause noticeplace-ai-pause.service is a system unit and is never touched.",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "opencode"
+      ],
+      "nodeBin": "/usr/local/bin/node",
+      "codexSocket": "/home/roomhacker/.codex/app-server-control/app-server-control.sock",
+      "codexBin": "/home/roomhacker/.local/bin/codex"
     }
   ],
   "excluded": [
