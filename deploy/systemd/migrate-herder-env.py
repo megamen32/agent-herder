@@ -91,7 +91,6 @@ FOREIGN_ENV_FILES = (
     "%h/.config/agent-herder/autopilot.env",
     "%h/.config/agent-herder/noticeplace.env",
     "%h/.config/agent-resume/hermes.env",
-    "%h/.config/agent-resume/hermes.env",
     "%h/.config/minimax/env",
     "/etc/omniroute.env",
     "/etc/notification-center.env",
