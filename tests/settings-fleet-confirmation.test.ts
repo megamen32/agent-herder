@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   computeConfirmationState,
+  defaultFleetConfirmationPeers,
   readConfirmationLedger,
   readFleetConfirmation,
   toConfirmationNodes,
@@ -216,6 +217,16 @@ describe("the reader of the confirmation asks the nodes of the fleet", () => {
     expect(confirmation.source).toBe("последнее известное подтверждение");
     expect(confirmation.error).toBeTruthy();
     expect(confirmation.nodes[0]?.status).toBe("не подтвердил");
+  });
+
+  it("does not ask the local node over the network", () => {
+    // The local node holds the policy of the owner: its own answer is read
+    // from the file of the node, so it is not asked over the network and it
+    // is not counted twice.
+    const peers = defaultFleetConfirmationPeers("roomhacker-server-100");
+    expect(peers.some((peer) => peer.hostId === "roomhacker-server-100")).toBe(false);
+    expect(peers.some((peer) => peer.hostId === "MacBook-Pro-User.local")).toBe(false);
+    expect(peers.length).toBeGreaterThan(0);
   });
 
   it("reads a ledger that cannot be read as an empty ledger", async () => {
