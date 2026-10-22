@@ -66,18 +66,29 @@ export const DISARM_PANEL_ENDPOINT = "/api/settings/automation/disarm";
 export const STOP_CURRENT_ENDPOINT = "/api/settings/automation/stop-current";
 
 /**
- * What the lever does and what it does not do.
+ * What the stop of the area does.
  *
- * The lever forbids the new automatic launches of a scope. The executors
- * that are already running keep running: the screen says this plainly
- * instead of promising a stop that does not happen.
+ * The stop of the area forbids the new automatic launches and stops the
+ * live automatic executors of the area one by one — one exact session, the
+ * path of the mesh. The sessions that could not be stopped are named below
+ * with the reason: the screen never promises a stop that did not happen.
  */
 export const LEVER_SCOPE_NOTICE =
-  "Рычаг запрещает новые автоматические запуски в области. Уже запущенные исполнители продолжают работу — останавливает их тот, кто их запустил.";
+  "Остановка области запрещает новые автоматические запуски и останавливает живые автоматические исполнители области — по одному, точным путём mesh_stop. Сессии, которые остановить не удалось, показаны ниже с причиной.";
+
+/**
+ * What the lighter action does not do.
+ *
+ * The forbid of the new launches alone leaves the live executors running:
+ * the screen says this plainly instead of promising a stop that does not
+ * happen.
+ */
+export const LEVER_NEW_ONLY_NOTICE =
+  "Запрет только новых запусков не останавливает живых исполнителей области: уже запущенные продолжают работу.";
 
 /** What happens when the owner allows the scope again. */
 export const LEVER_LIFT_NOTICE =
-  "Повторное разрешение открывает новые автоматические запуски в области. Подтверждения узлов приходят от каждой ноды отдельно.";
+  "Повторное разрешение открывает новые автоматические запуски в области. Остановленные сессии не поднимаются: их маска остаётся. Подтверждения узлов приходят от каждой ноды отдельно.";
 
 /**
  * The state of the nodes as the screen shows it.
@@ -249,6 +260,7 @@ export function StopControl({ onState }: { onState?: (state: DisarmState | null)
           action before anything else. */}
       <p className="herder-settings-state-line" role="status">{leverStateText(state)}</p>
       <p className="herder-settings-hint">{LEVER_SCOPE_NOTICE}</p>
+      <p className="herder-settings-hint">{LEVER_NEW_ONLY_NOTICE}</p>
 
       <div className="herder-settings-row">
         <label className="herder-settings-field">
