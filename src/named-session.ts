@@ -1,6 +1,6 @@
-import { mkdir, realpath, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
-import { isAbsolute, join } from "node:path";
+import { mkdir, open, readFile, realpath, rename, unlink, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { dirname, isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import lockfile from "proper-lockfile";
 import type { AgentSession, HarnessAdapter } from "./types/index.js";
@@ -10,6 +10,8 @@ import { getHumanStopStore } from "./human-stop-store.js";
 import { automaticDeliveryHeld, HUMAN_STOP_MESSAGE } from "./human-stop-actions.js";
 import { isCoordinationActive, sendCurrentTurnOnly, previousCoordinationReceipt } from "./coordination-active-delivery.js";
 import { agentRelayEnvelope } from "./agent-relay-envelope.js";
+import { automationDisarmDecision, sessionWorkKey, AutomationDisarmStore, type AutomationLaunchSource } from "./automation-disarm/index.js";
+import { resolveAutopilotStateDir } from "./autopilot/state-dir.js";
 
 export type NamedSessionMode = "queue" | "sync";
 
@@ -67,6 +69,176 @@ const recentNamedSessions = new Map<string, { session: AgentSession; seenAt: num
 const recentNamedDeliveries = new Map<string, { result: NamedSessionResult; seenAt: number }>();
 const RECENT_NAMED_SESSION_TTL_MS = 60_000;
 
+/**
+ * The owner-level automation lever, read from the durable owner file.
+ *
+ * The lever is keyed by the logical work, never by a session id, so a repeat
+ * of the same work under a new session id resolves to the same key and stays
+ * refused. Only an automatic run is ever refused: work a person started, and
+ * an explicit creation request for one concrete session, keep running.
+ */
+async function automationDisarmRefusal(
+  normalized: NamedSessionRequest,
+  source: AutomationLaunchSource,
+): Promise<string | undefined> {
+  const decision = await automationDisarmDecision(
+    AutomationDisarmStore.forRuntime(),
+    [sessionWorkKey(normalized.harness, normalized.name, normalized.cwd)],
+    source,
+  );
+  return decision.allowed ? undefined : decision.reason;
+}
+
+/**
+ * Catalog-wide search limit.
+ *
+ * The harness clients list the newest sessions of a directory and the window
+ * is small: the core client defaults to 100 rows and the OpenCode 2 client
+ * caps the request at 500. The busiest workspace already holds thousands of
+ * sessions, so a bounded window must never decide that a session does not
+ * exist. A lookup that cannot prove absence has to say so instead of letting
+ * the caller create a second session under the same name.
+ */
+const NAMED_SESSION_SEARCH_LIMIT = 5000;
+
+/** How many durable bindings are kept before the oldest ones are dropped. */
+const NAMED_SESSION_BINDING_LIMIT = 5000;
+
+/** Durable binding between a named session and the native session that serves it. */
+type NamedSessionBinding = {
+  harness: string;
+  cwd: string;
+  name: string;
+  sessionId: string;
+  title?: string;
+  updatedAt: string;
+};
+
+type NamedSessionBindingFile = { version: 1; bindings: NamedSessionBinding[] };
+
+/**
+ * Durable name→session bindings.
+ *
+ * A repeated delivery has to reuse the session it created, also after the
+ * runtime restarted. The native catalog answers that question, but only while
+ * the session is still inside a listing window; this file answers it with the
+ * session id, so reuse never depends on how many sessions appeared since.
+ */
+class NamedSessionBindingStore {
+  private operation: Promise<unknown> = Promise.resolve();
+  private readonly lockTarget: string;
+
+  constructor(private readonly path: string) {
+    this.lockTarget = `${path}.lock`;
+  }
+
+  async get(harness: string, cwd: string, name: string): Promise<NamedSessionBinding | undefined> {
+    const file = await this.serial(() => this.read());
+    return file.bindings.find((binding) => binding.harness === harness && binding.cwd === cwd && binding.name === name);
+  }
+
+  async put(binding: NamedSessionBinding): Promise<void> {
+    await this.serial(() => this.withFileLock(async () => {
+      const file = await this.read();
+      const index = file.bindings.findIndex((item) => item.harness === binding.harness && item.cwd === binding.cwd && item.name === binding.name);
+      const existing = index < 0 ? undefined : file.bindings[index];
+      if (existing && existing.sessionId === binding.sessionId) return;
+      if (index < 0) file.bindings.push(binding);
+      else file.bindings[index] = binding;
+      if (file.bindings.length > NAMED_SESSION_BINDING_LIMIT) file.bindings.splice(0, file.bindings.length - NAMED_SESSION_BINDING_LIMIT);
+      await this.write(file);
+    }));
+  }
+
+  async remove(harness: string, cwd: string, name: string): Promise<void> {
+    await this.serial(() => this.withFileLock(async () => {
+      const file = await this.read();
+      const index = file.bindings.findIndex((item) => item.harness === harness && item.cwd === cwd && item.name === name);
+      if (index < 0) return;
+      file.bindings.splice(index, 1);
+      await this.write(file);
+    }));
+  }
+
+  private async read(): Promise<NamedSessionBindingFile> {
+    try {
+      const parsed = JSON.parse(await readFile(this.path, "utf8")) as NamedSessionBindingFile;
+      if (parsed?.version !== 1 || !Array.isArray(parsed.bindings)) return { version: 1, bindings: [] };
+      return {
+        version: 1,
+        bindings: parsed.bindings.filter((binding) => binding
+          && typeof binding.harness === "string"
+          && typeof binding.cwd === "string"
+          && typeof binding.name === "string"
+          && typeof binding.sessionId === "string"),
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, bindings: [] };
+      throw error;
+    }
+  }
+
+  private async write(file: NamedSessionBindingFile): Promise<void> {
+    await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
+    const temporary = `${this.path}.${randomUUID()}.tmp`;
+    try {
+      const handle = await open(temporary, "wx", 0o600);
+      try {
+        await handle.writeFile(`${JSON.stringify(file, null, 2)}\n`, "utf8");
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      await rename(temporary, this.path);
+    } catch (error) {
+      await unlink(temporary).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async serial<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.operation.then(operation, operation);
+    this.operation = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  /** Bounded interprocess lock: the binding file is written by every worker. */
+  private async withFileLock<T>(operation: () => Promise<T>): Promise<T> {
+    await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
+    const handle = await open(this.lockTarget, "a", 0o600);
+    await handle.close();
+    const release = await lockfile.lock(this.lockTarget, {
+      realpath: false,
+      stale: 30_000,
+      update: 10_000,
+      retries: { retries: 20, minTimeout: 20, maxTimeout: 100, factor: 1 },
+    });
+    try {
+      return await operation();
+    } finally {
+      await release();
+    }
+  }
+}
+
+let bindingStore: NamedSessionBindingStore | undefined;
+let bindingStorePath: string | undefined;
+
+function namedSessionBindings(): NamedSessionBindingStore {
+  const path = resolveNamedSessionBindingPath();
+  if (!bindingStore || bindingStorePath !== path) {
+    bindingStore = new NamedSessionBindingStore(path);
+    bindingStorePath = path;
+  }
+  return bindingStore;
+}
+
+function resolveNamedSessionBindingPath(): string {
+  const configured = process.env.AGENT_HERDER_NAMED_SESSION_STORE?.trim();
+  if (configured) return configured;
+  return join(resolveAutopilotStateDir(), "named-sessions.json");
+}
+
 export async function createNamedSession(
   adapters: Map<string, HarnessAdapter>,
   request: NamedSessionRequest,
@@ -74,6 +246,8 @@ export async function createNamedSession(
   return withNamedSessionLock(request, async (normalized) => {
     const sourceError = await namedAutomationError(adapters, request, normalized);
     if (sourceError) return failed(normalized, sourceError, "not_attempted");
+    const disarmError = await automationDisarmRefusal(normalized, "explicit");
+    if (disarmError) return failed(normalized, disarmError, "not_attempted");
     const adapter = adapters.get(normalized.harness);
     if (!adapter) return failed(normalized, `Harness '${normalized.harness}' is not configured`);
     if (!adapter.createSession) return failed(normalized, `${adapter.name} does not support session creation`);
@@ -89,7 +263,7 @@ export async function createNamedSession(
     try {
       if (await sourceHeldNow(request)) return failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted");
       const session = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model, fullAccess: true, healthRecovery: request.healthRecovery });
-      rememberNamedSession(normalized, session);
+      await rememberNamedSession(adapter, normalized.name, normalized.cwd, session);
       return { ok: true, created: true, sessionId: session.id, model: request.model, ...normalized };
     } catch (error) {
       return failed(normalized, (error as Error).message);
@@ -104,6 +278,8 @@ export async function newOrResumeNamedSession(
   const resolved = await withNamedSessionLock<NamedSessionResolution>(request, async (normalized) => {
     const sourceError = await namedAutomationError(adapters, request, normalized);
     if (sourceError) return { kind: "error", result: failed(normalized, sourceError, "not_attempted") };
+    const disarmError = await automationDisarmRefusal(normalized, request.humanRequested === true ? "human" : "automation");
+    if (disarmError) return { kind: "error", result: failed(normalized, disarmError, "not_attempted") };
     const adapter = adapters.get(normalized.harness);
     if (!adapter) return { kind: "error", result: failed(normalized, `Harness '${normalized.harness}' is not configured`, "not_attempted") };
     if (!adapter.createSession) return { kind: "error", result: failed(normalized, `${adapter.name} does not support session creation`, "not_attempted") };
@@ -126,7 +302,7 @@ export async function newOrResumeNamedSession(
       try {
         if (await sourceHeldNow(request)) return { kind: "error", result: failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted") };
         target = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model, fullAccess: true, healthRecovery: request.healthRecovery });
-        rememberNamedSession(normalized, target);
+        await rememberNamedSession(adapter, normalized.name, normalized.cwd, target);
         created = true;
       } catch (error) {
         return { kind: "error", result: failed(normalized, (error as Error).message, "not_attempted") };
@@ -275,20 +451,44 @@ async function exactMatches(adapter: HarnessAdapter, name: string, cwd: string):
   const recent = recentNamedSessions.get(identity);
   if (recent && Date.now() - recent.seenAt < RECENT_NAMED_SESSION_TTL_MS) return [recent.session];
   if (recent) recentNamedSessions.delete(identity);
+
+  // A durable binding answers with the session id, so a repeated delivery
+  // reuses its session even when the runtime restarted and the session left
+  // every listing window of the native catalog.
+  const bound = await namedSessionBindings().get(adapter.type, cwd, name);
+  if (bound) {
+    const session = await adapter.getSession(bound.sessionId);
+    if (session && session.title === name && await sameCwd(session.cwd, cwd)) {
+      recentNamedSessions.set(identity, { session, seenAt: Date.now() });
+      return [session];
+    }
+    // The native session is gone or was renamed: the binding is stale.
+    await namedSessionBindings().remove(adapter.type, cwd, name);
+  }
+
   const sessions = adapter.findNamedSessions
     ? await adapter.findNamedSessions(name, cwd)
-    : await adapter.listSessions({ cwd });
+    : await adapter.listSessions({ cwd, limit: NAMED_SESSION_SEARCH_LIMIT });
   const candidates = adapter.findNamedSessions ? sessions : sessions.filter((session) => session.title === name);
   const matches: AgentSession[] = [];
   for (const session of candidates) {
-    try {
-      if (await realpath(session.cwd) === cwd) matches.push(session);
-    } catch {
-      // A vanished legacy CWD cannot be the requested canonical identity.
-    }
+    if (await sameCwd(session.cwd, cwd)) matches.push(session);
   }
-  if (matches.length === 1) recentNamedSessions.set(identity, { session: matches[0]!, seenAt: Date.now() });
+  if (matches.length === 1) {
+    recentNamedSessions.set(identity, { session: matches[0]!, seenAt: Date.now() });
+    await rememberNamedSession(adapter, name, cwd, matches[0]!);
+  }
   return matches;
+}
+
+/** True when the session really works in the requested canonical directory. */
+async function sameCwd(sessionCwd: string, cwd: string): Promise<boolean> {
+  try {
+    return await realpath(sessionCwd) === cwd;
+  } catch {
+    // A vanished legacy CWD cannot be the requested canonical identity.
+    return false;
+  }
 }
 
 function namedIdentity(harness: string, name: string, cwd: string): string {
@@ -313,8 +513,27 @@ function rememberNamedDelivery(identity: string, result: NamedSessionResult): vo
   recentNamedDeliveries.set(identity, { result, seenAt: Date.now() });
 }
 
-function rememberNamedSession(request: NamedSessionRequest, session: AgentSession): void {
-  recentNamedSessions.set(namedIdentity(request.harness, request.name, request.cwd), { session, seenAt: Date.now() });
+/**
+ * Remember the native session that serves a name.
+ *
+ * The in-memory map is the fast path, the durable binding survives a restart
+ * of the runtime. A failed binding write is reported but never fails the
+ * delivery: the native catalog is still the authority.
+ */
+async function rememberNamedSession(adapter: HarnessAdapter, name: string, cwd: string, session: AgentSession): Promise<void> {
+  recentNamedSessions.set(namedIdentity(adapter.type, name, cwd), { session, seenAt: Date.now() });
+  try {
+    await namedSessionBindings().put({
+      harness: adapter.type,
+      cwd,
+      name,
+      sessionId: session.id,
+      ...(session.title ? { title: session.title } : {}),
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error(`[agent-herder] named session binding was not written: ${(error as Error).message}`);
+  }
 }
 
 async function normalize(request: NamedSessionRequest): Promise<NamedSessionRequest> {
@@ -440,6 +659,8 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
   return withNamedSessionLock(request, async normalized => {
     const sourceError = await namedAutomationError(adapters, request, normalized);
     if (sourceError) return { ...failed(normalized, sourceError, "not_attempted"), activated: false };
+    const disarmError = await automationDisarmRefusal(normalized, request.humanRequested === true ? "human" : "automation");
+    if (disarmError) return { ...failed(normalized, disarmError, "not_attempted"), activated: false };
     const deliveryIdentity = namedDeliveryIdentity(normalized, request.message);
     const priorDelivery = recentNamedDelivery(deliveryIdentity);
     if (priorDelivery) return {...priorDelivery,activated:false};
@@ -456,7 +677,7 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
     if (!target) {
       if ((request.create||"if_missing")==="never") return {ok:false,created:false,harness:normalized.harness,name:normalized.name,cwd:normalized.cwd,delivery:"not_found",activated:false,error:"Named session not found"};
       if (!adapter.createSession) return {...failed(normalized,`${adapter.name} does not support session creation`,"not_attempted"),activated:false};
-      try { if (await sourceHeldNow(request)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), activated: false }; target=await adapter.createSession({name:normalized.name,cwd:normalized.cwd,model:request.model,fullAccess:true}); rememberNamedSession(normalized,target); created=true; } catch(e){ return {...failed(normalized,(e as Error).message,"not_attempted"),activated:false}; }
+      try { if (await sourceHeldNow(request)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), activated: false }; target=await adapter.createSession({name:normalized.name,cwd:normalized.cwd,model:request.model,fullAccess:true}); await rememberNamedSession(adapter, normalized.name, normalized.cwd, target); created=true; } catch(e){ return {...failed(normalized,(e as Error).message,"not_attempted"),activated:false}; }
     }
     const fresh=await adapter.getSession(target.id); const activation=request.activation ?? (created ? "always" : "if_running");
     if (!fresh) return {...failed(normalized,"Native target activity unavailable","not_attempted"),sessionId:target.id,activated:false};

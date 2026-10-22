@@ -5,6 +5,7 @@ import lockfile from "proper-lockfile";
 import { cacheWindowFor } from "../cache-handoff.js";
 import type { UnfinishedSessionNotice } from "../autopilot/unfinished-session-launcher.js";
 import type { AgentSession, ControlResult, HarnessAdapter, HarnessEvent } from "../types/index.js";
+import { automationDisarmDecision, sessionWorkKey, AutomationDisarmStore } from "../automation-disarm/index.js";
 
 export interface AutoCompactSettings {
   enabled: boolean;
@@ -216,6 +217,16 @@ export class AutoCompactService {
     if (await this.options.held(harness, id)) return { ok: false, error: "Сессия явно остановлена; компакт запрещён." };
     const session = await adapter.getSession(id);
     if (!session) return { ok: false, error: "Сессия недоступна." };
+    // The owner-level automation lever: the automatic sweep is an automatic
+    // run. An explicitly requested compact stays allowed.
+    if (!manual) {
+      const disarm = await automationDisarmDecision(
+        AutomationDisarmStore.forRuntime(),
+        [sessionWorkKey(harness, session.title, session.cwd)],
+        "automation",
+      );
+      if (!disarm.allowed) return { ok: false, error: disarm.reason };
+    }
     const context = compactContext(session);
     if (!context.quiet || !context.userMessageId) return { ok: false, error: "Сессия работает, ждёт человека или её контекст неизвестен." };
     const now = this.options.now?.() ?? Date.now();

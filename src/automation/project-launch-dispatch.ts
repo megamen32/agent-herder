@@ -16,6 +16,7 @@ import { HUMAN_STOP_MESSAGE } from "../human-stop-actions.js";
 import { MINIMAX_SUBSCRIPTION_MODEL, type MiniMaxQuotaPreflight } from "./minimax-quota-preflight.js";
 import { NOTICEPLACE_HEALTH_AUTHORIZED, validateNoticeplaceHealthLaunch } from "./noticeplace-health-launch.js";
 import { MODEL_NOT_PERMITTED_CODE } from "../project-model-policy.js";
+import { automationDisarmDecision, projectWorkKey, AutomationDisarmStore } from "../automation-disarm/index.js";
 
 /**
  * One recorded attempt of one operation on one harness.
@@ -195,6 +196,19 @@ export async function dispatchProjectLaunch(
     }
   }
   const attempts = await log.attempts(project, operationId);
+  // The owner-level automation lever. A dispatch is an automatic run, so a
+  // disarmed runtime refuses it here, before any harness is touched. The
+  // refusal names the reason and never changes the owner state: a retry, a
+  // policy reload or a re-dispatch cannot lift the lever.
+  const disarm = await automationDisarmDecision(
+    AutomationDisarmStore.forRuntime(),
+    [projectWorkKey(project)],
+    "automation",
+  );
+  if (!disarm.allowed) {
+    const reason = disarm.reason ?? "Автоматический запуск запрещён владельцем.";
+    return { operationId, project, attempts, outcome: "no_harness", routingReason: reason, error: reason };
+  }
 
   if (attempts.some((attempt) => attempt.outcome === "in_flight")) {
     const reserved = attempts.find((attempt) => attempt.outcome === "in_flight")!;

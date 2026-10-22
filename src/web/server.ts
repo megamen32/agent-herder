@@ -36,13 +36,18 @@ import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAl
 import type { AutoCompactService, AutoCompactStore } from "../autocontinue/auto-compact.js";
 import type { OperatorCohortEnrollmentTarget, OperatorContinuationEnrollmentTarget, SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
 import { AutomationLaunchPolicyStore, LaunchPolicyConflictError, MAX_MODEL_LENGTH, appendLaunchPolicyAudit, findProjectRoute, launchPolicyAuditRecord, validateAutomationLaunchPolicy } from "../automation-launch-policy.js";
+import { bearerToken, sameSecret } from "../secret-compare.js";
+import { AutomationDisarmStore, AUTOMATION_CANNOT_CHANGE_DISARM_REASON, buildAutomationDisarmSummary, humanWorkKeys, setAutomationDisarm } from "../automation-disarm/index.js";
+import { DirectFleetDisarmTransport } from "../automation-disarm/direct-transport.js";
+import type { FleetDisarmNodeResult, FleetDisarmTransport } from "../automation-disarm/service.js";
+import type { AutomationDisarmDocument } from "../automation-disarm/state.js";
 import { renderSessionGraph } from "../session-visualization.js";
 import { boundedCoordinationContext, coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
 import { sessionTargetRequest } from "../session-target.js";
 import { markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
 import { getAgentActivityStatistics, withSessionPortfolioStatistics } from "../session-statistics.js";
 import { createMcpHandler, type McpServer } from "@modelcontextprotocol/server";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash } from "node:crypto";
 import { toNodeHandler, type NodeMcpRequestHandler } from "@modelcontextprotocol/node";
 import type { AdapterRegistry } from "../adapter-registry.js";
 import type { HerderEventBus } from "../herder-events.js";
@@ -93,6 +98,10 @@ export interface WebDependencies {
   scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor;
   /** Disable local observer lifecycle when a process-owned supervisor already manages it. */
   sessionObservationManagedExternally?: boolean;
+  /** The durable owner state of the automation lever; the runtime store by default. */
+  automationDisarmStore?: AutomationDisarmStore;
+  /** The port that carries one owner decision to the other fleet nodes. */
+  automationDisarmTransport?: FleetDisarmTransport;
   /** Optional profile-scoped fleet API; its handler authenticates each request. */
   fleetHttpGuard?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
   fleetApiHandler?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
@@ -669,10 +678,14 @@ function noticeplaceHealthQuotaPreflight(): ReturnType<typeof createMiniMaxQuota
 }
 
 /** Compare two secrets without leaking their length or prefix through time. */
-function sameSecret(left: string | undefined, right: string | undefined): boolean {
-  if (!left || !right) return false;
-  const digest = (value: string) => createHash("sha256").update(value).digest();
-  return timingSafeEqual(digest(left), digest(right));
+/**
+ * The owner lever moves only for a caller that proves it holds the owner
+ * secret. The token is configured per node, and a node without it fails
+ * closed rather than moving the lever on the word of an unauthenticated
+ * caller.
+ */
+function configuredDisarmToken(): string | undefined {
+  return process.env.AGENT_HERDER_DISARM_TOKEN?.trim() || undefined;
 }
 
 /** How a native session is reached: ordinary, project-scoped or refused. */
@@ -788,7 +801,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
       if (dependencies.fleetHttpGuard && await dependencies.fleetHttpGuard(request, response)) return;
       if (dependencies.fleetApiHandler && await dependencies.fleetApiHandler(request, response)) return;
       if (await rag.handleHttp(request, response, async (harness, id) => (await dependencies.adapters.get(harness)?.getSession(id)) || undefined)) return;
-      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -923,7 +936,7 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   const resolveSessionRoute = async (harness: string, sessionId: string) => await resolveSessionRouteFor(integratorRuntime, adapters, scopedSupervisorFactory, harness, sessionId);
   if (url.pathname === "/api/resources/s21-lease" && request.method === "GET") {
@@ -1207,6 +1220,82 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       }
       return sendJson(response, 400, { error: (error as Error).message });
     }
+  }
+  if (url.pathname === "/api/automation/disarm" && request.method === "POST") {
+    // The owner-level automation lever. The state is durable, survives a
+    // restart and is confirmed across the fleet nodes, so the answer always
+    // names every node and what it reported.
+    const disarmStore = automationDisarmStore ?? AutomationDisarmStore.forRuntime();
+    const current = await disarmStore.read();
+    const answer = (ok: boolean, applied: boolean, disarmed: boolean, state: AutomationDisarmDocument, nodes: FleetDisarmNodeResult[], summary: string, error?: string) => sendJson(response, 200, {
+      ok, applied, disarmed,
+      state: { ...state, blockedWorkKeysHuman: humanWorkKeys(state.blockedWorkKeys) },
+      nodes: nodes.map((node) => ({ hostId: node.hostId, status: node.status, reason: node.reason ?? null })),
+      summary,
+      ...(error ? { error } : {}),
+    });
+    let body: Record<string, unknown>;
+    try {
+      body = await readJson(request) as Record<string, unknown>;
+    } catch (error) {
+      return sendJson(response, 400, { ok: false, applied: false, error: `Некорректное тело запроса: ${(error as Error).message}`, nodes: [] });
+    }
+    // A real secret is required. A node without a configured token fails
+    // closed: it never moves the lever for an unauthenticated caller.
+    const expectedToken = configuredDisarmToken();
+    if (!expectedToken) {
+      return sendJson(response, 503, {
+        ok: false, applied: false, disarmed: current.disarmed,
+        state: { ...current, blockedWorkKeysHuman: humanWorkKeys(current.blockedWorkKeys) },
+        nodes: [],
+        summary: "the disarm token is not configured on this node — the lever was not moved",
+        error: "AGENT_HERDER_DISARM_TOKEN is not configured on this node",
+        reason: "AGENT_HERDER_DISARM_TOKEN is not configured on this node",
+      });
+    }
+    const presented = bearerToken(request.headers.authorization);
+    if (!presented || !sameSecret(presented, expectedToken)) {
+      return sendJson(response, 401, {
+        ok: false, applied: false, disarmed: current.disarmed,
+        state: { ...current, blockedWorkKeysHuman: humanWorkKeys(current.blockedWorkKeys) },
+        nodes: [],
+        summary: "the disarm token is missing or wrong — the lever was not moved",
+        error: "unauthorized",
+        reason: "unauthorized",
+      });
+    }
+    // The secret proves who asks. The intent marker says what is asked: the
+    // lever moves only for an explicit owner action.
+    if (body.source !== "owner") {
+      return sendJson(response, 403, {
+        ok: false, applied: false, disarmed: current.disarmed,
+        state: { ...current, blockedWorkKeysHuman: humanWorkKeys(current.blockedWorkKeys) },
+        nodes: [],
+        summary: "the request is not an explicit owner action — the lever was not moved",
+        error: AUTOMATION_CANNOT_CHANGE_DISARM_REASON,
+        reason: AUTOMATION_CANNOT_CHANGE_DISARM_REASON,
+      });
+    }
+    if (typeof body.disarmed !== "boolean") return sendJson(response, 400, { ok: false, applied: false, error: "disarmed must be a boolean", nodes: [] });
+    let workKeys: string[] | undefined;
+    if (body.workKeys !== undefined) {
+      if (!Array.isArray(body.workKeys) || body.workKeys.some((key: unknown) => typeof key !== "string")) {
+        return sendJson(response, 400, { ok: false, applied: false, error: "workKeys must be a list of strings", nodes: [] });
+      }
+      workKeys = body.workKeys as string[];
+    }
+    const result = await setAutomationDisarm({
+      disarmed: body.disarmed,
+      ...(workKeys === undefined ? {} : { workKeys }),
+      ...(typeof body.reason === "string" && body.reason.trim() ? { reason: body.reason.trim().slice(0, 500) } : {}),
+      scope: "fleet",
+      source: "owner",
+      store: disarmStore,
+      transport: automationDisarmTransport ?? new DirectFleetDisarmTransport(),
+    });
+    // The request was processed. Whether the fleet confirmed it is read from
+    // the body, never from the status code.
+    return answer(result.ok, result.applied, result.disarmed, result.state, result.nodes, buildAutomationDisarmSummary(result));
   }
   if (url.pathname === "/api/session-images" && request.method === "POST") {
     if (!sessionImages) return sendJson(response, 503, { error: "Прикрепление изображений недоступно." });

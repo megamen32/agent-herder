@@ -24,6 +24,7 @@ import { automaticDeliveryHeld, holdManualStop, HUMAN_STOP_MESSAGE } from "../hu
 import { buildMessageProvenanceHeader } from "../message-provenance.js";
 import { compactAutomaticMessage, readLongMessage, saveLongMessageToWorkspace } from "../long-messages.js";
 import { createNamedSession, newOrResumeNamedSession, deliverNamedSession, selectDeliveryModel } from "../named-session.js";
+import { automationDisarmDecisionWithWork, sessionWorkKey, AutomationDisarmStore } from "../automation-disarm/index.js";
 import { homedir, hostname } from "node:os";
 import { createHash } from "node:crypto";
 import { relative, resolve, sep } from "node:path";
@@ -515,6 +516,15 @@ async function sendMessageOnce(
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return `Session '${parsed.sessionId}' not found.`;
   if (!parsed.humanRequested) {
+    // The owner-level automation lever: this tool delivers straight to the
+    // native adapter, so the lever is checked here too. A run a person
+    // started keeps working.
+    const disarm = await automationDisarmDecisionWithWork(
+      AutomationDisarmStore.forRuntime(),
+      async () => [sessionWorkKey(found.session.harness, found.session.title, found.session.cwd)],
+      "automation",
+    );
+    if (!disarm.allowed) return disarm.reason ?? "Автоматический запуск запрещён владельцем.";
     const prior = await previousCoordinationReceipt(found.adapter,parsed.sessionId,parsed.inputId);
     if (prior) return prior;
   }

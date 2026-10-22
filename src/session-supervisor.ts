@@ -20,6 +20,7 @@ import type {
 } from "./types/index.js";
 import { throwIfAborted } from "./abort-utils.js";
 import { createNamedSession, newOrResumeNamedSession, type NamedSessionRequest, type NamedSessionResult, type NewOrResumeNamedSessionRequest } from "./named-session.js";
+import { automationDisarmDecisionWithWork, sessionWorkKey, AutomationDisarmStore } from "./automation-disarm/index.js";
 import { getHarnessCapabilities } from "./types/index.js";
 import { localSessionHostId } from "./types/index.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "./session-convert.js";
@@ -560,6 +561,9 @@ export class SessionSupervisor {
     if (options.origin !== "human") {
       const admission = await this.automaticNativeAdmission(adapter, id, operation);
       if (!admission.allowed) return { ok: false, notSubmitted: true, nonRetryable: true, error: admission.reason };
+      // The owner-level automation lever: an automatic send is an automatic run.
+      const disarm = await this.automationDisarmRefusal(harness, id, false);
+      if (disarm) return { ok: false, notSubmitted: true, nonRetryable: true, error: disarm };
     }
     let session: AgentSession | null;
     if (expectedCwd) {
@@ -782,11 +786,42 @@ export class SessionSupervisor {
     return result;
   }
 
+  /**
+   * The owner-level automation lever, for the control paths that continue an
+   * existing session.
+   *
+   * A run a person started keeps working. An automatic run is refused while
+   * the owner forbade automation, and the work key of the session is used
+   * when it can be read, so a blocked work stays blocked under a new session
+   * id.
+   */
+  private async automationDisarmRefusal(harness: string, id: string, humanRequested: boolean): Promise<string | undefined> {
+    if (humanRequested) return undefined;
+    const decision = await automationDisarmDecisionWithWork(
+      AutomationDisarmStore.forRuntime(),
+      async () => {
+        const workKeys: string[] = [];
+        try {
+          const session = await this.requireAdapter(harness).getSession(id);
+          if (session) workKeys.push(sessionWorkKey(session.harness, session.title, session.cwd));
+        } catch {
+          // The global lever still applies when the session cannot be read.
+        }
+        return workKeys;
+      },
+      "automation",
+    );
+    return decision.allowed ? undefined : decision.reason;
+  }
+
   async resumeSession(harness: string, id: string, message?: string, humanRequested = false, inputId?: string): Promise<ControlResult> {
     const adapter = this.requireAdapter(harness);
     if (!humanRequested) {
       const admission = await this.automaticNativeAdmission(adapter, id, "resume");
       if (!admission.allowed) return this.automaticAdmissionRefusal(admission);
+      // The owner-level automation lever: an automatic resume is an automatic run.
+      const disarm = await this.automationDisarmRefusal(harness, id, false);
+      if (disarm) return { ok: false, error: disarm };
     }
     if (humanRequested) await this.releaseHumanStop(harness, id);
     else if (await this.isAutomationHeld(harness, id)) return { ok: false, error: "Чат явно остановлен; автоматическое продолжение запрещено." };
