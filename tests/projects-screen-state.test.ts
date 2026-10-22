@@ -243,7 +243,11 @@ describe("the mobile navigation of the panel", () => {
   });
 
   it("keeps the action of the projects visible and shows the unsaved changes", () => {
-    expect(styles).toContain("position: sticky");
+    // The action bar is pinned above the navigation: a sticky row cannot leave
+    // the box of its page, and the page is the whole scroll.
+    expect(styles).toContain(".projects-save-row {");
+    expect(styles).toContain("position: fixed");
+    expect(styles).toContain("bottom: calc(60px + env(safe-area-inset-bottom));");
     expect(page).toContain("Есть несохранённые изменения");
   });
 });

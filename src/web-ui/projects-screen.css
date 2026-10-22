@@ -465,15 +465,37 @@
     padding-bottom: 96px;
   }
 
-  /* Действие сохранения остаётся под рукой и показывает несохранённые правки. */
+  /*
+   * Действие сохранения остаётся под рукой и показывает несохранённые правки.
+   * Оно закреплено над полосой навигации, а не после формы: строка внутри
+   * прокручиваемой страницы не может остаться на виду.
+   */
   .projects-save-row {
-    position: sticky;
-    bottom: 0;
-    z-index: 4;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(60px + env(safe-area-inset-bottom));
+    z-index: 45;
     margin: 0;
-    padding: 10px 0 12px;
-    background: var(--bg);
+    padding: 8px 14px;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface-1);
     border-top: 1px solid var(--border);
+  }
+  .projects-save-row > span {
+    flex: 1 1 auto;
+    flex-basis: auto;
+    min-width: 0;
+  }
+  .projects-save-row .primary-button {
+    width: auto;
+    flex: 0 0 auto;
+  }
+  .projects-page {
+    padding-bottom: 148px;
   }
   .projects-toolbar {
     grid-template-columns: minmax(0, 1fr);
