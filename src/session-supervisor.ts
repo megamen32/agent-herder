@@ -25,7 +25,7 @@ import { localSessionHostId } from "./types/index.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "./session-convert.js";
 import { LineageStore, type LineageRecord } from "./lineage-store.js";
 import { ModelsDevPricing } from "./model-pricing.js";
-import { coordinationNotes } from "./coordination-notes.js";
+import { coordinationNotes, type WorkspaceDeclaration } from "./coordination-notes.js";
 import { herderEvents, type HerderEventBus } from "./herder-events.js";
 import { adapterResourceUri, sessionMessagesResourceUri, sessionResourceUri } from "./herder-resource-uris.js";
 import { harnessEventHealth, type HarnessEventHealthRegistry } from "./harness-event-health.js";
@@ -110,6 +110,8 @@ export class SessionNotFoundError extends Error {
 export class SessionSupervisor {
   private readonly sessionCacheTtlMs: number;
   private sessionSnapshot: SessionSnapshot | null = null;
+  /** The last served projection of the snapshot: native sessions with their declared work place. */
+  private projection: { snapshot: SessionSnapshot; sessions: AgentSession[] } | null = null;
   private sessionRefresh: Promise<void> | null = null;
   private readonly modelCacheTtlMs = 15 * 60_000;
   private readonly modelCache = new Map<string, { models: string[]; refreshedAt: number }>();
@@ -285,7 +287,7 @@ export class SessionSupervisor {
   listSessionsFast(filters: SessionFilters = {}): { sessions: AgentSession[]; warming: boolean } {
     if (this.sessionSnapshot) {
       if (Date.now() - this.sessionSnapshot.refreshedAt >= this.sessionCacheTtlMs) void this.refreshSessionSnapshot().catch(() => undefined);
-      return { sessions: this.filterSessions(this.sessionSnapshot.sessions, filters), warming: Boolean(this.sessionRefresh) };
+      return { sessions: this.filterSessions(this.projectedSessions(), filters), warming: Boolean(this.sessionRefresh) };
     }
     void this.refreshSessionSnapshot().catch(() => undefined);
     return { sessions: [], warming: true };
@@ -293,12 +295,12 @@ export class SessionSupervisor {
 
   /** Metadata pages reuse this process's actual snapshot generation, without renewing freshness. */
   sessionInventorySnapshot(): {sessions: AgentSession[]; warming: boolean; observedAt: string | null} {
-    return {sessions: this.sessionSnapshot?.sessions ?? [], warming: Boolean(this.sessionRefresh) || !this.sessionSnapshot, observedAt: this.sessionSnapshot ? new Date(this.sessionSnapshot.refreshedAt).toISOString() : null};
+    return {sessions: this.projectedSessions(), warming: Boolean(this.sessionRefresh) || !this.sessionSnapshot, observedAt: this.sessionSnapshot ? new Date(this.sessionSnapshot.refreshedAt).toISOString() : null};
   }
 
   async refreshSessions(filters: SessionFilters = {}): Promise<AgentSession[]> {
     await this.refreshSessionSnapshot();
-    return this.filterSessions(this.sessionSnapshot?.sessions ?? [], filters);
+    return this.serveSessions(filters);
   }
 
   async listSessions(filters: SessionFilters = {}): Promise<AgentSession[]> {
@@ -308,13 +310,19 @@ export class SessionSupervisor {
         // A failed background refresh leaves the last good snapshot intact.
         void this.refreshSessionSnapshot().catch(() => undefined);
       }
-      return this.filterSessions(this.sessionSnapshot.sessions, filters);
+    } else {
+      // The first request is cold and must establish a usable snapshot. All
+      // subsequent requests are cache-first and never wait for adapter discovery.
+      await this.refreshSessionSnapshot();
     }
+    return this.serveSessions(filters);
+  }
 
-    // The first request is cold and must establish a usable snapshot. All
-    // subsequent requests are cache-first and never wait for adapter discovery.
-    await this.refreshSessionSnapshot();
-    return this.filterSessions(this.sessionSnapshot!.sessions, filters);
+  /** The session list as it is served: native sessions with their declared work place. */
+  private async serveSessions(filters: SessionFilters): Promise<AgentSession[]> {
+    const snapshot = this.sessionSnapshot;
+    if (!snapshot) return [];
+    return this.filterSessions(await this.projectWorkplace(snapshot), filters);
   }
 
   private filterSessions(sessions: AgentSession[], filters: SessionFilters): AgentSession[] {
@@ -368,6 +376,37 @@ export class SessionSupervisor {
       }));
     }));
     return sessionGroups.flat();
+  }
+
+  /**
+   * The declared work place of a session is the truth about the machine and
+   * the directory it works on. The ledger is read once for the whole list and
+   * the native snapshot stays untouched: the refresh diff compares native
+   * with native, so a moved session never looks like a changed session.
+   */
+  private async projectWorkplace(snapshot: SessionSnapshot): Promise<AgentSession[]> {
+    let declarations: Map<string, WorkspaceDeclaration>;
+    try {
+      declarations = await coordinationNotes.activeWorkspaceDeclarations();
+    } catch {
+      // A locked or unreadable ledger must never take the session list down.
+      return snapshot.sessions;
+    }
+    const declared = coordinationNotes.workspaceObservations(declarations, snapshot.sessions.map((session) => session.id));
+    const sessions = snapshot.sessions.map((session) => {
+      const observation = declared.get(session.id);
+      if (!observation) return session;
+      return { ...session, hostId: observation.hostId, cwd: observation.cwd };
+    });
+    this.projection = { snapshot, sessions };
+    return sessions;
+  }
+
+  /** The served projection of the current snapshot; the native list until one exists. */
+  private projectedSessions(): AgentSession[] {
+    const snapshot = this.sessionSnapshot;
+    if (!snapshot) return [];
+    return this.projection?.snapshot === snapshot ? this.projection.sessions : snapshot.sessions;
   }
 
   async getSession(harness: string, id: string, expectedCwd?: string, options?: {includeMetrics?:boolean;includeModelOptions?:boolean}): Promise<AgentSession | null> {
