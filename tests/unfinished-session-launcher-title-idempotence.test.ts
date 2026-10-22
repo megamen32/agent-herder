@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type UnfinishedSessionNotice } from "../src/autopilot/unfinished-session-launcher.js";
+import { SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type UnfinishedSessionInventoryRecord, type UnfinishedSessionNotice } from "../src/autopilot/unfinished-session-launcher.js";
 import { AutopilotPolicyStore } from "../src/autopilot/policy-store.js";
 import { AutopilotSessionStore } from "../src/autopilot/session-store.js";
 import { HumanStopStore } from "../src/human-stop-store.js";
-import type { AgentSession, CreateSessionOptions, HarnessAdapter } from "../src/types/index.js";
+import type { AgentSession, CreateSessionOptions, HarnessAdapter, SessionSnapshotReceipt } from "../src/types/index.js";
 
 /** The deterministic continuation title of the planned topic "task". */
 const CONTINUATION_TITLE = "Автопродолжение — Task";
@@ -35,7 +35,7 @@ interface AdapterFixture {
 }
 
 /** A zcode adapter that counts creations, sends and named searches. */
-function fakeAdapter(options: { named?: AgentSession[]; searchFails?: boolean; withNamedSearch?: boolean } = {}): AdapterFixture {
+function fakeAdapter(options: { named?: AgentSession[]; searchFails?: boolean; withNamedSearch?: boolean; receipt?: () => SessionSnapshotReceipt | null; receiptThrows?: boolean } = {}): AdapterFixture {
     const created: CreateSessionOptions[] = [];
     const sent: Array<{ id: string; message: string }> = [];
     const named: Array<{ name: string; cwd: string }> = [];
@@ -72,11 +72,21 @@ function fakeAdapter(options: { named?: AgentSession[]; searchFails?: boolean; w
             return (options.named ?? []).map((session) => ({ ...session }));
         };
     }
+    // The completeness of the listing is reported only by an adapter that
+    // publishes a receipt of its own named search. An adapter without the
+    // receipt, or with a receipt of another listing, keeps the previous
+    // behaviour: the absence is not provable there, but it is not a
+    // prohibition either.
+    const receipt = options.receipt;
+    if (receipt) adapter.getSessionSnapshotReceipt = () => receipt();
+    if (options.receiptThrows) {
+        adapter.getSessionSnapshotReceipt = () => { throw new Error("snapshot receipt is unavailable"); };
+    }
     return { adapter, created, sent, named };
 }
 
 /** One autopilot cycle over a single unfinished session that must roll over. */
-async function runAutopilotCycle(fixture: AdapterFixture, notices: UnfinishedSessionNotice[]): Promise<void> {
+async function runAutopilotCycle(fixture: AdapterFixture, notices: UnfinishedSessionNotice[]): Promise<UnfinishedSessionInventoryRecord[]> {
     const root = await mkdtemp(join(tmpdir(), "herder-title-idempotence-"));
     try {
         const policyStore = new AutopilotPolicyStore(join(root, "policy.json"));
@@ -84,9 +94,10 @@ async function runAutopilotCycle(fixture: AdapterFixture, notices: UnfinishedSes
         const settings = new SessionAutostartStore(join(root, "settings.json"), {});
         await settings.setRuntimeSettings({ inventoryWindowHours: 48, evidenceMessageCount: 200, judgeModel: "fixture", autopilotJudgeModel: "fixture", rolloverExpiredCache: true });
         const current = sourceSession();
+        const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
         const launcher = new UnfinishedSessionLauncher({
             adapters: new Map([["zcode", fixture.adapter]]),
-            store: new UnfinishedSessionStore(join(root, "unfinished.json")),
+            store,
             settingsStore: settings,
             autopilotPolicyStore: policyStore,
             autopilotSessionStore: new AutopilotSessionStore(join(root, "sessions.json")),
@@ -102,6 +113,7 @@ async function runAutopilotCycle(fixture: AdapterFixture, notices: UnfinishedSes
             },
         });
         await launcher.runAutopilotCycle();
+        return await store.listInventory();
     } finally {
         await rm(root, { recursive: true, force: true });
     }
@@ -125,23 +137,28 @@ describe("continuation title idempotence", () => {
         const fixture = fakeAdapter({ named: [existing] });
         const notices: UnfinishedSessionNotice[] = [];
 
-        await runAutopilotCycle(fixture, notices);
+        const inventory = await runAutopilotCycle(fixture, notices);
 
         expect(fixture.named).toEqual([{ name: CONTINUATION_TITLE, cwd: CWD }]);
         expect(fixture.created).toEqual([]);
         expect(fixture.sent.map((entry) => entry.id)).toContain("existing-1");
         expect(notices).toEqual([]);
+        // The inventory is a durable source of truth: a reused executor is not
+        // a new session and must not be reported as one.
+        expect(inventory.map((record) => record.verdict?.reason)).toContain(`Продолжена существующая сессия «${CONTINUATION_TITLE}»: existing-1`);
     });
 
     it("creates the session when no session of the same name and cwd exists", async () => {
         const fixture = fakeAdapter({ named: [] });
         const notices: UnfinishedSessionNotice[] = [];
 
-        await runAutopilotCycle(fixture, notices);
+        const inventory = await runAutopilotCycle(fixture, notices);
 
         expect(fixture.named).toEqual([{ name: CONTINUATION_TITLE, cwd: CWD }]);
         expect(fixture.created.map((options) => options.name)).toEqual([CONTINUATION_TITLE]);
         expect(fixture.created.map((options) => options.cwd)).toEqual([CWD]);
+        // The creation branch keeps its own reason.
+        expect(inventory.map((record) => record.verdict?.reason)).toContain(`Объединена в новую сессию «${CONTINUATION_TITLE}»: created-1`);
     });
 
     it("refuses to start a second executor when two sessions carry the same name", async () => {
@@ -154,7 +171,9 @@ describe("continuation title idempotence", () => {
 
         expect(fixture.created).toEqual([]);
         expect(fixture.sent).toEqual([]);
-        expect(notices.map((notice) => notice.signalType)).toContain("continuation-refused");
+        expect(notices).toHaveLength(1);
+        expect(notices[0]!.signalType).toBe("continuation-refused");
+        expect(notices[0]!.body).toContain("Продолжение «task»");
     });
 
     it("keeps the previous behaviour for an adapter without the named search", async () => {
@@ -186,5 +205,80 @@ describe("continuation title idempotence", () => {
 
         expect(fixture.created).toEqual([]);
         expect(fixture.sent).toEqual([]);
+        // A transient failure is not an ambiguity: the owner is not notified.
+        expect(notices).toEqual([]);
+    });
+
+    it("refuses to create when the named search reports an incomplete listing", async () => {
+        const fixture = fakeAdapter({
+            named: [],
+            receipt: () => ({ exhaustive: false, observedAt: new Date().toISOString(), source: "fixture", reason: "tasks_index_read_failed" }),
+        });
+        const notices: UnfinishedSessionNotice[] = [];
+
+        await runAutopilotCycle(fixture, notices);
+
+        expect(fixture.named).toEqual([{ name: CONTINUATION_TITLE, cwd: CWD }]);
+        expect(fixture.created).toEqual([]);
+        expect(fixture.sent).toEqual([]);
+        expect(notices).toEqual([]);
+    });
+
+    it("creates the session when the named search reports an exhaustive listing", async () => {
+        const fixture = fakeAdapter({
+            named: [],
+            receipt: () => ({ exhaustive: true, observedAt: new Date().toISOString(), source: "fixture" }),
+        });
+        const notices: UnfinishedSessionNotice[] = [];
+
+        await runAutopilotCycle(fixture, notices);
+
+        expect(fixture.named).toEqual([{ name: CONTINUATION_TITLE, cwd: CWD }]);
+        expect(fixture.created.map((options) => options.name)).toEqual([CONTINUATION_TITLE]);
+        expect(fixture.sent.map((entry) => entry.id)).toContain("created-1");
+        expect(notices).toEqual([]);
+    });
+
+    it("keeps the previous behaviour when the snapshot receipt describes another listing", async () => {
+        // The codex-app-server publishes its receipt in listSessions only, so
+        // its named search leaves a receipt of another listing behind. Such a
+        // receipt proves nothing about this search and must not stop the
+        // continuation of the whole harness.
+        const fixture = fakeAdapter({
+            named: [],
+            receipt: () => ({ exhaustive: false, observedAt: new Date(Date.now() - 60_000).toISOString(), source: "fixture" }),
+        });
+        const notices: UnfinishedSessionNotice[] = [];
+
+        await runAutopilotCycle(fixture, notices);
+
+        expect(fixture.named).toEqual([{ name: CONTINUATION_TITLE, cwd: CWD }]);
+        expect(fixture.created.map((options) => options.name)).toEqual([CONTINUATION_TITLE]);
+        expect(fixture.sent.map((entry) => entry.id)).toContain("created-1");
+        expect(notices).toEqual([]);
+    });
+
+    it("keeps the previous behaviour when the snapshot receipt cannot be read", async () => {
+        const fixture = fakeAdapter({ named: [], receiptThrows: true });
+        const notices: UnfinishedSessionNotice[] = [];
+
+        await runAutopilotCycle(fixture, notices);
+
+        expect(fixture.named).toEqual([{ name: CONTINUATION_TITLE, cwd: CWD }]);
+        expect(fixture.created.map((options) => options.name)).toEqual([CONTINUATION_TITLE]);
+        expect(fixture.sent.map((entry) => entry.id)).toContain("created-1");
+        expect(notices).toEqual([]);
+    });
+
+    it("keeps the previous behaviour for an adapter without the snapshot receipt", async () => {
+        const fixture = fakeAdapter({ named: [] });
+        const notices: UnfinishedSessionNotice[] = [];
+
+        await runAutopilotCycle(fixture, notices);
+
+        expect(fixture.named).toEqual([{ name: CONTINUATION_TITLE, cwd: CWD }]);
+        expect(fixture.created.map((options) => options.name)).toEqual([CONTINUATION_TITLE]);
+        expect(fixture.sent.map((entry) => entry.id)).toContain("created-1");
+        expect(notices).toEqual([]);
     });
 });

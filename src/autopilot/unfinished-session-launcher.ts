@@ -17,7 +17,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
 import lockfile from "proper-lockfile";
 
-import type { AgentSession, HarnessAdapter, HarnessEvent, HarnessType, SendMessageResult, SessionMessageView } from "../types/index.js";
+import type { AgentSession, HarnessAdapter, HarnessEvent, HarnessType, SendMessageResult, SessionMessageView, SessionSnapshotReceipt } from "../types/index.js";
 import { localSessionHostId } from "../types/index.js";
 import type { HumanStopStore } from "../human-stop-store.js";
 import { cacheWindowFor, continuationModelFor, movePinnedContinuation, semanticTranscript, unfinishedProbeDelayMs, type CacheHandoffService } from "../cache-handoff.js";
@@ -4798,7 +4798,10 @@ export class UnfinishedSessionLauncher {
           if (existing.kind === "ambiguous") await this.notifyContinuationRefusal(group.topic, existing.reason, sources);
           continue;
         }
-        const created = existing.kind === "found"
+        // The inventory names the branch that really ran: a reused executor
+        // is an existing session, not a new one.
+        const reusedContinuation = existing.kind === "found";
+        const created = reusedContinuation
           ? existing.session
           : await primary.adapter.createSession({
             name: continuationName,
@@ -4860,7 +4863,9 @@ export class UnfinishedSessionLauncher {
           this.clearUrgentSession(source.sourceKey);
           pushInventory(source, {
             verdict: "completed",
-            reason: `Объединена в новую сессию «${continuationTitle(group.topic)}»: ${created.id}`,
+            reason: reusedContinuation
+              ? `Продолжена существующая сессия «${continuationTitle(group.topic)}»: ${created.id}`
+              : `Объединена в новую сессию «${continuationTitle(group.topic)}»: ${created.id}`,
             confidence: group.confidence,
             judgedAt,
           });
@@ -4888,6 +4893,16 @@ export class UnfinishedSessionLauncher {
    * executor is reused, several live executors are a refusal (a second
    * executor for one work is never started), and an adapter without the named
    * search keeps the previous behaviour.
+   *
+   * The absence of a session is proven only by a complete listing. The
+   * protection against a blind second executor is switched on exactly where
+   * the adapter can prove the completeness of its own named search: a receipt
+   * observed during this search (zcode publishes it). Where the proof is
+   * impossible the main path is not broken and the limitation is recorded
+   * here: an adapter without the receipt (opencode, minimax-code, chatgpt
+   * answer the absence themselves), a receipt of another listing (the
+   * codex-app-server publishes its receipt in listSessions only), or a
+   * receipt that cannot be read. An unprovable absence is not a prohibition.
    */
   private async findContinuationExecutor(
     adapter: HarnessAdapter,
@@ -4896,12 +4911,34 @@ export class UnfinishedSessionLauncher {
   ): Promise<{ kind: "none" } | { kind: "found"; session: AgentSession } | { kind: "ambiguous"; reason: string } | { kind: "unknown"; reason: string }> {
     if (!adapter.findNamedSessions) return { kind: "none" };
     let matches: AgentSession[];
+    const startedAt = Date.now();
     try {
       matches = await adapter.findNamedSessions(name, cwd);
     } catch (error) {
       // The absence of the session cannot be proven, so a second executor for
       // the same work would be started blind.
       return { kind: "unknown", reason: `поиск сессии «${name}» в ${cwd} не удался: ${errorText(error)}` };
+    }
+    // A successful search is not a proof of the absence: an incomplete listing
+    // answers "no match" without proving anything, and it cannot prove that no
+    // second executor runs the same work either. The protection is switched
+    // on only where the adapter proves the completeness of this very search.
+    if (adapter.getSessionSnapshotReceipt) {
+      let receipt: SessionSnapshotReceipt | null = null;
+      try {
+        receipt = adapter.getSessionSnapshotReceipt() ?? null;
+      } catch {
+        // A receipt that cannot be read is no signal, not a prohibition: a
+        // broken adapter must not silently kill the main path.
+        receipt = null;
+      }
+      const observedAt = receipt ? Date.parse(receipt.observedAt) : Number.NaN;
+      // A receipt of another listing (a global listSessions beside this
+      // search) describes nothing about this search and proves nothing, so it
+      // keeps the previous behaviour instead of refusing every continuation.
+      if (receipt && Number.isFinite(observedAt) && observedAt >= startedAt && receipt.exhaustive !== true) {
+        return { kind: "unknown", reason: `листинг сессий «${name}» в ${cwd} неполон (${receipt.reason ?? "причина неизвестна"}): отсутствие сессии не доказано` };
+      }
     }
     const executors = matches.filter((session) => !TERMINAL_EXECUTOR_STATUS.has(session.status));
     if (executors.length === 1) return { kind: "found", session: executors[0]! };
