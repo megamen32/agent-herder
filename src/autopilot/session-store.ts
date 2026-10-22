@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, normalize } from "node:path";
 import lockfile from "proper-lockfile";
-import { parseNoticeIncident, type NoticeIncidentBinding } from "./notice-incident.js";
+import { isHealthPlanId, parseNoticeIncident, type HealthPlanId, type NoticeIncidentBinding } from "./notice-incident.js";
 
 export type AutopilotHarness = "codex" | "opencode" | "claude" | "hermes" | "zcode";
 
@@ -15,7 +15,16 @@ export type AutopilotSessionOverride = {
   noticeIncident?: NoticeIncidentBinding;
 };
 
-type SessionFile = { version: 1; sessions: AutopilotSessionOverride[] };
+/**
+ * The durable file of the session switches.
+ *
+ * The launch plans are the selected health plans the center stated for a
+ * launch. They live next to the sessions because the plan of a launch must
+ * survive the restart that happens between the launch call and the arming
+ * call of the same session: the arming call carries the incident id only, so
+ * a plan kept in the process memory alone would be lost with the process.
+ */
+type SessionFile = { version: 1; sessions: AutopilotSessionOverride[]; launchPlans?: Record<string, HealthPlanId> };
 
 const MAX_TEXT = 512;
 
@@ -42,8 +51,31 @@ export class AutopilotSessionStore {
     return this.mutate(async (file) => {
       const key = sessionKey(normalized.harness, normalized.sessionId);
       const previous = file.sessions.find((item) => sessionKey(item.harness, item.sessionId) === key);
-      const noticeIncident = target.noticeIncident === undefined ? previous?.noticeIncident : parseNoticeIncident(target.noticeIncident);
-      if (previous?.noticeIncident && (previous.cwd !== normalized.cwd || JSON.stringify(previous.noticeIncident) !== JSON.stringify(noticeIncident))) throw new Error("original Notice incident binding cannot be replaced");
+      const previousBinding = previous?.noticeIncident;
+      const requested = target.noticeIncident === undefined ? undefined : parseNoticeIncident(target.noticeIncident);
+      // The binding of one incident is written once: its incident and project
+      // never change, and the working directory of an armed session is the
+      // directory of that binding.
+      if (previousBinding) {
+        if (previous?.cwd !== normalized.cwd) throw new Error("original Notice incident binding cannot be replaced");
+        if (requested && (requested.incidentId !== previousBinding.incidentId || requested.project !== previousBinding.project)) {
+          throw new Error("original Notice incident binding cannot be replaced");
+        }
+      }
+      // The selected plan of a binding can still be unknown when the binding
+      // is written: the center states the plan in the launch message, while
+      // the arming call carries the incident id only. A binding without a
+      // plan may receive one later; a bound plan is never replaced, because
+      // the center accepts the progress of one selected plan only.
+      if (previousBinding?.planId && requested?.planId && requested.planId !== previousBinding.planId) {
+        throw new Error("original Notice incident health plan cannot be replaced");
+      }
+      const noticeIncident = requested === undefined
+        ? previousBinding
+        : {
+          ...requested,
+          ...(requested.planId || !previousBinding?.planId ? {} : { planId: previousBinding.planId }),
+        };
       const next: AutopilotSessionOverride = {
         ...normalized,
         enabled,
@@ -54,7 +86,42 @@ export class AutopilotSessionStore {
       if (index < 0) file.sessions.push(next);
       else file.sessions[index] = next;
       file.sessions.sort((left, right) => sessionKey(left.harness, left.sessionId).localeCompare(sessionKey(right.harness, right.sessionId)));
+      // The plan of the launch is bound to the incident now: the remembered
+      // launch plan is not needed any more.
+      if (noticeIncident?.planId && file.launchPlans) {
+        const plans = { ...file.launchPlans };
+        delete plans[key];
+        file.launchPlans = plans;
+      }
       return { ...next };
+    });
+  }
+
+  /**
+   * The selected health plan the center stated for the launch of one session.
+   *
+   * The plan is remembered durably: the arming call of the same session
+   * carries the incident id only, so the plan of the launch has to outlive the
+   * process that stated it.
+   */
+  async getLaunchPlan(harness: AutopilotHarness, sessionId: string): Promise<HealthPlanId | undefined> {
+    const key = sessionKey(harness, sessionId);
+    return (await this.read()).launchPlans?.[key];
+  }
+
+  /** Every remembered launch plan, keyed by the session identity. */
+  async getLaunchPlans(): Promise<Record<string, HealthPlanId>> {
+    return { ...(await this.read()).launchPlans ?? {} };
+  }
+
+  /** Remember the selected health plan of one launch, durably. */
+  async setLaunchPlan(harness: AutopilotHarness, sessionId: string, planId: HealthPlanId): Promise<HealthPlanId> {
+    if (!isHealthPlanId(planId)) throw new Error("launch plan must be a selected health plan");
+    const key = sessionKey(harness, sessionId);
+    if ((await this.read()).launchPlans?.[key] === planId) return planId;
+    return this.mutate(async (file) => {
+      file.launchPlans = { ...(file.launchPlans ?? {}), [key]: planId };
+      return planId;
     });
   }
 
@@ -118,6 +185,7 @@ function parseFile(value: unknown): SessionFile {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("autopilot session state must be an object");
   const object = value as Record<string, unknown>;
   if (object.version !== 1 || !Array.isArray(object.sessions)) throw new Error("invalid autopilot session state");
+  const launchPlans = parseLaunchPlans(object.launchPlans);
   return {
     version: 1,
     sessions: object.sessions.map((item) => {
@@ -135,7 +203,43 @@ function parseFile(value: unknown): SessionFile {
         ...(record.noticeIncident === undefined ? {} : { noticeIncident: parseNoticeIncident(record.noticeIncident) }),
       };
     }),
+    ...(launchPlans ? { launchPlans } : {}),
   };
+}
+
+/**
+ * The remembered launch plans of the durable file.
+ *
+ * An unknown plan id is ignored instead of refused. The launch plan is a
+ * pending hint that fills in the missing plan of an arming call, so one
+ * unusable entry must not make the whole file unreadable: the armed records
+ * of the live state would be lost with it. The plan of a binding stays
+ * strict, because there the plan is the published one.
+ */
+function parseLaunchPlans(value: unknown): Record<string, HealthPlanId> | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    console.error("autopilot launch plans are not a map: the remembered launch plans are ignored");
+    return undefined;
+  }
+  const plans: Record<string, HealthPlanId> = {};
+  for (const [key, plan] of Object.entries(value as Record<string, unknown>)) {
+    if (!isHealthPlanId(plan)) {
+      reportUnknownLaunchPlan(key);
+      continue;
+    }
+    plans[key] = plan;
+  }
+  return plans;
+}
+
+/** One reason per unusable entry: the file is read on every operation. */
+const reportedLaunchPlans = new Set<string>();
+
+function reportUnknownLaunchPlan(key: string): void {
+  if (reportedLaunchPlans.has(key)) return;
+  reportedLaunchPlans.add(key);
+  console.error(`autopilot launch plan of ${key} is not a selected health plan: the entry is ignored`);
 }
 
 function normalizeTarget(target: { harness: AutopilotHarness; sessionId: string; cwd: string }) {

@@ -281,9 +281,14 @@ export class NoticeplaceHealthObserver {
   private async publish(target: NoticeplaceHealthTarget, summary: SessionProgressSummary, status: string, historyComplete: boolean): Promise<void> {
     const step = describeStep(summary, status, historyComplete);
     if (!step) return;
+    const planId = target.binding.planId;
+    if (!planId) {
+      this.refuseWithoutPlan(target);
+      return;
+    }
     await this.send({
       binding: target.binding,
-      planId: target.binding.planId!,
+      planId,
       idempotencyKey: `noticeplace-health:${target.binding.incidentId}:${summary.fingerprint}`,
       step,
       evidenceRefs: summary.evidence.map((item) => item.kind === "tool" ? `tool:${item.name ?? item.id}` : `message:${item.id}`),
@@ -292,10 +297,15 @@ export class NoticeplaceHealthObserver {
   }
 
   private async publishFinal(target: NoticeplaceHealthTarget, status: string): Promise<void> {
+    const planId = target.binding.planId;
+    if (!planId) {
+      this.refuseWithoutPlan(target);
+      return;
+    }
     try {
       await this.send({
         binding: target.binding,
-        planId: target.binding.planId!,
+        planId,
         // Two executors of one incident can finish with the same status; the
         // session identity keeps the second final from being swallowed as an
         // idempotent repeat of the first.
@@ -313,10 +323,15 @@ export class NoticeplaceHealthObserver {
   private async publishLifetimeLimit(target: NoticeplaceHealthTarget, state: TargetState): Promise<void> {
     const elapsed = Math.round((Date.now() - state.startedAt) / 1000);
     this.options.onError?.(`Notice health observer stopped ${target.sessionId} incident ${target.binding.incidentId}: the observation budget of ${elapsed}s is spent`);
+    const planId = target.binding.planId;
+    if (!planId) {
+      this.refuseWithoutPlan(target);
+      return;
+    }
     try {
       await this.send({
         binding: target.binding,
-        planId: target.binding.planId!,
+        planId,
         idempotencyKey: `noticeplace-health:${target.binding.incidentId}:final:${target.harness}:${target.sessionId}:limit`,
         step: "Наблюдение остановлено по лимиту времени; ждём независимую проверку источника.",
         evidenceRefs: [],
@@ -325,6 +340,17 @@ export class NoticeplaceHealthObserver {
     } catch (error) {
       this.reportError(target, error);
     }
+  }
+
+  /**
+   * The progress of an incident belongs to its selected plan.
+   *
+   * The center accepts the progress of one selected plan only, so a target
+   * without a known plan publishes nothing at all: an explicit refusal is
+   * better than a progress under a guessed plan.
+   */
+  private refuseWithoutPlan(target: NoticeplaceHealthTarget): void {
+    this.options.onError?.(`Notice health observer published nothing for ${target.sessionId} incident ${target.binding.incidentId}: the incident has no selected health plan`);
   }
 
   private async send(update: IncidentProgressUpdate): Promise<void> {

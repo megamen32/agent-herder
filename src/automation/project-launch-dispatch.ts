@@ -16,6 +16,7 @@ import { HUMAN_STOP_MESSAGE } from "../human-stop-actions.js";
 import { MINIMAX_SUBSCRIPTION_MODEL, type MiniMaxQuotaPreflight } from "./minimax-quota-preflight.js";
 import { NOTICEPLACE_HEALTH_AUTHORIZED, validateNoticeplaceHealthLaunch } from "./noticeplace-health-launch.js";
 import { automationDisarmDecision, projectWorkKey, AutomationDisarmStore } from "../automation-disarm/index.js";
+import { MODEL_NOT_PERMITTED_CODE } from "../project-model-policy.js";
 
 /**
  * One recorded attempt of one operation on one harness.
@@ -49,6 +50,13 @@ export interface ProjectLaunchDispatchResult extends Partial<NamedSessionResult>
   project: string;
   /** Human-readable reason the route advanced or stopped. */
   routingReason: string;
+  /**
+   * Stable ASCII class of the routing decision, for a machine observer.
+   *
+   * The reason text is written for a person and may be reworded; the code
+   * names the class of the decision and stays stable.
+   */
+  routingReasonCode?: string;
   attempts: ProjectLaunchAttempt[];
   outcome: LaunchOutcome | "human_hold" | "in_flight" | "no_harness";
   selectedHarness?: HarnessType;
@@ -132,6 +140,20 @@ function harnessLabel(harness: string): string {
   return HARNESS_LABELS[harness as HarnessType] ?? harness;
 }
 
+/**
+ * Stable ASCII classes of a routing decision.
+ *
+ * The model class is the shared code of the per-project model policy, so the
+ * launch field and the tool error code name the same refusal.
+ */
+const ROUTING_CODE_HARNESS_NOT_ALLOWED = "harness_not_allowed";
+const ROUTING_CODE_AUTOMATION_DISABLED = "automation_disabled";
+const ROUTING_CODE_NO_ROUTE = "no_route";
+const ROUTING_CODE_NO_HARNESS_LEFT = "no_harness_left";
+const ROUTING_CODE_ADMISSION_NOT_CONFIRMED = "admission_not_confirmed";
+const ROUTING_CODE_INCIDENT_SCOPE_NOT_PERMITTED = "incident_scope_not_permitted";
+const ROUTING_CODE_INCIDENT_ATTEMPT_FAILED = "incident_attempt_failed";
+
 /** Outcomes that must never advance to another harness. */
 const STOP_OUTCOMES: ReadonlySet<LaunchOutcome | "human_hold"> = new Set<LaunchOutcome | "human_hold">([
   "accepted",
@@ -166,7 +188,12 @@ export async function dispatchProjectLaunch(
     const error = validateNoticeplaceHealthLaunch(input)
       ?? (!input.policy.allowedHarnesses.includes("opencode") || (healthRoute && !healthRoute.harnesses.includes("opencode"))
         ? "Политика проекта не разрешает OpenCode для анализа инцидента; переключение среды запрещено." : undefined);
-    if (error) return { operationId, project, attempts: [], outcome: "no_harness", routingReason: error, error };
+    if (error) {
+      return {
+        operationId, project, attempts: [], outcome: "no_harness", routingReason: error, error,
+        routingReasonCode: ROUTING_CODE_INCIDENT_SCOPE_NOT_PERMITTED,
+      };
+    }
   }
   const attempts = await log.attempts(project, operationId);
   // The owner-level automation lever. A dispatch is an automatic run, so a
@@ -191,6 +218,7 @@ export async function dispatchProjectLaunch(
       attempts,
       outcome: "in_flight",
       routingReason: `Запуск ${harnessLabel(reserved.harness)} уже зарезервирован, результат неизвестен. Повтор не создаёт второго исполнителя.`,
+      routingReasonCode: ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
       selectedHarness: reserved.harness,
       ...(reserved.model ? { model: reserved.model } : {}),
     };
@@ -206,6 +234,7 @@ export async function dispatchProjectLaunch(
     return {
       operationId, project, attempts, outcome: "no_harness",
       routingReason: "Попытка анализа инцидента уже завершилась отказом. Переключение среды и провайдера запрещено.",
+      routingReasonCode: ROUTING_CODE_INCIDENT_ATTEMPT_FAILED,
     };
   }
   const previous = attempts[attempts.length - 1];
@@ -223,6 +252,9 @@ export async function dispatchProjectLaunch(
   let harness: HarnessType;
   let model: string | undefined;
   let routingReason: string;
+  // The class of the routing decision, carried into the result: an observer
+  // reads the class, not the wording of the reason.
+  let routingReasonCode: string | undefined;
   if (resolution.kind === "unconfigured") {
     const fallback = defaultTarget(input.policy, input.harness);
     if (!fallback) {
@@ -234,11 +266,13 @@ export async function dispatchProjectLaunch(
         routingReason: input.harness
           ? `Среда ${harnessLabel(input.harness)} не разрешена для автоматического запуска.`
           : "Для проекта нет маршрута, а автоматический запуск новых сессий выключен.",
+        routingReasonCode: input.harness ? ROUTING_CODE_HARNESS_NOT_ALLOWED : ROUTING_CODE_AUTOMATION_DISABLED,
       };
     }
     harness = fallback.harness;
     model = input.model ?? fallback.model;
     routingReason = `Для проекта нет маршрута: используется профиль ${harnessLabel(harness)}.`;
+    routingReasonCode = ROUTING_CODE_NO_ROUTE;
   } else if (resolution.kind === "exhausted") {
     return {
       operationId,
@@ -250,6 +284,11 @@ export async function dispatchProjectLaunch(
         : resolution.reason === "model_not_permitted"
           ? `Ни одна среда маршрута не использует модель, разрешённую для проекта ${project}. Проверьте списки «Разрешённые модели» и «Запрещённые модели» в настройке проектов.`
           : routingReasonOf(attempts),
+      routingReasonCode: resolution.reason === "no_harness_left"
+        ? ROUTING_CODE_NO_HARNESS_LEFT
+        : resolution.reason === "model_not_permitted"
+          ? MODEL_NOT_PERMITTED_CODE
+          : ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
       ...(attempts.length > 0 ? { selectedHarness: attempts[attempts.length - 1]!.harness } : {}),
     };
   } else {
@@ -282,6 +321,7 @@ export async function dispatchProjectLaunch(
         attempts,
         outcome: "no_harness",
         routingReason: `Сессия ${resolution.sessionId ?? ""} работает в среде ${harnessLabel(resolution.fromHarness ?? "")}; переход на ${harnessLabel(harness)} требует явной передачи контекста.`,
+        routingReasonCode: ROUTING_CODE_HARNESS_NOT_ALLOWED,
         selectedHarness: harness,
         ...(resolution.model ? { model: resolution.model } : {}),
         mode: "handoff_required",
@@ -312,6 +352,7 @@ export async function dispatchProjectLaunch(
         attempts: [...attempts.filter((item) => item.inputId !== completed.inputId), completed],
         outcome: "in_flight",
         routingReason: `Запуск ${harnessLabel(completed.harness)} уже выполняется другим вызовом; второй запуск не создаётся.`,
+        routingReasonCode: ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
         selectedHarness: completed.harness,
         ...(completed.model ? { model: completed.model } : {}),
       };
@@ -352,7 +393,10 @@ export async function dispatchProjectLaunch(
   const recorded = [...attempts, attempt];
 
   if (STOP_OUTCOMES.has(outcome)) {
-    return projectReceipt({ operationId, project, attempts: recorded, completed: attempt });
+    return projectReceipt({
+      operationId, project, attempts: recorded, completed: attempt,
+      ...(routingReasonCode ? { routingReasonCode } : {}),
+    });
   }
   // A definite pre-admission failure: continue down the ordered route.
   const next = resolveProjectLaunch(input.policy, { project, attempted: [...attempted, harness], outcome: outcome as LaunchOutcome });
@@ -366,6 +410,7 @@ export async function dispatchProjectLaunch(
     routingReason: healthAnalysis
       ? "OpenCode не подтвердил запуск анализа инцидента. Переключение среды и провайдера запрещено."
       : `${attempt.reason} Других сред в маршруте нет.`,
+    routingReasonCode: healthAnalysis ? ROUTING_CODE_ADMISSION_NOT_CONFIRMED : routingReasonCode ?? ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
     ...(result.error ? { error: result.error } : {}),
   };
 }
@@ -376,8 +421,14 @@ function projectReceipt(input: {
   project: string;
   attempts: ProjectLaunchAttempt[];
   completed: ProjectLaunchAttempt;
+  /** The class of the routing decision, when the dispatch made one. */
+  routingReasonCode?: string;
 }): ProjectLaunchDispatchResult {
   const { completed } = input;
+  // A confirmed launch carries no class of refusal; an unconfirmed or held one
+  // is an admission that never happened.
+  const routingReasonCode = input.routingReasonCode
+    ?? (completed.outcome === "accepted" ? undefined : ROUTING_CODE_ADMISSION_NOT_CONFIRMED);
   return {
     // Legacy records have no complete receipt; retain their known fields.
     ...(completed.model ? { model: completed.model } : {}),
@@ -390,6 +441,7 @@ function projectReceipt(input: {
     attempts: [...input.attempts.filter((attempt) => attempt.inputId !== completed.inputId), completed],
     outcome: completed.outcome as LaunchOutcome | "human_hold",
     routingReason: completed.reason,
+    ...(routingReasonCode ? { routingReasonCode } : {}),
     selectedHarness: completed.harness,
     mode: (completed.result?.created ?? completed.created) === false ? "resume" : "create",
   };
