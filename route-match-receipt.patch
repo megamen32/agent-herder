@@ -126,7 +126,7 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
      attempts: [...input.attempts.filter((attempt) => attempt.inputId !== completed.inputId), completed],
      outcome: completed.outcome as LaunchOutcome | "human_hold",
      routingReason: completed.reason,
-@@ -382,6 +399,34 @@
+@@ -382,6 +399,38 @@
    };
  }
  
@@ -145,6 +145,10 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
 + * the root of the route replaced the requested working folder, which is the
 + * case for a directory inside the root of a route and for a folder the route
 + * is authoritative over.
++ *
++ * The flag reads the requested folder only, never the spelling of the
++ * project: an alias and the route root name one launch, so the receipt of
++ * the first response and the receipt of the restart replay stay equal.
 + */
 +function routeReceiptOf(
 +  policy: AutomationLaunchPolicy,
@@ -154,7 +158,7 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
 +  const routeKey = routeKeyOf(policy, project);
 +  if (!routeKey) return undefined;
 +  const root = canonicalProjectKey(routeKey);
-+  const requested = canonicalProjectKey(cwd || project);
++  const requested = canonicalProjectKey(cwd ?? "");
 +  return { routeKey, workspaceReplaced: root.startsWith("/") && requested !== root };
 +}
 +

@@ -1,7 +1,7 @@
 diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-launch-dispatch.ts
 --- a/src/automation/project-launch-dispatch.ts
 +++ b/src/automation/project-launch-dispatch.ts
-@@ -54,6 +54,10 @@
+@@ -71,6 +71,10 @@
    selectedHarness?: HarnessType;
    model?: string;
    mode?: "create" | "resume" | "handoff_required";
@@ -12,25 +12,35 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
    sessionId?: string;
    delivery?: NamedSessionResult["delivery"];
    error?: string;
-@@ -168,11 +172,15 @@
-   // global profile of the launch path.
-   const governingKey = resolveModelPolicyRouteKey(input.policy.projectRoutes, input.project);
-   const governingRoute = governingKey ? input.policy.projectRoutes?.[governingKey] : undefined;
+@@ -192,6 +196,10 @@
+   const healthAnalysis = input[NOTICEPLACE_HEALTH_AUTHORIZED] === true;
+   const routeKey = routeKeyOf(input.policy, input.project);
+   const healthRoute = routeKey ? input.policy.projectRoutes?.[routeKey] : undefined;
 +  // The receipt names the route that governed the launch and states whether the
 +  // root of the route replaced the requested working folder, so the fact is
 +  // readable from the receipt and not only from the routing text.
-+  const routeReceipt = routeReceiptOf(governingKey, input.project, input.cwd);
++  const routeReceipt = routeReceiptOf(input.policy, input.project, input.cwd);
    if (healthAnalysis) {
      const error = validateNoticeplaceHealthLaunch(input)
        ?? (!input.policy.allowedHarnesses.includes("opencode") || (healthRoute && !healthRoute.harnesses.includes("opencode"))
-         ? "Политика проекта не разрешает OpenCode для анализа инцидента; переключение среды запрещено." : undefined);
--    if (error) return { operationId, project, attempts: [], outcome: "no_harness", routingReason: error, error };
-+    if (error) return { operationId, project, attempts: [], outcome: "no_harness", routingReason: error, error, ...routeReceipt };
+@@ -200,6 +208,7 @@
+       return {
+         operationId, project, attempts: [], outcome: "no_harness", routingReason: error, error,
+         routingReasonCode: ROUTING_CODE_INCIDENT_SCOPE_NOT_PERMITTED,
++        ...routeReceipt,
+       };
+     }
    }
-   const attempts = await log.attempts(project, operationId);
+@@ -223,6 +232,7 @@
+       // The class of the disarm decision itself: the whole automation is
+       // forbidden, or this one work is blocked.
+       ...(disarm.code ? { routingReasonDetail: disarm.code } : {}),
++      ...routeReceipt,
+     };
+   }
  
-@@ -186,12 +194,13 @@
-       routingReason: `Запуск ${harnessLabel(reserved.harness)} уже зарезервирован, результат неизвестен. Повтор не создаёт второго исполнителя.`,
+@@ -237,12 +247,13 @@
+       routingReasonCode: ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
        selectedHarness: reserved.harness,
        ...(reserved.model ? { model: reserved.model } : {}),
 +      ...routeReceipt,
@@ -44,47 +54,45 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
    }
  
    const attempted = attempts.map((attempt) => attempt.harness);
-@@ -199,6 +208,7 @@
-     return {
+@@ -251,6 +262,7 @@
        operationId, project, attempts, outcome: "no_harness",
        routingReason: "Попытка анализа инцидента уже завершилась отказом. Переключение среды и провайдера запрещено.",
+       routingReasonCode: ROUTING_CODE_INCIDENT_ATTEMPT_FAILED,
 +      ...routeReceipt,
      };
    }
    const previous = attempts[attempts.length - 1];
-@@ -227,6 +237,7 @@
-         routingReason: input.harness
+@@ -283,6 +295,7 @@
            ? `Среда ${harnessLabel(input.harness)} не разрешена для автоматического запуска.`
            : "Для проекта нет маршрута, а автоматический запуск новых сессий выключен.",
+         routingReasonCode: input.harness ? ROUTING_CODE_HARNESS_NOT_ALLOWED : AUTOMATION_DISABLED_CODE,
 +        ...routeReceipt,
        };
      }
      harness = fallback.harness;
-@@ -238,6 +249,7 @@
-       project,
-       attempts,
-       outcome: "no_harness",
+@@ -306,6 +319,7 @@
+           ? MODEL_NOT_PERMITTED_CODE
+           : ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
+       ...(attempts.length > 0 ? { selectedHarness: attempts[attempts.length - 1]!.harness } : {}),
 +      ...routeReceipt,
-       routingReason: resolution.reason === "no_harness_left"
-         ? "Все среды маршрута уже tried и ни одна не подтвердила запуск."
-         : resolution.reason === "model_not_permitted"
-@@ -274,6 +286,7 @@
-         project,
-         attempts,
-         outcome: "no_harness",
-+        ...routeReceipt,
-         routingReason: `Сессия ${resolution.sessionId ?? ""} работает в среде ${harnessLabel(resolution.fromHarness ?? "")}; переход на ${harnessLabel(harness)} требует явной передачи контекста.`,
-         selectedHarness: harness,
+     };
+   } else {
+     // A configured project is authoritative: the route decides harness, model
+@@ -342,6 +356,7 @@
          ...(resolution.model ? { model: resolution.model } : {}),
-@@ -304,6 +317,7 @@
-         project,
-         attempts: [...attempts.filter((item) => item.inputId !== completed.inputId), completed],
-         outcome: "in_flight",
+         mode: "handoff_required",
+         ...(resolution.sessionId ? { sessionId: resolution.sessionId } : {}),
 +        ...routeReceipt,
-         routingReason: `Запуск ${harnessLabel(completed.harness)} уже выполняется другим вызовом; второй запуск не создаётся.`,
+       };
+     }
+     routingReason = `${prefix}${attempts.length === 0
+@@ -371,12 +386,13 @@
+         routingReasonCode: ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
          selectedHarness: completed.harness,
          ...(completed.model ? { model: completed.model } : {}),
-@@ -312,7 +326,7 @@
++        ...routeReceipt,
+       };
+     }
      if (!STOP_OUTCOMES.has(completed.outcome as LaunchOutcome | "human_hold")) {
        return dispatchProjectLaunch({ ...input, operationId }, log, run);
      }
@@ -93,32 +101,32 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
    }
  
    const nativeResult = await run({ harness, cwd, message: input.message, ...(model ? { model } : {}), mode, inputId,
-@@ -345,7 +359,7 @@
-   const recorded = [...attempts, attempt];
- 
-   if (STOP_OUTCOMES.has(outcome)) {
--    return projectReceipt({ operationId, project, attempts: recorded, completed: attempt });
-+    return projectReceipt({ operationId, project, attempts: recorded, completed: attempt, routeReceipt });
+@@ -412,6 +428,7 @@
+     return projectReceipt({
+       operationId, project, attempts: recorded, completed: attempt,
+       ...(routingReasonCode ? { routingReasonCode } : {}),
++      routeReceipt,
+     });
    }
    // A definite pre-admission failure: continue down the ordered route.
-   const next = resolveProjectLaunch(input.policy, { project, attempted: [...attempted, harness], outcome: outcome as LaunchOutcome });
-@@ -355,6 +369,7 @@
-     operationId,
-     project,
-     attempts: recorded,
+@@ -430,6 +447,7 @@
+       ? ROUTING_CODE_ADMISSION_NOT_CONFIRMED
+       : exhaustedRouteCode(next) ?? routingReasonCode ?? ROUTING_CODE_ADMISSION_NOT_CONFIRMED,
+     ...(result.error ? { error: result.error } : {}),
 +    ...routeReceipt,
-     outcome: "no_harness",
-     routingReason: healthAnalysis
-       ? "OpenCode не подтвердил запуск анализа инцидента. Переключение среды и провайдера запрещено."
-@@ -369,6 +384,7 @@
-   project: string;
-   attempts: ProjectLaunchAttempt[];
+   };
+ }
+ 
+@@ -455,6 +473,8 @@
    completed: ProjectLaunchAttempt;
+   /** The class of the routing decision, when the dispatch made one. */
+   routingReasonCode?: string;
++  /** The route facts of the launch, when a route governed it. */
 +  routeReceipt?: ProjectLaunchRouteReceipt;
  }): ProjectLaunchDispatchResult {
    const { completed } = input;
-   return {
-@@ -380,14 +396,42 @@
+   // A confirmed launch carries no class of refusal; an unconfirmed or held one
+@@ -470,6 +490,7 @@
      ...completed.result,
      operationId: input.operationId,
      project: input.project,
@@ -126,35 +134,39 @@ diff --git a/src/automation/project-launch-dispatch.ts b/src/automation/project-
      attempts: [...input.attempts.filter((attempt) => attempt.inputId !== completed.inputId), completed],
      outcome: completed.outcome as LaunchOutcome | "human_hold",
      routingReason: completed.reason,
-     selectedHarness: completed.harness,
-     mode: (completed.result?.created ?? completed.created) === false ? "resume" : "create",
+@@ -479,6 +500,38 @@
    };
-+}
-+
+ }
+ 
 +/** The route facts of one launch, as the receipt states them. */
 +export interface ProjectLaunchRouteReceipt {
 +  /** The route key that governed the launch. */
 +  routeKey: string;
 +  /** The requested working folder was replaced by the root of the route. */
 +  workspaceReplaced: boolean;
- }
- 
++}
++
 +/**
 + * The route facts of one launch.
 + *
-+ * The route key names the route that governed the launch, found by the single
-+ * lookup rule. The flag states that the root of the route replaced the
-+ * requested working folder, which is the case for a directory inside the root
-+ * of a route and for a folder the route is authoritative over.
++ * The route key names the route that governed the launch, found by the one
++ * lookup rule of this base. The flag states that the root of the route
++ * replaced the requested working folder, which is the case for a directory
++ * inside the root of a route and for a folder the route is authoritative over.
++ *
++ * The flag reads the requested folder only, never the spelling of the
++ * project: an alias and the route root name one launch, so the receipt of
++ * the first response and the receipt of the restart replay stay equal.
 + */
 +function routeReceiptOf(
-+  routeKey: string | undefined,
++  policy: AutomationLaunchPolicy,
 +  project: string,
 +  cwd?: string,
 +): ProjectLaunchRouteReceipt | undefined {
++  const routeKey = routeKeyOf(policy, project);
 +  if (!routeKey) return undefined;
 +  const root = canonicalProjectKey(routeKey);
-+  const requested = canonicalProjectKey(cwd || project);
++  const requested = canonicalProjectKey(cwd ?? "");
 +  return { routeKey, workspaceReplaced: root.startsWith("/") && requested !== root };
 +}
 +
