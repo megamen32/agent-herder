@@ -6,6 +6,7 @@ export const NOTICEPLACE_HEALTH_AUTHORIZED: unique symbol = Symbol("noticeplace.
 
 const INCIDENT_MODELS: ReadonlySet<string> = new Set([
   "omniroute/minimax-combo-m3.1",
+  "omniroute/glm-5.3-flash-minimax-m3.1",
 ]);
 
 /** Only the HTTP boundary uses the dedicated verifier; no global MCP token. */
