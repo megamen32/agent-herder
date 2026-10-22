@@ -7,6 +7,7 @@ const page = readFileSync(new URL("../src/web-ui/projects-settings.tsx", import.
 const policyModule = readFileSync(new URL("../src/web-ui/launch-policy-settings.tsx", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../src/web-ui/codex-navigation.tsx", import.meta.url), "utf8");
 const main = readFileSync(new URL("../src/web-ui/main.tsx", import.meta.url), "utf8");
+const settingsScreen = readFileSync(new URL("../src/web-ui/settings/settings-screen.tsx", import.meta.url), "utf8");
 
 const policy = (overrides: Partial<LaunchPolicy> = {}): LaunchPolicy => ({
   version: 1,
@@ -27,7 +28,11 @@ describe("Projects navigation", () => {
     expect(navigation).toContain('active: "chat" | "jobs" | "statistics" | "machines" | "search" | "projects"');
     expect(main).toContain('showProjects ? "projects"');
     expect(main).toContain("onProjects={() =>");
-    expect(main).toContain("<ProjectsSettings ");
+    // The projects are a tab of the screen of the settings of the herder:
+    // the panel opens the screen, and the screen renders the component of
+    // the projects.
+    expect(main).toContain("<SettingsScreen ");
+    expect(settingsScreen).toContain("<ProjectsSettings ");
   });
 
   it("is reachable from the mobile chat menu as well", () => {
