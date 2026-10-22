@@ -155,6 +155,11 @@ export function ConnectionsSection(): React.ReactElement {
         Подключение изолировано: herder хранит свою часть подключения в своём хранилище, общего env-файла нет.
         Проверка соединения подтверждает авторизацию и не запускает исполнителя.
       </p>
+      <p className="herder-settings-hint">
+        Запуск с центра доходит до herder запросом POST /api/automation/project-launch: токен
+        service-учётной записи идёт в заголовке Authorization и не в теле, запрос несёт purpose,
+        operation_id и модель запуска. Проверка соединения этот запрос не делает.
+      </p>
 
       <div className="herder-settings-row">
         <label className="herder-settings-field">
