@@ -46,6 +46,7 @@ import { boundResumeReceiptQuery, createWebServer, resumeSelectedTarget } from "
 import { AgentResumeClient, type ResumeReceipt, type ResumeTransportRequest } from "./resume-transport.js";
 import { createConfiguredFleetApiHandler, createManagedFleetHttpGuard, isManagedFleetNode } from "./web/fleet-wiring.js";
 import { registerFleetNodeTools } from "./mesh/fleet-node.js";
+import { fleetPolicyRevisionLedgerPath } from "./mesh/fleet-policy-revision.js";
 import type { ProjectModelPolicyState } from "./project-model-delivery-gate.js";
 import { createConfiguredBrowserWakeService } from "./browser-wake.js";
 import { coordinationNotes } from "./coordination-notes.js";
@@ -158,6 +159,14 @@ const integratorFleetRuntime = new IntegratorFleetRuntime({ policyStore: automat
 const readLaunchPolicyForGate = async () => {
   const loaded = await automationLaunchPolicyStore.load();
   return loaded.kind === "valid" ? loaded.policy : undefined;
+};
+// The node says which version of the policy of the launch it holds right now,
+// so the fleet can tell a node that applied the wanted version from a node
+// that holds another one. The document is read at the moment of the answer,
+// and no copy of it is kept.
+const readLaunchPolicyRevision = async () => {
+  const loaded = await automationLaunchPolicyStore.readDocument();
+  return { kind: loaded.kind, appliedRevision: loaded.etag };
 };
 // A delivery may not start work in a project that restricts models, so the
 // delivery gate needs the state of the document and not only its content: an
@@ -599,7 +608,7 @@ function registerTools(
   const workspaceTransport = new FleetDirectTransport(directFleetPeers.filter(peer => peer.hostId !== "MacBook-Pro-User.local"));
   registerHarnessMeshTools(server, { adapters, gptadmin: workspaceTransport, deliveryPolicy: readLaunchPolicyStateForGate });
   registerWorkspaceTools(server, { transport: workspaceTransport });
-  registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate });
+  registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, launchPolicyRevision: readLaunchPolicyRevision, fleetTransport: workspaceTransport, fleetPeers: directFleetPeers.filter(peer => peer.hostId !== "MacBook-Pro-User.local").map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), policyRevisionLedgerPath: fleetPolicyRevisionLedgerPath(autopilotStateDir) });
 }
 
 /**

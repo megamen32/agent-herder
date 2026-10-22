@@ -11,11 +11,12 @@ import type {IntegratorFleetRuntime,IntegratorProjectReadinessSnapshot} from '..
 import {assertModelAllowedForDirectoryWithPolicy,type ProjectModelPolicyProvider} from '../project-model-gate.js';
 import { AutomationDisarmStore, buildAutomationDisarmSummary, humanWorkKeys, type AutomationDisarmRecord } from '../automation-disarm/index.js';
 import { sameSecret } from '../secret-compare.js';
+import { readFleetPolicyRevisions, type FleetPolicyRevisionPeer, type FleetPolicyRevisionTransport } from './fleet-policy-revision.js';
 // One process generation across all MCP connections and authenticated contexts.
 let viewReads=0;
 const processGeneration=Date.now()-Math.floor(process.uptime()*1000);
 /** Attach to the existing local controller. No override, native activation, private writer or subprocess. */
-export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<string,HarnessAdapter>;inventorySnapshot?:()=>LocalInventorySnapshot;readSupervisor?:Pick<SessionSupervisor,'getSession'|'getSessionDetails'>;integratorRuntime?:IntegratorFleetRuntime;ownerJournal?:Pick<FleetCreateJournal,'once'>;launchPolicy?:ProjectModelPolicyProvider}):void{
+export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<string,HarnessAdapter>;inventorySnapshot?:()=>LocalInventorySnapshot;readSupervisor?:Pick<SessionSupervisor,'getSession'|'getSessionDetails'>;integratorRuntime?:IntegratorFleetRuntime;ownerJournal?:Pick<FleetCreateJournal,'once'>;launchPolicy?:ProjectModelPolicyProvider;launchPolicyRevision?:()=>Promise<{kind:'valid'|'absent'|'invalid';appliedRevision:string}>;fleetTransport?:FleetPolicyRevisionTransport;fleetPeers?:readonly FleetPolicyRevisionPeer[];policyRevisionLedgerPath?:string}):void{
  const disarmRecordSchema=z.object({scope:z.string().min(1).max(4096),forbidden:z.boolean(),owner:z.string().max(200).optional(),reason:z.string().max(500).optional(),createdAt:z.string().max(64).optional(),policyRevision:z.string().max(128).optional(),workKeys:z.array(z.string().min(1).max(1024)).max(256).optional()}).strict();
  server.registerTool('automation_disarm',{description:'Hold or release the owner-level automation lever on this node. The state is durable on disk and survives a restart of the runtime. The caller must hold the owner token of this node (AGENT_HERDER_DISARM_TOKEN) and state an explicit owner action; a node without a configured token fails closed and never moves the lever. The records of the owner decision travel with the request and are the authority on this node; the flat lever and the flat list of works travel with them for a node of the earlier format. In read mode the node only reports the state it holds and changes nothing. The answer always names this node and the state it now holds, so a fleet answer can tell a confirmed node from an unreachable one.',inputSchema:z.object({mode:z.enum(['apply','read']).optional(),disarmed:z.boolean().optional(),workKeys:z.array(z.string().min(1).max(1024)).max(256).optional(),records:z.array(disarmRecordSchema).max(256).optional(),reason:z.string().max(500).optional(),decisionId:z.string().min(1).max(128).optional(),source:z.literal('owner').optional(),token:z.string().min(1).max(512).optional()}).strict()},async(request)=>{
   const refuse=(code:string,reason:string)=>{const refused={ok:false,hostId:hostname(),code,reason,decisionId:request.decisionId??null};return {structuredContent:refused,content:[{type:'text' as const,text:JSON.stringify(refused)}]};};
@@ -44,6 +45,20 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
   if(!change.ok)return refuse(change.code,change.reason);
   const payload={ok:true,hostId:hostname(),state:{...change.state,blockedWorkKeysHuman:humanWorkKeys(change.state.blockedWorkKeys)},summary:buildAutomationDisarmSummary({applied:true,disarmed:change.state.disarmed,nodes:[{hostId:hostname(),status:'confirmed'}]}),decisionId:request.decisionId??null};
   return {structuredContent:payload,content:[{type:'text' as const,text:JSON.stringify(payload)}]};
+ });
+ server.registerTool('fleet_policy_revisions',{description:'Read the applied revision of the policy of the launch on every node of the fleet. The version the owner saved is the desired one; every node is asked which version it holds right now, and the answer names the versions: a node that holds the wanted one is synchronized, a node that holds another one is diverged, and a node that did not answer is unconfirmed with the last confirmation that is known.',annotations:{readOnlyHint:true},inputSchema:z.object({}).strict()},async()=>{
+  const refuse=(code:string,error:string)=>{const refused={ok:false,hostId:hostname(),code,error};return {structuredContent:refused,content:[{type:'text' as const,text:JSON.stringify(refused)}]};};
+  if(!deps.launchPolicyRevision)return refuse('policy_revision_unavailable','The node does not read the policy of the launch, so it cannot name the version it holds.');
+  const local=await deps.launchPolicyRevision();
+  if(!deps.fleetTransport)return refuse('fleet_transport_unavailable','The node has no transport to the other nodes of the fleet.');
+  const summary=await readFleetPolicyRevisions({
+    transport:deps.fleetTransport,
+    peers:deps.fleetPeers??[],
+    desiredRevision:local.appliedRevision,
+    local:{hostId:hostname(),answer:{kind:local.kind,appliedRevision:local.appliedRevision}},
+    ledgerPath:deps.policyRevisionLedgerPath,
+  });
+  return {structuredContent:{...summary,hostId:hostname()},content:[{type:'text' as const,text:JSON.stringify(summary)}]};
  });
  server.registerTool('fleet_session_page',{description:'Read one page of the existing local session metadata snapshot, with native IDs, observation time and partial state. No history or native activation.',annotations:{readOnlyHint:true},inputSchema:z.object({cursor:z.string().max(2048).optional(),limit:z.number().int().min(1).max(100).default(100)}).strict()},async({cursor,limit})=>{
   const snapshot=deps.inventorySnapshot?.()??{sessions:[],warming:true,observedAt:null};
@@ -103,7 +118,7 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
  });
  server.registerTool('fleet_node_info',{description:'Read actual local Herder host/user identity and configured session-creation capability; project readiness is an explicit host-owned scoped preflight.',inputSchema:z.object({project:z.string().trim().min(1).max(512).optional()}).strict()},async(request?:{project?:string})=>{
   const project=request?.project;
-  const snapshot={hostId:hostname(),nativeUser:userInfo().username,platform:platform(),generation,createHarnesses:fleetHarnesses.filter(h=>typeof deps.adapters.get(h)?.createSession==='function')};
+  const snapshot={hostId:hostname(),nativeUser:userInfo().username,platform:platform(),generation,createHarnesses:fleetHarnesses.filter(h=>typeof deps.adapters.get(h)?.createSession==='function'),...(deps.launchPolicyRevision?{launchPolicy:await deps.launchPolicyRevision()}:{})};
   if(project===undefined)return {structuredContent:snapshot,content:[{type:'text' as const,text:JSON.stringify(snapshot)}]};
   const readiness=deps.integratorRuntime?await deps.integratorRuntime.readiness(project):undefined;
   const result={...snapshot,projectReadinessContract:'integrator-host-readiness-v1',projectReadiness:readiness??{state:'not_ready',projectId:project,reason:'project_scoped_runtime_unavailable'}};
