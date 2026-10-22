@@ -21,7 +21,12 @@ mcp_tools → mcp_call`. Mesh не создаёт новый Hub и не мен�
    Пустой список сессий и отсутствие транспорта — разные состояния.
 3. `mesh_deliver({target,sender,inputId,message})`: exact native адрес;
    `inputId` стабилен для одной операции; `message` — новая дельта ≤4000 знаков.
-4. Подтверждённая квитанция содержит `state: admitted`, native `turnId` и
+4. `mesh_stop({target,inputId})`: остановить одну native сессию **этой** машины.
+   Сессия останавливается, но не удаляется; неопределённый исход не переигрывается.
+   Остановка пишет на этой машине и ручной забор (тот же стор остановок, что
+   и локальный путь), иначе остановленная сессия осталась бы открытой для
+   автоматических доставок; квитанция сообщает, состоялся забор или нет.
+5. Подтверждённая квитанция содержит `state: admitted`, native `turnId` и
    тот же `inputId`. `unknown` запрещает повторную отправку. Только доказанное
    `not_attempted` с `retryable:true` допускает ограниченный повтор.
 
@@ -66,15 +71,23 @@ consumer. Он не читает/выдаёт/подменяет токены. �
 `src/mesh/native-peer.ts` — stdio MCP leaf, управляемый существующим GPTAdmin
 ShellMCP supervisor, без HTTP listener, watcher, нового Hub или private writer.
 Он читает Codex SQLite в read-only режиме и не более 128 KiB хвоста native
-rollout для metadata. Остальные харнесы явно unavailable до проверки их
-зарегистрированного native транспорта.
+rollout для metadata, а также metadata-only стор MiniMax Code. Остальные
+харнесы явно unavailable до проверки их зарегистрированного native транспорта.
+
+Leaf публикует обе платформы: Codex и MiniMax Code. Слияние — по адресу
+`{hostId,harness,nativeSessionId}`, сортировка по `lastActivity`, лимит — один
+общий бюджет на обе платформы, а не на каждый источник. Если один источник
+недоступен, второй публикуется, а ответ честно отражает частичность
+(`complete:false` + `discovery:"unavailable"` у источника).
 
 Control подключается только к существующему documented Unix-WebSocket
-`CODEX_APP_SERVER_SOCKET`; никогда не запускает, перемещает или убивает writer.
+`CODEX_APP_SERVER_SOCKET` и к опубликованному транспорту MiniMax Code desktop
+runtime; никогда не запускает, перемещает или убивает writer.
 Нужны independent native identity, fresh loaded membership/runtime status
 на существующем shared owner, bounded latest-turn metadata и
 `turn/steer(expectedTurnId)`. Idle/unknown ownership закрывается отказом.
 Настроенный путь без business proof не объявляется поддержанной capability.
+Подробности нативных сессий MiniMax Code — `docs/native-minimax-code-sessions.md`.
 
 Сборка **только leaf**, без старого `dist`:
 
