@@ -127,7 +127,7 @@ describe("the form of the settings", () => {
     // The states differ by their meaning, and the meaning is visible.
     expect(stateClass("Применено")).toContain("herder-settings-state-applied");
     expect(stateClass("Записано")).toContain("herder-settings-state-pending");
-    expect(stateClass("Ошибка")).toContain("herder-settings-state-error");
+    expect(stateClass("Узел недоступен")).toContain("herder-settings-state-unreachable");
     expect(stateClass("Применяется")).toContain("herder-settings-state-running");
   });
 
