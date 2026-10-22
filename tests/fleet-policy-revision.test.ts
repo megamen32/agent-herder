@@ -183,4 +183,30 @@ describe("the node says which version of the policy it holds", () => {
       await server.close();
     }
   });
+
+  it("shows a node of the earlier revision as unconfirmed, with the payload it really answered", async () => {
+    // The payload a node on 5e8b2fd really answered, measured on 100 on
+    // 22.10: the node of the earlier revision has no applied revision at all.
+    const oldNodeAnswer = {
+      structuredContent: {
+        hostId: "roomhacker-server-100",
+        nativeUser: "roomhacker",
+        platform: "linux",
+        generation: 1792675569258,
+        createHarnesses: ["codex", "zcode"],
+      },
+    };
+    const summary = await readFleetPolicyRevisions({
+      transport: transportWith({ "mcp:shell:peer:AgentHerder": oldNodeAnswer }),
+      peers: [{ hostId: "peer", target: "mcp:shell:peer:AgentHerder" }],
+      desiredRevision: DESIRED,
+    });
+    expect(summary.synchronized).toBe(false);
+    expect(summary.unconfirmed).toEqual(["peer"]);
+    const node = summary.nodes[0];
+    expect(node?.status).toBe("unconfirmed");
+    // The node did not confirm, so it is never called an agreement.
+    expect(node?.appliedRevision).toBeUndefined();
+    expect(node?.reason).toContain("не отдала свою версию");
+  });
 });
