@@ -36,6 +36,9 @@ import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAl
 import type { AutoCompactService, AutoCompactStore } from "../autocontinue/auto-compact.js";
 import type { OperatorCohortEnrollmentTarget, OperatorContinuationEnrollmentTarget, SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
 import { AutomationLaunchPolicyStore, LaunchPolicyConflictError, MAX_MODEL_LENGTH, appendLaunchPolicyAudit, findProjectRoute, launchPolicyAuditRecord, validateAutomationLaunchPolicy } from "../automation-launch-policy.js";
+import { AutomationDisarmStore, AUTOMATION_CANNOT_CHANGE_DISARM_REASON, setAutomationDisarm } from "../automation-disarm/index.js";
+import { DirectFleetDisarmTransport } from "../automation-disarm/direct-transport.js";
+import type { FleetDisarmTransport } from "../automation-disarm/service.js";
 import { renderSessionGraph } from "../session-visualization.js";
 import { boundedCoordinationContext, coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
 import { sessionTargetRequest } from "../session-target.js";
@@ -90,6 +93,10 @@ export interface WebDependencies {
   scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor;
   /** Disable local observer lifecycle when a process-owned supervisor already manages it. */
   sessionObservationManagedExternally?: boolean;
+  /** The durable owner state of the automation lever; the runtime store by default. */
+  automationDisarmStore?: AutomationDisarmStore;
+  /** The port that carries one owner decision to the other fleet nodes. */
+  automationDisarmTransport?: FleetDisarmTransport;
   /** Optional profile-scoped fleet API; its handler authenticates each request. */
   fleetHttpGuard?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
   fleetApiHandler?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
@@ -748,7 +755,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
       if (dependencies.fleetHttpGuard && await dependencies.fleetHttpGuard(request, response)) return;
       if (dependencies.fleetApiHandler && await dependencies.fleetApiHandler(request, response)) return;
       if (await rag.handleHttp(request, response, async (harness, id) => (await dependencies.adapters.get(harness)?.getSession(id)) || undefined)) return;
-      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -852,7 +859,7 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: Map<string, HealthPlanId>): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: Map<string, HealthPlanId>, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   const resolveSessionRoute = async (harness: string, sessionId: string) => await resolveSessionRouteFor(integratorRuntime, adapters, scopedSupervisorFactory, harness, sessionId);
   if (url.pathname === "/api/resources/s21-lease" && request.method === "GET") {
@@ -1136,6 +1143,57 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       }
       return sendJson(response, 400, { error: (error as Error).message });
     }
+  }
+  if (url.pathname === "/api/automation/disarm" && request.method === "POST") {
+    // The owner-level automation lever. The state is durable, survives a
+    // restart and is confirmed across the fleet nodes, so the answer always
+    // names every node and what it reported.
+    let body: Record<string, unknown>;
+    try {
+      body = await readJson(request) as Record<string, unknown>;
+    } catch (error) {
+      return sendJson(response, 400, { ok: false, error: `Некорректное тело запроса: ${(error as Error).message}` });
+    }
+    const disarmStore = automationDisarmStore ?? AutomationDisarmStore.forRuntime();
+    // Only an explicit owner action moves the lever. A call from an automatic
+    // context carries no owner marker: it is refused with a reason and
+    // changes nothing.
+    if (body.source !== "owner") {
+      return sendJson(response, 403, {
+        ok: false,
+        applied: false,
+        error: AUTOMATION_CANNOT_CHANGE_DISARM_REASON,
+        reason: AUTOMATION_CANNOT_CHANGE_DISARM_REASON,
+        state: await disarmStore.read(),
+        nodes: [],
+      });
+    }
+    if (typeof body.disarmed !== "boolean") return sendJson(response, 400, { ok: false, error: "disarmed must be a boolean" });
+    let workKeys: string[] | undefined;
+    if (body.workKeys !== undefined) {
+      if (!Array.isArray(body.workKeys) || body.workKeys.some((key: unknown) => typeof key !== "string")) {
+        return sendJson(response, 400, { ok: false, error: "workKeys must be a list of strings" });
+      }
+      workKeys = body.workKeys as string[];
+    }
+    const result = await setAutomationDisarm({
+      disarmed: body.disarmed,
+      ...(workKeys === undefined ? {} : { workKeys }),
+      ...(typeof body.reason === "string" && body.reason.trim() ? { reason: body.reason.trim().slice(0, 500) } : {}),
+      scope: "fleet",
+      source: "owner",
+      store: disarmStore,
+      transport: automationDisarmTransport ?? new DirectFleetDisarmTransport(),
+    });
+    return sendJson(response, result.ok ? 200 : 502, {
+      ok: result.ok,
+      complete: result.complete,
+      applied: result.applied,
+      disarmed: result.disarmed,
+      state: result.state,
+      nodes: result.nodes,
+      ...(result.reason ? { reason: result.reason } : {}),
+    });
   }
   if (url.pathname === "/api/session-images" && request.method === "POST") {
     if (!sessionImages) return sendJson(response, 503, { error: "Прикрепление изображений недоступно." });

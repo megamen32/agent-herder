@@ -18,8 +18,27 @@ export class DirectFleetDisarmTransport implements FleetDisarmTransport {
     ok: boolean;
     state?: AutomationDisarmDocument;
     reason?: string;
+    noRuntime?: boolean;
   }> {
-    const result = await this.transport.call(`mcp:shell:${nodeId}:AgentHerder`, "automation_disarm", {
+    const target = `mcp:shell:${nodeId}:AgentHerder`;
+    // A node that answers and runs no herder runtime cannot initiate a launch
+    // at all, so the single point of refusal is enough there. A node that does
+    // not answer throws, and its state stays unknown.
+    const probe = await this.transport.probeRuntime(target);
+    if (!probe.hasRuntime) {
+      return {
+        ok: false,
+        noRuntime: true,
+        reason: `На ноде нет herder-рантайма (${probe.reason ?? "ответа нет"}). Она не может инициировать запуск, поэтому запрет на ней не нужен.`,
+      };
+    }
+    if (!probe.hasDisarmTool) {
+      return {
+        ok: false,
+        reason: "На ноде herder-рантайм без инструмента automation_disarm: состояние этой ноды не подтверждено.",
+      };
+    }
+    const result = await this.transport.call(target, "automation_disarm", {
       disarmed: request.disarmed,
       workKeys: request.workKeys,
       ...(request.reason ? { reason: request.reason } : {}),

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import lockfile from "proper-lockfile";
 
 import { resolveAutopilotStateDir } from "../autopilot/state-dir.js";
+import { normalizeWorkKeyInput } from "./work-key.js";
 
 /** The durable owner-level state file, next to the live launch policy. */
 export const AUTOMATION_DISARM_FILE_NAME = "automation-disarm.json";
@@ -52,7 +53,7 @@ export type AutomationDisarmChangeResult =
   | { ok: true; state: AutomationDisarmDocument }
   | {
     ok: false;
-    code: "automation_cannot_change_disarm";
+    code: "automation_cannot_change_disarm" | "invalid_work_key";
     reason: string;
     state: AutomationDisarmDocument;
   };
@@ -134,6 +135,22 @@ export class AutomationDisarmStore {
     }
     return this.serial(() => this.withFileLock(async () => {
       const current = await this.read();
+      // The owner may name a work in the readable form or in the canonical
+      // one. Both are stored canonically, and a key that reads as neither is
+      // refused: a silently dropped key would look like a blocked work.
+      const canonical: string[] = [];
+      for (const key of change.workKeys ?? []) {
+        const normalized = normalizeWorkKeyInput(key);
+        if (!normalized) {
+          return {
+            ok: false,
+            code: "invalid_work_key",
+            reason: `Ключ работы '${key}' не распознан. Ожидается 'harness|каталог|имя' или 'project|ключ'.`,
+            state: current,
+          };
+        }
+        canonical.push(normalized);
+      }
       const state: AutomationDisarmDocument = {
         version: 1,
         disarmed: change.disarmed,
@@ -142,7 +159,7 @@ export class AutomationDisarmStore {
         ...(change.reason ? { reason: change.reason } : {}),
         blockedWorkKeys: change.workKeys === undefined
           ? current.blockedWorkKeys
-          : [...new Set(change.workKeys.map((key) => key.trim()).filter(Boolean))],
+          : [...new Set(canonical)],
       };
       await this.write(state);
       return { ok: true, state };

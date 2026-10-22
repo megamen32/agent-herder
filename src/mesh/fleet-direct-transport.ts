@@ -60,6 +60,25 @@ def rpc(method,params):
   value=json.loads(buf)
   if value.get('id')!=identity:raise RuntimeError('direct_rpc_identity_mismatch')
   return value
+if r['method']=='herder_runtime_probe':
+ # Answer whether this node runs a herder runtime at all. A node that answers
+ # and is not one cannot initiate a launch, so it needs no copy of the owner
+ # state. A node that does not answer in time leaves the state unknown.
+ try:
+  rpc('initialize',{'protocolVersion':'2025-11-25','capabilities':{},'clientInfo':{'name':'herder-fleet-direct','version':'1'}})
+  rpc('notifications/initialized',{})
+ except TimeoutError:
+  raise
+ except Exception:
+  print(json.dumps({'hasRuntime':False,'reason':'not_a_herder_runtime'}))
+  raise SystemExit(0)
+ listed=rpc('tools/list',{})
+ if listed.get('error'):
+  print(json.dumps({'hasRuntime':False,'reason':'mcp_tools_list_failed'}))
+  raise SystemExit(0)
+ names=[t.get('name') for t in ((listed.get('result') or {}).get('tools') or []) if isinstance(t,dict)]
+ print(json.dumps({'hasRuntime':True,'hasDisarmTool':'automation_disarm' in names,'tools':[n for n in names if isinstance(n,str)]}))
+ raise SystemExit(0)
 rpc('initialize',{'protocolVersion':'2025-11-25','capabilities':{},'clientInfo':{'name':'herder-fleet-direct','version':'1'}})
 rpc('notifications/initialized',{})
 if r['method']=='session/read':
@@ -105,6 +124,10 @@ export class FleetDirectTransport implements GptAdminTransport {
    child.on('close',code=>{clearTimeout(timer);if(failure||code!==0)return reject(failure??new Error(peerFailure(stderr)));try{resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));}catch{reject(new Error('direct_response_invalid'));}});
    child.stdin.end(request);
   });
+ }
+ /** Ask a node whether it runs a herder runtime, and whether it has the owner lever tool. */
+ async probeRuntime(target:string):Promise<{hasRuntime:boolean;hasDisarmTool?:boolean;reason?:string;tools?:string[]}>{
+  return this.rpc(this.peer(target),'herder_runtime_probe',{},this.deadlineMs) as Promise<{hasRuntime:boolean;hasDisarmTool?:boolean;reason?:string;tools?:string[]}>;
  }
  readSession(target:string,harness:string,sessionId:string):Promise<unknown>{
   if(!['codex','zcode','opencode'].includes(harness)||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))throw new Error('direct_session_invalid');

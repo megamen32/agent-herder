@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AutomationDisarmStore } from "../src/automation-disarm/state.js";
-import { projectWorkKey, sessionWorkKey } from "../src/automation-disarm/work-key.js";
+import { normalizeWorkKeyInput, projectWorkKey, sessionWorkKey } from "../src/automation-disarm/work-key.js";
 import { setAutomationDisarm, type FleetDisarmTransport } from "../src/automation-disarm/service.js";
 import { createNamedSession, newOrResumeNamedSession } from "../src/named-session.js";
 import { SessionSupervisor } from "../src/session-supervisor.js";
@@ -316,5 +316,128 @@ describe("owner-level automation lever: confirmation across the fleet", () => {
     expect(result.applied).toBe(false);
     expect(result.reason).toContain("только явное действие владельца");
     expect(result.nodes).toBeDefined();
+  });
+});
+
+describe("owner-level automation lever: what a node without a runtime means", () => {
+  const state = { version: 1 as const, disarmed: true, changedAt: "", changedBy: "owner" as const, blockedWorkKeys: [] };
+
+  it("accepts a node that answered and runs no herder runtime", async () => {
+    // A node without a herder runtime cannot initiate a launch, so the single
+    // point of refusal is enough there and the fleet answer stays successful.
+    const transport: FleetDisarmTransport = {
+      async apply(nodeId) {
+        if (nodeId === "server-44") return { ok: false, noRuntime: true, reason: "На ноде нет herder-рантайма" };
+        return { ok: true, state };
+      },
+    };
+    const result = await setAutomationDisarm({
+      disarmed: true,
+      scope: "fleet",
+      transport,
+      peers: ["server-44", "roomhacker-server-88"],
+      store: AutomationDisarmStore.forRuntime(),
+    });
+    expect(result.nodes.map((node) => node.status)).toEqual(["confirmed", "no_runtime", "confirmed"]);
+    expect(result.ok).toBe(true);
+    expect(result.complete).toBe(true);
+    expect(result.nodes.find((node) => node.hostId === "server-44")?.reason).toContain("herder-рантайма");
+  });
+
+  it("keeps an unreachable node a failure and names the reason", async () => {
+    const transport: FleetDisarmTransport = {
+      async apply(nodeId) {
+        if (nodeId === "server-44") throw new Error("direct_ssh_connect_timeout");
+        return { ok: true, state };
+      },
+    };
+    const result = await setAutomationDisarm({
+      disarmed: true,
+      scope: "fleet",
+      transport,
+      peers: ["server-44"],
+      store: AutomationDisarmStore.forRuntime(),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.complete).toBe(false);
+    const unreachable = result.nodes.find((node) => node.hostId === "server-44");
+    expect(unreachable?.status).toBe("unreachable");
+    expect(unreachable?.reason).toContain("direct_ssh_connect_timeout");
+  });
+
+  it("keeps a node that holds a different state a failure", async () => {
+    const transport: FleetDisarmTransport = {
+      async apply() { return { ok: true, state: { ...state, disarmed: false } }; },
+    };
+    const result = await setAutomationDisarm({
+      disarmed: true,
+      scope: "fleet",
+      transport,
+      peers: ["roomhacker-server-88"],
+      store: AutomationDisarmStore.forRuntime(),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.nodes.find((node) => node.hostId === "roomhacker-server-88")?.status).toBe("declined");
+  });
+
+  it("never reports a fleet answer without the full node list", async () => {
+    const transport: FleetDisarmTransport = {
+      async apply() { return { ok: true, state }; },
+    };
+    const confirmed = await setAutomationDisarm({
+      disarmed: true,
+      scope: "fleet",
+      transport,
+      peers: ["server-44", "roomhacker-server-88", "mac-mini-2012.lan"],
+      store: AutomationDisarmStore.forRuntime(),
+    });
+    expect(confirmed.ok).toBe(true);
+    expect(confirmed.nodes).toHaveLength(4);
+
+    const unreachable: FleetDisarmTransport = {
+      async apply() { throw new Error("direct_ssh_refused"); },
+    };
+    const failed = await setAutomationDisarm({
+      disarmed: true,
+      scope: "fleet",
+      transport: unreachable,
+      peers: ["server-44"],
+      store: AutomationDisarmStore.forRuntime(),
+    });
+    expect(failed.ok).toBe(false);
+    expect(failed.nodes).toHaveLength(2);
+    expect(failed.nodes[0]?.status).toBe("confirmed");
+    expect(failed.nodes[1]?.status).toBe("unreachable");
+  });
+});
+
+describe("owner-level automation lever: the work key input", () => {
+  it("reads the readable form and the canonical form as one key", async () => {
+    const store = AutomationDisarmStore.forRuntime();
+    const readable = await store.apply({ source: "owner", disarmed: false, workKeys: ["opencode|/work|my-card"] });
+    expect(readable.ok).toBe(true);
+    expect(readable.state.blockedWorkKeys).toEqual([sessionWorkKey("opencode", "my-card", "/work")]);
+
+    // The canonical form with real NUL separators gives exactly the same key.
+    const canonical = await store.apply({ source: "owner", disarmed: false, workKeys: [sessionWorkKey("opencode", "my-card", "/work")] });
+    expect(canonical.ok).toBe(true);
+    expect(canonical.state.blockedWorkKeys).toEqual(readable.state.blockedWorkKeys);
+
+    // The project form is readable too.
+    const project = await store.apply({ source: "owner", disarmed: false, workKeys: ["project|my-card"] });
+    expect(project.ok).toBe(true);
+    expect(project.state.blockedWorkKeys).toEqual([projectWorkKey("my-card")]);
+  });
+
+  it("refuses a key that reads as neither form", async () => {
+    const store = AutomationDisarmStore.forRuntime();
+    const refused = await store.apply({ source: "owner", disarmed: false, workKeys: ["just-a-word"] });
+    expect(refused.ok).toBe(false);
+    expect(refused.code).toBe("invalid_work_key");
+    expect((await store.read()).blockedWorkKeys).toEqual([]);
+  });
+
+  it("keeps a workspace path that contains a separator", () => {
+    expect(normalizeWorkKeyInput("opencode|/work|pipe|my-card")).toBe(sessionWorkKey("opencode", "my-card", "/work|pipe"));
   });
 });

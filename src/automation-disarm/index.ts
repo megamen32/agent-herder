@@ -21,11 +21,13 @@ export {
   sessionWorkKey,
   projectWorkKey,
   parseWorkKey,
+  normalizeWorkKeyInput,
   type WorkKey,
 } from "./work-key.js";
 export {
   setAutomationDisarm,
   defaultFleetPeerIds,
+  blocksFleetSuccess,
   type FleetDisarmNodeResult,
   type FleetDisarmRequest,
   type FleetDisarmTransport,

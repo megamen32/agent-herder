@@ -18,13 +18,25 @@ export interface FleetDisarmRequest {
   decisionId: string;
 }
 
-/** The outcome of one fleet node. */
+/**
+ * The outcome of one fleet node.
+ *
+ * `confirmed` means the node holds the requested state on disk. `no_runtime`
+ * means the node answered and has no herder runtime, so it cannot initiate a
+ * launch at all and needs no copy of the state. `unreachable` means the state
+ * of a node that may have a runtime is unknown. `declined` means the node
+ * answered and holds a different state.
+ */
 export interface FleetDisarmNodeResult {
   hostId: string;
-  /** `confirmed` means the node holds the requested state on disk. */
-  status: "confirmed" | "unreachable" | "declined";
+  status: "confirmed" | "no_runtime" | "unreachable" | "declined";
   /** Why the node is not confirmed. */
   reason?: string;
+}
+
+/** A node that blocks the fleet-wide success: its state is unknown or wrong. */
+export function blocksFleetSuccess(node: FleetDisarmNodeResult): boolean {
+  return node.status === "unreachable" || node.status === "declined";
 }
 
 /** The port that carries one owner decision to one fleet node. */
@@ -33,6 +45,11 @@ export interface FleetDisarmTransport {
     ok: boolean;
     state?: AutomationDisarmDocument;
     reason?: string;
+    /**
+     * The node answered and has no herder runtime, so it cannot initiate a
+     * launch and needs no copy of the state.
+     */
+    noRuntime?: boolean;
   }>;
 }
 
@@ -129,6 +146,11 @@ export async function setAutomationDisarm(
     const answers = await Promise.all(peers.map(async (peer) => {
       try {
         const answer = await request.transport!.apply(peer, decision);
+        // A node without a herder runtime cannot start a launch, so the
+        // single point of refusal is enough there. It is not a failure.
+        if (answer.noRuntime) {
+          return { hostId: peer, status: "no_runtime" as const, reason: answer.reason ?? "На ноде нет herder-рантайма: она не может инициировать запуск." };
+        }
         if (!answer.ok) {
           return { hostId: peer, status: "declined" as const, reason: answer.reason ?? "Нода не подтвердила состояние." };
         }
@@ -137,13 +159,20 @@ export async function setAutomationDisarm(
         }
         return { hostId: peer, status: "confirmed" as const };
       } catch (error) {
+        // The node did not answer: whether it has a runtime is unknown, so the
+        // state is unknown too and the fleet answer stays fail-closed.
         return { hostId: peer, status: "unreachable" as const, reason: (error as Error).message };
       }
     }));
     nodes.push(...answers);
   }
-  const complete = nodes.every((node) => node.status === "confirmed");
-  const unreachable = nodes.filter((node) => node.status !== "confirmed");
+  // Success needs every node that can initiate a launch to have confirmed.
+  // A node without a herder runtime cannot start one, so it never blocks the
+  // answer. A node whose state is unknown, or that holds a different state,
+  // always blocks it.
+  const blocking = nodes.filter(blocksFleetSuccess);
+  const withoutRuntime = nodes.filter((node) => node.status === "no_runtime");
+  const complete = blocking.length === 0;
   return {
     ok: complete,
     applied: true,
@@ -152,9 +181,11 @@ export async function setAutomationDisarm(
     localNode: { hostId: localNode.hostId, status: "confirmed" },
     nodes,
     complete,
-    ...(unreachable.length
-      ? { reason: `Состояние подтверждено не всеми нодами флота: ${unreachable.map((node) => `${node.hostId} (${node.status}${node.reason ? `: ${node.reason}` : ""})`).join(", ")}` }
-      : {}),
+    ...(blocking.length
+      ? { reason: `Состояние подтверждено не всеми нодами флота: ${blocking.map((node) => `${node.hostId} (${node.status}${node.reason ? `: ${node.reason}` : ""})`).join(", ")}` }
+      : withoutRuntime.length
+        ? { reason: `Ноды без herder-рантайма не могут инициировать запуск и не требуют копии состояния: ${withoutRuntime.map((node) => node.hostId).join(", ")}` }
+        : {}),
   };
 }
 
