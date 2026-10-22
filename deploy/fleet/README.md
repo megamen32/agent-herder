@@ -1,6 +1,6 @@
 # Agent Herder fleet deployment
 
-Status: Linux100/44/88 deployed. One real cabinet-created Codex session on88 has native same-ID readback and headed HTTPS opening proof. Mac launchers are source-verified; their first real startup exposed a Darwin thread-table parser error and remains unaccepted until repaired and rerun. Whole fleet and the parent shared-MCP migration remain open.
+Status: Linux100/44/88 deployed. One real cabinet-created Codex session on88 has native same-ID readback and headed HTTPS opening proof. Mac launchers are source-verified; their first real startup exposed a Darwin thread-table parser error and remains unaccepted until repaired and rerun. Whole fleet and the parent shared-MCP migration remain open. The fleet-node rollout itself is accepted on 5e8b2fd for 44, 88, Mac Mini and M1; the native launcher defect above stays open.
 
 The target is a local native Herder on server100, server44, server88, Mac Mini and Mac M1. The cabinet lists and filters sessions by host and creates a session with an explicit host and harness. Preserve native authentication, existing sessions and reverse SSH.
 
@@ -18,7 +18,7 @@ GrepMesh's existing Rust implementation is in src/gptadmin.rs, src/topology.rs a
 | 44 | server-44, x86_64 | Own agent-herder-fleet.service, loopback18791, Codex only | agent44.bezrabotnyi.com |
 | 88 | roomhacker-server-88, x86_64 | Own agent-herder-fleet.service, loopback18791; actual cabinet create/read/open accepted | agent88.bezrabotnyi.com |
 | Mac Mini | mac-mini-2012.lan, Macmini6,2 | Own managed Herder18789 installed ecd603e; shared native Codex preserved; outgoing Mesh authorization repair pending | agent-mac-mini.bezrabotnyi.com |
-| Mac M1 | MacBook-Pro-User.local, MacBookPro18,2, arm64 | Earlier local native controller/Herder proofs retained; currently reverse2222 and recovery LAN unavailable, current rollout not accepted | agent-mac-m1.bezrabotnyi.com |
+| Mac M1 | MacBook-Pro-User.local, MacBookPro18,2, arm64 | Earlier local native controller/Herder proofs retained; currently reverse2222 and recovery LAN unavailable, fleet node 18789 accepted on 5e8b2fd | agent-mac-m1.bezrabotnyi.com |
 
 M1 operator access uses its existing reverse SSH2222 first. Mac Mini uses canonical LAN SSH192.168.2.4. Do not label a forwarded100 endpoint as a Mac node. Own Herder18789 is installed on Mini and was previously installed on M1; an offline M1 is explicit, not fresh readiness. Preserve M1's historical18787 forward. Installed44/88 singleton ports are18791 and100 is18787.
 
