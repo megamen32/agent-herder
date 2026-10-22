@@ -15,6 +15,12 @@
  *   harness;
  * - an empty or absent allow list means no restriction at all: the global
  *   policy of the harness decides.
+ *
+ * The module also holds the one lookup that resolves a directory to the route
+ * that governs it, so the launch resolution and the model gate can never
+ * disagree about the project of a session. Every caller that needs the route
+ * of a directory goes through that lookup; the wrappers below exist only to
+ * name the two sides of it.
  */
 
 /** The parts of a project route this module reads. */
@@ -73,55 +79,211 @@ export function canonicalProjectKey(project: string): string {
   return typeof project === "string" ? project.replace(/\/+$/, "") : "";
 }
 
+/**
+ * Canonical path of a project: its segments, resolved.
+ *
+ * The empty segments and the `.` segments are dropped, and a `..` segment
+ * removes the segment before it, so `/a/b/../c` is `/a/c` and `/a/b/./c` is
+ * `/a/b/c`. A `..` without a segment to remove is dropped as well, so a path
+ * never leaves its root. A relative path stays relative: it is the name of a
+ * project, not a path below a root.
+ *
+ * The directory of a session and the root of a route are canonicalized by this
+ * one rule, so a directory that walks out of a route with `..` cannot inherit
+ * the lists of that route.
+ */
+export function normalizeProjectPath(value: string): string {
+  if (typeof value !== "string") return "";
+  const absolute = value.startsWith("/");
+  const segments: string[] = [];
+  for (const segment of value.split("/")) {
+    if (segment.length === 0 || segment === ".") continue;
+    if (segment === "..") {
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  const joined = segments.join("/");
+  return absolute ? `/${joined}` : joined;
+}
+
 /** Case-folded comparison key for a project path or a declared alias. */
 export function foldProjectKey(value: string): string {
   return canonicalProjectKey(value).toLocaleLowerCase("en-US");
 }
 /**
- * Find the route of a project by canonical path, declared alias or case-folded key.
+ * How a directory was matched to the route that governs it.
  *
- * The web UI and the server must resolve a project to the same route, so the
- * lookup lives here instead of in the node-only policy module.
+ * - `exact` — the canonical path of the directory is the key of the route;
+ * - `case` — the path of the directory is the key of the route in another case;
+ * - `alias` — the directory is one of the declared aliases of the route;
+ * - `nested` — the directory lies inside the root of the route.
+ */
+export type ProjectRouteMatchKind = "exact" | "case" | "alias" | "nested";
+
+/** The route that governs a directory, with the key it is configured under. */
+export interface ProjectRouteResolution<T extends ProjectModelRoute> {
+  /** The route that governs the directory. */
+  route: T;
+  /** The key of the route in the routes map: the path the route is configured under. */
+  routeKey: string;
+  /** How the directory matched the route. */
+  matchKind: ProjectRouteMatchKind;
+}
+
+/** One candidate route of the lookup, with the root it was matched by. */
+interface RouteCandidate<T extends ProjectModelRoute> {
+  route: T;
+  /** The key of the route in the routes map. */
+  routeKey: string;
+  /** The canonical path of the key: the root of the route. */
+  root: string;
+}
+
+/**
+ * Does the candidate root govern the directory better than the current one?
+ *
+ * The longer root wins, because it is the nearer project. At an equal length
+ * the lexicographically smaller canonical root wins, so the result depends on
+ * the content of the document and not on the order of its keys.
+ */
+function isBetterRoot(
+  candidateRoot: string,
+  candidateKey: string,
+  currentRoot: string,
+  currentKey: string,
+): boolean {
+  if (candidateRoot.length !== currentRoot.length) {
+    return candidateRoot.length > currentRoot.length;
+  }
+  if (candidateRoot !== currentRoot) return candidateRoot < currentRoot;
+  return candidateKey < currentKey;
+}
+
+/** The better of two candidates, or the only one when there is no current. */
+function betterCandidate<T extends ProjectModelRoute>(
+  current: RouteCandidate<T> | undefined,
+  candidate: RouteCandidate<T>,
+): RouteCandidate<T> {
+  if (!current) return candidate;
+  return isBetterRoot(candidate.root, candidate.routeKey, current.root, current.routeKey)
+    ? candidate
+    : current;
+}
+
+/**
+ * The one lookup that resolves a directory to the route that governs it.
+ *
+ * The rule is the same for the launch permission and for the model gate:
+ * 1. the exact canonical folder of the route wins;
+ * 2. then the same folder in another case;
+ * 3. then a declared alias of the route;
+ * 4. and finally the route root that contains the directory.
+ *
+ * A directory inside a routed project is governed by the rules of that project,
+ * so a session cannot escape them by starting in a subdirectory.
+ *
+ * The root of a route is the canonical path of its key. An alias resolves to the
+ * root of its route, but an alias is never a root itself: containment is only
+ * ever tested against the canonical path a route is configured under.
+ *
+ * The directory and the root are canonicalized by the same rule, so a
+ * directory that walks out of a route with `..` is matched against the route
+ * it really lies in and never inherits the lists of the route it left.
+ *
+ * Containment is a segment boundary, not a string prefix. The root `/a/b`
+ * contains `/a/b/c` and does not contain `/a/bc` nor `/a/b-backup`, so a
+ * sibling project cannot be captured by a common prefix.
+ *
+ * When several route roots contain the directory, the longest one wins: the
+ * route of a subdirectory overrides the route of its parent. At an equal
+ * length the lexicographically smaller canonical root wins, so the lookup
+ * returns the same route whatever order the keys of the document have.
+ *
+ * The nesting is matched literally, because the production paths are
+ * case-sensitive, while the exact folder and the alias are matched
+ * case-insensitively, exactly as before.
+ */
+// TODO(owner of src/integrator-fleet-runtime.ts): that file resolves a route by
+// exact key and alias only (src/integrator-fleet-runtime.ts:382) and reports
+// project_route_ambiguous when more than one route matches. Its contract is a
+// single route whose first harness is codex, so switching it to containment
+// would change which project a launch belongs to. It must not be changed
+// silently: if its owner agrees, it should call this lookup and keep the
+// ambiguity check explicit.
+export function findProjectModelRoute<T extends ProjectModelRoute>(
+  routes: Record<string, T> | undefined,
+  directory: string,
+): ProjectRouteResolution<T> | undefined {
+  if (!routes) return undefined;
+  // The directory and the root of every route are canonicalized by the same
+  // rule, so a directory that walks out of a route with `..` is matched
+  // against the route it really lies in.
+  const key = normalizeProjectPath(directory);
+  const entries = Object.entries(routes).map(([routeKey, route]) => ({
+    route,
+    routeKey,
+    root: normalizeProjectPath(routeKey),
+  }));
+
+  const exact = entries.find((entry) => entry.root === key);
+  if (exact) return { route: exact.route, routeKey: exact.routeKey, matchKind: "exact" };
+  const folded = foldProjectKey(key);
+
+  // A case variant of the key is nearer to the key than a declared alias, so
+  // the case is decided before the alias, whatever order the keys have.
+  let byCase: RouteCandidate<T> | undefined;
+  for (const entry of entries) {
+    if (foldProjectKey(entry.root) !== folded) continue;
+    byCase = betterCandidate(byCase, entry);
+  }
+  if (byCase) return { route: byCase.route, routeKey: byCase.routeKey, matchKind: "case" };
+
+  let byAlias: RouteCandidate<T> | undefined;
+  for (const entry of entries) {
+    if (!entry.route.aliases?.some((alias) => foldProjectKey(alias) === folded)) continue;
+    byAlias = betterCandidate(byAlias, entry);
+  }
+  if (byAlias) return { route: byAlias.route, routeKey: byAlias.routeKey, matchKind: "alias" };
+
+  // Nesting: the longest route root that contains the directory governs it.
+  let nested: RouteCandidate<T> | undefined;
+  for (const entry of entries) {
+    if (!entry.root.startsWith("/")) continue;
+    if (key !== entry.root && !key.startsWith(`${entry.root}/`)) continue;
+    nested = betterCandidate(nested, entry);
+  }
+  if (nested) return { route: nested.route, routeKey: nested.routeKey, matchKind: "nested" };
+  return undefined;
+}
+
+/**
+ * Find the route that governs a project.
+ *
+ * A thin wrapper over the one lookup {@link findProjectModelRoute}: the exact
+ * canonical folder, its case variant, a declared alias and finally the longest
+ * route root that contains the project.
  */
 export function findModelPolicyRoute<T extends ProjectModelRoute>(
   routes: Record<string, T> | undefined,
   project: string,
 ): T | undefined {
-  if (!routes) return undefined;
-  const key = canonicalProjectKey(project);
-  const exact = routes[key];
-  if (exact) return exact;
-  const folded = foldProjectKey(key);
-  for (const [candidate, route] of Object.entries(routes)) {
-    if (foldProjectKey(candidate) === folded) return route;
-    if (route.aliases?.some((alias) => foldProjectKey(alias) === folded)) return route;
-  }
-  return undefined;
+  return findProjectModelRoute(routes, project)?.route;
 }
 
 /**
  * Find the route that governs a working directory.
  *
- * A session runs in the project root or in one of its subdirectories, so the
- * longest route path that contains the directory is the project of that
- * session. An alias still resolves the same way as for an exact path.
+ * A thin wrapper over the same one lookup {@link findProjectModelRoute},
+ * because a session that runs in a subdirectory of a project is governed by
+ * the rules of that project.
  */
 export function findModelPolicyRouteForPath<T extends ProjectModelRoute>(
   routes: Record<string, T> | undefined,
   directory: string,
 ): T | undefined {
-  const direct = findModelPolicyRoute(routes, directory);
-  if (direct) return direct;
-  if (!routes) return undefined;
-  const key = canonicalProjectKey(directory);
-  let best: { route: T; length: number } | undefined;
-  for (const [candidate, route] of Object.entries(routes)) {
-    const root = canonicalProjectKey(candidate);
-    if (!root.startsWith("/")) continue;
-    if (key !== root && !key.startsWith(`${root}/`)) continue;
-    if (!best || root.length > best.length) best = { route, length: root.length };
-  }
-  return best?.route;
+  return findProjectModelRoute(routes, directory)?.route;
 }
 
 /** Normalized comparison form of one model list entry. */
@@ -176,7 +338,9 @@ export function effectiveModelForProject(
 /**
  * May this model be used in this project?
  *
- * A project without a route keeps the global policy unchanged.
+ * The project is resolved by the one route lookup, so a directory inside a
+ * routed project is judged by the rules of that project. A project without a
+ * route keeps the global policy unchanged.
  */
 export function modelPermittedForProject(
   policy: ProjectModelPolicy,
@@ -192,7 +356,9 @@ export function modelPermittedForProject(
  * Reject a model that the project policy does not permit.
  *
  * The error names the project, the model and the lists that decided it, so an
- * operator can see which rule to change.
+ * operator can see which rule to change. The lists are the ones of the route
+ * that governs the project, which is the route of the project root for a
+ * directory inside that root.
  */
 export function assertModelPermittedForProject(
   policy: ProjectModelPolicy,
