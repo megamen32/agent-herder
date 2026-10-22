@@ -363,7 +363,7 @@ export class SessionSupervisor {
     const sessionGroups = await Promise.all(adapters.map(async ([provider, adapter]) => {
       const sessions = await adapter.listSessions();
       return Promise.all(sessions.map(async (session) => {
-        const humanStopHeld = (provider === "codex" || provider === "zcode") ? await this.humanStops.observe(session) : false;
+        const humanStopHeld = (provider === "codex" || provider === "zcode" || provider === "opencode") ? await this.humanStops.observe(session) : false;
         const record = await this.lineage.get(sessionKey(provider, nativeSessionId(session)));
         const nativeParentId = typeof session.meta?.parentThreadId === "string" && session.meta.parentThreadId !== nativeSessionId(session) ? session.meta.parentThreadId : undefined;
         const nativeRole = typeof session.meta?.agentRole === "string" ? session.meta.agentRole : undefined;
@@ -475,7 +475,7 @@ export class SessionSupervisor {
     const direct = this.adapters.get(harness);
     if (direct) {
       const session = await read(direct);
-      const humanStopHeld = session && (harness === "codex" || harness === "zcode") ? await this.humanStops.observe(session) : false;
+      const humanStopHeld = session && (harness === "codex" || harness === "zcode" || harness === "opencode") ? await this.humanStops.observe(session) : false;
       const modelOptions = includeModelOptions === false ? [] : direct.listModels ? await direct.listModels() : [];
       return session
         ? { ...session, meta: { ...session.meta, humanStopHeld, provider: harness, controlCapabilities: getHarnessCapabilities(direct), modelOptions } }
