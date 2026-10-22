@@ -99,7 +99,7 @@ def release_bytes(root: Path) -> int:
 
 
 def trim_releases(releases_root: Path, rollback_root: Path, keep: str, prefer: str = "",
-                  keep_only: bool = False) -> dict:
+                  keep_only: bool = False, keep_pair: bool = False) -> dict:
     """Move the superseded releases to rollback/.
 
     The bytes are never deleted. With keep_only the owner node keeps one
@@ -115,6 +115,20 @@ def trim_releases(releases_root: Path, rollback_root: Path, keep: str, prefer: s
     if keep_only:
         for release in release_dirs(releases_root):
             if release.name == keep:
+                continue
+            shutil.move(str(release), str(rollback_root / release.name))
+            moved[release.name] = str(rollback_root / release.name)
+            print("trimmed", release.name, "-> rollback/")
+        print("releases:", [item.name for item in release_dirs(releases_root)])
+        print("rollback:", sorted(item.name for item in rollback_root.iterdir()))
+        print("budget bytes:", release_bytes(releases_root))
+        return moved
+    if keep_pair:
+        # a fleet node keeps two release directories: the new one and the
+        # release that is live now, the point of rollback. The rest goes to
+        # rollback/, the bytes are never deleted.
+        for release in release_dirs(releases_root):
+            if release.name in (keep, prefer):
                 continue
             shutil.move(str(release), str(rollback_root / release.name))
             moved[release.name] = str(rollback_root / release.name)
@@ -153,7 +167,8 @@ def node_side_fleet(arguments) -> int:
     fleet = Path(arguments.fleet_dir).expanduser()
     sha = arguments.sha
     release = fleet / "releases" / sha
-    trim_releases(fleet / "releases", fleet / "rollback", sha, arguments.previous_sha)
+    trim_releases(fleet / "releases", fleet / "rollback", sha, arguments.previous_sha,
+                  keep_pair=True)
     unpack_release(Path(arguments.archive), release)
     command = ["python3", str(HERE / "rollout-node.py"),
                "--fleet-dir", str(fleet),
