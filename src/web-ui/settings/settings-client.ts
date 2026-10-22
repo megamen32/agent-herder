@@ -22,7 +22,8 @@ export type SettingsRecord = {
   code_revision: string;
   desired: { value: unknown; desired_revision: number; fingerprint?: string };
   confirmed: {
-    applied_revision: number;
+    /** The revision that is really in effect; null while a change waits. */
+    applied_revision: number | null;
     state: SettingsApplyState;
     appliedAt: string | null;
     applyMode: SettingsApplyMode;

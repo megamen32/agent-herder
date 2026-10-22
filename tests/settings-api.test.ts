@@ -463,12 +463,15 @@ describe("the settings of the herder are managed by the owner from one API", () 
     // The desired version and the confirmed state are two things.
     expect(record.desired.value).toBe("agent-herder-contract");
     expect(record.desired.desired_revision).toBeGreaterThan(0);
-    // The applied revision is the revision that is really in effect: it is
-    // behind the desired one while the change waits for a restart.
-    expect(record.confirmed.applied_revision).toBeLessThanOrEqual(record.desired.desired_revision);
-    expect(record.confirmed.applied_revision).toBe(
-      record.confirmed.state === "Применено" ? record.desired.desired_revision : record.desired.desired_revision - 1,
-    );
+    // The applied revision is the revision that is really in effect. While
+    // the change waits for a restart there is no such revision: the answer
+    // says that the revision is not confirmed, and it never names a number
+    // that may not exist.
+    if (record.confirmed.state === "Применено") {
+      expect(record.confirmed.applied_revision).toBe(record.desired.desired_revision);
+    } else {
+      expect(record.confirmed.applied_revision).toBeNull();
+    }
     // The revision of the sources is the identity of the build, not a version
     // of the setting.
     expect(record.code_revision).toBe("abc123");
@@ -496,10 +499,10 @@ describe("the settings of the herder are managed by the owner from one API", () 
     const record = view.records.find((candidate: any) => candidate.id === "herder.env/NOTIFY_CENTER_PROJECT");
     expect(record.confirmed.state).toBe("Записано");
     expect(record.confirmed.requiresRestart).toBe(true);
-    // The applied revision is behind: the running service has not the new
-    // value yet.
-    expect(record.desired.desired_revision).toBeGreaterThan(record.confirmed.applied_revision);
-    expect(record.confirmed.applied_revision).toBe(record.desired.desired_revision - 1);
+    // The running service has not the new value yet: there is no revision in
+    // effect that the answer could name, so it names none.
+    expect(record.confirmed.applied_revision).toBeNull();
+    expect(record.desired.desired_revision).toBeGreaterThan(0);
   });
 
   it("keeps the escalation of a project a reference to the object of the center", async () => {

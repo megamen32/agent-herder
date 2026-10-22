@@ -115,12 +115,12 @@ export function settingsFingerprint(value: string): string {
  *
  * The desired revision is what the owner wants; the applied revision is what
  * the running service really has. While a change waits for a restart the
- * applied revision is behind the desired one: the file of the product already
- * holds the new value, but the service still runs with the old one. The
- * revision `0` means that no recorded revision is in effect.
+ * running service still has the old revision, and that revision is not
+ * known: the answer is `null` and the state says «Записано». A number that
+ * may not exist is never named as a fact.
  */
-export function appliedRevisionOf(desiredRevision: number, applied: boolean): number {
-  return applied ? desiredRevision : Math.max(0, desiredRevision - 1);
+export function appliedRevisionOf(desiredRevision: number, applied: boolean): number | null {
+  return applied ? desiredRevision : null;
 }
 
 /** Whether the key holds a secret, by the known list or by the name of the key. */
@@ -244,12 +244,13 @@ export interface SettingsRecord {
     /**
      * The revision that is really in effect.
      *
-     * While a change waits for a restart the applied revision is behind the
-     * desired one: the file of the product already holds the new value, but
-     * the running service still has the old one. The revision `0` means that
-     * no recorded revision is in effect.
+     * It is the revision that the running service really has. While a change
+     * waits for a restart there is no such revision: the file of the product
+     * already holds the new value, but the running service still has the old
+     * one. The answer says `null` then — a revision that does not exist is
+     * not named as a fact.
      */
-    applied_revision: number;
+    applied_revision: number | null;
     state: SettingsApplyState;
     appliedAt: string | null;
     applyMode: SettingsApplyMode;

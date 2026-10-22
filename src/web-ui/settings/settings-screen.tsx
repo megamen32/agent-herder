@@ -233,7 +233,8 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
                     <span className="herder-settings-action">{record.action}</span>
                     <details className="herder-settings-details">
                       <summary>Технические подробности</summary>
-                      <code>{record.id}</code> · область {record.scope.kind} · источник {record.source} · ревизия {record.desired.desired_revision} · в силе {record.confirmed.applied_revision}
+                      <code>{record.id}</code> · область {record.scope.kind} · источник {record.source} · ревизия {record.desired.desired_revision} · в силе{" "}
+                        {record.confirmed.applied_revision === null ? "не подтверждена, ждёт перезапуска" : record.confirmed.applied_revision}
                     </details>
                   </td>
                   <td>
