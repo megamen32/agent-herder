@@ -277,7 +277,7 @@
 
 .projects-model-state-ok strong { color: var(--status-done); }
 .projects-model-state-stale strong { color: var(--status-error); }
-.projects-model-state-paid strong { color: var(--status-waiting); }
+.projects-model-state-error strong { color: var(--status-error); }
 
 .projects-model-badge-allowed { border-color: var(--status-done); color: var(--status-done); }
 .projects-model-badge-denied { border-color: var(--status-error); color: var(--status-error); }

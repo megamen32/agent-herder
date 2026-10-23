@@ -843,12 +843,18 @@ export function ProjectModelPolicyEditor({
       <ul className="projects-model-list" aria-label={`Эффективная модель по средам маршрута проекта ${project}`}>
         {route.harnesses.map((harness) => {
           const effective = route.models?.[harness] ?? policy.models[harness] ?? "";
-          const label = effective ? modelRouteLabel({ modelId: effective, confirmed: catalog[harness] ?? [] }) : undefined;
+          const leaf = effective ? leafVerdicts?.[effective] : undefined;
+          const label = effective
+            ? modelRouteLabel({
+              modelId: effective,
+              confirmed: catalog[harness] ?? [],
+              launch: leaf ? { verdict: leaf.verdict, reason: leaf.reason } : undefined,
+            })
+            : undefined;
           const violation = routeModelViolation(route, effective);
           const check = checks?.find((item) => item.harness === harness);
           const answer = catalog[harness];
           const list = answer ?? [];
-          const leaf = effective ? leafVerdicts?.[effective] : undefined;
           const candidates = modelCandidates(harness, { policyModels: policy.models, confirmed: list, current: effective });
           const approved = approvedModelId(candidates, leafVerdicts);
           const working = leafVerdicts
@@ -867,7 +873,7 @@ export function ProjectModelPolicyEditor({
           // The answer of the environment is on the way: the screen says so
           // instead of blaming the model before anyone asked the environment.
           // One fact — one word. The state of the environment is the word of the
-          // catalog of OpenCode (рабочая / устаревшая / платная) and it is shown
+          // catalog of OpenCode (рабочая / устаревшая / не верифицирована) and it is shown
           // once, in its own block. The chip of the verdict speaks about the
           // lists of the project and the rule of the owner, so it stays for the
           // verdicts of the policy and steps aside for the state of the
