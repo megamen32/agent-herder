@@ -720,11 +720,16 @@ def fleet_confirmation(port: int) -> dict:
         return {"error": str(error)[:160]}
 
 
-def guard_policy(release: Path, node_bin: str = "/usr/local/bin/node") -> dict:
+def guard_policy(release: Path, node_bin: str = "/usr/local/bin/node", state_dir=None) -> dict:
     """The shipped guard: what it does to a session creation without a harness.
 
     The module of the release is asked, not the source of the repository: the
-    policy is proved on the code that runs.
+    verdict is proved on the code that runs. The verdict follows the policy of
+    the node: while the protection of the owner is on, the guard must refuse a
+    creation without a harness; while the owner has switched the protection
+    off, the guard must let the creation pass. The probe reads the policy of
+    the state directory of the node - the same file the service of the node
+    reads - and names it in the result.
     """
     module = release / "dist" / "codex-quota-guard.js"
     if not module.is_file():
@@ -738,6 +743,12 @@ def guard_policy(release: Path, node_bin: str = "/usr/local/bin/node") -> dict:
   const assertRemoteCodexAdmission = module.assertRemoteCodexAdmission;
   const reader = async () => ({});
   const out = {};
+  try {
+    const loaded = await module.loadCodexQuotaPolicy();
+    out.policy = { path: module.codexQuotaPolicyPath(), enabled: loaded.policy.enabled, onUnknown: loaded.policy.onUnknown, minRemainingPercent: loaded.policy.minRemainingPercent, revision: loaded.revision };
+  } catch (error) {
+    out.policy = { error: String(error && error.message || error).slice(0, 200) };
+  }
   for (const [name, args] of [["without harness", {}], ["harness opencode", { harness: "opencode" }], ["harness codex", { harness: "codex" }]]) {
     try {
       await assertRemoteCodexAdmission("fleet_create_session", args, reader);
@@ -751,23 +762,38 @@ def guard_policy(release: Path, node_bin: str = "/usr/local/bin/node") -> dict:
 """
     path = Path("/tmp/acceptance-guard-probe.mjs")
     path.write_text(script, encoding="utf-8")
+    environment = dict(os.environ)
+    if state_dir is not None:
+        environment["AGENT_HERDER_AUTOPILOT_STATE_DIR"] = str(state_dir)
     try:
         result = subprocess.run([node_bin, str(path), str(module)],
-                                capture_output=True, text=True, check=False, timeout=30)
+                                capture_output=True, text=True, check=False, timeout=30,
+                                env=environment)
         data = json.loads(result.stdout.strip().splitlines()[-1])
     except Exception as error:
         return {"ok": False, "error": str(error)[:200]}
+    policy = data.get("policy") or {}
     without = data.get("without harness", {})
     with_opencode = data.get("harness opencode", {})
+    if policy.get("error"):
+        ok = False
+        expectation = f"the policy of the node is not readable: {policy.get('error')}"
+    elif policy.get("enabled") is False:
+        ok = without.get("allowed") is True and with_opencode.get("allowed") is True
+        expectation = "the protection of the owner is off: the guard must let the creation pass"
+    else:
+        ok = (without.get("allowed") is False and without.get("code") == "codex_quota_guard"
+              and with_opencode.get("allowed") is True)
+        expectation = "the protection of the owner is on: the guard must refuse"
     return {
-        "ok": without.get("allowed") is False and without.get("code") == "codex_quota_guard"
-              and with_opencode.get("allowed") is True,
+        "ok": ok,
+        "expectation": expectation,
+        "policy": policy,
         "without_harness": without,
         "with_opencode": with_opencode,
         "with_codex": data.get("harness codex", {}),
         "guard_module": str(module),
     }
-
 
 def panel_session_creation(release: Path) -> dict:
     """Does the panel of this release create sessions, and with which harness?"""
@@ -844,7 +870,7 @@ def main() -> int:
     management = management_check(arguments.port, arguments.kind)
     reachability = peer_reachability(arguments.port, arguments.peer_host) if arguments.peer_host else {}
     confirmation = fleet_confirmation(arguments.port)
-    guard = guard_policy(release, arguments.node_bin)
+    guard = guard_policy(release, arguments.node_bin, state_dir)
     panel = panel_session_creation(release)
     lever = lever_check(state_dir, release, arguments.node_bin)
     budget = budget_check(releases_root, rollback_root)
@@ -946,8 +972,10 @@ def main() -> int:
          f"nodes=" + " ".join(f"{node.get('hostId')}:{node.get('status')}@{(node.get('confirmedAt') or 'нет')}"
                               for node in (confirmation.get("nodes") or []))
          + (f" error={confirmation.get('error')}" if confirmation.get("error") else "")),
-        ("the guard of the release blocks a session creation without a harness",
+        ("the guard of the release answers a session creation without a harness by the policy of the node",
          guard.get("ok", False),
+         f"policy enabled={guard.get('policy', {}).get('enabled')} "
+         f"at {guard.get('policy', {}).get('path')}; {guard.get('expectation')}; "
          f"without harness={guard.get('without_harness', {}).get('code')} "
          f"reason={(guard.get('without_harness', {}).get('decision') or {}).get('reason')} "
          f"with opencode allowed={guard.get('with_opencode', {}).get('allowed')}"),
