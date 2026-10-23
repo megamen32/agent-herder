@@ -198,7 +198,7 @@ export function registerSessionTools(server: McpServer, deps: {
     return undefined;
   }
 
-  server.registerTool("list_agents", { description: "List all coding agent sessions, including ZCode. Filter by harness, status, age (maxAge seconds), folder (CWD prefix like ~/apps) or machine (hostId). Omitted hostId lists sessions of every machine. Can show last message preview.", inputSchema: z.object({
+  server.registerTool("list_agents", { description: "Historical/session browsing. For a current global active inventory with actual code work hosts, multiple paths and freshness use list_active_sessions. List coding agent sessions, including ZCode. Filter by harness, status, age (maxAge seconds), folder (CWD prefix like ~/apps) or machine (hostId). Omitted hostId lists sessions of every machine. Can show last message preview.", inputSchema: z.object({
     harness: z.enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().default("all"),
     status: z.enum(["all", "running", "idle", "needs_input", "stopped", "error"]).optional().default("all"),
     limit: z.number().int().min(1).max(100).optional().default(20), maxAge: z.number().int().min(0).optional(), folder: z.string().optional(),

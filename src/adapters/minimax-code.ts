@@ -1,6 +1,7 @@
 import { open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { readMinimaxActiveSessions, type MinimaxActiveReceipt } from "./minimax-code-active.js";
 import { MinimaxCodeControl } from "./minimax-code-control.js";
 import { MINIMAX_CODE_HARNESS_CWD, MINIMAX_CODE_SESSION_STORE } from "./minimax-code-store.js";
 import type {
@@ -299,6 +300,19 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
   private indexCache: { at: number; entries: MinimaxStoredSession[] } | null = null;
   private contentCache = new Map<string, { stamp: string; session: AgentSession }>();
   private liveControlAvailable = false;
+  private activeReceipt: MinimaxActiveReceipt | null = null;
+  private activeRefreshProgress: {stage:string;stageStartedAt:string}|null = null;
+  getActiveSessionRefreshProgress(){return this.activeRefreshProgress;}
+
+  getActiveSessionSnapshotReceipt(): MinimaxActiveReceipt | null { return this.activeReceipt; }
+
+  /** Full native metadata inventory; never hydrates historical transcripts. */
+  async listActiveSessions(): Promise<AgentSession[]> {
+    this.activeReceipt = null;
+    const result = await readMinimaxActiveSessions(this.control,{onProgress:stage=>{this.activeRefreshProgress={stage,stageStartedAt:new Date().toISOString()};}});
+    this.activeReceipt = result.receipt;
+    return result.sessions;
+  }
 
   constructor(options: MinimaxCodeAdapterOptions = {}) {
     this.sessionStore = options.sessionStore || MINIMAX_CODE_SESSION_STORE;

@@ -1,0 +1,58 @@
+import {describe,it,expect} from 'vitest';
+import {filterActiveInventory} from '../src/active-session-inventory.js';
+describe('active inventory',()=>{
+ it('filters by work host before pagination, runtime remains separate',()=>{
+  const sessions=Array.from({length:150},(_,i)=>({id:String(i),harness:'minimax-code',title:'task',runtimeHostId:'m1',activity:{state:'active',observedAt:'2026-10-23T18:00:00Z',evidence:'native'},workspaces:i<149?[]:[{hostId:'server100',absolutePath:'/code'}]}));
+  const out=filterActiveInventory({sessions,hosts:[],partial:false},{hostId:'server100',limit:1});
+  expect(out.total).toBe(1);expect(out.sessions[0].id).toBe('149');expect(out.sessions[0].runtimeHostId).toBe('m1');
+  expect(filterActiveInventory({sessions,hosts:[],partial:false},{}).sessions).toHaveLength(150);
+ });
+ it('preserves unknown workspaces in unfiltered result',()=>{
+  const out=filterActiveInventory({sessions:[{id:'a',runtimeHostId:'m1',harness:'codex',title:'a',activity:{state:'active',observedAt:'x',evidence:'native'},workspaces:[]}],hosts:[],partial:true},{});
+  expect(out.total).toBe(1);expect(out.unknownWorkspaceCount).toBe(1);expect(out.partial).toBe(true);
+ });
+});
+
+import {mkdtemp,writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {readActiveInventory,activeInventoryFleet} from '../src/active-session-inventory.js';
+it('expired activity is unknown without renewing owner freshness',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'active-expiry-'));const path=join(dir,'index.json');
+ await writeFile(path,JSON.stringify({sessions:[{id:'a',runtimeHostId:'owner',workspaces:[],activity:{state:'active',observedAt:'2026-10-23T18:00:00Z'}}],hosts:[{hostId:'owner',observedAt:'2026-10-23T18:00:00Z',state:'available'}],partial:false}));
+ const out=await readActiveInventory({path,hostId:'owner',now:Date.parse('2026-10-23T18:01:00Z')});
+ expect(out.partial).toBe(true);expect(out.sessions[0].activity.state).toBe('unknown');expect(out.hosts[0].observedAt).toBe('2026-10-23T18:00:00Z');
+});
+it('one unavailable owner preserves others and cannot look like complete zero',async()=>{
+ const out=await activeInventoryFleet({},[{hostId:'a',target:'a'},{hostId:'b',target:'b'}],async p=>{if(p.hostId==='b')throw Error('offline');return {sessions:[{id:'x',runtimeHostId:'a',workspaces:[]}],hosts:[{hostId:'a',state:'available',observedAt:'now'}],partial:false};});
+ expect(out.total).toBe(1);expect(out.partial).toBe(true);expect(out.hosts[1].state).toBe('unavailable');
+});
+it('work host filter remains partial when unassigned sessions could match',()=>{
+ const out=filterActiveInventory({sessions:[{id:'a',runtimeHostId:'m1',harness:'codex',title:'a',activity:{state:'active',observedAt:'x',evidence:'native'},workspaces:[]}],hosts:[],partial:false},{hostId:'server100'});
+ expect(out.total).toBe(0);expect(out.partial).toBe(true);expect(out.activeCountExact).toBeNull();expect(out.unassignedWorkspaceCount).toBe(1);
+});
+import {startActiveInventoryOwner} from '../src/active-session-inventory.js';
+import type {HarnessAdapter,AgentSession} from '../src/types/index.js';
+it('publishes a fresh provider while another provider remains unresolved',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'active-isolation-'));const path=join(dir,'index.json');const at=new Date().toISOString();let release!:()=>void;
+ const session={id:'native-fast',harness:'minimax-code',status:'running',title:'fast',cwd:'',hostId:'owner',lastActivity:at,needsPermission:false,meta:{activityObservedAt:at,activityExpiresAt:new Date(Date.now()+30000).toISOString()}} as AgentSession;
+ const fast={type:'minimax-code',listActiveSessions:async()=>[session],getActiveSessionSnapshotReceipt:()=>({exhaustive:true,observedAt:at})};
+ const slow={type:'zcode',listActiveSessions:()=>new Promise<AgentSession[]>(resolve=>{release=()=>resolve([]);})};
+ const stop=startActiveInventoryOwner(()=>({sessions:[],observedAt:at,warming:false}),new Map([['minimax-code',fast],['zcode',slow]]) as unknown as Map<string,HarnessAdapter>,{path,hostId:'owner'});
+ try{let out;for(let i=0;i<40;i++){out=await readActiveInventory({path,hostId:'owner'});if(out.sessions.length)break;await new Promise(r=>setTimeout(r,25));}expect(out?.sessions[0]?.id).toBe('native-fast');expect(out?.partial).toBe(true);}
+ finally{stop();release();}
+});
+it('does not overlap provider reads after an observation deadline',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'active-singleflight-'));const path=join(dir,'index.json');let calls=0;
+ const adapter={type:'minimax-code',listActiveSessions:()=>{calls++;return new Promise<AgentSession[]>(()=>{});}};
+ const stop=startActiveInventoryOwner(()=>({sessions:[],observedAt:new Date().toISOString(),warming:false}),new Map([['minimax-code',adapter]])as unknown as Map<string,HarnessAdapter>,{path,hostId:'owner',intervalMs:5,nativeDeadlineMs:25});
+ try{await new Promise(r=>setTimeout(r,100));expect(calls).toBe(1);}finally{stop();}
+});
+import {officialNativeWorkspace} from '../src/active-session-inventory.js';
+it('ingests only fresh exact local official ZCode execution workspaces, never generic launch cwd',()=>{
+ const at=new Date().toISOString();const s={id:'child',harness:'zcode',hostId:'owner',cwd:'/code/actual',meta:{activityEvidence:'zcode-official-supervisor-running-tasks',nativeExecutor:'official-server',nativeRuntimePid:123,nativeRuntimeGeneration:1,activityObservedAt:at,activityExpiresAt:new Date(Date.now()+15000).toISOString()}} as unknown as AgentSession;
+ expect(officialNativeWorkspace(s,'owner')?.absolutePath).toBe('/code/actual');
+ expect(officialNativeWorkspace({...s,hostId:'other'},'owner')).toBeUndefined();
+ expect(officialNativeWorkspace({...s,meta:{}},'owner')).toBeUndefined();
+ expect(officialNativeWorkspace({...s,meta:{...s.meta,activityExpiresAt:'2000-01-01'}},'owner')).toBeUndefined();
+});

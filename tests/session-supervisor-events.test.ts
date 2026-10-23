@@ -85,9 +85,11 @@ describe("SessionSupervisor domain events", () => {
     await supervisor.refreshSessions();
     events.length = 0;
 
+    const observedBeforeNative = supervisor.nativeInventorySnapshot().observedAt;
     current.status = "running";
     current.messageCount = 2;
     listener?.({ kind: "message.updated", harness: "opencode", sessionId: "external-1", nativeType: "message.updated" });
+    expect(supervisor.nativeInventorySnapshot().observedAt).toBe(observedBeforeNative);
     expect(events.map((event) => event.source)).toContain("native:opencode:message.updated");
     expect(health.get("opencode")).toMatchObject({ mode: "native", connected: true });
     const afterNative = events.length;
@@ -156,4 +158,13 @@ describe("SessionSupervisor domain events", () => {
     stop();
   });
 
+});
+it('publishes one native provider while another provider is still loading',async()=>{
+ let release!:()=>void;
+ const fast={type:'claude',name:'fast',listSessions:async()=>[{...session(),id:'fast',status:'running'}]};
+ const slow={type:'hermes',name:'slow',listSessions:()=>new Promise<AgentSession[]>(r=>{release=()=>r([]);})};
+ const supervisor=new SessionSupervisor(new Map([['claude',fast],['hermes',slow]])as unknown as Map<string,HarnessAdapter>,{async convert(){return{success:true};}}as any);
+ const stop=supervisor.startObservation(60000);
+ try{await new Promise(r=>setTimeout(r,20));expect(supervisor.nativeInventorySnapshot().sessions.map(s=>s.id)).toContain('fast');}
+ finally{stop();release();}
 });

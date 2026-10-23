@@ -24,6 +24,8 @@ import {
   localSessionHostId,
 } from "../types/index.js";
 import { ZcodeAppServerClient, type ZcodeClientLike } from "./zcode-protocol.js";
+import { readZcodeActiveCandidates, zcodeStoredTailCanBeActive } from "./zcode-active.js";
+import {readZcodeOfficialRunning,connectZcodeOfficialWebSocket,type ZcodeOfficialRunning} from "./zcode-server-control.js";
 import { readExistingZcodeRuntimeObservation } from "./zcode-runtime-observation.js";
 import { lifecycleEntryFor, lifecycleStateFor, type SessionLifecycleSnapshot } from "../session-lifecycle.js";
 import { getHumanStopStore } from "../human-stop-store.js";
@@ -150,6 +152,8 @@ interface ZcodeCommand {
 }
 
 export interface ZcodeAdapterOptions {
+  /** Owner background refresh only; query readers use its materialized snapshot. */
+  readOfficialRunningTasks?:()=>Promise<ZcodeOfficialRunning>;
   /** Override the stdio app-server executable, primarily for tests. */
   command?: string;
   args?: string[];
@@ -1005,6 +1009,9 @@ export class ZcodeAdapter implements HarnessAdapter {
     events: true,
   };
 
+  private readonly officialWebSocketSelected:boolean;
+  private readonly readOfficialRunningTasks?:()=>Promise<ZcodeOfficialRunning>;
+  private officialRunning?:ZcodeOfficialRunning;
   private readonly cwd: string;
   private readonly modelIds: string[];
   private readonly client: ZcodeClientLike;
@@ -1050,6 +1057,8 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.cwd = resolve(options.cwd || process.env.ZCODE_CWD || process.cwd());
     this.modelIds = options.modelIds ?? [];
     this.useLocalConfig = !options.client;
+    this.officialWebSocketSelected=this.useLocalConfig&&!options.command&&!process.env.ZCODE_SERVER_NODE&&existsSync(join(homedir(),".zcode/server/run/control.sock"));
+    this.readOfficialRunningTasks=options.readOfficialRunningTasks??(this.useLocalConfig?()=>readZcodeOfficialRunning():undefined);
     this.useLocalTurnMetadata = this.useLocalConfig || options.localDbPath !== undefined;
     this.localDbPath = options.localDbPath ?? (process.env.ZCODE_DB_PATH || join(homedir(), ".zcode", "cli", "db", "db.sqlite"));
     this.turnStartTimeoutMs = options.turnStartTimeoutMs ?? 30_000;
@@ -1067,6 +1076,7 @@ export class ZcodeAdapter implements HarnessAdapter {
         ? [process.env.ZCODE_SERVER_ENTRY || join(process.env.ZCODE_SERVER_RUNTIME_ROOT || join(homedir(), ".zcode", "server"), "zcode-server.cjs")]
         : defaultCommand().args);
       this.client = new ZcodeAppServerClient({
+        connectWebSocket:this.officialWebSocketSelected?connectZcodeOfficialWebSocket:undefined,
         command,
         args,
         cwd: this.cwd,
@@ -1350,6 +1360,46 @@ export class ZcodeAdapter implements HarnessAdapter {
     if(entry?.turnId===proof.turnId&&entry.inputId===proof.inputId)this.observedActiveTurns.delete(proof.sessionId);
   }
 
+  private activeSessionReceipt: SessionSnapshotReceipt | null = null;
+
+  getActiveSessionSnapshotReceipt(): SessionSnapshotReceipt | null { return this.activeSessionReceipt; }
+
+  /** V4 native queue admission; this does not promise current-turn CAS. */
+  getOfficialMeshAdmission():"official-ws-v4"|undefined {
+    return this.officialWebSocketSelected&&this.officialRunning&&Date.parse(this.officialRunning.expiresAt)>Date.now()?'official-ws-v4':undefined;
+  }
+
+  private officialOverlay(sessions:AgentSession[]):AgentSession[]{
+    const snapshot=this.officialRunning;if(!snapshot)return sessions;
+    const rows=new Map(sessions.map(s=>[s.id,s]));
+    for(const task of snapshot.tasks){
+      this.sessionWorkspaces.set(task.sessionId,{workspacePath:resolve(task.workspacePath),workspaceIdentity:task.workspaceIdentity??resolve(task.workspacePath),workspaceKey:task.workspaceIdentity??resolve(task.workspacePath)});
+      const old=rows.get(task.sessionId);
+      rows.set(task.sessionId,{...old,id:task.sessionId,harness:'zcode',title:old?.title??task.sessionId,
+        cwd:resolve(task.workspacePath),hostId:localSessionHostId(),status:'running',needsPermission:false,
+        lastActivity:snapshot.observedAt,meta:{...old?.meta,workspaceIdentity:task.workspaceIdentity,
+          activityEvidence:'zcode-official-supervisor-running-tasks',activityObservedAt:snapshot.observedAt,activityExpiresAt:snapshot.expiresAt,
+          nativeRuntimePid:snapshot.pid,nativeRuntimeGeneration:snapshot.generation,...(task.parentSessionId?{parentSessionId:task.parentSessionId}:{}),nativeParentKnown:task.parentKnown??false,
+          nativeActivityFresh:Date.parse(snapshot.expiresAt)>Date.now(),nativeExecutor:'official-server',deliveryRoute:this.officialWebSocketSelected?'official-server-ws':'official-server-unverified'}});
+    }
+    return [...rows.values()];
+  }
+
+  async listActiveSessions(): Promise<AgentSession[]> {
+    this.activeSessionReceipt = null;
+    let officialUnavailable=false;
+    if(this.readOfficialRunningTasks){try{this.officialRunning=await this.readOfficialRunningTasks();}catch{officialUnavailable=true;}}
+    const stored = await this.listPersistedSessions({});
+    const officialIds=new Set(this.officialRunning?.tasks.map(t=>t.sessionId)??[]);
+    const candidates = stored.filter(session => !officialIds.has(session.id)&&(session.status === "running" || session.status === "needs_input"));
+    let active:AgentSession[]=[];let candidateUnavailable=false;
+    try{active=await readZcodeActiveCandidates(candidates, session => this.observeExistingRuntime(session.id, session.cwd));}catch{candidateUnavailable=true;}
+    const official=this.officialOverlay(stored).filter(row=>officialIds.has(row.id));
+    this.activeSessionReceipt = { exhaustive: false, observedAt: new Date().toISOString(),
+      source: "zcode-existing-native-runtime+official-supervisor", reason: officialUnavailable?'official_supervisor_unavailable':candidateUnavailable?'existing_runtime_candidates_partial':"known_task_candidates_only_loaded_identity_coverage_unknown" };
+    return [...active,...official];
+  }
+
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
     await this.observeAcceptedWorkspaceTurns();
     const persisted = await this.listPersistedSessions(options);
@@ -1357,7 +1407,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     const mergeCreated = (sessions: AgentSession[]): AgentSession[] => {
       const merged = new Map(sessions.map((session) => [session.id, session]));
       for (const session of created) if (!merged.has(session.id)) merged.set(session.id, session);
-      return [...merged.values()].sort((left, right) => Date.parse(right.lastActivity) - Date.parse(left.lastActivity));
+      return this.officialOverlay([...merged.values()]).filter(s=>!options.cwd||s.cwd===resolve(options.cwd)).sort((left, right) => Date.parse(right.lastActivity) - Date.parse(left.lastActivity));
     };
     if (!options.cwd && persisted.length === 0 && !this.reportedEmptyTasksIndex) {
       this.reportedEmptyTasksIndex = true;
@@ -1764,7 +1814,7 @@ export class ZcodeAdapter implements HarnessAdapter {
           });
           // Recent assistant tool work is evidence of a newer continuation;
           // a terminal-only usage row and a completed task index are historical.
-          if (status !== "needs_input" && native?.ongoingAssistantAt
+          if (status !== "needs_input" && zcodeStoredTailCanBeActive(rawStatus) && native?.ongoingAssistantAt
             && native.ongoingAssistantAt > (observedLifecycle?.at ?? 0)
             && native.ongoingAssistantAt <= Date.now()
             && Date.now() - native.ongoingAssistantAt < activeWindowMs) status = "running";
@@ -1822,6 +1872,7 @@ export class ZcodeAdapter implements HarnessAdapter {
               pinned: row.pinned === 1,
               workspaceIdentity,
               duplicateTaskRows: duplicateRows.length,
+              ...(typeof nativeSessions.get(row.task_id)?.parentId === "string" ? {parentSessionId:nativeSessions.get(row.task_id)!.parentId} : {}),
               ...(nativeTimeUpdated ? { nativeTimeUpdated } : {}),
               ...(turn ? { nativeLastTurn: turn } : {}),
               ...(nativeTimeUpdated && nativeTimeUpdated > updatedAt ? { lastActivitySource: "native-session-db" } : {}),
@@ -1854,6 +1905,10 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   async getSession(id: string): Promise<AgentSession | null> {
+    if(this.officialRunning?.tasks.some(t=>t.sessionId===id)){
+      const stored=await this.listPersistedSessions({});
+      return this.officialOverlay(stored).find(s=>s.id===id)??null;
+    }
     const lost=this.observedActiveTurns.get(id);
     if(lost?.workspaceCrash&&lost.workspaceRuntime&&workspaceCrashCurrent(this.localDbPath,id,lost.workspaceCrash,this.workspaceProcessProbe)){
       const session=lost.workspaceRuntime.session;

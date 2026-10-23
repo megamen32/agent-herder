@@ -9,7 +9,8 @@ import {MeshDeliveryLedger} from "./delivery-ledger.js";
 import {inventoryHarnesses} from "./inventory.js";
 import {coordinationNotes,type CoordinationNoteStore} from "../coordination-notes.js";
 import {checkDeliveryModel,deliveryRefusalText,resolveSessionWorkDirectory,type ProjectModelPolicyStateProvider} from "../project-model-delivery-gate.js";
-import {holdManualStop} from "../human-stop-actions.js";
+import {automationDisarmDecisionWithWork,sessionWorkKey,AutomationDisarmStore} from "../automation-disarm/index.js";
+import {automaticDeliveryHeld,holdManualStop} from "../human-stop-actions.js";
 import {getHumanStopStore} from "../human-stop-store.js";
 import {MINIMAX_CODE_HARNESS_CWD} from "../adapters/minimax-code-store.js";
 import {MINIMAX_CODE_HARNESS,observeMinimaxCode,runMinimaxCodeDelivery} from "./native-minimax-code.js";
@@ -18,6 +19,7 @@ export interface HarnessMeshCapability {harness:string;discovery:"available"|"un
 export type MeshNotesInjector=(session:{id:string;harness:string;cwd:string;hostId?:string},message:string)=>Promise<string>;
 /** Independent native observation of one exact session of this host. */
 export type MeshNativeObserver=(harness:string,nativeSessionId:string)=>Promise<{nativeSessionId:string;status:string;cwd?:string|null}|null>;
+const officialZcode=(harness:string,adapter:HarnessAdapter|undefined)=>harness==='zcode'&&(adapter as HarnessAdapter & {getOfficialMeshAdmission?:()=>string|undefined}|undefined)?.getOfficialMeshAdmission?.()==='official-ws-v4';
 type Dependencies={hostId?:string;adapters:Map<string,HarnessAdapter>;send?:(args:Record<string,unknown>)=>Promise<unknown>;ledgerPath?:string;readDeadlineMs?:number;projectStore?:Pick<CoordinationNoteStore,"activeWorkspaceForSession"> & Partial<Pick<CoordinationNoteStore,"activeWorkspaceObservation">>;notes?:MeshNotesInjector;nativeObserve?:MeshNativeObserver;deliveryPolicy?:ProjectModelPolicyStateProvider};
 export class LocalHarnessMesh {
  readonly hostId:string;
@@ -31,7 +33,7 @@ export class LocalHarnessMesh {
   const freshIds=new Map<string,string>();
   const inspect=async(harness:string)=>{
    const adapter=this.deps.adapters.get(harness);
-   if(!adapter || (adapter.lazyStart&&adapter.isReady&&!adapter.isReady())){
+   if(!adapter || (adapter.lazyStart&&adapter.isReady&&!adapter.isReady()&&!officialZcode(harness,adapter))){
     complete=false;
     harnesses.push({harness,discovery:"unavailable",delivery:"unsupported",reason:!adapter?"adapter_not_registered":"native_transport_disconnected"});return;
    }
@@ -53,7 +55,7 @@ export class LocalHarnessMesh {
      const session=compactSession(this.hostId,projected);sessions.push(session);freshIds.set(addressKey(session.address),row.id);
     }
     // Existing API implementations do not all provide native admission proof.
-    const deliverable=harness==="codex"||harness===MINIMAX_CODE_HARNESS;
+    const deliverable=harness==="codex"||harness===MINIMAX_CODE_HARNESS||officialZcode(harness,adapter);
     harnesses.push({harness,discovery:"available",delivery:deliverable?"available":"unsupported",...(deliverable?{}:{reason:"native_admission_receipt_unverified"})});
    }catch(error){complete=false;harnesses.push({harness,discovery:"unavailable",delivery:"unsupported",reason:error instanceof Error&&error.message==="mesh_read_deadline"?"native_discovery_deadline":"native_discovery_failed"});}
   };
@@ -80,6 +82,7 @@ export class LocalHarnessMesh {
    // A native MiniMax Code session owns its own turn inside the desktop
    // runtime, so the delivery is queued there and proven by its receipt.
    if(request.target.harness===MINIMAX_CODE_HARNESS)return this.deliverMinimaxCode(request,adapter);
+   if(officialZcode(request.target.harness,adapter))return this.deliverZcodeOfficial(request,adapter);
    if(request.target.harness!=="codex")return reject("native_admission_receipt_unverified");
    const sessionId=this.ids.get(addressKey(request.target))||request.target.nativeSessionId;
    const session=await adapter.getSession(sessionId);
@@ -89,6 +92,24 @@ export class LocalHarnessMesh {
    const raw=this.deps.send?await this.deps.send(args):await handleSendMessage(this.deps.adapters,args);
    return parseNativeReceipt(typeof raw==="string"?{content:[{type:"text",text:raw}]}:raw,request.inputId);
   });
+ }
+ /** Queue through the already-supported official V4 adapter. The durable mesh
+  * ledger surrounds this call; admission/unknown input is never reissued. */
+ private async deliverZcodeOfficial(request:MeshDelivery,adapter:HarnessAdapter):Promise<NativeReceipt>{
+  const reject=(reason:string):NativeReceipt=>({state:'not_attempted',inputId:request.inputId,retryable:true,reason});
+  const session=await adapter.getSession(request.target.nativeSessionId).catch(()=>null);
+  if(!session||compactSession(this.hostId,session).address.nativeSessionId!==request.target.nativeSessionId)return reject('native_session_identity_unknown');
+  if(session.meta?.nativeExecutor!=='official-server'||session.meta.nativeActivityFresh!==true||session.status!=='running')return reject('official_native_activity_unknown');
+  const disarm=await automationDisarmDecisionWithWork(AutomationDisarmStore.forRuntime(),async()=>[sessionWorkKey(session.harness,session.title,session.cwd)],'automation');
+  if(!disarm.allowed)return reject('automation_disarmed');
+  if(await automaticDeliveryHeld(session,false,adapter))return reject('human_stopped_native_session');
+  const provenance=`Источник: ${request.sender.hostId} / ${request.sender.harness} / ${request.sender.nativeSessionId}.\n${request.message}`;
+  const message=await (this.deps.notes?this.deps.notes(session,provenance):coordinationNotes.inject(session,provenance));
+  if(!officialZcode('zcode',adapter)||await automaticDeliveryHeld(session,false,adapter))return reject('official_native_admission_held');
+  const receipt=await adapter.sendMessage(session.id,{message,inputId:request.inputId,queue:true,origin:'automation'});
+  if(receipt.admitted===true&&receipt.inputId===request.inputId&&receipt.admissionKind!=='current_turn_context')return {state:'admitted',inputId:request.inputId,retryable:false,...(receipt.turnId?{turnId:receipt.turnId}:{}),reason:'official_zcode_v4_input_accepted'};
+  if(receipt.notSubmitted===true&&receipt.admissionUnknown!==true)return {state:'not_attempted',inputId:request.inputId,retryable:receipt.nonRetryable!==true,reason:'official_zcode_v4_not_submitted'};
+  return {state:'unknown',inputId:request.inputId,retryable:false,reason:'official_zcode_v4_admission_unknown'};
  }
  /**
   * The per-project model gate of one delivery.

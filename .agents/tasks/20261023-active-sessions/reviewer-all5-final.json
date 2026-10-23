@@ -1,0 +1,192 @@
+{
+  "at": "2026-10-23T19:38:11.652350+00:00",
+  "elapsedSeconds": 1.582,
+  "result": {
+    "hosts": [
+      {
+        "hostId": "roomhacker-server-100",
+        "ownerPid": 2229307,
+        "state": "available",
+        "observedAt": "2026-10-23T19:38:08.232Z",
+        "sources": [
+          {
+            "harness": "opencode",
+            "exhaustive": true,
+            "source": "opencode-native-active-status",
+            "observedAt": "2026-10-23T19:38:08.139Z",
+            "refreshDurationMs": 16
+          },
+          {
+            "harness": "claude",
+            "exhaustive": false,
+            "source": "native-adapter",
+            "reason": "native_enumeration_coverage_unknown"
+          },
+          {
+            "harness": "codex",
+            "exhaustive": true,
+            "source": "codex-app-server"
+          },
+          {
+            "harness": "hermes",
+            "exhaustive": false,
+            "source": "native-adapter",
+            "reason": "native_enumeration_coverage_unknown"
+          },
+          {
+            "harness": "zcode",
+            "exhaustive": false,
+            "source": "zcode-existing-native-runtime+official-supervisor",
+            "observedAt": "2026-10-23T19:38:08.232Z",
+            "refreshDurationMs": 109,
+            "reason": "known_task_candidates_only_loaded_identity_coverage_unknown"
+          },
+          {
+            "harness": "minimax-code",
+            "exhaustive": true,
+            "source": "native_active_turn",
+            "observedAt": "2026-10-23T19:38:04.944Z",
+            "activityCoverage": "native_active_turn",
+            "metadataEnumerationExhaustive": true,
+            "candidateCount": 4,
+            "failedCandidateCount": 0,
+            "totalSessions": 5171,
+            "pages": 29,
+            "expiresAt": "2026-10-23T19:38:19.944Z",
+            "stageTimingsMs": {
+              "metadata": 1801,
+              "candidate_seed": 5,
+              "controller_validation": 15
+            },
+            "refreshDurationMs": 1820
+          },
+          {
+            "harness": "fast-agent",
+            "exhaustive": false,
+            "source": "native-adapter",
+            "reason": "native_enumeration_coverage_unknown"
+          }
+        ]
+      },
+      {
+        "hostId": "server-44",
+        "ownerPid": 812317,
+        "state": "available",
+        "observedAt": "2026-10-23T19:38:05.318Z",
+        "sources": [
+          {
+            "harness": "codex",
+            "exhaustive": true,
+            "source": "codex-app-server"
+          }
+        ]
+      },
+      {
+        "hostId": "roomhacker-server-88",
+        "ownerPid": 2985885,
+        "state": "available",
+        "observedAt": "2026-10-23T19:38:06.778Z",
+        "sources": [
+          {
+            "harness": "opencode",
+            "exhaustive": true,
+            "source": "opencode-native-active-status",
+            "observedAt": "2026-10-23T19:38:05.654Z",
+            "refreshDurationMs": 41
+          },
+          {
+            "harness": "codex",
+            "exhaustive": true,
+            "source": "codex-app-server"
+          },
+          {
+            "harness": "zcode",
+            "exhaustive": false,
+            "source": "zcode-existing-native-runtime+official-supervisor",
+            "observedAt": "2026-10-23T19:38:05.636Z",
+            "refreshDurationMs": 22,
+            "reason": "official_supervisor_unavailable"
+          }
+        ]
+      },
+      {
+        "hostId": "mac-mini-2012.lan",
+        "ownerPid": 38634,
+        "state": "available",
+        "observedAt": "2026-10-23T19:37:56.615Z",
+        "sources": [
+          {
+            "harness": "codex",
+            "exhaustive": true,
+            "source": "codex-app-server"
+          }
+        ]
+      },
+      {
+        "hostId": "MacBook-Pro-User.local",
+        "state": "unavailable",
+        "observedAt": null,
+        "reason": "direct_native_listener_unavailable"
+      }
+    ],
+    "partial": true,
+    "unassignedWorkspaceCount": 7,
+    "total": 11,
+    "activeCount": 3,
+    "activeRunningCount": 3,
+    "activeWaitingCount": 0,
+    "activeCountExact": null,
+    "activeRootCount": 1,
+    "activeChildCount": 2,
+    "unknownActivityCount": 8,
+    "countIsLowerBound": true,
+    "limited": false,
+    "unknownWorkspaceCount": 7,
+    "filters": {}
+  },
+  "m1Rows": 0,
+  "zcodeRows": [
+    {
+      "id": "session_b38b92e45be8939782ee5863251407b4",
+      "runtimeHostId": "roomhacker-server-100",
+      "parentSessionId": null,
+      "workspaces": [
+        {
+          "hostId": "roomhacker-server-100",
+          "absolutePath": "/home/roomhacker/PycharmProjects/TelegramAuto",
+          "source": "observed",
+          "observedAt": "2026-10-23T19:38:03.129Z",
+          "evidence": "local official supervisor running-tasks execution workspace; native pid 1199736 generation 1"
+        }
+      ]
+    },
+    {
+      "id": "sess_subagent_agent_6989882e-7261-436d-a447-ac2c23b232d7",
+      "runtimeHostId": "roomhacker-server-100",
+      "parentSessionId": "session_b38b92e45be8939782ee5863251407b4",
+      "workspaces": [
+        {
+          "hostId": "roomhacker-server-100",
+          "absolutePath": "/home/roomhacker/PycharmProjects/TelegramAuto",
+          "source": "observed",
+          "observedAt": "2026-10-23T19:38:03.129Z",
+          "evidence": "local official supervisor running-tasks execution workspace; native pid 1199736 generation 1"
+        }
+      ]
+    },
+    {
+      "id": "sess_subagent_agent_3a6a7d84-3ddf-441f-92ec-108fcd6f752c",
+      "runtimeHostId": "roomhacker-server-100",
+      "parentSessionId": "session_b38b92e45be8939782ee5863251407b4",
+      "workspaces": [
+        {
+          "hostId": "roomhacker-server-100",
+          "absolutePath": "/home/roomhacker/PycharmProjects/TelegramAuto",
+          "source": "observed",
+          "observedAt": "2026-10-23T19:38:03.129Z",
+          "evidence": "local official supervisor running-tasks execution workspace; native pid 1199736 generation 1"
+        }
+      ]
+    }
+  ]
+}

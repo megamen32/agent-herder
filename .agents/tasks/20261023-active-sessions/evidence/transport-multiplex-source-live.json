@@ -1,0 +1,107 @@
+[
+  {
+    "cycle": 0,
+    "rows": [
+      {
+        "hostId": "roomhacker-server-100",
+        "ms": 177,
+        "state": "available",
+        "active": 27
+      },
+      {
+        "hostId": "server-44",
+        "ms": 405,
+        "state": "available",
+        "active": 0
+      },
+      {
+        "hostId": "roomhacker-server-88",
+        "ms": 413,
+        "state": "available",
+        "active": 0
+      },
+      {
+        "hostId": "mac-mini-2012.lan",
+        "ms": 1473,
+        "state": "available",
+        "active": 0
+      },
+      {
+        "hostId": "MacBook-Pro-User.local",
+        "ms": 592,
+        "state": "available",
+        "active": 18
+      }
+    ]
+  },
+  {
+    "cycle": 1,
+    "rows": [
+      {
+        "hostId": "roomhacker-server-100",
+        "ms": 154,
+        "state": "available",
+        "active": 27
+      },
+      {
+        "hostId": "server-44",
+        "ms": 121,
+        "state": "available",
+        "active": 0
+      },
+      {
+        "hostId": "roomhacker-server-88",
+        "ms": 133,
+        "state": "available",
+        "active": 0
+      },
+      {
+        "hostId": "mac-mini-2012.lan",
+        "ms": 888,
+        "state": "available",
+        "active": 0
+      },
+      {
+        "hostId": "MacBook-Pro-User.local",
+        "ms": 260,
+        "state": "available",
+        "active": 17
+      }
+    ]
+  },
+  {
+    "cycle": 2,
+    "rows": [
+      {
+        "hostId": "roomhacker-server-100",
+        "ms": 111,
+        "state": "available",
+        "active": 27
+      },
+      {
+        "hostId": "server-44",
+        "ms": 124,
+        "state": "available",
+        "active": 0
+      },
+      {
+        "hostId": "roomhacker-server-88",
+        "ms": 137,
+        "state": "available",
+        "active": 0
+      },
+      {
+        "hostId": "mac-mini-2012.lan",
+        "ms": 900,
+        "state": "available",
+        "active": 0
+      },
+      {
+        "hostId": "MacBook-Pro-User.local",
+        "ms": 419,
+        "state": "available",
+        "active": 17
+      }
+    ]
+  }
+]

@@ -1,0 +1,11 @@
+{
+  "release": "/home/roomhacker/agents-projects/.fleet-candidate/releases/f630075ef68a8bb0fe63faed95b6e3256f61cc81",
+  "at": "2026-10-23T19:37:07.960Z",
+  "id": "session_b38b92e45be8939782ee5863251407b4",
+  "status": "running",
+  "activeTurnId": "turn_315dd97b-5915-44b7-8845-c8c99fd3584e",
+  "eventSeq": 18368,
+  "stateRevision": 8,
+  "ownedPid": null,
+  "ownCompletedCanaryExistingOnly": "native_session_inactive_no_load_no_resend"
+}

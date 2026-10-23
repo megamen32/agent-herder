@@ -1,0 +1,20 @@
+{
+  "at": "2026-10-23T20:15:45.258Z",
+  "current": "/home/roomhacker/agents-projects/.fleet-candidate/releases/2a438e006277eab5879e3919569f00a71de2a819",
+  "queryModulesByteIdentical": {
+    "mcp/active-session-tools.js": "68ea6762135d86871746b5adcadaeccab08b3324927cb4cfb853850ef2fc4288",
+    "active-session-fleet.js": "763eb9fcdf38787d7a3e6c410999ade59ff18be751ee29f24c7895ea874b59e1"
+  },
+  "childId": "01a1653d-a3dd-7b73-b279-226467566409",
+  "parentThreadId": "01a1653b-d774-73b3-9c0a-09cced76ea9e",
+  "normalizedParent": "01a1653b-d774-73b3-9c0a-09cced76ea9e",
+  "workspaces": [
+    {
+      "hostId": "roomhacker-server-100",
+      "absolutePath": "/home/roomhacker/agents-projects/noticeplace",
+      "source": "declared",
+      "observedAt": "2026-10-23T20:15:12.686Z",
+      "evidence": "parent_declaration:01a1653b-d774-73b3-9c0a-09cced76ea9e:v1:coordination_declaration:coordination-note:5c8348fe-947d-4692-a76c-75a850eec1aa:explicit-working-declaration"
+    }
+  ]
+}

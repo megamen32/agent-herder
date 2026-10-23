@@ -1,0 +1,260 @@
+[
+  {
+    "cycle": 0,
+    "at": 1792785157.8825788,
+    "hosts": [
+      {
+        "host": "100",
+        "totalMs": 98.23,
+        "bootstrapMs": 91.05,
+        "httpMs": 7.18,
+        "bytes": 12295,
+        "ownerPid": 2455492,
+        "active": 25,
+        "unknown": 0,
+        "observedAt": "2026-10-23T19:52:36.888Z",
+        "load": [
+          38.27490234375,
+          40.087890625,
+          40.0244140625
+        ]
+      },
+      {
+        "host": "44",
+        "totalMs": 351.67,
+        "bootstrapMs": 345.31,
+        "httpMs": 6.36,
+        "bytes": 682,
+        "ownerPid": 847893,
+        "active": 0,
+        "unknown": 0,
+        "observedAt": "2026-10-23T19:52:34.076Z",
+        "load": [
+          4.521484375,
+          3.98291015625,
+          4.49658203125
+        ]
+      },
+      {
+        "host": "88",
+        "totalMs": 369.12,
+        "bootstrapMs": 363.88,
+        "httpMs": 5.24,
+        "bytes": 1057,
+        "ownerPid": 3039044,
+        "active": 0,
+        "unknown": 0,
+        "observedAt": "2026-10-23T19:52:36.386Z",
+        "load": [
+          9.88818359375,
+          10.71923828125,
+          11.12109375
+        ]
+      },
+      {
+        "host": "M1",
+        "totalMs": 679.87,
+        "bootstrapMs": 495.88,
+        "httpMs": 183.99,
+        "bytes": 19955,
+        "ownerPid": 88827,
+        "active": 17,
+        "unknown": 0,
+        "observedAt": "2026-10-23T19:52:36.558Z",
+        "load": [
+          15.4453125,
+          19.13671875,
+          17.99072265625
+        ]
+      },
+      {
+        "host": "Mini",
+        "totalMs": 1182.69,
+        "bootstrapMs": 1139.03,
+        "httpMs": 43.66,
+        "bytes": 697,
+        "ownerPid": 41599,
+        "active": 0,
+        "unknown": 0,
+        "observedAt": "2026-10-23T19:52:38.378Z",
+        "load": [
+          2.27880859375,
+          2.82666015625,
+          2.97705078125
+        ]
+      }
+    ]
+  },
+  {
+    "cycle": 1,
+    "at": 1792785159.0732238,
+    "hosts": [
+      {
+        "host": "100",
+        "totalMs": 85.78,
+        "bootstrapMs": 78.47,
+        "httpMs": 7.31,
+        "bytes": 12295,
+        "ownerPid": 2455492,
+        "active": 25,
+        "unknown": 0,
+        "observedAt": "2026-10-23T19:52:36.888Z",
+        "load": [
+          38.27490234375,
+          40.087890625,
+          40.0244140625
+        ]
+      },
+      {
+        "host": "44",
+        "totalMs": 345.7,
+        "bootstrapMs": 340.29,
+        "httpMs": 5.41,
+        "bytes": 682,
+        "ownerPid": 847893,
+        "active": 0,
+        "unknown": 0,
+        "observedAt": "2026-10-23T19:52:38.897Z",
+        "load": [
+          5.60107421875,
+          4.2158203125,
+          4.5693359375
+        ]
+      },
+      {
+        "host": "88",
+        "totalMs": 363.48,
+        "bootstrapMs": 357.46,
+        "httpMs": 6.02,
+        "bytes": 1057,
+        "ownerPid": 3039044,
+        "active": 0,
+        "unknown": 0,
+        "observedAt": "2026-10-23T19:52:36.386Z",
+        "load": [
+          10.2978515625,
+          10.79052734375,
+          11.14208984375
+        ]
+      },
+      {
+        "host": "M1",
+        "totalMs": 440.14,
+        "bootstrapMs": 416.59,
+        "httpMs": 23.55,
+        "bytes": 19955,
+        "ownerPid": 88827,
+        "active": 17,
+        "unknown": 0,
+        "observedAt": "2026-10-23T19:52:39.136Z",
+        "load": [
+          15.3291015625,
+          19.05126953125,
+          17.96728515625
+        ]
+      },
+      {
+        "host": "Mini",
+        "totalMs": 1075.31,
+        "bootstrapMs": 1040.77,
+        "httpMs": 34.54,
+        "bytes": 697,
+        "ownerPid": 41599,
+        "active": 0,
+        "unknown": 0,
+        "observedAt": "2026-10-23T19:52:38.389Z",
+        "load": [
+          2.27880859375,
+          2.82666015625,
+          2.97705078125
+        ]
+      }
+    ]
+  },
+  {
+    "cycle": 2,
+    "at": 1792785160.1521873,
+    "hosts": [
+      {
+        "host": "100",
+        "totalMs": 74.27,
+        "bootstrapMs": 70.1,
+        "httpMs": 4.17,
+        "bytes": 12295,
+        "ownerPid": 2455492,
+        "active": 25,
+        "unknown": 0,
+        "observedAt": "2026-10-23T19:52:36.888Z",
+        "load": [
+          38.27490234375,
+          40.087890625,
+          40.0244140625
+        ]
+      },
+      {
+        "host": "44",
+        "totalMs": 333.53,
+        "bootstrapMs": 329.9,
+        "httpMs": 3.63,
+        "bytes": 682,
+        "ownerPid": 847893,
+        "active": 0,
+        "unknown": 0,
+        "observedAt": "2026-10-23T19:52:39.070Z",
+        "load": [
+          5.60107421875,
+          4.2158203125,
+          4.5693359375
+        ]
+      },
+      {
+        "host": "88",
+        "totalMs": 385.75,
+        "bootstrapMs": 380.38,
+        "httpMs": 5.37,
+        "bytes": 1057,
+        "ownerPid": 3039044,
+        "active": 0,
+        "unknown": 0,
+        "observedAt": "2026-10-23T19:52:39.492Z",
+        "load": [
+          10.2978515625,
+          10.79052734375,
+          11.14208984375
+        ]
+      },
+      {
+        "host": "M1",
+        "totalMs": 433.93,
+        "bootstrapMs": 383.0,
+        "httpMs": 50.93,
+        "bytes": 19955,
+        "ownerPid": 88827,
+        "active": 17,
+        "unknown": 0,
+        "observedAt": "2026-10-23T19:52:39.136Z",
+        "load": [
+          15.3291015625,
+          19.05126953125,
+          17.96728515625
+        ]
+      },
+      {
+        "host": "Mini",
+        "totalMs": 1106.06,
+        "bootstrapMs": 1068.69,
+        "httpMs": 37.37,
+        "bytes": 697,
+        "ownerPid": 41599,
+        "active": 0,
+        "unknown": 0,
+        "observedAt": "2026-10-23T19:52:38.389Z",
+        "load": [
+          2.57666015625,
+          2.87890625,
+          2.99462890625
+        ]
+      }
+    ]
+  }
+]

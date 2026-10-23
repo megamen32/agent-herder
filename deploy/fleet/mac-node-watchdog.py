@@ -219,7 +219,9 @@ def darwin_mutable_bytes(root,limit,overall_deadline,verify_root,refuse,pinned):
     the child's unchanged two-second census plus startup and owned cleanup.
     """
     child=None;root_fd=None;cwd_fd=None;summary=b''
-    operation_deadline=overall_deadline-1
+    # A fresh retry shares the original window; leave bounded cleanup time
+    # without making its remaining fraction unusable after a scheduling delay.
+    operation_deadline=overall_deadline-min(1,max(0,overall_deadline-time.monotonic())/2)
     def remaining():
         value=operation_deadline-time.monotonic()
         if value<=0:refuse('storage_observation_limit','deadline')
@@ -310,8 +312,18 @@ def storage_bytes(root, limit, *, artifact=False, _native_mutable=True):
         verify_root()
         return darwin_artifact_bytes(root,limit,overall_deadline,verify_root,refuse,pinned)
     if not artifact and sys.platform=='darwin' and _native_mutable:
-        verify_root()
-        return darwin_mutable_bytes(root,limit,overall_deadline,verify_root,refuse,pinned)
+        for attempt in (1,2):
+            verify_root()
+            try:return darwin_mutable_bytes(root,limit,overall_deadline,verify_root,refuse,pinned)
+            except Refused as error:
+                reason,_,payload=str(error).partition(' ')
+                try:kind=json.loads(payload).get('kind')
+                except (ValueError,AttributeError):kind=None
+                if reason!='storage_observation_limit' or kind!='deadline' or attempt==2 or time.monotonic()>=overall_deadline:raise
+                # Only an observation deadline admits one entirely fresh census.
+                # Keep the SAME pinned root and unchanged overall four seconds;
+                # no prior sample replaces hard byte/file/root/cleanup failures.
+                verify_root()
     class Deadline(Exception):pass
     flags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW
     for attempt in (1,2):

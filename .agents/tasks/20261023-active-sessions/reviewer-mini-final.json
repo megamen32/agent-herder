@@ -1,0 +1,48 @@
+{
+  "at": "2026-10-23T19:38:09.921217+00:00",
+  "hostname": "mac-mini-2012.lan",
+  "current": "/Users/roomhacker/.local/share/agent-herder/fleet/releases/f630075ef68a8bb0fe63faed95b6e3256f61cc81",
+  "configSource": "f630075ef68a8bb0fe63faed95b6e3256f61cc81",
+  "launchState": [
+    "state = running",
+    "pid = 38592",
+    "last exit code = 78: EX_CONFIG"
+  ],
+  "listener": [
+    "COMMAND   PID       USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME",
+    "node    38634 roomhacker   19u  IPv4 0xe92e1d78be60bd09      0t0  TCP *:18789 (LISTEN)"
+  ],
+  "result": {
+    "hosts": [
+      {
+        "hostId": "mac-mini-2012.lan",
+        "ownerPid": 38634,
+        "state": "available",
+        "observedAt": "2026-10-23T19:37:56.615Z",
+        "sources": [
+          {
+            "harness": "codex",
+            "exhaustive": true,
+            "source": "codex-app-server"
+          }
+        ]
+      }
+    ],
+    "partial": false,
+    "unassignedWorkspaceCount": 0,
+    "total": 0,
+    "activeCount": 0,
+    "activeRunningCount": 0,
+    "activeWaitingCount": 0,
+    "activeCountExact": 0,
+    "activeRootCount": 0,
+    "activeChildCount": 0,
+    "unknownActivityCount": 0,
+    "countIsLowerBound": false,
+    "limited": false,
+    "unknownWorkspaceCount": 0,
+    "filters": {
+      "runtimeHostId": "mac-mini-2012.lan"
+    }
+  }
+}

@@ -7,6 +7,7 @@ import { getHumanStopStore, type HumanStopStore } from "./human-stop-store.js";
 import type {NativeHookTurn} from './adapters/zcode-workspace-lifecycle.js';
 import type {
   AgentSession,
+  SessionSnapshotReceipt,
   ControlResult,
   HarnessAdapter,
   HarnessEvent,
@@ -90,6 +91,7 @@ interface AutomaticResumeState {
 interface SessionSnapshot {
   sessions: AgentSession[];
   refreshedAt: number;
+  observedAt: number;
 }
 
 export interface HarnessModelCache {
@@ -111,6 +113,9 @@ export class SessionNotFoundError extends Error {
 export class SessionSupervisor {
   private readonly sessionCacheTtlMs: number;
   private sessionSnapshot: SessionSnapshot | null = null;
+  private readonly inventoryFailures = new Map<string,string>();
+  private readonly nativeProviderSnapshots = new Map<string,{sessions:AgentSession[];observedAt:number;receipt:SessionSnapshotReceipt}>();
+  private readonly nativeProviderRefreshes = new Map<string,Promise<AgentSession[]>>();
   /** The declared work place of every session, read once per update. */
   private projection: { observations: Map<string, WorkspaceObservation>; at: number } | null = null;
   /** The running projection update. */
@@ -260,6 +265,7 @@ export class SessionSupervisor {
     const bounded = Math.max(1_000, intervalMs);
     const tick = () => {
       this.ensureNativeSubscriptions();
+      for(const [provider,adapter]of this.adapters)if(!adapter.lazyStart||adapter.lazyDiscovery||!adapter.isReady||adapter.isReady())void this.refreshNativeProvider(provider,adapter);
       void this.refreshSessionSnapshot().catch(() => undefined);
     };
     this.observationTimer = setInterval(tick, bounded);
@@ -300,7 +306,23 @@ export class SessionSupervisor {
 
   /** Metadata pages reuse this process's actual snapshot generation, without renewing freshness. */
   sessionInventorySnapshot(): {sessions: AgentSession[]; warming: boolean; observedAt: string | null} {
-    return {sessions: this.projectedSessions(), warming: Boolean(this.sessionRefresh) || !this.sessionSnapshot, observedAt: this.sessionSnapshot ? new Date(this.sessionSnapshot.refreshedAt).toISOString() : null};
+    return {sessions: this.projectedSessions(), warming: Boolean(this.sessionRefresh) || !this.sessionSnapshot, observedAt: this.sessionSnapshot ? new Date(this.sessionSnapshot.observedAt).toISOString() : null};
+  }
+
+  /** Owner-only raw inventory; legacy work-target projection cannot change runtime identity. */
+  nativeInventorySnapshot(): {sessions: AgentSession[]; warming: boolean; observedAt: string | null; failures:Record<string,string>;sources:Record<string,SessionSnapshotReceipt>} {
+    const rows=[...this.nativeProviderSnapshots];
+    return {failures:Object.fromEntries(this.inventoryFailures),sources:Object.fromEntries(rows.map(([provider,value])=>[provider,value.receipt])),sessions:rows.flatMap(([,value])=>value.sessions.map(session=>({...session,meta:{...session.meta,activityObservedAt:session.meta?.activityObservedAt??new Date(value.observedAt).toISOString(),activityExpiresAt:session.meta?.activityExpiresAt??new Date(value.observedAt+30000).toISOString()}}))),warming:Boolean(this.sessionRefresh)||!rows.length,observedAt:rows.length?new Date(Math.max(...rows.map(([,value])=>value.observedAt))).toISOString():null};
+  }
+
+  /** Polls share one native read per provider; a slow provider never holds other observations. */
+  private refreshNativeProvider(provider:string,adapter:HarnessAdapter):Promise<AgentSession[]> {
+    const pending=this.nativeProviderRefreshes.get(provider);if(pending)return pending;
+    const read=Promise.resolve().then(()=>adapter.listSessions()).then(sessions=>{
+      const observedAt=Date.now();const receipt=adapter.getSessionSnapshotReceipt?.()??{exhaustive:false,observedAt:new Date(observedAt).toISOString(),source:'native-adapter',reason:'native_enumeration_coverage_unknown'};
+      this.nativeProviderSnapshots.set(provider,{sessions,observedAt,receipt});this.inventoryFailures.delete(provider);return sessions;
+    }).catch(()=>{this.inventoryFailures.set(provider,'native_enumeration_failed');return this.nativeProviderSnapshots.get(provider)?.sessions??[];}).finally(()=>{this.nativeProviderRefreshes.delete(provider);});
+    this.nativeProviderRefreshes.set(provider,read);return read;
   }
 
   async refreshSessions(filters: SessionFilters = {}): Promise<AgentSession[]> {
@@ -343,7 +365,8 @@ export class SessionSupervisor {
     this.sessionRefresh = this.readSessionSnapshot()
       .then((sessions) => {
         this.seedModelCacheFromSessions(sessions);
-        this.sessionSnapshot = { sessions, refreshedAt: Date.now() };
+        const observedAt = Date.now();
+        this.sessionSnapshot = { sessions, refreshedAt: observedAt, observedAt };
         if (previous) this.publishSnapshotDiff(previous, sessions);
         this.refreshStaleModelCaches();
         // The declared work places of the new snapshot are read in the
@@ -361,7 +384,7 @@ export class SessionSupervisor {
       !adapter.lazyStart || adapter.lazyDiscovery || !adapter.isReady || adapter.isReady()
     );
     const sessionGroups = await Promise.all(adapters.map(async ([provider, adapter]) => {
-      const sessions = await adapter.listSessions();
+      const sessions = await this.refreshNativeProvider(provider,adapter);
       return Promise.all(sessions.map(async (session) => {
         const humanStopHeld = (provider === "codex" || provider === "zcode" || provider === "opencode") ? await this.humanStops.observe(session) : false;
         const record = await this.lineage.get(sessionKey(provider, nativeSessionId(session)));

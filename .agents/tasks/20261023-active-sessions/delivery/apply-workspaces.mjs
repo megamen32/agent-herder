@@ -1,0 +1,12 @@
+import {readFile} from 'node:fs/promises';
+import {SessionWorkspaceStore} from '/Users/user/.local/share/agent-herder/fleet/releases/44975f68ad8275602144de2f4d6cfa9d7f6922d3/dist/session-workspaces.js';
+import {backfillSessionWorkspaces,createSessionWorkspaceOwnerUpdater} from '/Users/user/.local/share/agent-herder/fleet/releases/44975f68ad8275602144de2f4d6cfa9d7f6922d3/dist/session-workspaces-backfill.js';
+import {readMinimaxActiveSessions} from '/Users/user/.local/share/agent-herder/fleet/releases/44975f68ad8275602144de2f4d6cfa9d7f6922d3/dist/adapters/minimax-code-active.js';
+import {MinimaxCodeControl} from '/Users/user/.local/share/agent-herder/fleet/releases/44975f68ad8275602144de2f4d6cfa9d7f6922d3/dist/adapters/minimax-code-control.js';
+const store=new SessionWorkspaceStore();
+const applied=await backfillSessionWorkspaces(store,JSON.parse(await readFile('/tmp/ah-active-44975f6/workspaces.json','utf8')));
+const native=await readMinimaxActiveSessions(new MinimaxCodeControl());
+const identities=native.sessions.map(s=>({runtimeHostId:'MacBook-Pro-User.local',harness:s.harness,nativeSessionId:s.id,lastActivity:s.lastActivity,parentSessionId:s.meta?.parentSessionId}));
+await createSessionWorkspaceOwnerUpdater({store,readEvidence:async()=>[]})(identities);
+const records=await store.readMany(identities);
+console.log(JSON.stringify({applied,nativeReceipt:native.receipt,currentActive:identities.length,knownWorkspaces:[...records.values()].filter(r=>r.workspaces.length).length,unknown:identities.filter(i=>!records.has(JSON.stringify([i.runtimeHostId.toLowerCase(),i.harness,i.nativeSessionId]))).map(i=>i.nativeSessionId)}));

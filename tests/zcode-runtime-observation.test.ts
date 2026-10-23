@@ -12,6 +12,13 @@ describe("existing ZCode runtime observation", () => {
     expect(observation.idleProof).toBe(false);
     expect(start).not.toHaveBeenCalled();
   });
+  it("uses a positive native messageLimit while discarding dialogue",async()=>{
+    const callIfReady=async(_channel:string,_method:string,args:unknown[])=>{
+      if(Number((args[0] as any).messageLimit)<=0)throw Error('Invalid params: messageLimit expected>0');
+      return {session:{sessionId:'known'},messages:[{text:'private'}],runtime:{eventSeq:1,stateRevision:2,pendingRequestIds:[]}};
+    };
+    expect(await readExistingZcodeRuntimeObservation({callIfReady},workspace,'known')).toMatchObject({available:true});
+  });
   it("uses a ready existing transport without calling start", async () => {
     const client = new ZcodeAppServerClient({ command: "must-not-run" });
     const start = vi.spyOn(client, "start").mockRejectedValue(new Error("must not start"));
@@ -28,7 +35,7 @@ describe("existing ZCode runtime observation", () => {
     }));
     const observation = await readExistingZcodeRuntimeObservation({ callIfReady }, workspace, "known");
     expect(callIfReady).toHaveBeenCalledWith("zcode-agent", "readSession", [
-      { ...workspace, sessionId: "known", runtimePolicy: "existing-only", messageLimit: 0 },
+      { ...workspace, sessionId: "known", runtimePolicy: "existing-only", messageLimit: 1 },
     ]);
     expect(observation).toMatchObject({ available: true, activeTurnId: "turn-live", pendingRequestCount: 1,
       loadedSessionCoverage: "unknown", queuedInputCount: null, admittedNotStartedCount: null, idleProof: false });

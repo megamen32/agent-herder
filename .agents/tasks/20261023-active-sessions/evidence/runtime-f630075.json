@@ -1,0 +1,966 @@
+{
+  "observedAt": "2026-10-23T19:37:01.327910+00:00",
+  "hosts": {
+    "100": {
+      "hostname": "roomhacker-server-100",
+      "current": "/home/roomhacker/agents-projects/.fleet-candidate/releases/f630075ef68a8bb0fe63faed95b6e3256f61cc81",
+      "configSourceSha": "f630075ef68a8bb0fe63faed95b6e3256f61cc81",
+      "manifestSha256": "f06583fbdad04acc8738979def33c3e30021dbddebf50d51f32aac7b18d56b08",
+      "releaseDirs": 6
+    },
+    "44": {
+      "hostname": "server-44",
+      "current": "/home/roomhacker/.local/share/agent-herder/fleet/releases/f630075ef68a8bb0fe63faed95b6e3256f61cc81",
+      "configSourceSha": "f630075ef68a8bb0fe63faed95b6e3256f61cc81",
+      "manifestSha256": "481c1bdc3b39bd1535fdc8dce71a7b26825d6a1a48d9c26110d0e226e8bd0a84",
+      "releaseDirs": 7
+    },
+    "88": {
+      "hostname": "roomhacker-server-88",
+      "current": "/home/roomhacker/.local/share/agent-herder/fleet/releases/f630075ef68a8bb0fe63faed95b6e3256f61cc81",
+      "configSourceSha": "f630075ef68a8bb0fe63faed95b6e3256f61cc81",
+      "manifestSha256": "481c1bdc3b39bd1535fdc8dce71a7b26825d6a1a48d9c26110d0e226e8bd0a84",
+      "releaseDirs": 7
+    },
+    "M1": {
+      "hostname": "MacBook-Pro-User.local",
+      "current": "/Users/user/.local/share/agent-herder/fleet/releases/f630075ef68a8bb0fe63faed95b6e3256f61cc81",
+      "configSourceSha": "f630075ef68a8bb0fe63faed95b6e3256f61cc81",
+      "manifestSha256": "2fb3fcaab890b17281719c37aaa4ca476b5855a6197c4917da51ad25ac5b5842",
+      "releaseDirs": 2
+    },
+    "Mini": {
+      "hostname": "mac-mini-2012.lan",
+      "current": "/Users/roomhacker/.local/share/agent-herder/fleet/releases/f630075ef68a8bb0fe63faed95b6e3256f61cc81",
+      "configSourceSha": "f630075ef68a8bb0fe63faed95b6e3256f61cc81",
+      "manifestSha256": "82ff93ef7901ebda66e222b884a4c80342de2ee67d5432536879560b9e5f553a",
+      "releaseDirs": 1
+    }
+  },
+  "query": {
+    "sessions": [
+      {
+        "id": "01a16a2a-0d60-79d2-8ca1-ec2942e8fbf2",
+        "harness": "codex",
+        "title": "userio_contact_check_20261023",
+        "runtimeHostId": "roomhacker-server-100",
+        "status": "running",
+        "activity": {
+          "state": "unknown",
+          "observedAt": "2026-10-23T19:34:09.451Z",
+          "evidence": "codex-app-server",
+          "expiresAt": "2026-10-23T19:34:39.451Z"
+        },
+        "workspaces": []
+      },
+      {
+        "id": "01a16987-f6fd-7351-b61d-a3647396a867",
+        "harness": "codex",
+        "title": "\u041f\u043e\u0447\u0438\u043d\u0438\u0442\u044c \u0434\u043e\u0441\u0442\u0443\u043f \u043a Mavis-\u0441\u0435\u0441\u0441\u0438\u044f\u043c",
+        "runtimeHostId": "roomhacker-server-100",
+        "status": "running",
+        "activity": {
+          "state": "unknown",
+          "observedAt": "2026-10-23T19:34:09.451Z",
+          "evidence": "codex-app-server",
+          "expiresAt": "2026-10-23T19:34:39.451Z"
+        },
+        "workspaces": []
+      },
+      {
+        "id": "01a16939-ae62-7852-ab74-0b13f96246dc",
+        "harness": "codex",
+        "title": "\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u044c AutoFindClient \u043a AirLock",
+        "runtimeHostId": "roomhacker-server-100",
+        "status": "running",
+        "activity": {
+          "state": "unknown",
+          "observedAt": "2026-10-23T19:34:09.451Z",
+          "evidence": "codex-app-server",
+          "expiresAt": "2026-10-23T19:34:39.451Z"
+        },
+        "workspaces": []
+      },
+      {
+        "id": "01a16938-5314-7150-a996-2168c80471e3",
+        "harness": "codex",
+        "title": "\u0423\u0441\u043a\u043e\u0440\u0438\u0442\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0443 \u0441\u0430\u0439\u0442\u0430",
+        "runtimeHostId": "roomhacker-server-100",
+        "status": "running",
+        "activity": {
+          "state": "unknown",
+          "observedAt": "2026-10-23T19:34:09.451Z",
+          "evidence": "codex-app-server",
+          "expiresAt": "2026-10-23T19:34:39.451Z"
+        },
+        "workspaces": []
+      },
+      {
+        "id": "01a16843-ffd5-7c53-bf67-06110d9a4ac7",
+        "harness": "codex",
+        "title": "account broker",
+        "runtimeHostId": "roomhacker-server-100",
+        "status": "running",
+        "activity": {
+          "state": "unknown",
+          "observedAt": "2026-10-23T19:34:09.451Z",
+          "evidence": "codex-app-server",
+          "expiresAt": "2026-10-23T19:34:39.451Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/PycharmProjects/account-broker/.worktrees/review-fixes-20261023",
+            "source": "declared",
+            "observedAt": "2026-10-23T19:20:31.000Z",
+            "evidence": "\u0421\u043e\u0445\u0440\u0430\u043d\u0451\u043d\u043d\u044b\u0439 \u0432\u044b\u0434\u0435\u043b\u0435\u043d\u043d\u044b\u0439 \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435\u043c worktree; \u0442\u0435\u043a\u0443\u0449\u0438\u0435 audit/plan \u0430\u0440\u0442\u0435\u0444\u0430\u043a\u0442\u044b \u0438 \u0431\u0443\u0434\u0443\u0449\u0430\u044f \u0438\u0437\u043e\u043b\u0438\u0440\u043e\u0432\u0430\u043d\u043d\u0430\u044f \u0440\u0430\u0431\u043e\u0442\u0430 \u043f\u043e\u0441\u043b\u0435 \u0441\u043e\u0433\u043b\u0430\u0441\u043e\u0432\u0430\u043d\u0438\u044f."
+          }
+        ]
+      },
+      {
+        "id": "01a16587-8440-7962-b22f-5e6a12f4abdd",
+        "harness": "codex",
+        "title": "gptadmin",
+        "runtimeHostId": "roomhacker-server-100",
+        "status": "running",
+        "activity": {
+          "state": "unknown",
+          "observedAt": "2026-10-23T19:34:09.451Z",
+          "evidence": "codex-app-server",
+          "expiresAt": "2026-10-23T19:34:39.451Z"
+        },
+        "workspaces": []
+      },
+      {
+        "id": "01a16563-0dfa-7a53-a040-7f7e3ab1aa86",
+        "harness": "codex",
+        "title": "exmanager workspace",
+        "runtimeHostId": "roomhacker-server-100",
+        "status": "running",
+        "activity": {
+          "state": "unknown",
+          "observedAt": "2026-10-23T19:34:09.451Z",
+          "evidence": "codex-app-server",
+          "expiresAt": "2026-10-23T19:34:39.451Z"
+        },
+        "workspaces": []
+      },
+      {
+        "id": "01a1653b-d774-73b3-9c0a-09cced76ea9e",
+        "harness": "codex",
+        "title": "voice exmanager notice place userio",
+        "runtimeHostId": "roomhacker-server-100",
+        "status": "running",
+        "activity": {
+          "state": "unknown",
+          "observedAt": "2026-10-23T19:34:09.451Z",
+          "evidence": "codex-app-server",
+          "expiresAt": "2026-10-23T19:34:39.451Z"
+        },
+        "workspaces": []
+      },
+      {
+        "id": "session_b38b92e45be8939782ee5863251407b4",
+        "harness": "zcode",
+        "title": "Analyzing KULTURNYJ_SHOK channel statistics data",
+        "runtimeHostId": "roomhacker-server-100",
+        "status": "running",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:21.771Z",
+          "evidence": "zcode-official-supervisor-running-tasks",
+          "expiresAt": "2026-10-23T19:36:36.771Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/PycharmProjects/TelegramAuto",
+            "source": "observed",
+            "observedAt": "2026-10-23T19:36:21.771Z",
+            "evidence": "local official supervisor running-tasks execution workspace; native pid 1199736 generation 1"
+          }
+        ]
+      },
+      {
+        "id": "sess_subagent_agent_6989882e-7261-436d-a447-ac2c23b232d7",
+        "harness": "zcode",
+        "title": "sess_subagent_agent_6989882e-7261-436d-a447-ac2c23b232d7",
+        "runtimeHostId": "roomhacker-server-100",
+        "status": "running",
+        "parentSessionId": "session_b38b92e45be8939782ee5863251407b4",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:21.771Z",
+          "evidence": "zcode-official-supervisor-running-tasks",
+          "expiresAt": "2026-10-23T19:36:36.771Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/PycharmProjects/TelegramAuto",
+            "source": "observed",
+            "observedAt": "2026-10-23T19:36:21.771Z",
+            "evidence": "local official supervisor running-tasks execution workspace; native pid 1199736 generation 1"
+          }
+        ]
+      },
+      {
+        "id": "sess_subagent_agent_3a6a7d84-3ddf-441f-92ec-108fcd6f752c",
+        "harness": "zcode",
+        "title": "sess_subagent_agent_3a6a7d84-3ddf-441f-92ec-108fcd6f752c",
+        "runtimeHostId": "roomhacker-server-100",
+        "status": "running",
+        "parentSessionId": "session_b38b92e45be8939782ee5863251407b4",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:21.771Z",
+          "evidence": "zcode-official-supervisor-running-tasks",
+          "expiresAt": "2026-10-23T19:36:36.771Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/PycharmProjects/TelegramAuto",
+            "source": "observed",
+            "observedAt": "2026-10-23T19:36:21.771Z",
+            "evidence": "local official supervisor running-tasks execution workspace; native pid 1199736 generation 1"
+          }
+        ]
+      },
+      {
+        "id": "mvs_0f24ad87f7a04bb28cde89a1353d98d0",
+        "harness": "minimax-code",
+        "title": "Airlock settingsapp",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/airlock-internal",
+            "source": "declared",
+            "observedAt": "2026-10-23T11:56:30.256Z",
+            "evidence": "startup_declaration:persisted-first-compactionSummary:msg-CpJZ6Eol6O8mOqICmUK3xzgtOpeQJVC626JBx3L6Mz4:role-deployment-checkout-not-asserted-source:current-server100-user-attestation"
+          }
+        ]
+      },
+      {
+        "id": "mvs_18e84c09edaa4c8ab18b61c0928349a0",
+        "harness": "minimax-code",
+        "title": "Real task times, green plan yellow overrun",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "parentSessionId": "mvs_92b7a29fcb6147ae848063c2e62bf864",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/LastHumanCommit-mavis-1444",
+            "source": "declared",
+            "observedAt": "2026-10-23T19:35:49.256Z",
+            "evidence": "parent_declaration:mvs_92b7a29fcb6147ae848063c2e62bf864:v5:native_tool_execution:native-message:a4f6e489-4806-40e8-a847-143183b528c3:tool:call_function_bz0mql9kccyp_1:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/LastHumanCommit",
+            "source": "declared",
+            "observedAt": "2026-10-23T19:35:49.256Z",
+            "evidence": "parent_declaration:mvs_92b7a29fcb6147ae848063c2e62bf864:v5:native_tool_execution:native-message:e78810f3-75c4-47cd-8904-9a3bab5b7d3b:tool:call_function_0iasc66ajueu_2:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/agent-harness-fleet",
+            "source": "declared",
+            "observedAt": "2026-10-23T19:35:49.256Z",
+            "evidence": "parent_declaration:mvs_92b7a29fcb6147ae848063c2e62bf864:v5:native_tool_execution:native-message:49d8cd5e-7684-43ac-8f7c-762a9a38dffa:tool:call_function_7wzj4tuc28i5_1:host-user-attestation-20261023"
+          }
+        ]
+      },
+      {
+        "id": "mvs_22e2437b7bc74367868213bf4900d16b",
+        "harness": "minimax-code",
+        "title": "Make the rest of the long lane in-process",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "parentSessionId": "mvs_92b7a29fcb6147ae848063c2e62bf864",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/LastHumanCommit-mavis-1444",
+            "source": "declared",
+            "observedAt": "2026-10-23T18:44:49.364Z",
+            "evidence": "parent_declaration:mvs_92b7a29fcb6147ae848063c2e62bf864:v5:native_tool_execution:native-message:a4f6e489-4806-40e8-a847-143183b528c3:tool:call_function_bz0mql9kccyp_1:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/LastHumanCommit",
+            "source": "declared",
+            "observedAt": "2026-10-23T18:44:49.364Z",
+            "evidence": "parent_declaration:mvs_92b7a29fcb6147ae848063c2e62bf864:v5:native_tool_execution:native-message:e78810f3-75c4-47cd-8904-9a3bab5b7d3b:tool:call_function_0iasc66ajueu_2:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/agent-harness-fleet",
+            "source": "declared",
+            "observedAt": "2026-10-23T18:44:49.364Z",
+            "evidence": "parent_declaration:mvs_92b7a29fcb6147ae848063c2e62bf864:v5:native_tool_execution:native-message:49d8cd5e-7684-43ac-8f7c-762a9a38dffa:tool:call_function_7wzj4tuc28i5_1:host-user-attestation-20261023"
+          }
+        ]
+      },
+      {
+        "id": "mvs_38e41d80ff66430992c32cdcea89811d",
+        "harness": "minimax-code",
+        "title": "1 - TGC",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/PycharmProjects/TelegramAuto",
+            "source": "declared",
+            "observedAt": "2026-10-23T17:09:41.082Z",
+            "evidence": "startup_declaration:persisted-first-compactionSummary:msg-zOP8X6gnuk4pL4kEeXj4LRA2bgc1Q3jWTAYQcCvubKE:explicit-repository-host-current-user-attestation"
+          }
+        ]
+      },
+      {
+        "id": "mvs_42f71a7427224fc795d0b3d2b2197767",
+        "harness": "minimax-code",
+        "title": "\u041a\u0430\u043d\u043e\u043d: \u043a\u0430\u043a \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435 \u0432\u044b\u0437\u044b\u0432\u0430\u0435\u0442 \u0447\u0443\u0436\u043e\u0439 \u0440\u0435\u0441\u0443\u0440\u0441",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "parentSessionId": "mvs_81d8120ae9ef4ccf8df7367ebe2e37f6",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/airlock-admin",
+            "source": "observed",
+            "observedAt": "2026-10-23T18:15:32.801Z",
+            "evidence": "native_tool_execution:native-message:dd6b294b-4cb0-4424-8bb7-e91e7c6a6e32:tool:call_01a169f9a07c7134a2193d34:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/airlock-admin/airlock",
+            "source": "observed",
+            "observedAt": "2026-10-23T18:08:58.430Z",
+            "evidence": "native_tool_execution:native-message:df80dd17-4200-4a5b-aa61-0160b66531b2:tool:call_01a169f38cfa71f89be3fbb1:host-user-attestation-20261023"
+          }
+        ]
+      },
+      {
+        "id": "mvs_436e65c47019471a9cca29532ae08f51",
+        "harness": "minimax-code",
+        "title": "Account-broker: \u043f\u043e\u043b\u043d\u044b\u0439 \u0446\u0438\u043a\u043b LHC \u2014 \u043f\u043b\u0430\u043d, \u0444\u0430\u043a\u0442\u044b \u0438 \u0430\u0440\u0442\u0435\u0444\u0430\u043a\u0442\u044b \u043a\u0430\u0436\u0434\u044b\u0439 \u0447\u0430\u0441",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "macbook-pro-user.local",
+            "absolutePath": "/Users/user/Documents/account-broker-plan",
+            "source": "observed",
+            "observedAt": "2026-10-23T19:13:54.283Z",
+            "evidence": "native-local-edit:message:9ac1fcaa-25d4-4dcb-a895-d6ec1f3b4195:file:README.md;exact-M1-Git-root-and-files-readback"
+          }
+        ]
+      },
+      {
+        "id": "mvs_4dcee0773c65450da62aecf8b4d5e993",
+        "harness": "minimax-code",
+        "title": "Make the fast lane in-process too",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "parentSessionId": "mvs_92b7a29fcb6147ae848063c2e62bf864",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/LastHumanCommit-mavis-1444",
+            "source": "declared",
+            "observedAt": "2026-10-23T18:44:49.367Z",
+            "evidence": "parent_declaration:mvs_92b7a29fcb6147ae848063c2e62bf864:v5:native_tool_execution:native-message:a4f6e489-4806-40e8-a847-143183b528c3:tool:call_function_bz0mql9kccyp_1:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/LastHumanCommit",
+            "source": "declared",
+            "observedAt": "2026-10-23T18:44:49.367Z",
+            "evidence": "parent_declaration:mvs_92b7a29fcb6147ae848063c2e62bf864:v5:native_tool_execution:native-message:e78810f3-75c4-47cd-8904-9a3bab5b7d3b:tool:call_function_0iasc66ajueu_2:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/agent-harness-fleet",
+            "source": "declared",
+            "observedAt": "2026-10-23T18:44:49.367Z",
+            "evidence": "parent_declaration:mvs_92b7a29fcb6147ae848063c2e62bf864:v5:native_tool_execution:native-message:49d8cd5e-7684-43ac-8f7c-762a9a38dffa:tool:call_function_7wzj4tuc28i5_1:host-user-attestation-20261023"
+          }
+        ]
+      },
+      {
+        "id": "mvs_4f40fab5c86f4ad5bad2cd9b7b5507a2",
+        "harness": "minimax-code",
+        "title": "\u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u043f\u043e\u0438\u0441\u043a \u0432 user IO \u043d\u0430 \u0441\u043e\u0442\u043e\u043c \u0441\u0435\u0440\u0432\u0435\u0440\u0435",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/universal-userio/.worktrees/telegram-reply-to-20261023",
+            "source": "observed",
+            "observedAt": "2026-10-23T16:18:25.617Z",
+            "evidence": "native_tool_execution:native-message:8789427e-9ff4-47d2-a7e7-1aa49d2b4990:tool:call_01a1698de1367495a66c8ac3:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/universal-userio",
+            "source": "observed",
+            "observedAt": "2026-10-23T16:18:25.617Z",
+            "evidence": "native_tool_execution:native-message:8789427e-9ff4-47d2-a7e7-1aa49d2b4990:tool:call_01a1698de1367495a66c8ac3:host-user-attestation-20261023"
+          }
+        ]
+      },
+      {
+        "id": "mvs_65dee54d3aec49f2a73edf403aa3ddd2",
+        "harness": "minimax-code",
+        "title": "Cut git spawns in production code",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "parentSessionId": "mvs_92b7a29fcb6147ae848063c2e62bf864",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/LastHumanCommit-mavis-1444",
+            "source": "declared",
+            "observedAt": "2026-10-23T19:35:39.728Z",
+            "evidence": "parent_declaration:mvs_92b7a29fcb6147ae848063c2e62bf864:v5:native_tool_execution:native-message:a4f6e489-4806-40e8-a847-143183b528c3:tool:call_function_bz0mql9kccyp_1:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/LastHumanCommit",
+            "source": "declared",
+            "observedAt": "2026-10-23T19:35:39.728Z",
+            "evidence": "parent_declaration:mvs_92b7a29fcb6147ae848063c2e62bf864:v5:native_tool_execution:native-message:e78810f3-75c4-47cd-8904-9a3bab5b7d3b:tool:call_function_0iasc66ajueu_2:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/agent-harness-fleet",
+            "source": "declared",
+            "observedAt": "2026-10-23T19:35:39.728Z",
+            "evidence": "parent_declaration:mvs_92b7a29fcb6147ae848063c2e62bf864:v5:native_tool_execution:native-message:49d8cd5e-7684-43ac-8f7c-762a9a38dffa:tool:call_function_7wzj4tuc28i5_1:host-user-attestation-20261023"
+          }
+        ]
+      },
+      {
+        "id": "mvs_90a1bc8a316c4322a262f32a55535434",
+        "harness": "minimax-code",
+        "title": "VW: \u0443\u0431\u0440\u0430\u0442\u044c \u0440\u0443\u0447\u043d\u043e\u0439 \u0438\u043c\u043f\u043e\u0440\u0442 \u0438 \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u043f\u0440\u0438\u0451\u043c\u043d\u0438\u043a",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "parentSessionId": "mvs_93d3f9a8f7a84585ad70c16c880c0c20",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/vw-release-git",
+            "source": "observed",
+            "observedAt": "2026-10-23T18:17:58.821Z",
+            "evidence": "native_tool_execution:native-message:bcf3691a-764c-4d9d-a6bd-9d16df5e081d:tool:call-04557214-d85d-44f0-9315-f1e7fb0d9ec8:host-user-attestation-20261023"
+          }
+        ]
+      },
+      {
+        "id": "mvs_92b7a29fcb6147ae848063c2e62bf864",
+        "harness": "minimax-code",
+        "title": "LastHumanCommit",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/LastHumanCommit-mavis-1444",
+            "source": "observed",
+            "observedAt": "2026-10-23T17:51:26.452Z",
+            "evidence": "native_tool_execution:native-message:a4f6e489-4806-40e8-a847-143183b528c3:tool:call_function_bz0mql9kccyp_1:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/LastHumanCommit",
+            "source": "observed",
+            "observedAt": "2026-10-23T17:40:01.977Z",
+            "evidence": "native_tool_execution:native-message:e78810f3-75c4-47cd-8904-9a3bab5b7d3b:tool:call_function_0iasc66ajueu_2:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/agent-harness-fleet",
+            "source": "observed",
+            "observedAt": "2026-10-23T17:53:21.504Z",
+            "evidence": "native_tool_execution:native-message:49d8cd5e-7684-43ac-8f7c-762a9a38dffa:tool:call_function_7wzj4tuc28i5_1:host-user-attestation-20261023"
+          }
+        ]
+      },
+      {
+        "id": "mvs_93d3f9a8f7a84585ad70c16c880c0c20",
+        "harness": "minimax-code",
+        "title": "atv-CO",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/vw-release-git",
+            "source": "observed",
+            "observedAt": "2026-10-23T17:58:11.193Z",
+            "evidence": "native_tool_execution:native-message:782b832a-ae90-47bd-877a-24ff43e16f35:tool:call_01a169e97f8d76879cc4932b:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/PycharmProjects/AutoFindClient",
+            "source": "observed",
+            "observedAt": "2026-10-23T18:07:15.587Z",
+            "evidence": "native_tool_execution:native-message:72b6cd4d-360d-4016-a0e5-e22c0f93ebad:tool:call_01a169f1a37c73f58dc4e249:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/PycharmProjects/proxy5-registry",
+            "source": "observed",
+            "observedAt": "2026-10-23T18:03:29.366Z",
+            "evidence": "native_tool_execution:native-message:d95f41d2-38d7-4bb7-bc74-e6da6ebaf582:tool:call_01a169edac5a75f99691f5a4:host-user-attestation-20261023"
+          }
+        ]
+      },
+      {
+        "id": "mvs_9b233c14c0704b42bc46047085d9d3ba",
+        "harness": "minimax-code",
+        "title": "Notice Place hourly relay to Codex Root 01a1653b",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": []
+      },
+      {
+        "id": "mvs_a3dd1bb239854de292183ec7571f97eb",
+        "harness": "minimax-code",
+        "title": "L02 isolation evidence for Matrix bot pair",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "parentSessionId": "mvs_4f40fab5c86f4ad5bad2cd9b7b5507a2",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/universal-userio/.worktrees/telegram-reply-to-20261023",
+            "source": "declared",
+            "observedAt": "2026-10-23T19:29:00.176Z",
+            "evidence": "parent_declaration:mvs_4f40fab5c86f4ad5bad2cd9b7b5507a2:v4:native_tool_execution:native-message:8789427e-9ff4-47d2-a7e7-1aa49d2b4990:tool:call_01a1698de1367495a66c8ac3:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/universal-userio",
+            "source": "declared",
+            "observedAt": "2026-10-23T19:29:00.176Z",
+            "evidence": "parent_declaration:mvs_4f40fab5c86f4ad5bad2cd9b7b5507a2:v4:native_tool_execution:native-message:8789427e-9ff4-47d2-a7e7-1aa49d2b4990:tool:call_01a1698de1367495a66c8ac3:host-user-attestation-20261023"
+          }
+        ]
+      },
+      {
+        "id": "mvs_c5cc2e47b1bf40a09e08b260ac54549c",
+        "harness": "minimax-code",
+        "title": "L76: \u0434\u043e\u043d\u0435\u0441\u0442\u0438 L69 \u0432 \u0436\u0438\u0432\u043e\u0439 \u043a\u043e\u043d\u0442\u0443\u0440",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "parentSessionId": "mvs_fee82cd663194081a4dfab9969c20274",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/.fleet-candidate",
+            "source": "declared",
+            "observedAt": "2026-10-23T19:11:12.221Z",
+            "evidence": "parent_declaration:mvs_fee82cd663194081a4dfab9969c20274:v1:startup_declaration:persisted-first-compactionSummary:msg-ZquBCYIz03BnSefuBDq07VHACUldKRAYtbWwEjOQmws:role-live-fleet-release-workarea-server100"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/.worktrees/integration-owner3-20261023",
+            "source": "declared",
+            "observedAt": "2026-10-23T19:11:12.221Z",
+            "evidence": "parent_declaration:mvs_fee82cd663194081a4dfab9969c20274:v1:startup_declaration:persisted-first-compactionSummary:msg-ZquBCYIz03BnSefuBDq07VHACUldKRAYtbWwEjOQmws:explicit-server100-worktree"
+          }
+        ]
+      },
+      {
+        "id": "mvs_d01039d819ed4989ab4660fc7f859942",
+        "harness": "minimax-code",
+        "title": "TGC",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/PycharmProjects/TelegramAuto",
+            "source": "observed",
+            "observedAt": "2026-10-23T18:16:00.377Z",
+            "evidence": "native_tool_execution:native-message:f8efb74f-c41e-4768-aca1-bba201e06342:tool:call_8ea5a78d603140799ce0a953:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/PycharmProjects/TelegramAuto/ATV",
+            "source": "observed",
+            "observedAt": "2026-10-23T18:13:05.366Z",
+            "evidence": "native_tool_execution:native-message:ef0e2a80-c69a-45b2-903d-3cf92480620b:tool:call_0f55bb892b0749cfaf338e7b:host-user-attestation-20261023"
+          }
+        ]
+      },
+      {
+        "id": "mvs_f70ce650bbf94d789e4e4a2669f6743a",
+        "harness": "minimax-code",
+        "title": "exmanager",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/exmanager/.agents/tasks/20261022-exmanager-recovery",
+            "source": "observed",
+            "observedAt": "2026-10-23T17:57:50.969Z",
+            "evidence": "native_tool_execution:native-message:e4db4b58-ac06-4dc2-9226-24e59bdc7d45:tool:call_55d49469bbdb461e8db9a0d8:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/exmanager",
+            "source": "observed",
+            "observedAt": "2026-10-23T18:12:33.047Z",
+            "evidence": "native_tool_execution:native-message:926860a8-0479-421c-8650-cd31060fb8da:tool:call_98f2cc3eda0442628b14aebf:host-user-attestation-20261023"
+          }
+        ]
+      },
+      {
+        "id": "mvs_fcedef26e3924f728b459f2eceb1dfba",
+        "harness": "minimax-code",
+        "title": "\u041f\u0430\u043a\u0435\u0442\u043d\u0430\u044f \u0434\u043e\u0441\u0442\u0430\u0432\u043a\u0430 WAL \u0432 \u043e\u0431\u043b\u0430\u043a\u043e",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "parentSessionId": "mvs_93d3f9a8f7a84585ad70c16c880c0c20",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/vw-release-git",
+            "source": "declared",
+            "observedAt": "2026-10-23T18:44:49.372Z",
+            "evidence": "parent_declaration:mvs_93d3f9a8f7a84585ad70c16c880c0c20:v6:native_tool_execution:native-message:782b832a-ae90-47bd-877a-24ff43e16f35:tool:call_01a169e97f8d76879cc4932b:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/PycharmProjects/AutoFindClient",
+            "source": "declared",
+            "observedAt": "2026-10-23T18:44:49.372Z",
+            "evidence": "parent_declaration:mvs_93d3f9a8f7a84585ad70c16c880c0c20:v6:native_tool_execution:native-message:72b6cd4d-360d-4016-a0e5-e22c0f93ebad:tool:call_01a169f1a37c73f58dc4e249:host-user-attestation-20261023"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/PycharmProjects/proxy5-registry",
+            "source": "declared",
+            "observedAt": "2026-10-23T18:44:49.372Z",
+            "evidence": "parent_declaration:mvs_93d3f9a8f7a84585ad70c16c880c0c20:v6:native_tool_execution:native-message:d95f41d2-38d7-4bb7-bc74-e6da6ebaf582:tool:call_01a169edac5a75f99691f5a4:host-user-attestation-20261023"
+          }
+        ]
+      },
+      {
+        "id": "mvs_fee82cd663194081a4dfab9969c20274",
+        "harness": "minimax-code",
+        "title": "\u0428\u0422\u0410\u0422\u041d\u041e",
+        "runtimeHostId": "MacBook-Pro-User.local",
+        "status": "running",
+        "activity": {
+          "state": "active",
+          "observedAt": "2026-10-23T19:36:15.025Z",
+          "evidence": "native_active_turn",
+          "expiresAt": "2026-10-23T19:36:30.025Z"
+        },
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/.fleet-candidate",
+            "source": "declared",
+            "observedAt": "2026-10-23T17:29:34.894Z",
+            "evidence": "startup_declaration:persisted-first-compactionSummary:msg-ZquBCYIz03BnSefuBDq07VHACUldKRAYtbWwEjOQmws:role-live-fleet-release-workarea-server100"
+          },
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/agents-projects/.worktrees/integration-owner3-20261023",
+            "source": "declared",
+            "observedAt": "2026-10-23T17:29:34.894Z",
+            "evidence": "startup_declaration:persisted-first-compactionSummary:msg-ZquBCYIz03BnSefuBDq07VHACUldKRAYtbWwEjOQmws:explicit-server100-worktree"
+          }
+        ]
+      }
+    ],
+    "hosts": [
+      {
+        "hostId": "roomhacker-server-100",
+        "ownerPid": 2229307,
+        "state": "available",
+        "observedAt": "2026-10-23T19:36:21.863Z",
+        "sources": [
+          {
+            "harness": "opencode",
+            "exhaustive": true,
+            "source": "opencode-native-active-status",
+            "observedAt": "2026-10-23T19:36:21.863Z",
+            "refreshDurationMs": 98
+          },
+          {
+            "harness": "claude",
+            "exhaustive": false,
+            "source": "native-adapter",
+            "reason": "native_enumeration_coverage_unknown"
+          },
+          {
+            "harness": "codex",
+            "exhaustive": true,
+            "source": "codex-app-server"
+          },
+          {
+            "harness": "hermes",
+            "exhaustive": false,
+            "source": "native-adapter",
+            "reason": "native_enumeration_coverage_unknown"
+          },
+          {
+            "harness": "zcode",
+            "exhaustive": false,
+            "source": "zcode-existing-native-runtime+official-supervisor",
+            "observedAt": "2026-10-23T19:36:21.849Z",
+            "refreshDurationMs": 84,
+            "reason": "known_task_candidates_only_loaded_identity_coverage_unknown"
+          },
+          {
+            "harness": "minimax-code",
+            "exhaustive": true,
+            "source": "native_active_turn",
+            "observedAt": "2026-10-23T19:36:17.912Z",
+            "activityCoverage": "native_active_turn",
+            "metadataEnumerationExhaustive": true,
+            "candidateCount": 4,
+            "failedCandidateCount": 0,
+            "totalSessions": 5167,
+            "pages": 29,
+            "expiresAt": "2026-10-23T19:36:32.912Z",
+            "stageTimingsMs": {
+              "metadata": 1120,
+              "candidate_seed": 7,
+              "controller_validation": 19
+            },
+            "refreshDurationMs": 1147
+          },
+          {
+            "harness": "fast-agent",
+            "exhaustive": false,
+            "source": "native-adapter",
+            "reason": "native_enumeration_coverage_unknown"
+          }
+        ]
+      },
+      {
+        "hostId": "server-44",
+        "ownerPid": 812317,
+        "state": "available",
+        "observedAt": "2026-10-23T19:36:20.271Z",
+        "sources": [
+          {
+            "harness": "codex",
+            "exhaustive": true,
+            "source": "codex-app-server"
+          }
+        ]
+      },
+      {
+        "hostId": "roomhacker-server-88",
+        "ownerPid": 2985885,
+        "state": "available",
+        "observedAt": "2026-10-23T19:36:21.711Z",
+        "sources": [
+          {
+            "harness": "opencode",
+            "exhaustive": true,
+            "source": "opencode-native-active-status",
+            "observedAt": "2026-10-23T19:36:20.577Z",
+            "refreshDurationMs": 37
+          },
+          {
+            "harness": "codex",
+            "exhaustive": true,
+            "source": "codex-app-server"
+          },
+          {
+            "harness": "zcode",
+            "exhaustive": false,
+            "source": "zcode-existing-native-runtime+official-supervisor",
+            "observedAt": "2026-10-23T19:36:20.566Z",
+            "refreshDurationMs": 26,
+            "reason": "official_supervisor_unavailable"
+          }
+        ]
+      },
+      {
+        "hostId": "mac-mini-2012.lan",
+        "ownerPid": 38634,
+        "state": "available",
+        "observedAt": "2026-10-23T19:35:56.769Z",
+        "sources": [
+          {
+            "harness": "codex",
+            "exhaustive": true,
+            "source": "codex-app-server"
+          }
+        ]
+      },
+      {
+        "hostId": "MacBook-Pro-User.local",
+        "ownerPid": 7216,
+        "state": "available",
+        "observedAt": "2026-10-23T19:36:15.025Z",
+        "sources": [
+          {
+            "harness": "codex",
+            "exhaustive": true,
+            "source": "codex-app-server"
+          },
+          {
+            "harness": "minimax-code",
+            "exhaustive": true,
+            "source": "native_active_turn",
+            "observedAt": "2026-10-23T19:36:15.025Z",
+            "activityCoverage": "native_active_turn",
+            "metadataEnumerationExhaustive": true,
+            "candidateCount": 19,
+            "failedCandidateCount": 0,
+            "totalSessions": 1213,
+            "pages": 12,
+            "expiresAt": "2026-10-23T19:36:30.025Z",
+            "stageTimingsMs": {
+              "metadata": 7998,
+              "candidate_seed": 27,
+              "controller_validation": 265
+            },
+            "refreshDurationMs": 8303
+          }
+        ]
+      }
+    ],
+    "partial": true,
+    "unassignedWorkspaceCount": 8,
+    "total": 30,
+    "activeCount": 22,
+    "activeRunningCount": 22,
+    "activeWaitingCount": 0,
+    "activeCountExact": null,
+    "activeRootCount": 11,
+    "activeChildCount": 11,
+    "unknownActivityCount": 8,
+    "countIsLowerBound": true,
+    "limited": false,
+    "unknownWorkspaceCount": 8,
+    "filters": {}
+  },
+  "claim": "All five reachable; Codex100 expired rows explicitly unknown; final native-current proof pending Codex fix"
+}

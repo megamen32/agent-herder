@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-23T19:17:08.115Z",
+  "cwd": "/tmp/herder-zcode-ws-uKNbi0",
+  "inputId": "herder-ws-e5712529-a80d-41b2-87bb-475c8a0bbbc0",
+  "phase": "send_returned_no_replay",
+  "marker": "HERDER_ZCODE_WS_20261023_OK",
+  "projectId": "a1e2fa34-9aba-4537-a34b-1e7fef72097d",
+  "sessionId": "session_95c794ef-153f-4a3b-a0c4-5d0031cecbb3",
+  "sendReceipt": {
+    "ok": true,
+    "admitted": true,
+    "inputId": "herder-ws-e5712529-a80d-41b2-87bb-475c8a0bbbc0",
+    "admission": "accepted"
+  }
+}

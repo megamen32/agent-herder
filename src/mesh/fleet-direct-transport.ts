@@ -1,6 +1,8 @@
 import {meshDiscoveryTimeoutMs} from "./discovery-timeout.js";
 import {assertRemoteCodexAdmission} from "../codex-quota-guard.js";
 import {spawn} from 'node:child_process';
+import {mkdirSync,lstatSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {hostname,userInfo} from 'node:os';
 import type {GptAdminTransport} from './gptadmin.js';
 /** Reuses owner-authorized fleet SSH, transporting HTTP to each existing singleton. Never starts MCP stdio or a native controller. */
@@ -13,6 +15,15 @@ export const directFleetPeers:readonly DirectPeer[]=[
  // The Mac maintains this authenticated reverse route even when it leaves the LAN.
  {hostId:'MacBook-Pro-User.local',sshHost:'127.0.0.1',sshPort:2222,nativeUser:'user',port:18789,python:'/opt/homebrew/bin/python3'},
 ];
+/** Reuse only authenticated exact-peer connections; idle masters expire in 30s. */
+export function sshMultiplexOptions(peer:DirectPeer):string[]{
+ const uid=process.getuid?.();if(uid===undefined)throw new Error('direct_control_owner_unavailable');
+ const dir='/tmp/ah-direct-'+uid;
+ try{mkdirSync(dir,{mode:0o700});}catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;}
+ const info=lstatSync(dir);if(!info.isDirectory()||info.isSymbolicLink()||info.uid!==uid||(info.mode&0o077)!==0)throw new Error('direct_control_directory_unverified');
+ const key=createHash('sha256').update(JSON.stringify([peer.hostId,peer.sshHost,peer.sshPort??22,peer.nativeUser,hostname()])).digest('hex').slice(0,32);
+ return ['-o','ControlMaster=auto','-o','ControlPersist=30','-o','ControlPath='+dir+'/'+key];
+}
 const quote=(s:string)=>"'"+s.replace(/'/g,"'\"'\"'")+"'";
 // Return fixed codes only: peer stderr can contain private paths or request data.
 const peerFailure=(stderr:string):string=>{
@@ -62,6 +73,15 @@ def rpc(method,params):
   value=json.loads(buf)
   if value.get('id')!=identity:raise RuntimeError('direct_rpc_identity_mismatch')
   return value
+# Exact read-only inventory path: reuse the existing owner API and materialized
+# backend, avoiding per-query MCP initialization and native-provider discovery.
+if r['method']=='tools/call' and r['params']=={'name':'list_active_sessions_local','arguments':{}}:
+ path='/api/sessions/active?runtimeHostId='+urllib.parse.quote(r['hostId'],safe='')
+ with opener.open(url[:-4]+path,timeout=max(.001,deadline-time.monotonic())) as response:body=response.read(1048577)
+ if len(body)>1048576:raise RuntimeError('direct_response_limit')
+ value=json.loads(body)
+ if len(value.get('hosts',[]))!=1 or value['hosts'][0].get('hostId')!=r['hostId']:raise RuntimeError('native_owner_identity_mismatch')
+ print(json.dumps(value));raise SystemExit(0)
 if r['method']=='herder_runtime_probe':
  # Answer whether this node runs a herder runtime at all. A node that answers
  # and is not one cannot initiate a launch, so it needs no copy of the owner
@@ -123,7 +143,7 @@ export class FleetDirectTransport implements GptAdminTransport {
   const local=peer.hostId===hostname()&&peer.nativeUser===userInfo().username;
   const executable=local?peer.python:'/usr/bin/ssh';
   const reverseVia100=peer.hostId==='MacBook-Pro-User.local'&&peer.sshHost==='127.0.0.1'&&hostname()!=='roomhacker-server-100';
-  const args=local?['-I','-S','-B','-c',bridge]:['-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=3','-o','ConnectionAttempts=1','-o','ServerAliveInterval=3','-o','ServerAliveCountMax=1',...(reverseVia100?['-J','roomhacker@192.168.2.100']:[]),...(peer.sshPort?['-p',String(peer.sshPort)]:[]),'-l',peer.nativeUser,peer.sshHost,`${quote(peer.python)} -I -S -B -c ${quote(bridge)}`];
+  const args=local?['-I','-S','-B','-c',bridge]:['-T',...sshMultiplexOptions(peer),'-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=3','-o','ConnectionAttempts=1','-o','ServerAliveInterval=3','-o','ServerAliveCountMax=1',...(reverseVia100?['-J','roomhacker@192.168.2.100']:[]),...(peer.sshPort?['-p',String(peer.sshPort)]:[]),'-l',peer.nativeUser,peer.sshHost,`${quote(peer.python)} -I -S -B -c ${quote(bridge)}`];
   return new Promise((resolve,reject)=>{
    const child=spawn(executable,args,{stdio:['pipe','pipe','pipe']});let size=0;const chunks:Buffer[]=[];let failure:Error|undefined;let stderr='';
    const timer=setTimeout(()=>{failure=new Error('direct_deadline');child.kill('SIGKILL');},timeoutMs+500);
@@ -144,7 +164,7 @@ export class FleetDirectTransport implements GptAdminTransport {
  readSessionPage(target:string,cursor?:string,limit=100):Promise<unknown>{return this.call(target,'fleet_session_page',{limit,...(cursor?{cursor}:{})});}
  schema(target:string):Promise<unknown>{return this.rpc(this.peer(target),'tools/list',{},this.deadlineMs);}
  async call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
-  if(!['model_quotas','fleet_node_info','mesh_snapshot','create_session','fleet_session_page','session_search_local','list_agents','send_message','mesh_deliver','mesh_stop','workspace_probe','workspace_reserve','workspace_owners','automation_disarm','common_settings_read','common_settings_status','common_settings_notice','common_settings_opt_in','common_settings_restore'].includes(tool))throw new Error('direct_tool_not_authorized');
+  if(!['list_active_sessions_local','model_quotas','fleet_node_info','mesh_snapshot','create_session','fleet_session_page','session_search_local','list_agents','send_message','mesh_deliver','mesh_stop','workspace_probe','workspace_reserve','workspace_owners','automation_disarm','common_settings_read','common_settings_status','common_settings_notice','common_settings_opt_in','common_settings_restore'].includes(tool))throw new Error('direct_tool_not_authorized');
   if(tool==='mesh_deliver' && (args.sender as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
   if(tool==='workspace_reserve' && (args.owner as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
   if(tool==='mesh_stop' && (args.target as any)?.hostId!==this.peer(target).hostId)throw new Error('direct_stop_host_mismatch');

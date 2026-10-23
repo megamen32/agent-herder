@@ -1,0 +1,266 @@
+{
+  "snapshots": [
+    {
+      "elapsedMs": 186,
+      "receipt": {
+        "exhaustive": true,
+        "observedAt": "2026-10-23T19:40:02.556Z",
+        "expiresAt": "2026-10-23T19:40:32.556Z",
+        "source": "codex-loaded-native-runtime",
+        "scope": "connected_native_controller",
+        "candidateCount": 49,
+        "failedCandidateCount": 0,
+        "pages": 1
+      },
+      "ids": [
+        "01a1653b-d774-73b3-9c0a-09cced76ea9e",
+        "01a16587-8440-7962-b22f-5e6a12f4abdd",
+        "01a16843-ffd5-7c53-bf67-06110d9a4ac7",
+        "01a16938-5314-7150-a996-2168c80471e3",
+        "01a16987-f6fd-7351-b61d-a3647396a867",
+        "01a16939-ae62-7852-ab74-0b13f96246dc",
+        "01a169f0-b84a-7503-8e7f-0ccccac36e9d",
+        "01a169f1-3736-78b0-8fec-cff070468c0e",
+        "01a16a00-ad8b-7ad3-a4f5-af981bff653c",
+        "01a16a1e-eb51-7101-b0b0-783871bd15bf",
+        "01a16a22-48b6-7402-ba2a-daf8ec50dbea",
+        "01a16a2a-0d60-79d2-8ca1-ec2942e8fbf2",
+        "01a16a24-d407-7983-ad97-4df8bb5681cb",
+        "01a16a25-2fd6-7161-a7c0-a9f5dfdc1991",
+        "01a16a31-ed85-7c40-9d1c-9ade7a395f7d",
+        "01a16a34-355f-7be3-ba12-492eb28c20ce",
+        "01a16a32-9f3e-7ef2-af79-3265b93a7c12",
+        "01a16a43-33f4-7413-a3de-b7046146ba67",
+        "01a16a3b-cc08-7e82-b410-c2bb3c44ce29"
+      ],
+      "statuses": [
+        {
+          "id": "01a1653b-d774-73b3-9c0a-09cced76ea9e",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16587-8440-7962-b22f-5e6a12f4abdd",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16843-ffd5-7c53-bf67-06110d9a4ac7",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16938-5314-7150-a996-2168c80471e3",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16987-f6fd-7351-b61d-a3647396a867",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16939-ae62-7852-ab74-0b13f96246dc",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a169f0-b84a-7503-8e7f-0ccccac36e9d",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a169f1-3736-78b0-8fec-cff070468c0e",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a00-ad8b-7ad3-a4f5-af981bff653c",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a1e-eb51-7101-b0b0-783871bd15bf",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a22-48b6-7402-ba2a-daf8ec50dbea",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a2a-0d60-79d2-8ca1-ec2942e8fbf2",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a24-d407-7983-ad97-4df8bb5681cb",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a25-2fd6-7161-a7c0-a9f5dfdc1991",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a31-ed85-7c40-9d1c-9ade7a395f7d",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a34-355f-7be3-ba12-492eb28c20ce",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a32-9f3e-7ef2-af79-3265b93a7c12",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a43-33f4-7413-a3de-b7046146ba67",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a3b-cc08-7e82-b410-c2bb3c44ce29",
+          "status": "running",
+          "flags": []
+        }
+      ]
+    },
+    {
+      "elapsedMs": 196,
+      "receipt": {
+        "exhaustive": true,
+        "observedAt": "2026-10-23T19:40:02.753Z",
+        "expiresAt": "2026-10-23T19:40:32.753Z",
+        "source": "codex-loaded-native-runtime",
+        "scope": "connected_native_controller",
+        "candidateCount": 49,
+        "failedCandidateCount": 0,
+        "pages": 1
+      },
+      "ids": [
+        "01a16587-8440-7962-b22f-5e6a12f4abdd",
+        "01a1653b-d774-73b3-9c0a-09cced76ea9e",
+        "01a16843-ffd5-7c53-bf67-06110d9a4ac7",
+        "01a16987-f6fd-7351-b61d-a3647396a867",
+        "01a16939-ae62-7852-ab74-0b13f96246dc",
+        "01a16938-5314-7150-a996-2168c80471e3",
+        "01a169f0-b84a-7503-8e7f-0ccccac36e9d",
+        "01a169f1-3736-78b0-8fec-cff070468c0e",
+        "01a16a00-ad8b-7ad3-a4f5-af981bff653c",
+        "01a16a22-48b6-7402-ba2a-daf8ec50dbea",
+        "01a16a1e-eb51-7101-b0b0-783871bd15bf",
+        "01a16a25-2fd6-7161-a7c0-a9f5dfdc1991",
+        "01a16a2a-0d60-79d2-8ca1-ec2942e8fbf2",
+        "01a16a31-ed85-7c40-9d1c-9ade7a395f7d",
+        "01a16a24-d407-7983-ad97-4df8bb5681cb",
+        "01a16a32-9f3e-7ef2-af79-3265b93a7c12",
+        "01a16a3b-cc08-7e82-b410-c2bb3c44ce29",
+        "01a16a34-355f-7be3-ba12-492eb28c20ce",
+        "01a16a43-33f4-7413-a3de-b7046146ba67"
+      ],
+      "statuses": [
+        {
+          "id": "01a16587-8440-7962-b22f-5e6a12f4abdd",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a1653b-d774-73b3-9c0a-09cced76ea9e",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16843-ffd5-7c53-bf67-06110d9a4ac7",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16987-f6fd-7351-b61d-a3647396a867",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16939-ae62-7852-ab74-0b13f96246dc",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16938-5314-7150-a996-2168c80471e3",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a169f0-b84a-7503-8e7f-0ccccac36e9d",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a169f1-3736-78b0-8fec-cff070468c0e",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a00-ad8b-7ad3-a4f5-af981bff653c",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a22-48b6-7402-ba2a-daf8ec50dbea",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a1e-eb51-7101-b0b0-783871bd15bf",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a25-2fd6-7161-a7c0-a9f5dfdc1991",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a2a-0d60-79d2-8ca1-ec2942e8fbf2",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a31-ed85-7c40-9d1c-9ade7a395f7d",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a24-d407-7983-ad97-4df8bb5681cb",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a32-9f3e-7ef2-af79-3265b93a7c12",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a3b-cc08-7e82-b410-c2bb3c44ce29",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a34-355f-7be3-ba12-492eb28c20ce",
+          "status": "running",
+          "flags": []
+        },
+        {
+          "id": "01a16a43-33f4-7413-a3de-b7046146ba67",
+          "status": "running",
+          "flags": []
+        }
+      ]
+    }
+  ]
+}

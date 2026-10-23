@@ -1,0 +1,42 @@
+{
+  "release": "/home/roomhacker/agents-projects/.fleet-candidate/releases/f630075ef68a8bb0fe63faed95b6e3256f61cc81",
+  "at": "2026-10-23T19:36:09.948Z",
+  "rows": [
+    {
+      "path": "adapters/zcode",
+      "installedSha256": "d29997cb0dfce536d468667bc372c4532490c8abdf3f0f38b541e7c790c1b450",
+      "expectedSha256": "d29997cb0dfce536d468667bc372c4532490c8abdf3f0f38b541e7c790c1b450",
+      "identical": true
+    },
+    {
+      "path": "adapters/zcode-protocol",
+      "installedSha256": "fee7ff139560aa17715d2a1d7e5074b3976dcfd3ef549b85546e65ad9f2e5a9a",
+      "expectedSha256": "fee7ff139560aa17715d2a1d7e5074b3976dcfd3ef549b85546e65ad9f2e5a9a",
+      "identical": true
+    },
+    {
+      "path": "adapters/zcode-server-control",
+      "installedSha256": "0e65abcf2cf950c7cd45cc1187e3f53ae7af6c239a3908f650bb20993e14b607",
+      "expectedSha256": "0e65abcf2cf950c7cd45cc1187e3f53ae7af6c239a3908f650bb20993e14b607",
+      "identical": true
+    },
+    {
+      "path": "adapters/zcode-runtime-observation",
+      "installedSha256": "bd8c84ad9d56ca19128d4e0986ba1b7e386f85d415ab20af95109d7a1eb1af02",
+      "expectedSha256": "bd8c84ad9d56ca19128d4e0986ba1b7e386f85d415ab20af95109d7a1eb1af02",
+      "identical": true
+    },
+    {
+      "path": "mesh/local",
+      "installedSha256": "22f4a0290f968c22f88c6549ddec5ac9606a3221390bda86433d68a877907618",
+      "expectedSha256": "22f4a0290f968c22f88c6549ddec5ac9606a3221390bda86433d68a877907618",
+      "identical": true
+    }
+  ],
+  "native": {
+    "id": "session_95c794ef-153f-4a3b-a0c4-5d0031cecbb3",
+    "status": "stopped",
+    "meshScope": "official-ws-v4",
+    "ownedPid": null
+  }
+}

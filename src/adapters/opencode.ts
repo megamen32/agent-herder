@@ -1,3 +1,4 @@
+import {readOpenCodeActiveSessions} from "./opencode-active.js";
 import { currentTurnContextReceipt, previousCoordinationReceipt, reserveCurrentTurnContext } from "../coordination-active-delivery.js";
 import { deferredMessages } from "../deferred-messages.js";
 import { getHumanStopStore } from "../human-stop-store.js";
@@ -362,6 +363,19 @@ export class OpenCodeAdapter implements HarnessAdapter {
 
   async init(): Promise<void> {
     await this.client.init();
+  }
+
+  private activeSnapshotReceipt: {exhaustive:boolean;observedAt:string;source:string}|null = null;
+  getActiveSessionSnapshotReceipt() {return this.activeSnapshotReceipt;}
+  async listActiveSessions():Promise<AgentSession[]> {
+    this.activeSnapshotReceipt=null;
+    await this.client.init();
+    const result=await readOpenCodeActiveSessions({v2:this.client.isV2,hostId:localSessionHostId(),read:async path=>{
+      const response=await fetch(`${this.baseUrl}${path}`,{headers:this.authorization?{Authorization:this.authorization}:{},signal:AbortSignal.timeout(10000)});
+      if(!response.ok)throw new Error(`opencode_active_native_http_${response.status}`);
+      return unwrapEnvelope(await response.json());
+    }});
+    this.activeSnapshotReceipt=result.receipt;return result.sessions;
   }
 
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
