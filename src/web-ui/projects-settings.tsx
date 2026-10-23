@@ -128,7 +128,7 @@ export type FleetSessionFact = { hostId: string; launchCwd: string; lastActivity
 export type ProjectNodeState = { hostId: string; label: string; answered: boolean; applies: boolean };
 
 /** How the state of a project is shown: an icon and a word, never a colour alone. */
-export type ProjectStateTone = "done" | "partial" | "unknown";
+export type ProjectStateTone = "done" | "partial" | "unknown" | "idle";
 export type ProjectStateView = { icon: string; label: string; detail: string; tone: ProjectStateTone };
 
 /** One project of the list with everything the row needs. */
@@ -156,10 +156,10 @@ export const PROJECT_SORT_LABELS: ReadonlyArray<readonly [ProjectSort, string]> 
 ];
 
 /**
- * The closed projects of the rule of the owner live in `model-status.ts`, so
- * the panel and the server name the same projects. The guard of the OpenCode
- * integration is the source of truth:
- * `integrations/opencode/agent-herder-autopilot.js` (`restrictedProjectRoots`).
+ * The closed projects of the rule of the owner live in the module of the
+ * models of the panel, so the panel and the server name the same projects.
+ * The guard of the OpenCode integration is the source of truth there, and the
+ * panel never touches the guard itself.
  */
 
 /* ---------- Общие мелочи: путь, склонение, время ---------- */
@@ -493,24 +493,29 @@ export function checkProjectModelRoutes(
 /**
  * The state of a project across the machines of the fleet.
  *
- * A machine that answered and runs the project took the route. A machine that
- * did not answer is unknown, and it is never counted as taken.
+ * The words are fixed, so the card does not change its story between two
+ * loads. A machine that answered and runs the project took the route. A machine
+ * that did not answer is named in the only unknown sentence of the screen:
+ * «не удалось спросить узел 88». A machine that answered and does not run the
+ * project is a plain fact and not an unknown.
  */
 export function projectApplicationState(nodes: ProjectNodeState[]): ProjectStateView {
   const total = nodes.length;
   const accepted = nodes.filter((node) => node.answered && node.applies).length;
-  const unanswered = nodes.filter((node) => !node.answered).length;
-  if (total === 0) return { icon: "?", label: "Неизвестно", detail: "данных о флоте нет", tone: "unknown" };
-  if (unanswered > 0) {
+  const silent = nodes.filter((node) => !node.answered);
+  if (total === 0) {
+    return { icon: "?", label: "Неизвестно", detail: "не удалось получить список узлов флота", tone: "unknown" };
+  }
+  if (silent.length > 0) {
     if (accepted > 0) {
       return {
         icon: "◐",
         label: "Применено частично",
-        detail: `${accepted} из ${total} узлов приняли, ${unanswered} не ответили`,
+        detail: `${accepted} из ${total} узлов приняли, ${silent.length} не ответили`,
         tone: "partial",
       };
     }
-    return { icon: "?", label: "Неизвестно", detail: "узел не ответил", tone: "unknown" };
+    return { icon: "?", label: "Неизвестно", detail: `не удалось спросить ${silentNodes(silent)}`, tone: "unknown" };
   }
   if (accepted > 0) {
     return {
@@ -520,7 +525,27 @@ export function projectApplicationState(nodes: ProjectNodeState[]): ProjectState
       tone: "done",
     };
   }
-  return { icon: "?", label: "Неизвестно", detail: "проект не найден на узлах", tone: "unknown" };
+  return { icon: "○", label: "Не запущено", detail: "ни один узел не показывает этот проект", tone: "idle" };
+}
+
+/**
+ * The machines that did not answer, in one phrase.
+ *
+ * The screen names them, so the owner sees which node to look at: «узел 88»
+ * for one machine and «узлы 44 и 88» for several.
+ */
+export function silentNodes(nodes: ProjectNodeState[]): string {
+  const names = nodes.map((node) => nodeShortName(node));
+  if (names.length === 0) return "узлы флота";
+  if (names.length === 1) return `узел ${names[0]}`;
+  return `узлы ${names.slice(0, -1).join(", ")} и ${names[names.length - 1]}`;
+}
+
+/** The short name of a machine for one phrase: «88» instead of «Сервер 88». */
+function nodeShortName(node: ProjectNodeState): string {
+  const label = (node.label || node.hostId || "").trim();
+  const short = label.replace(/^Сервер\s+/i, "").trim();
+  return short || node.hostId || "флота";
 }
 
 /* ---------- Данные флота ---------- */
@@ -573,6 +598,22 @@ export type FleetFactsState = "loading" | "ready" | "failed";
 export type FleetRowState = { hosts: FleetFactsState; sessions: FleetFactsState };
 
 /**
+ * One answer of the fleet, read from the panel.
+ *
+ * A node that does not answer is not an error of the screen: the answer is
+ * simply unknown, and the screen says so in words.
+ */
+async function readFleetJson<T>(path: string): Promise<T | undefined> {
+  try {
+    const response = await fetch(path, { cache: "no-store" });
+    if (!response.ok) return undefined;
+    return await response.json() as T;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The machines of the fleet and the sessions they run.
  *
  * The panel already knows both lists: `/api/fleet/hosts` names the machines and
@@ -580,48 +621,76 @@ export type FleetRowState = { hosts: FleetFactsState; sessions: FleetFactsState 
  * active. The answer of the sessions is slow, so the screen does not wait for
  * it: the rows of the projects are drawn from the policy right away, and the
  * machine and the freshness arrive later, in the cells that wait for them.
+ *
+ * The screen can ask for a fresh answer: `refresh()` re-reads both lists and
+ * remembers the moment of the answer, so the card can say when it last spoke
+ * to the nodes.
  */
 export function useFleetFacts() {
   const [hosts, setHosts] = React.useState<FleetHostFact[]>([]);
   const [sessions, setSessions] = React.useState<FleetSessionFact[]>([]);
   const [hostsState, setHostsState] = React.useState<FleetFactsState>("loading");
   const [sessionsState, setSessionsState] = React.useState<FleetFactsState>("loading");
+  const [refreshedAt, setRefreshedAt] = React.useState("");
+  const [refreshing, setRefreshing] = React.useState(false);
+  const alive = React.useRef(true);
   React.useEffect(() => {
-    let cancelled = false;
-    const read = async <T,>(path: string): Promise<T | undefined> => {
-      try {
-        const response = await fetch(path, { cache: "no-store" });
-        if (!response.ok) return undefined;
-        return await response.json() as T;
-      } catch {
-        return undefined;
-      }
-    };
-    void (async () => {
-      const [hostResult, sessionResult] = await Promise.all([
-        read<{ hosts?: Array<{ hostId?: string; label?: string; state?: string; reason?: string }> }>("/api/fleet/hosts"),
-        read<{ sessions?: Array<{ address?: { hostId?: string }; project?: { launchCwd?: string | null }; lastActivity?: string; model?: string }> }>("/api/fleet/sessions"),
-      ]);
-      if (cancelled) return;
-      const nextHosts: FleetHostFact[] = (hostResult?.hosts ?? [])
-        .filter((host): host is { hostId: string; label?: string; state?: string; reason?: string } => typeof host.hostId === "string" && host.hostId.length > 0)
-        .map((host) => ({ hostId: host.hostId, label: host.label ?? host.hostId, state: host.state ?? "unavailable", reason: host.reason }));
-      const nextSessions: FleetSessionFact[] = (sessionResult?.sessions ?? [])
-        .map((session) => ({
-          hostId: session.address?.hostId ?? "",
-          launchCwd: typeof session.project?.launchCwd === "string" ? session.project.launchCwd : "",
-          lastActivity: typeof session.lastActivity === "string" ? session.lastActivity : "",
-          model: typeof session.model === "string" ? session.model : "",
-        }))
-        .filter((session) => session.hostId.length > 0);
-      setHosts(nextHosts);
-      setSessions(nextSessions);
-      setHostsState(hostResult ? "ready" : "failed");
-      setSessionsState(sessionResult ? "ready" : "failed");
-    })();
-    return () => { cancelled = true; };
+    alive.current = true;
+    return () => { alive.current = false; };
   }, []);
-  return { hosts, sessions, hostsState, sessionsState };
+  const read = React.useCallback(async (): Promise<void> => {
+    const [hostResult, sessionResult] = await Promise.all([
+      readFleetJson<{ hosts?: Array<{ hostId?: string; label?: string; state?: string; reason?: string }> }>("/api/fleet/hosts"),
+      readFleetJson<{ sessions?: Array<{ address?: { hostId?: string }; project?: { launchCwd?: string | null }; lastActivity?: string; model?: string }> }>("/api/fleet/sessions"),
+    ]);
+    if (!alive.current) return;
+    const nextHosts: FleetHostFact[] = (hostResult?.hosts ?? [])
+      .filter((host): host is { hostId: string; label?: string; state?: string; reason?: string } => typeof host.hostId === "string" && host.hostId.length > 0)
+      .map((host) => ({ hostId: host.hostId, label: host.label ?? host.hostId, state: host.state ?? "unavailable", reason: host.reason }));
+    const nextSessions: FleetSessionFact[] = (sessionResult?.sessions ?? [])
+      .map((session) => ({
+        hostId: session.address?.hostId ?? "",
+        launchCwd: typeof session.project?.launchCwd === "string" ? session.project.launchCwd : "",
+        lastActivity: typeof session.lastActivity === "string" ? session.lastActivity : "",
+        model: typeof session.model === "string" ? session.model : "",
+      }))
+      .filter((session) => session.hostId.length > 0);
+    setHosts(nextHosts);
+    setSessions(nextSessions);
+    setHostsState(hostResult ? "ready" : "failed");
+    setSessionsState(sessionResult ? "ready" : "failed");
+    setRefreshedAt(new Date().toISOString());
+  }, []);
+  React.useEffect(() => {
+    void read();
+  }, [read]);
+  /** Re-read the state of the nodes and remember the moment of the answer. */
+  const refresh = React.useCallback(async (): Promise<void> => {
+    setRefreshing(true);
+    try {
+      await read();
+    } finally {
+      if (alive.current) setRefreshing(false);
+    }
+  }, [read]);
+  return { hosts, sessions, hostsState, sessionsState, refreshedAt, refreshing, refresh };
+}
+
+/**
+ * The moment of the last answer of the fleet, in the words of the owner.
+ *
+ * The panel shows the time of Moscow, so the moment means the same thing on
+ * every machine of the fleet: «Обновлено в 05:12 МСК».
+ */
+export function refreshMomentLabel(iso: string): string {
+  const time = Date.parse(iso);
+  if (!Number.isFinite(time)) return "";
+  const clock = new Date(time).toLocaleTimeString("ru-RU", {
+    timeZone: "Europe/Moscow",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `Обновлено в ${clock} МСК`;
 }
 
 /**
@@ -645,6 +714,7 @@ export function buildProjectEntries(
       answered: item.state === "ready",
       applies: facts.some((fact) => fact.hostId === item.hostId),
     }));
+    const counts = projectRuleCounts(route);
     return {
       project,
       route,
@@ -653,14 +723,60 @@ export function buildProjectEntries(
       hostId,
       hostLabel: hostId ? machineName({ hostId, label: host?.label ?? hostId }) : "",
       lastActivity: facts[0]?.lastActivity ?? "",
-      environmentCount: route.harnesses.length,
-      modelCount: (route.allowedModels?.length ?? 0) + (route.deniedModels?.length ?? 0),
+      environmentCount: counts.environments,
+      modelCount: counts.modelRules,
       nodeStates,
     };
   });
 }
 
 /* ---------- Форма моделей ---------- */
+
+/**
+ * What the rule of the project holds.
+ *
+ * The counter of the card is built from this and from nothing else: the
+ * environments of the route and the entries of the two lists of models. It says
+ * the truth about the rule and does not change by itself between two loads.
+ */
+export function projectRuleCounts(route: ProjectLaunchRoute): { environments: number; modelRules: number } {
+  const rules = new Set([...(route.allowedModels ?? []), ...(route.deniedModels ?? [])]
+    .map((entry) => entry.trim())
+    .filter(Boolean));
+  return { environments: route.harnesses.length, modelRules: rules.size };
+}
+
+/** The counter of the card in words: «2 среды · 7 правил моделей». */
+export function projectCountsLabel(counts: { environments: number; modelRules: number }): string {
+  return `${counts.environments} ${plural(counts.environments, "среда", "среды", "сред")} · ${counts.modelRules} ${plural(counts.modelRules, "правило моделей", "правила моделей", "правил моделей")}`;
+}
+
+/**
+ * The readable name of one entry of a list of models.
+ *
+ * A list holds rules and not only models: «*» is any model, and «codex/*» is
+ * the catalog of one environment. The owner reads the rule in words, and the
+ * exact id stays under it.
+ */
+export function humanListEntry(entry: string): string {
+  const trimmed = entry.trim();
+  if (!trimmed) return "";
+  if (trimmed === "*") return "Любая модель";
+  const slash = trimmed.indexOf("/");
+  if (slash > 0) {
+    const provider = humanProviderName(trimmed.slice(0, slash));
+    const rest = trimmed.slice(slash + 1);
+    const tail = rest === "*" ? "*" : humanModelName(rest);
+    return `Каталог среды: ${provider}${tail === "*" ? " *" : ` · ${tail}`}`;
+  }
+  // A pattern without a provider: the star is a part of the name of the
+  // family, so it is read apart from it.
+  const star = trimmed.endsWith("*");
+  const base = star ? trimmed.slice(0, -1) : trimmed;
+  const name = base ? humanModelName(base) : "";
+  if (!star) return name;
+  return name ? `${name} *` : "*";
+}
 
 /**
  * One model list of a project: the allowed or the denied models.
@@ -675,6 +791,7 @@ function ProjectModelList({
   route,
   field,
   title,
+  caption,
   hint,
   suggestions,
   knownIds,
@@ -686,6 +803,8 @@ function ProjectModelList({
   route: ProjectLaunchRoute;
   field: "allowedModels" | "deniedModels";
   title: string;
+  /** The short caption of the concept: what the list is for. */
+  caption: string;
   hint: string;
   suggestions: string[];
   /** Every model id the environments of the route confirm. */
@@ -725,12 +844,13 @@ function ProjectModelList({
       <span className={`projects-model-badge ${allowed ? "projects-model-badge-allowed" : "projects-model-badge-denied"}`} aria-hidden="true">{allowed ? "✓" : "✕"}</span>
       {title}
     </span>
+    <p className="projects-concept-caption">{caption}</p>
     <ul className="projects-model-list" aria-label={`${title} для проекта ${project}`}>
       {models.length === 0
         ? <li className="projects-model-empty">{allowed ? "Пустой список разрешённых — без ограничений." : "Пустой список запрещённых — запретов нет."}</li>
         : models.map((model) => <li className={`projects-model-item${allowed ? "" : " projects-model-item-denied"}`} key={model}>
           <span className="projects-model-entry">
-            <span className="projects-model-entry-name">{humanModelName(model)}</span>
+            <span className="projects-model-entry-name">{humanListEntry(model)}</span>
             <code className="projects-model-entry-id">{model}</code>
           </span>
           <button type="button" aria-label={`Убрать модель ${model} из списка «${title}» проекта ${project}`}
@@ -773,6 +893,24 @@ function ProjectModelList({
  * is never used in the project, even when it is the effective model of a
  * harness of the route: that harness simply stops being used.
  */
+
+/**
+ * The five words about a model, with the short caption of each.
+ *
+ * The screen shows all five, so it says what every one of them means. The
+ * captions are short on purpose: they sit next to the field they name.
+ */
+export const MODEL_CONCEPT_CAPTIONS = {
+  route: "Модель маршрута — что велено этой среде",
+  common: "Общая модель среды — что едет, если проект не задал свою",
+  allowed: "Разрешённые модели — что проект может запускать",
+  denied: "Запрещённые модели — что проект не может запускать никогда",
+  effective: "Эффективная модель — что поедет на самом деле",
+} as const;
+
+/** How the five words about a model follow each other, in one sentence. */
+export const MODEL_CONCEPT_RELATION = "Модель маршрута (или общая модель среды, если её нет) проходит через списки «Разрешённые модели» и «Запрещённые модели» — и то, что осталось, едет как эффективная модель.";
+
 export function ProjectModelPolicyEditor({
   project,
   route,
@@ -824,22 +962,26 @@ export function ProjectModelPolicyEditor({
   return <fieldset className="projects-fieldset" id={`projects-models-${project}`} disabled={disabled}>
     <legend>Модели проекта</legend>
     <div className="projects-legend" aria-label="Как читать правила моделей">
-      <p><strong>«Разрешённые модели»</strong> — фильтр проекта: какие модели проект вообще может запускать. Пустой список — без ограничений. Шаблон с «*» в конце, например <code>omniroute/minimax-*</code>, разрешает всё с таким началом; <code>*</code> разрешает всё.</p>
+      <p className="projects-legend-relation"><strong>Как связаны эти пять слов о модели.</strong> {MODEL_CONCEPT_RELATION}</p>
+      <p><strong>«Разрешённые модели»</strong> — фильтр проекта: какие модели проект вообще может запускать. Пустой список — без ограничений. Шаблон с «*» в конце, например <code>minimax-*</code>, разрешает всё с таким началом; <code>*</code> разрешает всё.</p>
       <p><strong>«Запрещённые модели»</strong> — что проект не может запускать никогда. Запрет сильнее разрешения.</p>
       <p><strong>Откуда берётся модель.</strong> Сначала модель маршрута проекта, иначе общая модель среды для этой среды.</p>
-      <p><strong>Доступность модели — свойство среды.</strong> Панель показывает, подтверждает ли среда этот id, и больше ничего о нём не выдумывает: подписка, бесплатный пул и платный маршрут для среды выглядят одинаково.</p>
-      <p><strong>Одно и то же бывает двумя написаниями.</strong> Маршрут <code>omniroute/minimax-combo-m3.1</code> и ключ каталога <code>omniroute/minimax/MiniMax-M3.1-Flash</code> — одна и та же модель. Пишите маршрут: его понимают политика и Herder.</p>
+      <p><strong>Доступность модели — свойство среды.</strong> Панель показывает, подтверждает ли среда этот id, и больше ничего о нём не выдумывает.</p>
+      <p><strong>Одно и то же бывает двумя написаниями.</strong> Модель может называться маршрутом и полным id каталога — это одна и та же модель. Пишите маршрут: его понимают политика и Herder.</p>
       <p><strong>Как убрать блок.</strong> В карточке блока написано, что заблокировано и почему. Нажмите «Поставить рабочую модель» — панель запишет id, который среда подтверждает.</p>
     </div>
     <ProjectModelList project={project} route={route} field="allowedModels" title="Разрешённые модели"
-      hint="Что может запускаться в проекте. Пустой список разрешённых — без ограничений: работает общая модель среды. Шаблон «*» разрешает всё, например omniroute/minimax-*."
+      caption={MODEL_CONCEPT_CAPTIONS.allowed}
+      hint="Что может запускаться в проекте. Пустой список разрешённых — без ограничений: работает общая модель среды. Шаблон «*» разрешает всё, например minimax-*."
       suggestions={suggestions} knownIds={knownIds} statusOf={statusOf} disabled={disabled} onChange={onChange} />
     <ProjectModelList project={project} route={route} field="deniedModels" title="Запрещённые модели"
+      caption={MODEL_CONCEPT_CAPTIONS.denied}
       hint="Что никогда не запускается в проекте. Запрет сильнее разрешения: запрещённая модель не используется, даже если она указана в разрешённых."
       suggestions={suggestions} knownIds={knownIds} statusOf={statusOf} disabled={disabled} onChange={onChange} />
     {conflicts.length > 0 && <p className="autopilot-error" role="alert">{`Модель «${conflicts[0]}» указана и как разрешённая, и как запрещённая. Уберите её из одного из списков, иначе политика не сохранится.`}</p>}
     <div className="projects-field">
       <span className="projects-field-label">Эффективная модель по средам маршрута</span>
+      <p className="projects-concept-caption">{MODEL_CONCEPT_CAPTIONS.effective}</p>
       <ul className="projects-model-list" aria-label={`Эффективная модель по средам маршрута проекта ${project}`}>
         {route.harnesses.map((harness) => {
           const effective = route.models?.[harness] ?? policy.models[harness] ?? "";
@@ -933,6 +1075,9 @@ export function ProjectRoutesEditor({
   fleet,
   open,
   onOpenChange,
+  onRefresh,
+  refreshing,
+  refreshedAt,
   disabled,
   onChange,
   onRemove,
@@ -951,6 +1096,12 @@ export function ProjectRoutesEditor({
   fleet?: FleetRowState;
   open: boolean;
   onOpenChange: (next: boolean) => void;
+  /** Re-read the state of the nodes and answer with the moment of the answer. */
+  onRefresh: () => void;
+  /** True while the panel is asking the nodes right now. */
+  refreshing?: boolean;
+  /** The moment of the last answer of the fleet. */
+  refreshedAt?: string;
   disabled?: boolean;
   onChange: (next: ProjectLaunchRoute) => void;
   onRemove: () => void;
@@ -963,26 +1114,39 @@ export function ProjectRoutesEditor({
   const addable = available.filter((harness) => !route.harnesses.includes(harness));
   const name = entry?.name ?? projectName(project, route);
   const aliases = entry?.aliases ?? (route.aliases ?? []).filter(Boolean);
-  const environments = entry?.environmentCount ?? route.harnesses.length;
-  const models = entry?.modelCount ?? ((route.allowedModels?.length ?? 0) + (route.deniedModels?.length ?? 0));
+  // The counter of the card comes from the rule of the project and from
+  // nothing else, so it says the truth and does not jump between two loads.
+  const counts = projectRuleCounts(route);
   const machine = entry?.hostLabel
     || (fleet?.hosts === "loading" ? "обновляю…" : "Машина неизвестна");
   const freshness = entry?.lastActivity
     ? relativeTime(entry.lastActivity)
     : fleet?.sessions === "loading" ? "обновляю…" : "время неизвестно";
+  const moment = refreshMomentLabel(refreshedAt ?? "");
   return <details className="projects-card" open={open} onToggle={(event) => onOpenChange(event.currentTarget.open)}>
-    <summary className="projects-card-summary">
+    <summary className="projects-card-summary" title="Нажмите на шапку, чтобы раскрыть или свернуть карточку">
+      <span className="projects-card-chevron" aria-hidden="true">{open ? "▾" : "▸"}</span>
       <span className="projects-card-name">{name}</span>
       {aliases.slice(1).map((alias) => <span className="projects-alias-chip" key={alias}>{alias}</span>)}
       <span className={`projects-machine-chip${entry?.hostId ? "" : " projects-machine-chip-unknown"}`}>
         <span aria-hidden="true">▣</span> {machine}
       </span>
-      <span className="projects-card-counts">
-        {`${environments} ${plural(environments, "среда", "среды", "сред")} · ${models} ${plural(models, "модель", "модели", "моделей")}`}
+      <span className="projects-card-counts"
+        title="Счётчик из правила проекта: столько сред в маршруте и столько записей в списках «Разрешённые модели» и «Запрещённые модели».">
+        {projectCountsLabel(counts)}
       </span>
       {state && <span className={`projects-state projects-state-${state.tone}`}>
         <span aria-hidden="true">{state.icon}</span> {state.label}
       </span>}
+      <span className="projects-card-refresh">
+        <button type="button" className="quiet-button projects-refresh-button"
+          aria-label={`Обновить состояние проекта ${project}`}
+          disabled={Boolean(refreshing)}
+          onClick={(event) => { event.preventDefault(); event.stopPropagation(); onRefresh(); }}>
+          {refreshing ? "Обновляю…" : "Обновить состояние"}
+        </button>
+        {moment && <small className="projects-card-refreshed" role="status">{moment}</small>}
+      </span>
       <time className="projects-card-time" dateTime={entry?.lastActivity || undefined} title={absoluteTime(entry?.lastActivity ?? "")}>
         {freshness}
       </time>
@@ -1037,6 +1201,7 @@ export function ProjectRoutesEditor({
       </fieldset>
       <fieldset className="projects-fieldset" disabled={disabled}>
         <legend>Модель маршрута</legend>
+        <p className="projects-concept-caption">{MODEL_CONCEPT_CAPTIONS.route}</p>
         <p className="projects-help">Укажите модель, которую Herder отдаст этой среде для этого проекта. Например, <code>omniroute/minimax-combo-m3.1</code> для OpenCode. Пустое поле берёт общую модель среды.</p>
         {route.harnesses.map((harness) => <div className="projects-field" key={`${project}-${harness}`}>
           <label htmlFor={routeInputId(project, harness)}>Модель · {labelFor(harness, runtimes)}</label>
@@ -1176,7 +1341,7 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
   const [sort, setSort] = React.useState<ProjectSort>("recent");
   const [openCards, setOpenCards] = React.useState<Record<string, boolean>>({});
   const [scrollTo, setScrollTo] = React.useState<string | null>(null);
-  const { hosts, sessions, hostsState, sessionsState } = useFleetFacts();
+  const { hosts, sessions, hostsState, sessionsState, refreshedAt, refreshing, refresh } = useFleetFacts();
 
   const routes = Object.entries(policy.projectRoutes ?? {});
   const entries = buildProjectEntries(routes, hosts, sessions);
@@ -1280,6 +1445,9 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
         fleet={{ hosts: hostsState, sessions: sessionsState }}
         open={Boolean(openCards[project])}
         onOpenChange={(next) => setOpenCards((current) => ({ ...current, [project]: next }))}
+        onRefresh={() => void refresh()}
+        refreshing={refreshing}
+        refreshedAt={refreshedAt}
         disabled={saving || Boolean(loadError)}
         onChange={(next) => setRoutes({ ...(policy.projectRoutes ?? {}), [project]: next })}
         onRemove={() => {
@@ -1304,9 +1472,8 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
       <summary>Справка: что делают списки моделей и почему модель могут заблокировать</summary>
       <div className="projects-explainer-body">
         <p><strong>Списки моделей — это фильтр проекта.</strong> «Разрешённые модели» — что проект может запускать, «Запрещённые модели» — что не может никогда. Запрет всегда сильнее разрешения.</p>
-        <p><strong>Блокирует запросы модельная защита интеграции OpenCode</strong> (<code>integrations/opencode/agent-herder-autopilot.js</code>, <code>enforceRestrictedModelRequest</code>). Для закрытых проектов (TelegramAuto, video_watching) маршрут модели должен совпасть с подтверждённым нативным маршрутом среды: иначе запрос отклоняется — «полный нативный маршрут провайдера запрещён или не подтверждён».</p>
-        <p>Модели, которых нет в списке моделей OpenCode, получают отказ 409: маршрут не подтверждён. Маршрут <code>omniroute/minimax-combo-m3.1</code> сервер подтверждает: запуск на нём не отзывается.</p>
-        <p><strong>Маршрут закрытого проекта проверяет сервер.</strong> Имя модели ничего не решает: сервер смотрит провайдера за маршрутом и отвечает одним из трёх слов — маршрут разрешён, маршрут отклонён или маршрут не верифицирован. Пока сервер не ответил, панель не обещает, что запуск пройдёт.</p>
+        <p><strong>Что мешает запуску.</strong> Модель может не подтверждаться средой, может быть запрещена списками проекта, а у закрытых проектов (TelegramAuto, video_watching) маршрут дополнительно проверяет сервер: он смотрит провайдера за маршрутом и отвечает, разрешён маршрут или нет. Пока сервер не ответил, панель не обещает, что запуск пройдёт.</p>
+        <p><strong>Что именно проверяет панель.</strong> Три проверяемых факта: подтверждает ли среда этот id, закрыт ли провайдер правилом владельца и разрешена ли модель списками проекта. Ничего догадываться или обещать панель не станет.</p>
         <p><strong>Порядок сред.</strong> Herder идёт по списку сверху вниз и переключается на следующую среду только после отказа, когда запуск точно не состоялся. Проекты без маршрута работают как раньше.</p>
       </div>
     </details>
@@ -1324,6 +1491,7 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
       </div>
       <div>
         <span className="eyebrow">ОБЩИЕ МОДЕЛИ СРЕДЫ</span>
+        <p className="projects-concept-caption">{MODEL_CONCEPT_CAPTIONS.common}</p>
         <ul className="projects-globals-models" aria-label="Общие модели среды">
           {globalModelRows.map((row) => <li key={row.harness}>
             <strong>{row.label}</strong>
@@ -1398,7 +1566,10 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
             <div className="launch-runtime-list">{available.map((harness) => {
               const selected = newProjectHarnesses.includes(harness);
               return <label className="launch-runtime-option" key={`add-${harness}`}>
-                <span><strong>{labelFor(harness, runtimes)}</strong><small aria-hidden="true">{selected ? `позиция ${newProjectHarnesses.indexOf(harness) + 1}` : "не в маршруте"}</small></span>
+                <span className="projects-runtime-option-text">
+                  <strong>{labelFor(harness, runtimes)}</strong>{" "}
+                  <small aria-hidden="true">{selected ? `позиция ${newProjectHarnesses.indexOf(harness) + 1}` : "не в маршруте"}</small>
+                </span>
                 <input type="checkbox" checked={selected} aria-label={`Добавить ${labelFor(harness, runtimes)} в маршрут нового проекта`} onChange={(event) => {
                   setNewProjectHarnesses((current) => event.target.checked
                     ? [...current, harness].slice(-4)
