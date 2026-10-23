@@ -9,7 +9,7 @@ import {
   defaultHooksProhibitions,
   parseHooksProhibitions,
 } from "../src/hooks/state.js";
-import { HooksService, hookProhibitionsEnabled } from "../src/hooks/service.js";
+import { HooksService, hookProhibitionsEnabled, hookRuntimeActive } from "../src/hooks/service.js";
 import { resolveAutopilotStateDir } from "../src/autopilot/state-dir.js";
 
 const cleanups: string[] = [];
@@ -33,14 +33,47 @@ describe("the lever of the prohibitions of the hooks: durable state", () => {
     );
   });
 
-  it("starts with the prohibitions on: the current behaviour of the product", async () => {
+  it("starts with the optional hooks runtime off: an optional integration is opt-in", async () => {
     const dir = await stateDir();
     const store = HooksProhibitionsStore.at(dir);
     const { state, known } = await store.readState();
     expect(known).toBe(true);
-    expect(state.prohibitionsEnabled).toBe(true);
+    expect(state.hooksEnabled).toBe(false);
+    expect(state.prohibitionsEnabled).toBe(false);
     expect(state.disabledHooks).toEqual([]);
-    expect(defaultHooksProhibitions().prohibitionsEnabled).toBe(true);
+    expect(state.inactiveHooks).toEqual([]);
+    expect(defaultHooksProhibitions().hooksEnabled).toBe(false);
+    expect(defaultHooksProhibitions().prohibitionsEnabled).toBe(false);
+  });
+
+  it("reads a document of an older runtime as off: an update never turns the hooks back on", () => {
+    const parsed = parseHooksProhibitions({ version: 1, prohibitionsEnabled: true, disabledHooks: [] });
+    expect(parsed.hooksEnabled).toBe(false);
+    expect(parsed.inactiveHooks).toEqual([]);
+  });
+
+  it("keeps the whole runtime off when only the prohibitions move", async () => {
+    // The fleet sync and the automatic paths write the prohibitions. They
+    // never write the switch of the runtime, so they can never turn the
+    // optional hooks on.
+    const dir = await stateDir();
+    const store = HooksProhibitionsStore.at(dir);
+    const applied = await store.apply({ source: "owner", prohibitionsEnabled: true, reason: "общие настройки" });
+    expect(applied.ok).toBe(true);
+    expect(applied.state.hooksEnabled).toBe(false);
+    expect(applied.state.prohibitionsEnabled).toBe(true);
+    expect(hookRuntimeActive(applied.state, true, "Stop")).toBe(false);
+  });
+
+  it("keeps a hook off on its own while the runtime is on", async () => {
+    const dir = await stateDir();
+    const store = HooksProhibitionsStore.at(dir);
+    const applied = await store.apply({ source: "owner", hooksEnabled: true, inactiveHooks: ["Stop"], reason: "Stop не нужен" });
+    expect(applied.ok).toBe(true);
+    expect(applied.state.hooksEnabled).toBe(true);
+    expect(applied.state.inactiveHooks).toEqual(["Stop"]);
+    expect(hookRuntimeActive(applied.state, true, "Stop")).toBe(false);
+    expect(hookRuntimeActive(applied.state, true, "PreToolUse")).toBe(true);
   });
 
   it("keeps the decision of the owner after the runtime state is recreated", async () => {
@@ -48,26 +81,26 @@ describe("the lever of the prohibitions of the hooks: durable state", () => {
     const applied = await HooksProhibitionsStore.at(dir).apply({
       source: "owner",
       actor: "owner",
-      prohibitionsEnabled: false,
-      reason: "хуки мешают",
+      hooksEnabled: true,
+      reason: "решение владельца",
     });
     expect(applied.ok).toBe(true);
     expect(applied.changed).toBe(true);
 
     // A restart of the process builds a new store over the same directory.
     const state = await HooksProhibitionsStore.at(dir).read();
-    expect(state.prohibitionsEnabled).toBe(false);
-    expect(state.reason).toBe("хуки мешают");
+    expect(state.hooksEnabled).toBe(true);
+    expect(state.reason).toBe("решение владельца");
     expect(state.changedBy).toBe("owner");
 
-    const raw = JSON.parse(await readFile(join(dir, "hooks-prohibitions.json"), "utf8")) as { prohibitionsEnabled: boolean };
-    expect(raw.prohibitionsEnabled).toBe(false);
+    const raw = JSON.parse(await readFile(join(dir, "hooks-prohibitions.json"), "utf8")) as { hooksEnabled: boolean };
+    expect(raw.hooksEnabled).toBe(true);
   });
 
   it("keeps the set of the hooks whose own prohibitions are off", async () => {
     const dir = await stateDir();
     const store = HooksProhibitionsStore.at(dir);
-    const applied = await store.apply({ source: "owner", prohibitionsEnabled: true, disabledHooks: ["Stop"] });
+    const applied = await store.apply({ source: "owner", hooksEnabled: true, prohibitionsEnabled: true, disabledHooks: ["Stop"] });
     expect(applied.ok).toBe(true);
     expect(applied.state.disabledHooks).toEqual(["Stop"]);
     // The rest of the hooks keep forbidding what they forbid.
@@ -78,13 +111,15 @@ describe("the lever of the prohibitions of the hooks: durable state", () => {
   it("writes one record of the decision into the journal of the owner", async () => {
     const dir = await stateDir();
     const store = HooksProhibitionsStore.at(dir);
-    await store.apply({ source: "owner", actor: "владелец панели", prohibitionsEnabled: false, reason: "мешают" });
+    await store.apply({ source: "owner", actor: "владелец панели", hooksEnabled: true, reason: "мешают" });
     const audit = await store.audit();
     expect(audit).toHaveLength(1);
     expect(audit[0]?.actor).toBe("владелец панели");
     expect(audit[0]?.reason).toBe("мешают");
-    expect(audit[0]?.before.prohibitionsEnabled).toBe(true);
+    expect(audit[0]?.before.prohibitionsEnabled).toBe(false);
     expect(audit[0]?.after.prohibitionsEnabled).toBe(false);
+    expect(audit[0]?.before.hooksEnabled).toBe(false);
+    expect(audit[0]?.after.hooksEnabled).toBe(true);
     const raw = await readFile(join(dir, "hooks-prohibitions.audit.jsonl"), "utf8");
     expect(raw.trim().split("\n")).toHaveLength(1);
   });
@@ -92,10 +127,10 @@ describe("the lever of the prohibitions of the hooks: durable state", () => {
   it("is idempotent: the same decision twice is one decision", async () => {
     const dir = await stateDir();
     const store = HooksProhibitionsStore.at(dir);
-    const first = await store.apply({ source: "owner", prohibitionsEnabled: false, reason: "мешают" });
+    const first = await store.apply({ source: "owner", hooksEnabled: true, reason: "мешают" });
     expect(first.changed).toBe(true);
 
-    const second = await store.apply({ source: "owner", prohibitionsEnabled: false, reason: "мешают" });
+    const second = await store.apply({ source: "owner", hooksEnabled: true, reason: "мешают" });
     expect(second.ok).toBe(true);
     expect(second.changed).toBe(false);
     expect(second.etag).toBe(first.etag);
@@ -119,13 +154,13 @@ describe("the lever of the prohibitions of the hooks: durable state", () => {
   it("refuses an automatic attempt to change the lever and names the reason", async () => {
     const dir = await stateDir();
     const store = HooksProhibitionsStore.at(dir);
-    await store.apply({ source: "owner", prohibitionsEnabled: false });
-    const attempt = await store.apply({ source: "automation", prohibitionsEnabled: true });
+    await store.apply({ source: "owner", hooksEnabled: true });
+    const attempt = await store.apply({ source: "automation", hooksEnabled: false });
     expect(attempt.ok).toBe(false);
     expect(attempt.code).toBe("automation_cannot_change_prohibitions");
     expect(attempt.reason).toBe(AUTOMATION_CANNOT_CHANGE_PROHIBITIONS_REASON);
     // The refused attempt changed nothing.
-    expect((await store.read()).prohibitionsEnabled).toBe(false);
+    expect((await store.read()).hooksEnabled).toBe(true);
   });
 
   it("reads a damaged state as unknown: the hooks forbid nothing", async () => {
@@ -150,8 +185,20 @@ describe("the lever of the prohibitions of the hooks: the view of the panel", ()
     const view = await service.readView();
     expect(view.hooks.map((hook) => hook.kind)).toEqual(["Stop", "PreToolUse", "PostToolUse", "SessionStart", "UserPromptSubmit"]);
     expect(view.hooks.find((hook) => hook.kind === "Stop")?.humanName).toContain("Stop");
-    expect(view.hooks.find((hook) => hook.kind === "Stop")?.state).toBe("включены");
-    expect(view.hooks.find((hook) => hook.kind === "SessionStart")?.state).toBe("не запрещает");
+    // The whole optional runtime is off: no hook of the herder runs.
+    expect(view.hooksEnabled).toBe(false);
+    expect(view.hooks.find((hook) => hook.kind === "Stop")?.state).toBe("не выполняется");
+    expect(view.hooks.find((hook) => hook.kind === "SessionStart")?.state).toBe("не выполняется");
+
+    // With the runtime on and the prohibitions off, the hooks run and forbid
+    // nothing. That is a different state from a hook that does not run.
+    const on = await service.applyProhibitions({ source: "owner", hooksEnabled: true, reason: "владелец включил" });
+    expect(on.view.hooksEnabled).toBe(true);
+    expect(on.view.hooks.find((hook) => hook.kind === "Stop")?.state).toBe("выполняется, не запрещает");
+    expect(on.view.hooks.find((hook) => hook.kind === "SessionStart")?.state).toBe("выполняется, не запрещает");
+
+    const prohibiting = await service.applyProhibitions({ source: "owner", prohibitionsEnabled: true, reason: "запреты" });
+    expect(prohibiting.view.hooks.find((hook) => hook.kind === "Stop")?.state).toBe("выполняется, может запрещать");
   });
 
   it("shows the last refusal of the hook that refused", async () => {
@@ -174,13 +221,25 @@ describe("the lever of the prohibitions of the hooks: the view of the panel", ()
   it("answers the hooks with the light state they ask for", async () => {
     const dir = await stateDir();
     const service = new HooksService(HooksProhibitionsStore.at(dir), (await import("../src/hooks/service.js")).HooksActivityStore.at(dir));
-    const before = await service.readProhibitions();
+    const before = await service.readProhibitions("Stop");
     expect(before.known).toBe(true);
-    expect(before.prohibitionsEnabled).toBe(true);
+    expect(before.hooksEnabled).toBe(false);
+    expect(before.active).toBe(false);
+    expect(before.prohibitionsEnabled).toBe(false);
 
-    await service.applyProhibitions({ source: "owner", prohibitionsEnabled: false, reason: "мешают" });
-    const after = await service.readProhibitions();
+    await service.applyProhibitions({ source: "owner", hooksEnabled: true, prohibitionsEnabled: false, reason: "мешают" });
+    const after = await service.readProhibitions("Stop");
+    expect(after.hooksEnabled).toBe(true);
+    expect(after.active).toBe(true);
     expect(after.prohibitionsEnabled).toBe(false);
     expect(after.disabledHooks).toEqual([]);
+
+    // A hook that the owner switched off on its own is quiet even when the
+    // runtime of the other hooks is on.
+    await service.applyProhibitions({ source: "owner", inactiveHooks: ["Stop"], reason: "Stop не нужен" });
+    const quiet = await service.readProhibitions("Stop");
+    expect(quiet.hooksEnabled).toBe(true);
+    expect(quiet.active).toBe(false);
+    expect((await service.readProhibitions("PreToolUse")).active).toBe(true);
   });
 });

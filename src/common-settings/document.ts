@@ -40,6 +40,16 @@ export interface CommonSettingsHooksState {
   disabledHooks: string[];
 }
 
+/*
+ * The switch of the whole optional hooks runtime is deliberately not part of
+ * the common document.
+ *
+ * The lever of the owner is a node-local decision: the fleet sync may carry
+ * the position of the prohibitions, but it can never turn the optional hooks
+ * runtime of a node back on. A node that has the hooks off keeps them off,
+ * whatever the common document says.
+ */
+
 /**
  * The lever of the prohibitions of the hooks, as the common document needs it.
  *

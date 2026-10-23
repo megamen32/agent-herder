@@ -17,16 +17,33 @@ export const HOOKS_PROHIBITIONS_AUDIT_FILE_NAME = "hooks-prohibitions.audit.json
  *
  * The document is the authority, not the memory of the process: a restart
  * re-reads it, so the lever of the owner survives a restart of the runtime.
- * The default is the current behaviour of the product — the prohibitions are
- * on — and only an explicit action of the owner lifts them.
+ *
+ * Two levers live here and they are not the same lever. `hooksEnabled` is the
+ * switch of the whole optional hooks runtime of the herder: while it is off,
+ * no hook of the herder runs at all — neither the ones that forbid something
+ * nor the ones that only carry the context of the session.
+ * `prohibitionsEnabled` says whether the hooks that run may forbid a tool
+ * call or hold the stop of a turn. Turning the prohibitions off never stops
+ * the hooks from running, and turning the hooks off is not the same thing as
+ * turning the prohibitions off.
+ *
+ * The default is the current behaviour of the product — the hooks are off and
+ * nothing forbids anything — and only an explicit action of the owner turns
+ * them on. A document that does not know the switch is a document of an older
+ * runtime, and it is read as off: an optional integration never comes back by
+ * itself.
  */
 export interface HooksProhibitionsDocument {
   /** 1 for the only format of the document. */
   version: 1;
+  /** True runs the optional hooks runtime of the herder, false keeps it quiet. */
+  hooksEnabled: boolean;
   /** True forbids the hooks, false permits them to forbid nothing. */
   prohibitionsEnabled: boolean;
   /** The hooks whose own prohibitions are off, even when the others are on. */
   disabledHooks: HookKind[];
+  /** The hooks that do not run at all, even when the runtime is on. */
+  inactiveHooks: HookKind[];
   /** The identity of the owner who changed the lever. */
   changedBy: string;
   /** When the owner changed the lever. */
@@ -39,8 +56,8 @@ export interface HooksProhibitionsDocument {
 export interface HooksProhibitionsAuditRecord {
   at: string;
   actor: string;
-  before: { prohibitionsEnabled: boolean; disabledHooks: HookKind[] };
-  after: { prohibitionsEnabled: boolean; disabledHooks: HookKind[] };
+  before: { hooksEnabled: boolean; prohibitionsEnabled: boolean; disabledHooks: HookKind[]; inactiveHooks: HookKind[] };
+  after: { hooksEnabled: boolean; prohibitionsEnabled: boolean; disabledHooks: HookKind[]; inactiveHooks: HookKind[] };
   reason: string;
 }
 
@@ -54,8 +71,23 @@ export interface HooksProhibitionsChange {
   actor?: string;
   /** The requested position of the main lever; undefined keeps the current one. */
   prohibitionsEnabled?: boolean;
+  /**
+   * The requested position of the whole hooks runtime.
+   *
+   * Undefined keeps the current position. This switch is never written by the
+   * automatic paths: only an explicit action of the owner moves it, so an
+   * auto-install or a fleet sync can never turn the hooks back on.
+   */
+  hooksEnabled?: boolean;
   /** The hooks whose prohibitions are off; undefined keeps the recorded set. */
   disabledHooks?: HookKind[];
+  /**
+   * The hooks that do not run at all.
+   *
+   * Undefined keeps the recorded set. Like the switch of the whole runtime,
+   * this list moves only by an explicit action of the owner.
+   */
+  inactiveHooks?: HookKind[];
   /** The owner-visible reason of the change. */
   reason?: string;
 }
@@ -70,12 +102,20 @@ export type HooksProhibitionsChangeResult =
     state: HooksProhibitionsDocument;
   };
 
-/** The state of a runtime that never had a decision of the owner. */
+/**
+ * The state of a runtime that never had a decision of the owner.
+ *
+ * The optional hooks runtime of the herder is off, and nothing forbids
+ * anything. A new installation, a new session and an update all start here:
+ * an optional integration is opt-in, never opt-out.
+ */
 export function defaultHooksProhibitions(): HooksProhibitionsDocument {
   return {
     version: 1,
-    prohibitionsEnabled: true,
+    hooksEnabled: false,
+    prohibitionsEnabled: false,
     disabledHooks: [],
+    inactiveHooks: [],
     changedBy: "owner",
     changedAt: "",
     reason: "",
@@ -95,8 +135,10 @@ export const AUTOMATION_CANNOT_CHANGE_PROHIBITIONS_REASON =
  */
 export function hooksProhibitionsEtag(state: HooksProhibitionsDocument): string {
   const canonical = JSON.stringify({
+    hooksEnabled: state.hooksEnabled,
     prohibitionsEnabled: state.prohibitionsEnabled,
     disabledHooks: [...state.disabledHooks].sort(),
+    inactiveHooks: [...state.inactiveHooks].sort(),
     changedAt: state.changedAt,
     changedBy: state.changedBy,
   });
@@ -114,15 +156,30 @@ export function parseHooksProhibitions(value: unknown): HooksProhibitionsDocumen
   const file = value as Record<string, unknown>;
   if (file.version !== 1) throw new Error("unsupported version");
   if (typeof file.prohibitionsEnabled !== "boolean") throw new Error("prohibitionsEnabled must be a boolean");
+  // A document of an older runtime does not know the switch of the whole
+  // hooks runtime. It is read as off: an optional integration never comes
+  // back by itself, not after an update either.
+  const hooksEnabled = file.hooksEnabled === undefined ? false : file.hooksEnabled;
+  if (typeof hooksEnabled !== "boolean") throw new Error("hooksEnabled must be a boolean");
   const disabled = file.disabledHooks === undefined ? [] : file.disabledHooks;
   if (!Array.isArray(disabled) || disabled.some((kind) => !isHookKind(kind))) throw new Error("disabledHooks must be a list of hooks");
   const hooks = [...new Set(disabled as HookKind[])].sort(
     (left, right) => HOOK_KINDS.indexOf(left) - HOOK_KINDS.indexOf(right),
   );
+  // The hooks that do not run at all. A document of an older runtime does not
+  // know the list, and an unknown list means that no hook is switched off on
+  // its own: the runtime switch decides.
+  const inactive = file.inactiveHooks === undefined ? [] : file.inactiveHooks;
+  if (!Array.isArray(inactive) || inactive.some((kind) => !isHookKind(kind))) throw new Error("inactiveHooks must be a list of hooks");
+  const inactiveHooks = [...new Set(inactive as HookKind[])].sort(
+    (left, right) => HOOK_KINDS.indexOf(left) - HOOK_KINDS.indexOf(right),
+  );
   return {
     version: 1,
+    hooksEnabled,
     prohibitionsEnabled: file.prohibitionsEnabled,
     disabledHooks: hooks,
+    inactiveHooks,
     changedBy: typeof file.changedBy === "string" && file.changedBy ? file.changedBy : "owner",
     changedAt: typeof file.changedAt === "string" ? file.changedAt : "",
     reason: typeof file.reason === "string" ? file.reason : "",
@@ -131,9 +188,12 @@ export function parseHooksProhibitions(value: unknown): HooksProhibitionsDocumen
 
 /** Do the two states say the same thing? */
 export function sameHooksProhibitions(left: HooksProhibitionsDocument, right: HooksProhibitionsDocument): boolean {
-  return left.prohibitionsEnabled === right.prohibitionsEnabled
+  return left.hooksEnabled === right.hooksEnabled
+    && left.prohibitionsEnabled === right.prohibitionsEnabled
     && left.disabledHooks.length === right.disabledHooks.length
-    && left.disabledHooks.every((kind, index) => kind === right.disabledHooks[index]);
+    && left.disabledHooks.every((kind, index) => kind === right.disabledHooks[index])
+    && left.inactiveHooks.length === right.inactiveHooks.length
+    && left.inactiveHooks.every((kind, index) => kind === right.inactiveHooks[index]);
 }
 
 /**
@@ -230,15 +290,30 @@ export class HooksProhibitionsStore {
         state: current,
       };
     }
+    if (change.inactiveHooks?.some((kind) => !isHookKind(kind))) {
+      const current = await this.read();
+      return {
+        ok: false,
+        code: "unknown_hook",
+        reason: `Такого хука нет: ${(change.inactiveHooks ?? []).filter((kind) => !isHookKind(kind)).join(", ")}. Доступны: ${HOOK_KINDS.join(", ")}.`,
+        state: current,
+      };
+    }
     return this.serial(() => this.withFileLock(async () => {
       const current = await this.read();
       const now = new Date().toISOString();
       const next: HooksProhibitionsDocument = {
         version: 1,
+        // The switch of the whole hooks runtime moves only when the owner
+        // names it. An automatic path leaves it as it is.
+        hooksEnabled: change.hooksEnabled ?? current.hooksEnabled,
         prohibitionsEnabled: change.prohibitionsEnabled ?? current.prohibitionsEnabled,
         disabledHooks: change.disabledHooks
           ? [...new Set(change.disabledHooks)].sort((left, right) => HOOK_KINDS.indexOf(left) - HOOK_KINDS.indexOf(right))
           : [...current.disabledHooks],
+        inactiveHooks: change.inactiveHooks
+          ? [...new Set(change.inactiveHooks)].sort((left, right) => HOOK_KINDS.indexOf(left) - HOOK_KINDS.indexOf(right))
+          : [...current.inactiveHooks],
         changedBy: change.actor?.trim() || current.changedBy || "owner",
         changedAt: now,
         reason: change.reason?.trim() || current.reason,
@@ -252,8 +327,8 @@ export class HooksProhibitionsStore {
       await appendHooksProhibitionsAudit(this.auditPath, {
         at: now,
         actor: next.changedBy,
-        before: { prohibitionsEnabled: current.prohibitionsEnabled, disabledHooks: [...current.disabledHooks] },
-        after: { prohibitionsEnabled: next.prohibitionsEnabled, disabledHooks: [...next.disabledHooks] },
+        before: { hooksEnabled: current.hooksEnabled, prohibitionsEnabled: current.prohibitionsEnabled, disabledHooks: [...current.disabledHooks], inactiveHooks: [...current.inactiveHooks] },
+        after: { hooksEnabled: next.hooksEnabled, prohibitionsEnabled: next.prohibitionsEnabled, disabledHooks: [...next.disabledHooks], inactiveHooks: [...next.inactiveHooks] },
         reason: next.reason,
       });
       return { ok: true, state: next, changed: true, etag: hooksProhibitionsEtag(next) };

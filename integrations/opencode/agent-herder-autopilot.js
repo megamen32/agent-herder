@@ -34,6 +34,76 @@ async function coordinationFetch(path, options = {}, observe) {
   }
 }
 
+/**
+ * Whether the optional hooks runtime of the herder runs at all.
+ *
+ * The owner switches it from the settings of the herder ("Настройки" →
+ * "Хуки Agent Herder"). While it is off, this plugin does nothing: it
+ * carries no context into the session, it records no activity and it does
+ * not continue a turn. The state is read from the same service the panel
+ * writes, and it is remembered for two seconds, so a model request does not
+ * wait for the network.
+ *
+ * The state is unknown at the start and stays unknown when the service cannot
+ * be read: an optional integration that cannot learn the decision of the
+ * owner stays quiet rather than guess. A hook that does not work must not get
+ * in the way.
+ */
+let hooksState = { at: 0, enabled: false }
+
+async function hooksEnabledByOwner() {
+  const now = Date.now()
+  if (now - hooksState.at < 2000) return hooksState.enabled
+  let enabled = false
+  try {
+    const response = await fetch(`${coordinationEndpoint}/api/hooks/prohibitions`, { signal: AbortSignal.timeout(900) })
+    if (response.ok) {
+      const data = await response.json()
+      if (data?.known === true) {
+        // A herder of an older version does not know the switch of the whole
+        // runtime. Its own lever of the prohibitions decides then, so a
+        // rollout never weakens the guard of the owner by accident.
+        enabled = typeof data.hooksEnabled === "boolean"
+          ? data.hooksEnabled
+          : data.prohibitionsEnabled !== false
+      }
+    }
+  } catch { /* the service is unreachable: the hooks stay off */ }
+  hooksState = { at: now, enabled }
+  return enabled
+}
+
+/**
+ * Whether the owner left the prohibitions on.
+ *
+ * The owner switches them from the same panel. While they are on, the guard
+ * below forbids what the rule of the owner forbids. When the owner switches
+ * them off, the guard stops forbidding anything: the work of the session
+ * continues.
+ *
+ * The whole optional runtime comes first: while it is off, the prohibitions
+ * mean nothing and the guard has nothing to forbid.
+ */
+let prohibitionsState = { at: 0, enabled: false }
+
+async function prohibitionsEnabledByOwner() {
+  if (!(await hooksEnabledByOwner())) return false
+  const now = Date.now()
+  if (now - prohibitionsState.at < 2000) return prohibitionsState.enabled
+  let enabled = false
+  try {
+    const response = await fetch(`${coordinationEndpoint}/api/hooks/prohibitions`, { signal: AbortSignal.timeout(900) })
+    if (response.ok) {
+      const data = await response.json()
+      // An unknown state keeps the prohibitions on: the guard of the owner
+      // fails closed while it cannot learn the decision.
+      if (data?.known === true) enabled = data.prohibitionsEnabled !== false
+    }
+  } catch { /* the service is unreachable: the prohibitions keep their last value */ }
+  prohibitionsState = { at: now, enabled }
+  return enabled
+}
+
 function coordinationPaths(value, out = new Set()) {
   if (typeof value === "string") {
     for (const match of value.matchAll(/\*\*\* (?:Update|Add|Delete) File:\s*([^\n]+)/g)) out.add(match[1].trim())
@@ -205,8 +275,22 @@ async function enforceRestrictedSubagent(ctx, event) {
     const configured = responseData(await ctx.agent.get({ agentID: target }))
     const model = configured?.model ?? parentSession?.model
     const leaves = await resolveNativeModelLeaves(ctx, model)
-    if (leaves?.length && !hasRestrictedProviderLeaf(leaves)) return
-  } catch { /* unknown route stays denied */ }
+    if (leaves?.length) {
+      // The provider of the route is known. The providers the owner closed stay
+      // closed whatever the switch says: that is the rule of the owner, not the
+      // lever of the hooks.
+      if (hasRestrictedProviderLeaf(leaves)) {
+        event.effect = "deny"
+        event.message = "Agent Herder blocked this child: the provider of this route is closed by the rule of the owner."
+      }
+      return
+    }
+  } catch { /* the route could not be read at all */ }
+  // The provider of the route could not be read. While the optional hooks
+  // runtime of the herder is on and the prohibitions are on, an unverified
+  // route is refused. The owner may switch the hooks off in the settings, and
+  // then the work of the session continues.
+  if (!(await prohibitionsEnabledByOwner())) return
   event.effect = "deny"
   event.message = "Agent Herder blocked this child: its complete native provider route is forbidden or could not be verified for this project."
 }
@@ -217,9 +301,20 @@ async function enforceRestrictedModelRequest(ctx, event) {
   if (!lineage.known) throw new Error("Agent Herder cannot verify the native session lineage; model request is denied.")
   if (!lineage.restricted) return
   const leaves = await resolveNativeModelLeaves(ctx, event.model)
-  if (!leaves?.length || hasRestrictedProviderLeaf(leaves)) {
-    throw new Error("Agent Herder blocked this model request: the complete native provider route is forbidden or could not be verified for this project.")
+  if (leaves?.length) {
+    // The provider of the route is known. The providers the owner closed stay
+    // closed whatever the switch says.
+    if (hasRestrictedProviderLeaf(leaves)) {
+      throw new Error("Agent Herder blocked this model request: the provider of this route is closed by the rule of the owner.")
+    }
+    return
   }
+  // The provider of the route could not be read. While the optional hooks
+  // runtime of the herder is on and the prohibitions are on, an unverified
+  // route is refused; the owner may switch the hooks off in the settings, and
+  // then the work of the session continues.
+  if (!(await prohibitionsEnabledByOwner())) return
+  throw new Error("Agent Herder blocked this model request: the complete native provider route is forbidden or could not be verified for this project.")
 }
 
 async function installRestrictedProviderGuards(ctx) {
@@ -415,6 +510,10 @@ async function createV1Hooks({ directory, $, client }, options = {}) {
       }catch{}
     },
     "experimental.chat.system.transform": async ({ sessionID }, output) => {
+      // The switch of the whole optional runtime lives in the herder: while it
+      // is off, the herder carries no context into the session, so this
+      // handler has nothing to add. The handler of a running harness becomes
+      // quiet at once, without a restart.
       if (!sessionID || !Array.isArray(output.system)) return
       try {
         const q = new URLSearchParams({ harness: "opencode", sessionId: sessionID, cwd: directory, touch: "1", consume: "1" })

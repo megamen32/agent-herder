@@ -24,6 +24,14 @@ let raw = "";
 for await (const chunk of process.stdin) raw += chunk;
 
 const prohibition = await readProhibitions(kind);
+// The optional hooks runtime of the herder is off, or this hook is switched
+// off on its own: this gate does nothing at all, and the launcher is never
+// started.
+if (!prohibition.active) {
+  await journal(kind, { event: "hooks-off", known: prohibition.known });
+  process.stdout.write("{}");
+  process.exit(0);
+}
 await reportActivity(kind, { outcome: "fired", harness: process.env.AGENT_HERDER_HARNESS || "claude" });
 
 if (!prohibition.enabled) {

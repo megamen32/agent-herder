@@ -1,0 +1,27 @@
+# Квитанция текущего состояния хуков на server-100
+
+Дата: 2026-10-23 16:21 MSK
+
+## Живой Herder (127.0.0.1:18787, штатный readback)
+
+```
+{
+    "ok": true,
+    "known": true,
+    "prohibitionsEnabled": false,
+    "disabledHooks": [
+        "Stop",
+        "PreToolUse",
+        "PostToolUse",
+        "SessionStart",
+        "UserPromptSubmit"
+    ],
+    "etag": "\"8510b05f58333389d0ea8cf3c3fb0088\""
+}
+```
+
+## Изолированный узел с новой сборкой (дефолт OFF)
+
+```
+(изолированный узел остановлен после проверки; состояние по умолчанию: hooksEnabled=false)
+```

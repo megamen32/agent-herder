@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { expect, it, vi } from 'vitest';
 import { createWebServer } from '../src/web/server.js';
+import { HooksService } from '../src/hooks/service.js';
 import { OpenCodeAdapter } from '../src/adapters/opencode.js';
 import { deferredMessages } from '../src/deferred-messages.js';
 import { getHumanStopStore } from '../src/human-stop-store.js';
@@ -26,6 +27,7 @@ async function fixture() {
   });
   const adapter=new OpenCodeAdapter({baseUrl:await listen(native), protocol: "v1"});
   const server=createWebServer({adapters:new Map([['opencode',adapter]]),converter:{} as any,supervisor:{isAutomationHeld:async()=>false} as any});
+  await HooksService.forRuntime().applyProhibitions({source:'owner',hooksEnabled:true,reason:'сценарий теста'});
   const endpoint=await listen(server);
   const physical=join(directory,'agent-herder-current-context-'+randomUUID()+'.mjs');
   await writeFile(physical,await readFile(new URL('../integrations/opencode/agent-herder-current-context.js',import.meta.url)));

@@ -47,7 +47,9 @@ async function startHerder(scenario: HerderScenario): Promise<HerderProbe> {
     probe.requests.push({ method: request.method ?? "", path: request.url ?? "", body: raw });
     response.setHeader("content-type", "application/json");
     if (request.url?.startsWith("/api/hooks/prohibitions")) {
-      response.end(JSON.stringify(scenario.prohibitions ?? { ok: true, known: true, prohibitionsEnabled: true, disabledHooks: [] }));
+      // The optional hooks runtime of the herder runs in these scenarios; the
+      // lever of the owner is answered by the real product.
+      response.end(JSON.stringify(scenario.prohibitions ?? { ok: true, known: true, hooksEnabled: true, active: true, prohibitionsEnabled: true, disabledHooks: [] }));
       return;
     }
     if (request.url?.startsWith("/api/hooks/activity")) {
@@ -125,7 +127,7 @@ describe("the hook of the stop: a hook that cannot work never gets in the way", 
 
   it("does not hold the stop when the owner turned the prohibitions off", async () => {
     const stateDir = await workDir();
-    const herder = await startHerder({ prohibitions: { ok: true, known: true, prohibitionsEnabled: false, disabledHooks: [] } });
+    const herder = await startHerder({ prohibitions: { ok: true, known: true, hooksEnabled: true, active: true, prohibitionsEnabled: false, disabledHooks: [] } });
     const result = await runScript(stopHook, { session_id: "codex:1", cwd: "/repo" }, {
       AGENT_HERDER_URL: herder.url,
       AGENT_HERDER_HOOK_STATE_DIR: stateDir,
@@ -140,7 +142,7 @@ describe("the hook of the stop: a hook that cannot work never gets in the way", 
 
   it("does not hold the stop when only the Stop hook is switched off", async () => {
     const stateDir = await workDir();
-    const herder = await startHerder({ prohibitions: { ok: true, known: true, prohibitionsEnabled: true, disabledHooks: ["Stop"] } });
+    const herder = await startHerder({ prohibitions: { ok: true, known: true, hooksEnabled: true, active: true, prohibitionsEnabled: true, disabledHooks: ["Stop"] } });
     const result = await runScript(stopHook, { session_id: "codex:1", cwd: "/repo" }, {
       AGENT_HERDER_URL: herder.url,
       AGENT_HERDER_HOOK_STATE_DIR: stateDir,
@@ -175,7 +177,7 @@ describe("the hook of the coordination: the prohibition travels only while it is
   it("does not pass the prohibition on when the owner turned it off", async () => {
     const stateDir = await workDir();
     const herder = await startHerder({
-      prohibitions: { ok: true, known: true, prohibitionsEnabled: false, disabledHooks: [] },
+      prohibitions: { ok: true, known: true, hooksEnabled: true, active: true, prohibitionsEnabled: false, disabledHooks: [] },
       activityContext: conflict,
     });
     const result = await runScript(coordinationHook, {
@@ -191,7 +193,7 @@ describe("the hook of the coordination: the prohibition travels only while it is
   it("passes the prohibition on and names the refusal while it is on", async () => {
     const stateDir = await workDir();
     const herder = await startHerder({
-      prohibitions: { ok: true, known: true, prohibitionsEnabled: true, disabledHooks: [] },
+      prohibitions: { ok: true, known: true, hooksEnabled: true, active: true, prohibitionsEnabled: true, disabledHooks: [] },
       activityContext: conflict,
     });
     const result = await runScript(coordinationHook, {
@@ -217,13 +219,28 @@ describe("the hook of the coordination: the prohibition travels only while it is
 describe("the gate of the stop of Claude Code", () => {
   it("does not run the launcher while the prohibitions are off", async () => {
     const stateDir = await workDir();
-    const herder = await startHerder({ prohibitions: { ok: true, known: true, prohibitionsEnabled: false, disabledHooks: [] } });
+    const herder = await startHerder({ prohibitions: { ok: true, known: true, hooksEnabled: true, active: true, prohibitionsEnabled: false, disabledHooks: [] } });
     const result = await runScript(stopGate, { session_id: "claude:1" }, {
       AGENT_HERDER_URL: herder.url,
       AGENT_HERDER_HOOK_STATE_DIR: stateDir,
     }, ["--", process.execPath, "-e", "process.stdout.write('{\"decision\":\"block\"}')"]);
     expect(result.code).toBe(0);
     expect(result.stdout.trim()).toBe("{}");
+  });
+
+  it("does nothing at all while the whole optional hooks runtime is off", async () => {
+    const stateDir = await workDir();
+    const herder = await startHerder({ prohibitions: { ok: true, known: true, hooksEnabled: false, active: false, prohibitionsEnabled: true, disabledHooks: [] } });
+    const result = await runScript(stopGate, { session_id: "claude:1" }, {
+      AGENT_HERDER_URL: herder.url,
+      AGENT_HERDER_HOOK_STATE_DIR: stateDir,
+    }, ["--", process.execPath, "-e", "process.stdout.write('{\"decision\":\"block\"}')"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout.trim()).toBe("{}");
+    // The launcher never started: the gate asked the herder and stopped there.
+    expect(herder.requests.some((request) => request.path.startsWith("/api/hooks/activity"))).toBe(false);
+    const journal = await readFile(join(stateDir, "Stop.jsonl"), "utf8");
+    expect(journal).toContain("hooks-off");
   });
 
   it("runs the launcher while the prohibitions are on", async () => {

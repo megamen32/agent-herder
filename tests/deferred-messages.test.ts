@@ -31,7 +31,7 @@ describe("durable cross-agent inbox", () => {
       response.writeHead(200, { "content-type": "application/json" });
       // The lever of the owner: the hook asks it before it forbids anything.
       if (requestedUrl.startsWith("/api/hooks/prohibitions")) {
-        response.end(JSON.stringify({ ok: true, known: true, prohibitionsEnabled: true, disabledHooks: [] }));
+        response.end(JSON.stringify({ ok: true, known: true, hooksEnabled: true, active: true, prohibitionsEnabled: true, disabledHooks: [] }));
         return;
       }
       response.end(JSON.stringify({ humanStopHeld, inboxContext: "must not deliver" }));
@@ -95,7 +95,7 @@ describe("durable cross-agent inbox", () => {
       response.writeHead(200, { "content-type": "application/json" });
       // The lever of the owner: the hook asks it before it holds the stop.
       if (requestedUrl.startsWith("/api/hooks/prohibitions")) {
-        response.end(JSON.stringify({ ok: true, known: true, prohibitionsEnabled: true, disabledHooks: [] }));
+        response.end(JSON.stringify({ ok: true, known: true, hooksEnabled: true, active: true, prohibitionsEnabled: true, disabledHooks: [] }));
         return;
       }
       response.end(JSON.stringify(requestedUrl.includes("consume=1")

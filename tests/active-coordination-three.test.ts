@@ -6,6 +6,7 @@ import {createServer} from 'node:http';
 import {afterEach,expect,it,vi} from 'vitest';
 import {DeferredMessageStore,deferredMessages,withDeferred} from '../src/deferred-messages.js';
 import {createWebServer} from '../src/web/server.js';
+import {HooksService} from '../src/hooks/service.js';
 import {OpenCodeAdapter} from '../src/adapters/opencode.js';
 import {ZcodeAdapter} from '../src/adapters/zcode.js';
 import plugin from '../integrations/opencode/agent-herder-autopilot.js';
@@ -46,6 +47,9 @@ it('OpenCode only reads native busy/root-user identity and current plugin contex
  const adapter=new OpenCodeAdapter({baseUrl:`http://127.0.0.1:${(native.address() as any).port}`, protocol: "v1"});
  let held=false;const server=createWebServer({adapters:new Map([['opencode',adapter]]),converter:{} as any,supervisor:{isAutomationHeld:async()=>held} as any});
  await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
+ // The optional hooks runtime of the herder runs in this scenario: the
+ // context of the session is carried by the hook.
+ await HooksService.forRuntime().applyProhibitions({source:'owner',hooksEnabled:true,reason:'сценарий теста'});
  const endpoint=`http://127.0.0.1:${(server.address() as any).port}`;const old=process.env.AGENT_HERDER_URL;process.env.AGENT_HERDER_URL=endpoint;
  const nativeFetch=globalThis.fetch;vi.spyOn(globalThis,'fetch').mockImplementation((input,init)=>{const url=new URL(String(input));return nativeFetch(url.pathname.startsWith('/api/coordination/')?endpoint+url.pathname+url.search:input,init)});
  try{
@@ -87,6 +91,7 @@ it.each(['opencode','hermes'] as const)('real supervisor context reads late pers
  const adapters=new Map([[harness,adapter]]),stops=getHumanStopStore();
  const supervisor=new SessionSupervisor(adapters,{} as any,new LineageStore(join(root,'lineage.json')),{humanStopStore:stops});
  const server=createWebServer({adapters,converter:{} as any,supervisor});await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
+ await HooksService.forRuntime().applyProhibitions({source:'owner',hooksEnabled:true,reason:'сценарий теста'});
  try{
   await deferredMessages.addActive(harness,id,'exact-live-identity','late-once','must not enter stopped context');
   await stops.hold(session as any,{id:'manual-stop',at:new Date().toISOString(),reason:'explicit human Stop'});

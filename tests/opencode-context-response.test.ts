@@ -7,6 +7,7 @@ import { expect, it, vi } from 'vitest';
 import { DeferredMessageStore, deferredMessages } from '../src/deferred-messages.js';
 import { OpenCodeAdapter } from '../src/adapters/opencode.js';
 import { createWebServer } from '../src/web/server.js';
+import { HooksService } from '../src/hooks/service.js';
 import plugin from '../integrations/opencode/agent-herder-autopilot.js';
 import { getHumanStopStore } from '../src/human-stop-store.js';
 
@@ -14,6 +15,9 @@ import { getHumanStopStore } from '../src/human-stop-store.js';
 // Expected 3s/max 15s. No native task, provider, control or installed plugin calls.
 function gate() { let resolve!: () => void; const promise = new Promise<void>(r => { resolve = r; }); return { promise, resolve }; }
 async function listen(server: Server) { await new Promise<void>(r => server.listen(0, '127.0.0.1', r)); return `http://127.0.0.1:${(server.address() as {port:number}).port}`; }
+// The optional hooks runtime of the herder runs in these scenarios: the
+// context of the session is carried by the hook.
+async function enableHooksRuntime() { await HooksService.forRuntime().applyProhibitions({ source: 'owner', hooksEnabled: true, reason: 'сценарий теста' }); }
 async function close(server: Server) { server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); }
 
 it('native guard wait does not reserve the shared inbox chain', async () => {
@@ -59,6 +63,7 @@ it('three delayed native reads fit the unchanged 1200ms plugin body deadline', a
   const adapter = new OpenCodeAdapter({baseUrl:await listen(native), protocol: "v1"});
   await adapter.getSession(id); // Existing admission warms the exact native directory.
   const server = createWebServer({adapters:new Map([['opencode',adapter]]), converter:{} as any, supervisor:{isAutomationHeld:async()=>false} as any});
+  await enableHooksRuntime();
   const endpoint = await listen(server), old = process.env.AGENT_HERDER_URL;
   process.env.AGENT_HERDER_URL = endpoint;
   const nativeFetch = globalThis.fetch;
@@ -86,6 +91,7 @@ it('client disconnect during native read refuses the durable offer', async () =>
   const id = 'opencode-' + randomUUID(), entered = gate(), release = gate(), finished = gate();
   const adapter = {type:'opencode', getCoordinationActiveTurnId:async()=>{entered.resolve(); await release.promise; finished.resolve(); return 'user';}} as any;
   const server = createWebServer({adapters:new Map([['opencode',adapter]]), converter:{} as any, supervisor:{isAutomationHeld:async()=>false} as any});
+  await enableHooksRuntime();
   const endpoint = await listen(server);
   await deferredMessages.addActive('opencode', id, 'user', 'once', 'must remain unoffered');
   const url = `${endpoint}/api/coordination/context?${new URLSearchParams({harness:'opencode',sessionId:id,cwd:'/workspace',activeTurnId:'user',consumeActive:'1'})}`;
@@ -107,6 +113,7 @@ it('a persisted Stop arriving during native read drops pending context and retai
     return 'user';
   }} as any;
   const server = createWebServer({adapters:new Map([['opencode',adapter]]),converter:{} as any,supervisor:{isAutomationHeld:async()=>false} as any});
+  await enableHooksRuntime();
   const endpoint = await listen(server);
   const prior = await deferredMessages.add(id,'explicit task');
   await deferredMessages.addActive('opencode',id,'user','once','never after Stop',[prior.id]);

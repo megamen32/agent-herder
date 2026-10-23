@@ -22,6 +22,11 @@ function installRouteProof(options: {
   if (options.endpoint) vi.stubEnv("AGENT_HERDER_URL", options.endpoint);
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input));
+    // The optional hooks runtime of the herder runs in this scenario: the
+    // guard may forbid what the rule of the owner forbids.
+    if (url.pathname === "/api/hooks/prohibitions") {
+      return response({ ok: true, known: true, hooksEnabled: true, active: true, prohibitionsEnabled: true, disabledHooks: [] });
+    }
     if (url.origin !== (options.endpoint || "http://127.0.0.1:18787") || url.pathname !== "/api/native-model-route-proof") {
       return new Response(null, { status: 404 });
     }
@@ -90,7 +95,9 @@ describe("OpenCode V2 restricted native child admission", () => {
     const decision: Record<string, unknown> = { action: "subagent", resources: ["child"], sessionID: "childSession" };
     await context.permissionHook(decision);
     expect(decision.effect).toBe("deny");
-    expect(decision.message).toContain("complete native provider route");
+    // The provider of the route is known and closed by the rule of the owner:
+    // that rule is not the lever of the hooks.
+    expect(decision.message).toContain("closed by the rule of the owner");
     await cleanup();
   });
 
@@ -111,6 +118,9 @@ describe("OpenCode V2 restricted native child admission", () => {
   });
 
   it("fails closed when a selected child model is missing from the native model catalog", async () => {
+    // The optional hooks runtime of the herder runs in this scenario and the
+    // prohibitions are on: the guard refuses what it cannot verify.
+    installRouteProof({ leaves: [] });
     const context = makeContext({
       agents: { child: { id: "child", model: "unknown-provider/model" } },
       models: [],

@@ -6,7 +6,9 @@ import { fileURLToPath } from 'node:url';
 describe('coordination hook actual workspace', () => {
   it('attributes edits to tool workdir while preserving outside-launch absolute paths', async () => {
     let received: any;
-    const server=createServer(async(req,res)=>{let raw='';for await(const part of req)raw+=part;if(raw)received=JSON.parse(raw);res.setHeader('content-type','application/json');res.end('{}');});
+    const server=createServer(async(req,res)=>{let raw='';for await(const part of req)raw+=part;if(raw&&!req.url?.startsWith('/api/hooks/prohibitions'))received=JSON.parse(raw);res.setHeader('content-type','application/json');// The optional hooks runtime of the herder runs in this scenario.
+    if(req.url?.startsWith('/api/hooks/prohibitions')){res.end(JSON.stringify({ok:true,known:true,hooksEnabled:true,active:true,prohibitionsEnabled:true,disabledHooks:[]}));return;}
+    res.end('{}');});
     await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
     try {
       const address=server.address() as {port:number};
@@ -22,7 +24,9 @@ describe('coordination hook actual workspace', () => {
 
 it('observes a literal workdir in a composed Codex exec tool without executing its code',async()=>{
  let received:any;
- const server=createServer(async(req,res)=>{let raw='';for await(const part of req)raw+=part;if(raw)received=JSON.parse(raw);res.setHeader('content-type','application/json');res.end('{}')});
+ const server=createServer(async(req,res)=>{let raw='';for await(const part of req)raw+=part;if(raw&&!req.url?.startsWith('/api/hooks/prohibitions'))received=JSON.parse(raw);res.setHeader('content-type','application/json');
+ if(req.url?.startsWith('/api/hooks/prohibitions')){res.end(JSON.stringify({ok:true,known:true,hooksEnabled:true,active:true,prohibitionsEnabled:true,disabledHooks:[]}));return;}
+ res.end('{}')});
  await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
  try{
   const child=spawn(process.execPath,[fileURLToPath(new URL('../scripts/coordination-hook.mjs',import.meta.url))],{env:{...process.env,AGENT_HERDER_URL:`http://127.0.0.1:${(server.address() as any).port}`},stdio:['pipe','pipe','pipe']});

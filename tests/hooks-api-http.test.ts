@@ -43,12 +43,59 @@ describe("the API of the hooks", () => {
     const response = await fetch(`${base}/api/hooks`);
     expect(response.status).toBe(200);
     const view = await readJson(response);
-    expect(view.prohibitionsEnabled).toBe(true);
+    // The optional hooks runtime of the herder is off by default: no hook of
+    // the herder runs until the owner turns it on.
+    expect(view.hooksEnabled).toBe(false);
+    expect(view.prohibitionsEnabled).toBe(false);
     expect(view.known).toBe(true);
     const hooks = view.hooks as Array<Record<string, unknown>>;
     expect(hooks.map((hook) => hook.kind)).toEqual(["Stop", "PreToolUse", "PostToolUse", "SessionStart", "UserPromptSubmit"]);
     expect(hooks[0]?.humanName).toContain("Stop");
-    expect(hooks[0]?.state).toBe("включены");
+    expect(hooks[0]?.state).toBe("не выполняется");
+  });
+
+  it("turns the whole optional hooks runtime on only by an explicit action of the owner", async () => {
+    const base = await startServer();
+    const moved = await fetch(`${base}/api/hooks/prohibitions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: "owner", hooksEnabled: true, reason: "нужны хуки" }),
+    });
+    expect(moved.status).toBe(200);
+    const view = await readJson(moved);
+    expect(view.hooksEnabled).toBe(true);
+    expect(view.reason).toBe("нужны хуки");
+
+    // The hooks read the light answer: the runtime runs, and this hook runs.
+    const read = await readJson(await fetch(`${base}/api/hooks/prohibitions?kind=Stop`));
+    expect(read.known).toBe(true);
+    expect(read.hooksEnabled).toBe(true);
+    expect(read.active).toBe(true);
+    expect(read.prohibitionsEnabled).toBe(false);
+
+    // A hook that the owner switched off on its own stays quiet.
+    await fetch(`${base}/api/hooks/prohibitions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: "owner", inactiveHooks: ["Stop"] }),
+    });
+    const quiet = await readJson(await fetch(`${base}/api/hooks/prohibitions?kind=Stop`));
+    expect(quiet.hooksEnabled).toBe(true);
+    expect(quiet.active).toBe(false);
+    const other = await readJson(await fetch(`${base}/api/hooks/prohibitions?kind=PreToolUse`));
+    expect(other.active).toBe(true);
+  });
+
+  it("never lets the automatic paths turn the optional hooks runtime on", async () => {
+    const base = await startServer();
+    const refused = await fetch(`${base}/api/hooks/prohibitions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: "automation", hooksEnabled: true }),
+    });
+    expect(refused.status).toBe(403);
+    const view = await readJson(await fetch(`${base}/api/hooks`));
+    expect(view.hooksEnabled).toBe(false);
   });
 
   it("moves the lever as an explicit action of the owner", async () => {
@@ -56,11 +103,12 @@ describe("the API of the hooks", () => {
     const moved = await fetch(`${base}/api/hooks/prohibitions`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ source: "owner", prohibitionsEnabled: false, reason: "хуки мешают" }),
+      body: JSON.stringify({ source: "owner", hooksEnabled: true, prohibitionsEnabled: false, reason: "хуки мешают" }),
     });
     expect(moved.status).toBe(200);
     const view = await readJson(moved);
     expect(view.prohibitionsEnabled).toBe(false);
+    expect(view.hooksEnabled).toBe(true);
     expect(view.reason).toBe("хуки мешают");
 
     // The hooks read the light answer: the prohibitions are off.
@@ -129,7 +177,7 @@ describe("the API of the hooks", () => {
     await fetch(`${base}/api/hooks/prohibitions`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ source: "owner", prohibitionsEnabled: false, reason: "мешают" }),
+      body: JSON.stringify({ source: "owner", hooksEnabled: true, reason: "мешают" }),
     });
     const view = await readJson(await fetch(`${base}/api/hooks`));
     const audit = view.audit as Array<Record<string, unknown>>;

@@ -52,16 +52,28 @@ export async function journal(kind, record) {
 }
 
 /**
- * Ask the herder whether this hook may forbid something.
+ * Ask the herder whether the optional hooks runtime runs, and whether this
+ * hook may forbid something.
  *
- * The answer is fail-open in every failure: the hook forbids nothing. The
- * caller gets `known: false` as well, so it can tell the owner that the
- * state of the lever is unknown instead of pretending it is off.
+ * Two answers come back. `hooksEnabled` says whether the optional hooks
+ * runtime of the herder runs at all: while it is off, the hook does nothing
+ * — it does not forbid anything and it does not carry any context into the
+ * session. `enabled` says whether this hook may forbid something, which also
+ * needs the runtime to be on and this hook to be named in no disabled set.
+ *
+ * The answer is fail-open in every failure: an unreachable service, a timeout
+ * or an unknown state means the hook does nothing, because a hook that cannot
+ * learn the decision of the owner must stay quiet rather than guess. The
+ * owner complained exactly about this: a hook that does not work still gets
+ * in the way.
+ *
+ * Every failure is written to the journal of the hook, so the owner can see
+ * why a hook did nothing. The journal is a trail, never a gate.
  */
 export async function readProhibitions(kind, options = {}) {
   const endpoint = options.endpoint ?? herderEndpoint();
   try {
-    const response = await fetch(`${endpoint}/api/hooks/prohibitions`, {
+    const response = await fetch(`${endpoint}/api/hooks/prohibitions?kind=${encodeURIComponent(kind)}`, {
       headers: { accept: "application/json" },
       signal: AbortSignal.timeout(options.timeoutMs ?? READ_TIMEOUT_MS),
     });
@@ -69,17 +81,28 @@ export async function readProhibitions(kind, options = {}) {
     const body = await response.json();
     const known = body?.known === true;
     const disabled = Array.isArray(body?.disabledHooks) ? body.disabledHooks : [];
-    const enabled = known && body?.prohibitionsEnabled === true && !disabled.includes(kind);
+    // The whole optional runtime first: while it is off, no hook runs.
+    const hooksEnabled = known && body?.hooksEnabled === true;
+    // The hook itself may be switched off on its own, even when the runtime
+    // of the other hooks is on.
+    const active = hooksEnabled && body?.active === true;
+    const enabled = active && body?.prohibitionsEnabled === true && !disabled.includes(kind);
     if (!known) {
       await journal(kind, {
         event: "state-unknown",
         reason: typeof body?.reason === "string" && body.reason ? body.reason : "the herder did not name the state",
       });
     }
-    return { known, enabled, reason: typeof body?.reason === "string" ? body.reason : undefined };
+    return {
+      known,
+      hooksEnabled,
+      active,
+      enabled,
+      reason: typeof body?.reason === "string" ? body.reason : undefined,
+    };
   } catch (error) {
     await journal(kind, { event: "state-unavailable", reason: String(error?.message ?? error) });
-    return { known: false, enabled: false, reason: "состояние запретов хуков недоступно" };
+    return { known: false, hooksEnabled: false, active: false, enabled: false, reason: "состояние запретов хуков недоступно" };
   }
 }
 

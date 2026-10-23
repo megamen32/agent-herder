@@ -44,8 +44,12 @@ export interface HooksView {
   ok?: boolean;
   /** False when the state of the lever cannot be trusted. */
   known?: boolean;
+  /** True when the optional hooks runtime of the herder runs at all. */
+  hooksEnabled?: boolean;
   prohibitionsEnabled?: boolean;
   disabledHooks?: HookKind[];
+  /** The hooks that do not run at all, even when the runtime is on. */
+  inactiveHooks?: HookKind[];
   changedBy?: string;
   changedAt?: string;
   reason?: string;
@@ -209,7 +213,7 @@ export async function loadHooks(): Promise<HooksView> {
 
 /** Move the lever of the owner. */
 export async function saveHooksProhibitions(
-  change: { prohibitionsEnabled?: boolean; disabledHooks?: HookKind[]; reason: string },
+  change: { prohibitionsEnabled?: boolean; disabledHooks?: HookKind[]; hooksEnabled?: boolean; inactiveHooks?: HookKind[]; reason: string },
   etag?: string,
 ): Promise<HooksView> {
   const response = await fetch(HOOKS_PROHIBITIONS_ENDPOINT, {

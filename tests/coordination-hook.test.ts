@@ -17,6 +17,13 @@ async function runHook(event: Record<string, unknown>): Promise<Record<string, u
     for await (const part of request) raw += part;
     if (request.url === "/api/coordination/activity") received = JSON.parse(raw);
     response.setHeader("content-type", "application/json");
+    // The optional hooks runtime of the herder runs in this scenario: the
+    // hook does its work. The lever of the owner is answered by the real
+    // product, and the hook stays quiet when it is off.
+    if (request.url?.startsWith("/api/hooks/prohibitions")) {
+      response.end(JSON.stringify({ ok: true, known: true, hooksEnabled: true, active: true, prohibitionsEnabled: true, disabledHooks: [] }));
+      return;
+    }
     response.end("{}");
   });
   servers.push(server);

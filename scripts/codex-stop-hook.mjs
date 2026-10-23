@@ -22,11 +22,18 @@ if (!sessionId) {
   process.exit(0);
 }
 
-// The lever of the owner. While the prohibitions of the Stop hook are on,
-// the hook may hold the stop of the session and continue the same turn.
-// When they are off — or when the state of the lever cannot be read at all —
-// the hook stays quiet: it never holds the stop of a session.
+// The lever of the owner. The optional hooks runtime of the herder comes
+// first: while it is off, this hook does nothing at all. While the
+// prohibitions of the Stop hook are on, the hook may hold the stop of the
+// session and continue the same turn. When they are off — or when the state
+// of the lever cannot be read at all — the hook stays quiet: it never holds
+// the stop of a session.
 const prohibition = await readProhibitions("Stop");
+if (!prohibition.active) {
+  await journal("Stop", { event: "hooks-off", sessionId, known: prohibition.known });
+  process.stdout.write("{}");
+  process.exit(0);
+}
 await reportActivity("Stop", { outcome: "fired", sessionId, harness: "codex" });
 if (!prohibition.enabled) {
   await journal("Stop", { event: "prohibitions-off", sessionId, known: prohibition.known });

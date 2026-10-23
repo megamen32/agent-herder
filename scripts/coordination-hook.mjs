@@ -13,12 +13,17 @@ const event = input.hook_event_name || input.hookEventName || "";
 const sessionId = String(input.session_id || input.sessionId || "");
 const cwd = String(input.cwd || process.cwd());
 const harness = process.env.AGENT_HERDER_HARNESS || "codex";
-// The lever of the owner. While the prohibitions of this hook are on, the
-// hook may put a conflict into the context of the tool call. When they are
-// off — or when the state of the lever cannot be read at all — the hook
-// passes no prohibition on: a hook that cannot work never gets in the way.
+// The lever of the owner. The optional hooks runtime of the herder comes
+// first: while it is off, this hook carries nothing into the session at all.
+// While the prohibitions of this hook are on, the hook may put a conflict
+// into the context of the tool call. When they are off — or when the state of
+// the lever cannot be read at all — the hook passes no prohibition on: a hook
+// that cannot work never gets in the way.
 const HOOK_EVENTS = ["Stop", "PreToolUse", "PostToolUse", "SessionStart", "UserPromptSubmit"];
-const prohibition = HOOK_EVENTS.includes(event) ? await readProhibitions(event) : { known: false, enabled: false };
+const prohibition = HOOK_EVENTS.includes(event) ? await readProhibitions(event) : { known: false, hooksEnabled: false, active: false, enabled: false };
+if (!prohibition.active) {
+  process.exit(0);
+}
 // The prohibition content of the coordination context: the soft lock that
 // asks the agent to agree before it edits an overlapping path.
 function withoutProhibitions(context) {
