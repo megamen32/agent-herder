@@ -43,7 +43,8 @@ describe('personal session pins (fast unit; expected2s/max20s)', () => {
   expect(sidebarEntries([parent,child],settings,new Set(['codex:parent']),new Set(),'',[]).map(x=>x.session.id)).toEqual(['parent']);
  });
  it('respects host, harness, completion and search filters before promotion', () => {
-  const local=row('same'), remote=row('same',{hostId:'mac-m1',remote:true,title:'remote',harness:'zcode',status:'stopped'});
+  // Обе сессии завершены: живой фильтр не должен возвращать их даже ради закрепления.
+  const local=row('same',{status:'stopped'}), remote=row('same',{hostId:'mac-m1',remote:true,title:'remote',harness:'zcode',status:'stopped'});
   const pins=[sessionPinKey(remote)!,sessionPinKey(local)!];
   expect(sidebarEntries([local,remote],settings,new Set(),new Set(),'remote',pins).map(x=>x.session.hostId)).toEqual(['mac-m1']);
   expect(sidebarEntries([local,remote],{...settings,hostId:local.hostId},new Set(),new Set(),'',pins).map(x=>x.session.hostId)).toEqual([local.hostId]);

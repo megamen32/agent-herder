@@ -10,13 +10,22 @@ type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
  */
 export const SESSION_LIST_SETTINGS_STORAGE_KEY = "agent-herder.list-settings";
 
+/**
+ * Подпись переключателя читается прямо: по умолчанию в списке живые сессии,
+ * а галочка добавляет завершённые. Обратного действия («показать живые»)
+ * в подписи нет.
+ */
+export const SESSION_LIST_SHOW_COMPLETED_LABEL = "Показывать завершённые";
+export const SESSION_LIST_SHOW_COMPLETED_ARIA = "Показывать завершённые сессии";
+export const SESSION_LIST_SHOW_COMPLETED_HINT = "По умолчанию в списке видны живые сессии. Отметьте, чтобы добавить завершённые и ошибочные.";
+
 export const DEFAULT_SESSION_LIST_SETTINGS: SessionListSettings = {
   cwd: "",
   project: "",
   harness: "",
   hostId: "",
   sort: "created",
-  showAll: true,
+  showAll: false,
 };
 
 const SESSION_LIST_SORTS: SessionListSort[] = ["created", "activity", "status", "harness", "title", "cwd"];
