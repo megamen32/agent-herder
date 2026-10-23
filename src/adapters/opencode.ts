@@ -15,6 +15,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { throwIfAborted } from "../abort-utils.js";
 import { terminalQuotaFailure, normalizeSendAdmission } from "./quota-failure.js";
+import type { IntegratorHarness, IntegratorSessionBindingStore } from "../integrator-session-binding.js";
 
 export { normalizeOpenCodeEvent, openCodeConnectedModels, openCodeMessageParts, openCodeModelCatalogEntries, parseOpenCodeServerCommand, unwrapEnvelope } from "agent-resume-mcp";
 export type { OpenCodeEvent, OpenCodeModelCatalogEntry } from "agent-resume-mcp";
@@ -69,6 +70,16 @@ function discoverOpenCodeServerUrl(pid: string | undefined): string | undefined 
   } catch {
     return undefined;
   }
+}
+
+/** The durable reservation one integrator operation handed to this adapter. */
+export interface OpenCodeIntegratorReservation {
+  operationId: string;
+  attempt: number;
+  inputId: string;
+  hostId: string;
+  /** The harness the operation was reserved for. The receipt names it. */
+  harness: IntegratorHarness;
 }
 
 export interface OpenCodeProviderLeaf {
@@ -322,8 +333,16 @@ export class OpenCodeAdapter implements HarnessAdapter {
   private readonly authorization: string | undefined;
   /** Native v2 emits the inbox delivery before execution.started, whose frame has no input ID. */
   private readonly deliveredInboxBySession = new Map<string, string | null>();
+  /** Durable integrator journal of the reserved operation, when this adapter serves one. */
+  private readonly integratorSessionBindingStore: IntegratorSessionBindingStore | undefined;
+  /** The reservation the integrator runtime handed to this adapter. */
+  private readonly integratorReservation: OpenCodeIntegratorReservation | undefined;
 
-  constructor(config: { baseUrl?: string; password?: string; protocol?: "auto" | "v1" | "v2" } = {}) {
+  constructor(config: { baseUrl?: string; password?: string; protocol?: "auto" | "v1" | "v2";
+    /** Durable integrator journal of the reserved operation, when this adapter serves one. */
+    integratorSessionBindingStore?: IntegratorSessionBindingStore;
+    /** The reservation the integrator runtime handed to this adapter. */
+    integratorReservation?: OpenCodeIntegratorReservation } = {}) {
     this.client = new OpenCodeClient({
       baseUrl: config.baseUrl,
       ...(config.password ? { password: config.password } : {}),
@@ -333,6 +352,8 @@ export class OpenCodeAdapter implements HarnessAdapter {
     const password = config.password ?? process.env.OPENCODE_SERVER_PASSWORD;
     const username = process.env.OPENCODE_SERVER_USERNAME || "opencode";
     this.authorization = password ? `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}` : undefined;
+    this.integratorSessionBindingStore = config.integratorSessionBindingStore;
+    this.integratorReservation = config.integratorReservation;
   }
 
   /** True once the server answered as an OpenCode 2 (`/api`) instance. */
@@ -545,6 +566,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
       ...(model ? { model } : {}),
       ...(options.fullAccess ? { fullAccess: true } : {}),
     });
+    await this.recordIntegratorCreated(created.id, created.cwd || options.cwd);
     // A session Herder created knows who it is from its first turn: otherwise
     // an OpenCode agent cannot name itself, coordinate, or answer "who am I".
     await this.announceIdentity({
@@ -553,6 +575,20 @@ export class OpenCodeAdapter implements HarnessAdapter {
       cwd: created.cwd || options.cwd,
     }).catch(() => false);
     return this.toAgentSession({ ...created, cwd: created.cwd || options.cwd });
+  }
+
+  /**
+   * Write the durable created receipt of the reserved integrator operation.
+   *
+   * The reservation is what this adapter was built for; without one the adapter
+   * serves an ordinary session and writes nothing.
+   */
+  private async recordIntegratorCreated(nativeSessionId: string, launchCwd: string): Promise<void> {
+    const store = this.integratorSessionBindingStore;
+    const reservation = this.integratorReservation;
+    if (!store || !reservation) return;
+    await store.recordCreated({ operationId: reservation.operationId, attempt: reservation.attempt,
+      harness: reservation.harness, nativeSessionId, launchCwd });
   }
 
   /**
