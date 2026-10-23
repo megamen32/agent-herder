@@ -367,3 +367,42 @@ and native ZCode completion. Task: `.agents/tasks/20261015-native-sqlite-file-bu
 
 Пока приложение не перезапущено или не публикует транспорт, адаптер остаётся
 read-only по доставке и честно отвечает отказом с причиной.
+
+## Устаревший pid нативного OpenCode (23 октября 2026)
+
+Записанный в `node-config.json` `opencodePid` — состояние, а не причина падения
+узла. На 88 `opencodePid=3688` пережил собственный перезапуск OpenCode: bootstrap
+читал `/proc/3688/cmdline`, получал `FileNotFoundError`, выходил с кодом 1, и
+`agent-herder-fleet.service` уходил в цикл `activating (auto-restart)`, пока
+запись не поправили вручную.
+
+Linux-узел (`deploy/fleet/node-bootstrap.py`):
+
+- записанный pid проверяется по факту наличия (`/proc/<pid>`), а не чтением
+  cmdline без проверки: отсутствие процесса — состояние, не исключение;
+- мёртвый или переиспользованный pid не валит узел: живой OpenCode того же
+  порта находится по процессам и по таблице ядра (`/proc/net/tcp`), а его
+  cmdline и environ доказывают, что это `opencode serve --port <порт>`;
+- если OpenCode не запущен вовсе, узел запускает его сам
+  (`opencode serve --hostname 127.0.0.1 --port <порт>`), берёт учётные данные
+  из защищённого `opencodeEnvFile` или из своего окружения и ждёт порт до 30 с;
+  поднятый процесс живёт в control group юнита, поэтому перезапуск юнита
+  перезапускает и его, а следующий bootstrap поднимает OpenCode снова;
+- только реальная неудача останавливает узел, и сообщение называет причину:
+  `could not start OpenCode on port <порт>: the opencode binary was not found`,
+  `... the process exited with <код>`, `... the port did not open in 30 seconds`,
+  `has no live OpenCode serve on port <порт>`;
+- после того как узел убедился, с кем работает, `opencodePid` обновляется на
+  живой (атомарная запись, 0600). Верная запись не переписывается заново.
+
+mac-узел (`deploy/fleet/mac-node-watchdog.py`): тот же класс дефекта — `ps -p`
+для отсутствующего процесса давал `native_observation_failed` вместо ответа
+«процесса нет». Watchdog допускает пустой результат `ps -p` (с проверкой
+отсутствия в ядре), находит живой OpenCode по слушающему сокету (`lsof`),
+доказывает его через `ps` и записывает живой pid в `node-config.json`.
+Создавать нативный демон watchdog не вправе (контракт файла): без живого
+OpenCode он отказывается и называет нужный порт.
+
+Проверка: `tests/fleet-bootstrap-stale-pid.test.py` (устаревший pid,
+переиспользованный pid, отсутствие OpenCode, отсутствие бинаря, режим
+`--check`) и два теста в `tests/harness-mesh-mac-watchdog.test.py`.
