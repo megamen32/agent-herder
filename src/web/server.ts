@@ -759,6 +759,19 @@ async function currentLaunchPolicyRevision(
 const MAX_SESSION_LIST_WINDOW = 500;
 
 /**
+ * The window of the list that a caller receives when it names none.
+ *
+ * The server bounds the answer of the list, not only the panel: an old
+ * panel, a tool of the mesh or a proxy that asks for the whole list used to
+ * receive megabytes of the history and to fill the route of the panel with
+ * them. The screens of the panel then waited for the history of another
+ * screen. The answer stays a window, and the counter of the whole list
+ * travels with it, so a caller that counts the sessions of the mesh still
+ * counts them all.
+ */
+const DEFAULT_SESSION_LIST_WINDOW = 100;
+
+/**
  * The budget of the answer of the list, in bytes.
  *
  * The size of a session is not uniform: a session with a long history is
@@ -2387,7 +2400,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   }
   if (request.method === "GET" && url.pathname === "/") {
     const html = await readFile(htmlPath, "utf8");
-    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    // The shell of the panel names the bundle of the current release. A
+    // cached shell keeps an old bundle alive in the browser, and an old
+    // bundle asks for the whole history of the mesh. The shell is never
+    // cached; the assets keep their own hash and their own cache.
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
     response.end(html);
     return;
   }
@@ -2530,31 +2547,33 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     };
     // The window of the list. The panel asks for a window and the answer
     // carries the window and the counter of the whole list, so the panel
-    // knows that the list is longer than it shows. A request without a
-    // window keeps the old answer: the whole list, as before.
-    const asked = sessionListLimit(url.searchParams.get("limit"));
+    // knows that the list is longer than it shows. The server bounds the
+    // answer even when the caller names no window: the whole history of the
+    // mesh is megabytes of JSON, and a screen of the panel must not become
+    // slow because another screen asked for the history. The counter of the
+    // whole list travels with the answer either way.
+    const asked = sessionListLimit(url.searchParams.get("limit")) ?? DEFAULT_SESSION_LIST_WINDOW;
     if (url.searchParams.get("quick") === "1") {
       const snapshot = supervisor.listSessionsFast(filters);
       const total = snapshot.sessions.length;
-      // The window of the list applies when the caller names it: a caller
-      // that asks for the whole list gets the whole list, and the answer
-      // carries the counter of the list either way. The panel of the herder
-      // names its window, and the answer says that it is a window:
-      // `truncated`, `total` and `limit` travel with it.
-      const visible = asked === undefined ? snapshot.sessions : sessionListWindow(snapshot.sessions, asked);
+      // The answer is a window: the sessions of the window and the counter
+      // of the whole list. `truncated`, `total` and `limit` travel with it,
+      // so the panel knows that the list is longer than it shows.
+      const visible = sessionListWindow(snapshot.sessions, asked);
       const truncated = visible.length < total;
       return sendJson(response, 200, url.searchParams.get("inventory") === "1"
-        ? { sessions: projectSessionInventory(visible), warming: snapshot.warming, total, ...(asked === undefined ? {} : { limit: asked, truncated }) }
-        : { ...snapshot, sessions: visible, total, ...(asked === undefined ? {} : { limit: asked, truncated }) });
+        ? { sessions: projectSessionInventory(visible), warming: snapshot.warming, total, limit: asked, truncated }
+        : { ...snapshot, sessions: visible, total, limit: asked, truncated });
     }
     const sessions = await supervisor.listSessions(filters);
     const total = sessions.length;
-    const visible = asked === undefined ? sessions : sessionListWindow(sessions, asked);
+    const visible = sessionListWindow(sessions, asked);
     sendJson(response, 200, {
       sessions: url.searchParams.get("inventory") === "1" ? projectSessionInventory(visible) : visible,
       warming: false,
       total,
-      ...(asked === undefined ? {} : { limit: asked, truncated: visible.length < total }),
+      limit: asked,
+      truncated: visible.length < total,
     });
     return;
   }
