@@ -897,8 +897,9 @@ export class SessionSupervisor {
   }
 
   async getSessionDetails(provider: string, id: string, options: SessionDetailOptions = {}): Promise<SessionDetails> {
+    // An exact MiniMax read must not hydrate up to 500 unrelated transcripts.
     const cachedSessions = options.quick
-      ? provider === "codex"
+      ? provider === "minimax-code" ? undefined : provider === "codex"
         ? this.sessionSnapshot?.sessions.filter((session) => session.harness === provider)
           ?? await this.adapters.get(provider)?.listSessions().catch(() => undefined)
         : await this.listSessions({ harness: provider })
