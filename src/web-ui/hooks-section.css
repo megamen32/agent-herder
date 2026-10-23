@@ -13,9 +13,11 @@
  * must not lie on top of the table: the remote chat takes the third column of
  * the screen and the table of the hooks goes under it. The panel already
  * hides the local chat on this tab; the remote chat is hidden here by the same
- * rule, so the table of the hooks is read whole.
+ * rule, so the table of the hooks is read whole. The remote chat is a
+ * neighbour of the screen of the settings, so the rule hangs on the screen
+ * that holds the section of the hooks.
  */
-.herder-settings-page:has(.herder-hooks) .remote-chat-pane {
+.oc-app:has(.herder-hooks) .remote-chat-pane {
   display: none;
 }
 
@@ -61,6 +63,25 @@
   .herder-hooks-table-wrap {
     overflow-x: auto;
   }
+}
+
+/*
+ * The colour of the cell of the prohibition.
+ *
+ * The green of the panel means «всё в порядке». The prohibition is not that:
+ * it is the thing that holds the session. The cell says it in words, and the
+ * green stays with the state where the prohibitions are lifted.
+ */
+.herder-hooks-prohibition-on {
+  color: var(--text);
+}
+
+.herder-hooks-prohibition-off {
+  color: var(--status-done);
+}
+
+.herder-hooks-prohibition-none {
+  color: var(--muted);
 }
 
 /*

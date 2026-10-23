@@ -74,7 +74,7 @@ describe("the tab of the hooks: the table is read whole", () => {
     // The remote chat of an open session takes the third column of the screen
     // and the table of the hooks went under it. The tab of the hooks now owns
     // the screen, the same way the panel already hides the local chat here.
-    expect(css).toMatch(/\.herder-settings-page:has\(\.herder-hooks\)\s+\.remote-chat-pane\s*\{[^}]*display:\s*none/);
+    expect(css).toMatch(/\.oc-app:has\(\.herder-hooks\)\s+\.remote-chat-pane\s*\{[^}]*display:\s*none/);
     expect(source).toContain('className="herder-settings-block herder-hooks"');
   });
 
@@ -100,6 +100,14 @@ describe("the tab of the hooks: the column says what it is about", () => {
     expect(hooksProhibitionText({ kind: "Stop", canProhibit: true, state: "выключены" })).toBe("Запреты выключены");
     expect(hooksProhibitionText({ kind: "Stop", canProhibit: true, state: "неизвестно" })).toBe("Неизвестно");
     expect(hooksProhibitionText({ kind: "SessionStart", canProhibit: false, state: "не запрещает" })).toBe("Запреты не действуют");
+  });
+
+  it("does not paint the prohibition green as if everything were in order", () => {
+    // The green of the panel means «всё в порядке», and the prohibition is
+    // the thing that holds the session: it says its meaning in words.
+    const html = render();
+    expect(html).not.toContain("herder-settings-status-known");
+    expect(html).toContain("herder-hooks-prohibition-on");
   });
 });
 

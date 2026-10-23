@@ -236,6 +236,31 @@ export function hooksProhibitionText(hook: HooksPanelHook): string {
 }
 
 /**
+ * The colour of the cell of the prohibition.
+ *
+ * The green of the panel means «всё в порядке», and the prohibition is not
+ * that: the prohibition of the hooks is the thing that holds the owner. The
+ * cell says it in words and stays out of the colour of success.
+ */
+export type HooksProhibitionTone = "on" | "off" | "none" | "unknown";
+
+export function hooksProhibitionTone(hook: HooksPanelHook): HooksProhibitionTone {
+  if (hook.canProhibit === false) return "none";
+  const state = hooksStateLabel(hook);
+  if (state === "неизвестно") return "unknown";
+  return state === "выключены" ? "off" : "on";
+}
+
+/** The look of the cell of the prohibition, by the meaning of the state. */
+export function hooksProhibitionClass(hook: HooksPanelHook): string {
+  const tone = hooksProhibitionTone(hook);
+  if (tone === "unknown") return "herder-settings-status-unknown";
+  if (tone === "off") return "herder-hooks-prohibition-off";
+  if (tone === "none") return "herder-hooks-prohibition-none";
+  return "herder-hooks-prohibition-on";
+}
+
+/**
  * The state of the Stop hook in the words of the owner.
  *
  * The Stop hook holds the stop of the session, so the owner reads one line:
@@ -503,7 +528,7 @@ export function HooksPanel({
                   )}
                 </td>
                 <td>
-                  <span className={hook.state === "неизвестно" ? "herder-settings-status-unknown" : "herder-settings-status-known"}>
+                  <span className={hooksProhibitionClass(hook)}>
                     {hooksProhibitionText(hook)}
                   </span>
                 </td>
