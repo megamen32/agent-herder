@@ -8,10 +8,15 @@ const createSchema=z.object({hostId:z.string().min(1).max(512),harness:z.enum(['
 export function createFleetApiHandler(resolve:FleetCabinetService|((request:IncomingMessage)=>FleetCabinetService|Promise<FleetCabinetService>),localHostId=hostname()){
  return async(request:IncomingMessage,response:ServerResponse):Promise<boolean>=>{
   const url=new URL(request.url??'/', 'http://localhost');
-  if(!['/api/fleet/hosts','/api/fleet/sessions','/api/fleet/create','/api/fleet/session','/api/fleet/inventory','/api/fleet/control'].includes(url.pathname))return false;
+  if(!['/api/fleet/hosts','/api/fleet/sessions','/api/fleet/search','/api/fleet/create','/api/fleet/session','/api/fleet/inventory','/api/fleet/control'].includes(url.pathname))return false;
   const send=(status:number,value:unknown)=>{response.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});response.end(JSON.stringify(value));};
   try{
    const service=typeof resolve==='function'?await resolve(request):resolve;
+   if(url.pathname==='/api/fleet/search'&&request.method==='GET'){
+    const limit=url.searchParams.has('limit')?Number(url.searchParams.get('limit')):20;
+    if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error('search_limit_invalid');
+    send(200,await service.search({query:url.searchParams.get('query')??'',hostId:url.searchParams.get('hostId')??undefined,harnesses:url.searchParams.getAll('harness'),limit}));return true;
+   }
    if(url.pathname==='/api/fleet/control'&&['GET','POST'].includes(request.method??'')){
     const address={hostId:url.searchParams.get('hostId')??'',harness:url.searchParams.get('harness')??'',nativeSessionId:url.searchParams.get('sessionId')??''};
     let value:unknown;

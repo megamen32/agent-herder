@@ -1,0 +1,160 @@
+{
+  "schema_version": 2,
+  "title": "Быстрый поиск сессий на всех компьютерах",
+  "goal": "пользователь быстро находит сессию по названию или слову через существующие MCP и API на всех компьютерах.",
+  "business_result": "поиск отвечает из индекса, показывает компьютер и сессию, честно отмечает неполное покрытие.",
+  "current_progress": "10 source-тестов и tsc подтверждены; установленный поиск и покрытие пяти компьютеров ожидают проверки",
+  "external_waits": [],
+  "slots": 2,
+  "updated_at": "2026-10-23T19:43:23",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "L2 Проверить хранение, настройки и ограничения исходных сессий; исполнитель session_search_design",
+      "status": "done",
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 15.0
+      },
+      "role": "Worker",
+      "affected_files": [],
+      "read_paths": [
+        "src"
+      ],
+      "write_paths": [],
+      "paths": []
+    },
+    {
+      "id": "L02",
+      "label": "L1 Восстановить обнаружение Mavis за 30 секунд и параллельное чтение компьютеров; исполнитель repair_mavis_access",
+      "status": "running",
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "note": "расширена проверка таймаутов и обхода новых сессий; серверные discovery и exact history исправлены, но исходная цель — Mavis на Mac M1; приёмка правильного компьютера ещё выполняется",
+      "role": "Worker",
+      "affected_files": [],
+      "read_paths": [
+        "src"
+      ],
+      "write_paths": [],
+      "paths": []
+    },
+    {
+      "id": "L03",
+      "label": "L3 Реализовать SQLite FTS5 и поиск через API и MCP; исполнитель session_search_design",
+      "status": "running",
+      "depends_on": [],
+      "role": "Worker",
+      "affected_files": [
+        "src/session-search.ts",
+        "src/session-search-indexer.ts",
+        "src/session-search-fleet.ts",
+        "src/mcp/session-search-tools.ts",
+        "src/index.ts",
+        "src/mesh/fleet-api.ts",
+        "src/mesh/fleet-service.ts",
+        "src/mesh/fleet-direct-transport.ts",
+        "src/mesh/fleet-owner-http-transport.ts",
+        "src/web/server.ts",
+        "tests/session-search.test.ts",
+        "tests/session-search-fleet.test.ts",
+        "tests/session-search-indexer.test.ts"
+      ],
+      "estimate_unknown_reason": "Длительность реализации или первичного заполнения не измерена",
+      "read_paths": [
+        "src"
+      ],
+      "write_paths": [
+        "src/session-search.ts",
+        "src/session-search-indexer.ts",
+        "src/session-search-fleet.ts",
+        "src/mcp/session-search-tools.ts",
+        "src/index.ts",
+        "src/mesh/fleet-api.ts",
+        "src/mesh/fleet-service.ts",
+        "src/mesh/fleet-direct-transport.ts",
+        "src/mesh/fleet-owner-http-transport.ts",
+        "src/web/server.ts",
+        "tests/session-search.test.ts",
+        "tests/session-search-fleet.test.ts",
+        "tests/session-search-indexer.test.ts"
+      ],
+      "paths": [
+        "src/session-search.ts",
+        "src/session-search-indexer.ts",
+        "src/session-search-fleet.ts",
+        "src/mcp/session-search-tools.ts",
+        "src/index.ts",
+        "src/mesh/fleet-api.ts",
+        "src/mesh/fleet-service.ts",
+        "src/mesh/fleet-direct-transport.ts",
+        "src/mesh/fleet-owner-http-transport.ts",
+        "src/web/server.ts",
+        "tests/session-search.test.ts",
+        "tests/session-search-fleet.test.ts",
+        "tests/session-search-indexer.test.ts"
+      ]
+    },
+    {
+      "id": "L04",
+      "label": "L4 Прочитать полные сохранённые сессии через отдельные исходные форматы; исполнитель repair_mavis_access",
+      "status": "running",
+      "depends_on": [],
+      "role": "Worker",
+      "affected_files": [
+        "src/session-search-sources.ts",
+        "tests/session-search-sources.test.ts"
+      ],
+      "estimate_unknown_reason": "Длительность реализации или первичного заполнения не измерена",
+      "read_paths": [
+        "src"
+      ],
+      "write_paths": [
+        "src/session-search-sources.ts",
+        "tests/session-search-sources.test.ts"
+      ],
+      "paths": [
+        "src/session-search-sources.ts",
+        "tests/session-search-sources.test.ts"
+      ]
+    },
+    {
+      "id": "L05",
+      "label": "L5 Установить интеграцию, заполнить индекс и проверить сохранность настроек",
+      "status": "queued",
+      "depends_on": [
+        "L03",
+        "L04"
+      ],
+      "role": "Worker",
+      "affected_files": [],
+      "estimate_unknown_reason": "Длительность реализации или первичного заполнения не измерена",
+      "read_paths": [
+        "src"
+      ],
+      "write_paths": [],
+      "paths": []
+    },
+    {
+      "id": "L06",
+      "label": "L6 Провести две независимые приёмки MCP и API на нескольких компьютерах",
+      "status": "queued",
+      "depends_on": [
+        "L05"
+      ],
+      "role": "Worker",
+      "affected_files": [],
+      "estimate_unknown_reason": "Длительность реализации или первичного заполнения не измерена",
+      "read_paths": [
+        "src"
+      ],
+      "write_paths": [],
+      "paths": []
+    }
+  ],
+  "leaf_count": 6
+}
