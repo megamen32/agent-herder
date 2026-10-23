@@ -1,13 +1,13 @@
 import type {McpServer} from '@modelcontextprotocol/server';
 import {z} from 'zod';
 import {readActiveInventory,activeInventoryFleet,filterActiveInventory,type ActiveInventoryQuery} from '../active-session-inventory.js';
-import {FleetDirectTransport,directFleetPeers} from '../mesh/fleet-direct-transport.js';
+import {readFleetActiveInventory} from '../active-session-fleet.js';
 import {hostname} from 'node:os';
 const query={hostId:z.string().min(1).max(512).optional().describe('Code work computer; matches any confirmed workspace, not GUI/runtime computer.'),runtimeHostId:z.string().min(1).max(512).optional().describe('Separate GUI/runtime computer filter.'),harness:z.string().min(1).max(64).optional(),limit:z.number().int().min(1).max(10000).optional(),offset:z.number().int().min(0).optional()};
 const result=(value:unknown)=>({content:[{type:'text' as const,text:JSON.stringify(value)}],structuredContent:value as Record<string,unknown>});
 export async function listActiveSessions(input:ActiveInventoryQuery={}){
- const transport=new FleetDirectTransport(directFleetPeers,3000);
- return activeInventoryFleet(input,directFleetPeers.map(p=>({hostId:p.hostId,target:`mcp:shell:${p.hostId}:AgentHerder`})),peer=>peer.hostId===hostname()?readActiveInventory():transport.call(peer.target,'list_active_sessions_local',{}));
+ if(input.runtimeHostId?.toLowerCase()===hostname().toLowerCase())return filterActiveInventory(await readActiveInventory(),input);
+ return readFleetActiveInventory(input);
 }
 export function registerActiveSessionTools(server:McpServer){
  server.registerTool('list_active_sessions_local',{description:'Read this owner current materialized active inventory. Internal fleet reader; never hydrates history or infers live activity from FTS.',annotations:{readOnlyHint:true},inputSchema:z.object({}).strict()},async()=>result(await readActiveInventory()));

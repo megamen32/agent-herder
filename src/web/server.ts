@@ -1,3 +1,4 @@
+import {startActiveFleetInventoryOwner} from '../active-session-fleet.js';
 import {startActiveInventoryOwner} from "../active-session-inventory.js";
 import {listActiveSessions} from "../mcp/active-session-tools.js";
 import type { BackgroundAutopilotStop } from "../autopilot/background-stop.js";
@@ -847,6 +848,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const userMessageDelivery = dependencies.jobs ? new UserMessageDelivery(dependencies.adapters, supervisor, dependencies.jobs) : undefined;
   const sessionImages = dependencies.sessionImageStore ?? new SessionImageStore(join(homedir(), ".local/state/agent-herder/session-images"));
   const rag = agentHerderRag();
+  const stopActiveFleetInventory = process.env.VITEST ? undefined : startActiveFleetInventoryOwner();
   const stopActiveInventory = process.env.VITEST ? undefined : startActiveInventoryOwner(()=>supervisor.nativeInventorySnapshot(),dependencies.adapters);
   const searchIndexer=process.env.VITEST?Promise.resolve(undefined):startSessionSearchBackground().catch(()=>undefined);
   // The health plan of a launch, remembered between the launch call and the
@@ -1045,6 +1047,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   });
   server.once("close", () => {
     stopActiveInventory?.();
+    stopActiveFleetInventory?.();
     void searchIndexer.then(owner=>owner?.close());
     userMessageDelivery?.close();
     stopSessionObservation?.();
