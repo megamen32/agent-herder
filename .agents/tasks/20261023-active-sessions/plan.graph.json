@@ -3,10 +3,13 @@
   "title": "Быстрый список активных сессий и реальных мест работы",
   "goal": "пользователь одной командой получает текущие активные сессии всей сети и реальные абсолютные пути изменения кода без исторического сканирования при запросе.",
   "business_result": "правильный глобальный список и количество; у каждой сессии отдельно компьютер исполнения и один или несколько подтверждённых рабочих каталогов.",
+  "business_results": [
+    "правильный глобальный список и количество; у каждой сессии отдельно компьютер исполнения и один или несколько подтверждённых рабочих каталогов."
+  ],
   "current_progress": "Рабочее дерево f139e3f создано; чужой canonical WIP сохранён; исследованы существующие supervisor/cache и MCP seams.",
   "external_waits": "Нет внешних ожиданий; срок доставки уточняется после проверки runtime seams.",
-  "slots": 2,
-  "updated_at": "2026-10-23T21:41:14",
+  "slots": 3,
+  "updated_at": "2026-10-23T23:20:45",
   "tasks": [
     {
       "id": "L01",
@@ -17,9 +20,9 @@
         "minimum": 15.0,
         "maximum": 15.0
       },
-      "actual_minutes": 33.0,
+      "actual_minutes": 114.0,
       "started_at": "21:07",
-      "finished_at": "21:40",
+      "finished_at": "23:01",
       "acceptance": "native/GUI evidence и RED→GREEN; TTL и неизвестность явно представлены.",
       "description": "active_minimax_truth исследует native activity и исправляет наблюдатель MiniMax без вывода активности из persisted status.",
       "role": "active_minimax_truth",
@@ -47,9 +50,9 @@
         "minimum": 15.0,
         "maximum": 15.0
       },
-      "actual_minutes": 23.0,
+      "actual_minutes": 129.0,
       "started_at": "21:07",
-      "finished_at": "21:30",
+      "finished_at": "23:16",
       "acceptance": "удалённая работа на server100 не превращается в M1 или каталог ~/.minimax.",
       "description": "active_workspaces восстанавливает несколько рабочих каталогов с hostId и источником, используя существующие декларации.",
       "role": "active_workspaces",
@@ -73,9 +76,9 @@
         "minimum": 20.0,
         "maximum": 20.0
       },
-      "actual_minutes": 30.0,
+      "actual_minutes": 118.0,
       "started_at": "21:10",
-      "finished_at": "21:40",
+      "finished_at": "23:08",
       "acceptance": "list_active_sessions без hostId охватывает все пять компьютеров; запрос не сканирует историю.",
       "description": "active_inventory_product создаёт материализованный текущий список; фильтры до пагинации, компьютер работы отдельно от компьютера исполнения.",
       "role": "active_inventory_product",
@@ -102,9 +105,11 @@
     {
       "id": "L04",
       "label": "Интегрировать и доставить на пять компьютеров",
-      "status": "running",
+      "status": "done",
       "depends_on": [],
+      "actual_minutes": 96.0,
       "started_at": "21:40",
+      "finished_at": "23:16",
       "acceptance": "installed readback каждой машины и сохранность чужого WIP.",
       "description": "сохранить чужие изменения и фактические версии сервисов; опубликовать только owned paths в main.",
       "role": "active_inventory_product",
@@ -123,10 +128,11 @@
     {
       "id": "L05",
       "label": "Независимо сверить реальную активность и время команды",
-      "status": "queued",
-      "depends_on": [
-        "L04"
-      ],
+      "status": "done",
+      "depends_on": [],
+      "actual_minutes": 82.0,
+      "started_at": "21:49",
+      "finished_at": "23:11",
       "acceptance": "два бизнес-результата подтверждены; частичные и неизвестные состояния не маркируются PASS.",
       "description": "независимая GUI/native сверка и три последовательных измерения без LLM внутри критического времени.",
       "role": "independent tester",
@@ -135,7 +141,23 @@
       "read_paths": [],
       "write_paths": [],
       "paths": []
+    },
+    {
+      "id": "L06",
+      "label": "Исправить видимость официального текущего экземпляра ZCode",
+      "status": "done",
+      "depends_on": [],
+      "actual_minutes": 77.0,
+      "started_at": "21:54",
+      "finished_at": "23:11",
+      "acceptance": "RED→fix→GREEN и отдельная реальная потребительская проверка; текущая native identity имеет приоритет над историческим completed.",
+      "description": "active_sessions_review выполняет новое прямое поручение пользователя: official control.sock running-tasks имеет текущую сессию и двух детей, старый stdio смотрел другой экземпляр.",
+      "affected_files": [
+        "src/adapters/zcode.ts",
+        "src/adapters/zcode-server-control.ts",
+        "tests/zcode-official-running.test.ts."
+      ]
     }
   ],
-  "leaf_count": 5
+  "leaf_count": 6
 }

@@ -1,0 +1,93 @@
+{
+  "at": "2026-10-23T20:11:51.848Z",
+  "source": "exact materialized native parentSessionId; existing owner updater inheritance only",
+  "rows": 20,
+  "changes": [
+    {
+      "identity": "[\"roomhacker-server-100\",\"codex\",\"01a169c3-7d71-7a81-9281-e384d3039e48\"]",
+      "workspaces": [
+        {
+          "hostId": "roomhacker-server-100",
+          "absolutePath": "/home/roomhacker/PycharmProjects/AutoFindClient",
+          "source": "declared",
+          "observedAt": "2026-10-23T20:11:51.808Z",
+          "evidence": "parent_declaration:01a16938-5314-7150-a996-2168c80471e3:v1:pwd and clean diff on assigned chat.py/chat.j2"
+        }
+      ]
+    },
+    {
+      "identity": "[\"roomhacker-server-100\",\"codex\",\"01a16a10-fe09-7db0-a39e-0ca1c89d6119\"]",
+      "workspaces": [
+        {
+          "hostId": "roomhacker-server-100",
+          "absolutePath": "/home/roomhacker/agents-projects/agent-herder",
+          "source": "declared",
+          "observedAt": "2026-10-23T20:11:51.819Z",
+          "evidence": "parent_declaration:01a16987-f6fd-7351-b61d-a3647396a867:v1:native_tool_execution:native-rollout:rollout-2026-10-23T19-11-20-01a16987-f6fd-7351-b61d-a3647396a867.jsonl:ordinal:3494:call:call_378882f6390d4aa2a38a1ccdc6a382c2:explicit-exec-workdir"
+        }
+      ]
+    },
+    {
+      "identity": "[\"roomhacker-server-100\",\"codex\",\"01a16a00-ad8b-7ad3-a4f5-af981bff653c\"]",
+      "workspaces": [
+        {
+          "hostId": "roomhacker-server-100",
+          "absolutePath": "/home/roomhacker/agents-projects/agent-herder",
+          "source": "declared",
+          "observedAt": "2026-10-23T20:11:51.826Z",
+          "evidence": "parent_declaration:01a16987-f6fd-7351-b61d-a3647396a867:v1:native_tool_execution:native-rollout:rollout-2026-10-23T19-11-20-01a16987-f6fd-7351-b61d-a3647396a867.jsonl:ordinal:3494:call:call_378882f6390d4aa2a38a1ccdc6a382c2:explicit-exec-workdir"
+        }
+      ]
+    },
+    {
+      "identity": "[\"roomhacker-server-100\",\"codex\",\"01a16a5e-d561-7c51-9aa2-a65ee7ebb1f2\"]",
+      "workspaces": [
+        {
+          "hostId": "roomhacker-server-100",
+          "absolutePath": "/home/roomhacker/.codex/worktrees/e5fb/exmanager",
+          "source": "declared",
+          "observedAt": "2026-10-23T20:11:51.831Z",
+          "evidence": "parent_declaration:01a16563-0dfa-7a53-a040-7f7e3ab1aa86:v1:native_tool_execution:native-rollout:rollout-2026-10-22T23-52-32-01a16563-0dfa-7a53-a040-7f7e3ab1aa86.jsonl:ordinal:10179:call:call_4527dbaf05f94413b2d6167578febb93:explicit-exec-workdir"
+        }
+      ]
+    },
+    {
+      "identity": "[\"roomhacker-server-100\",\"codex\",\"01a16a63-3906-7791-a577-41a2bc0e3ba0\"]",
+      "workspaces": [
+        {
+          "hostId": "roomhacker-server-100",
+          "absolutePath": "/home/roomhacker/.codex/worktrees/e5fb/exmanager",
+          "source": "declared",
+          "observedAt": "2026-10-23T20:11:51.838Z",
+          "evidence": "parent_declaration:01a16563-0dfa-7a53-a040-7f7e3ab1aa86:v1:native_tool_execution:native-rollout:rollout-2026-10-22T23-52-32-01a16563-0dfa-7a53-a040-7f7e3ab1aa86.jsonl:ordinal:10179:call:call_4527dbaf05f94413b2d6167578febb93:explicit-exec-workdir"
+        }
+      ]
+    }
+  ],
+  "afterQuery": {
+    "total": 36,
+    "active": 36,
+    "unknownWorkspaceCount": 1,
+    "affectedRows": [
+      {
+        "id": "01a169c3-7d71-7a81-9281-e384d3039e48",
+        "parentSessionId": "01a16938-5314-7150-a996-2168c80471e3",
+        "workspaces": [
+          {
+            "hostId": "roomhacker-server-100",
+            "absolutePath": "/home/roomhacker/PycharmProjects/AutoFindClient",
+            "source": "declared",
+            "observedAt": "2026-10-23T20:11:51.808Z",
+            "evidence": "parent_declaration:01a16938-5314-7150-a996-2168c80471e3:v1:pwd and clean diff on assigned chat.py/chat.j2"
+          }
+        ]
+      }
+    ],
+    "noLongerActiveIds": [
+      "01a16a00-ad8b-7ad3-a4f5-af981bff653c",
+      "01a16a10-fe09-7db0-a39e-0ca1c89d6119",
+      "01a16a5e-d561-7c51-9aa2-a65ee7ebb1f2",
+      "01a16a63-3906-7791-a577-41a2bc0e3ba0"
+    ]
+  }
+}

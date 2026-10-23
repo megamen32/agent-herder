@@ -1,0 +1,43 @@
+{
+  "observedAt": "2026-10-23T19:04:04.078Z",
+  "pid": 1199736,
+  "generation": 1,
+  "nativeIds": [
+    "sess_subagent_agent_6989882e-7261-436d-a447-ac2c23b232d7",
+    "sess_subagent_agent_3a6a7d84-3ddf-441f-92ec-108fcd6f752c",
+    "session_b38b92e45be8939782ee5863251407b4"
+  ],
+  "activeIds": [
+    "session_b38b92e45be8939782ee5863251407b4",
+    "sess_subagent_agent_6989882e-7261-436d-a447-ac2c23b232d7",
+    "sess_subagent_agent_3a6a7d84-3ddf-441f-92ec-108fcd6f752c"
+  ],
+  "target": {
+    "id": "session_b38b92e45be8939782ee5863251407b4",
+    "status": "running",
+    "title": "Analyzing KULTURNYJ_SHOK channel statistics data",
+    "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto",
+    "meta": {
+      "createdAt": "2026-10-23T15:22:35.516Z",
+      "persistedTaskStatus": "error",
+      "discoverySource": "tasks-index",
+      "pinned": true,
+      "workspaceIdentity": "remote:server:9daf3b93-8364-4f57-883d-dfee868d2210:/home/roomhacker/PycharmProjects/TelegramAuto",
+      "duplicateTaskRows": 1,
+      "nativeTimeUpdated": 1792782244088,
+      "activityEvidence": "zcode-official-supervisor-running-tasks",
+      "activityObservedAt": "2026-10-23T19:04:04.078Z",
+      "activityExpiresAt": "2026-10-23T19:04:19.078Z",
+      "nativeRuntimePid": 1199736,
+      "nativeRuntimeGeneration": 1,
+      "nativeActivityFresh": true,
+      "deliveryRoute": "official-server-unverified"
+    }
+  },
+  "receipt": {
+    "exhaustive": false,
+    "observedAt": "2026-10-23T19:04:04.185Z",
+    "source": "zcode-existing-native-runtime+official-supervisor",
+    "reason": "known_task_candidates_only_loaded_identity_coverage_unknown"
+  }
+}

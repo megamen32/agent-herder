@@ -1,0 +1,57 @@
+{
+  "at": "2026-10-23T19:18:48.904Z",
+  "pid": 1199736,
+  "generation": 1,
+  "frame": 201,
+  "sessionId": "session_95c794ef-153f-4a3b-a0c4-5d0031cecbb3",
+  "status": "idle",
+  "runtime": {
+    "eventSeq": 61,
+    "stateRevision": 1,
+    "pendingRequestIds": [],
+    "contextUsage": {
+      "used": 117566,
+      "size": 200000,
+      "cost": null,
+      "cache": {
+        "inputTokens": 117423,
+        "cacheReadTokens": 117376,
+        "cacheWriteTokens": 0,
+        "latestHitRate": 0.9995997377004505,
+        "hitRateRequestCount": 1,
+        "totalInputTokens": 117423,
+        "totalCacheReadTokens": 117376,
+        "totalCacheWriteTokens": 0,
+        "hitRate": 0.9995997377004505
+      }
+    },
+    "goalVerifications": [],
+    "goalVerificationTimeline": []
+  },
+  "messagesSummary": [
+    {
+      "role": "user",
+      "keys": [
+        "info",
+        "parts"
+      ],
+      "marker": true
+    },
+    {
+      "role": "user",
+      "keys": [
+        "info",
+        "parts"
+      ],
+      "marker": false
+    },
+    {
+      "role": "assistant",
+      "keys": [
+        "info",
+        "parts"
+      ],
+      "marker": true
+    }
+  ]
+}

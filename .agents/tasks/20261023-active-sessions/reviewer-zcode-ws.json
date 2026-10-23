@@ -1,0 +1,22 @@
+{
+  "at": "2026-10-23T19:07:54.367Z",
+  "pid": 1199736,
+  "generation": 1,
+  "frame": 201,
+  "sessionId": "session_b38b92e45be8939782ee5863251407b4",
+  "status": "running",
+  "runtime": {
+    "eventSeq": 17934,
+    "stateRevision": 7,
+    "activeTurnId": "turn_10ba0b7e-8212-407a-8c50-236926fa3850",
+    "activeTurnKind": "regular",
+    "pendingRequestIds": [],
+    "contextUsage": {
+      "used": 537502,
+      "size": 200000,
+      "cost": null
+    },
+    "goalVerifications": [],
+    "goalVerificationTimeline": []
+  }
+}

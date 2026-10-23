@@ -1,0 +1,14 @@
+{
+  "oldMain": "8c4a2737f252c2be6ee42bf19683b1c452db97cb",
+  "newMain": "9cffc9efa0dfe05eed6eb67c2b9a21db877dba7e",
+  "ownedPaths": [
+    "src/active-session-fleet.ts",
+    "src/mcp/active-session-tools.ts",
+    "src/web/server.ts",
+    "tests/active-fleet-materialized.test.ts"
+  ],
+  "foreignWebHunksPreserved": true,
+  "foreignIndexPreserved": true,
+  "foreignDiffSha256Before": "4aef6335dacdc718d666fb22cf23926e73f2cc731aa908ab6641ae1a7044a80f",
+  "foreignDiffSha256After": "4aef6335dacdc718d666fb22cf23926e73f2cc731aa908ab6641ae1a7044a80f"
+}

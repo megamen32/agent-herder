@@ -1,0 +1,8 @@
+{
+  "newMain": "b17f6e48f8ebd66fb876fbc0e4c3f103f8decb7c",
+  "sourceCommit": "ac7135a",
+  "foreignCodexBytesAfterRemovingOnlyOwnedHunksSha256": "00cd146750bb72854597686ebbfba86fec3d65724aade7a273348712739540df",
+  "initialForeignCodexSha256": "00cd146750bb72854597686ebbfba86fec3d65724aade7a273348712739540df",
+  "foreignCodexPreserved": true,
+  "foreignIndexPreserved": true
+}

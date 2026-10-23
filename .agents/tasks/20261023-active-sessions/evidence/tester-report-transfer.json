@@ -1,0 +1,8 @@
+{
+  "sourceWorktree": "/home/roomhacker/agents-projects/agent-herder/.worktrees/active-sessions-20261023/.agents/tasks/20261023-active-sessions",
+  "filesSha256": {
+    "tester2.md": "838122b311738b768b659a97a0615189fa9e65f9df4a026b5ef5aad1ed2b72b2",
+    "tester2-benchmark-raw.json": "1a59a8b01f055e3ecc0d610fcf749f559ab6754c310d461b6f419a150fdb154a"
+  },
+  "allBytesPreserved": true
+}

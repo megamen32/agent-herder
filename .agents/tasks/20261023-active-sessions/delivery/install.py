@@ -1,10 +1,12 @@
 import argparse,os,json,shutil,hashlib,subprocess,time,socket
 from pathlib import Path
-p=argparse.ArgumentParser();p.add_argument('--fleet',required=True);p.add_argument('--expected',required=True);p.add_argument('--owner100',action='store_true');p.add_argument('--activate',action='store_true');p.add_argument('--prepare-from');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--fleet',required=True);p.add_argument('--expected',required=True);p.add_argument('--owner100',action='store_true');p.add_argument('--activate',action='store_true');p.add_argument('--prepare-from');p.add_argument('--expected-config');p.add_argument('--archive-previous',action='store_true');a=p.parse_args()
 fleet=Path(a.fleet).expanduser();packet=Path(__file__).resolve().parent;patch=json.loads((packet/'patch.json').read_text());sha=patch['patchSourceSha'];current=fleet/'current';base=Path(a.prepare_from).resolve(strict=True) if a.prepare_from else current.resolve(strict=True)
 assert not(a.prepare_from and a.activate),'prepare_only_base_override'
 assert base.name==a.expected,('current_changed',base.name)
-configpath=fleet/'node-config.json';configraw=configpath.read_bytes();config=json.loads(configraw);assert a.prepare_from or config['sourceSha']==a.expected,('config_changed',config['sourceSha'])
+assert sha!=base.name,'candidate_already_current_use_readback'
+configpath=fleet/'node-config.json';configraw=configpath.read_bytes();config=json.loads(configraw);assert a.prepare_from or config['sourceSha']==(a.expected_config or a.expected),('config_changed',config['sourceSha'])
+exec_before=subprocess.check_output(['systemctl','--user','show','agent-herder.service','-p','ExecStart','--value']) if a.owner100 else None
 node=config.get('nodeBin','/usr/local/bin/node');assert shutil.disk_usage(fleet).free>2*1024**3,'disk_reserve'
 settings=Path.home()/'.local/state/agent-herder';protected=[settings/'settings'/n for n in ['profiles.json','projects.json','secrets.json']]
 hashfile=lambda path:hashlib.sha256(path.read_bytes()).hexdigest()
@@ -16,9 +18,11 @@ else:
 def write_owned(path,data):
  if path.exists() or path.is_symlink():path.unlink()
  path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(data)
+for path in {item['path'] for item in patch['replacements']}:write_owned(release/'dist'/path,(base/'dist'/path).read_bytes())
 for path in (packet/'overlay').rglob('*.js'):write_owned(release/'dist'/path.relative_to(packet/'overlay'),path.read_bytes())
 for item in patch['replacements']:
  path=release/'dist'/item['path'];data=path.read_text()
+ if data.count(item['after'])==1 or (item.get('alreadyPresent') and all(x in data for x in item['alreadyPresent'])):continue
  assert data.count(item['before'])==1,('owned_patch_anchor',item['path'],item['before'][:100])
  write_owned(path,data.replace(item['before'],item['after'],1).encode())
 oldmanifest=json.loads((base/'dist/fleet-deployment-manifest.json').read_text());payload={str(f.relative_to(release/'dist')):hashfile(f) for f in sorted((release/'dist').rglob('*')) if f.is_file() and not f.is_symlink() and f.name!='fleet-deployment-manifest.json'}
@@ -33,6 +37,7 @@ print(json.dumps({'state':'prepared','host':socket.gethostname(),'base':a.expect
 if not a.activate:raise SystemExit(0)
 # Compare-and-swap preconditions immediately before switching config + symlink.
 assert current.resolve().name==a.expected and configpath.read_bytes()==configraw,'activation_state_changed'
+if a.owner100:assert subprocess.check_output(['systemctl','--user','show','agent-herder.service','-p','ExecStart','--value'])==exec_before,'service_exec_changed'
 rollback=fleet/'rollback'/('before-active-'+sha[:8]);rollback.mkdir(parents=True,exist_ok=True)
 shutil.copy2(configpath,rollback/'node-config.json')
 if a.owner100:
@@ -40,8 +45,13 @@ if a.owner100:
  write_owned(dropin,('[Service]\nExecStart=\nExecStart='+node+' '+str(release/'dist/index.js')+'\n').encode())
 config['sourceSha']=sha;tmp=configpath.with_suffix('.active-new');tmp.write_text(json.dumps(config,indent=1)+'\n');tmp.chmod(0o600);os.replace(tmp,configpath)
 link=fleet/'.current-active-new';os.symlink(str(release),link);os.replace(link,current)
+if a.archive_previous:
+ assert os.uname().sysname=='Darwin' and base!=current.resolve(),'previous_release_not_inactive'
+ retained=fleet/'rollback/retained-before-active'/base.name;retained.parent.mkdir(parents=True,exist_ok=True);assert not retained.exists(),'retained_previous_exists'
+ archive_receipt={'original':str(base),'retained':str(retained),'manifestSha256':hashfile(base/'dist/fleet-deployment-manifest.json'),'reason':'retain previous inactive bytes outside bounded active release census'}
+ os.rename(base,retained);(rollback/'retained-previous.json').write_text(json.dumps(archive_receipt,indent=2)+'\n')
 if os.uname().sysname=='Darwin':
- label='com.bezrabotnyi.agent-herder-fleet-node';subprocess.run(['launchctl','kickstart','-k','user/'+str(os.getuid())+'/'+label],check=True)
+ label='com.bezrabotnyi.agent-herder-fleet-node';domains=[domain+'/'+str(os.getuid())+'/'+label for domain in ['gui','user']];targets=[target for target in domains if subprocess.run(['launchctl','print',target],capture_output=True).returncode==0];assert len(targets)==1,'launchd_owner_domain_ambiguous';subprocess.run(['launchctl','kickstart','-k',targets[0]],check=True)
 else:
  unit='agent-herder.service' if a.owner100 else 'agent-herder-fleet.service';subprocess.run(['systemctl','--user','daemon-reload'],check=True);subprocess.run(['systemctl','--user','restart',unit],check=True)
 print(json.dumps({'state':'switched','host':socket.gethostname(),'candidate':sha,'rollback':str(rollback)}),flush=True)

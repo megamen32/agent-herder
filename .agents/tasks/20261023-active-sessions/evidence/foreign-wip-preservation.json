@@ -1,0 +1,96 @@
+{
+  "initialIntegration": {
+    "oldHead": "f139e3f6e48a6fbcbd195b44dec5f824f31e4bdc",
+    "newHead": "44975f68ad8275602144de2f4d6cfa9d7f6922d3",
+    "foreignStatusBefore": " M .agents/TEST_ACCESS.md\u0000 M integrations/opencode/agent-herder-autopilot.js\u0000 M src/adapters/codex-app-server.ts\u0000 M src/adapters/opencode.ts\u0000 M src/human-request/notice-question.ts\u0000 M src/integrator-fleet-runtime.ts\u0000 M src/integrator-progress.ts\u0000 M src/integrator-session-binding.ts\u0000 M src/web/server.ts\u0000 M tests/integrator-fleet-runtime.test.ts\u0000 M tests/integrator-session-binding.test.ts\u0000?? .agents/shared-session/probes/\u0000?? .agents/tasks/20261023-active-sessions/\u0000?? .agents/tasks/20261023-fleet-session-search/active-session-benchmark-175440.md\u0000?? .agents/tasks/20261023-fleet-session-search/minimax-active-helper-native-turn-live.json\u0000?? .agents/tasks/20261023-fleet-session-search/minimax-native-active-turn-proof-1832.json\u0000?? .agents/tasks/20261023-fleet-session-search/minimax-native-active-turn-source-proof.md\u0000?? .agents/tasks/20261023-hooks-off-default/\u0000?? .agents/tasks/20261023-session-renaming/\u0000?? AGENTS.md\u0000?? tests/integrator-stale-running-notice.test.ts\u0000?? tests/opencode-integrator-receipt.test.ts\u0000",
+    "unownedWipHashes": {
+      ".agents/TEST_ACCESS.md": "f42a6ced2fa5a60a243becc8ee4233563ff3cc7e40e48f5beea8531a9a21fbb2",
+      "integrations/opencode/agent-herder-autopilot.js": "cae8336020e43238df66828746d0a0d0ed68ceac822f1f20dd318b5df662ca07",
+      "src/adapters/codex-app-server.ts": "00cd146750bb72854597686ebbfba86fec3d65724aade7a273348712739540df",
+      "src/human-request/notice-question.ts": "f0aa9decc55bfc75100c50584d95307630f7771d1f037ffc6a8f8c2c4916bca7",
+      "src/integrator-fleet-runtime.ts": "08983e0e7a77881cc206319b5aff93f52132308c0789ee9897647cdede3d1ae1",
+      "src/integrator-progress.ts": "5f1da6ba0953b48ebe5e8224899a4b9ad2f5cae5b36f34012d8653b5e7e0561c",
+      "src/integrator-session-binding.ts": "6578df85360d4350a2bee8c38c2ec10b50c6764014797f1f9f79c9d254fe496f",
+      "tests/integrator-fleet-runtime.test.ts": "95cc281c1753e03fd8ee42d318f376e856f10d8aed042c30de9d833827662244",
+      "tests/integrator-session-binding.test.ts": "c9899b068f9011004066237e70d715d068701f94fc66d23250cc1c35505d2bf6",
+      ".agents/tasks/20261023-fleet-session-search/active-session-benchmark-175440.md": "5fc142e425fdd6b36011ee8034d12bafbc7f402a7e871362f44c5a9cec191ee6",
+      ".agents/tasks/20261023-fleet-session-search/minimax-active-helper-native-turn-live.json": "945d4eb5cf4249f1f19b82091b32b20762c938e6b65acd08d2c418e39c9bf98f",
+      ".agents/tasks/20261023-fleet-session-search/minimax-native-active-turn-proof-1832.json": "c454ea2feb8b7d7ea89ba78cbf7c50070659fffffe4aee69f614b69c842c6767",
+      ".agents/tasks/20261023-fleet-session-search/minimax-native-active-turn-source-proof.md": "27aadae23c79ec78f2949b6bac0f82698dc1eda917cb3e17d02f4570c336077e",
+      "AGENTS.md": "85983e79de993c903177a41d9c4b80a184b32339046de175c7da5eac25920dac",
+      "tests/integrator-stale-running-notice.test.ts": "4dd1dde56758ee42751e267ec9d5886ace0cfbedeef67cd2b454c1a40ac0a2c9",
+      "tests/opencode-integrator-receipt.test.ts": "80f783a250c4ce0e2f9480d5f49d85258e25b59d6a5db7c34a30ba090a14aaf7"
+    },
+    "indexBeforeSHA256": "e7d602c7ac197c0a9f046f37fe014d307c7d5edd9d51e0eba200e7552d89873b",
+    "foreignStatusAfter": " M .agents/TEST_ACCESS.md\u0000 M integrations/opencode/agent-herder-autopilot.js\u0000 M src/adapters/codex-app-server.ts\u0000 M src/adapters/opencode.ts\u0000 M src/human-request/notice-question.ts\u0000 M src/integrator-fleet-runtime.ts\u0000 M src/integrator-progress.ts\u0000 M src/integrator-session-binding.ts\u0000 M src/web/server.ts\u0000 M tests/integrator-fleet-runtime.test.ts\u0000 M tests/integrator-session-binding.test.ts\u0000?? .agents/shared-session/probes/\u0000?? .agents/tasks/20261023-fleet-session-search/active-session-benchmark-175440.md\u0000?? .agents/tasks/20261023-fleet-session-search/minimax-active-helper-native-turn-live.json\u0000?? .agents/tasks/20261023-fleet-session-search/minimax-native-active-turn-proof-1832.json\u0000?? .agents/tasks/20261023-fleet-session-search/minimax-native-active-turn-source-proof.md\u0000?? .agents/tasks/20261023-hooks-off-default/\u0000?? .agents/tasks/20261023-session-renaming/\u0000?? AGENTS.md\u0000?? tests/integrator-stale-running-notice.test.ts\u0000?? tests/opencode-integrator-receipt.test.ts\u0000",
+    "newMain": "44975f68ad8275602144de2f4d6cfa9d7f6922d3",
+    "indexStagedAfter": ""
+  },
+  "currentHashes": {
+    ".agents/TEST_ACCESS.md": {
+      "before": "f42a6ced2fa5a60a243becc8ee4233563ff3cc7e40e48f5beea8531a9a21fbb2",
+      "after": "f42a6ced2fa5a60a243becc8ee4233563ff3cc7e40e48f5beea8531a9a21fbb2"
+    },
+    "integrations/opencode/agent-herder-autopilot.js": {
+      "before": "cae8336020e43238df66828746d0a0d0ed68ceac822f1f20dd318b5df662ca07",
+      "after": "cae8336020e43238df66828746d0a0d0ed68ceac822f1f20dd318b5df662ca07"
+    },
+    "src/adapters/codex-app-server.ts": {
+      "before": "00cd146750bb72854597686ebbfba86fec3d65724aade7a273348712739540df",
+      "after": "00cd146750bb72854597686ebbfba86fec3d65724aade7a273348712739540df"
+    },
+    "src/human-request/notice-question.ts": {
+      "before": "f0aa9decc55bfc75100c50584d95307630f7771d1f037ffc6a8f8c2c4916bca7",
+      "after": "f0aa9decc55bfc75100c50584d95307630f7771d1f037ffc6a8f8c2c4916bca7"
+    },
+    "src/integrator-fleet-runtime.ts": {
+      "before": "08983e0e7a77881cc206319b5aff93f52132308c0789ee9897647cdede3d1ae1",
+      "after": "08983e0e7a77881cc206319b5aff93f52132308c0789ee9897647cdede3d1ae1"
+    },
+    "src/integrator-progress.ts": {
+      "before": "5f1da6ba0953b48ebe5e8224899a4b9ad2f5cae5b36f34012d8653b5e7e0561c",
+      "after": "5f1da6ba0953b48ebe5e8224899a4b9ad2f5cae5b36f34012d8653b5e7e0561c"
+    },
+    "src/integrator-session-binding.ts": {
+      "before": "6578df85360d4350a2bee8c38c2ec10b50c6764014797f1f9f79c9d254fe496f",
+      "after": "6578df85360d4350a2bee8c38c2ec10b50c6764014797f1f9f79c9d254fe496f"
+    },
+    "tests/integrator-fleet-runtime.test.ts": {
+      "before": "95cc281c1753e03fd8ee42d318f376e856f10d8aed042c30de9d833827662244",
+      "after": "95cc281c1753e03fd8ee42d318f376e856f10d8aed042c30de9d833827662244"
+    },
+    "tests/integrator-session-binding.test.ts": {
+      "before": "c9899b068f9011004066237e70d715d068701f94fc66d23250cc1c35505d2bf6",
+      "after": "c9899b068f9011004066237e70d715d068701f94fc66d23250cc1c35505d2bf6"
+    },
+    ".agents/tasks/20261023-fleet-session-search/active-session-benchmark-175440.md": {
+      "before": "5fc142e425fdd6b36011ee8034d12bafbc7f402a7e871362f44c5a9cec191ee6",
+      "after": "5fc142e425fdd6b36011ee8034d12bafbc7f402a7e871362f44c5a9cec191ee6"
+    },
+    ".agents/tasks/20261023-fleet-session-search/minimax-active-helper-native-turn-live.json": {
+      "before": "945d4eb5cf4249f1f19b82091b32b20762c938e6b65acd08d2c418e39c9bf98f",
+      "after": "945d4eb5cf4249f1f19b82091b32b20762c938e6b65acd08d2c418e39c9bf98f"
+    },
+    ".agents/tasks/20261023-fleet-session-search/minimax-native-active-turn-proof-1832.json": {
+      "before": "c454ea2feb8b7d7ea89ba78cbf7c50070659fffffe4aee69f614b69c842c6767",
+      "after": "c454ea2feb8b7d7ea89ba78cbf7c50070659fffffe4aee69f614b69c842c6767"
+    },
+    ".agents/tasks/20261023-fleet-session-search/minimax-native-active-turn-source-proof.md": {
+      "before": "27aadae23c79ec78f2949b6bac0f82698dc1eda917cb3e17d02f4570c336077e",
+      "after": "27aadae23c79ec78f2949b6bac0f82698dc1eda917cb3e17d02f4570c336077e"
+    },
+    "AGENTS.md": {
+      "before": "85983e79de993c903177a41d9c4b80a184b32339046de175c7da5eac25920dac",
+      "after": "85983e79de993c903177a41d9c4b80a184b32339046de175c7da5eac25920dac"
+    },
+    "tests/integrator-stale-running-notice.test.ts": {
+      "before": "4dd1dde56758ee42751e267ec9d5886ace0cfbedeef67cd2b454c1a40ac0a2c9",
+      "after": "4dd1dde56758ee42751e267ec9d5886ace0cfbedeef67cd2b454c1a40ac0a2c9"
+    },
+    "tests/opencode-integrator-receipt.test.ts": {
+      "before": "80f783a250c4ce0e2f9480d5f49d85258e25b59d6a5db7c34a30ba090a14aaf7",
+      "after": "80f783a250c4ce0e2f9480d5f49d85258e25b59d6a5db7c34a30ba090a14aaf7"
+    }
+  },
+  "allInitialUnownedBytesPreserved": true
+}

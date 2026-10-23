@@ -1,0 +1,34 @@
+{
+  "release": "/home/roomhacker/agents-projects/.fleet-candidate/releases/bda5746d2d46b6f613b94f3d6f99239aa4cc8b0a",
+  "at": "2026-10-23T19:24:30.904Z",
+  "rows": [
+    {
+      "name": "zcode",
+      "sourceSha256": "0cdb187639dc1566981a3c6ed6d4b138025fb8c19d80028d94af8868bb727d16",
+      "installedSha256": "42fc089f33e965dda3c59e1a4b38ae185ee64ec046bde500f3b3221dc9ccf8f0",
+      "expectedSha256": "42fc089f33e965dda3c59e1a4b38ae185ee64ec046bde500f3b3221dc9ccf8f0",
+      "identical": true
+    },
+    {
+      "name": "zcode-protocol",
+      "sourceSha256": "37367632b97faddede1d4cea392c5a5c4d3f5d868f0295c4834e6c96bb58f864",
+      "installedSha256": "fee7ff139560aa17715d2a1d7e5074b3976dcfd3ef549b85546e65ad9f2e5a9a",
+      "expectedSha256": "fee7ff139560aa17715d2a1d7e5074b3976dcfd3ef549b85546e65ad9f2e5a9a",
+      "identical": true
+    },
+    {
+      "name": "zcode-server-control",
+      "sourceSha256": "f1f1832555865db835c4e36dbf701ec203a3dcc595f6759b3aa13bad92d37e5b",
+      "installedSha256": "0e65abcf2cf950c7cd45cc1187e3f53ae7af6c239a3908f650bb20993e14b607",
+      "expectedSha256": "0e65abcf2cf950c7cd45cc1187e3f53ae7af6c239a3908f650bb20993e14b607",
+      "identical": true
+    },
+    {
+      "name": "zcode-runtime-observation",
+      "sourceSha256": "1ce7a95829be5b4e7801678f7f1eb4029403d860f4cd217ee257c492fa0fdd00",
+      "installedSha256": "bd8c84ad9d56ca19128d4e0986ba1b7e386f85d415ab20af95109d7a1eb1af02",
+      "expectedSha256": "bd8c84ad9d56ca19128d4e0986ba1b7e386f85d415ab20af95109d7a1eb1af02",
+      "identical": true
+    }
+  ]
+}

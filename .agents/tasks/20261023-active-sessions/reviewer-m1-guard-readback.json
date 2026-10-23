@@ -1,0 +1,455 @@
+{
+  "samples": [
+    {
+      "source": "b17f6e48f8ebd66fb876fbc0e4c3f103f8decb7c",
+      "helper": "1dfa7c46a4c6f2d4991af9b3463e78e9ed2b6c964c22cf4c0504b148fb8a08fa",
+      "pin": "1dfa7c46a4c6f2d4991af9b3463e78e9ed2b6c964c22cf4c0504b148fb8a08fa"
+    },
+    {
+      "at": "2026-10-23T19:49:28.171382+00:00",
+      "partial": true,
+      "hosts": [
+        {
+          "hostId": "roomhacker-server-100",
+          "ownerPid": 2455492,
+          "state": "available",
+          "observedAt": "2026-10-23T19:49:28.907Z",
+          "sources": [
+            {
+              "harness": "opencode",
+              "exhaustive": true,
+              "source": "opencode-native-active-status",
+              "observedAt": "2026-10-23T19:49:28.730Z",
+              "refreshDurationMs": 144
+            },
+            {
+              "harness": "claude",
+              "exhaustive": false,
+              "source": "native-adapter",
+              "reason": "native_enumeration_coverage_unknown"
+            },
+            {
+              "harness": "codex",
+              "exhaustive": true,
+              "source": "codex-loaded-native-runtime",
+              "observedAt": "2026-10-23T19:49:28.907Z",
+              "candidateCount": 49,
+              "failedCandidateCount": 0,
+              "pages": 1,
+              "expiresAt": "2026-10-23T19:49:58.907Z",
+              "refreshDurationMs": 320
+            },
+            {
+              "harness": "hermes",
+              "exhaustive": false,
+              "source": "native-adapter",
+              "reason": "native_enumeration_coverage_unknown"
+            },
+            {
+              "harness": "zcode",
+              "exhaustive": false,
+              "source": "zcode-existing-native-runtime+official-supervisor",
+              "observedAt": "2026-10-23T19:49:28.704Z",
+              "refreshDurationMs": 117,
+              "reason": "known_task_candidates_only_loaded_identity_coverage_unknown"
+            },
+            {
+              "harness": "minimax-code",
+              "exhaustive": true,
+              "source": "native_active_turn",
+              "observedAt": "2026-10-23T19:49:24.588Z",
+              "activityCoverage": "native_active_turn",
+              "metadataEnumerationExhaustive": true,
+              "candidateCount": 4,
+              "failedCandidateCount": 0,
+              "totalSessions": 5189,
+              "pages": 29,
+              "expiresAt": "2026-10-23T19:49:39.588Z",
+              "stageTimingsMs": {
+                "metadata": 983,
+                "candidate_seed": 5,
+                "controller_validation": 14
+              },
+              "refreshDurationMs": 1002
+            },
+            {
+              "harness": "fast-agent",
+              "exhaustive": false,
+              "source": "native-adapter",
+              "reason": "native_enumeration_coverage_unknown"
+            }
+          ]
+        },
+        {
+          "hostId": "server-44",
+          "ownerPid": 847893,
+          "state": "available",
+          "observedAt": "2026-10-23T19:49:28.837Z",
+          "sources": [
+            {
+              "harness": "codex",
+              "exhaustive": true,
+              "source": "codex-loaded-native-runtime",
+              "observedAt": "2026-10-23T19:49:28.666Z",
+              "candidateCount": 0,
+              "failedCandidateCount": 0,
+              "pages": 1,
+              "expiresAt": "2026-10-23T19:49:58.666Z",
+              "refreshDurationMs": 1
+            }
+          ]
+        },
+        {
+          "hostId": "roomhacker-server-88",
+          "ownerPid": 3039044,
+          "state": "available",
+          "observedAt": "2026-10-23T19:49:25.558Z",
+          "sources": [
+            {
+              "harness": "opencode",
+              "exhaustive": true,
+              "source": "opencode-native-active-status",
+              "observedAt": "2026-10-23T19:49:25.082Z",
+              "refreshDurationMs": 115
+            },
+            {
+              "harness": "codex",
+              "exhaustive": true,
+              "source": "codex-loaded-native-runtime",
+              "observedAt": "2026-10-23T19:49:24.970Z",
+              "candidateCount": 0,
+              "failedCandidateCount": 0,
+              "pages": 1,
+              "expiresAt": "2026-10-23T19:49:54.970Z",
+              "refreshDurationMs": 2
+            },
+            {
+              "harness": "zcode",
+              "exhaustive": false,
+              "source": "zcode-existing-native-runtime+official-supervisor",
+              "observedAt": "2026-10-23T19:49:25.075Z",
+              "refreshDurationMs": 107,
+              "reason": "official_supervisor_unavailable"
+            }
+          ]
+        },
+        {
+          "hostId": "mac-mini-2012.lan",
+          "ownerPid": 41599,
+          "state": "available",
+          "observedAt": "2026-10-23T19:49:28.356Z",
+          "sources": [
+            {
+              "harness": "codex",
+              "exhaustive": true,
+              "source": "codex-loaded-native-runtime",
+              "observedAt": "2026-10-23T19:49:28.356Z",
+              "candidateCount": 1,
+              "failedCandidateCount": 0,
+              "pages": 1,
+              "expiresAt": "2026-10-23T19:49:58.356Z",
+              "refreshDurationMs": 5
+            }
+          ]
+        },
+        {
+          "hostId": "MacBook-Pro-User.local",
+          "ownerPid": 88827,
+          "state": "available",
+          "observedAt": "2026-10-23T19:49:24.975Z",
+          "sources": [
+            {
+              "harness": "codex",
+              "exhaustive": true,
+              "source": "codex-loaded-native-runtime",
+              "observedAt": "2026-10-23T19:49:24.975Z",
+              "candidateCount": 0,
+              "failedCandidateCount": 0,
+              "pages": 1,
+              "expiresAt": "2026-10-23T19:49:54.975Z",
+              "refreshDurationMs": 9
+            },
+            {
+              "harness": "minimax-code",
+              "exhaustive": true,
+              "source": "native_active_turn",
+              "observedAt": "2026-10-23T19:49:21.107Z",
+              "activityCoverage": "native_active_turn",
+              "metadataEnumerationExhaustive": true,
+              "candidateCount": 18,
+              "failedCandidateCount": 0,
+              "totalSessions": 1214,
+              "pages": 12,
+              "expiresAt": "2026-10-23T19:49:36.107Z",
+              "stageTimingsMs": {
+                "metadata": 552,
+                "candidate_seed": 87,
+                "controller_validation": 500
+              },
+              "refreshDurationMs": 1142
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "at": "2026-10-23T19:49:36.375905+00:00",
+      "partial": true,
+      "hosts": [
+        {
+          "hostId": "roomhacker-server-100",
+          "ownerPid": 2455492,
+          "state": "available",
+          "observedAt": "2026-10-23T19:49:39.018Z",
+          "sources": [
+            {
+              "harness": "opencode",
+              "exhaustive": true,
+              "source": "opencode-native-active-status",
+              "observedAt": "2026-10-23T19:49:38.697Z",
+              "refreshDurationMs": 59
+            },
+            {
+              "harness": "claude",
+              "exhaustive": false,
+              "source": "native-adapter",
+              "reason": "native_enumeration_coverage_unknown"
+            },
+            {
+              "harness": "codex",
+              "exhaustive": true,
+              "source": "codex-loaded-native-runtime",
+              "observedAt": "2026-10-23T19:49:39.018Z",
+              "candidateCount": 49,
+              "failedCandidateCount": 0,
+              "pages": 1,
+              "expiresAt": "2026-10-23T19:50:09.018Z",
+              "refreshDurationMs": 380
+            },
+            {
+              "harness": "hermes",
+              "exhaustive": false,
+              "source": "native-adapter",
+              "reason": "native_enumeration_coverage_unknown"
+            },
+            {
+              "harness": "zcode",
+              "exhaustive": false,
+              "source": "zcode-existing-native-runtime+official-supervisor",
+              "observedAt": "2026-10-23T19:49:38.816Z",
+              "refreshDurationMs": 178,
+              "reason": "known_task_candidates_only_loaded_identity_coverage_unknown"
+            },
+            {
+              "harness": "minimax-code",
+              "exhaustive": true,
+              "source": "native_active_turn",
+              "observedAt": "2026-10-23T19:49:34.761Z",
+              "activityCoverage": "native_active_turn",
+              "metadataEnumerationExhaustive": true,
+              "candidateCount": 4,
+              "failedCandidateCount": 0,
+              "totalSessions": 5189,
+              "pages": 29,
+              "expiresAt": "2026-10-23T19:49:49.761Z",
+              "stageTimingsMs": {
+                "metadata": 1154,
+                "candidate_seed": 4,
+                "controller_validation": 14
+              },
+              "refreshDurationMs": 1172
+            },
+            {
+              "harness": "fast-agent",
+              "exhaustive": false,
+              "source": "native-adapter",
+              "reason": "native_enumeration_coverage_unknown"
+            }
+          ]
+        },
+        {
+          "hostId": "server-44",
+          "ownerPid": 847893,
+          "state": "available",
+          "observedAt": "2026-10-23T19:49:38.666Z",
+          "sources": [
+            {
+              "harness": "codex",
+              "exhaustive": true,
+              "source": "codex-loaded-native-runtime",
+              "observedAt": "2026-10-23T19:49:38.666Z",
+              "candidateCount": 0,
+              "failedCandidateCount": 0,
+              "pages": 1,
+              "expiresAt": "2026-10-23T19:50:08.666Z",
+              "refreshDurationMs": 1
+            }
+          ]
+        },
+        {
+          "hostId": "roomhacker-server-88",
+          "ownerPid": 3039044,
+          "state": "available",
+          "observedAt": "2026-10-23T19:49:35.543Z",
+          "sources": [
+            {
+              "harness": "opencode",
+              "exhaustive": true,
+              "source": "opencode-native-active-status",
+              "observedAt": "2026-10-23T19:49:34.989Z",
+              "refreshDurationMs": 20
+            },
+            {
+              "harness": "codex",
+              "exhaustive": true,
+              "source": "codex-loaded-native-runtime",
+              "observedAt": "2026-10-23T19:49:34.971Z",
+              "candidateCount": 0,
+              "failedCandidateCount": 0,
+              "pages": 1,
+              "expiresAt": "2026-10-23T19:50:04.971Z",
+              "refreshDurationMs": 2
+            },
+            {
+              "harness": "zcode",
+              "exhaustive": false,
+              "source": "zcode-existing-native-runtime+official-supervisor",
+              "observedAt": "2026-10-23T19:49:34.980Z",
+              "refreshDurationMs": 11,
+              "reason": "official_supervisor_unavailable"
+            }
+          ]
+        },
+        {
+          "hostId": "mac-mini-2012.lan",
+          "ownerPid": 41599,
+          "state": "available",
+          "observedAt": "2026-10-23T19:49:38.380Z",
+          "sources": [
+            {
+              "harness": "codex",
+              "exhaustive": true,
+              "source": "codex-loaded-native-runtime",
+              "observedAt": "2026-10-23T19:49:38.355Z",
+              "candidateCount": 1,
+              "failedCandidateCount": 0,
+              "pages": 1,
+              "expiresAt": "2026-10-23T19:50:08.355Z",
+              "refreshDurationMs": 3
+            }
+          ]
+        },
+        {
+          "hostId": "MacBook-Pro-User.local",
+          "ownerPid": 88827,
+          "state": "available",
+          "observedAt": "2026-10-23T19:49:35.202Z",
+          "sources": [
+            {
+              "harness": "codex",
+              "exhaustive": true,
+              "source": "codex-loaded-native-runtime",
+              "observedAt": "2026-10-23T19:49:35.202Z",
+              "candidateCount": 0,
+              "failedCandidateCount": 0,
+              "pages": 1,
+              "expiresAt": "2026-10-23T19:50:05.202Z",
+              "refreshDurationMs": 35
+            },
+            {
+              "harness": "minimax-code",
+              "exhaustive": true,
+              "source": "native_active_turn",
+              "observedAt": "2026-10-23T19:49:21.107Z",
+              "activityCoverage": "native_active_turn",
+              "metadataEnumerationExhaustive": true,
+              "candidateCount": 18,
+              "failedCandidateCount": 0,
+              "totalSessions": 1214,
+              "pages": 12,
+              "expiresAt": "2026-10-23T19:49:36.107Z",
+              "stageTimingsMs": {
+                "metadata": 552,
+                "candidate_seed": 87,
+                "controller_validation": 500
+              },
+              "refreshDurationMs": 1142
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "at": "2026-10-23T19:49:45.730870+00:00",
+      "partial": true,
+      "hosts": [
+        {
+          "hostId": "roomhacker-server-100",
+          "state": "unavailable",
+          "observedAt": null,
+          "reason": "activity_host_deadline"
+        },
+        {
+          "hostId": "server-44",
+          "state": "unavailable",
+          "observedAt": null,
+          "reason": "activity_host_deadline"
+        },
+        {
+          "hostId": "roomhacker-server-88",
+          "state": "unavailable",
+          "observedAt": null,
+          "reason": "activity_host_deadline"
+        },
+        {
+          "hostId": "mac-mini-2012.lan",
+          "state": "unavailable",
+          "observedAt": null,
+          "reason": "activity_host_deadline"
+        },
+        {
+          "hostId": "MacBook-Pro-User.local",
+          "ownerPid": 88827,
+          "state": "available",
+          "observedAt": "2026-10-23T19:49:40.219Z",
+          "sources": [
+            {
+              "harness": "codex",
+              "exhaustive": true,
+              "source": "codex-loaded-native-runtime",
+              "observedAt": "2026-10-23T19:49:40.219Z",
+              "candidateCount": 0,
+              "failedCandidateCount": 0,
+              "pages": 1,
+              "expiresAt": "2026-10-23T19:50:10.219Z",
+              "refreshDurationMs": 2
+            },
+            {
+              "harness": "minimax-code",
+              "exhaustive": true,
+              "source": "native_active_turn",
+              "observedAt": "2026-10-23T19:49:37.314Z",
+              "activityCoverage": "native_active_turn",
+              "metadataEnumerationExhaustive": true,
+              "candidateCount": 18,
+              "failedCandidateCount": 0,
+              "totalSessions": 1214,
+              "pages": 12,
+              "expiresAt": "2026-10-23T19:49:52.314Z",
+              "stageTimingsMs": {
+                "metadata": 8077,
+                "candidate_seed": 34,
+                "controller_validation": 4229
+              },
+              "refreshDurationMs": 12341
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "managerPid": 88455,
+  "nodePid": 88827,
+  "managerState": "running",
+  "claim": "bounded helper and three owner generations; not fleet completeness"
+}
