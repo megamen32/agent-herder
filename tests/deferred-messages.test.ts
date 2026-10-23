@@ -26,8 +26,14 @@ describe("durable cross-agent inbox", () => {
   it.each([undefined, "false"])("does not consume inbox or continue without a valid stop flag: %s", async (humanStopHeld) => {
     const requestedUrls: string[] = [];
     const server = createServer((request, response) => {
-      requestedUrls.push(request.url || "");
+      const requestedUrl = request.url || "";
+      requestedUrls.push(requestedUrl);
       response.writeHead(200, { "content-type": "application/json" });
+      // The lever of the owner: the hook asks it before it forbids anything.
+      if (requestedUrl.startsWith("/api/hooks/prohibitions")) {
+        response.end(JSON.stringify({ ok: true, known: true, prohibitionsEnabled: true, disabledHooks: [] }));
+        return;
+      }
       response.end(JSON.stringify({ humanStopHeld, inboxContext: "must not deliver" }));
     });
     await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
@@ -38,8 +44,9 @@ describe("durable cross-agent inbox", () => {
         hook_event_name: "Stop", session_id: "codex-invalid-fence", cwd: projectRoot,
       }, { AGENT_HERDER_URL: `http://127.0.0.1:${address.port}` });
       expect(JSON.parse(output)).toEqual({});
-      expect(requestedUrls).toHaveLength(1);
-      expect(requestedUrls[0]).toContain("consume=0");
+      const coordinationUrls = requestedUrls.filter((url) => url.startsWith("/api/coordination/"));
+      expect(coordinationUrls).toHaveLength(1);
+      expect(coordinationUrls[0]).toContain("consume=0");
     } finally {
       await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
     }
@@ -86,6 +93,11 @@ describe("durable cross-agent inbox", () => {
       const requestedUrl = request.url || "";
       requestedUrls.push(requestedUrl);
       response.writeHead(200, { "content-type": "application/json" });
+      // The lever of the owner: the hook asks it before it holds the stop.
+      if (requestedUrl.startsWith("/api/hooks/prohibitions")) {
+        response.end(JSON.stringify({ ok: true, known: true, prohibitionsEnabled: true, disabledHooks: [] }));
+        return;
+      }
       response.end(JSON.stringify(requestedUrl.includes("consume=1")
         ? { humanStopHeld: false, inboxContext: "<agent-herder-inbox>coordinate now</agent-herder-inbox>", inboxCount: 1 }
         : { humanStopHeld: false }));

@@ -688,7 +688,7 @@ function quotaRecoveryReason(quota: QuotaRecoveryRecord): string {
     : "Ожидает ограниченной повторной попытки; неизвестная квота не считается доступной.";
   if (quota.state === "dispatching" && quota.reasonCode === "delivery_unknown") return "Квитанция отправки пока не подтверждена; повторная отправка запрещена, идёт точная сверка.";
   if (quota.state === "dispatching") return "Продолжение отправляется; повторная отправка запрещена до сверки нативной квитанции.";
-  if (quota.state === "accepted") return "Нативный ввод принят; ожидается результат этого точного ввода.";
+  if (quota.state === "accepted") return "Нативный ввод принят. Автоматические повторы остановлены; состояние ответа смотрите в переписке.";
   if (quota.state === "exhausted" || quota.reasonCode === "candidate_exhausted") return "Запасные модели исчерпаны; автоматическая отправка остановлена.";
   if (quota.reasonCode === "delivery_unknown") return "Результат доставки неизвестен; автоматическая повторная отправка остановлена.";
   if (quota.reasonCode === "model_unavailable") return "Выбранная модель недоступна или не подтверждена нативным runtime.";

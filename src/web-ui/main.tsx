@@ -764,7 +764,7 @@ function App() {
   // The screen of the settings has two tabs: the settings of the herder
   // and the models of the projects. The second tab belongs to the
   // Projects contour; the herder only gives it a place.
-  const [settingsTab, setSettingsTab] = React.useState<"herder" | "projects">("projects");
+  const [settingsTab, setSettingsTab] = React.useState<"herder" | "projects" | "hooks">("projects");
   const [advancedSearchQuery, setAdvancedSearchQuery] = React.useState<string>();
   const consumeAdvancedSearchInitialQuery = React.useCallback(() => setAdvancedSearchQuery(undefined), []);
   const [showFleet, setShowFleet] = React.useState(false);

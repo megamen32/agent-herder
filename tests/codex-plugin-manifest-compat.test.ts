@@ -32,8 +32,12 @@ describe("Codex plugin hook manifest compatibility", () => {
     const commands = Object.values(hooks.hooks ?? {}).flatMap((groups) => groups.flatMap((group) =>
       (group.hooks ?? []).map((hook) => hook.command ?? "")));
 
-    expect(commands).toContain('node "${PLUGIN_ROOT}/scripts/codex-stop-hook.mjs"');
-    expect(commands).toContain('node "${PLUGIN_ROOT}/scripts/coordination-hook.mjs"');
+    // The commands of the Codex plugin call the scripts of the hooks directly,
+    // and every one of them is safe: a hook that cannot start leaves the
+    // session alone instead of breaking it.
+    expect(commands.some((command) => command.startsWith('node "${PLUGIN_ROOT}/scripts/codex-stop-hook.mjs"'))).toBe(true);
+    expect(commands.some((command) => command.startsWith('node "${PLUGIN_ROOT}/scripts/coordination-hook.mjs"'))).toBe(true);
+    expect(commands.every((command) => command.trimEnd().endsWith("|| true"))).toBe(true);
     expect(commands.every((command) => !command.includes("CLAUDE_PLUGIN_ROOT"))).toBe(true);
   });
 });

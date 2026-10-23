@@ -15,10 +15,12 @@ import {
   type SettingsView,
 } from "./settings-client.js";
 import { StopControl } from "./stop-control.js";
+import { HooksSection } from "../hooks-section.js";
 import { ConnectionsSection } from "./connections-section.js";
 import { RuntimeSection } from "./runtime-section.js";
 import { ProjectsSection } from "./projects-section.js";
 import { FleetConfirmation } from "./fleet-confirmation.js";
+import { CommonSettingsSection } from "./common-settings-section.js";
 import "./settings.css";
 
 /**
@@ -34,7 +36,7 @@ import "./settings.css";
  * contour; the herder does not touch it, it only gives it a place.
  */
 
-export type SettingsTab = "herder" | "projects";
+export type SettingsTab = "herder" | "projects" | "hooks";
 
 /**
  * The one line that says how the state of a setting is in effect.
@@ -107,10 +109,23 @@ export function SettingsScreen({
           >
             Модели проекта
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "hooks"}
+            className={tab === "hooks" ? "herder-settings-tab herder-settings-tab-active" : "herder-settings-tab"}
+            onClick={() => onTabChange("hooks")}
+          >
+            Хуки
+          </button>
         </div>
       </header>
       <div className="herder-settings-panel" role="tabpanel">
-        {tab === "herder" ? <HerderSettings onOpenLaunchSettings={onOpenLaunchSettings} /> : <ProjectsSettings onOpenLaunchSettings={onOpenLaunchSettings} />}
+        {tab === "herder"
+          ? <HerderSettings onOpenLaunchSettings={onOpenLaunchSettings} />
+          : tab === "projects"
+            ? <ProjectsSettings onOpenLaunchSettings={onOpenLaunchSettings} />
+            : <HooksSection />}
       </div>
     </section>
   );
@@ -250,10 +265,14 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
             {envRecords.map((record) => {
               const key = record.id.slice("herder.env/".length);
               const secret = record.desired.value === null && record.desired.fingerprint !== undefined;
+              // A common setting is changed here once and reaches every node
+              // that takes the common settings.
+              const common = (view.commonSettings?.keys ?? []).includes(key);
               return (
                 <tr key={record.id}>
                   <td>
                     <strong>{record.humanName}</strong>
+                    {common ? <span className="herder-settings-badge">общая настройка</span> : null}
                     <span className="herder-settings-action">{record.action}</span>
                     <details className="herder-settings-details">
                       <summary>Технические подробности</summary>
@@ -405,6 +424,8 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
       <RuntimeSection />
       <ConnectionsSection />
       <StopControl />
+
+      <CommonSettingsSection />
 
       <FleetConfirmation />
 

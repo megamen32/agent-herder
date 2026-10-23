@@ -19,8 +19,21 @@ import {
   type PolicyMergeResult,
   type ProjectLaunchRoute,
 } from "./launch-policy-settings.js";
-import { conflictingModelEntries, routeModelViolation } from "../project-model-gate.js";
+import { conflictingModelEntries, modelMatchesEntry, routeModelViolation } from "../project-model-gate.js";
+import { modelRouteLabel } from "./model-route-label.js";
+import {
+  MODEL_STATUS_WORDS,
+  MODEL_VERDICT_LABELS,
+  explainModelListError,
+  hasRestrictedProviderToken,
+  modelVerdict,
+  unusedListEntries,
+  workingModelId,
+  type ModelVerdict,
+} from "./model-status.js";
 import { machineName } from "./fleet/machine-labels.js";
+
+export { BLOCKED_MODEL_ACTION, hasRestrictedProviderToken } from "./model-status.js";
 
 /**
  * The Projects screen of the panel.
@@ -147,9 +160,6 @@ export const RESTRICTED_PROJECT_ROOTS: readonly string[] = [
   "/home/roomhacker/PycharmProjects/TelegramAuto",
   "/home/roomhacker/PycharmProjects/video_watching",
 ];
-
-/** What the operator has to do when a model request is blocked. */
-export const BLOCKED_MODEL_ACTION = "Укажите в маршруте проекта модель, которую среда подтверждает: omniroute/minimax-combo-m3.1 (конечная модель minimax-code/mmcode/MiniMax-M3.1-Flash). Списки «Разрешённые модели» и «Запрещённые модели» эту блокировку не отменяют.";
 
 /* ---------- Общие мелочи: путь, склонение, время ---------- */
 
@@ -333,18 +343,21 @@ export function modelRouteTitle(modelId: string): string {
   return provider || model || modelId;
 }
 
-/** The same rule of the guard of the OpenCode integration: codex, claude, anthropic. */
-const RESTRICTED_MODEL_TOKEN = /(^|[^a-z0-9])(codex|claude|anthropic)([^a-z0-9]|$)/i;
-
-/** True when the route leads to a provider the rule of the owner closes. */
-export function hasRestrictedProviderToken(modelId: string): boolean {
-  return RESTRICTED_MODEL_TOKEN.test(modelId);
-}
-
 /** True when the project is one of the closed projects of the rule of the owner. */
 export function isRestrictedProject(project: string): boolean {
   const target = normalizePath(project);
   return RESTRICTED_PROJECT_ROOTS.some((root) => target === root || target.startsWith(`${root}/`));
+}
+
+/**
+ * Write the model of one harness of a route.
+ *
+ * The one-click actions of the card and of the editor call it: the id lands in
+ * the route of that harness only, and the models of the other harnesses stay
+ * exactly as they were.
+ */
+export function setRouteModel(route: ProjectLaunchRoute, harness: string, model: string): ProjectLaunchRoute {
+  return updateProjectRouteModel(route, harness, model);
 }
 
 /** The check of one model route of a project. */
@@ -354,15 +367,20 @@ export type ModelRouteCheck = {
   state: "blocked" | "unconfirmed" | "ok";
   reason: string;
   action: string;
+  /** The whole verdict of the model: what the owner sees and what to press. */
+  verdict: ModelVerdict;
+  /** The id that works instead, when this one does not. */
+  working?: string;
 };
 
 /**
- * The check of the models of a route against the models the environment confirms.
+ * The check of the models of a route against the rules that decide a launch.
  *
- * The lists of allowed and denied models of the project do not take part in it:
- * the block comes from the guard of the OpenCode integration, and it happens
- * when the route of the model cannot be confirmed as the native route of the
- * environment.
+ * Three things are checked, in the order of the rules themselves: the rule of
+ * the owner (codex, claude and anthropic are closed for the closed projects),
+ * the two lists of the project, and the list of the models the environment
+ * confirms. The lists of the project are the same ones the gate of the launch
+ * uses, so the reason the panel shows is the reason the launch refuses.
  */
 export function checkProjectModelRoutes(
   project: string,
@@ -373,35 +391,35 @@ export function checkProjectModelRoutes(
   const restricted = isRestrictedProject(project);
   return route.harnesses.map((harness) => {
     const model = (route.models?.[harness] ?? policy.models[harness] ?? "").trim();
-    if (!model) return { harness, model: "", state: "ok", reason: "", action: "" };
     const list = confirmed[harness] ?? [];
-    if (restricted && hasRestrictedProviderToken(model)) {
+    const working = workingModelId(harness, { policyModels: policy.models, confirmed: list });
+    const verdict = modelVerdict({
+      harness,
+      model,
+      confirmed: list,
+      allowedModels: route.allowedModels,
+      deniedModels: route.deniedModels,
+      restricted,
+      workingModel: working,
+    });
+    if (verdict.kind === "missing") {
+      return { harness, model: "", state: "ok", reason: "", action: "", verdict, working };
+    }
+    if (verdict.kind === "closed" || verdict.kind === "denied" || verdict.kind === "notAllowed") {
+      return { harness, model, state: "blocked", reason: verdict.reason, action: verdict.action, verdict, working };
+    }
+    if (verdict.kind === "unconfirmed") {
       return {
         harness,
         model,
-        state: "blocked",
-        reason: "маршрут ведёт к провайдеру, который закрыт правилом владельца (codex, claude или anthropic)",
-        action: BLOCKED_MODEL_ACTION,
+        state: restricted ? "blocked" : "unconfirmed",
+        reason: verdict.reason,
+        action: verdict.action,
+        verdict,
+        working,
       };
     }
-    if (list.length > 0 && !list.includes(model)) {
-      return restricted
-        ? {
-          harness,
-          model,
-          state: "blocked",
-          reason: "маршрут не совпал с подтверждённым нативным маршрутом среды",
-          action: BLOCKED_MODEL_ACTION,
-        }
-        : {
-          harness,
-          model,
-          state: "unconfirmed",
-          reason: "модели нет в списке моделей среды — среда её не подтверждает",
-          action: "",
-        };
-    }
-    return { harness, model, state: "ok", reason: "", action: "" };
+    return { harness, model, state: "ok", reason: "", action: "", verdict, working };
   });
 }
 
@@ -456,7 +474,9 @@ export function useKnownProjectPaths() {
     let cancelled = false;
     void (async () => {
       try {
-        const response = await fetch("/api/sessions?quick=1");
+        // The list of the sessions is huge without a limit, so the screen
+        // always asks for a bounded part of it.
+        const response = await fetch("/api/sessions?quick=1&limit=100");
         if (!response.ok) throw new Error("sessions unavailable");
         const result = await response.json() as { sessions?: Array<{ cwd?: string }> };
         if (cancelled) return;
@@ -476,17 +496,31 @@ export function useKnownProjectPaths() {
 }
 
 /**
+ * How fresh the knowledge of the fleet is.
+ *
+ * `loading` means the answer is on the way, `ready` that it came, `failed`
+ * that it did not. The screen shows the word instead of an empty cell, so a
+ * slow answer never looks like a project without a machine.
+ */
+export type FleetFactsState = "loading" | "ready" | "failed";
+
+/** What the row of a project knows about the fleet right now. */
+export type FleetRowState = { hosts: FleetFactsState; sessions: FleetFactsState };
+
+/**
  * The machines of the fleet and the sessions they run.
  *
  * The panel already knows both lists: `/api/fleet/hosts` names the machines and
  * `/api/fleet/sessions` says where every session runs and when it was last
- * active. The Projects screen needs them to say which machine a project lives
- * on and how fresh it is.
+ * active. The answer of the sessions is slow, so the screen does not wait for
+ * it: the rows of the projects are drawn from the policy right away, and the
+ * machine and the freshness arrive later, in the cells that wait for them.
  */
 export function useFleetFacts() {
   const [hosts, setHosts] = React.useState<FleetHostFact[]>([]);
   const [sessions, setSessions] = React.useState<FleetSessionFact[]>([]);
-  const [failed, setFailed] = React.useState(false);
+  const [hostsState, setHostsState] = React.useState<FleetFactsState>("loading");
+  const [sessionsState, setSessionsState] = React.useState<FleetFactsState>("loading");
   React.useEffect(() => {
     let cancelled = false;
     const read = async <T,>(path: string): Promise<T | undefined> => {
@@ -517,11 +551,12 @@ export function useFleetFacts() {
         .filter((session) => session.hostId.length > 0);
       setHosts(nextHosts);
       setSessions(nextSessions);
-      setFailed(!hostResult && !sessionResult);
+      setHostsState(hostResult ? "ready" : "failed");
+      setSessionsState(sessionResult ? "ready" : "failed");
     })();
     return () => { cancelled = true; };
   }, []);
-  return { hosts, sessions, failed };
+  return { hosts, sessions, hostsState, sessionsState };
 }
 
 /**
@@ -577,6 +612,8 @@ function ProjectModelList({
   title,
   hint,
   suggestions,
+  knownIds,
+  statusOf,
   disabled,
   onChange,
 }: {
@@ -586,6 +623,10 @@ function ProjectModelList({
   title: string;
   hint: string;
   suggestions: string[];
+  /** Every model id the environments of the route confirm. */
+  knownIds: string[];
+  /** The short status of a model for the list of the suggestions. */
+  statusOf: (model: string) => string;
   disabled?: boolean;
   onChange: (next: ProjectLaunchRoute) => void;
 }) {
@@ -605,6 +646,15 @@ function ProjectModelList({
     onChange(removeProjectRouteModelList(route, field, model));
     setNotice(`Модель ${model} убрана из списка «${title}».`);
   };
+  const unused = allowed && knownIds.length > 0 ? unusedListEntries(models, knownIds) : [];
+  const typed = value.trim();
+  const typedMatches = !typed || typed === "*" || knownIds.length === 0
+    || knownIds.some((id) => modelMatchesEntry(id, typed));
+  const typedWarning = typed && !typedMatches
+    ? allowed
+      ? `«${typed}» не совпадёт ни с одной моделью среды: впишите id модели или нажмите «Разрешить все модели» — запишется «*», это любая модель.`
+      : `«${typed}» не совпадёт ни с одной моделью среды: запрет не сработает. Впишите id модели или шаблон с «*» в конце.`
+    : "";
   return <div className={`projects-field projects-model-field${allowed ? "" : " projects-model-field-denied"}`}>
     <span className="projects-field-label">
       <span className={`projects-model-badge ${allowed ? "projects-model-badge-allowed" : "projects-model-badge-denied"}`} aria-hidden="true">{allowed ? "✓" : "✕"}</span>
@@ -622,17 +672,31 @@ function ProjectModelList({
             disabled={disabled} onClick={() => remove(model)}>Убрать</button>
         </li>)}
     </ul>
+    {unused.length > 0 && <p className="projects-model-warn" role="status">{`В списке «${title}» есть запись, которой не соответствует ни одна модель среды: ${unused.map((entry) => `«${entry}»`).join(", ")}. Такая запись не разрешает ничего: гейт сравнивает id точно, с «*» только в конце. Нажмите «Разрешить все модели», и запишется «*» — любая модель.`}</p>}
     <div className="projects-model-add">
       <label htmlFor={listId}>{`${title} · добавить модель`}</label>
       <input id={listId} type="text" list={`${listId}-options`} value={value} maxLength={256}
         placeholder="model id" aria-label={`${title} для проекта ${project}: добавить модель`}
         disabled={disabled} onChange={(event) => setValue(event.target.value)}
         onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); add(); } }} />
-      <datalist id={`${listId}-options`}>{suggestions.map((model) => <option value={model} key={model}>{modelRouteTitle(model)}</option>)}</datalist>
+      <datalist id={`${listId}-options`}>{suggestions.map((model) => <option value={model} key={model}>{`${modelRouteTitle(model)} — ${statusOf(model)}`}</option>)}</datalist>
       <button type="button" aria-label={`Добавить модель в список «${title}» проекта ${project}`}
         disabled={disabled || !value.trim()} onClick={add}>Добавить</button>
     </div>
     <small className="projects-help">{hint}</small>
+    {typedWarning && <p className="projects-model-warn" role="status">{typedWarning}</p>}
+    <div className="projects-model-actions">
+      {allowed && <button type="button" aria-label={`Разрешить все модели проекта ${project}`} disabled={disabled}
+        onClick={() => {
+          onChange({ ...route, allowedModels: ["*"] });
+          setNotice("В список «Разрешённые модели» записано «*» — любая модель.");
+        }}>Разрешить все модели</button>}
+      <button type="button" aria-label={`Очистить список «${title}» проекта ${project}`} disabled={disabled || models.length === 0}
+        onClick={() => {
+          onChange({ ...route, [field]: [] });
+          setNotice(`Список «${title}» очищен.`);
+        }}>Очистить список</button>
+    </div>
     <p className="projects-model-notice" role="status">{notice}</p>
   </div>;
 }
@@ -671,24 +735,65 @@ export function ProjectModelPolicyEditor({
   const allowedModels = route.allowedModels ?? [];
   const deniedModels = route.deniedModels ?? [];
   const conflicts = conflictingModelEntries(allowedModels, deniedModels);
+  const knownIds = [...new Set(route.harnesses.flatMap((harness) => catalog[harness] ?? []))];
+  const restricted = isRestrictedProject(project);
+  /** The short status of a model in the list of the suggestions. */
+  const statusOf = (model: string): string => {
+    if (restricted && hasRestrictedProviderToken(model)) return MODEL_STATUS_WORDS.closed;
+    if (!knownIds.includes(model)) return MODEL_STATUS_WORDS.unconfirmed;
+    return MODEL_STATUS_WORDS.works;
+  };
 
   return <fieldset className="projects-fieldset" id={`projects-models-${project}`} disabled={disabled}>
     <legend>Модели проекта</legend>
+    <div className="projects-legend" aria-label="Как читать правила моделей">
+      <p><strong>«Разрешённые модели»</strong> — фильтр проекта: какие модели проект вообще может запускать. Пустой список — без ограничений. Шаблон с «*» в конце, например <code>omniroute/minimax-*</code>, разрешает всё с таким началом; <code>*</code> разрешает всё.</p>
+      <p><strong>«Запрещённые модели»</strong> — что проект не может запускать никогда. Запрет сильнее разрешения.</p>
+      <p><strong>Откуда берётся модель.</strong> Сначала модель маршрута проекта, иначе общая модель среды для этой среды.</p>
+      <p><strong>Доступность модели — свойство среды.</strong> Панель показывает, подтверждает ли среда этот id, и больше ничего о нём не выдумывает: подписка, бесплатный пул и платный маршрут для среды выглядят одинаково.</p>
+      <p><strong>Одно и то же бывает двумя написаниями.</strong> Маршрут <code>omniroute/minimax-combo-m3.1</code> и ключ каталога <code>omniroute/minimax/MiniMax-M3.1-Flash</code> — одна и та же модель. Пишите маршрут: его понимают политика и Herder.</p>
+      <p><strong>Как убрать блок.</strong> В карточке блока написано, что заблокировано и почему. Нажмите «Поставить рабочую модель» — панель запишет id, который среда подтверждает.</p>
+    </div>
     <ProjectModelList project={project} route={route} field="allowedModels" title="Разрешённые модели"
       hint="Что может запускаться в проекте. Пустой список разрешённых — без ограничений: работает общая модель среды. Шаблон «*» разрешает всё, например omniroute/minimax-*."
-      suggestions={suggestions} disabled={disabled} onChange={onChange} />
+      suggestions={suggestions} knownIds={knownIds} statusOf={statusOf} disabled={disabled} onChange={onChange} />
     <ProjectModelList project={project} route={route} field="deniedModels" title="Запрещённые модели"
       hint="Что никогда не запускается в проекте. Запрет сильнее разрешения: запрещённая модель не используется, даже если она указана в разрешённых."
-      suggestions={suggestions} disabled={disabled} onChange={onChange} />
+      suggestions={suggestions} knownIds={knownIds} statusOf={statusOf} disabled={disabled} onChange={onChange} />
     {conflicts.length > 0 && <p className="autopilot-error" role="alert">{`Модель «${conflicts[0]}» указана и как разрешённая, и как запрещённая. Уберите её из одного из списков, иначе политика не сохранится.`}</p>}
     <div className="projects-field">
       <span className="projects-field-label">Эффективная модель по средам маршрута</span>
       <ul className="projects-model-list" aria-label={`Эффективная модель по средам маршрута проекта ${project}`}>
         {route.harnesses.map((harness) => {
-          const effective = route.models?.[harness] ?? policy.models[harness];
+          const effective = route.models?.[harness] ?? policy.models[harness] ?? "";
+          const label = effective ? modelRouteLabel({ modelId: effective, confirmed: catalog[harness] ?? [] }) : undefined;
           const violation = routeModelViolation(route, effective);
           const check = checks?.find((item) => item.harness === harness);
-          return <li className={`projects-model-item projects-effective${violation ? " projects-model-item-warn" : ""}`} key={harness}>
+          const answer = catalog[harness];
+          const list = answer ?? [];
+          const working = workingModelId(harness, { policyModels: policy.models, confirmed: list });
+          const verdict = modelVerdict({
+            harness,
+            model: effective,
+            confirmed: list,
+            allowedModels,
+            deniedModels,
+            restricted,
+            workingModel: working,
+          });
+          // The answer of the environment is on the way: the screen says so
+          // instead of blaming the model before anyone asked the environment.
+          // One fact — one word. The state of the environment is the word of the
+          // catalog of OpenCode (рабочая / устаревшая) and it is shown
+          // once, in its own block. The chip of the verdict speaks about the
+          // lists of the project and the rule of the owner, so it stays for the
+          // verdicts of the policy and steps aside for the state of the
+          // environment.
+          const environmentKind = verdict.kind === "works" || verdict.kind === "unconfirmed";
+          const status = answer === undefined
+            ? { label: "проверяем…", tone: "unknown" as const }
+            : { label: verdict.label, tone: verdict.tone };
+          return <li className={`projects-model-item projects-effective projects-model-status-${status.tone}`} key={harness}>
             <span className="projects-effective-environment">
               <span className="projects-model-caption">Среда</span>
               <strong>{labelFor(harness, runtimes)}</strong>
@@ -697,10 +802,21 @@ export function ProjectModelPolicyEditor({
               <span className="projects-model-caption">Модель</span>
               <code>{effective || "модель не задана"}</code>
               {effective && <small className="projects-model-route">{modelRouteTitle(effective)}</small>}
+              {(!environmentKind || !label) && <span className={`projects-status projects-status-${status.tone}`} role="status">{status.label}</span>}
             </span>
+            {label && <span className={`projects-model-state projects-model-state-${label.tone}`}>
+              <span className="projects-model-caption">Состояние</span>
+              <strong>{label.state}</strong>
+              <small className="projects-model-state-reason">{label.reason}</small>
+            </span>}
             {violation === "denied" && <span className="projects-model-warn" role="status">Модель запрещена в этом проекте: среда перестанет использоваться.</span>}
             {violation === "not_allowed" && <span className="projects-model-warn" role="status">Модель не разрешена в этом проекте: среда перестанет использоваться.</span>}
-            {check?.state === "unconfirmed" && <span className="projects-model-warn" role="status">{check.reason}.</span>}
+            {check?.state === "unconfirmed" && !label && <span className="projects-model-warn" role="status">{check.reason}.</span>}
+            {verdict.kind === "closed" && <span className="projects-model-warn" role="status">{verdict.detail}</span>}
+            {working && working !== effective && <span className="projects-model-actions">
+              <button type="button" aria-label={`Поставить рабочую модель ${working} для среды ${labelFor(harness, runtimes)} в проекте ${project}`}
+                disabled={disabled} onClick={() => onChange(setRouteModel(route, harness, working))}>Поставить рабочую модель</button>
+            </span>}
           </li>;
         })}
         {route.harnesses.length === 0 && <li className="projects-model-empty" aria-hidden="true">В маршруте нет ни одной среды.</li>}
@@ -721,6 +837,7 @@ export function ProjectRoutesEditor({
   checks,
   entry,
   state,
+  fleet,
   open,
   onOpenChange,
   disabled,
@@ -735,6 +852,8 @@ export function ProjectRoutesEditor({
   checks?: ModelRouteCheck[];
   entry?: ProjectEntry;
   state?: ProjectStateView;
+  /** How fresh the knowledge of the fleet is, for the cells that wait for it. */
+  fleet?: FleetRowState;
   open: boolean;
   onOpenChange: (next: boolean) => void;
   disabled?: boolean;
@@ -751,12 +870,17 @@ export function ProjectRoutesEditor({
   const aliases = entry?.aliases ?? (route.aliases ?? []).filter(Boolean);
   const environments = entry?.environmentCount ?? route.harnesses.length;
   const models = entry?.modelCount ?? ((route.allowedModels?.length ?? 0) + (route.deniedModels?.length ?? 0));
+  const machine = entry?.hostLabel
+    || (fleet?.hosts === "loading" ? "обновляю…" : "Машина неизвестна");
+  const freshness = entry?.lastActivity
+    ? relativeTime(entry.lastActivity)
+    : fleet?.sessions === "loading" ? "обновляю…" : "время неизвестно";
   return <details className="projects-card" open={open} onToggle={(event) => onOpenChange(event.currentTarget.open)}>
     <summary className="projects-card-summary">
       <span className="projects-card-name">{name}</span>
       {aliases.slice(1).map((alias) => <span className="projects-alias-chip" key={alias}>{alias}</span>)}
       <span className={`projects-machine-chip${entry?.hostId ? "" : " projects-machine-chip-unknown"}`}>
-        <span aria-hidden="true">▣</span> {entry?.hostLabel || "Машина неизвестна"}
+        <span aria-hidden="true">▣</span> {machine}
       </span>
       <span className="projects-card-counts">
         {`${environments} ${plural(environments, "среда", "среды", "сред")} · ${models} ${plural(models, "модель", "модели", "моделей")}`}
@@ -765,7 +889,7 @@ export function ProjectRoutesEditor({
         <span aria-hidden="true">{state.icon}</span> {state.label}
       </span>}
       <time className="projects-card-time" dateTime={entry?.lastActivity || undefined} title={absoluteTime(entry?.lastActivity ?? "")}>
-        {relativeTime(entry?.lastActivity ?? "")}
+        {freshness}
       </time>
       <code className="projects-card-path">{project}</code>
     </summary>
@@ -849,44 +973,71 @@ export function ProjectRoutesEditor({
 }
 
 /**
- * The explanation of a model request the policy of the project would block.
+ * The card of a block: what is blocked, why, and what to press.
  *
- * The block is a prediction of the policy of the project: the requested model
- * is not in the list of the models the environment confirms. It is not a record
- * of an observed refusal of the guard of the OpenCode integration — that guard
- * answers on its own, and the panel has no feed of it.
+ * The block is a check of the panel before the launch: the model of the route
+ * is compared with the models the environment confirms and with the two lists
+ * of the project. It is not a record of an observed refusal of the guard of the
+ * OpenCode integration — that guard answers on its own, and the panel has no
+ * feed of it.
  */
 export function BlockedModelNotice({
   project,
   check,
   confirmed,
+  onSetModel,
   onOpenModels,
 }: {
   project: string;
   check: ModelRouteCheck;
   confirmed: string[];
+  onSetModel: (model: string) => void;
   onOpenModels: () => void;
 }) {
   const [routeOpen, setRouteOpen] = React.useState(false);
+  const verdict = check.verdict;
+  const title = verdict.kind === "closed"
+    ? `Модель ${check.model} закрыта правилом владельца — запуск на ней не пройдёт`
+    : verdict.kind === "denied"
+      ? `Модель ${check.model} запрещена в списке проекта — запуск на ней не пройдёт`
+      : verdict.kind === "notAllowed"
+        ? `Модель ${check.model} не разрешена в проекте — запуск на ней не пройдёт`
+        : `Модель ${check.model} среда не подтверждает — запуск на ней не пройдёт`;
+  const working = check.working ?? "";
   return <div className="projects-blocked" role="alert">
-    <p className="projects-blocked-title"><span aria-hidden="true">⛔</span> Запрос модели заблокирован политикой проекта</p>
-    <p className="projects-blocked-note">Это предсказание политики проекта, а не запись о случившемся отказе: запрошенная модель не входит в подтверждённый список среды.</p>
+    <p className="projects-blocked-title"><span aria-hidden="true">⛔</span> {title}</p>
+    <p className="projects-blocked-note">Панель сверяет модель маршрута со списком моделей среды и со списками проекта. Это проверка до запуска, а не запись о случившемся отказе.</p>
     <dl className="projects-blocked-facts">
       <div><dt>Модель</dt><dd><code>{check.model}</code><small>{modelRouteTitle(check.model)}</small></dd></div>
       <div><dt>Проект</dt><dd>{project}</dd></div>
       <div><dt>Причина</dt><dd>{check.reason}</dd></div>
-      <div><dt>Что делать</dt><dd>{check.action}</dd></div>
+      <div><dt>Что делать</dt><dd>{check.action || "Откройте Модели проекта и поставьте модель, которую среда подтверждает."}</dd></div>
     </dl>
     <div className="projects-blocked-actions">
-      <button type="button" className="primary-button" onClick={onOpenModels}>Открыть Модели проекта</button>
+      {working && <button type="button" className="primary-button"
+        aria-label={`Поставить рабочую модель ${working} в проекте ${project}`}
+        onClick={() => onSetModel(working)}>Поставить рабочую модель</button>}
+      <button type="button" className="quiet-button" onClick={onOpenModels}>Открыть Модели проекта</button>
       <button type="button" className="quiet-button" aria-expanded={routeOpen}
         onClick={() => setRouteOpen((value) => !value)}>Показать подтверждённый маршрут</button>
     </div>
+    {working && <p className="projects-blocked-hint">Рабочая модель этой среды: <code>{working}</code>. Кнопка запишет её в маршрут проекта — больше ничего менять не нужно.</p>}
     {routeOpen && <div className="projects-blocked-route">
       <p>Среда подтверждает эти модели:</p>
       {confirmed.length === 0
         ? <p className="projects-help">Список моделей среды пуст — среда не подтвердила ни одного маршрута.</p>
-        : <ul>{confirmed.map((model) => <li key={model}><code>{model}</code><small>{modelRouteTitle(model)}</small></li>)}</ul>}
+        : <ul>{confirmed.map((model) => {
+          const status = modelVerdict({ harness: check.harness, model, confirmed, restricted: isRestrictedProject(project) });
+          return <li key={model}>
+            <span className="projects-blocked-route-entry">
+              <code>{model}</code>
+              <small>{modelRouteTitle(model)}</small>
+              <span className={`projects-status projects-status-${status.tone}`}>{status.label}</span>
+            </span>
+            {status.kind === "works" && <button type="button" aria-label={`Поставить модель ${model} в проекте ${project}`}
+              onClick={() => onSetModel(model)}>Поставить</button>}
+          </li>;
+        })}</ul>}
     </div>}
   </div>;
 }
@@ -919,7 +1070,7 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
   const [sort, setSort] = React.useState<ProjectSort>("recent");
   const [openCards, setOpenCards] = React.useState<Record<string, boolean>>({});
   const [scrollTo, setScrollTo] = React.useState<string | null>(null);
-  const { hosts, sessions, failed: fleetFailed } = useFleetFacts();
+  const { hosts, sessions, hostsState, sessionsState } = useFleetFacts();
 
   const routes = Object.entries(policy.projectRoutes ?? {});
   const entries = buildProjectEntries(routes, hosts, sessions);
@@ -930,6 +1081,29 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
   const allowed = policy.allowedHarnesses;
   const available = allowed.length > 0 ? allowed : runtimes.map(({ id }) => id);
   const knownPaths = useKnownProjectPaths();
+  // The common models of the environments: what rides when the project names
+  // no model of its own.
+  const globalModelRows = [...new Set([...Object.keys(policy.models ?? {}), ...harnesses])]
+    .map((harness) => {
+      const model = policy.models[harness] ?? "";
+      const answer = confirmed[harness];
+      const list = answer ?? [];
+      const verdict = modelVerdict({
+        harness,
+        model,
+        confirmed: list,
+        workingModel: workingModelId(harness, { policyModels: policy.models, confirmed: list }),
+      });
+      return {
+        harness,
+        label: labelFor(harness, runtimes),
+        model: model || "не задана",
+        status: answer === undefined
+          ? "проверяем…"
+          : verdict.label,
+        tone: answer === undefined ? "unknown" as const : verdict.tone,
+      };
+    });
   const routesValid = routes.every(([project, route]) =>
     project.startsWith("/") && route.harnesses.length > 0
     && route.harnesses.every((harness) => allowed.length === 0 || allowed.includes(harness))
@@ -963,6 +1137,12 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
     const state = projectApplicationState(entry.nodeStates);
     return <div className="projects-item" key={project}>
       {blocked && <BlockedModelNotice project={project} check={blocked} confirmed={confirmed[blocked.harness] ?? []}
+        onSetModel={(model) => {
+          const harness = blocked.harness;
+          const next = setRouteModel(route, harness, model);
+          setRoutes({ ...(policy.projectRoutes ?? {}), [project]: next });
+          setOpenCards((current) => ({ ...current, [project]: true }));
+        }}
         onOpenModels={() => {
           setOpenCards((current) => ({ ...current, [project]: true }));
           setScrollTo(project);
@@ -976,6 +1156,7 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
         checks={checks}
         entry={entry}
         state={state}
+        fleet={{ hosts: hostsState, sessions: sessionsState }}
         open={Boolean(openCards[project])}
         onOpenChange={(next) => setOpenCards((current) => ({ ...current, [project]: next }))}
         disabled={saving || Boolean(loadError)}
@@ -1001,7 +1182,7 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
     <details className="projects-explainer" open>
       <summary>Справка: что делают списки моделей и почему модель могут заблокировать</summary>
       <div className="projects-explainer-body">
-        <p><strong>Списки «Разрешённые модели» и «Запрещённые модели» не управляют блокировкой запроса модели.</strong> Они ограничивают, какие модели Herder может выдать проекту, и не решают, пройдёт ли запрос через защиту интеграции OpenCode. Запрет всегда сильнее разрешения: запрещённая модель в проекте не запускается никогда.</p>
+        <p><strong>Списки моделей — это фильтр проекта.</strong> «Разрешённые модели» — что проект может запускать, «Запрещённые модели» — что не может никогда. Запрет всегда сильнее разрешения.</p>
         <p><strong>Блокирует запросы модельная защита интеграции OpenCode</strong> (<code>integrations/opencode/agent-herder-autopilot.js</code>, <code>enforceRestrictedModelRequest</code>). Для закрытых проектов (TelegramAuto, video_watching) маршрут модели должен совпасть с подтверждённым нативным маршрутом среды: иначе запрос отклоняется — «полный нативный маршрут провайдера запрещён или не подтверждён».</p>
         <p>Модели, которых нет в списке моделей OpenCode, получают отказ 409: маршрут не подтверждён. Маршрут <code>omniroute/minimax-combo-m3.1</code> подтверждается и приводит к конечной модели minimax-code/mmcode/MiniMax-M3.1-Flash — в нём нет ни codex, ни claude, ни anthropic.</p>
         <p><strong>Порядок сред.</strong> Herder идёт по списку сверху вниз и переключается на следующую среду только после отказа, когда запуск точно не состоялся. Проекты без маршрута работают как раньше.</p>
@@ -1019,13 +1200,26 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
         <p className="projects-globals-value">Notice Place</p>
         <small className="projects-help">Модель для анализа инцидентов выбирается в <a href="https://notify.bezrabotnyi.com/admin/#health-model">админке Notice Place</a>. Эта страница её не меняет.</small>
       </div>
+      <div>
+        <span className="eyebrow">ОБЩИЕ МОДЕЛИ СРЕДЫ</span>
+        <ul className="projects-globals-models" aria-label="Общие модели среды">
+          {globalModelRows.map((row) => <li key={row.harness}>
+            <strong>{row.label}</strong>
+            <span className="projects-globals-model">{`общие модели среды: по умолчанию едет ${row.model}`}</span>
+            <span className={`projects-status projects-status-${row.tone}`}>{row.status}</span>
+          </li>)}
+          {globalModelRows.length === 0 && <li className="projects-model-empty">У сред нет общих моделей.</li>}
+        </ul>
+        <small className="projects-help">Если проект ничего не задал, поедет общая модель среды. Меняется в общих настройках запуска.</small>
+        {onOpenLaunchSettings && <button type="button" className="quiet-button" aria-label="Открыть общие настройки запуска: общие модели среды"
+          onClick={onOpenLaunchSettings}>Открыть настройки запуска</button>}
+      </div>
     </section>
     {loading ? <p className="settings-loading" role="status">Загружаем маршруты проектов…</p> : <>
       {needsSetup && <p className="launch-policy-notice" role="status">Настройки запуска ещё не сохранены. Сохраните маршрут проекта, чтобы он начал применяться.</p>}
       {draft.phase === "invalid" && <p className="autopilot-error" role="alert">Политика запуска повреждена, поэтому сохранить маршруты из формы нельзя: {loadError}. Файл политики на сервере нужно исправить вручную.</p>}
       {draft.phase === "error" && <p className="autopilot-error" role="alert">Не удалось загрузить настройки запуска: {loadError}. Обновите страницу и повторите.</p>}
-      {fleetFailed && <p className="projects-help" role="status">Машины флота сейчас недоступны: у проектов нет метки машины и времени последнего изменения.</p>}
-      <div className="projects-toolbar">
+      {(hostsState === "failed" || sessionsState === "failed") && <p className="projects-help" role="status">Машины флота сейчас недоступны: у проектов нет метки машины и времени последнего изменения.</p>}      <div className="projects-toolbar">
         <div className="projects-field projects-search">
           <label htmlFor="projects-search">Поиск по проектам</label>
           <input id="projects-search" type="search" value={query} placeholder="Поиск по названию, пути или машине"
@@ -1109,7 +1303,7 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
       {draft.conflicts.length > 0 && <p className="autopilot-error" role="alert">{`Проект${draft.conflicts.length > 1 ? "ы" : ""} ${draft.conflicts.join(", ")} изменились в другой вкладке. Ваша версия оставлена в форме, но не сохранена: перезагрузите страницу или измените проект заново.`}
         <button type="button" className="quiet-button" aria-label="Перезагрузить маршруты и отбросить правки" disabled={saving} onClick={() => void draft.reload()}>Перезагрузить и отбросить правки</button>
       </p>}
-      {saveError && <p className="autopilot-error" role="alert">Не удалось сохранить маршруты: {saveError}</p>}
+      {saveError && <p className="autopilot-error" role="alert">{`Не сохранено: ${explainModelListError(saveError)}`}</p>}
       {!valid && <p className="projects-help" role="alert">Маршрут задан некорректно: проверьте путь проекта, среды и модели. Пока это не исправлено, политика запуска не сохранится.</p>}
       <div className="settings-save-row projects-save-row">
         <span role="status">

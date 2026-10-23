@@ -46,6 +46,13 @@ import { boundResumeReceiptQuery, createWebServer, resumeSelectedTarget } from "
 import { AgentResumeClient, type ResumeReceipt, type ResumeTransportRequest } from "./resume-transport.js";
 import { createConfiguredFleetApiHandler, createManagedFleetHttpGuard, isManagedFleetNode } from "./web/fleet-wiring.js";
 import { registerFleetNodeTools } from "./mesh/fleet-node.js";
+import {
+  commonSettingsService,
+  registerCommonSettingsTools,
+  startCommonSettingsSyncLoop,
+} from "./common-settings/index.js";
+import { hooksLeverFromStore } from "./common-settings/index.js";
+import { HooksProhibitionsStore, isHookKind, type HookKind } from "./hooks/index.js";
 import { fleetPolicyRevisionLedgerPath } from "./mesh/fleet-policy-revision.js";
 import type { ProjectModelPolicyState } from "./project-model-delivery-gate.js";
 import { createConfiguredBrowserWakeService } from "./browser-wake.js";
@@ -152,6 +159,33 @@ const sessionAutostartStore = new SessionAutostartStore(
 );
 const autoCompactStore = new AutoCompactStore(join(autopilotStateDir, "auto-compact.json"));
 const automationLaunchPolicyStore = new AutomationLaunchPolicyStore(join(autopilotStateDir, "automation-launch-policy.json"));
+// The lever of the owner over the prohibitions of the hooks. It is the
+// same durable state as the launch policy beside it, and it travels in
+// the common document of the fleet — the lever of the automation is a
+// different thing and is not touched here.
+const hooksProhibitionsStore = HooksProhibitionsStore.at(autopilotStateDir);
+
+/**
+ * The lever of the hooks as the common document sees it.
+ *
+ * The store of the hooks accepts only the known kinds of hooks, while the
+ * common document carries the names as strings: the names are checked here, so
+ * an unknown name is dropped instead of written into the lever.
+ */
+const hooksLeverStore = {
+  readState: () => hooksProhibitionsStore.readState(),
+  apply: (change: {
+    source: "owner";
+    actor?: string;
+    prohibitionsEnabled?: boolean;
+    disabledHooks?: string[];
+    reason?: string;
+  }) =>
+    hooksProhibitionsStore.apply({
+      ...change,
+      disabledHooks: change.disabledHooks?.filter((hook): hook is HookKind => isHookKind(hook)),
+    }),
+};
 const integratorSessionBindingStore = new IntegratorSessionBindingStore({ persistencePath: join(autopilotStateDir, "integrator-session-bindings.json") });
 const integratorFleetRuntime = new IntegratorFleetRuntime({ policyStore: automationLaunchPolicyStore, bindingStore: integratorSessionBindingStore, codexBin: process.env.CODEX_BIN });
 // The per-project model gate reads the same stored document as the launcher,
@@ -609,6 +643,10 @@ function registerTools(
   registerHarnessMeshTools(server, { adapters, gptadmin: workspaceTransport, deliveryPolicy: readLaunchPolicyStateForGate });
   registerWorkspaceTools(server, { transport: workspaceTransport });
   registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, launchPolicyRevision: readLaunchPolicyRevision, fleetTransport: workspaceTransport, fleetPeers: directFleetPeers.filter(peer => peer.hostId !== "MacBook-Pro-User.local").map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), policyRevisionLedgerPath: fleetPolicyRevisionLedgerPath(autopilotStateDir) });
+  // The common settings of the fleet: a node that has no owner of the document
+  // named in its environment registers no tool and claims nothing.
+  const commonSettings = commonSettingsService({ hooks: hooksLeverFromStore(hooksLeverStore) });
+  if (commonSettings) registerCommonSettingsTools(server, { service: commonSettings });
 }
 
 /**
@@ -985,6 +1023,7 @@ async function main() {
     if (isQuotaLensEnabled()) startQuotaLensSampler();
     const webServer = createWebServer({
       adapters,
+      hooksProhibitionsStore: hooksLeverStore,
       converter: processSessionConverter,
       humanRequests,
       choiceRegistry,
@@ -1019,6 +1058,11 @@ async function main() {
   if (startSelectedStdio(webPort, createStdioMcpServer, (error) => console.error(`[agent-herder] MCP stdio error: ${error.message}`))) {
     console.error("[agent-herder] MCP v2 server running on stdio (2026-07-28 + legacy fallback)");
   }
+
+  // The node takes the document of the common settings by itself. A node that
+  // was off catches up when it comes back: nobody does it by hand.
+  const commonSettingsNode = commonSettingsService({ hooks: hooksLeverFromStore(hooksLeverStore) });
+  if (commonSettingsNode) startCommonSettingsSyncLoop(commonSettingsNode);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

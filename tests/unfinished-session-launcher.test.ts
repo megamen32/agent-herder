@@ -830,6 +830,7 @@ describe("terminal quota recovery", () => {
       expect(sent).toHaveLength(1);
       expect(sent[0]?.model).toBe(current.model);
       expect((await store.list())[0]?.quotaRecovery?.state).toBe("accepted");
+      expect((await store.getQuotaRecoveryWaitStatus(current.harness, current.id, current.cwd!))?.reason).toBe("Нативный ввод принят. Автоматические повторы остановлены; состояние ответа смотрите в переписке.");
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
