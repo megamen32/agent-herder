@@ -3,7 +3,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {expect,it,vi} from "vitest";
 import {SessionWorkspaceStore} from "../src/session-workspaces.js";
-import {createSessionWorkspaceOwnerUpdater} from "../src/session-workspaces-backfill.js";
+import {createSessionWorkspaceOwnerUpdater,createMavisWorkspaceEvidenceReader} from "../src/session-workspaces-backfill.js";
 it("ingests native evidence once and inherits only explicit same-runtime parent relationships",async()=>{
 const d=await mkdtemp(join(tmpdir(),"workspace-owner-"));try{
  const store=new SessionWorkspaceStore(join(d,"store.json"));const id={runtimeHostId:"mac-m1",harness:"minimax-code",nativeSessionId:"parent"};
@@ -28,4 +28,14 @@ const d=await mkdtemp(join(tmpdir(),"workspace-owner-parent-"));try{
  const child={...id,nativeSessionId:"child",parentSessionId:"parent",lastActivity:"one"};const update=createSessionWorkspaceOwnerUpdater({store,readEvidence:async()=>[],now:()=>clock});await update([child]);
  await store.declare({...id,mode:"replace",observedAt:"2026-10-23T18:01:00Z",expectedVersion:1,workspaces:[{hostId:"server100",absolutePath:"/repo/b",source:"declared",observedAt:"2026-10-23T18:01:00Z"}]});clock+=120_000;await update([{...child,lastActivity:"two"}]);
  expect((await store.read(child))?.workspaces.map(w=>w.absolutePath)).toEqual(["/repo/b"]);
+}finally{await rm(d,{recursive:true,force:true});}});
+
+it("uses native transport proof for A+B and ignores path-only metadata without erasing A",async()=>{
+const d=await mkdtemp(join(tmpdir(),"workspace-transport-"));try{
+ const store=new SessionWorkspaceStore(join(d,"store.json")),id={runtimeHostId:"mac",harness:"minimax-code",nativeSessionId:"one"};
+ await store.declare({...id,mode:"replace",observedAt:"2026-10-23T17:00:00Z",workspaces:[{hostId:"server100",absolutePath:"/repo/a",source:"declared",observedAt:"2026-10-23T17:00:00Z"}]});
+ let clock=Date.parse("2026-10-23T18:00:00Z"),phase=0;
+ const readEvidence=createMavisWorkspaceEvidenceReader({workHostForSession:async()=>"server100",control:{getMessages:async()=>({ok:true,body:{messages:[{timestamp:Date.parse("2026-10-23T18:01:00Z"),msg_id:"proof",tool_calls:[{tool_name:"bash",tool_call_args:phase?{target:"mcp:shell:server100:Shell",cwd:"/repo/b"}:{cwd:"/Users/user/proj"}}]}]}})}});
+ const update=createSessionWorkspaceOwnerUpdater({store,readEvidence,now:()=>clock});await update([{...id,lastActivity:"one"}]);expect((await store.read(id))?.workspaces.map(w=>w.absolutePath)).toEqual(["/repo/a"]);
+ phase=1;clock+=61_000;await update([{...id,lastActivity:"two"}]);expect((await store.read(id))?.workspaces.map(w=>w.absolutePath)).toEqual(["/repo/a","/repo/b"]);
 }finally{await rm(d,{recursive:true,force:true});}});

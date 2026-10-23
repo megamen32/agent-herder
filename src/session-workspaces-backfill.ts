@@ -27,7 +27,7 @@ export async function backfillSessionWorkspaces(store:SessionWorkspaceStore,evid
 
 /** Extract only execution context explicitly carried by native tools. No title,
  * GUI cwd or arbitrary transcript-wide pathname matching is allowed here. */
-export function workspaceEvidenceFromNativeMessages(input:SessionWorkspaceIdentity & {workHostId:string;messages:Array<Record<string,unknown>>}):NativeWorkspaceEvidence[] {
+export function workspaceEvidenceFromNativeMessages(input:SessionWorkspaceIdentity & {workHostId?:string;messages:Array<Record<string,unknown>>}):NativeWorkspaceEvidence[] {
   const output:NativeWorkspaceEvidence[]=[];
   for(const message of input.messages){
     const observedAt=typeof message.timestamp==="number"?new Date(message.timestamp).toISOString():typeof message.timestamp==="string"?message.timestamp:"";
@@ -40,15 +40,24 @@ export function workspaceEvidenceFromNativeMessages(input:SessionWorkspaceIdenti
       if(typeof args==="string"){try{args=JSON.parse(args);}catch{continue;}}
       if(!args||typeof args!=="object")continue;
       const a=args as Record<string,unknown>,name=String(tool.tool_name??"");
+      // A declared work host is intent, never execution transport evidence.
+      // Only native executionHostId metadata or an explicit MCP shell target
+      // identifies where these tool arguments actually execute.
+      const target=typeof tool.target==="string"?tool.target:typeof a.target==="string"?a.target:"";
+      const targetHost=/^mcp:shell:([^:]+):[^:]+$/.exec(target)?.[1];
+      const executionHostId=typeof tool.executionHostId==="string"?tool.executionHostId.trim():targetHost;
+      if(!executionHostId)continue;
       const paths:string[]=[];
       // cwd is valid only for a tool that actually executes code, never a
       // coordination/human request where it usually describes the GUI launch.
       if(/(?:^|__)(?:bash|shell_exec|exec_command|ctx_execute|ctx_execute_file)$/.test(name)){
         for(const field of ["workdir","cwd"]){if(typeof a[field]==="string"&&a[field].startsWith("/"))paths.push(a[field]);}
         const command=typeof a.command==="string"?a.command:typeof a.code==="string"?a.code:"";
-        for(const match of command.matchAll(/\b(?:cd\s+|git\s+-C\s+)["']?(\/home\/roomhacker\/[^\s"';&|)]+)/g))paths.push(match[1]);
+        // SSH changes the execution machine inside this shell. Without native
+        // metadata for that inner transport, never label its cd as outer host.
+        if(!/\bssh\b/.test(command))for(const match of command.matchAll(/\b(?:cd\s+|git\s+-C\s+)["']?(\/[^\s"';&|)]+)/g))paths.push(match[1]);
       }
-      for(const absolutePath of new Set(paths))output.push({runtimeHostId:input.runtimeHostId,harness:input.harness,nativeSessionId:input.nativeSessionId,hostId:input.workHostId,absolutePath,observedAt,evidenceRef:`native-message:${String(message.msg_id??"unknown")}:tool:${String(tool.tool_call_id??name)}`,kind:"native_tool_execution"});
+      for(const absolutePath of new Set(paths))output.push({runtimeHostId:input.runtimeHostId,harness:input.harness,nativeSessionId:input.nativeSessionId,hostId:executionHostId,absolutePath,observedAt,evidenceRef:`native-message:${String(message.msg_id??"unknown")}:tool:${String(tool.tool_call_id??name)}`,kind:"native_tool_execution"});
     }
   }
   return output;
@@ -100,16 +109,17 @@ export function createSessionWorkspaceOwnerUpdater(deps:{store:SessionWorkspaceS
   };
 }
 
-/** Native reader for the owner updater. The work-host resolver must come from
- * explicit per-session declarations or a verified execution transport; it must
- * not default to the desktop/runtime hostname. */
+/** Native reader for the owner updater. Execution locations must be
+ * explicit native transport metadata. Legacy workHostForSession is an optional
+ * compatibility hint only and never assigns an execution host. */
 export function createMavisWorkspaceEvidenceReader(deps:{
   control:{getMessages:(id:string,options:{limit:number})=>Promise<{ok:boolean;body:unknown}>};
-  workHostForSession:(session:WorkspaceOwnerSession)=>Promise<string|undefined>;
+  workHostForSession?:(session:WorkspaceOwnerSession)=>Promise<string|undefined>;
 }) {
   return async(session:WorkspaceOwnerSession):Promise<NativeWorkspaceEvidence[]>=>{
     if(session.harness!=="minimax-code")return [];
-    const workHostId=await deps.workHostForSession(session);if(!workHostId)return [];
+    // Legacy resolver supplies intent only. It cannot qualify unknown tool paths.
+    const workHostId=await deps.workHostForSession?.(session);
     const result=await deps.control.getMessages(session.nativeSessionId,{limit:40});
     if(!result.ok)throw new Error("Native workspace evidence unavailable");
     const body=result.body as {messages?:unknown};
