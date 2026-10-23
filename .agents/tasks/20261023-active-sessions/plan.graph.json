@@ -1,0 +1,141 @@
+{
+  "schema_version": 2,
+  "title": "Быстрый список активных сессий и реальных мест работы",
+  "goal": "пользователь одной командой получает текущие активные сессии всей сети и реальные абсолютные пути изменения кода без исторического сканирования при запросе.",
+  "business_result": "правильный глобальный список и количество; у каждой сессии отдельно компьютер исполнения и один или несколько подтверждённых рабочих каталогов.",
+  "current_progress": "Рабочее дерево f139e3f создано; чужой canonical WIP сохранён; исследованы существующие supervisor/cache и MCP seams.",
+  "external_waits": "Нет внешних ожиданий; срок доставки уточняется после проверки runtime seams.",
+  "slots": 2,
+  "updated_at": "2026-10-23T21:41:14",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "Исследовать живую активность Mavis и доказать ошибку списка",
+      "status": "done",
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "actual_minutes": 33.0,
+      "started_at": "21:07",
+      "finished_at": "21:40",
+      "acceptance": "native/GUI evidence и RED→GREEN; TTL и неизвестность явно представлены.",
+      "description": "active_minimax_truth исследует native activity и исправляет наблюдатель MiniMax без вывода активности из persisted status.",
+      "role": "active_minimax_truth",
+      "affected_files": [
+        "src/adapters/minimax-code.ts",
+        "src/native-observer/minimax-code.ts"
+      ],
+      "note": "независимая проверка обнаружила различие native статуса и дополнительных GUI-флагов",
+      "read_paths": [],
+      "write_paths": [
+        "src/adapters/minimax-code.ts",
+        "src/native-observer/minimax-code.ts"
+      ],
+      "paths": [
+        "src/adapters/minimax-code.ts",
+        "src/native-observer/minimax-code.ts"
+      ]
+    },
+    {
+      "id": "L02",
+      "label": "Восстановить подтверждённые места изменения кода",
+      "status": "done",
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "actual_minutes": 23.0,
+      "started_at": "21:07",
+      "finished_at": "21:30",
+      "acceptance": "удалённая работа на server100 не превращается в M1 или каталог ~/.minimax.",
+      "description": "active_workspaces восстанавливает несколько рабочих каталогов с hostId и источником, используя существующие декларации.",
+      "role": "active_workspaces",
+      "affected_files": [
+        "src/session-workspaces.ts"
+      ],
+      "read_paths": [],
+      "write_paths": [
+        "src/session-workspaces.ts"
+      ],
+      "paths": [
+        "src/session-workspaces.ts"
+      ]
+    },
+    {
+      "id": "L03",
+      "label": "Собрать быстрый глобальный API и MCP",
+      "status": "done",
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 20.0,
+        "maximum": 20.0
+      },
+      "actual_minutes": 30.0,
+      "started_at": "21:10",
+      "finished_at": "21:40",
+      "acceptance": "list_active_sessions без hostId охватывает все пять компьютеров; запрос не сканирует историю.",
+      "description": "active_inventory_product создаёт материализованный текущий список; фильтры до пагинации, компьютер работы отдельно от компьютера исполнения.",
+      "role": "active_inventory_product",
+      "affected_files": [
+        "src/active-session-inventory.ts",
+        "src/mcp/active-session-tools.ts",
+        "src/index.ts",
+        "src/web/server.ts"
+      ],
+      "read_paths": [],
+      "write_paths": [
+        "src/active-session-inventory.ts",
+        "src/mcp/active-session-tools.ts",
+        "src/index.ts",
+        "src/web/server.ts"
+      ],
+      "paths": [
+        "src/active-session-inventory.ts",
+        "src/mcp/active-session-tools.ts",
+        "src/index.ts",
+        "src/web/server.ts"
+      ]
+    },
+    {
+      "id": "L04",
+      "label": "Интегрировать и доставить на пять компьютеров",
+      "status": "running",
+      "depends_on": [],
+      "started_at": "21:40",
+      "acceptance": "installed readback каждой машины и сохранность чужого WIP.",
+      "description": "сохранить чужие изменения и фактические версии сервисов; опубликовать только owned paths в main.",
+      "role": "active_inventory_product",
+      "affected_files": [
+        "dist/"
+      ],
+      "estimate_unknown_reason": "Точный объём неизвестен до проверки интерфейсов и runtime payload.",
+      "read_paths": [],
+      "write_paths": [
+        "dist/"
+      ],
+      "paths": [
+        "dist/"
+      ]
+    },
+    {
+      "id": "L05",
+      "label": "Независимо сверить реальную активность и время команды",
+      "status": "queued",
+      "depends_on": [
+        "L04"
+      ],
+      "acceptance": "два бизнес-результата подтверждены; частичные и неизвестные состояния не маркируются PASS.",
+      "description": "независимая GUI/native сверка и три последовательных измерения без LLM внутри критического времени.",
+      "role": "independent tester",
+      "affected_files": [],
+      "estimate_unknown_reason": "Точный объём неизвестен до проверки интерфейсов и runtime payload.",
+      "read_paths": [],
+      "write_paths": [],
+      "paths": []
+    }
+  ],
+  "leaf_count": 5
+}
