@@ -16,10 +16,10 @@
 export const PAID_MODEL_PLANS = ["minimax-coding-plan"] as const;
 
 /** The state of a model of a project, in the words of the owner. */
-export type ModelRouteState = "рабочая" | "устаревшая" | "платная";
+export type ModelRouteState = "рабочая" | "устаревшая" | "платная" | "не верифицирована" | "отказ";
 
 /** The tone of the state: the colour of the badge, not the word of it. */
-export type ModelRouteTone = "ok" | "stale" | "paid";
+export type ModelRouteTone = "ok" | "stale" | "paid" | "error";
 
 /** The state of a model and the reason of it. */
 export interface ModelRouteLabel {
@@ -52,6 +52,12 @@ export function modelRouteLabel(input: {
   modelId: string;
   confirmed: readonly string[];
   paidPlans?: readonly string[];
+  /**
+   * The verdict of the server about the launch of the route. It is the
+   * authority for a closed project: the catalog says which models exist, and
+   * the server says which route the launch will really take.
+   */
+  launch?: { verdict: "allowed" | "denied" | "unknown"; reason?: string };
 }): ModelRouteLabel | undefined {
   const modelId = input.modelId.trim();
   if (!modelId) return undefined;
@@ -62,6 +68,22 @@ export function modelRouteLabel(input: {
       state: "устаревшая",
       tone: "stale",
       reason: "Маршрут не верифицируется: id отсутствует в каталоге моделей OpenCode.",
+    };
+  }
+  if (input.launch && input.launch.verdict === "unknown") {
+    return {
+      state: "не верифицирована",
+      tone: "error",
+      reason: "Сервер не подтвердил маршрут: провайдер за ним неизвестен, и защита среды отзовёт запуск.",
+    };
+  }
+  if (input.launch && input.launch.verdict === "denied") {
+    return {
+      state: "отказ",
+      tone: "error",
+      reason: input.launch.reason === "closed-provider"
+        ? "Сервер подтвердил: за маршрутом провайдер, закрытый правилом владельца."
+        : "Сервер подтвердил: провайдер маршрута не входит в список разрешённых для закрытого проекта.",
     };
   }
   const provider = modelProvider(modelId);
@@ -75,6 +97,6 @@ export function modelRouteLabel(input: {
   return {
     state: "рабочая",
     tone: "ok",
-    reason: "Среда подтверждает этот маршрут.",
+    reason: "Модель есть в каталоге моделей среды.",
   };
 }

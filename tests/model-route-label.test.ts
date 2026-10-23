@@ -28,7 +28,49 @@ describe("the state of a model of a project is named in words", () => {
     const label = modelRouteLabel({ modelId: "omniroute/minimax-combo-m3.1", confirmed });
     expect(label?.state).toBe("рабочая");
     expect(label?.tone).toBe("ok");
-    expect(label?.reason).toContain("подтверждает");
+    expect(label?.reason).toContain("каталоге");
+  });
+
+  it("does not call a route working while the server could not confirm it", () => {
+    // The catalog says which models exist, and the server says what the launch
+    // will do. When the server has no proof of the route, the badge must not
+    // say that the route works.
+    const label = modelRouteLabel({
+      modelId: "omniroute/minimax-combo-m3.1",
+      confirmed,
+      launch: { verdict: "unknown", reason: "unverified" },
+    });
+    expect(label?.state).toBe("не верифицирована");
+    expect(label?.tone).toBe("error");
+    expect(label?.reason).toContain("Сервер не подтвердил");
+  });
+
+  it("calls a route the server refused a refusal and names the reason", () => {
+    const closed = modelRouteLabel({
+      modelId: "omniroute/minimax-combo-m3.1",
+      confirmed,
+      launch: { verdict: "denied", reason: "closed-provider" },
+    });
+    expect(closed?.state).toBe("отказ");
+    expect(closed?.tone).toBe("error");
+    expect(closed?.reason).toContain("закрытый правилом владельца");
+    const outside = modelRouteLabel({
+      modelId: "omniroute/minimax-combo-m3.1",
+      confirmed,
+      launch: { verdict: "denied", reason: "not-allowed" },
+    });
+    expect(outside?.state).toBe("отказ");
+    expect(outside?.reason).toContain("не входит в список разрешённых");
+  });
+
+  it("keeps the state of the catalog when the server confirmed the route", () => {
+    const label = modelRouteLabel({
+      modelId: "omniroute/minimax-combo-m3.1",
+      confirmed,
+      launch: { verdict: "allowed", reason: "verified" },
+    });
+    expect(label?.state).toBe("рабочая");
+    expect(label?.tone).toBe("ok");
   });
 
   it("calls a model that is not in the catalog stale and says why", () => {
@@ -86,5 +128,6 @@ describe("the form of the models shows the state of the model", () => {
     expect(styles).toMatch(/projects-model-state-ok/);
     expect(styles).toMatch(/projects-model-state-stale/);
     expect(styles).toMatch(/projects-model-state-paid/);
+    expect(styles).toMatch(/projects-model-state-error/);
   });
 });

@@ -852,12 +852,18 @@ export function ProjectModelPolicyEditor({
       <ul className="projects-model-list" aria-label={`Эффективная модель по средам маршрута проекта ${project}`}>
         {route.harnesses.map((harness) => {
           const effective = route.models?.[harness] ?? policy.models[harness] ?? "";
-          const label = effective ? modelRouteLabel({ modelId: effective, confirmed: catalog[harness] ?? [] }) : undefined;
+          const leaf = effective ? leafVerdicts?.[effective] : undefined;
+          const label = effective
+            ? modelRouteLabel({
+              modelId: effective,
+              confirmed: catalog[harness] ?? [],
+              launch: leaf ? { verdict: leaf.verdict, reason: leaf.reason } : undefined,
+            })
+            : undefined;
           const violation = routeModelViolation(route, effective);
           const check = checks?.find((item) => item.harness === harness);
           const answer = catalog[harness];
           const list = answer ?? [];
-          const leaf = effective ? leafVerdicts?.[effective] : undefined;
           const candidates = modelCandidates(harness, { policyModels: policy.models, confirmed: list, current: effective });
           const approved = approvedModelId(candidates, leafVerdicts);
           const working = leafVerdicts

@@ -436,7 +436,7 @@ export function modelVerdict(input: {
   return {
     kind: "works",
     label: MODEL_VERDICT_LABELS.works,
-    detail: "Среда подтверждает этот id: модель будет отправлена в среду.",
+    detail: "Модель есть в каталоге моделей среды: она будет отправлена в среду.",
     reason: "",
     action: "",
     tone: "ok",
