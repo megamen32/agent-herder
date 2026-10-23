@@ -52,13 +52,15 @@ describe("the state of a project across the machines of the fleet", () => {
     expect(state.tone).toBe("partial");
   });
 
-  it("reads «Неизвестно: узел не ответил» when no machine answered", () => {
+  it("names the machine it could not ask instead of changing the story", () => {
     const state = projectApplicationState([
       { hostId: "a", label: "A", answered: false, applies: false },
       { hostId: "b", label: "B", answered: false, applies: false },
     ]);
-    expect(`${state.label}: ${state.detail}`).toBe("Неизвестно: узел не ответил");
+    // One wording for the unknown, and it names the node that did not answer.
+    expect(`${state.label}: ${state.detail}`).toBe("Неизвестно: не удалось спросить узлы A и B");
     expect(state.icon).toBe("?");
+    expect(state.tone).toBe("unknown");
   });
 
   it("is complete when every machine answered and one of them runs the project", () => {
@@ -170,14 +172,14 @@ describe("the readable names of the models", () => {
 describe("the screen of the projects", () => {
   it("collapses every project into a row that opens on demand", () => {
     expect(page).toContain('<details className="projects-card"');
-    expect(page).toContain('<summary className="projects-card-summary">');
+    expect(page).toContain('<summary className="projects-card-summary"');
     expect(page).toContain("projects-card-time");
     expect(page).toContain("projects-machine-chip");
   });
 
   it("shows the name, the machine, the counts and the time of the last change in the row", () => {
-    expect(page).toContain("plural(environments, \"среда\", \"среды\", \"сред\")");
-    expect(page).toContain("plural(models, \"модель\", \"модели\", \"моделей\")");
+    expect(page).toContain("plural(counts.environments, \"среда\", \"среды\", \"сред\")");
+    expect(page).toContain("plural(counts.modelRules, \"правило моделей\", \"правила моделей\", \"правил моделей\")");
     expect(page).toContain("<time className=\"projects-card-time\"");
   });
 
@@ -194,8 +196,10 @@ describe("the screen of the projects", () => {
   it("explains the block once and says what the lists of models do", () => {
     const explainer = "Списки моделей — это фильтр проекта.";
     expect(page.split(explainer)).toHaveLength(2);
-    expect(page).toContain("enforceRestrictedModelRequest");
-    expect(page).toContain("integrations/opencode/agent-herder-autopilot.js");
+    // The help of the owner names no file, no function and no error code.
+    expect(page).not.toContain("enforceRestrictedModelRequest");
+    expect(page).not.toContain("integrations/opencode/agent-herder-autopilot.js");
+    expect(page).not.toContain("отказ 409");
     expect(page).toContain("TelegramAuto, video_watching");
   });
 
@@ -223,7 +227,7 @@ describe("the screen of the projects", () => {
   });
 
   it("shows the human name of every model of the lists", () => {
-    expect(page).toContain("humanModelName(model)");
+    expect(page).toContain("humanListEntry(model)");
     expect(page).toContain("projects-model-entry-name");
   });
 });
