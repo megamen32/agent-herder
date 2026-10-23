@@ -250,6 +250,8 @@ async function collectSessionDirectories(root: string, limit: number): Promise<s
     } catch {
       return;
     }
+    // Visit newest dated paths before the finite enumeration budget fills.
+    entries.sort((a,b)=>b.name.localeCompare(a.name));
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
       const full = join(dir, entry.name);

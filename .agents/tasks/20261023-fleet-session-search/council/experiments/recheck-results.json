@@ -1,0 +1,22 @@
+{
+  "git_worktree": {
+    "foreign_tracked_staged_untracked_and_index_unchanged": true,
+    "owned_commit": "5c994b6"
+  },
+  "split_gc_counterexample": {
+    "valid_CAS_then_dangling": true,
+    "schedule": [
+      "GC selects unreferenced B",
+      "activate B at revision 0 succeeds",
+      "GC unlinks B outside shared commit"
+    ]
+  },
+  "corrected_model": {
+    "tombstoned_candidate_rejected": true,
+    "ABA_stale_revision_rejected": true
+  },
+  "config_counterexample": {
+    "independent_precheck_does_not_protect_activation": true
+  },
+  "elapsed_ms": 150.98
+}

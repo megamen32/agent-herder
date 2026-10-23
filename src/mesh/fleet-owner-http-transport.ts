@@ -1,3 +1,4 @@
+import {meshDiscoveryTimeoutMs} from "./discovery-timeout.js";
 import {assertRemoteCodexAdmission} from "../codex-quota-guard.js";
 import {request as httpsRequest,type RequestOptions} from 'node:https';
 import type {ClientRequest,IncomingMessage,IncomingHttpHeaders} from 'node:http';
@@ -147,17 +148,17 @@ export class FleetOwnerHttpTransport implements GptAdminTransport {
  }
  schema(target:string):Promise<unknown>{return this.operation(target,10000,async(state,signal)=>{await this.connect(state,signal);await this.info(state,signal);return this.rpc(state,signal,'tools/list',{});});}
  call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
-  if(!['model_quotas','fleet_node_info','mesh_snapshot','create_session','fleet_session_page'].includes(tool))return Promise.reject(new Error('owner_http_tool_not_authorized'));
+  if(!['model_quotas','fleet_node_info','mesh_snapshot','create_session','fleet_session_page','session_search_local'].includes(tool))return Promise.reject(new Error('owner_http_tool_not_authorized'));
   if(tool==='create_session'&&(!idempotencyKey||!/^[a-f0-9]{64}$/.test(idempotencyKey)))return Promise.reject(new Error('owner_http_create_identity_missing'));
   // Flat native tool args are frozen as a serialized snapshot before any handshake.
   let captured:Record<string,unknown>;
   try{const text=JSON.stringify(args);if(Buffer.byteLength(text)>12000||!record(args))throw new Error();captured=JSON.parse(text);}catch{return Promise.reject(new Error('owner_http_arguments_invalid'));}
-  return this.operation(target,tool==='create_session'?30000:10000,async(state,signal)=>{
+  return this.operation(target,tool==='create_session'?30000:tool==='mesh_snapshot'?meshDiscoveryTimeoutMs()+5000:10000,async(state,signal)=>{
    await this.connect(state,signal);if(tool==='fleet_node_info')return this.info(state,signal);
    if(tool==='create_session'||tool==='fleet_session_page')await this.info(state,signal);
    await assertRemoteCodexAdmission(tool,captured,()=>this.rpc(state,signal,'tools/call',{name:'model_quotas',arguments:{}}));
    const result=await this.rpc(state,signal,'tools/call',{name:tool==='create_session'?'fleet_create_session':tool,arguments:tool==='create_session'?{...captured,inputId:idempotencyKey}:captured});
-   if(['mesh_snapshot','fleet_session_page'].includes(tool)&&unwrapResult(result).hostId!==state.peer.hostId)throw new Error('owner_http_native_identity_mismatch');return result;
+   if(['mesh_snapshot','fleet_session_page','session_search_local'].includes(tool)&&unwrapResult(result).hostId!==state.peer.hostId)throw new Error('owner_http_native_identity_mismatch');return result;
   });
  }
  readSessionPage(target:string,cursor?:string,limit=100):Promise<unknown>{return this.call(target,'fleet_session_page',{limit,...(cursor?{cursor}:{})});}

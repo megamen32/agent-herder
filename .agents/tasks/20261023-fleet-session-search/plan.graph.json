@@ -1,0 +1,174 @@
+{
+  "schema_version": 2,
+  "title": "Быстрый поиск сессий на всех компьютерах",
+  "goal": "через Herder работать именно с Mavis на Mac M1 и быстро находить сохранённые сессии по названию и словам на пяти компьютерах через API и MCP.",
+  "business_result": "БР1 — найти Mavis на Mac M1, прочитать сессию, передать реальное поручение владельца и прочитать ответ; БР2 — быстрый индексный поиск названий и текста на всех пяти компьютерах с сохранением настроек и исходных сессий. Дополнительное поручение — проверенное советом решение о безопасной параллельной работе, переданное LHC; production guard в этот объём не входит.",
+  "current_progress": "БР1: реальные поручения M1 доставлены, ответы прочитаны через общий Herder. БР2: пять owner доступны, FTS5 API/MCP приняты двумя независимыми проверяющими, native gaps явно PARTIAL; фоновое обновление продолжается. Совет завершён как исследовательское решение, production guard не внедрён.",
+  "external_waits": "",
+  "slots": 3,
+  "updated_at": "2026-10-23T20:49:12",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "L2 Проверить хранение, настройки и ограничения исходных сессий; исполнитель session_search_design",
+      "status": "done",
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 15.0
+      },
+      "role": "Worker",
+      "affected_files": [],
+      "read_paths": [
+        "src"
+      ],
+      "write_paths": [],
+      "paths": []
+    },
+    {
+      "id": "L02",
+      "label": "L4 Прочитать полные сохранённые сессии через отдельные исходные форматы; исполнитель repair_mavis_access",
+      "status": "done",
+      "depends_on": [],
+      "role": "Worker",
+      "affected_files": [
+        "src/session-search-sources.ts",
+        "tests/session-search-sources.test.ts"
+      ],
+      "note": "расширена проверка таймаутов и обхода новых сессий; серверные discovery и exact history исправлены, но исходная цель — Mavis на Mac M1; приёмка правильного компьютера ещё выполняется",
+      "estimate_unknown_reason": "Точная длительность не измерена; заполнение и дефекты установленной среды проверяются",
+      "read_paths": [
+        "src"
+      ],
+      "write_paths": [
+        "src/session-search-sources.ts",
+        "tests/session-search-sources.test.ts"
+      ],
+      "paths": [
+        "src/session-search-sources.ts",
+        "tests/session-search-sources.test.ts"
+      ]
+    },
+    {
+      "id": "L03",
+      "label": "L7 Передать уточнение владельца в рабочую MiniMax LHC-сессию через Herder и прочитать ответ; исполнитель verify_mavis_fix",
+      "status": "done",
+      "depends_on": [],
+      "role": "Worker",
+      "affected_files": [],
+      "estimate_unknown_reason": "Точная длительность не измерена; заполнение и дефекты установленной среды проверяются",
+      "read_paths": [
+        "src"
+      ],
+      "write_paths": [],
+      "paths": []
+    },
+    {
+      "id": "L04",
+      "label": "L1 Найти именно Mavis на Mac M1 через общий Herder и обеспечить адресное чтение и доставку",
+      "status": "done",
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "acceptance": "точный Mac M1, сохранённое поручение владельца один раз и прочитанный ответ; общий маршрут не возвращает ложный пустой результат для существующей удалённой сессии.",
+      "description": "точный Mac M1 проверен. Реальные поручения о нескольких результатах и сохранности чужого WIP доставлены один раз, ответы прочитаны. Второе поручение прошло через общий вход Herder на сервере 100, подтвердив исправленный удалённый маршрут.",
+      "role": "Worker",
+      "affected_files": [],
+      "note": "реальная доставка через M1 owner уже подтверждена; общий remote list/send на сервере 100 имеет отдельный подтверждённый дефект маршрутизации",
+      "estimate_unknown_reason": "Длительность реализации или первичного заполнения не измерена",
+      "read_paths": [
+        "src"
+      ],
+      "write_paths": [],
+      "paths": []
+    },
+    {
+      "id": "L05",
+      "label": "L3 Реализовать SQLite FTS5 и неблокирующий поиск через API и MCP; исполнитель session_search_design",
+      "status": "done",
+      "depends_on": [],
+      "description": "опубликованы FTS5, отдельный worker_thread для сканирования, read-only путь запроса и FTS-first план фильтрованного поиска. Независимая API/MCP проверка на сервере 100: 429/454 мс, одинаковые ID; запросы отвечают во время наполнения.",
+      "role": "Worker",
+      "affected_files": [
+        "src/session-search.ts",
+        "src/session-search-indexer.ts",
+        "src/session-search-worker.ts",
+        "src/session-search-fleet.ts",
+        "src/mcp/session-search-tools.ts"
+      ],
+      "estimate_unknown_reason": "Точная длительность не измерена; заполнение и дефекты установленной среды проверяются",
+      "read_paths": [
+        "src"
+      ],
+      "write_paths": [
+        "src/session-search.ts",
+        "src/session-search-indexer.ts",
+        "src/session-search-worker.ts",
+        "src/session-search-fleet.ts",
+        "src/mcp/session-search-tools.ts"
+      ],
+      "paths": [
+        "src/session-search.ts",
+        "src/session-search-indexer.ts",
+        "src/session-search-worker.ts",
+        "src/session-search-fleet.ts",
+        "src/mcp/session-search-tools.ts"
+      ]
+    },
+    {
+      "id": "L06",
+      "label": "L8 Проверить советом решение безопасной параллельной работы и передать правило LHC; исполнитель Lead и независимые модели",
+      "status": "done",
+      "depends_on": [],
+      "description": "независимые Sol и MiniMax, синтез Astra и свежая проверка Sol завершены. Контрпримеры отражены в council/final-decision.md; правило WIP передано LHC и подтверждено ответом. Это исследовательское решение с границами внедрения, не реализованная production гарантия. Дополнительная краткая передача итогов совета проверяется отдельно без повтора прежних сообщений.",
+      "role": "Lead и независимые модели",
+      "affected_files": [
+        ".agents/tasks/20261023-fleet-session-search/council/final-decision.md"
+      ],
+      "estimate_unknown_reason": "Точная длительность не измерена; заполнение и дефекты установленной среды проверяются",
+      "read_paths": [
+        ".agents/tasks/20261023-fleet-session-search/council"
+      ],
+      "write_paths": [
+        ".agents/tasks/20261023-fleet-session-search/council"
+      ],
+      "paths": [
+        ".agents/tasks/20261023-fleet-session-search/council"
+      ]
+    },
+    {
+      "id": "L07",
+      "label": "L5 Установить интеграцию, заполнить индекс и проверить сохранность настроек на пяти компьютерах",
+      "status": "done",
+      "depends_on": [],
+      "description": "все пять owner сейчас отвечают. 100/44/88/M1 используют eee96f3, Mini — 2209b4c с исправленной полной ESM-зависимостью. M1: точный фильтрованный поиск 1014 мс и health-read 68 мс одновременно с наполнением; Mini: поиск 1075 мс, индекс 44 сессии/403 фрагмента. Исторический таймаут наблюдателя M1 восстановлен штатным менеджером; независимое окно стабильности 90 секунд и три проверки завершены без нового отказа. Конфигурация сохранена; quick_check и FTS integrity-check прошли на всех пяти узлах. Отсутствующие исходные файлы обозначаются PARTIAL.",
+      "role": "Worker",
+      "acceptance": "названия и сохранённые слова, точные host/harness/native ID, независимое чтение источника, измеренное время во время наполнения и после него; отсутствие исходного текста обозначается PARTIAL, а не отсутствием совпадений.",
+      "affected_files": [],
+      "estimate_unknown_reason": "Точная длительность не измерена; заполнение и дефекты установленной среды проверяются",
+      "read_paths": [
+        "src"
+      ],
+      "write_paths": [],
+      "paths": []
+    },
+    {
+      "id": "L08",
+      "label": "L6 Провести две независимые приёмки MCP и API на нескольких компьютерах",
+      "status": "done",
+      "depends_on": [],
+      "acceptance": "названия и сохранённые слова, точные host/harness/native ID, независимое чтение источника, измеренное время во время наполнения и после него; отсутствие исходного текста обозначается PARTIAL, а не отсутствием совпадений. Сервер 100 принят независимым потребителем; оба независимых проверяющих подтвердили фактические API/MCP результаты всех пяти узлов; частичные источники остаются явно обозначенными.",
+      "role": "Worker",
+      "affected_files": [],
+      "estimate_unknown_reason": "Точная длительность не измерена; заполнение и дефекты установленной среды проверяются",
+      "read_paths": [
+        "src"
+      ],
+      "write_paths": [],
+      "paths": []
+    }
+  ],
+  "leaf_count": 8
+}

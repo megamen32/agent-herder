@@ -88,6 +88,7 @@ import { getS21Ownership } from "../s21-resource-ownership.js";
 import { getHumanStopStore } from "../human-stop-store.js";
 import { deferredMessages, renderDeferredMessages } from "../deferred-messages.js";
 import { agentHerderRag } from "../rag-search.js";
+import {startSessionSearchBackground} from '../session-search-worker.js';
 import { handleIntegratorSessionTranscript } from "../integrator-session-route.js";
 
 /** How many skipped sessions of one recovery are named in the operator's log. */
@@ -862,6 +863,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const userMessageDelivery = dependencies.jobs ? new UserMessageDelivery(dependencies.adapters, supervisor, dependencies.jobs) : undefined;
   const sessionImages = dependencies.sessionImageStore ?? new SessionImageStore(join(homedir(), ".local/state/agent-herder/session-images"));
   const rag = agentHerderRag();
+  const searchIndexer=process.env.VITEST?Promise.resolve(undefined):startSessionSearchBackground().catch(()=>undefined);
   // The health plan of a launch, remembered between the launch call and the
   // arming call of the same session: the center states the selected plan in
   // the launch message, while the arming call carries only the incident id.
@@ -1057,6 +1059,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
     }
   });
   server.once("close", () => {
+    void searchIndexer.then(owner=>owner?.close());
     userMessageDelivery?.close();
     stopSessionObservation?.();
     // The detached observers publish into the incident cards: they must stop

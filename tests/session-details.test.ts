@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -52,6 +52,14 @@ function adapterWithoutLiveHistory(): HarnessAdapter {
 }
 
 describe("SessionSupervisor details", () => {
+  it("reads exact MiniMax quick history without enumerating every session",async()=>{
+    const native={...session,id:"mvs_exact",harness:"minimax-code" as const};
+    const list=vi.fn(async()=>{throw new Error("whole-store hydration must not run");});
+    const a={...adapter(),type:"minimax-code" as const,listSessions:list,getSession:async()=>native};
+    const supervisor=new SessionSupervisor(new Map([["minimax-code",a]]),{async convert(){return {success:true};},async read(){return null;}},new LineageStore("/tmp/agent-herder-test-lineage-do-not-create.json"));
+    const details=await supervisor.getSessionDetails("minimax-code",native.id,{quick:true,limit:3,history:"acp"});
+    expect(details.session.id).toBe(native.id);expect(details.messages).toHaveLength(3);expect(list).not.toHaveBeenCalled();
+  });
   it("returns structured live messages and marks an unregistered external session honestly", async () => {
     const supervisor = new SessionSupervisor(
       new Map([["claude-acp", adapter()]]),

@@ -1,3 +1,4 @@
+import {meshDiscoveryTimeoutMs} from "../src/mesh/discovery-timeout.js";
 import {describe,expect,it,vi} from "vitest";
 import {LocalHarnessMesh} from "../src/mesh/local.js";
 import {mkdtemp,rm} from "node:fs/promises";
@@ -9,6 +10,16 @@ import {coordinationNotes} from "../src/coordination-notes.js";
 import {randomUUID} from "node:crypto";
 const base={id:"n",harness:"codex",status:"running",cwd:"/launch",title:"t",lastActivity:new Date().toISOString(),needsPermission:false,meta:{activeCwd:"/actual",launchCwd:"/launch",projectSource:"native"}};
 describe("local mesh capabilities (focused integration; expected 5s, maximum 30s)",()=>{
+ it("validates the configurable discovery timeout inside the fleet deadline",()=>{
+  const diagnostic=vi.spyOn(console,"error").mockImplementation(()=>{});
+  try{
+   expect(meshDiscoveryTimeoutMs("")).toBe(30000);
+   expect(meshDiscoveryTimeoutMs("100")).toBe(100);
+   expect(meshDiscoveryTimeoutMs("300000")).toBe(300000);
+   for(const value of ["0","300001","Infinity","oops","1.5"]){expect(meshDiscoveryTimeoutMs(value)).toBe(30000);}
+   expect(diagnostic).toHaveBeenCalledTimes(5);
+  }finally{diagnostic.mockRestore();}
+ });
  it("keeps the native100 address while projecting a declared workspace on88",async()=>{
   const dir=await mkdtemp(join(tmpdir(),"herder-remote-mesh-"));try{
    const store=new CoordinationNoteStore(join(dir,"notes.json"));await store.declareWorkspace({sessionId:"n",harness:"codex",hostId:"host88",cwd:"/remote/project"});
@@ -31,6 +42,26 @@ describe("local mesh capabilities (focused integration; expected 5s, maximum 30s
   expect(r.sessions[0]?.project.currentCwd).toBe("/actual");
   expect(r.harnesses).toContainEqual(expect.objectContaining({harness:"minimax-code",delivery:"unsupported",reason:"adapter_not_registered"}));
   expect(JSON.stringify(r)).not.toContain("repairPlan");
+ });
+ it("discovers late MiniMax within the shared deadline when earlier providers hang",async()=>{
+  vi.useFakeTimers();
+  try{
+   const hung={listSessions:vi.fn(()=>new Promise<any[]>(()=>{}))};
+   const minimax={listSessions:vi.fn(async()=>[{...base,id:"mvs_live",harness:"minimax-code"}])};
+   const adapters=new Map([["codex",hung],["claude",hung],["opencode",hung],["minimax-code",minimax]]) as any;
+   const m=new LocalHarnessMesh({hostId:"h",adapters,readDeadlineMs:100,projectStore:{activeWorkspaceForSession:()=>undefined} as any});
+   const pending=m.snapshot();await vi.advanceTimersByTimeAsync(100);
+   const result=await pending;
+   expect(result.harnesses).toContainEqual({harness:"minimax-code",discovery:"available",delivery:"available"});
+   expect(result.sessions).toContainEqual(expect.objectContaining({address:{hostId:"h",harness:"minimax-code",nativeSessionId:"mvs_live"}}));
+   expect(result.complete).toBe(false);
+   expect(result.harnesses).toContainEqual(expect.objectContaining({harness:"codex",reason:"native_discovery_deadline"}));
+  }finally{vi.useRealTimers();}
+ });
+ it("distinguishes an adapter failure from an exhausted discovery deadline",async()=>{
+  const adapter={listSessions:async()=>{throw new Error("native backend refused");}};
+  const result=await new LocalHarnessMesh({adapters:new Map([["minimax-code",adapter]]) as any}).snapshot();
+  expect(result.harnesses).toContainEqual(expect.objectContaining({harness:"minimax-code",reason:"native_discovery_failed"}));
  });
  it("bounds a hung native read and discards late rows without changing later snapshots",async()=>{
   let resolve!:(r:any[])=>void;const adapter={type:"codex",listSessions:vi.fn(()=>new Promise<any[]>(r=>resolve=r)),isReady:()=>true};

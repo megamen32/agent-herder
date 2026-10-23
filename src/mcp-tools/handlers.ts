@@ -1,3 +1,4 @@
+import {meshDiscoveryTimeoutMs} from "../mesh/discovery-timeout.js";
 import { HarnessAdapter, AgentSession } from "../types/index.js";
 import { z } from "zod";
 import {
@@ -245,13 +246,14 @@ export async function listAgentsResult(
 
   const unavailable: Array<{harness: string; error: string}> = [];
   let discoveryLimited = false;
+  const discoveryTimeoutMs=meshDiscoveryTimeoutMs();
   await Promise.all(targets.map(async adapter => {
     if (adapter.lazyStart && !adapter.lazyDiscovery && adapter.isReady && !adapter.isReady()) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const sessions = await Promise.race([
         adapter.listSessions({limit:parsed.limit,...(adapter.type === "opencode" && parsed.folder ? {cwd:expandPath(parsed.folder)} : {})}),
-        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Discovery exceeded 3 seconds")), 3000); }),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`Discovery exceeded ${discoveryTimeoutMs} ms`)), discoveryTimeoutMs); }),
       ]);
       discovered.push(...sessions);
       const receipt = adapter.getSessionSnapshotReceipt?.();
@@ -534,7 +536,9 @@ async function sendMessageOnce(
   if (await automaticDeliveryHeld(found.session, parsed.humanRequested, found.adapter)) return HUMAN_STOP_MESSAGE;
   if (!parsed.humanRequested && !isCoordinationActive(found.session)) return skippedCoordination(found.session);
 
-  const provenanceHeader = parsed.meshSender
+  const provenanceHeader = parsed.humanRequested
+    ? "Поручение пользователя, переданное агентом" + (parsed.fromSessionId ? `\n${await buildMessageProvenanceHeader(adapters, parsed, found.session)}` : "")
+    : parsed.meshSender
     ? `🤖 ${parsed.meshSender.harness}@${parsed.meshSender.hostId} ${parsed.meshSender.nativeSessionId}`
     : await buildMessageProvenanceHeader(adapters, parsed, found.session);
   const deliveredBody = parsed.humanRequested ? parsed.message : await compactAutomaticMessage(parsed.message);

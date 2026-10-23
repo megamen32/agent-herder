@@ -1,3 +1,4 @@
+import {meshDiscoveryTimeoutMs} from "./discovery-timeout.js";
 import {assertRemoteCodexAdmission} from "../codex-quota-guard.js";
 import {spawn} from 'node:child_process';
 import {hostname,userInfo} from 'node:os';
@@ -143,7 +144,7 @@ export class FleetDirectTransport implements GptAdminTransport {
  readSessionPage(target:string,cursor?:string,limit=100):Promise<unknown>{return this.call(target,'fleet_session_page',{limit,...(cursor?{cursor}:{})});}
  schema(target:string):Promise<unknown>{return this.rpc(this.peer(target),'tools/list',{},this.deadlineMs);}
  async call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
-  if(!['model_quotas','fleet_node_info','mesh_snapshot','create_session','fleet_session_page','mesh_deliver','mesh_stop','workspace_probe','workspace_reserve','workspace_owners','automation_disarm','common_settings_read','common_settings_status','common_settings_notice','common_settings_opt_in','common_settings_restore'].includes(tool))throw new Error('direct_tool_not_authorized');
+  if(!['model_quotas','fleet_node_info','mesh_snapshot','create_session','fleet_session_page','session_search_local','list_agents','send_message','mesh_deliver','mesh_stop','workspace_probe','workspace_reserve','workspace_owners','automation_disarm','common_settings_read','common_settings_status','common_settings_notice','common_settings_opt_in','common_settings_restore'].includes(tool))throw new Error('direct_tool_not_authorized');
   if(tool==='mesh_deliver' && (args.sender as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
   if(tool==='workspace_reserve' && (args.owner as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
   if(tool==='mesh_stop' && (args.target as any)?.hostId!==this.peer(target).hostId)throw new Error('direct_stop_host_mismatch');
@@ -152,6 +153,6 @@ export class FleetDirectTransport implements GptAdminTransport {
    if(!idempotencyKey||!/^[a-f0-9]{64}$/.test(idempotencyKey))throw new Error('direct_create_identity_missing');
    return this.rpc(this.peer(target),'tools/call',{name:'fleet_create_session',arguments:{...args,inputId:idempotencyKey}},30000);
   }
-  return this.rpc(this.peer(target),'tools/call',{name:tool,arguments:args},this.deadlineMs);
+  return this.rpc(this.peer(target),'tools/call',{name:tool,arguments:args},tool==='mesh_snapshot'?Math.max(this.deadlineMs,meshDiscoveryTimeoutMs()+5000):this.deadlineMs);
  }
 }
