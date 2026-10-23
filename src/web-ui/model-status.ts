@@ -29,14 +29,123 @@ export function hasRestrictedProviderToken(modelId: string): boolean {
 }
 
 /**
- * The panel does not judge money.
+ * The closed projects of the rule of the owner.
  *
- * A subscription, a free pool and a metered route look the same to the
- * environment. The panel knows three things and only three: does the
- * environment confirm this id, is the provider closed by the rule of the
- * owner, and do the lists of the project allow it. The name of the plan is
- * part of the id itself, and the owner reads it there.
+ * The guard of the OpenCode integration is the source of truth
+ * (`integrations/opencode/agent-herder-autopilot.js`, `restrictedProjectRoots`),
+ * and the launcher repeats the list for the recovery of the operator cohort
+ * (`src/autopilot/unfinished-session-launcher.ts`). The list is repeated here
+ * only so the panel and the server name the same projects; the rule of the
+ * guard itself is never touched by either of them.
  */
+export const RESTRICTED_PROJECT_ROOTS: readonly string[] = [
+  "/home/roomhacker/PycharmProjects/TelegramAuto",
+  "/home/roomhacker/PycharmProjects/video_watching",
+];
+
+/**
+ * The path as the launcher sees it: no `.`, no `..`, no empty segment.
+ *
+ * The browser has no `node:path`, so the normalization of the launcher is
+ * repeated here. `tests/leaf-verdict-panel.test.ts` runs the normalization of
+ * the launcher against this one, so the two cannot drift apart unnoticed.
+ */
+function normalizeProjectPath(value: string): string {
+  const absolute = value.startsWith("/");
+  const segments: string[] = [];
+  for (const segment of value.split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      const last = segments[segments.length - 1];
+      if (segments.length > 0 && last !== "..") segments.pop();
+      else if (!absolute) segments.push("..");
+      continue;
+    }
+    segments.push(segment);
+  }
+  const joined = segments.join("/");
+  if (absolute) return joined ? `/${joined}` : "/";
+  return joined || ".";
+}
+
+/** True when the path is one of the closed projects of the rule of the owner. */
+export function isRestrictedProjectPath(project: string): boolean {
+  // The comparison of the launcher (`src/autopilot/unfinished-session-launcher.ts`,
+  // `isCodexClaudeRestrictedCohortProject`): the path of the platform, the
+  // slashes of the path, no trailing slash, and the case does not matter. The
+  // panel and the guard must name the same projects, or the panel promises a
+  // launch the guard revokes.
+  const target = normalizeProjectPath(project).replace(/\\/gu, "/").replace(/\/+$/u, "").toLocaleLowerCase("en-US");
+  return RESTRICTED_PROJECT_ROOTS.some((root) => {
+    const canonicalRoot = normalizeProjectPath(root).replace(/\\/gu, "/").replace(/\/+$/u, "").toLocaleLowerCase("en-US");
+    return target === canonicalRoot || target.startsWith(`${canonicalRoot}/`);
+  });
+}
+
+/**
+ * The verdict of the server about one route of a model.
+ *
+ * The panel cannot tell whether a launch will be revoked: the rule of the owner
+ * is about the provider behind the route, and only the node that holds the
+ * proof of the route knows it. The server therefore answers with one of three
+ * words, and the panel turns the word into the sentence the owner reads.
+ */
+export type LeafVerdict = "allowed" | "denied" | "unknown";
+
+/** Why the server answered so. The codes are opaque: the panel names them. */
+export type LeafVerdictReason =
+  | "verified"
+  | "closed-provider"
+  | "not-allowed"
+  | "unverified"
+  | "resolver-unavailable"
+  | "rule-not-applicable";
+
+/** The answer of the server about one model id. */
+export type LeafVerdictEntry = { verdict: LeafVerdict; reason: LeafVerdictReason };
+
+/** The answers of the server about one project, keyed by the model id. */
+export type LeafVerdictMap = Record<string, Record<string, LeafVerdictEntry>>;
+
+/**
+ * The model the server confirmed for the route.
+ *
+ * The panel never picks the route by its name: it asks the server about every
+ * candidate and writes the one the server called `allowed`. A candidate the
+ * server did not answer about is never written.
+ */
+export function approvedModelId(
+  candidates: readonly string[],
+  verdicts: Record<string, LeafVerdictEntry> | undefined,
+): string {
+  if (!verdicts) return "";
+  for (const candidate of candidates) {
+    if (verdicts[candidate]?.verdict === "allowed") return candidate;
+  }
+  return "";
+}
+
+/**
+ * The models the panel asks the server about.
+ *
+ * The current route of the harness comes first, then the route of the product,
+ * then the common model of the harness, then the catalog of the environment.
+ * The list is bounded: the server resolves every id of it against the gateway
+ * of the route, and a long catalog would cost more than it is worth.
+ */
+export function modelCandidates(
+  harness: string,
+  options: { policyModels?: Record<string, string>; confirmed?: string[]; current?: string; limit?: number } = {},
+): string[] {
+  const profile = DEFAULT_PROFILES.find((item) => item.harness === harness)?.model;
+  const global = options.policyModels?.[harness];
+  const ordered = [options.current, profile, global, ...(options.confirmed ?? [])];
+  const unique = [...new Set(ordered
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value)))];
+  return unique.slice(0, options.limit ?? 16);
+}
+
 
 /**
  * The id the environment runs for a harness when the project names none.
@@ -68,7 +177,9 @@ export type ModelVerdictKind =
   | "missing"
   | "closed"
   | "denied"
-  | "notAllowed";
+  | "notAllowed"
+  | "unverified"
+  | "refused";
 
 /** How the status is shown: a word and a colour, never a colour alone. */
 export type ModelVerdictTone = "ok" | "warn" | "error" | "unknown";
@@ -98,6 +209,8 @@ export const MODEL_VERDICT_LABELS: Readonly<Record<ModelVerdictKind, string>> = 
   closed: "Закрыт правилом владельца",
   denied: "Запрещена в списке проекта",
   notAllowed: "Нет в списке разрешённых проекта",
+  unverified: "Маршрут не верифицирован — запуск будет отозван",
+  refused: "Отказ: маршрут закрыт правилом владельца",
 };
 
 /**
@@ -118,15 +231,18 @@ export const MODEL_STATUS_WORDS = {
   works: "Работает",
   unconfirmed: "Не подтверждена",
   closed: "Закрыта правилом",
+  unverified: "Не проверено",
 } as const;
 
 /**
  * The verdict of one model of one project.
  *
  * The order of the checks is the order of the rules that decide a launch: the
- * rule of the owner comes first, then the lists of the project, and the
- * environment last. A closed provider is a block even when the environment
- * knows the model.
+ * rule of the owner comes first, then the lists of the project, the
+ * environment, and the verdict of the server about the route last. The verdict
+ * of the server is the only answer about the provider behind the route: a
+ * closed provider is a block even when the environment knows the model, and a
+ * route the server could not verify is never a promise.
  */
 export function modelVerdict(input: {
   harness: string;
@@ -136,6 +252,8 @@ export function modelVerdict(input: {
   deniedModels?: string[];
   restricted?: boolean;
   workingModel?: string;
+  /** The verdict of the server about the route behind the model. */
+  leafVerdict?: LeafVerdictEntry;
 }): ModelVerdict {
   const model = input.model.trim();
   const confirmed = input.confirmed ?? [];
@@ -147,6 +265,11 @@ export function modelVerdict(input: {
   const put = working
     ? `Нажмите «Поставить рабочую модель» — запишется ${working}.`
     : BLOCKED_MODEL_ACTION;
+  // The route of a closed project is decided by the server: the panel names the
+  // route the server confirmed, and says so when it confirmed none.
+  const putServer = working
+    ? `Нажмите «Поставить рабочую модель» — запишется ${working}, её подтвердил сервер.`
+    : "Сервер не подтвердил ни один маршрут для этого проекта: поставьте модель, которую среда подтверждает, и проверьте маршрут ещё раз.";
 
   if (!model) {
     return {
@@ -212,6 +335,47 @@ export function modelVerdict(input: {
       worksInstead: working || undefined,
     };
   }
+  // The route of a closed project is decided by the server, not by the name of
+  // the model: the provider behind the route is what the rule of the owner
+  // closes, and only the node that holds the proof of the route knows it.
+  const leaf = input.leafVerdict;
+  if (restricted && leaf) {
+    if (leaf.verdict === "unknown") {
+      return {
+        kind: "unverified",
+        label: MODEL_VERDICT_LABELS.unverified,
+        detail: "Сервер не смог подтвердить маршрут: провайдер за ним неизвестен, и защита среды отзовёт запуск.",
+        reason: "маршрут не верифицирован — запуск будет отозван",
+        action: putServer,
+        tone: "error",
+        worksInstead: working || undefined,
+      };
+    }
+    if (leaf.verdict === "denied") {
+      const closed = leaf.reason === "closed-provider";
+      return {
+        kind: "refused",
+        label: MODEL_VERDICT_LABELS.refused,
+        detail: closed
+          ? "Сервер подтвердил: за маршрутом стоит провайдер, закрытый правилом владельца. Запуск будет отозван."
+          : "Сервер подтвердил: провайдер этого маршрута не входит в список разрешённых для закрытого проекта.",
+        reason: closed
+          ? "за маршрутом провайдер, закрытый правилом владельца"
+          : "провайдер маршрута не входит в список разрешённых для закрытого проекта",
+        action: putServer,
+        tone: "error",
+        worksInstead: working || undefined,
+      };
+    }
+    return {
+      kind: "works",
+      label: MODEL_VERDICT_LABELS.works,
+      detail: "Сервер подтвердил маршрут: провайдер за ним разрешён, и запуск не будет отозван.",
+      reason: "",
+      action: "",
+      tone: "ok",
+    };
+  }
   return {
     kind: "works",
     label: MODEL_VERDICT_LABELS.works,
@@ -220,6 +384,25 @@ export function modelVerdict(input: {
     action: "",
     tone: "ok",
   };
+}
+
+/**
+ * The status the panel shows for the route of one model.
+ *
+ * A closed project is decided by the server: while the server has not answered
+ * about the route, the panel says that the route is being checked and never
+ * that it works. The name of the model and the catalog of the environment are
+ * not enough to promise a launch.
+ */
+export function routeStatusLabel(input: {
+  restricted: boolean;
+  leaf?: LeafVerdictEntry;
+  verdict: ModelVerdict;
+}): { label: string; tone: ModelVerdictTone } {
+  if (input.restricted && !input.leaf && input.verdict.kind !== "missing") {
+    return { label: "проверяем маршрут…", tone: "unknown" };
+  }
+  return { label: input.verdict.label, tone: input.verdict.tone };
 }
 
 /**

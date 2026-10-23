@@ -1,6 +1,7 @@
 import type { BackgroundAutopilotStop } from "../autopilot/background-stop.js";
 import type { AutopilotRunnerInput } from "../autopilot-runner.js";
 import { projectSessionInventory } from "./session-inventory.js";
+import { isRestrictedProjectPath } from "../web-ui/model-status.js";
 import { SessionImageStore } from "../session-images.js";
 import { homedir, hostname, userInfo } from "node:os";
 import { UserMessageDelivery, type UserMessageRoute } from "../user-message-delivery.js";
@@ -1164,6 +1165,110 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
+/**
+ * The rule of the owner for one leaf of a route.
+ *
+ * This is the rule of the launcher (`src/autopilot/unfinished-session-launcher.ts`,
+ * `isAllowedRestrictedProviderLeaf`), kept here so the server answers the panel
+ * with the same answer the launcher gives. The rule of the guard itself is
+ * never touched: `tests/leaf-verdict-panel.test.ts` runs the rule of the
+ * launcher against this one, so the two cannot drift apart unnoticed.
+ */
+export function isAllowedRestrictedProviderLeaf(leaf: { providerId: string; modelId: string }): boolean {
+  const providerId = leaf.providerId.trim().toLocaleLowerCase("en-US");
+  const modelId = leaf.modelId.trim().toLocaleLowerCase("en-US");
+  if (!providerId || !modelId || /codex|claude/u.test(`${providerId}/${modelId}`)) return false;
+  const allowedMiniMax = new Set(["minimax", "minimax-code", "minimax-coding-plan"]);
+  const allowedGlm = new Set(["glm", "zai", "zai-coding-plan", "zhipu"]);
+  const isMiniMax = allowedMiniMax.has(providerId) && /minimax|mmcode/u.test(modelId);
+  const isGlm = allowedGlm.has(providerId) && /(^|[/_-])glm([-_/]|$)/u.test(modelId);
+  return isMiniMax || isGlm;
+}
+
+/**
+ * The verdict of the server about one route of a model.
+ *
+ * `allowed` means the route is proven and the rule of the owner lets it,
+ * `denied` means the route is proven and the rule refuses it, and `unknown`
+ * means the route could not be proven — then the guard of the medium revokes
+ * the launch, so an unknown route is never a promise.
+ */
+export type ModelLaunchVerdict = "allowed" | "denied" | "unknown";
+
+/** The answer of the server about one model id, with the reason of it. */
+export type ModelLaunchVerdictEntry = { verdict: ModelLaunchVerdict; reason: string };
+
+/** How long one route may take to be proven before the answer is unknown. */
+const MODEL_LAUNCH_VERDICT_TIMEOUT_MS = 8_000;
+
+/** The promise, but only while it is quick enough for the panel. */
+async function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([promise, deadline]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * The verdict of the server about every route the panel asks about.
+ *
+ * The raw leaves never leave the node: the proof of a route stays loopback-only,
+ * and the panel receives the word of the verdict and nothing else. A failure of
+ * the resolver is an `unknown`, never an `allowed`.
+ */
+export async function computeModelLaunchVerdicts(input: {
+  harness: string;
+  cwd: string;
+  modelIds: string[];
+  adapters: Map<string, HarnessAdapter>;
+}): Promise<Record<string, ModelLaunchVerdictEntry>> {
+  const restricted = input.harness === "opencode" && isRestrictedProjectPath(input.cwd);
+  if (!restricted) {
+    // The rule of the owner closes the route of a closed project only, so
+    // everywhere else there is nothing for the server to refuse.
+    return Object.fromEntries(input.modelIds.map((modelId) => [modelId, { verdict: "allowed", reason: "rule-not-applicable" }]));
+  }
+  const adapter = input.adapters.get("opencode") as (HarnessAdapter & {
+    resolveModelProviderLeaves?: (modelId: string) => Promise<{
+      nativeHarness: string;
+      nativeModelId: string;
+      resolvedProviderLeaves: Array<{ providerId: string; modelId: string }>;
+    } | null>;
+  }) | undefined;
+  if (!adapter?.resolveModelProviderLeaves) {
+    return Object.fromEntries(input.modelIds.map((modelId) => [modelId, { verdict: "unknown", reason: "resolver-unavailable" }]));
+  }
+  const entries = await Promise.all(input.modelIds.map(async (modelId): Promise<[string, ModelLaunchVerdictEntry]> => {
+    try {
+      const resolved = await withDeadline(adapter.resolveModelProviderLeaves!(modelId), MODEL_LAUNCH_VERDICT_TIMEOUT_MS);
+      const leaves = resolved?.resolvedProviderLeaves;
+      if (!resolved || resolved.nativeHarness !== "opencode" || resolved.nativeModelId !== modelId
+        || !Array.isArray(leaves) || leaves.length === 0
+        || leaves.some((leaf) => !leaf || typeof leaf.providerId !== "string" || typeof leaf.modelId !== "string")) {
+        return [modelId, { verdict: "unknown", reason: "unverified" }];
+      }
+      if (leaves.every((leaf) => isAllowedRestrictedProviderLeaf(leaf))) {
+        return [modelId, { verdict: "allowed", reason: "verified" }];
+      }
+      // The reason, not the rule: the rule of the launcher cuts codex and
+      // claude, and this wider token only names the reason the panel reads.
+      // Both ends of the answer are the same — a leaf with such a provider is
+      // denied either way.
+      const closed = leaves.some((leaf) => /codex|claude|anthropic/iu.test(`${leaf.providerId}/${leaf.modelId}`));
+      return [modelId, { verdict: "denied", reason: closed ? "closed-provider" : "not-allowed" }];
+    } catch {
+      return [modelId, { verdict: "unknown", reason: "unverified" }];
+    }
+  }));
+  return Object.fromEntries(entries);
+}
+
 async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   const resolveSessionRoute = async (harness: string, sessionId: string) => await resolveSessionRouteFor(integratorRuntime, adapters, scopedSupervisorFactory, harness, sessionId);
@@ -1847,6 +1952,36 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     } catch {
       return sendJson(response, 503, { error: "The complete native provider route could not be verified" });
     }
+  }
+  if (url.pathname === "/api/model-launch-verdict" && request.method === "GET") {
+    response.setHeader("cache-control", "no-store");
+    // The same origin check the neighbouring endpoints use: the panel reads the
+    // verdict from the browser, and a page of another origin must not ask.
+    if (request.headers["sec-fetch-site"] === "cross-site") return sendJson(response, 403, { error: "cross-site verdict read refused" });
+    const origin = request.headers.origin;
+    if (origin) {
+      try {
+        if (new URL(origin).host !== request.headers.host) return sendJson(response, 403, { error: "origin mismatch" });
+      } catch {
+        return sendJson(response, 403, { error: "invalid origin" });
+      }
+    }
+    const harness = url.searchParams.get("harness")?.trim() ?? "";
+    const cwd = url.searchParams.get("cwd")?.trim() ?? "";
+    const modelIds = (url.searchParams.get("modelIds") ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (!harness) return sendJson(response, 400, { error: "harness is required" });
+    if (!cwd) return sendJson(response, 400, { error: "cwd is required" });
+    if (modelIds.length === 0 || modelIds.length > 64) return sendJson(response, 400, { error: "modelIds must hold 1 to 64 model ids" });
+    if (modelIds.some((modelId) => modelId.length > 256 || /[\u0000-\u001f\u007f]/u.test(modelId))) {
+      return sendJson(response, 400, { error: "modelIds must hold clean model ids" });
+    }
+    // The answer holds the word of the verdict and nothing else: the provider
+    // behind the route never leaves the node that holds the proof of it.
+    const verdicts = await computeModelLaunchVerdicts({ harness, cwd, modelIds, adapters });
+    return sendJson(response, 200, { verdicts });
   }
   if (url.pathname === "/api/human-stop/status" && request.method === "GET") {
     response.setHeader("cache-control", "no-store");

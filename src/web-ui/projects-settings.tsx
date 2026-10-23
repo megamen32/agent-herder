@@ -24,16 +24,23 @@ import { modelRouteLabel } from "./model-route-label.js";
 import {
   MODEL_STATUS_WORDS,
   MODEL_VERDICT_LABELS,
+  approvedModelId,
   explainModelListError,
   hasRestrictedProviderToken,
+  isRestrictedProjectPath,
+  modelCandidates,
   modelVerdict,
+  routeStatusLabel,
   unusedListEntries,
   workingModelId,
+  type LeafVerdictEntry,
+  type LeafVerdictMap,
   type ModelVerdict,
 } from "./model-status.js";
 import { machineName } from "./fleet/machine-labels.js";
 
 export { BLOCKED_MODEL_ACTION, hasRestrictedProviderToken } from "./model-status.js";
+export { RESTRICTED_PROJECT_ROOTS } from "./model-status.js";
 
 /**
  * The Projects screen of the panel.
@@ -149,17 +156,11 @@ export const PROJECT_SORT_LABELS: ReadonlyArray<readonly [ProjectSort, string]> 
 ];
 
 /**
- * The closed projects of the rule of the owner.
- *
- * The guard of the OpenCode integration is the source of truth:
+ * The closed projects of the rule of the owner live in `model-status.ts`, so
+ * the panel and the server name the same projects. The guard of the OpenCode
+ * integration is the source of truth:
  * `integrations/opencode/agent-herder-autopilot.js` (`restrictedProjectRoots`).
- * The list is repeated here only so the screen can explain a block in plain
- * words; the guard itself is never touched by this screen.
  */
-export const RESTRICTED_PROJECT_ROOTS: readonly string[] = [
-  "/home/roomhacker/PycharmProjects/TelegramAuto",
-  "/home/roomhacker/PycharmProjects/video_watching",
-];
 
 /* ---------- Общие мелочи: путь, склонение, время ---------- */
 
@@ -345,8 +346,59 @@ export function modelRouteTitle(modelId: string): string {
 
 /** True when the project is one of the closed projects of the rule of the owner. */
 export function isRestrictedProject(project: string): boolean {
-  const target = normalizePath(project);
-  return RESTRICTED_PROJECT_ROOTS.some((root) => target === root || target.startsWith(`${root}/`));
+  return isRestrictedProjectPath(project);
+}
+
+/* ---------- Вердикт сервера о маршруте ---------- */
+
+/** What the panel asks the server about one route of one project. */
+export type LeafVerdictRequest = { project: string; harness: string; modelIds: string[] };
+
+/**
+ * Ask the server about the routes of the closed projects.
+ *
+ * The panel cannot tell whether a launch will be revoked: the rule of the owner
+ * is about the provider behind the route, and only the node that holds the proof
+ * of the route knows it. The panel therefore asks the server and shows what it
+ * answers. The answer holds the word of the verdict and nothing else — the
+ * provider behind the route never leaves the node that proved it.
+ */
+export function useModelLaunchVerdicts(requests: LeafVerdictRequest[]): { verdicts: LeafVerdictMap; pending: boolean } {
+  const [verdicts, setVerdicts] = React.useState<LeafVerdictMap>({});
+  const [pending, setPending] = React.useState(false);
+  const key = requests
+    .map((request) => `${request.project}\u0000${request.harness}\u0000${request.modelIds.join(",")}`)
+    .join("\u0001");
+  React.useEffect(() => {
+    if (requests.length === 0) {
+      setVerdicts({});
+      setPending(false);
+      return;
+    }
+    let cancelled = false;
+    setPending(true);
+    void (async () => {
+      const next: LeafVerdictMap = {};
+      await Promise.all(requests.map(async (request) => {
+        if (request.modelIds.length === 0) return;
+        try {
+          const query = `harness=${encodeURIComponent(request.harness)}&cwd=${encodeURIComponent(request.project)}&modelIds=${encodeURIComponent(request.modelIds.join(","))}`;
+          const response = await fetch(`/api/model-launch-verdict?${query}`, { cache: "no-store" });
+          if (!response.ok) return;
+          const result = await response.json() as { verdicts?: Record<string, LeafVerdictEntry> };
+          const answers = result.verdicts ?? {};
+          next[request.project] = { ...(next[request.project] ?? {}), ...answers };
+        } catch {
+          // A silent server leaves the verdict unknown, never allowed.
+        }
+      }));
+      if (cancelled) return;
+      setVerdicts(next);
+      setPending(false);
+    })();
+    return () => { cancelled = true; };
+  }, [key]);
+  return { verdicts, pending };
 }
 
 /**
@@ -381,18 +433,29 @@ export type ModelRouteCheck = {
  * the two lists of the project, and the list of the models the environment
  * confirms. The lists of the project are the same ones the gate of the launch
  * uses, so the reason the panel shows is the reason the launch refuses.
+ *
+ * The verdict of the server about the route decides the last word for a closed
+ * project: the panel never promises a route the server did not confirm.
  */
 export function checkProjectModelRoutes(
   project: string,
   route: ProjectLaunchRoute,
   policy: LaunchPolicy,
   confirmed: Record<string, string[]>,
+  leafVerdicts?: Record<string, LeafVerdictEntry>,
 ): ModelRouteCheck[] {
   const restricted = isRestrictedProject(project);
   return route.harnesses.map((harness) => {
     const model = (route.models?.[harness] ?? policy.models[harness] ?? "").trim();
     const list = confirmed[harness] ?? [];
-    const working = workingModelId(harness, { policyModels: policy.models, confirmed: list });
+    const candidates = modelCandidates(harness, { policyModels: policy.models, confirmed: list, current: model });
+    // The button writes the route the server confirmed. While the server has
+    // not answered, the panel keeps the route of the environment, so the screen
+    // does not go empty.
+    const approved = approvedModelId(candidates, leafVerdicts);
+    const working = leafVerdicts
+      ? approved
+      : workingModelId(harness, { policyModels: policy.models, confirmed: list });
     const verdict = modelVerdict({
       harness,
       model,
@@ -401,11 +464,13 @@ export function checkProjectModelRoutes(
       deniedModels: route.deniedModels,
       restricted,
       workingModel: working,
+      leafVerdict: leafVerdicts?.[model],
     });
     if (verdict.kind === "missing") {
       return { harness, model: "", state: "ok", reason: "", action: "", verdict, working };
     }
-    if (verdict.kind === "closed" || verdict.kind === "denied" || verdict.kind === "notAllowed") {
+    if (verdict.kind === "closed" || verdict.kind === "denied" || verdict.kind === "notAllowed"
+      || verdict.kind === "unverified" || verdict.kind === "refused") {
       return { harness, model, state: "blocked", reason: verdict.reason, action: verdict.action, verdict, working };
     }
     if (verdict.kind === "unconfirmed") {
@@ -715,6 +780,7 @@ export function ProjectModelPolicyEditor({
   runtimes,
   modelOptions,
   checks,
+  leafVerdicts,
   disabled,
   onChange,
 }: {
@@ -724,6 +790,8 @@ export function ProjectModelPolicyEditor({
   runtimes: LaunchRuntimeOption[];
   modelOptions: Record<string, string[]>;
   checks?: ModelRouteCheck[];
+  /** The verdict of the server about the routes of this project. */
+  leafVerdicts?: Record<string, LeafVerdictEntry>;
   disabled?: boolean;
   onChange: (next: ProjectLaunchRoute) => void;
 }) {
@@ -741,6 +809,15 @@ export function ProjectModelPolicyEditor({
   const statusOf = (model: string): string => {
     if (restricted && hasRestrictedProviderToken(model)) return MODEL_STATUS_WORDS.closed;
     if (!knownIds.includes(model)) return MODEL_STATUS_WORDS.unconfirmed;
+    if (restricted) {
+      // A closed project is decided by the server, so the word here is the word
+      // of the server. Without an answer the panel says nothing about work.
+      const leaf = leafVerdicts?.[model];
+      if (!leaf) return MODEL_STATUS_WORDS.unverified;
+      if (leaf.verdict === "allowed") return MODEL_STATUS_WORDS.works;
+      if (leaf.verdict === "denied") return MODEL_STATUS_WORDS.closed;
+      return MODEL_STATUS_WORDS.unverified;
+    }
     return MODEL_STATUS_WORDS.works;
   };
 
@@ -771,7 +848,12 @@ export function ProjectModelPolicyEditor({
           const check = checks?.find((item) => item.harness === harness);
           const answer = catalog[harness];
           const list = answer ?? [];
-          const working = workingModelId(harness, { policyModels: policy.models, confirmed: list });
+          const leaf = effective ? leafVerdicts?.[effective] : undefined;
+          const candidates = modelCandidates(harness, { policyModels: policy.models, confirmed: list, current: effective });
+          const approved = approvedModelId(candidates, leafVerdicts);
+          const working = leafVerdicts
+            ? approved
+            : workingModelId(harness, { policyModels: policy.models, confirmed: list });
           const verdict = modelVerdict({
             harness,
             model: effective,
@@ -780,19 +862,22 @@ export function ProjectModelPolicyEditor({
             deniedModels,
             restricted,
             workingModel: working,
+            leafVerdict: leaf,
           });
           // The answer of the environment is on the way: the screen says so
           // instead of blaming the model before anyone asked the environment.
           // One fact — one word. The state of the environment is the word of the
-          // catalog of OpenCode (рабочая / устаревшая) and it is shown
+          // catalog of OpenCode (рабочая / устаревшая / платная) and it is shown
           // once, in its own block. The chip of the verdict speaks about the
           // lists of the project and the rule of the owner, so it stays for the
           // verdicts of the policy and steps aside for the state of the
           // environment.
           const environmentKind = verdict.kind === "works" || verdict.kind === "unconfirmed";
+          // The verdict of the server about the route is on the way too: the
+          // screen says so instead of promising that the route works.
           const status = answer === undefined
             ? { label: "проверяем…", tone: "unknown" as const }
-            : { label: verdict.label, tone: verdict.tone };
+            : routeStatusLabel({ restricted, leaf, verdict });
           return <li className={`projects-model-item projects-effective projects-model-status-${status.tone}`} key={harness}>
             <span className="projects-effective-environment">
               <span className="projects-model-caption">Среда</span>
@@ -813,7 +898,8 @@ export function ProjectModelPolicyEditor({
             {violation === "not_allowed" && <span className="projects-model-warn" role="status">Модель не разрешена в этом проекте: среда перестанет использоваться.</span>}
             {check?.state === "unconfirmed" && !label && <span className="projects-model-warn" role="status">{check.reason}.</span>}
             {verdict.kind === "closed" && <span className="projects-model-warn" role="status">{verdict.detail}</span>}
-            {working && working !== effective && <span className="projects-model-actions">
+            {(verdict.kind === "unverified" || verdict.kind === "refused") && <span className="projects-model-warn" role="status">{verdict.detail}</span>}
+            {working && working !== effective && (!restricted || leafVerdicts !== undefined) && <span className="projects-model-actions">
               <button type="button" aria-label={`Поставить рабочую модель ${working} для среды ${labelFor(harness, runtimes)} в проекте ${project}`}
                 disabled={disabled} onClick={() => onChange(setRouteModel(route, harness, working))}>Поставить рабочую модель</button>
             </span>}
@@ -835,6 +921,7 @@ export function ProjectRoutesEditor({
   runtimes,
   modelOptions,
   checks,
+  leafVerdicts,
   entry,
   state,
   fleet,
@@ -850,6 +937,8 @@ export function ProjectRoutesEditor({
   runtimes: LaunchRuntimeOption[];
   modelOptions: Record<string, string[]>;
   checks?: ModelRouteCheck[];
+  /** The verdict of the server about the routes of this project. */
+  leafVerdicts?: Record<string, LeafVerdictEntry>;
   entry?: ProjectEntry;
   state?: ProjectStateView;
   /** How fresh the knowledge of the fleet is, for the cells that wait for it. */
@@ -967,7 +1056,7 @@ export function ProjectRoutesEditor({
         </div>
       </fieldset>
       <ProjectModelPolicyEditor project={project} route={route} policy={policy} runtimes={runtimes}
-        modelOptions={modelOptions} checks={checks} disabled={disabled} onChange={onChange} />
+        modelOptions={modelOptions} checks={checks} leafVerdicts={leafVerdicts} disabled={disabled} onChange={onChange} />
     </div>}
   </details>;
 }
@@ -985,12 +1074,15 @@ export function BlockedModelNotice({
   project,
   check,
   confirmed,
+  leafVerdicts,
   onSetModel,
   onOpenModels,
 }: {
   project: string;
   check: ModelRouteCheck;
   confirmed: string[];
+  /** The verdict of the server about the routes of this project. */
+  leafVerdicts?: Record<string, LeafVerdictEntry>;
   onSetModel: (model: string) => void;
   onOpenModels: () => void;
 }) {
@@ -1002,11 +1094,15 @@ export function BlockedModelNotice({
       ? `Модель ${check.model} запрещена в списке проекта — запуск на ней не пройдёт`
       : verdict.kind === "notAllowed"
         ? `Модель ${check.model} не разрешена в проекте — запуск на ней не пройдёт`
-        : `Модель ${check.model} среда не подтверждает — запуск на ней не пройдёт`;
+        : verdict.kind === "unverified"
+            ? `Маршрут ${check.model} не верифицирован — запуск будет отозван`
+            : verdict.kind === "refused"
+              ? `Маршрут ${check.model} отклонён правилом владельца — запуск не пройдёт`
+              : `Модель ${check.model} среда не подтверждает — запуск на ней не пройдёт`;
   const working = check.working ?? "";
   return <div className="projects-blocked" role="alert">
     <p className="projects-blocked-title"><span aria-hidden="true">⛔</span> {title}</p>
-    <p className="projects-blocked-note">Панель сверяет модель маршрута со списком моделей среды и со списками проекта. Это проверка до запуска, а не запись о случившемся отказе.</p>
+    <p className="projects-blocked-note">Панель сверяет модель маршрута со списком моделей среды и со списками проекта, а маршрут закрытого проекта — ещё и с сервером: сервер знает провайдера за маршрутом и решает, отзовёт ли защита среды запуск. Это проверка до запуска, а не запись о случившемся отказе.</p>
     <dl className="projects-blocked-facts">
       <div><dt>Модель</dt><dd><code>{check.model}</code><small>{modelRouteTitle(check.model)}</small></dd></div>
       <div><dt>Проект</dt><dd>{project}</dd></div>
@@ -1027,14 +1123,18 @@ export function BlockedModelNotice({
       {confirmed.length === 0
         ? <p className="projects-help">Список моделей среды пуст — среда не подтвердила ни одного маршрута.</p>
         : <ul>{confirmed.map((model) => {
-          const status = modelVerdict({ harness: check.harness, model, confirmed, restricted: isRestrictedProject(project) });
+          const leaf = leafVerdicts?.[model];
+          // A closed project is decided by the server: without its answer the
+          // panel says that the route is not checked, and offers nothing.
+          const waiting = isRestrictedProject(project) && !leaf;
+          const status = modelVerdict({ harness: check.harness, model, confirmed, restricted: isRestrictedProject(project), leafVerdict: leaf });
           return <li key={model}>
             <span className="projects-blocked-route-entry">
               <code>{model}</code>
               <small>{modelRouteTitle(model)}</small>
-              <span className={`projects-status projects-status-${status.tone}`}>{status.label}</span>
+              <span className={`projects-status projects-status-${status.tone}`}>{waiting ? MODEL_STATUS_WORDS.unverified : status.label}</span>
             </span>
-            {status.kind === "works" && <button type="button" aria-label={`Поставить модель ${model} в проекте ${project}`}
+            {status.kind === "works" && !waiting && <button type="button" aria-label={`Поставить модель ${model} в проекте ${project}`}
               onClick={() => onSetModel(model)}>Поставить</button>}
           </li>;
         })}</ul>}
@@ -1078,6 +1178,18 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
   const groups = groupProjectEntriesByMachine(visible);
   const harnesses = [...new Set(routes.flatMap(([, route]) => route.harnesses))];
   const confirmed = useHarnessModelCatalog(harnesses);
+  // The routes of the closed projects are decided by the server: the panel asks
+  // it about every route it shows and writes the answer, never a guess of its
+  // own. A project that is not closed has no such rule, so it is not asked.
+  const verdictRequests = routes.flatMap(([project, route]): LeafVerdictRequest[] => {
+    if (!isRestrictedProject(project)) return [];
+    if (!route.harnesses.includes("opencode")) return [];
+    const list = confirmed.opencode ?? [];
+    const current = (route.models?.opencode ?? policy.models.opencode ?? "").trim();
+    const modelIds = modelCandidates("opencode", { policyModels: policy.models, confirmed: list, current });
+    return modelIds.length > 0 ? [{ project, harness: "opencode", modelIds }] : [];
+  });
+  const { verdicts: leafVerdicts } = useModelLaunchVerdicts(verdictRequests);
   const allowed = policy.allowedHarnesses;
   const available = allowed.length > 0 ? allowed : runtimes.map(({ id }) => id);
   const knownPaths = useKnownProjectPaths();
@@ -1132,11 +1244,13 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
 
   const renderProject = (entry: ProjectEntry) => {
     const { project, route } = entry;
-    const checks = checkProjectModelRoutes(project, route, policy, confirmed);
+    const projectVerdicts = leafVerdicts[project];
+    const checks = checkProjectModelRoutes(project, route, policy, confirmed, projectVerdicts);
     const blocked = checks.find((check) => check.state === "blocked");
     const state = projectApplicationState(entry.nodeStates);
     return <div className="projects-item" key={project}>
       {blocked && <BlockedModelNotice project={project} check={blocked} confirmed={confirmed[blocked.harness] ?? []}
+        leafVerdicts={projectVerdicts}
         onSetModel={(model) => {
           const harness = blocked.harness;
           const next = setRouteModel(route, harness, model);
@@ -1154,6 +1268,7 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
         runtimes={runtimes}
         modelOptions={modelOptions}
         checks={checks}
+        leafVerdicts={projectVerdicts}
         entry={entry}
         state={state}
         fleet={{ hosts: hostsState, sessions: sessionsState }}
@@ -1184,7 +1299,8 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
       <div className="projects-explainer-body">
         <p><strong>Списки моделей — это фильтр проекта.</strong> «Разрешённые модели» — что проект может запускать, «Запрещённые модели» — что не может никогда. Запрет всегда сильнее разрешения.</p>
         <p><strong>Блокирует запросы модельная защита интеграции OpenCode</strong> (<code>integrations/opencode/agent-herder-autopilot.js</code>, <code>enforceRestrictedModelRequest</code>). Для закрытых проектов (TelegramAuto, video_watching) маршрут модели должен совпасть с подтверждённым нативным маршрутом среды: иначе запрос отклоняется — «полный нативный маршрут провайдера запрещён или не подтверждён».</p>
-        <p>Модели, которых нет в списке моделей OpenCode, получают отказ 409: маршрут не подтверждён. Маршрут <code>omniroute/minimax-combo-m3.1</code> подтверждается и приводит к конечной модели minimax-code/mmcode/MiniMax-M3.1-Flash — в нём нет ни codex, ни claude, ни anthropic.</p>
+        <p>Модели, которых нет в списке моделей OpenCode, получают отказ 409: маршрут не подтверждён. Маршрут <code>omniroute/minimax-combo-m3.1</code> сервер подтверждает: запуск на нём не отзывается.</p>
+        <p><strong>Маршрут закрытого проекта проверяет сервер.</strong> Имя модели ничего не решает: сервер смотрит провайдера за маршрутом и отвечает одним из трёх слов — маршрут разрешён, маршрут отклонён или маршрут не верифицирован. Пока сервер не ответил, панель не обещает, что запуск пройдёт.</p>
         <p><strong>Порядок сред.</strong> Herder идёт по списку сверху вниз и переключается на следующую среду только после отказа, когда запуск точно не состоялся. Проекты без маршрута работают как раньше.</p>
       </div>
     </details>
