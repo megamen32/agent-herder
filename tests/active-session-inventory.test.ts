@@ -42,3 +42,9 @@ it('publishes a fresh provider while another provider remains unresolved',async(
  try{let out;for(let i=0;i<40;i++){out=await readActiveInventory({path,hostId:'owner'});if(out.sessions.length)break;await new Promise(r=>setTimeout(r,25));}expect(out?.sessions[0]?.id).toBe('native-fast');expect(out?.partial).toBe(true);}
  finally{stop();release();}
 });
+it('does not overlap provider reads after an observation deadline',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'active-singleflight-'));const path=join(dir,'index.json');let calls=0;
+ const adapter={type:'minimax-code',listActiveSessions:()=>{calls++;return new Promise<AgentSession[]>(()=>{});}};
+ const stop=startActiveInventoryOwner(()=>({sessions:[],observedAt:new Date().toISOString(),warming:false}),new Map([['minimax-code',adapter]])as unknown as Map<string,HarnessAdapter>,{path,hostId:'owner',intervalMs:5,nativeDeadlineMs:25});
+ try{await new Promise(r=>setTimeout(r,100));expect(calls).toBe(1);}finally{stop();}
+});

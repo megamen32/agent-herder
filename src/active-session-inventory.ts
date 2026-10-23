@@ -8,7 +8,7 @@ import {MinimaxCodeControl} from './adapters/minimax-code-control.js';
 import {createMavisWorkspaceEvidenceReader,createSessionWorkspaceOwnerUpdater} from './session-workspaces-backfill.js';
 import {unwrapResult} from './mesh/protocol.js';
 export interface ActiveSessionRow {id:string;harness:string;title:string;runtimeHostId:string;status?:string;parentSessionId?:string;activity:{state:string;observedAt:string;evidence:string;expiresAt?:string};workspaces:Array<Pick<SessionWorkspace,'hostId'|'absolutePath'>&Partial<SessionWorkspace>>}
-export interface ActiveHostReceipt {hostId:string;state:string;observedAt:string|null;reason?:string;sources?:Array<{harness:string;exhaustive:boolean;source:string;reason?:string}>}
+export interface ActiveHostReceipt {hostId:string;ownerPid?:number;state:string;observedAt:string|null;reason?:string;sources?:Array<{harness:string;exhaustive:boolean;source:string;reason?:string}>}
 export interface ActiveInventory {sessions:ActiveSessionRow[];hosts:ActiveHostReceipt[];partial:boolean}
 export interface ActiveInventoryQuery {hostId?:string;runtimeHostId?:string;harness?:string;limit?:number;offset?:number}
 export const activeInventoryPath=()=>process.env.AGENT_HERDER_ACTIVE_INVENTORY||resolve(homedir(),'.local/state/agent-herder/active-inventory.json');
@@ -34,7 +34,7 @@ export async function readActiveInventory(options:{path?:string;hostId?:string;n
  }catch(error){return {sessions:[],partial:true,hosts:[{hostId,state:'unavailable',observedAt:null,reason:(error as NodeJS.ErrnoException).code==='ENOENT'?'activity_snapshot_not_ready':'activity_snapshot_unreadable'}]};}
 }
 /** Materialize generic snapshots and independently refreshed native activity. Consumers never scan native history. */
-export function startActiveInventoryOwner(snapshot:()=>{sessions:AgentSession[];observedAt:string|null;warming:boolean;failures?:Record<string,string>},adapters:Map<string,HarnessAdapter>,options:{path?:string;hostId?:string;intervalMs?:number}={}){
+export function startActiveInventoryOwner(snapshot:()=>{sessions:AgentSession[];observedAt:string|null;warming:boolean;failures?:Record<string,string>},adapters:Map<string,HarnessAdapter>,options:{path?:string;hostId?:string;intervalMs?:number;nativeDeadlineMs?:number}={}){
  const hostId=options.hostId??hostname(),path=options.path??activeInventoryPath();let closed=false,pending=false;let lastGeneration='';let workspaceUpdatePending=false;let publishAgain=false;
  const live=new Map<string,{harness:string;sessions:AgentSession[];failed:boolean;observedAt:string|null;exhaustive:boolean;reason?:string;coverage?:Record<string,unknown>;refreshDurationMs?:number;errorName?:string}>();
  const refreshing=new Set<string>();
@@ -54,7 +54,7 @@ export function startActiveInventoryOwner(snapshot:()=>{sessions:AgentSession[];
    const places=await sessionWorkspaces.readMany(identities);
    const sources=[...adapters].map(([harness,adapter])=>{const r=adapter.getSessionSnapshotReceipt?.();const live=dedicated.find(d=>d.harness===harness);if(!live&&!current.observedAt)return {harness,exhaustive:false,source:r?.source??'native-adapter',reason:'native_snapshot_warming'};if(!live&&current.failures?.[harness])return {harness,exhaustive:false,source:r?.source??'native-adapter',reason:current.failures[harness]};if(live)return {harness,exhaustive:live.exhaustive&&!live.failed,source:'native-active-observer',observedAt:live.observedAt,...live.coverage,refreshDurationMs:live.refreshDurationMs,errorName:live.errorName,...(live.reason?{reason:live.reason}:{})};return {harness,exhaustive:r?.exhaustive??false,source:r?.source??'native-adapter',...(!r?{reason:'native_enumeration_coverage_unknown'}:r.reason?{reason:r.reason}:{})};});
    const sessions=nativeSessions.filter(s=>s.status==='running'||s.status==='needs_input').map(s=>({id:s.id,harness:s.harness,title:s.title,runtimeHostId:hostId,status:s.status,...(typeof s.meta?.parentSessionId==='string'?{parentSessionId:s.meta.parentSessionId}:typeof s.meta?.parentThreadId==='string'?{parentSessionId:s.meta.parentThreadId}:typeof s.meta?.parentID==='string'?{parentSessionId:s.meta.parentID}:{}),activity:{state:'active',observedAt:String(s.meta?.activityObservedAt??current.observedAt!),evidence:String(s.meta?.activityEvidence??s.meta?.transport??'native-adapter-status'),expiresAt:String(s.meta?.activityExpiresAt??new Date(Date.parse(current.observedAt!)+30000).toISOString())},workspaces:places.get(sessionWorkspaceKey({runtimeHostId:hostId,harness:s.harness,nativeSessionId:s.id}))?.workspaces??[]}));
-   const value:ActiveInventory={sessions,partial:sources.some(s=>!s.exhaustive),hosts:[{hostId,state:'available',observedAt:[current.observedAt,...dedicated.map(d=>d.observedAt)].filter((v):v is string=>Boolean(v)).sort().at(-1)??null,sources}]};
+   const value:ActiveInventory={sessions,partial:sources.some(s=>!s.exhaustive),hosts:[{hostId,ownerPid:process.pid,state:'available',observedAt:[current.observedAt,...dedicated.map(d=>d.observedAt)].filter((v):v is string=>Boolean(v)).sort().at(-1)??null,sources}]};
    const serialized=JSON.stringify(value);if(serialized===lastGeneration)return;
    await mkdir(dirname(path),{recursive:true});const tmp=`${path}.${randomUUID()}.tmp`;await writeFile(tmp,serialized,{mode:0o600});await rename(tmp,path);lastGeneration=serialized;
   }finally{pending=false;if(publishAgain&&!closed){publishAgain=false;void tick().catch(()=>{});}}
@@ -62,13 +62,15 @@ export function startActiveInventoryOwner(snapshot:()=>{sessions:AgentSession[];
  const publish=()=>void tick().catch(()=>{});
  const refreshDedicated=()=>{for(const [harness,adapter] of adapters){
   if(!live.has(harness)||refreshing.has(harness)||closed)continue;refreshing.add(harness);
-  const native=adapter as HarnessAdapter & {listActiveSessions():Promise<AgentSession[]>;getActiveSessionSnapshotReceipt?():{exhaustive:boolean;observedAt:string;reason?:string;[key:string]:unknown}|null};
-  let timeout:ReturnType<typeof setTimeout>|undefined;const refreshStarted=performance.now();
-  void Promise.race([native.listActiveSessions(),new Promise<never>((_,reject)=>{timeout=setTimeout(()=>reject(new Error('native_activity_deadline')),20000);})]).then(sessions=>{
+  const native=adapter as HarnessAdapter & {listActiveSessions():Promise<AgentSession[]>;getActiveSessionRefreshProgress?():{stage:string;stageStartedAt:string}|null;getActiveSessionSnapshotReceipt?():{exhaustive:boolean;observedAt:string;reason?:string;[key:string]:unknown}|null};
+  const refreshStarted=performance.now();
+  const deadline=setTimeout(()=>{const prior=live.get(harness)!;live.set(harness,{...prior,failed:true,exhaustive:false,reason:'native_activity_deadline',refreshDurationMs:Math.round(performance.now()-refreshStarted),coverage:{...prior.coverage,refreshProgress:native.getActiveSessionRefreshProgress?.()??null}});publish();},options.nativeDeadlineMs??20000);deadline.unref?.();
+  // A deadline changes evidence, not ownership of a still-running native read.
+  void native.listActiveSessions().then(sessions=>{
    const receipt=native.getActiveSessionSnapshotReceipt?.();
-   const coverage=Object.fromEntries(['source','activityCoverage','metadataEnumerationExhaustive','candidateCount','failedCandidateCount','totalSessions','pages','expiresAt'].filter(key=>receipt?.[key]!==undefined).map(key=>[key,receipt![key]]));
+   const coverage=Object.fromEntries(['source','activityCoverage','metadataEnumerationExhaustive','candidateCount','failedCandidateCount','totalSessions','pages','expiresAt','stageTimingsMs'].filter(key=>receipt?.[key]!==undefined).map(key=>[key,receipt![key]]));
    if(!closed)live.set(harness,{harness,sessions,failed:false,observedAt:receipt?.observedAt??new Date().toISOString(),exhaustive:receipt?.exhaustive??false,coverage,refreshDurationMs:Math.round(performance.now()-refreshStarted),...(receipt?.reason?{reason:receipt.reason}:{})});
-  }).catch(error=>{const prior=live.get(harness)!;const code=error instanceof Error&&/^[a-z_]+$/.test(error.message)?error.message:'native_activity_unavailable';live.set(harness,{...prior,failed:true,exhaustive:false,reason:code,errorName:error instanceof Error?error.name:'UnknownError',refreshDurationMs:Math.round(performance.now()-refreshStarted)});}).finally(()=>{if(timeout)clearTimeout(timeout);refreshing.delete(harness);publish();});
+  }).catch(error=>{const prior=live.get(harness)!;const code=error instanceof Error&&/^[a-z_]+$/.test(error.message)?error.message:'native_activity_unavailable';live.set(harness,{...prior,failed:true,exhaustive:false,reason:code,errorName:error instanceof Error?error.name:'UnknownError',refreshDurationMs:Math.round(performance.now()-refreshStarted),coverage:{...prior.coverage,refreshProgress:native.getActiveSessionRefreshProgress?.()??null}});}).finally(()=>{clearTimeout(deadline);refreshing.delete(harness);publish();});
  }};
  const timer=setInterval(publish,1000);timer.unref();const observer=setInterval(refreshDedicated,options.intervalMs??5000);observer.unref();publish();refreshDedicated();return ()=>{closed=true;clearInterval(timer);clearInterval(observer);};
 }

@@ -301,13 +301,15 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
   private contentCache = new Map<string, { stamp: string; session: AgentSession }>();
   private liveControlAvailable = false;
   private activeReceipt: MinimaxActiveReceipt | null = null;
+  private activeRefreshProgress: {stage:string;stageStartedAt:string}|null = null;
+  getActiveSessionRefreshProgress(){return this.activeRefreshProgress;}
 
   getActiveSessionSnapshotReceipt(): MinimaxActiveReceipt | null { return this.activeReceipt; }
 
   /** Full native metadata inventory; never hydrates historical transcripts. */
   async listActiveSessions(): Promise<AgentSession[]> {
     this.activeReceipt = null;
-    const result = await readMinimaxActiveSessions(this.control);
+    const result = await readMinimaxActiveSessions(this.control,{onProgress:stage=>{this.activeRefreshProgress={stage,stageStartedAt:new Date().toISOString()};}});
     this.activeReceipt = result.receipt;
     return result.sessions;
   }

@@ -16,6 +16,7 @@ export interface MinimaxActiveReceipt {
   reason?: string;
   totalSessions: number;
   pages: number;
+  stageTimingsMs: Record<string, number>;
 }
 interface NativeSession {
   session_id: string; agent_name?: string; title?: string; workspace_dir?: string;
@@ -30,6 +31,7 @@ const object = (value: unknown): Record<string, any> => {
 
 export interface MinimaxActiveOptions {
   readRuntimeCandidateIds?: () => Promise<string[]>;
+  onProgress?: (stage:string)=>void;
 }
 
 /** Both normal turns and manual compaction call repository.admit before controller.register.
@@ -46,6 +48,9 @@ export async function readMinimaxRuntimeCandidateIds(
 
 /** Current runtime work, including compaction. GUI optimistic loading is not execution proof. */
 export async function readMinimaxActiveSessions(control: Pick<MinimaxCodeControl, "call">, options: MinimaxActiveOptions = {}): Promise<{ sessions: AgentSession[]; receipt: MinimaxActiveReceipt }> {
+  const stageTimingsMs:Record<string,number>={};let stage='metadata',stageStart=performance.now();
+  const progress=(next:string)=>{stageTimingsMs[stage]=Math.round(performance.now()-stageStart);stage=next;stageStart=performance.now();options.onProgress?.(next);};
+  options.onProgress?.(stage);
   const request = async (path: string) => {
     const response = await control.call("GET", path);
     if (!response.ok) throw new Error(response.error || "minimax_active_runtime_unavailable");
@@ -77,11 +82,13 @@ export async function readMinimaxActiveSessions(control: Pick<MinimaxCodeControl
       if (cursor) seen.add(cursor);
     } while (cursor);
   }));
+  progress("candidate_seed");
   let seedComplete = true;
   let seedIds: string[] = [];
   try { seedIds = await (options.readRuntimeCandidateIds || readMinimaxRuntimeCandidateIds)(); }
   catch { seedComplete = false; }
   const candidates = [...new Set([...seedIds, ...[...rows.values()].filter(row => row.status?.status_type === 1).map(row => row.session_id)])];
+  progress("controller_validation");
   const active: NativeSession[] = [];
   let failedCandidateCount = 0;
   // Bound concurrent reads, never the candidate set. A failed ID cannot erase other positives.
@@ -101,12 +108,13 @@ export async function readMinimaxActiveSessions(control: Pick<MinimaxCodeControl
       } catch { failedCandidateCount += 1; }
     }));
   }
+  progress("complete");
   const observedAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 15_000).toISOString();
   const exhaustive = seedComplete && failedCandidateCount === 0;
   const receipt: MinimaxActiveReceipt = { exhaustive, metadataEnumerationExhaustive: true,
     activityCoverage: exhaustive ? "native_active_turn" : "partial", observedAt, expiresAt, source: "native_active_turn",
-    totalSessions: rows.size, pages, candidateCount: candidates.length, failedCandidateCount,
+    stageTimingsMs, totalSessions: rows.size, pages, candidateCount: candidates.length, failedCandidateCount,
     ...(!seedComplete ? { reason: "native_runtime_candidate_seed_unavailable" } : failedCandidateCount ? { reason: "native_runtime_candidate_validation_partial" } : {}),
   };
   const sessions: AgentSession[] = active.map(row => ({
