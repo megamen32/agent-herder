@@ -1,0 +1,83 @@
+/*
+ * The tab of the hooks of the herder.
+ *
+ * The rules here belong to the tab of the hooks only. They do not change the
+ * rest of the panel: the colours are the colours of the theme, the buttons are
+ * the buttons of the settings.
+ */
+
+/*
+ * The tab owns the screen.
+ *
+ * When the owner opens the hooks, the panel of the chat of an open session
+ * must not lie on top of the table: the remote chat takes the third column of
+ * the screen and the table of the hooks goes under it. The panel already
+ * hides the local chat on this tab; the remote chat is hidden here by the same
+ * rule, so the table of the hooks is read whole.
+ */
+.herder-settings-page:has(.herder-hooks) .remote-chat-pane {
+  display: none;
+}
+
+/* The block of the hooks lies above any panel that shares the screen. */
+.herder-hooks {
+  position: relative;
+  z-index: 2;
+}
+
+/* The state of the Stop hook: the owner reads it before the table. */
+.herder-hooks-stop-status {
+  margin: 0 0 6px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* The sign of the refresh: the button owes the owner a sign that it read. */
+.herder-hooks-refreshed {
+  margin: 8px 0 0;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+/*
+ * The table of the hooks.
+ *
+ * The table is wide and the screen of the owner is not; the table scrolls
+ * sideways instead of losing a column, and its header stays above the rows
+ * while the owner scrolls the rows.
+ */
+.herder-hooks-table-wrap {
+  position: relative;
+}
+
+.herder-hooks-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-1);
+}
+
+@media (max-width: 1100px) {
+  .herder-hooks-table-wrap {
+    overflow-x: auto;
+  }
+}
+
+/*
+ * One meaning — one look.
+ *
+ * The action that turns a prohibition off is the dangerous one and wears the
+ * dangerous colour of the panel; the action that turns it back on is safe
+ * and stays plain. The button of the Stop hook is dangerous on the same rule,
+ * so the sharpest lever of the owner cannot look safer than the rest.
+ */
+.herder-hooks .herder-settings-button-danger {
+  border-color: var(--status-error);
+  background: color-mix(in srgb, var(--status-error) 14%, transparent);
+  color: var(--status-error);
+  font-weight: 600;
+}
+
+.herder-hooks .herder-settings-button-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--status-error) 22%, transparent);
+}
