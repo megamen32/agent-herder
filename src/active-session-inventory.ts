@@ -4,7 +4,8 @@ import {homedir,hostname} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import type {AgentSession,HarnessAdapter} from './types/index.js';
 import {sessionWorkspaces,sessionWorkspaceKey,type SessionWorkspace} from './session-workspaces.js';
-import {createSessionWorkspaceOwnerUpdater} from './session-workspaces-backfill.js';
+import {MinimaxCodeControl} from './adapters/minimax-code-control.js';
+import {createMavisWorkspaceEvidenceReader,createSessionWorkspaceOwnerUpdater} from './session-workspaces-backfill.js';
 import {unwrapResult} from './mesh/protocol.js';
 export interface ActiveSessionRow {id:string;harness:string;title:string;runtimeHostId:string;status?:string;parentSessionId?:string;activity:{state:string;observedAt:string;evidence:string;expiresAt?:string};workspaces:Array<Pick<SessionWorkspace,'hostId'|'absolutePath'>&Partial<SessionWorkspace>>}
 export interface ActiveHostReceipt {hostId:string;state:string;observedAt:string|null;reason?:string;sources?:Array<{harness:string;exhaustive:boolean;source:string;reason?:string}>}
@@ -34,11 +35,12 @@ export async function readActiveInventory(options:{path?:string;hostId?:string;n
 }
 /** Existing owner polling supplies current native sessions; no additional native scan. */
 export function startActiveInventoryOwner(snapshot:()=>{sessions:AgentSession[];observedAt:string|null;warming:boolean;failures?:Record<string,string>},adapters:Map<string,HarnessAdapter>,options:{path?:string;hostId?:string;intervalMs?:number}={}){
- const hostId=options.hostId??hostname(),path=options.path??activeInventoryPath();let closed=false,pending=false;let lastGeneration='';
+ const hostId=options.hostId??hostname(),path=options.path??activeInventoryPath();let closed=false,pending=false;let lastGeneration='';let workspaceUpdatePending=false;
  const live=new Map<string,{harness:string;sessions:AgentSession[];failed:boolean;observedAt:string|null;exhaustive:boolean;reason?:string}>();
  const refreshing=new Set<string>();
  for(const [harness,adapter] of adapters)if(typeof (adapter as HarnessAdapter & {listActiveSessions?:unknown}).listActiveSessions==='function')live.set(harness,{harness,sessions:[],failed:true,observedAt:null,exhaustive:false,reason:'native_activity_warming'});
- const updateWorkspaces=createSessionWorkspaceOwnerUpdater({store:sessionWorkspaces,readEvidence:async()=>[]});
+ const nativeWorkspaceReader=createMavisWorkspaceEvidenceReader({control:new MinimaxCodeControl(),workHostForSession:async identity=>{const record=await sessionWorkspaces.read(identity);const hosts=[...new Set(record?.workspaces.map(w=>w.hostId)??[])];return hosts.length===1?hosts[0]:undefined;}});
+ const updateWorkspaces=createSessionWorkspaceOwnerUpdater({store:sessionWorkspaces,readEvidence:nativeWorkspaceReader});
  const tick=async()=>{
   if(pending||closed)return;pending=true;
   try{
@@ -46,8 +48,8 @@ export function startActiveInventoryOwner(snapshot:()=>{sessions:AgentSession[];
    // Workspace declarations may change independently of the native generation.
    const dedicated=[...live.values()];
    const dedicatedNames=new Set(dedicated.map(d=>d.harness));
-   const nativeSessions=[...current.sessions.filter(s=>!dedicatedNames.has(s.harness)),...dedicated.flatMap(d=>d.sessions)];
-   await updateWorkspaces(nativeSessions.map(s=>({runtimeHostId:hostId,harness:s.harness,nativeSessionId:s.id,lastActivity:s.lastActivity,...(typeof s.meta?.parentSessionId==='string'?{parentSessionId:s.meta.parentSessionId}:{})})));
+   const nativeSessions=[...current.sessions.filter(s=>!dedicatedNames.has(s.harness)&&(s.status==='running'||s.status==='needs_input')),...dedicated.flatMap(d=>d.sessions)];
+   if(!workspaceUpdatePending){workspaceUpdatePending=true;void updateWorkspaces(nativeSessions.map(s=>({runtimeHostId:hostId,harness:s.harness,nativeSessionId:s.id,lastActivity:s.lastActivity,...(typeof s.meta?.parentSessionId==='string'?{parentSessionId:s.meta.parentSessionId}:{})}))).catch(()=>{}).finally(()=>{workspaceUpdatePending=false;});}
    const identities=nativeSessions.map(s=>({runtimeHostId:hostId,harness:s.harness,nativeSessionId:s.id}));
    const places=await sessionWorkspaces.readMany(identities);
    const sources=[...adapters].map(([harness,adapter])=>{const r=adapter.getSessionSnapshotReceipt?.();const live=dedicated.find(d=>d.harness===harness);if(!live&&!current.observedAt)return {harness,exhaustive:false,source:r?.source??'native-adapter',reason:'native_snapshot_warming'};if(!live&&current.failures?.[harness])return {harness,exhaustive:false,source:r?.source??'native-adapter',reason:current.failures[harness]};if(live)return {harness,exhaustive:live.exhaustive&&!live.failed,source:'native-active-observer',observedAt:live.observedAt,...(live.reason?{reason:live.reason}:{})};return {harness,exhaustive:r?.exhaustive??false,source:r?.source??'native-adapter',...(!r?{reason:'native_enumeration_coverage_unknown'}:r.reason?{reason:r.reason}:{})};});
