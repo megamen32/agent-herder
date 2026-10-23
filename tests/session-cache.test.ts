@@ -41,7 +41,14 @@ describe("session discovery cache", () => {
     expect(calls).toBe(2);
 
     releaseRefresh([session("new")]);
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    // The refresh of the node settles after the observation of the human
+    // stop of the session, so the wait is for the new snapshot itself and
+    // not for one tick of the event loop.
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const served = await supervisor.listSessions();
+      if (served[0]?.id === "new") break;
+      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    }
     await expect(supervisor.listSessions()).resolves.toMatchObject([{ id: "new" }]);
   });
 
