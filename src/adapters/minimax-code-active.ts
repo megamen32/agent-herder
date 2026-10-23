@@ -65,6 +65,7 @@ export async function readMinimaxActiveSessions(control: Pick<MinimaxCodeControl
     lineage: { kind: row.parent_session_id ? "subagent" : "root", ...(row.parent_session_id ? { parentId: row.parent_session_id } : {}), role: row.agent_name },
     meta: { activityEvidence: receipt.source, activityObservedAt: observedAt, activityExpiresAt: expiresAt,
       liveStatus: "running", nativeStatusType: 1, nativeAgentName: row.agent_name,
+      ...(row.parent_session_id ? { parentSessionId: row.parent_session_id, lineageKind: "subagent" } : { lineageKind: "root" }),
       ...(row.status?.error_code === undefined ? {} : { retainedNativeErrorCode: row.status.error_code }) },
   }));
   return { sessions, receipt };

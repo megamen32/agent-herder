@@ -9,5 +9,5 @@ it.skipIf(!process.env.MINIMAX_ACTIVE_PROBE_URL)("reads the actual native metada
   }});
   expect(result.receipt.exhaustive).toBe(true);
   expect(result.sessions.every(s=>s.status==="running")).toBe(true);
-  await writeFile("/tmp/minimax-active-helper-live-20261023.json", JSON.stringify({receipt:result.receipt,elapsedMs:Math.round(performance.now()-started),count:result.sessions.length,roots:result.sessions.filter(s=>s.lineage?.kind==="root").length,children:result.sessions.filter(s=>s.lineage?.kind==="subagent").length,ids:result.sessions.map(s=>s.id)}));
+  await writeFile("/tmp/minimax-active-helper-live-20261023.json", JSON.stringify({receipt:result.receipt,elapsedMs:Math.round(performance.now()-started),count:result.sessions.length,roots:result.sessions.filter(s=>s.meta?.lineageKind==="root").length,children:result.sessions.filter(s=>s.meta?.lineageKind==="subagent").length,ids:result.sessions.map(s=>s.id)}));
 },15000);

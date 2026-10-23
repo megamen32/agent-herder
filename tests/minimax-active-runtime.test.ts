@@ -7,7 +7,7 @@ describe("native MiniMax active metadata", () => {
     const result = await readMinimaxActiveSessions({call});
     expect(result.sessions.map(s=>s.id).sort()).toEqual(["child","root"]);
     expect(result.sessions.find(s=>s.id==="root")?.status).toBe("running");
-    expect(result.sessions.find(s=>s.id==="child")?.lineage).toMatchObject({kind:"subagent",parentId:"root"});
+    expect(result.sessions.find(s=>s.id==="child")?.meta).toMatchObject({lineageKind:"subagent",parentSessionId:"root"});
     expect(result.receipt).toMatchObject({exhaustive:true,totalSessions:3,pages:3});
     expect(call.mock.calls.every(([method])=>method==="GET")).toBe(true);
   });
