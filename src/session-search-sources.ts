@@ -1,3 +1,4 @@
+import {setImmediate as yieldEventLoop} from 'node:timers/promises';
 import {createHash} from 'node:crypto';
 import {createReadStream} from 'node:fs';
 import {readdir,readFile,stat} from 'node:fs/promises';
@@ -67,7 +68,7 @@ async function* sqliteSessions(harness:'opencode'|'zcode'|'hermes',path:string,o
    // Native schemas do not all advance a content update timestamp (Hermes
    // messages use creation time). Hash persisted content to detect same-size edits.
    const digest=createHash('sha256').update(JSON.stringify(row));
-   for(const message of messages.iterate(id) as Iterable<any>){check(options.signal);digest.update(JSON.stringify(message));if(parts)for(const part of parts.iterate(id,message.id) as Iterable<any>)digest.update(JSON.stringify(part));}
+   let hashedRows=0;for(const message of messages.iterate(id) as Iterable<any>){check(options.signal);digest.update(JSON.stringify(message));if(++hashedRows%128===0)await yieldEventLoop();if(parts)for(const part of parts.iterate(id,message.id) as Iterable<any>){check(options.signal);digest.update(JSON.stringify(part));if(++hashedRows%128===0)await yieldEventLoop();}}
    const revision=digest.digest('hex');
    const chunks=async function*(){for(const m of messages.iterate(id) as Iterable<any>){check(options.signal);if(hermes){let value=m.content;try{value=JSON.parse(value);}catch{/* Native plain-text content is valid. */}const body=text(value);if(body)yield {id:String(m.id),text:body};}else{JSON.parse(str(m.data));for(const part of parts!.iterate(id,m.id) as Iterable<any>){const data=JSON.parse(str(part.data));const body=str(data.text);if(body)yield {id:String(part.id),text:body};}}}};
    yield {harness,nativeSessionId:id,title:str(row.title)||id,cwd:str(row.cwd),revision:`${revision}:${str(row.title)}:${str(row.cwd)}`,chunks:chunks()};
