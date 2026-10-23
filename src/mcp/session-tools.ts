@@ -89,6 +89,13 @@ export function registerSessionTools(server: McpServer, deps: {
   const { adapters, jobs, events } = deps;
   const coordination = deps.coordination ?? coordinationNotes;
   let peerTransport: GptAdminTransport | undefined = deps.transport;
+  function selectedRemotePeer(hostId?: string) {
+    const requested = normalizeHostId(hostId, hostname());
+    if (requested.toLowerCase() === hostname().toLowerCase()) return undefined;
+    const peer = directFleetPeers.find(candidate => candidate.hostId.toLowerCase() === requested.toLowerCase());
+    if (!peer) throw new Error(`host_target_unavailable:${requested}`);
+    return peer;
+  }
   /**
    * Override the work machine and/or work directory of a live session.
    * The declaration is the existing workspace mechanism, so the mesh projection
@@ -202,6 +209,20 @@ export function registerSessionTools(server: McpServer, deps: {
     sessions: z.array(sessionSchema), total: z.number().int().min(0), limited: z.boolean(),
     filters: z.object({ harness: z.string(), status: z.string(), maxAge: z.number().optional(), folder: z.string().optional(), hostId: z.string().optional(), includeLastMessage: z.boolean() }),
   }) }, async (args) => {
+    const peer = selectedRemotePeer(args.hostId);
+    if (peer) {
+      const {hostId: _hostId, ...ownerArgs} = args;
+      const result = unwrapResult(await (peerTransport ?? new FleetDirectTransport([peer])).call(`mcp:shell:${peer.hostId}:AgentHerder`, "list_agents", ownerArgs));
+      const sessions = z.array(sessionSchema).parse(result.sessions);
+      if (sessions.some(session => session.hostId !== peer.hostId)) throw new Error("remote_session_identity_mismatch");
+      for (const session of sessions) {
+        const scope = await deps.integratorRuntime?.adapterForSession({hostId:peer.hostId,harness:session.harness,nativeSessionId:session.id});
+        if (scope && scope.kind !== "ordinary") throw new Error("project_session_scope_unavailable");
+      }
+      if (typeof result.complete !== "boolean" || !Array.isArray(result.unavailable) || !Number.isInteger(result.total) || typeof result.limited !== "boolean") throw new Error("remote_session_list_invalid");
+      const remote = {complete:result.complete,unavailable:z.array(z.object({harness:z.string(),error:z.string()})).parse(result.unavailable),total:Number(result.total),limited:result.limited,sessions,filters:{...args,hostId:peer.hostId}};
+      return {content:[{type:"text" as const,text:formatListAgentsResult(remote)}],structuredContent:remote};
+    }
     const result = await listAgentsResult(adapters, args);
     return { content: [{ type: "text" as const, text: formatListAgentsResult(result) }], structuredContent: result };
   });
@@ -326,6 +347,21 @@ export function registerSessionTools(server: McpServer, deps: {
   });
 
   server.registerTool("send_message", { description: "Send a message to an agent. Ordinary coordination is active-turn-only, including queue mode: inactive/completed targets return skipped_inactive without new turns or deferred debt. Explicit humanRequested=true permits a human new task/send/resume. inputId deduplicates retries for 24 hours. Active coordination notes are injected automatically. fromSessionId/fromHarness add verified reply attribution, do not authenticate the caller. Modes: sync (wait), queue (fire-and-forget), steer (redirect).", inputSchema: SendMessageSchema }, async (args) => {
+    const peer = selectedRemotePeer(args.hostId);
+    if (peer) {
+      if (!args.harness) throw new Error("remote_session_host_and_harness_required");
+      const scope = await deps.integratorRuntime?.adapterForSession({hostId:peer.hostId,harness:args.harness,nativeSessionId:args.sessionId});
+      if (scope?.kind === "deny") throw new Error("project_session_scope_unavailable");
+      if (!scope || scope.kind === "ordinary") {
+        const {hostId: _hostId, ...ownerArgs} = args;
+        // The owner applies its model/active-turn gates. Never retry an uncertain call.
+        try {
+          return await (peerTransport ?? new FleetDirectTransport([peer])).call(`mcp:shell:${peer.hostId}:AgentHerder`, "send_message", ownerArgs) as {content:Array<{type:"text";text:string}>};
+        } catch {
+          return {content:[{type:"text" as const,text:JSON.stringify({ok:false,delivery:"unknown",inputId:args.inputId,admissionUnknown:true,nonRetryable:true,error:"remote_delivery_outcome_unknown"})}]};
+        }
+      }
+    }
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
     if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);

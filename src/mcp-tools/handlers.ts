@@ -536,7 +536,9 @@ async function sendMessageOnce(
   if (await automaticDeliveryHeld(found.session, parsed.humanRequested, found.adapter)) return HUMAN_STOP_MESSAGE;
   if (!parsed.humanRequested && !isCoordinationActive(found.session)) return skippedCoordination(found.session);
 
-  const provenanceHeader = parsed.meshSender
+  const provenanceHeader = parsed.humanRequested
+    ? "Поручение пользователя, переданное агентом" + (parsed.fromSessionId ? `\n${await buildMessageProvenanceHeader(adapters, parsed, found.session)}` : "")
+    : parsed.meshSender
     ? `🤖 ${parsed.meshSender.harness}@${parsed.meshSender.hostId} ${parsed.meshSender.nativeSessionId}`
     : await buildMessageProvenanceHeader(adapters, parsed, found.session);
   const deliveredBody = parsed.humanRequested ? parsed.message : await compactAutomaticMessage(parsed.message);
