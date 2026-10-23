@@ -21,12 +21,17 @@ export function lexicalMatch(query:string):string {
 export class SessionSearchIndex {
  private readonly db:DatabaseSync;
  private ingesting=false;
- constructor(readonly path=SESSION_SEARCH_PATH,readonly hostId=hostname()){
-  mkdirSync(dirname(path),{recursive:true,mode:0o700});
-  this.db=new DatabaseSync(path);
+ constructor(readonly path=SESSION_SEARCH_PATH,readonly hostId=hostname(),options:{readOnly?:boolean}={}){
+  if(!options.readOnly)mkdirSync(dirname(path),{recursive:true,mode:0o700});
+  this.db=new DatabaseSync(path,{readOnly:options.readOnly===true});
   const tables=this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all();
   if(tables.length&&!tables.some(row=>row.name==='search_schema')){this.db.close();throw new Error('search_database_not_owned');}
   if(tables.length&&(this.db.prepare('SELECT version FROM search_schema').get() as {version:number})?.version!==1){this.db.close();throw new Error('search_schema_incompatible');}
+  if(options.readOnly){
+   if(!tables.length){this.db.close();throw new Error('search_index_not_ready');}
+   this.db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=100');
+   return;
+  }
   chmodSync(path,0o600);
   this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=3000;
    CREATE TABLE IF NOT EXISTS search_schema(version INTEGER NOT NULL);

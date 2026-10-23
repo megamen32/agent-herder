@@ -9,7 +9,7 @@ const result=(value:unknown)=>({content:[{type:'text' as const,text:JSON.stringi
 /** Reads only the mirror. Index population belongs to the long-running owner. */
 export function registerSessionSearchTools(server:McpServer,options:{index?:SessionSearchIndex;transport?:GptAdminTransport;peers?:readonly SearchPeer[]}={}){
  let index=options.index;
- const local=()=>index??=(new SessionSearchIndex());
+ const local=()=>index??=(new SessionSearchIndex(undefined,undefined,{readOnly:true}));
  server.registerTool('session_search_local',{description:'Search this host persisted session titles and message words in its FTS5 mirror. No live history scrape. Reports source coverage and indexing progress.',annotations:{readOnlyHint:true},inputSchema:z.object(query).strict()},async input=>result(local().search(input)));
  server.registerTool('session_search',{description:'Search indexed persisted session titles and message words on configured computers in parallel. Missing or incomplete host indexes are explicit.',annotations:{readOnlyHint:true},inputSchema:z.object({...query,hostId:z.string().min(1).max(512).optional()}).strict()},async input=>{
   if(!options.transport||!options.peers?.length){if(input.hostId&&input.hostId!==local().hostId)throw new Error('search_host_invalid');return result(local().search(input));}

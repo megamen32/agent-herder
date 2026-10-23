@@ -61,5 +61,11 @@ describe('disposable lexical session mirror',()=>{
   expect(()=>new SessionSearchIndex(path)).toThrow('search_database_not_owned');
   const read=new DatabaseSync(path,{readOnly:true});try{expect(read.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()).toEqual([{name:'threads'}]);}finally{read.close();}
  });
+ it('opens consumer queries without writer admission while a backfill write transaction is held',async()=>{
+  const index=fixture();await index.ingest(session('visiblewhilewriting'),'a');
+  const writer=new DatabaseSync(index.path);writer.exec('BEGIN IMMEDIATE');let reader:SessionSearchIndex|undefined;
+  try{reader=new SessionSearchIndex(index.path,'host-a',{readOnly:true});expect(reader.search({query:'visiblewhilewriting'}).results).toHaveLength(1);}
+  finally{reader?.close();writer.exec('ROLLBACK');writer.close();}
+ });
  it('treats operator-like input as plain Unicode words',()=>{expect(lexicalMatch('title:кот OR собака*')).toBe('"title" AND "кот" AND "OR" AND "собака"');expect(()=>lexicalMatch('***')).toThrow();});
 });
