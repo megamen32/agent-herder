@@ -12,8 +12,11 @@ import type { AgentSession, HarnessAdapter } from "../src/types/index.js";
  * the answer says how many sessions the mesh has in total, so the owner sees
  * that the list is longer than the window and can load more.
  *
- * A request without a window keeps the whole list: the other contour of the
- * panel asks for it that way and its call keeps working as before.
+ * The server bounds the answer even when the caller names no window: the
+ * history of the mesh is megabytes of JSON, and a screen of the panel must
+ * not become slow because another screen asked for the history. The counter
+ * of the whole list travels with the answer, so a caller that counts the
+ * sessions of the mesh still counts them all.
  */
 
 const servers: Server[] = [];
@@ -75,16 +78,18 @@ describe("the list of the sessions is a window with a counter", () => {
     expect(body.truncated).toBe(true);
   });
 
-  it("answers the whole list when the caller names no window, and says how many sessions there are", async () => {
+  it("answers a bounded window and the counter of the whole list when the caller names no window", async () => {
     const base = await startServer(150);
     const response = await fetch(`${base}/api/sessions?quick=1`);
     const body = await response.json() as { sessions: unknown[]; total?: number; limit?: number; truncated?: boolean };
-    // A caller that names no window gets the whole list: a contour that
-    // counts the sessions of the mesh must not lose half of them silently.
-    expect(body.sessions.length).toBe(150);
+    // The server bounds the answer: a caller that names no window gets the
+    // default window, not the whole history of the mesh. The counter of the
+    // whole list travels with the answer, so a contour that counts the
+    // sessions of the mesh must not lose half of them silently.
+    expect(body.sessions.length).toBe(100);
     expect(body.total).toBe(150);
-    expect(body.limit).toBeUndefined();
-    expect(body.truncated).toBeUndefined();
+    expect(body.limit).toBe(100);
+    expect(body.truncated).toBe(true);
   });
 
   it("bounds the window and never answers more than the bound", async () => {
@@ -108,14 +113,37 @@ describe("the list of the sessions is a window with a counter", () => {
     expect(body.total).toBe(40);
   });
 
-  it("ignores a window that is not a number", async () => {
+  it("answers the default window when the window is not a number", async () => {
     const base = await startServer(25);
     const response = await fetch(`${base}/api/sessions?quick=1&limit=many`);
     const body = await response.json() as { sessions: unknown[]; total?: number; limit?: number; truncated?: boolean };
-    // A window that is not a number is no window: the whole list answers.
+    // A window that is not a number is not a window to ask for everything
+    // with: the default window answers, and the counter keeps the truth.
     expect(body.sessions.length).toBe(25);
     expect(body.total).toBe(25);
-    expect(body.limit).toBeUndefined();
-    expect(body.truncated).toBeUndefined();
+    expect(body.limit).toBe(100);
+    expect(body.truncated).toBe(false);
+  });
+
+  it("keeps the answer inside the byte budget even when the caller names no window", async () => {
+    const base = await startServer(40, "x".repeat(10_000));
+    const response = await fetch(`${base}/api/sessions?quick=1`);
+    const text = await response.text();
+    // The budget of the answer is 300 KiB; the envelope of the answer is
+    // counted apart from the sessions.
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(300 * 1024 + 4096);
+    const body = JSON.parse(text) as { sessions: unknown[]; total?: number; truncated?: boolean };
+    expect(body.sessions.length).toBeLessThan(40);
+    expect(body.total).toBe(40);
+    expect(body.truncated).toBe(true);
+  });
+
+  it("never caches the shell of the panel", async () => {
+    const base = await startServer(5);
+    const response = await fetch(`${base}/`);
+    // The shell names the bundle of the current release. A cached shell keeps
+    // an old bundle alive in the browser, and an old bundle asks for the
+    // whole history of the mesh.
+    expect(response.headers.get("cache-control")).toContain("no-store");
   });
 });
