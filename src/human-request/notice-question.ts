@@ -1,3 +1,4 @@
+import { staleRunningQuestionBinding, type IntegratorProgressResult, type StaleRunningQuestionTarget } from "../integrator-progress.js";
 import type { NoticeIncidentBinding } from "../autopilot/notice-incident.js";
 import type { HumanQuestionBinding } from "./question-binding.js";
 
@@ -80,4 +81,23 @@ export async function deliverNoticeQuestion(
     body: JSON.stringify(envelope),
   });
   if (!response.ok) throw new Error(`Notice human request rejected with HTTP ${response.status}`);
+}
+
+/**
+ * Ask the operator about one stale-running session.
+ *
+ * The stale-running fact is the only trigger: every other progress state makes
+ * no network call at all. The delivery goes through the existing producer, so
+ * the question lands in the same Notice scope as every other human question,
+ * and the deterministic request id keeps it on one card.
+ */
+export async function deliverStaleRunningQuestion(
+  progress: IntegratorProgressResult,
+  target: StaleRunningQuestionTarget,
+  config: NoticeQuestionConfig,
+): Promise<boolean> {
+  const binding = staleRunningQuestionBinding(progress, target);
+  if (!binding) return false;
+  await deliverNoticeQuestion(binding, config);
+  return true;
 }

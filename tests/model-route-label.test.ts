@@ -2,7 +2,7 @@
  * The state of a model of a project is named before the route is saved.
  *
  * The names of the models drift, and the difference between a working id, a
- * stale one and a paid one is invisible in the panel until the owner is told
+ * stale one is invisible in the panel until the owner is told
  * it in words.
  */
 import { readFileSync } from "node:fs";
@@ -11,7 +11,6 @@ import { describe, expect, it } from "vitest";
 import {
   modelProvider,
   modelRouteLabel,
-  PAID_MODEL_PLANS,
 } from "../src/web-ui/model-route-label.js";
 
 const page = readFileSync(new URL("../src/web-ui/projects-settings.tsx", import.meta.url), "utf8");
@@ -28,7 +27,49 @@ describe("the state of a model of a project is named in words", () => {
     const label = modelRouteLabel({ modelId: "omniroute/minimax-combo-m3.1", confirmed });
     expect(label?.state).toBe("рабочая");
     expect(label?.tone).toBe("ok");
-    expect(label?.reason).toContain("подтверждает");
+    expect(label?.reason).toContain("каталоге");
+  });
+
+  it("does not call a route working while the server could not confirm it", () => {
+    // The catalog says which models exist, and the server says what the launch
+    // will do. When the server has no proof of the route, the badge must not
+    // say that the route works.
+    const label = modelRouteLabel({
+      modelId: "omniroute/minimax-combo-m3.1",
+      confirmed,
+      launch: { verdict: "unknown", reason: "unverified" },
+    });
+    expect(label?.state).toBe("не верифицирована");
+    expect(label?.tone).toBe("error");
+    expect(label?.reason).toContain("Сервер не подтвердил");
+  });
+
+  it("calls a route the server refused a refusal and names the reason", () => {
+    const closed = modelRouteLabel({
+      modelId: "omniroute/minimax-combo-m3.1",
+      confirmed,
+      launch: { verdict: "denied", reason: "closed-provider" },
+    });
+    expect(closed?.state).toBe("отказ");
+    expect(closed?.tone).toBe("error");
+    expect(closed?.reason).toContain("закрытый правилом владельца");
+    const outside = modelRouteLabel({
+      modelId: "omniroute/minimax-combo-m3.1",
+      confirmed,
+      launch: { verdict: "denied", reason: "not-allowed" },
+    });
+    expect(outside?.state).toBe("отказ");
+    expect(outside?.reason).toContain("не входит в список разрешённых");
+  });
+
+  it("keeps the state of the catalog when the server confirmed the route", () => {
+    const label = modelRouteLabel({
+      modelId: "omniroute/minimax-combo-m3.1",
+      confirmed,
+      launch: { verdict: "allowed", reason: "verified" },
+    });
+    expect(label?.state).toBe("рабочая");
+    expect(label?.tone).toBe("ok");
   });
 
   it("calls a model that is not in the catalog stale and says why", () => {
@@ -39,6 +80,7 @@ describe("the state of a model of a project is named in words", () => {
     expect(label?.reason).toContain("OpenCode");
   });
 
+
   it("says nothing while the catalog of the environment is unknown", () => {
     // An empty catalog is not a verdict: the environment has not answered
     // yet, and an unknown state is not a state.
@@ -46,10 +88,23 @@ describe("the state of a model of a project is named in words", () => {
     expect(modelRouteLabel({ modelId: "  ", confirmed })).toBeUndefined();
   });
 
+  it("takes the stale verdict before anything else", () => {
+    const label = modelRouteLabel({ modelId: "omniroute/never-confirmed", confirmed });
+    expect(label?.state).toBe("устаревшая");
+  });
+
   it("names the provider of a model id", () => {
     expect(modelProvider("omniroute/minimax-combo-m3.1")).toBe("omniroute");
     expect(modelProvider("minimax-coding-plan/MiniMax-M3.1-Flash")).toBe("minimax-coding-plan");
     expect(modelProvider("no-slash")).toBe("");
+  });
+
+});
+
+describe("the form of the models shows the state of the model", () => {
+  it("draws the badge of the state next to the effective model", () => {
+    expect(page).toContain("modelRouteLabel");
+    expect(page).toContain("projects-model-state");
   });
 
   it("names the state in words, not only in colour", () => {
@@ -62,5 +117,6 @@ describe("the state of a model of a project is named in words", () => {
     expect(styles).toContain("projects-model-state");
     expect(styles).toMatch(/projects-model-state-ok/);
     expect(styles).toMatch(/projects-model-state-stale/);
+    expect(styles).toMatch(/projects-model-state-error/);
   });
 });

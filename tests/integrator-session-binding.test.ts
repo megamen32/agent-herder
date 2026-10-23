@@ -298,4 +298,33 @@ describe("integrator session binding store", () => {
     expect(legacy?.attempts[0]?.inputId).toBe(inputId);
     expect(legacy?.attempts[0]?.receipt).toEqual(oldReceipt);
   });
+
+  it("records the created native address for the selected harness and keeps the Codex receipt identical", async () => {
+    const f = await fixture();
+    const opencode = await f.store.reserve({ operationId: "task-op-harness-opencode", hostId: "server-100", harness: "opencode" });
+    const accepted = await f.store.recordCreated({
+      operationId: "task-op-harness-opencode", attempt: opencode.attempt.attempt, harness: "opencode",
+      nativeSessionId: "native-opencode-1", launchCwd: "/work/project",
+    });
+    expect(accepted).toMatchObject({ state: "accepted", harness: "opencode", attempts: [{ state: "accepted",
+      address: { hostId: "server-100", harness: "opencode", nativeSessionId: "native-opencode-1" } }] });
+    expect(accepted.attempts[0]?.receipt).toEqual({ state: "created", inputId: opencode.attempt.inputId,
+      address: { hostId: "server-100", harness: "opencode", nativeSessionId: "native-opencode-1" },
+      launchCwd: "/work/project", retryable: false });
+
+    const codex = await f.store.reserve({ operationId: "task-op-harness-codex", hostId: "server-100", harness: "codex" });
+    const codexAccepted = await f.store.recordCreated({
+      operationId: "task-op-harness-codex", attempt: codex.attempt.attempt, harness: "codex",
+      nativeSessionId: "native-codex-1", launchCwd: "/work/project",
+    });
+    expect(codexAccepted.attempts[0]?.receipt).toEqual({ state: "created", inputId: codex.attempt.inputId,
+      address: { hostId: "server-100", harness: "codex", nativeSessionId: "native-codex-1" },
+      launchCwd: "/work/project", retryable: false });
+
+    await expect(f.store.recordCreated({
+      operationId: "task-op-harness-opencode", attempt: opencode.attempt.attempt, harness: "opencode",
+      nativeSessionId: "native-opencode-2", launchCwd: "/work/project",
+    })).rejects.toThrow("attempt_terminal");
+  });
+
 });

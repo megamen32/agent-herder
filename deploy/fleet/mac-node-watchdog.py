@@ -9,6 +9,10 @@ Codex JOIN also requires approved codexOwnerPid/codexOwnerStartedAt
 (ps lstart) /codexOwnerBin; canonical rendezvous +UID/PID/executable/listen/
 inode proof is refreshed each sample, no unknown owner/forward adoption.
 OpenCode additionally needs an EXISTING protected opencodeEnvFile.
+A recorded OpenCode pid that is gone is a state, not a failure: the watchdog
+adopts the live OpenCode of the same port, proves it by ps and lsof and records
+that pid. The watchdog never creates a native daemon: without a live OpenCode
+it refuses and names the port it needs.
 Never inspect /proc, create a native daemon, copy credentials or prune releases.
 
 Owned child process group: RSS soft256MiB Mini/384MiB M1 (30s sustained), hard512MiB;
@@ -101,6 +105,14 @@ def command(argv,deadline=None):
             and argv[:2]==['/bin/ps','-g'] and argv[3:]==['-o','pid=,pgid=,uid=,rss=,time=,stat=,lstart=']
             and re.fullmatch(r'[0-9]{1,10}',argv[2]) and int(argv[2])>1):
         try:os.killpg(int(argv[2]),0)
+        except ProcessLookupError:return ''
+        except OSError:pass
+    # A gone process is a state, not a probe error: accept only this exact
+    # single process query AND a kernel absence check.
+    if (result.returncode==1 and not result.stdout and not result.stderr and len(argv)==5
+            and argv[:2]==['/bin/ps','-p'] and argv[3]=='-o'
+            and re.fullmatch(r'[0-9]{1,10}',argv[2]) and int(argv[2])>1):
+        try:os.kill(int(argv[2]),0)
         except ProcessLookupError:return ''
         except OSError:pass
     if result.returncode or len(result.stdout)>1024**2:
@@ -496,23 +508,85 @@ def protected_env(pointer):
     if not values.get('OPENCODE_SERVER_PASSWORD'):raise Refused('opencode_auth_pointer_missing')
     return values
 
-def opencode_environment(config):
+def process_command(pid):
+    """The uid and the arguments of a live process; None when the process is gone."""
+    text=command(['/bin/ps','-p',str(pid),'-o','uid=,command=']).strip()
+    if not text:return None
+    parts=text.split(maxsplit=1)
+    if len(parts)!=2 or not parts[0].isdigit():raise Refused('opencode_native_identity_mismatch')
+    return int(parts[0]),shlex.split(parts[1])
+
+def opencode_serve_port(args):
+    """The port of an OpenCode serve command line; None when it is not one."""
+    if not args or 'serve' not in args:return None
+    if not any('opencode' in Path(arg).name for arg in args[:2]):return None
+    if '--port' not in args:return '4096'
+    index=args.index('--port')+1
+    return args[index] if index<len(args) else None
+
+def opencode_listener_pids(port):
+    """Every process that owns a LISTEN socket on this TCP port."""
+    pids=[]
+    for token in command(['/usr/sbin/lsof','-t','-nP','-iTCP:'+str(port),'-sTCP:LISTEN']).split():
+        if re.fullmatch(r'[0-9]{1,10}',token):pids.append(int(token))
+    return pids
+
+def find_opencode(port):
+    """The live OpenCode of this port, found by its listener and proven by ps."""
+    for pid in opencode_listener_pids(port):
+        row=process_command(pid)
+        if row is None:continue
+        uid,args=row
+        if uid!=os.getuid():continue
+        if opencode_serve_port(args)!=str(port):continue
+        return pid
+    return None
+
+def record_opencode_pid(base,config,pid):
+    """The node records the live pid it actually works with."""
+    if config.get('opencodePid')==pid:return
+    path=base/'node-config.json'
+    updated=dict(config);updated['opencodePid']=pid
+    temporary=path.with_suffix('.json.new')
+    temporary.write_text(json.dumps(updated,indent=1)+'\n')
+    os.chmod(temporary,0o600)
+    os.replace(temporary,path)
+    config['opencodePid']=pid
+
+def opencode_environment(config,base=None):
     pointer=config.get('opencodeEnvFile')
     if not isinstance(pointer,str) or not Path(pointer).is_absolute():
         raise Refused('opencode_auth_pointer_missing')
     values=protected_env(Path(pointer))
     pid=config.get('opencodePid');port=config.get('opencodePort')
-    if type(pid)!=int or pid<=1 or type(port)!=int or not 1<=port<=65535:
+    if type(port)!=int or not 1<=port<=65535:
         raise Refused('opencode_native_identity_missing')
-    native=command(['/bin/ps','-p',str(pid),'-o','uid=,command=']).strip().split(maxsplit=1)
-    if len(native)!=2 or int(native[0])!=os.getuid():raise Refused('opencode_native_identity_mismatch')
-    args=shlex.split(native[1])
-    if 'serve' not in args or not any('opencode' in Path(arg).name for arg in args[:2]):
-        raise Refused('opencode_native_identity_mismatch')
-    actual=args[args.index('--port')+1] if '--port' in args else '4096'
-    if actual!=str(port):raise Refused('opencode_native_port_changed')
+    if type(pid)!=int or pid<=1:
+        pid=None
+    else:
+        row=process_command(pid)
+        if row is None:
+            pid=None                      # a gone pid is a state, not a failure
+        else:
+            uid,args=row
+            if uid!=os.getuid():raise Refused('opencode_native_identity_mismatch')
+            actual=opencode_serve_port(args)
+            if actual is None:
+                pid=None                  # the pid was reused by another process
+            elif actual!=str(port):
+                raise Refused('opencode_native_port_changed')
+    if pid is None:
+        pid=find_opencode(port)
+    if pid is None:
+        raise Refused('opencode_native_identity_missing: no live OpenCode serves port %d'%port)
+    row=process_command(pid)
+    if row is None:raise Refused('opencode_native_identity_mismatch')
+    uid,args=row
+    if uid!=os.getuid():raise Refused('opencode_native_identity_mismatch')
+    if opencode_serve_port(args)!=str(port):raise Refused('opencode_native_port_changed')
     listeners=command(['/usr/sbin/lsof','-t','-nP','-a','-p',str(pid),'-iTCP:'+str(port),'-sTCP:LISTEN']).split()
     if set(listeners)!={str(pid)}:raise Refused('opencode_native_listener_mismatch')
+    if base is not None:record_opencode_pid(base,config,pid)
     return {**values,'OPENCODE_URL':'http://127.0.0.1:'+str(port)}
 
 def cpu_seconds(value):
@@ -785,7 +859,7 @@ def probe_node_port(port):
         probe.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
         probe.bind(('127.0.0.1',port))
 
-def prepare(base,config,artifact_cache=None):
+def prepare(base,config,artifact_cache=None,read_only=False):
     if sys.platform!='darwin':raise Refused('darwin_required')
     policy=Policy(command(['/usr/sbin/sysctl','-n','hw.model']).strip())
     if config['hostId']!=socket.gethostname():raise Refused('native_host_identity_mismatch')
@@ -798,7 +872,7 @@ def prepare(base,config,artifact_cache=None):
         raise Refused('unsupported_node_harnesses')
     native={}
     if 'codex' in harnesses:native.update(codex_environment(config))
-    if 'opencode' in harnesses:native.update(opencode_environment(config))
+    if 'opencode' in harnesses:native.update(opencode_environment(config,None if read_only else base))
     if 'zcode' in harnesses:
         znode=executable(config['zcodeNode']);zentry=Path(config['zcodeEntry'])
         if not zentry.is_absolute() or not zentry.is_file():raise Refused('zcode_entry_missing')
@@ -816,6 +890,18 @@ def prepare(base,config,artifact_cache=None):
         AGENT_HERDER_WEB_HOST='0.0.0.0',AGENT_HERDER_WEB_PORT=str(config.get('webPort',18789)),
         AGENT_HERDER_ADAPTER_REGISTRY=str(state/'adapters.json'),AGENT_HERDER_AUTOPILOT_STATE_DIR=str(state/'autopilot'),
         AGENT_HERDER_HUMAN_REQUEST_STORE=str(state/'human-requests.json'),AGENT_HERDER_SINGLETON_LOCK=str(base/'run/node.lock'),TMPDIR=str(temp))
+    # The node serves GET/PUT /api/automation/launch-policy from the autopilot
+    # state directory. Seed the document at deploy time so the node has a
+    # policy version to confirm and the endpoint answers instead of "absent".
+    # A seeding failure must not take the node down.
+    try:
+        sys.path.insert(0,str(Path(__file__).resolve().parent))
+        import launch_policy_seed
+        _models,_document=launch_policy_seed.default_models()
+        launch_policy_seed.seed(str(state),harnesses,_models,_document.get("preferredHarness"),_document.get("fallbackModels"))
+    except Exception as exc:
+        print("launch-policy seed failed: "+str(exc))
+
     port=config.get('webPort',18789)
     if type(port)!=int or not 1024<=port<=65535:raise Refused('node_port_invalid')
     probe_node_port(port)
@@ -938,7 +1024,7 @@ def main():
     if sys.argv[1:] not in ([],['--check']):raise Refused('unsupported_argument')
     config=json_file(base/'node-config.json')
     artifact_cache=ArtifactCensus()
-    policy,node,entry,state,temp,env=prepare(base,config,artifact_cache)
+    policy,node,entry,state,temp,env=prepare(base,config,artifact_cache,read_only=sys.argv[1:]==['--check'])
     if sys.argv[1:]==['--check']:
         print(json.dumps({'hostId':socket.gethostname(),'sourceSha':config['sourceSha'],'harnesses':config['harnesses'],'nativeCodexSocket':'codex' in config['harnesses'],'secretsPrinted':False,'enforcement':'darwin_watchdog'}));return 0
     for path in (state,base/'run',temp):private_directory(path)

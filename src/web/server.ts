@@ -1,6 +1,7 @@
 import type { BackgroundAutopilotStop } from "../autopilot/background-stop.js";
 import type { AutopilotRunnerInput } from "../autopilot-runner.js";
 import { projectSessionInventory } from "./session-inventory.js";
+import { isRestrictedProjectPath } from "../web-ui/model-status.js";
 import { SessionImageStore } from "../session-images.js";
 import { homedir, hostname, userInfo } from "node:os";
 import { UserMessageDelivery, type UserMessageRoute } from "../user-message-delivery.js";
@@ -20,6 +21,10 @@ import type { ProjectLaunchDispatcher } from "../automation/project-launch-dispa
 import type { IntegratorFleetRuntime } from "../integrator-fleet-runtime.js";
 import { NOTICEPLACE_HEALTH_AUTHORIZED, NOTICEPLACE_HEALTH_PURPOSE, hasNoticeplaceHealthBearer, qualifyNoticeplaceHealthModel, validateNoticeplaceHealthLaunch } from "../automation/noticeplace-health-launch.js";
 import { buildSessionProgress } from "../health-progress.js";
+import { buildIntegratorProgress } from "../integrator-progress.js";
+import { deliverStaleRunningQuestion } from "../human-request/notice-question.js";
+import { loadAskHumanProducer, type AskHumanProducer } from "../human-request/ask-human-producer.js";
+import { sessionInspectFacts, type SessionInspectFacts } from "../session-visualization.js";
 import { NoticeplaceHealthObserver } from "../automation/noticeplace-health-observer.js";
 import { appendHealthRefusalAudit, healthRefusalAuditPath, type HealthReasonRefusal } from "../automation/health-reason-codes.js";
 import { NOTICEPLACE_HEALTH_MODELS, resolveLaunchHealthPlan } from "../automation/noticeplace-health-policy.js";
@@ -57,7 +62,7 @@ import type { AutomationDisarmDocument } from "../automation-disarm/state.js";
 import { renderSessionGraph } from "../session-visualization.js";
 import { boundedCoordinationContext, coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
 import { sessionTargetRequest } from "../session-target.js";
-import { markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
+import { lifecycleEntryFor, markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
 import { getAgentActivityStatistics, withSessionPortfolioStatistics } from "../session-statistics.js";
 import { createMcpHandler, type McpServer } from "@modelcontextprotocol/server";
 import { createHash } from "node:crypto";
@@ -759,6 +764,19 @@ async function currentLaunchPolicyRevision(
 const MAX_SESSION_LIST_WINDOW = 500;
 
 /**
+ * The window of the list that a caller receives when it names none.
+ *
+ * The server bounds the answer of the list, not only the panel: an old
+ * panel, a tool of the mesh or a proxy that asks for the whole list used to
+ * receive megabytes of the history and to fill the route of the panel with
+ * them. The screens of the panel then waited for the history of another
+ * screen. The answer stays a window, and the counter of the whole list
+ * travels with it, so a caller that counts the sessions of the mesh still
+ * counts them all.
+ */
+const DEFAULT_SESSION_LIST_WINDOW = 100;
+
+/**
  * The budget of the answer of the list, in bytes.
  *
  * The size of a session is not uniform: a session with a long history is
@@ -1144,6 +1162,204 @@ export function createWebServer(dependencies: WebDependencies): Server {
   return server;
 }
 
+/**
+ * The facts the session inspector shows: the model's real state, the agent's
+ * last action, the files it changed, and who its children are.
+ *
+ * Every fact comes from a canonical source: the session transcript, the
+ * lineage store, or the working directory. What is not measured stays absent.
+ */
+async function sessionInspectorFacts(details: SessionDetails): Promise<SessionInspectFacts> {
+  const facts = sessionInspectFacts(details);
+  return { ...facts, worktreeFiles: await dirtyWorktreeFiles(details.session.cwd) };
+}
+
+/**
+ * The task a child session was given, when the lineage store recorded one.
+ * A child the provider never named stays unnamed — it is not given a fake title.
+ */
+async function childTaskNames(
+  harness: string,
+  children: AgentSession[],
+): Promise<Map<string, { task?: string; role?: string }>> {
+  const named = new Map<string, { task?: string; role?: string }>();
+  if (!children.length) return named;
+  try {
+    const store = new LineageStore(lineageStorePath());
+    await store.load();
+    for (const child of children) {
+      const provider = typeof child.meta?.provider === "string" ? child.meta.provider : harness;
+      const record = await store.get(`${provider}:${child.id}`) ?? await store.get(`${harness}:${child.id}`);
+      if (record?.task || record?.role) named.set(child.id, { task: record.task, role: record.role });
+    }
+  } catch { /* the lineage store is optional; an absent task stays unnamed */ }
+  return named;
+}
+
+/** The lineage file the supervisor itself reads. */
+function lineageStorePath(): string {
+  const dataHome = process.env.XDG_DATA_HOME || `${process.env.HOME || process.cwd()}/.local/share`;
+  return `${dataHome}/agent-herder/lineage.json`;
+}
+
+/** Files changed in the session's working directory, by git itself. */
+async function dirtyWorktreeFiles(cwd: string): Promise<string[]> {
+  if (!cwd || !isAbsolute(cwd)) return [];
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", cwd, "status", "--porcelain=v1", "--untracked-files=all"], { timeout: 4000, maxBuffer: 1024 * 1024 });
+    return stdout.split("\n").filter(Boolean).map((line) => line.slice(3).trim()).filter(Boolean);
+  } catch { return []; }
+}
+
+/**
+ * A child session carries the task it was given, when Herder recorded one.
+ * The provider's own title stays the fallback; a missing name stays missing.
+ */
+async function withChildTasks(details: SessionDetails, harness: string): Promise<SessionDetails> {
+  const named = await childTaskNames(harness, details.children || []);
+  if (!named.size) return details;
+  return {
+    ...details,
+    children: (details.children || []).map((child) => {
+      const found = named.get(child.id);
+      if (!found) return child;
+      return { ...child, meta: { ...child.meta, ...(found.task ? { task: found.task } : {}), ...(found.role ? { agentRole: found.role } : {}) } };
+    }),
+  };
+}
+
+/** Why a converted session is or is not visible in the running OpenCode. */
+export type ConvertVisibilityCause =
+  | "served"
+  | "no-session-id"
+  | "server-unreachable"
+  | "database-mismatch"
+  | "table-mismatch"
+  | "not-served"
+  | "row-missing";
+
+/** The verdict about one converted session, with the reason in the owner's words. */
+export type ConvertVisibility = { visible: boolean; cause: ConvertVisibilityCause; note: string };
+
+/** The global OpenCode database — the file the running OpenCode server opens. */
+function opencodeGlobalDbPath(): string {
+  const dataHome = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share");
+  return process.env.OPENCODE_DB_PATH || join(dataHome, "opencode", "opencode.db");
+}
+
+/** The project-local database the converter writes into when a project path is given. */
+function opencodeProjectDbPath(projectPath: string): string {
+  return join(projectPath, ".opencode", "opencode.db");
+}
+
+/**
+ * What one OpenCode database holds: its tables, and the table that carries
+ * the converted session. A database that cannot be opened is absent, not empty.
+ */
+type OpencodeDbProbe = { tables: string[]; rowTable: string | null };
+
+/** The session tables a converted row can land in, served table first. */
+const SESSION_TABLES = ["session_v2", "session", "sessions"] as const;
+
+async function probeOpencodeDb(dbPath: string, sessionId: string): Promise<OpencodeDbProbe | null> {
+  let db: import("node:sqlite").DatabaseSync;
+  try {
+    const { DatabaseSync } = await import("node:sqlite");
+    db = new DatabaseSync(dbPath, { readOnly: true });
+  } catch {
+    return null;
+  }
+  try {
+    const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map((row) => row.name);
+    let rowTable: string | null = null;
+    for (const table of SESSION_TABLES) {
+      if (!tables.includes(table)) continue;
+      try {
+        if (db.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(sessionId)) { rowTable = table; break; }
+      } catch { /* a table of another shape is not this row */ }
+    }
+    return { tables, rowTable };
+  } catch {
+    return null;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Whether the running OpenCode server serves a converted session.
+ *
+ * The server's own answer decides: the OpenCode adapter asks that server for
+ * the session, and a session the server does not return is one the owner will
+ * not see. The databases are read only to explain the refusal — which file and
+ * which table the row landed in, next to the file and the table the server
+ * reads.
+ */
+async function opencodeSessionVisibility(
+  supervisor: SessionSupervisor,
+  targetSessionId: string | undefined,
+  projectPath: string | undefined,
+): Promise<ConvertVisibility> {
+  if (!targetSessionId) {
+    return { visible: false, cause: "no-session-id", note: "OpenCode не вернул идентификатор новой сессии." };
+  }
+  // The live server is asked twice: a row that was just written can be a
+  // moment behind the read, and a single miss would be a wrong verdict.
+  let lastError: string | undefined;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 250));
+    try {
+      const served = await supervisor.getSession("opencode", targetSessionId, undefined, { includeModelOptions: false });
+      if (served) return { visible: true, cause: "served", note: "Новая сессия видна в работающем OpenCode." };
+      lastError = undefined;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+  }
+  if (lastError !== undefined) {
+    return {
+      visible: false,
+      cause: "server-unreachable",
+      note: `работающий OpenCode не ответил (${lastError}), поэтому видимость новой сессии не подтверждена`,
+    };
+  }
+
+  // The server answered and did not serve the session: name the cause.
+  const globalDb = opencodeGlobalDbPath();
+  const projectDb = projectPath ? opencodeProjectDbPath(projectPath) : undefined;
+  const global = await probeOpencodeDb(globalDb, targetSessionId);
+  const project = projectDb && projectDb !== globalDb ? await probeOpencodeDb(projectDb, targetSessionId) : undefined;
+  const servedTable = global?.tables.includes("session_v2") ? "session_v2" : global?.tables.includes("session") ? "session" : undefined;
+
+  if (project?.rowTable) {
+    return {
+      visible: false,
+      cause: "database-mismatch",
+      note: `перенос записан в project-local базу \`${projectDb}\` (таблица \`${project.rowTable}\`), а работающий OpenCode читает глобальную базу \`${globalDb}\`${servedTable ? ` (таблица \`${servedTable}\`)` : ""}`,
+    };
+  }
+  if (global?.rowTable && servedTable && global.rowTable !== servedTable) {
+    return {
+      visible: false,
+      cause: "table-mismatch",
+      note: `перенос записан в таблицу \`${global.rowTable}\`, а работающий OpenCode читает таблицу \`${servedTable}\``,
+    };
+  }
+  if (global?.rowTable) {
+    return {
+      visible: false,
+      cause: "not-served",
+      note: `перенос записан в таблицу \`${global.rowTable}\` глобальной базы, но работающий OpenCode её не отдаёт`,
+    };
+  }
+  const checked = [globalDb, ...(projectDb ? [projectDb] : [])].map((path) => `\`${path}\``).join(", ");
+  return {
+    visible: false,
+    cause: "row-missing",
+    note: `строка переноса не найдена ни в одной базе OpenCode (проверены: ${checked})`,
+  };
+}
+
 /** Edited files are attributed to the git repo that actually owns them, so
  * each repo's coordination board sees the sessions touching it — a session
  * working across several repos appears on several boards. Non-repo paths
@@ -1165,6 +1381,110 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   } catch { top = null; }
   repoToplevelCache.set(dir, { top, at: Date.now() });
   return top ?? fallback;
+}
+
+/**
+ * The rule of the owner for one leaf of a route.
+ *
+ * This is the rule of the launcher (`src/autopilot/unfinished-session-launcher.ts`,
+ * `isAllowedRestrictedProviderLeaf`), kept here so the server answers the panel
+ * with the same answer the launcher gives. The rule of the guard itself is
+ * never touched: `tests/leaf-verdict-panel.test.ts` runs the rule of the
+ * launcher against this one, so the two cannot drift apart unnoticed.
+ */
+export function isAllowedRestrictedProviderLeaf(leaf: { providerId: string; modelId: string }): boolean {
+  const providerId = leaf.providerId.trim().toLocaleLowerCase("en-US");
+  const modelId = leaf.modelId.trim().toLocaleLowerCase("en-US");
+  if (!providerId || !modelId || /codex|claude/u.test(`${providerId}/${modelId}`)) return false;
+  const allowedMiniMax = new Set(["minimax", "minimax-code", "minimax-coding-plan"]);
+  const allowedGlm = new Set(["glm", "zai", "zai-coding-plan", "zhipu"]);
+  const isMiniMax = allowedMiniMax.has(providerId) && /minimax|mmcode/u.test(modelId);
+  const isGlm = allowedGlm.has(providerId) && /(^|[/_-])glm([-_/]|$)/u.test(modelId);
+  return isMiniMax || isGlm;
+}
+
+/**
+ * The verdict of the server about one route of a model.
+ *
+ * `allowed` means the route is proven and the rule of the owner lets it,
+ * `denied` means the route is proven and the rule refuses it, and `unknown`
+ * means the route could not be proven — then the guard of the medium revokes
+ * the launch, so an unknown route is never a promise.
+ */
+export type ModelLaunchVerdict = "allowed" | "denied" | "unknown";
+
+/** The answer of the server about one model id, with the reason of it. */
+export type ModelLaunchVerdictEntry = { verdict: ModelLaunchVerdict; reason: string };
+
+/** How long one route may take to be proven before the answer is unknown. */
+const MODEL_LAUNCH_VERDICT_TIMEOUT_MS = 8_000;
+
+/** The promise, but only while it is quick enough for the panel. */
+async function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([promise, deadline]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * The verdict of the server about every route the panel asks about.
+ *
+ * The raw leaves never leave the node: the proof of a route stays loopback-only,
+ * and the panel receives the word of the verdict and nothing else. A failure of
+ * the resolver is an `unknown`, never an `allowed`.
+ */
+export async function computeModelLaunchVerdicts(input: {
+  harness: string;
+  cwd: string;
+  modelIds: string[];
+  adapters: Map<string, HarnessAdapter>;
+}): Promise<Record<string, ModelLaunchVerdictEntry>> {
+  const restricted = input.harness === "opencode" && isRestrictedProjectPath(input.cwd);
+  if (!restricted) {
+    // The rule of the owner closes the route of a closed project only, so
+    // everywhere else there is nothing for the server to refuse.
+    return Object.fromEntries(input.modelIds.map((modelId) => [modelId, { verdict: "allowed", reason: "rule-not-applicable" }]));
+  }
+  const adapter = input.adapters.get("opencode") as (HarnessAdapter & {
+    resolveModelProviderLeaves?: (modelId: string) => Promise<{
+      nativeHarness: string;
+      nativeModelId: string;
+      resolvedProviderLeaves: Array<{ providerId: string; modelId: string }>;
+    } | null>;
+  }) | undefined;
+  if (!adapter?.resolveModelProviderLeaves) {
+    return Object.fromEntries(input.modelIds.map((modelId) => [modelId, { verdict: "unknown", reason: "resolver-unavailable" }]));
+  }
+  const entries = await Promise.all(input.modelIds.map(async (modelId): Promise<[string, ModelLaunchVerdictEntry]> => {
+    try {
+      const resolved = await withDeadline(adapter.resolveModelProviderLeaves!(modelId), MODEL_LAUNCH_VERDICT_TIMEOUT_MS);
+      const leaves = resolved?.resolvedProviderLeaves;
+      if (!resolved || resolved.nativeHarness !== "opencode" || resolved.nativeModelId !== modelId
+        || !Array.isArray(leaves) || leaves.length === 0
+        || leaves.some((leaf) => !leaf || typeof leaf.providerId !== "string" || typeof leaf.modelId !== "string")) {
+        return [modelId, { verdict: "unknown", reason: "unverified" }];
+      }
+      if (leaves.every((leaf) => isAllowedRestrictedProviderLeaf(leaf))) {
+        return [modelId, { verdict: "allowed", reason: "verified" }];
+      }
+      // The reason, not the rule: the rule of the launcher cuts codex and
+      // claude, and this wider token only names the reason the panel reads.
+      // Both ends of the answer are the same — a leaf with such a provider is
+      // denied either way.
+      const closed = leaves.some((leaf) => /codex|claude|anthropic/iu.test(`${leaf.providerId}/${leaf.modelId}`));
+      return [modelId, { verdict: "denied", reason: closed ? "closed-provider" : "not-allowed" }];
+    } catch {
+      return [modelId, { verdict: "unknown", reason: "unverified" }];
+    }
+  }));
+  return Object.fromEntries(entries);
 }
 
 async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport): Promise<void> {
@@ -1851,6 +2171,36 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 503, { error: "The complete native provider route could not be verified" });
     }
   }
+  if (url.pathname === "/api/model-launch-verdict" && request.method === "GET") {
+    response.setHeader("cache-control", "no-store");
+    // The same origin check the neighbouring endpoints use: the panel reads the
+    // verdict from the browser, and a page of another origin must not ask.
+    if (request.headers["sec-fetch-site"] === "cross-site") return sendJson(response, 403, { error: "cross-site verdict read refused" });
+    const origin = request.headers.origin;
+    if (origin) {
+      try {
+        if (new URL(origin).host !== request.headers.host) return sendJson(response, 403, { error: "origin mismatch" });
+      } catch {
+        return sendJson(response, 403, { error: "invalid origin" });
+      }
+    }
+    const harness = url.searchParams.get("harness")?.trim() ?? "";
+    const cwd = url.searchParams.get("cwd")?.trim() ?? "";
+    const modelIds = (url.searchParams.get("modelIds") ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (!harness) return sendJson(response, 400, { error: "harness is required" });
+    if (!cwd) return sendJson(response, 400, { error: "cwd is required" });
+    if (modelIds.length === 0 || modelIds.length > 64) return sendJson(response, 400, { error: "modelIds must hold 1 to 64 model ids" });
+    if (modelIds.some((modelId) => modelId.length > 256 || /[\u0000-\u001f\u007f]/u.test(modelId))) {
+      return sendJson(response, 400, { error: "modelIds must hold clean model ids" });
+    }
+    // The answer holds the word of the verdict and nothing else: the provider
+    // behind the route never leaves the node that holds the proof of it.
+    const verdicts = await computeModelLaunchVerdicts({ harness, cwd, modelIds, adapters });
+    return sendJson(response, 200, { verdicts });
+  }
   if (url.pathname === "/api/human-stop/status" && request.method === "GET") {
     response.setHeader("cache-control", "no-store");
     const harness = url.searchParams.get("harness")?.trim();
@@ -2255,7 +2605,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   }
   if (request.method === "GET" && url.pathname === "/") {
     const html = await readFile(htmlPath, "utf8");
-    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    // The shell of the panel names the bundle of the current release. A
+    // cached shell keeps an old bundle alive in the browser, and an old
+    // bundle asks for the whole history of the mesh. The shell is never
+    // cached; the assets keep their own hash and their own cache.
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
     response.end(html);
     return;
   }
@@ -2398,31 +2752,33 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     };
     // The window of the list. The panel asks for a window and the answer
     // carries the window and the counter of the whole list, so the panel
-    // knows that the list is longer than it shows. A request without a
-    // window keeps the old answer: the whole list, as before.
-    const asked = sessionListLimit(url.searchParams.get("limit"));
+    // knows that the list is longer than it shows. The server bounds the
+    // answer even when the caller names no window: the whole history of the
+    // mesh is megabytes of JSON, and a screen of the panel must not become
+    // slow because another screen asked for the history. The counter of the
+    // whole list travels with the answer either way.
+    const asked = sessionListLimit(url.searchParams.get("limit")) ?? DEFAULT_SESSION_LIST_WINDOW;
     if (url.searchParams.get("quick") === "1") {
       const snapshot = supervisor.listSessionsFast(filters);
       const total = snapshot.sessions.length;
-      // The window of the list applies when the caller names it: a caller
-      // that asks for the whole list gets the whole list, and the answer
-      // carries the counter of the list either way. The panel of the herder
-      // names its window, and the answer says that it is a window:
-      // `truncated`, `total` and `limit` travel with it.
-      const visible = asked === undefined ? snapshot.sessions : sessionListWindow(snapshot.sessions, asked);
+      // The answer is a window: the sessions of the window and the counter
+      // of the whole list. `truncated`, `total` and `limit` travel with it,
+      // so the panel knows that the list is longer than it shows.
+      const visible = sessionListWindow(snapshot.sessions, asked);
       const truncated = visible.length < total;
       return sendJson(response, 200, url.searchParams.get("inventory") === "1"
-        ? { sessions: projectSessionInventory(visible), warming: snapshot.warming, total, ...(asked === undefined ? {} : { limit: asked, truncated }) }
-        : { ...snapshot, sessions: visible, total, ...(asked === undefined ? {} : { limit: asked, truncated }) });
+        ? { sessions: projectSessionInventory(visible), warming: snapshot.warming, total, limit: asked, truncated }
+        : { ...snapshot, sessions: visible, total, limit: asked, truncated });
     }
     const sessions = await supervisor.listSessions(filters);
     const total = sessions.length;
-    const visible = asked === undefined ? sessions : sessionListWindow(sessions, asked);
+    const visible = sessionListWindow(sessions, asked);
     sendJson(response, 200, {
       sessions: url.searchParams.get("inventory") === "1" ? projectSessionInventory(visible) : visible,
       warming: false,
       total,
-      ...(asked === undefined ? {} : { limit: asked, truncated: visible.length < total }),
+      limit: asked,
+      truncated: visible.length < total,
     });
     return;
   }
@@ -2619,14 +2975,14 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         { limit: Number.isFinite(limitValue) ? limitValue : 3, history: history || "auto", quick },
       );
       if (details.session.id !== sessionId || details.session.harness !== harness) return sendJson(response, 409, { error: "Exact native session identity mismatch." });
-      return sendJson(response, 200, details);
+      return sendJson(response, 200, quick ? details : await withChildTasks(details, harness));
     }
     const details = await supervisor.getSessionDetails(
       harness,
       sessionId,
       { limit: Number.isFinite(limitValue) ? limitValue : 3, history: history || "auto", quick },
     );
-    return sendJson(response, 200, details);
+    return sendJson(response, 200, quick ? details : await withChildTasks(details, harness));
   }
   const visualizationMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/visualization$/);
   if (visualizationMatch && request.method === "GET") {
@@ -2638,10 +2994,22 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { error: "Scoped session read port is unavailable." });
     const details = route.kind === "scoped" ? await route.supervisor!.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" })
       : await supervisor.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" });
-    const html = await sessionVisualizer(details);
+    const html = await sessionVisualizer(await withChildTasks(details, harness));
     response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
     response.end(html);
     return;
+  }
+  const inspectMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/inspect$/);
+  if (inspectMatch && request.method === "GET") {
+    const harness = decodeURIComponent(inspectMatch[1]);
+    const sessionId = decodeURIComponent(inspectMatch[2]);
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { error: "Scoped session read port is unavailable." });
+    const details = route.kind === "scoped" ? await route.supervisor!.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" })
+      : await supervisor.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" });
+    if (!details) return sendJson(response, 404, { error: "Session not found" });
+    return sendJson(response, 200, await sessionInspectorFacts(await withChildTasks(details, harness)));
   }
   const progressMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/progress$/);
   if (progressMatch && request.method === "GET") {
@@ -2655,6 +3023,10 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const details = route.kind === "scoped" ? await route.supervisor!.getSessionDetails(harness, sessionId,
       { limit: Number.isFinite(limitValue) ? limitValue : 5, history: history || "auto" })
       : await supervisor.getSessionDetails(harness, sessionId, { limit: Number.isFinite(limitValue) ? limitValue : 5, history: history || "auto" });
+    // A stale running session asks the operator exactly one question. The stale
+    // fact is the only trigger, and the delivery is the existing Notice
+    // producer, so no second channel and no second card appear.
+    void reportStaleRunningSession(harness, sessionId, details).catch(() => undefined);
     return sendJson(response, 200, buildSessionProgress(details, Number.isFinite(limitValue) ? limitValue : 5));
   }
   const actionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/(resume|message|stop|terminate|cancel|recover|fork|archive|compact|model|permissions\/([^/]+))$/);
@@ -2763,6 +3135,64 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }));
   }
 
+  const convertMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/convert$/);
+  if (convertMatch && request.method === "POST") {
+    const harness = decodeURIComponent(convertMatch[1]) as HarnessType;
+    const sessionId = decodeURIComponent(convertMatch[2]);
+    const body = await readJson(request);
+    const to = typeof body.to === "string" ? body.to as HarnessType : undefined;
+    if (to !== "opencode") return sendJson(response, 400, { error: "Доступен перевод только в OpenCode." });
+    if (harness !== "codex") return sendJson(response, 400, { error: "Перевод в OpenCode доступен только для сессий Codex." });
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { error: "Scoped session read port is unavailable." });
+    const details = route.kind === "scoped" ? await route.supervisor!.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" })
+      : await supervisor.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" });
+    if (!details) return sendJson(response, 404, { error: "Сессия не найдена." });
+    const nativeSessionId = typeof details.session.meta?.nativeSessionId === "string" ? details.session.meta.nativeSessionId : sessionId;
+    const readingSupervisor = route.kind === "scoped" ? route.supervisor! : supervisor;
+    const result = await supervisor.convertSession({
+      sessionId: nativeSessionId,
+      from: harness,
+      to,
+      projectPath: details.session.cwd || undefined,
+    });
+    if (!result.success) {
+      return sendJson(response, 502, {
+        ok: false,
+        from: harness,
+        to,
+        error: result.error || "Не удалось перевести сессию в OpenCode.",
+        warnings: result.warnings,
+      });
+    }
+    // The conversation was written into the OpenCode database. Whether the
+    // running OpenCode server serves that row is a separate fact, and it is
+    // measured against that server rather than assumed.
+    const visible = await opencodeSessionVisibility(readingSupervisor, result.targetSessionId, details.session.cwd || undefined);
+    return sendJson(response, 200, {
+      ok: true,
+      from: harness,
+      to,
+      // What was carried over to the new session.
+      transferred: {
+        messageCount: result.messageCount,
+        targetSessionId: result.targetSessionId,
+        targetPath: result.targetPath,
+      },
+      // What the running OpenCode server shows about that new session.
+      visibleInOpenCode: visible.visible,
+      visibilityCause: visible.cause,
+      visibilityNote: visible.note,
+      // What stays where it was: the original session is never moved or removed.
+      stayed: {
+        sessionId,
+        harness,
+        path: details.session.cwd || undefined,
+      },
+      warnings: result.warnings,
+    });
+  }
   if (request.method === "POST" && url.pathname === "/api/conversions") {
     const body = await readJson(request);
     if (typeof body.sessionId !== "string" || typeof body.from !== "string" || typeof body.to !== "string") {
@@ -2934,4 +3364,52 @@ function sendNamedSessionResult(
 ): void {
   const conflict = result.error?.startsWith("Ambiguous named session") || result.error?.includes("already exists");
   sendJson(response, result.ok ? 200 : conflict ? 409 : 502, result);
+}
+
+/** The age of the running evidence that makes a session stale for the operator. */
+const STALE_RUNNING_AFTER_MS = 15 * 60_000;
+
+/** The sessions already asked about: one question per stale session per process. */
+const staleRunningAsked = new Set<string>();
+let staleRunningProducer: Promise<AskHumanProducer | undefined> | undefined;
+
+/**
+ * Ask the operator about one stale-running session.
+ *
+ * The stale fact is the only trigger, and the same session is never asked
+ * twice from one process. The delivery goes through the existing Notice
+ * producer, so the question lands in the same scope as every other human
+ * question and the answer returns through the existing completion path.
+ */
+async function reportStaleRunningSession(harness: string, sessionId: string, details: SessionDetails): Promise<void> {
+  const key = `${harness}:${sessionId}`;
+  if (staleRunningAsked.has(key)) return;
+  const lifecycle = lifecycleEntryFor(harness, sessionId);
+  const progress = buildIntegratorProgress({
+    now: Date.now(),
+    staleAfterMs: STALE_RUNNING_AFTER_MS,
+    details,
+    ...(lifecycle ? { lifecycle } : {}),
+  });
+  if (progress.state !== "stale_running") return;
+  staleRunningAsked.add(key);
+  try {
+    staleRunningProducer ??= loadAskHumanProducer(process.env);
+    const producer = await staleRunningProducer;
+    if (!producer) { staleRunningAsked.delete(key); return; }
+    await deliverStaleRunningQuestion(progress, {
+      harness,
+      session_id: sessionId,
+      ...(details.session.cwd ? { cwd: details.session.cwd } : {}),
+    }, {
+      endpoint: producer.endpoint,
+      token: producer.token,
+      project: producer.project,
+      recipient: producer.recipient,
+      ...(producer.allowedActors ? { allowedActors: producer.allowedActors } : {}),
+    });
+  } catch (error) {
+    staleRunningAsked.delete(key);
+    console.error(`[agent-herder] the stale running question for ${key} was not delivered: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
