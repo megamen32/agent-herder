@@ -11,7 +11,7 @@ inode proof is refreshed each sample, no unknown owner/forward adoption.
 OpenCode additionally needs an EXISTING protected opencodeEnvFile.
 Never inspect /proc, create a native daemon, copy credentials or prune releases.
 
-Owned child process group: RSS soft256MiB (30s sustained), hard512MiB;
+Owned child process group: RSS soft256MiB Mini/384MiB M1 (30s sustained), hard512MiB;
 CPU100% over20s,150% per sample after10s startup;128 threads/16 processes;
 temp128/state64MiB; <=3 release directories/512MiB; host reserve Mini2/M1 4GiB,
 disk2GiB. Poll delay2s plus bounded probes, metadata commands5s/two attempts10s total,
@@ -68,6 +68,9 @@ class Policy:
         if model not in ('Macmini6,2', 'MacBookPro18,2'):
             raise Refused('native_model_unverified')
         self.host_reserve_kib = (2 if model == 'Macmini6,2' else 4)*1024**2
+        # The measured M1 Herder resident set is 273 MiB with >21 GiB free;
+        # retain the hard fence and Mini admission while fitting this runtime.
+        self.memory_soft_kib = (256 if model == 'Macmini6,2' else 384)*1024
 
 def command(argv,deadline=None):
     # A transient read timeout must not kill both healthy owned controllers.
@@ -653,8 +656,8 @@ def cpu_percent(previous,current,elapsed):
 def rolling_cpu(samples,now):
     return sum(max(0,min(end,now)-max(start,now-CPU_WINDOW))*cpu for start,end,cpu in samples)/CPU_WINDOW
 
-def soft_memory_anchor(rss,now,previous):
-    return (now if previous is None else previous) if rss>MEMORY_SOFT_KIB else None
+def soft_memory_anchor(rss,now,previous,limit_kib=MEMORY_SOFT_KIB):
+    return (now if previous is None else previous) if rss>limit_kib else None
 
 def violations(sample,policy,elapsed,soft_since=None):
     rules=[('memory_hard',sample['rss_kib']>MEMORY_MAX_KIB),
@@ -966,7 +969,7 @@ def main():
                     'state_bytes':storage_bytes(state,64*MIB),'artifact_bytes':artifact,'releases':releases,
                     'artifactCensusAgeSeconds':artifact_cache.age_seconds(),
                     'host_available_kib':host_available_kib(),'disk_free_bytes':shutil.disk_usage(base).free}
-                soft=soft_memory_anchor(sample['rss_kib'],elapsed,soft);failed=violations(sample,policy,elapsed,soft)
+                soft=soft_memory_anchor(sample['rss_kib'],elapsed,soft,policy.memory_soft_kib);failed=violations(sample,policy,elapsed,soft)
                 if failed:reason='resource_budget';break
                 time.sleep(POLL_SECONDS)
         except KeyboardInterrupt:reason='operator_stop'

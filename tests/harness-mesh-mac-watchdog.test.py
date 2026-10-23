@@ -40,6 +40,18 @@ w = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(w)
 
 class MacWatchdogTests(unittest.TestCase):
+    def test_measured_m1_herder_rss_is_admitted_without_removing_memory_guards(self):
+        # Real 8040 exit sample: 279696 KiB, 37.76s, >21 GiB host available.
+        measured=self.sample(rss_kib=279696,host_available_kib=22817013)
+        policy=w.Policy('MacBookPro18,2')
+        anchor=w.soft_memory_anchor(measured['rss_kib'],0,None,policy.memory_soft_kib)
+        self.assertIsNone(anchor)
+        self.assertNotIn('memory_soft_sustained',w.violations(measured,w.Policy('MacBookPro18,2'),37.76,anchor))
+        high=self.sample(rss_kib=384*1024+1)
+        anchor=w.soft_memory_anchor(high['rss_kib'],0,None,policy.memory_soft_kib)
+        self.assertIn('memory_soft_sustained',w.violations(high,w.Policy('MacBookPro18,2'),30,anchor))
+        self.assertIn('memory_hard',w.violations(self.sample(rss_kib=512*1024+1),w.Policy('MacBookPro18,2'),0))
+        self.assertEqual(w.Policy('Macmini6,2').memory_soft_kib,256*1024)
     def test_three_preserved_hardlinked_releases_fit_existing_byte_cap_and_fourth_refuses(self):
         with tempfile.TemporaryDirectory() as folder:
             base=Path(folder);releases=base/'releases';releases.mkdir()
