@@ -189,7 +189,7 @@ exec(compile(source,'owned-http-bridge','exec'))`;
   const input={inputId:'e'.repeat(64),harness:'codex',name:'scoped task',cwd:'/caller/cwd',project:'project-alpha',projectReadinessContract:'integrator-host-readiness-v1',projectReadiness};
   const result=await callback(input);expect(ownerJournal.once).toHaveBeenCalledWith({...input,hostId:state.host},expect.any(Function));
   expect(runtime.validateReadiness).toHaveBeenCalledOnce();
-  expect(create).toHaveBeenCalledWith({inputId:input.inputId,name:input.name,cwd:input.cwd,project:input.project,projectReadinessContract:input.projectReadinessContract,projectReadiness:input.projectReadiness});
+  expect(create).toHaveBeenCalledWith({inputId:input.inputId,name:input.name,cwd:input.cwd,project:input.project,harness:input.harness,projectReadinessContract:input.projectReadinessContract,projectReadiness:input.projectReadiness});
   expect(JSON.parse(result.content[0].text)).toMatchObject({ok:true,sessionId:'scoped-native',cwd:'/configured/root'});
  });
 });

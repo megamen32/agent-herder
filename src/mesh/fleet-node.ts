@@ -126,7 +126,10 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
   const snapshot={hostId:hostname(),nativeUser:userInfo().username,platform:platform(),generation,createHarnesses:fleetHarnesses.filter(h=>typeof deps.adapters.get(h)?.createSession==='function'),...(deps.launchPolicyRevision?{launchPolicy:await deps.launchPolicyRevision()}:{})};
   if(project===undefined)return {structuredContent:snapshot,content:[{type:'text' as const,text:JSON.stringify(snapshot)}]};
   const readiness=deps.integratorRuntime?await deps.integratorRuntime.readiness(project):undefined;
-  const result={...snapshot,projectReadinessContract:'integrator-host-readiness-v1',projectReadiness:readiness??{state:'not_ready',projectId:project,reason:'project_scoped_runtime_unavailable'}};
+  // The route names the harness and the model a consumer must request. The values come from the route
+  // resolver, so an opencode route is reachable and a project without a route is named with its reason.
+  const projectRoute=deps.integratorRuntime?await deps.integratorRuntime.projectRoute(project):{state:'unavailable' as const,reason:'project_scoped_runtime_unavailable'};
+  const result={...snapshot,projectReadinessContract:'integrator-host-readiness-v1',projectReadiness:readiness??{state:'not_ready',projectId:project,reason:'project_scoped_runtime_unavailable'},projectRoute};
   return {structuredContent:result,content:[{type:'text' as const,text:JSON.stringify(result)}]};
  });
 }

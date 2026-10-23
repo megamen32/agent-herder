@@ -17,7 +17,7 @@ describe('fleet HTTP and native MCP envelopes (focused integration; expected 3s,
  });
  it('returns project readiness in both MCP envelopes and refuses unready project create before durable intent',async()=>{
   const readiness={state:'ready',projectId:'Олег и Никита',projectRoot:'/work/integrator',rootIdentity:'["/work/integrator",1,2]',policyRevision:'etag-1',hostId:hostname(),harness:'codex',harnessVersion:'codex-cli 0.162.1',model:'gpt-6-luna',requiredTools:['web_search'],availableTools:['web_search'],availableModels:['gpt-6-luna'],resourceReady:true,runtimeInstanceId:'runtime-1',cwd:'/work/integrator',pathResolution:{requestedCwd:'/work/integrator',canonicalCwd:'/work/integrator',rootPath:'/work/integrator',contained:true,identityMatches:true},observedAtMs:Date.now()};
-  const runtime={readiness:vi.fn(async()=>readiness),validateReadiness:vi.fn(async()=>false),create:vi.fn()};
+  const runtime={readiness:vi.fn(async()=>readiness),validateReadiness:vi.fn(async()=>false),create:vi.fn(),projectRoute:vi.fn(async()=>({state:'available',harness:'codex',model:'gpt-6-luna'}))};
   const ownerJournal={once:vi.fn()};
   const server=new McpServer({name:'local-herder',version:'1'});
   registerFleetNodeTools(server,{adapters:new Map(),integratorRuntime:runtime as any,ownerJournal:ownerJournal as any});

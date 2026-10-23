@@ -1,7 +1,7 @@
 import { hostname, homedir } from "node:os";
 import { resolve } from "node:path";
 import { realpath, stat } from "node:fs/promises";
-import { AutomationLaunchPolicyStore, canonicalProjectKey, type AutomationLaunchPolicyDocument } from "./automation-launch-policy.js";
+import { AutomationLaunchPolicyStore, canonicalProjectKey, type AutomationLaunchPolicyDocument, type ProjectLaunchRoute } from "./automation-launch-policy.js";
 import { CodexAppServerAdapter } from "./adapters/codex-app-server.js";
 import { OpenCodeAdapter } from "./adapters/opencode.js";
 import {
@@ -13,7 +13,7 @@ import {
 } from "./project-runtime-policy.js";
 import type { ProjectExecutionBinding, TrustedRuntimeOwnerResolver } from "./project-execution-scope.js";
 import { IntegratorSessionBindingStore, type IntegratorLaunchReceipt, type IntegratorNativeAddress, type IntegratorOperationBinding } from "./integrator-session-binding.js";
-import type { FleetCreateReceipt, FleetHarness } from "./mesh/fleet-contract.js";
+import { fleetHarnesses, type FleetCreateReceipt, type FleetHarness } from "./mesh/fleet-contract.js";
 import type { HarnessAdapter } from "./types/index.js";
 
 export interface IntegratorFleetCreateInput {
@@ -94,6 +94,12 @@ type CodexConfiguredProject = { rootPath: string; harness: "codex"; model: typeo
 type ConfiguredProject =
   | CodexConfiguredProject
   | { rootPath: string; harness: Exclude<FleetHarness, "codex">; model: string; etag: string; nativeWebSearch?: "live" };
+/** The one saved route of a project: the exact policy document it was read from, its root and its route. */
+type RouteMatch = { document: Extract<AutomationLaunchPolicyDocument, { kind: "valid" }>; rootPath: string; route: ProjectLaunchRoute };
+/** The route a consumer must request: the harness the project designates and the model of that harness. */
+export type IntegratorProjectRoute =
+  | { state: "available"; harness: FleetHarness; model: string; reason?: undefined }
+  | { state: "unavailable"; harness?: undefined; model?: undefined; reason: string };
 type ScopedSession = { adapter: CodexAppServerAdapter; owner: TrustedRuntimeOwnerResolver; project: CodexConfiguredProject; operationId: string };
 type ScopedFactory = (input: Parameters<typeof CodexAppServerAdapter.createProjectScoped>[0]) => Promise<CodexAppServerAdapter>;
 
@@ -489,8 +495,8 @@ export class IntegratorFleetRuntime {
     };
   }
 
-  /** Resolves one project route for one explicitly selected harness. The route designates its primary harness; another harness is never substituted. */
-  private async resolveConfiguredProject(project: string, harness: FleetHarness): Promise<{ ok: true; project: ConfiguredProject } | { ok: false; reason: string }> {
+  /** Matches the one saved route of a project. The route designates its own harness; the caller decides what to do with it. */
+  private async matchRoute(project: string): Promise<{ ok: true; match: RouteMatch } | { ok: false; reason: string }> {
     let document: AutomationLaunchPolicyDocument;
     try { document = await this.options.policyStore.readDocument(); }
     catch { return { ok: false, reason: "project_route_policy_unavailable" }; }
@@ -507,6 +513,32 @@ export class IntegratorFleetRuntime {
     if (!rootPath.startsWith("/") || resolve(rootPath) !== rootPath) {
       return { ok: false, reason: "project_route_codex_unavailable" };
     }
+    return { ok: true, match: { document, rootPath, route } };
+  }
+
+  /**
+   * The route a consumer must request: the harness the project designates and the model of that harness.
+   * The values come from the same resolver the create path uses, so a caller never asks for a harness the
+   * route does not designate. A project without a route is named with the reason of the resolver, never thrown.
+   */
+  async projectRoute(projectId: string): Promise<IntegratorProjectRoute> {
+    const matched = await this.matchRoute(projectId);
+    if (!matched.ok) return { state: "unavailable", reason: matched.reason };
+    const designated = matched.match.route.harnesses[0];
+    const fleetHarness = designated && (fleetHarnesses as readonly string[]).includes(designated) ? designated as FleetHarness : undefined;
+    if (!fleetHarness || !matched.match.document.policy.allowedHarnesses.includes(fleetHarness)) {
+      return { state: "unavailable", reason: "project_route_harness_unavailable" };
+    }
+    const configured = await this.resolveConfiguredProject(projectId, fleetHarness, matched);
+    if (!configured.ok) return { state: "unavailable", reason: configured.reason };
+    return { state: "available", harness: configured.project.harness, model: configured.project.model };
+  }
+
+  /** Resolves one project route for one explicitly selected harness. The route designates its primary harness; another harness is never substituted. */
+  private async resolveConfiguredProject(project: string, harness: FleetHarness, matchedRoute?: { ok: true; match: RouteMatch }): Promise<{ ok: true; project: ConfiguredProject } | { ok: false; reason: string }> {
+    const matched = matchedRoute ?? await this.matchRoute(project);
+    if (!matched.ok) return { ok: false, reason: matched.reason };
+    const { document, rootPath, route } = matched.match;
     const routeHarness = route.harnesses[0];
     if (!routeHarness || routeHarness !== harness || !document.policy.allowedHarnesses.includes(harness)) {
       return { ok: false, reason: harness === "codex" ? "project_route_codex_unavailable" : "project_route_harness_unavailable" };
