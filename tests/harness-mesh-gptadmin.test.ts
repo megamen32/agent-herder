@@ -3,6 +3,29 @@ import { GptAdminMesh } from "../src/mesh/gptadmin.js";
 const a={hostId:"100",harness:"codex",nativeSessionId:"native"};
 function hub(){return {discover:vi.fn(async()=>({servers:[{server_id:"mcp:shell:100:Herder",kind:"child_mcp",status:"online"},{server_id:"shell:mac",kind:"virtual_shell",status:"online"}]})),schema:vi.fn(async()=>({tools:[{name:"mesh_snapshot"},{name:"mesh_deliver"}]})),call:vi.fn(async(_target:string,name:string,args:Record<string,unknown>)=>name==="mesh_snapshot"?{hostId:"100",sessions:[{address:a,project:{launchCwd:"/launch",currentCwd:"/actual",source:"native"},status:"running",title:"test",lastActivity:"now"}],harnesses:[],complete:true}:{state:"admitted",inputId:args.inputId,turnId:"turn",retryable:false})};}
 describe("GPTAdmin native mesh (focused integration; expected 5s, maximum 30s)",()=>{
+ it("bounds all peer discovery together and preserves a ready local peer",async()=>{
+  vi.useFakeTimers();
+  try{
+   const h=hub();h.discover.mockResolvedValue({servers:Array.from({length:12},(_,n)=>({server_id:`mcp:shell:${n}:Herder`,kind:"child_mcp",status:"online"}))} as any);
+   h.schema.mockImplementation(async()=>{await new Promise(resolve=>setTimeout(resolve,10000));return {tools:[{name:"mesh_snapshot"}]};});
+   h.call.mockImplementation(async(target:string)=>target==="mcp:shell:0:Herder"?{hostId:"0",sessions:[],harnesses:[],complete:true}:await new Promise<any>(()=>{}));
+   let done=false;const pending=new GptAdminMesh(h).discover().then(result=>{done=true;return result;});
+   await vi.advanceTimersByTimeAsync(50001);
+   expect(done).toBe(true);const result=await pending;
+   expect(result.hosts.find(x=>x.hostId==="0")?.state).toBe("available");
+   expect(result.hosts.filter(x=>x.state==="unavailable")).toHaveLength(11);
+   expect(result.complete).toBe(false);
+  }finally{vi.useRealTimers();}
+ });
+ it("allows a thirty-second native snapshot before the outer discovery deadline",async()=>{
+  vi.useFakeTimers();
+  try{
+   const h=hub();const original=h.call.getMockImplementation()!;
+   h.call.mockImplementation(async(...args:any[])=>{await new Promise(resolve=>setTimeout(resolve,30000));return original(...args as [string,string,Record<string,unknown>]);});
+   const pending=new GptAdminMesh(h).discover();await vi.advanceTimersByTimeAsync(30001);
+   expect((await pending).hosts.find(x=>x.hostId==="100")?.state).toBe("available");
+  }finally{vi.useRealTimers();}
+ });
  it("re-resolves a route after stateless MCP recreates the server between calls",async()=>{
   const h=hub();await new GptAdminMesh(h).discover();
   const fresh=new GptAdminMesh(h);

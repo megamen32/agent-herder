@@ -1,3 +1,4 @@
+import {meshDiscoveryTimeoutMs} from "./discovery-timeout.js";
 import {assertRemoteCodexAdmission} from "../codex-quota-guard.js";
 import {spawn} from 'node:child_process';
 import {hostname,userInfo} from 'node:os';
@@ -152,6 +153,6 @@ export class FleetDirectTransport implements GptAdminTransport {
    if(!idempotencyKey||!/^[a-f0-9]{64}$/.test(idempotencyKey))throw new Error('direct_create_identity_missing');
    return this.rpc(this.peer(target),'tools/call',{name:'fleet_create_session',arguments:{...args,inputId:idempotencyKey}},30000);
   }
-  return this.rpc(this.peer(target),'tools/call',{name:tool,arguments:args},this.deadlineMs);
+  return this.rpc(this.peer(target),'tools/call',{name:tool,arguments:args},tool==='mesh_snapshot'?Math.max(this.deadlineMs,meshDiscoveryTimeoutMs()+5000):this.deadlineMs);
  }
 }

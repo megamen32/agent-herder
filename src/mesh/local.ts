@@ -1,3 +1,4 @@
+import {meshDiscoveryTimeoutMs} from "./discovery-timeout.js";
 import {homedir,hostname} from "node:os";
 import {join} from "node:path";
 import type {HarnessAdapter} from "../types/index.js";
@@ -26,7 +27,7 @@ export class LocalHarnessMesh {
  async snapshot(limit=12):Promise<{hostId:string;sessions:MeshSession[];harnesses:HarnessMeshCapability[];complete:boolean;limited:boolean}>{
   if(!Number.isInteger(limit)||limit<1||limit>12)throw new Error("Mesh snapshot limit must be 1..12");
   const sessions:MeshSession[]=[];const harnesses:HarnessMeshCapability[]=[];let complete=true;let limited=false;
-  const deadline=Date.now()+(this.deps.readDeadlineMs??2000);
+  const deadline=Date.now()+(this.deps.readDeadlineMs??meshDiscoveryTimeoutMs());
   const freshIds=new Map<string,string>();
   const inspect=async(harness:string)=>{
    const adapter=this.deps.adapters.get(harness);
@@ -54,9 +55,11 @@ export class LocalHarnessMesh {
     // Existing API implementations do not all provide native admission proof.
     const deliverable=harness==="codex"||harness===MINIMAX_CODE_HARNESS;
     harnesses.push({harness,discovery:"available",delivery:deliverable?"available":"unsupported",...(deliverable?{}:{reason:"native_admission_receipt_unverified"})});
-   }catch{complete=false;harnesses.push({harness,discovery:"unavailable",delivery:"unsupported",reason:"native_discovery_failed"});}
+   }catch(error){complete=false;harnesses.push({harness,discovery:"unavailable",delivery:"unsupported",reason:error instanceof Error&&error.message==="mesh_read_deadline"?"native_discovery_deadline":"native_discovery_failed"});}
   };
-  let next=0;await Promise.all(Array.from({length:3},async()=>{for(;;){const harness=inventoryHarnesses[next++];if(!harness)return;await inspect(harness);}}));
+  // Each registered provider gets the same bounded discovery window. Queuing
+  // behind a hung provider consumed that window before later harnesses started.
+  await Promise.all(inventoryHarnesses.map(inspect));
   this.ids.clear();for(const [key,value]of freshIds)this.ids.set(key,value);
   const sorted=sessions.sort((a,b)=>b.lastActivity.localeCompare(a.lastActivity)).slice(0,limit);
   if(sessions.length>limit){complete=false;limited=true;}
