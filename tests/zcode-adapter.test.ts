@@ -661,7 +661,8 @@ describe("ZCode adapter", () => {
       expect(meta("runtime-stop")).toMatchObject({status:"cancelled",cancelledByUser:true,transportLost:true});
       expect(rows.find((x)=>x.id==="runtime-stop")?.status).toBe("error");
       expect(meta("runtime-progress").transportLost).toBeUndefined();
-      expect(rows.find((x)=>x.id==="runtime-progress")?.status).toBe("running");
+      // A persisted completed task is terminal until a newer native/lifecycle start.
+      expect(rows.find((x)=>x.id==="runtime-progress")?.status).toBe("stopped");
       expect(meta("runtime-pending").transportLost).toBeUndefined();
       expect(meta("runtime-old-stop").transportLost).toBeUndefined();
       expect(meta("runtime-invalid").transportLost).toBeUndefined();
