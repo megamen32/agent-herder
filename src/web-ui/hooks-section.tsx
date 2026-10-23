@@ -1,5 +1,7 @@
 import React from "react";
 
+import "./hooks-section.css";
+
 /**
  * The section of the hooks of the product.
  *
@@ -17,6 +19,11 @@ import React from "react";
  *
  * The screen is honest about the state: a lever that cannot be read reads as
  * «состояние неизвестно», never as «выключено».
+ *
+ * Everything the owner reads here is in words of the owner: the column of the
+ * prohibition names what it is about, the time of the last firing is the same
+ * human time as in the section of the tasks, and the codes of the
+ * implementation stay out of sight.
  */
 
 export type HookKind = "Stop" | "PreToolUse" | "PostToolUse" | "SessionStart" | "UserPromptSubmit";
@@ -65,6 +72,67 @@ export const HOOKS_PROHIBITIONS_ENDPOINT = "/api/hooks/prohibitions";
 /** What the owner may change: every prohibition at once. */
 export type HooksToggleIntent = "disable" | "enable";
 
+/** The Moscow zone: the times of the panel are read in it. */
+const MSK = "Europe/Moscow";
+
+/**
+ * The moment of the day, as the owner reads the clock.
+ *
+ * The same human time as in the section of the tasks: «05:12 МСК».
+ */
+export function hooksClockText(when: Date = new Date()): string {
+  const human = when.toLocaleTimeString("ru-RU", { timeZone: MSK, hour: "2-digit", minute: "2-digit", hour12: false });
+  return `${human} МСК`;
+}
+
+/**
+ * The moment of the day, as the owner reads it after a refresh.
+ *
+ * The button of the refresh owes the owner a sign that it did something.
+ */
+export function hooksRefreshText(when: Date = new Date()): string {
+  return `Обновлено в ${hooksClockText(when)}`;
+}
+
+/**
+ * The moment of the table, in the human form of the panel.
+ *
+ * The same format as in the section of the tasks: «23.10.2026, 03:25 МСК».
+ */
+export function hooksWhenText(iso: string): string {
+  const time = Date.parse(iso);
+  if (!Number.isFinite(time)) return "";
+  const human = new Date(time).toLocaleString("ru-RU", {
+    timeZone: MSK,
+    dateStyle: "short",
+    timeStyle: "short",
+    hour12: false,
+  });
+  return `${human} МСК`;
+}
+
+/**
+ * The text of the owner without the codes of the implementation.
+ *
+ * A raw date, a hash of a document or the name of an unreachable node are
+ * not words of the owner: they are replaced with words of the owner.
+ */
+export function hooksPlainText(text: string | undefined): string {
+  if (!text) return "";
+  return text
+    .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?/g, (moment) => hooksWhenText(moment) || "время неизвестно")
+    .replace(/sha256:[0-9a-f]+/gi, "хэш документа")
+    .replace(/direct_peer_unavailable/gi, "не отвечает");
+}
+
+/** The name of the owner, as the owner reads it. */
+export function hooksActorText(actor: string | undefined): string {
+  const name = (actor ?? "").trim();
+  if (!name) return "владелец";
+  if (name === "owner" || name === "user" || name === "владелец") return "владелец";
+  return name;
+}
+
 /** The state of the lever, in one line, as the owner reads it. */
 export function hooksLeverText(view: HooksView | null): string {
   if (!view) return "Состояние запретов хуков читается…";
@@ -89,6 +157,30 @@ export function hooksToggleLabel(view: HooksView | null): string {
   if (intent === "disable") return "Выключить запреты хуков";
   if (intent === "enable") return "Включить запреты хуков";
   return "Обновить состояние";
+}
+
+/**
+ * How the button of the main switch looks.
+ *
+ * One meaning — one look: the button that turns the prohibitions off is the
+ * dangerous one and wears the dangerous colour, the button that turns them
+ * back on is safe and wears the safe colour.
+ */
+export type HooksButtonTone = "danger" | "plain";
+
+export function hooksToggleTone(view: HooksView | null): HooksButtonTone {
+  return hooksToggleIntent(view) === "disable" ? "danger" : "plain";
+}
+
+/**
+ * How the button of the Stop hook looks.
+ *
+ * The same rule as the main switch: the action that turns a prohibition off
+ * is dangerous and looks dangerous.
+ */
+export function hooksStopTone(view: HooksView | null): HooksButtonTone {
+  const disabled = view?.disabledHooks?.includes("Stop") === true;
+  return disabled ? "plain" : "danger";
 }
 
 /**
@@ -118,7 +210,11 @@ export function hooksStopLabel(view: HooksView | null): string {
   return disabled ? "Включить запреты у Stop-хука" : "Выключить запреты у Stop-хука";
 }
 
-/** The state of one hook, as the table shows it. */
+/**
+ * The state of one hook, as the table shows it.
+ *
+ * The short form of the state, as it comes from the server.
+ */
 export function hooksStateLabel(hook: HooksPanelHook): string {
   if (hook.canProhibit === false) return "не запрещает";
   if (hook.state === "неизвестно") return "неизвестно";
@@ -126,19 +222,57 @@ export function hooksStateLabel(hook: HooksPanelHook): string {
   return "включены";
 }
 
-/** When the hook ran last, as the table shows it. */
+/**
+ * What the hook may forbid, in the words of the owner.
+ *
+ * The column does not say «включены» alone: it says what is switched on or
+ * off, so the owner cannot read it as «всё в порядке».
+ */
+export function hooksProhibitionText(hook: HooksPanelHook): string {
+  if (hook.canProhibit === false) return "Запреты не действуют";
+  const state = hooksStateLabel(hook);
+  if (state === "неизвестно") return "Неизвестно";
+  return state === "выключены" ? "Запреты выключены" : "Запреты включены";
+}
+
+/**
+ * The state of the Stop hook in the words of the owner.
+ *
+ * The Stop hook holds the stop of the session, so the owner reads one line:
+ * may the session stop or not.
+ */
+export function hooksStopStatusText(view: HooksView | null): string {
+  if (!view || view.known === false) return "Остановка сессии: неизвестно";
+  const stop = view.hooks?.find((hook) => hook.kind === "Stop");
+  if (stop && stop.canProhibit === false) return "Остановка сессии: разрешена";
+  const disabled = view.disabledHooks?.includes("Stop") === true;
+  if (view.prohibitionsEnabled === false || disabled) return "Остановка сессии: разрешена";
+  return "Остановка сессии: запрещена";
+}
+
+/** When the hook ran last, as the server says it. */
 export function hooksLastFiredText(hook: HooksPanelHook): string {
   return hook.lastFiredAt ? hook.lastFiredAt : "ещё не срабатывал";
+}
+
+/**
+ * When the hook ran last, as the owner reads it.
+ *
+ * The same human time as in the section of the tasks.
+ */
+export function hooksFiredText(hook: HooksPanelHook): string {
+  const raw = hooksLastFiredText(hook);
+  if (raw === "ещё не срабатывал") return raw;
+  return hooksWhenText(raw) || "время неизвестно";
 }
 
 /** The last refusal of the hook, as the table shows it. */
 export function hooksLastRefusalText(hook: HooksPanelHook): string {
   const refusal = hook.lastRefusal;
   if (!refusal) return "отказов не было";
-  const when = refusal.at ? refusal.at : "время неизвестно";
-  const reason = refusal.reason ? refusal.reason : "причина не названа";
-  const session = refusal.sessionId ? ` (сессия ${refusal.sessionId})` : "";
-  return `${when} — ${reason}${session}`;
+  const when = refusal.at ? hooksWhenText(refusal.at) : "время неизвестно";
+  const reason = hooksPlainText(refusal.reason) || "причина не названа";
+  return `${when} — ${reason}`;
 }
 
 /**
@@ -236,20 +370,203 @@ export async function saveHooksProhibitions(
 }
 
 /** What the owner is about to confirm. */
-type PendingAction = { kind: "all"; intent: HooksToggleIntent } | { kind: "stop"; disabled: boolean };
+export type PendingAction = { kind: "all"; intent: HooksToggleIntent } | { kind: "stop"; disabled: boolean };
+
+export interface HooksPanelProps {
+  view: HooksView | null;
+  busy?: boolean;
+  error?: { reason: string; hint: string } | null;
+  pending?: PendingAction | null;
+  /** The sign of the last refresh of the owner. */
+  refreshedAt?: string | null;
+  onToggleAll?: () => void;
+  onToggleStop?: () => void;
+  onRefresh?: () => void;
+  onConfirm?: () => void;
+  onCancel?: () => void;
+}
+
+/**
+ * The screen of the hooks, as the owner reads it.
+ *
+ * The screen is separate from the reading of the state, so the owner sees
+ * the same screen in the test and in the panel.
+ */
+export function HooksPanel({
+  view,
+  busy = false,
+  error = null,
+  pending = null,
+  refreshedAt = null,
+  onToggleAll,
+  onToggleStop,
+  onRefresh,
+  onConfirm,
+  onCancel,
+}: HooksPanelProps): React.ReactElement {
+  const intent = hooksToggleIntent(view);
+  const hooks = view?.hooks ?? [];
+  const stopDisabled = view?.disabledHooks?.includes("Stop") === true;
+  const toggleTone = hooksToggleTone(view);
+  const stopTone = hooksStopTone(view);
+
+  return (
+    <section className="herder-settings-block herder-hooks" aria-label="Хуки">
+      <h2>Хуки</h2>
+      {/* The state comes first: on a phone the owner sees the state and the
+          action before anything else. */}
+      <p className="herder-settings-state-line" role="status">{hooksLeverText(view)}</p>
+      {/* The Stop hook has its own line: the owner reads whether the session
+          may stop, without reading the table. */}
+      <p className="herder-hooks-stop-status" role="status">{hooksStopStatusText(view)}</p>
+      <p className="herder-settings-hint">
+        Хуки — это то, что агент-herder подвешивает к сессии: проверка перед вызовом инструмента и решение, можно ли остановить ход.
+        Запрет автоматики и аварийная пауза — другие рычаги, они здесь не меняются.
+      </p>
+
+      <div className="herder-settings-actions">
+        <button
+          type="button"
+          className={toggleTone === "danger" ? "herder-settings-button herder-settings-button-danger" : "herder-settings-button"}
+          disabled={busy || intent === null}
+          onClick={() => { onToggleAll?.(); }}
+        >
+          {hooksToggleLabel(view)}
+        </button>
+        <button
+          type="button"
+          className={stopTone === "danger" ? "herder-settings-button herder-settings-button-danger" : "herder-settings-button"}
+          disabled={busy || view?.known === false}
+          onClick={() => { onToggleStop?.(); }}
+        >
+          {hooksStopLabel(view)}
+        </button>
+        <button type="button" className="herder-settings-button" disabled={busy} onClick={() => { onRefresh?.(); }}>
+          Обновить состояние
+        </button>
+      </div>
+
+      {/* The button of the refresh owes the owner a sign that it did something. */}
+      {refreshedAt ? <p className="herder-hooks-refreshed" role="status">{refreshedAt}</p> : null}
+
+      {pending ? (
+        <div className="herder-settings-notice" role="status">
+          <p>
+            {pending.kind === "all"
+              ? hooksConfirmText(pending.intent)
+              : hooksStopConfirmText(pending.disabled)}
+          </p>
+          <div className="herder-settings-actions">
+            <button type="button" className="herder-settings-button" disabled={busy} onClick={() => { onConfirm?.(); }}>
+              {busy ? "Применяю…" : "Да, применить"}
+            </button>
+            <button type="button" className="herder-settings-button" disabled={busy} onClick={() => { onCancel?.(); }}>
+              Отмена
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {error ? (
+        <>
+          <p className="herder-settings-error" role="alert">{error.reason}</p>
+          <p className="herder-settings-hint">{error.hint}</p>
+        </>
+      ) : null}
+
+      <p className="herder-settings-hint">
+        {`Изменил: ${hooksActorText(view?.changedBy)}`}
+        {view?.changedAt ? ` · ${hooksWhenText(view.changedAt)}` : ""}
+        {view?.reason ? ` · ${hooksPlainText(view.reason)}` : ""}
+      </p>
+
+      {/* The table scrolls sideways instead of losing a column, and its
+          header stays above the rows while the owner scrolls. */}
+      <div className="herder-hooks-table-wrap">
+        <table className="herder-settings-table herder-hooks-table">
+          <thead>
+            <tr><th>Хук</th><th>Что делает</th><th>Что может запрещать</th><th>Когда сработал</th><th>Последний отказ</th></tr>
+          </thead>
+          <tbody>
+            {hooks.map((hook) => (
+              <tr key={hook.kind}>
+                <td>
+                  <strong>{hook.humanName ?? hook.kind}</strong>
+                  <span className="herder-settings-hint">{hook.scope ?? ""}</span>
+                </td>
+                <td>
+                  {hook.purpose ?? ""}
+                  {hook.canProhibit ? (
+                    <span className="herder-settings-hint">Запрещает: {hooksPlainText(hook.prohibition) || "запрет"}.</span>
+                  ) : (
+                    <span className="herder-settings-hint">Ничего не запрещает.</span>
+                  )}
+                </td>
+                <td>
+                  <span className={hook.state === "неизвестно" ? "herder-settings-status-unknown" : "herder-settings-status-known"}>
+                    {hooksProhibitionText(hook)}
+                  </span>
+                </td>
+                <td>{hooksFiredText(hook)}</td>
+                <td>
+                  <span>{hooksLastRefusalText(hook)}</span>
+                  {/* The identifier of the session is a code of the
+                      implementation: it stays out of the way until the owner
+                      opens it. */}
+                  {hook.lastRefusal?.sessionId ? (
+                    <details className="herder-settings-details">
+                      <summary>Подробности отказа</summary>
+                      <span className="herder-settings-hint">Сессия: {hook.lastRefusal.sessionId}</span>
+                    </details>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+            {!hooks.length ? (
+              <tr><td colSpan={5}>Список хуков придёт от herder. Обновите состояние.</td></tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+
+      {view?.audit?.length ? (
+        <details className="herder-settings-details">
+          <summary>Журнал изменений запретов ({view.audit.length})</summary>
+          <table className="herder-settings-table">
+            <thead>
+              <tr><th>Когда</th><th>Кто</th><th>Причина</th></tr>
+            </thead>
+            <tbody>
+              {[...view.audit].reverse().map((record, index) => (
+                <tr key={`${record.at ?? index}`}>
+                  <td>{record.at ? hooksWhenText(record.at) : "время неизвестно"}</td>
+                  <td>{hooksActorText(record.actor)}</td>
+                  <td>{hooksPlainText(record.reason) || "причина не названа"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      ) : null}
+    </section>
+  );
+}
 
 export function HooksSection(): React.ReactElement {
   const [view, setView] = React.useState<HooksView | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<{ reason: string; hint: string } | null>(null);
   const [pending, setPending] = React.useState<PendingAction | null>(null);
+  const [refreshedAt, setRefreshedAt] = React.useState<string | null>(null);
 
-  const reload = React.useCallback(async (): Promise<void> => {
+  const reload = React.useCallback(async (): Promise<boolean> => {
     try {
       setView(await loadHooks());
       setError(null);
+      return true;
     } catch (cause) {
       setError(hooksReadErrorText((cause as Error).message));
+      return false;
     }
   }, []);
 
@@ -271,145 +588,37 @@ export function HooksSection(): React.ReactElement {
   };
 
   const intent = hooksToggleIntent(view);
-  const hooks = view?.hooks ?? [];
   const stopDisabled = view?.disabledHooks?.includes("Stop") === true;
 
   return (
-    <section className="herder-settings-block" aria-label="Хуки">
-      <h2>Хуки</h2>
-      {/* The state comes first: on a phone the owner sees the state and the
-          action before anything else. */}
-      <p className="herder-settings-state-line" role="status">{hooksLeverText(view)}</p>
-      <p className="herder-settings-hint">
-        Хуки — это то, что агент-herder подвешивает к сессии: проверка перед вызовом инструмента и решение, можно ли остановить ход.
-        Запрет автоматики и аварийная пауза — другие рычаги, они здесь не меняются.
-      </p>
-
-      <div className="herder-settings-actions">
-        <button
-          type="button"
-          className={intent === "enable" ? "herder-settings-button" : "herder-settings-button herder-settings-button-danger"}
-          disabled={busy || intent === null}
-          onClick={() => { setPending({ kind: "all", intent: intent ?? "disable" }); }}
-        >
-          {hooksToggleLabel(view)}
-        </button>
-        <button
-          type="button"
-          className="herder-settings-button"
-          disabled={busy || view?.known === false}
-          onClick={() => { setPending({ kind: "stop", disabled: !stopDisabled }); }}
-        >
-          {hooksStopLabel(view)}
-        </button>
-        <button type="button" className="herder-settings-button" disabled={busy} onClick={() => { void reload(); }}>
-          Обновить состояние
-        </button>
-      </div>
-
-      {pending ? (
-        <div className="herder-settings-notice" role="status">
-          <p>
-            {pending.kind === "all"
-              ? hooksConfirmText(pending.intent)
-              : hooksStopConfirmText(pending.disabled)}
-          </p>
-          <div className="herder-settings-actions">
-            <button
-              type="button"
-              className="herder-settings-button"
-              disabled={busy}
-              onClick={() => {
-                if (pending.kind === "all") {
-                  void apply({
-                    prohibitionsEnabled: pending.intent === "enable",
-                    reason: hooksChangeReason(pending.intent),
-                  });
-                  return;
-                }
-                const disabledHooks: HookKind[] = (view?.disabledHooks ?? []).filter((kind) => kind !== "Stop");
-                if (pending.disabled) disabledHooks.push("Stop");
-                void apply({
-                  disabledHooks,
-                  reason: hooksChangeReason(pending.disabled ? "stop-disable" : "stop-enable"),
-                });
-              }}
-            >
-              {busy ? "Применяю…" : "Да, применить"}
-            </button>
-            <button type="button" className="herder-settings-button" disabled={busy} onClick={() => { setPending(null); }}>
-              Отмена
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {error ? (
-        <>
-          <p className="herder-settings-error" role="alert">{error.reason}</p>
-          <p className="herder-settings-hint">{error.hint}</p>
-        </>
-      ) : null}
-
-      <p className="herder-settings-hint">
-        {view?.changedBy ? `Изменил: ${view.changedBy}` : "Изменил: владелец"}
-        {view?.changedAt ? ` · ${view.changedAt}` : ""}
-        {view?.reason ? ` · ${view.reason}` : ""}
-      </p>
-
-      <table className="herder-settings-table">
-        <thead>
-          <tr><th>Хук</th><th>Что делает</th><th>Состояние</th><th>Когда сработал</th><th>Последний отказ</th></tr>
-        </thead>
-        <tbody>
-          {hooks.map((hook) => (
-            <tr key={hook.kind}>
-              <td>
-                <strong>{hook.humanName ?? hook.kind}</strong>
-                <span className="herder-settings-hint">{hook.scope ?? ""}</span>
-              </td>
-              <td>
-                {hook.purpose ?? ""}
-                {hook.canProhibit ? (
-                  <span className="herder-settings-hint">Может запрещать: {hook.prohibition ?? "запрет"}.</span>
-                ) : (
-                  <span className="herder-settings-hint">Запретов не ставит.</span>
-                )}
-              </td>
-              <td>
-                <span className={hook.state === "неизвестно" ? "herder-settings-status-unknown" : "herder-settings-status-known"}>
-                  {hooksStateLabel(hook)}
-                </span>
-              </td>
-              <td>{hooksLastFiredText(hook)}</td>
-              <td>{hooksLastRefusalText(hook)}</td>
-            </tr>
-          ))}
-          {!hooks.length ? (
-            <tr><td colSpan={5}>Список хуков придёт от herder. Обновите состояние.</td></tr>
-          ) : null}
-        </tbody>
-      </table>
-
-      {view?.audit?.length ? (
-        <details className="herder-settings-details">
-          <summary>Журнал изменений запретов ({view.audit.length})</summary>
-          <table className="herder-settings-table">
-            <thead>
-              <tr><th>Когда</th><th>Кто</th><th>Причина</th></tr>
-            </thead>
-            <tbody>
-              {[...view.audit].reverse().map((record, index) => (
-                <tr key={`${record.at ?? index}`}>
-                  <td>{record.at ?? "время неизвестно"}</td>
-                  <td>{record.actor ?? "владелец"}</td>
-                  <td>{record.reason ?? "причина не названа"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </details>
-      ) : null}
-    </section>
+    <HooksPanel
+      view={view}
+      busy={busy}
+      error={error}
+      pending={pending}
+      refreshedAt={refreshedAt}
+      onToggleAll={() => { setPending({ kind: "all", intent: intent ?? "disable" }); }}
+      onToggleStop={() => { setPending({ kind: "stop", disabled: !stopDisabled }); }}
+      onRefresh={() => {
+        void reload().then((read) => { if (read) setRefreshedAt(hooksRefreshText()); });
+      }}
+      onConfirm={() => {
+        if (!pending) return;
+        if (pending.kind === "all") {
+          void apply({
+            prohibitionsEnabled: pending.intent === "enable",
+            reason: hooksChangeReason(pending.intent),
+          });
+          return;
+        }
+        const disabledHooks: HookKind[] = (view?.disabledHooks ?? []).filter((kind) => kind !== "Stop");
+        if (pending.disabled) disabledHooks.push("Stop");
+        void apply({
+          disabledHooks,
+          reason: hooksChangeReason(pending.disabled ? "stop-disable" : "stop-enable"),
+        });
+      }}
+      onCancel={() => { setPending(null); }}
+    />
   );
 }
