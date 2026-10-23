@@ -1,3 +1,4 @@
+import {meshDiscoveryTimeoutMs} from "./discovery-timeout.js";
 import {createHash} from "node:crypto";
 import {CoordinationDeliveryBudget} from "../coordination-delivery-budget.js";
 import {addressKey,unwrapResult,type MeshAddress,type MeshSession,type NativeReceipt} from "./protocol.js";
@@ -58,15 +59,17 @@ export class GptAdminMesh {
   private routes=new Map<string,Route>();
   private readonly budget=new CoordinationDeliveryBudget();
   private readonly inputs=new Map<string,{digest:string;result:Promise<DeliveryReceipt>}>();
-  constructor(private readonly hub:GptAdminTransport,private readonly deadlineMs=5000,private readonly deliveryPolicy?:ProjectModelPolicyStateProvider){}
-  private async bounded<T>(read:Promise<T>):Promise<T>{
+  constructor(private readonly hub:GptAdminTransport,private readonly deadlineMs=meshDiscoveryTimeoutMs()+10000,private readonly deliveryPolicy?:ProjectModelPolicyStateProvider){}
+  private async bounded<T>(read:Promise<T>,timeoutMs=this.deadlineMs):Promise<T>{
     let timer:ReturnType<typeof setTimeout>|undefined;
-    try {return await Promise.race([read,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error("mesh_read_deadline")),this.deadlineMs);})]);}
+    try {return await Promise.race([read,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error("mesh_read_deadline")),Math.max(1,timeoutMs));})]);}
     finally {if(timer)clearTimeout(timer);}
   }
   async discover(limit=12):Promise<MeshDiscovery>{
     if(!Number.isInteger(limit)||limit<1||limit>12)throw new Error("Mesh discovery limit must be 1..12");
-    const discovery=unwrapResult(await this.bounded(this.hub.discover()));
+    const deadline=Date.now()+this.deadlineMs+10000;
+    const read=<T>(operation:()=>Promise<T>)=>{const remaining=deadline-Date.now();if(remaining<=0)throw new Error("mesh_read_deadline");return this.bounded(operation(),Math.min(this.deadlineMs,remaining));};
+    const discovery=unwrapResult(await read(()=>this.hub.discover()));
     if(!Array.isArray(discovery.servers))throw new Error("GPTAdmin discovery has no target list");
     const servers=discovery.servers as Array<{server_id:string;kind:string;name?:string;status:string}>;
     const shells=servers.filter(s=>s.kind==="virtual_shell"&&s.server_id.startsWith("shell:"));
@@ -77,15 +80,16 @@ export class GptAdminMesh {
     const sessions:MeshSession[]=[];let peerLimited=false;
     const freshRoutes=new Map<string,Route>();
     const peers=[...selected.entries()].slice(0,12);
-    // Bounded fan-out: three schema/snapshot reads at a time; no LLM or transcripts.
-    for(let offset=0;offset<peers.length;offset+=3)await Promise.all(peers.slice(offset,offset+3).map(async([hostId,peer])=>{
+    // Fixed maximum twelve peers share one whole-discovery deadline. A slow
+    // peer cannot defer the local result into a later batch beyond client timeout.
+    await Promise.all(peers.map(async([hostId,peer])=>{
       let receipt:MeshHostReceipt={hostId,target:peer.server_id,state:"unavailable",reason:"child_offline"};
       try{
         if(!["online","configured"].includes(peer.status))throw new Error("child_offline");
-        const schema=unwrapResult(await this.bounded(this.hub.schema(peer.server_id)));
+        const schema=unwrapResult(await read(()=>this.hub.schema(peer.server_id)));
         const tools=Array.isArray(schema.tools)?schema.tools as Array<{name:string}>:[];
         if(!tools.some(t=>t.name==="mesh_snapshot"))throw new Error("mesh_snapshot_capability_missing");
-        const snapshot=unwrapResult(await this.bounded(this.hub.call(peer.server_id,"mesh_snapshot",{limit})));
+        const snapshot=unwrapResult(await read(()=>this.hub.call(peer.server_id,"mesh_snapshot",{limit})));
         if(snapshot.hostId!==hostId)throw new Error("native_host_identity_mismatch");
         if(!Array.isArray(snapshot.sessions)||!Array.isArray(snapshot.harnesses))throw new Error("invalid_mesh_snapshot");
         const truncated=snapshot.sessions.length>limit||snapshot.limited===true;

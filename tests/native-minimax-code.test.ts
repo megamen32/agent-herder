@@ -1,3 +1,4 @@
+import {MinimaxCodeAdapter} from "../src/adapters/minimax-code.js";
 import {describe,expect,it} from "vitest";
 import {mkdtemp,mkdir,writeFile,rm,utimes} from "node:fs/promises";
 import {tmpdir} from "node:os";
@@ -19,6 +20,18 @@ async function session(root:string,id:string,options:{at?:number;created?:number
 }
 
 describe("native MiniMax Code observation (focused integration; expected 3s, maximum 30s)",()=>{
+ it("keeps the newest day visible when the store exceeds the enumeration budget",async()=>{
+  const root=await mkdtemp(join(tmpdir(),"herder-minimax-budget-"));try{
+   const old=join(root,"2026/10/01");await mkdir(old,{recursive:true});
+   for(let n=0;n<4096;n+=64)await Promise.all(Array.from({length:64},(_,i)=>mkdir(join(old,`00-00-00-000-session_${encode("mvs_old_"+(n+i))}`))));
+   await session(root,"mvs_latest",{at:Date.UTC(2026,9,23),day:"2026/10/23"});
+   const observed=await observeMinimaxCode(1,root,"host");
+   expect(observed.sessions[0]?.address.nativeSessionId).toBe("mvs_latest");
+   expect(observed.complete).toBe(false);
+   const adapter=new MinimaxCodeAdapter({sessionStore:root});
+   expect((await adapter.listSessions({limit:1}))[0]?.id).toBe("mvs_latest");
+  }finally{await rm(root,{recursive:true,force:true});}
+ });
  it("does not hide a new empty session behind the metadata window",async()=>{
   const root=await mkdtemp(join(tmpdir(),"herder-minimax-observer-"));try{
    for(let n=0;n<97;n++)await session(root,`mvs_old_${n}`,{at:1000,day:"2026/10/09",transcript:"PRIVATE"});
