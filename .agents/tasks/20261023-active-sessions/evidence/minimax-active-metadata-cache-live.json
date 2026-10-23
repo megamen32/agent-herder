@@ -1,0 +1,168 @@
+{
+  "cycles": [
+    {
+      "receipt": {
+        "exhaustive": true,
+        "metadataEnumerationExhaustive": false,
+        "activityCoverage": "native_active_turn",
+        "observedAt": "2026-10-23T19:55:19.370Z",
+        "expiresAt": "2026-10-23T19:55:34.370Z",
+        "source": "native_active_turn",
+        "stageTimingsMs": {
+          "metadata": 0,
+          "candidate_seed": 622,
+          "controller_validation": 552
+        },
+        "totalSessions": 17,
+        "pages": 0,
+        "candidateCount": 17,
+        "failedCandidateCount": 0
+      },
+      "elapsedMs": 1177,
+      "count": 17,
+      "metadataReads": 17,
+      "ids": [
+        "mvs_0f24ad87f7a04bb28cde89a1353d98d0",
+        "mvs_07a5fe50ced240a1b82e3b99b4f3907e",
+        "mvs_18e84c09edaa4c8ab18b61c0928349a0",
+        "mvs_22e2437b7bc74367868213bf4900d16b",
+        "mvs_38e41d80ff66430992c32cdcea89811d",
+        "mvs_42f71a7427224fc795d0b3d2b2197767",
+        "mvs_436e65c47019471a9cca29532ae08f51",
+        "mvs_4dcee0773c65450da62aecf8b4d5e993",
+        "mvs_4f40fab5c86f4ad5bad2cd9b7b5507a2",
+        "mvs_65dee54d3aec49f2a73edf403aa3ddd2",
+        "mvs_90a1bc8a316c4322a262f32a55535434",
+        "mvs_93d3f9a8f7a84585ad70c16c880c0c20",
+        "mvs_c5cc2e47b1bf40a09e08b260ac54549c",
+        "mvs_d01039d819ed4989ab4660fc7f859942",
+        "mvs_d1ea515f866643b5941a65615e4a6802",
+        "mvs_f70ce650bbf94d789e4e4a2669f6743a",
+        "mvs_fee82cd663194081a4dfab9969c20274"
+      ]
+    },
+    {
+      "receipt": {
+        "exhaustive": true,
+        "metadataEnumerationExhaustive": false,
+        "activityCoverage": "native_active_turn",
+        "observedAt": "2026-10-23T19:55:21.489Z",
+        "expiresAt": "2026-10-23T19:55:36.489Z",
+        "source": "native_active_turn",
+        "stageTimingsMs": {
+          "metadata": 0,
+          "candidate_seed": 548,
+          "controller_validation": 1569
+        },
+        "totalSessions": 17,
+        "pages": 0,
+        "candidateCount": 17,
+        "failedCandidateCount": 0
+      },
+      "elapsedMs": 2117,
+      "count": 17,
+      "metadataReads": 0,
+      "ids": [
+        "mvs_07a5fe50ced240a1b82e3b99b4f3907e",
+        "mvs_0f24ad87f7a04bb28cde89a1353d98d0",
+        "mvs_18e84c09edaa4c8ab18b61c0928349a0",
+        "mvs_22e2437b7bc74367868213bf4900d16b",
+        "mvs_38e41d80ff66430992c32cdcea89811d",
+        "mvs_42f71a7427224fc795d0b3d2b2197767",
+        "mvs_436e65c47019471a9cca29532ae08f51",
+        "mvs_4dcee0773c65450da62aecf8b4d5e993",
+        "mvs_4f40fab5c86f4ad5bad2cd9b7b5507a2",
+        "mvs_65dee54d3aec49f2a73edf403aa3ddd2",
+        "mvs_90a1bc8a316c4322a262f32a55535434",
+        "mvs_93d3f9a8f7a84585ad70c16c880c0c20",
+        "mvs_c5cc2e47b1bf40a09e08b260ac54549c",
+        "mvs_d01039d819ed4989ab4660fc7f859942",
+        "mvs_d1ea515f866643b5941a65615e4a6802",
+        "mvs_f70ce650bbf94d789e4e4a2669f6743a",
+        "mvs_fee82cd663194081a4dfab9969c20274"
+      ]
+    },
+    {
+      "receipt": {
+        "exhaustive": true,
+        "metadataEnumerationExhaustive": false,
+        "activityCoverage": "native_active_turn",
+        "observedAt": "2026-10-23T19:55:24.289Z",
+        "expiresAt": "2026-10-23T19:55:39.289Z",
+        "source": "native_active_turn",
+        "stageTimingsMs": {
+          "metadata": 0,
+          "candidate_seed": 353,
+          "controller_validation": 2447
+        },
+        "totalSessions": 17,
+        "pages": 0,
+        "candidateCount": 17,
+        "failedCandidateCount": 0
+      },
+      "elapsedMs": 2800,
+      "count": 17,
+      "metadataReads": 0,
+      "ids": [
+        "mvs_07a5fe50ced240a1b82e3b99b4f3907e",
+        "mvs_0f24ad87f7a04bb28cde89a1353d98d0",
+        "mvs_18e84c09edaa4c8ab18b61c0928349a0",
+        "mvs_22e2437b7bc74367868213bf4900d16b",
+        "mvs_38e41d80ff66430992c32cdcea89811d",
+        "mvs_42f71a7427224fc795d0b3d2b2197767",
+        "mvs_436e65c47019471a9cca29532ae08f51",
+        "mvs_4dcee0773c65450da62aecf8b4d5e993",
+        "mvs_4f40fab5c86f4ad5bad2cd9b7b5507a2",
+        "mvs_65dee54d3aec49f2a73edf403aa3ddd2",
+        "mvs_90a1bc8a316c4322a262f32a55535434",
+        "mvs_93d3f9a8f7a84585ad70c16c880c0c20",
+        "mvs_c5cc2e47b1bf40a09e08b260ac54549c",
+        "mvs_d01039d819ed4989ab4660fc7f859942",
+        "mvs_d1ea515f866643b5941a65615e4a6802",
+        "mvs_f70ce650bbf94d789e4e4a2669f6743a",
+        "mvs_fee82cd663194081a4dfab9969c20274"
+      ]
+    },
+    {
+      "receipt": {
+        "exhaustive": true,
+        "metadataEnumerationExhaustive": false,
+        "activityCoverage": "native_active_turn",
+        "observedAt": "2026-10-23T19:55:25.707Z",
+        "expiresAt": "2026-10-23T19:55:40.707Z",
+        "source": "native_active_turn",
+        "stageTimingsMs": {
+          "metadata": 0,
+          "candidate_seed": 452,
+          "controller_validation": 964
+        },
+        "totalSessions": 17,
+        "pages": 0,
+        "candidateCount": 17,
+        "failedCandidateCount": 0
+      },
+      "elapsedMs": 1417,
+      "count": 17,
+      "metadataReads": 0,
+      "ids": [
+        "mvs_07a5fe50ced240a1b82e3b99b4f3907e",
+        "mvs_0f24ad87f7a04bb28cde89a1353d98d0",
+        "mvs_18e84c09edaa4c8ab18b61c0928349a0",
+        "mvs_22e2437b7bc74367868213bf4900d16b",
+        "mvs_38e41d80ff66430992c32cdcea89811d",
+        "mvs_42f71a7427224fc795d0b3d2b2197767",
+        "mvs_436e65c47019471a9cca29532ae08f51",
+        "mvs_4dcee0773c65450da62aecf8b4d5e993",
+        "mvs_4f40fab5c86f4ad5bad2cd9b7b5507a2",
+        "mvs_65dee54d3aec49f2a73edf403aa3ddd2",
+        "mvs_90a1bc8a316c4322a262f32a55535434",
+        "mvs_93d3f9a8f7a84585ad70c16c880c0c20",
+        "mvs_c5cc2e47b1bf40a09e08b260ac54549c",
+        "mvs_d01039d819ed4989ab4660fc7f859942",
+        "mvs_d1ea515f866643b5941a65615e4a6802",
+        "mvs_f70ce650bbf94d789e4e4a2669f6743a",
+        "mvs_fee82cd663194081a4dfab9969c20274"
+      ]
+    }
+  ]
+}
