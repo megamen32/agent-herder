@@ -1,6 +1,24 @@
 # Codex → Mavis C2: восстановлено
 
-Статус: **DELIVERED**, все 3 листа завершены. Source/tests, installed runtime и фактическое исполнение C2 подтверждены отдельно. Полные сообщения, команды C2, результаты инструментов и транскрипты не публикуются.
+Статус: **DELIVERED**, все 3 листа завершены. Source/tests, installed runtime и фактическое исполнение C2 подтверждены отдельно. Полные сообщения, команды C2, результаты инструментов и транскрипты не публикуются; ниже отдельно разрешены три коротких post-send фрагмента.
+
+## Что C2 прямо подтвердил после отправки
+
+Короткие дословные фрагменты существующих ответов, разрешённые владельцем отдельно для этого результата:
+
+- Assistant `975e6145-b04c-4be4-b70f-852a013a662d`, 2026-10-23T22:20:17.170Z: «Принял прямое поручение.»
+- Assistant `f5c70901-bbc7-4a70-843b-29d1b31d56b2`, 2026-10-23T22:21:24.581Z: «Handoff прочитан.»
+- Тот же assistant: «Сверяю канонический generation14 с тем, что я опубликовал».
+
+Оба ответа относятся к turn `1ee9a5b2-0dea-482d-b749-68c61b1e86c9` после нового input `exmanager-c2-owner-directive-20261024-herder-01a16987-r1`. **Отдельного явного подтверждения роли единственного владельца следующей установки/sync в этих фрагментах нет.** C2 прямо принял поручение в общем виде, подтвердил чтение handoff и назвал текущий шаг — сверку canonical generation14 с ранее опубликованным состоянием. Установка/sync ещё не объявлена выполненной; отдельный блокер не назван.
+
+Фактические read receipts того же native assistant: `call_function_szyovdazzffn_1` — handoff, `call_function_szyovdazzffn_2` — существующий общий чат, оба exit0. Второй результат содержит ID существующей записи `lhc-1.4.0-release.json`. Это доказательства успешных чтений; они не подменяют отсутствующую отдельную install/sync-формулировку.
+
+## Действующий общий канал и способ связи
+
+Существующий общий межагентный канал — **server-100 `/home/roomhacker/.agents/shared-session/chat`**. С M1 он доступен через уже настроенный `server100-codex` SSH; SHA256 выбранного файла `lhc-1.4.0-release.json` на обеих сторонах совпал: `520357b98ce646000b4f18c14f716c6fe12adaf833a1594c034df0031fce8ee0`. Штатное чтение на server100: `lhc_chat.py --system read --reader <native-session-id> --limit 5` из установленного LHC1.5.44 `common/tools`. Новый чат на M1 не создаётся.
+
+Для адресной связи восстановлен штатный Herder `mesh_route`: target `{hostId: "MacBook-Pro-User.local", harness: "minimax-code", nativeSessionId: "mvs_f70ce650bbf94d789e4e4a2669f6743a"}`, проверенный sender и уникальный stable `inputId` на одно новое логическое сообщение. Registered peer/schema/owner/exact native identity проверяются до writer; текущий native Running получает штатный queue-item steer, idle — queue. Accepted/UNKNOWN не повторяются и не отправляются другим fallback. Этот результат не требует новых сообщений C2 или finder.
 
 ## Source и проверки
 
@@ -9,6 +27,10 @@
 - `cbc4cc2`: active-aware supported steer по независимому CURRENT native Running; idle остаётся queue. RED1→GREEN, один writer без fallback/replay. HumanStop, policy, notes и durable ledger сохранены.
 - `1deb355`: targeted registered-peer schema + owner identity + exact readSession вместо полного mesh snapshot для известного native адреса. Неправильный host/ID/harness не доходит до writer.
 - Mandatory initial RED4; focused native25/25 и routing20/20 GREEN; TypeScript noEmit GREEN. Исходные проверки и дополнительные counterexamples описаны в independent-review.md.
+
+## Publication receipt
+
+Source commit `1deb35553bc0836a583ee19681b6a262932f287b` и его три предыдущих owned commits опубликованы в `origin/main`. Первичная публикация 30 sanitized task artifacts: `2201645`. Последующий разрешённый excerpt — только документационный delta; runtime не перезапускается из-за изменения отчёта. Source publication не подменяет installed и consumer receipts ниже.
 
 ## Installed
 
