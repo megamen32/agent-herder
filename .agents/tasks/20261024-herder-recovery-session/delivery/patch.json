@@ -1,0 +1,49 @@
+{
+  "patchSourceSha": "cbc4cc2fbbf0635258e550f760ecb8350568c9d2",
+  "sourceGitBlobs": {
+    "src/adapters/minimax-code.ts": "aaee5d6ea72d731cbe8e731686b1e3d48bda84bd",
+    "src/mesh/local.ts": "d37e7151f54debc07d0336174503a42f64414bed",
+    "src/adapters/minimax-code-native-session.ts": "1448e1a3ad31e395a3cdeaee23efb8892d1d430d",
+    "src/session-supervisor.ts": "6aab8d60256c5e115c21695855c9ed6577960743"
+  },
+  "files": [
+    "adapters/minimax-code-native-session"
+  ],
+  "replacements": [
+    {
+      "path": "adapters/minimax-code.js",
+      "before": "import { open, readdir, stat } from \"node:fs/promises\";\nimport { join } from \"node:path\";\n",
+      "after": "import { readMinimaxNativeSession } from './minimax-code-native-session.js';\nimport { open, readdir, stat } from \"node:fs/promises\";\nimport { join } from \"node:path\";\n"
+    },
+    {
+      "path": "adapters/minimax-code.js",
+      "before": "    }\n    async getSession(id) {\n        const stored = await this.readStoredSessions();\n        const entry = stored.find((candidate) => candidate.id === id);\n",
+      "after": "    }\n    async getSession(id) {\n        if (await this.control.available())\n            return readMinimaxNativeSession(this.control, id);\n        const stored = await this.readStoredSessions();\n        const entry = stored.find((candidate) => candidate.id === id);\n"
+    },
+    {
+      "path": "adapters/minimax-code.js",
+      "before": "    }\n    async getSessionMessages(id, limit = 100) {\n        const stored = await this.readStoredSessions();\n        const entry = stored.find((candidate) => candidate.id === id);\n",
+      "after": "    }\n    async getSessionMessages(id, limit = 100) {\n        if (await this.control.available()) {\n            const identity = await this.control.getSession(id);\n            if (identity.status === 404)\n                return null;\n            if (!identity.ok)\n                throw new Error('minimax_native_session_unavailable');\n            if (identity.body?.session?.session_id !== id)\n                throw new Error('minimax_native_session_identity_mismatch');\n            const keep = Math.min(MAX_MESSAGE_LIMIT, Math.max(1, limit > 0 ? Math.floor(limit) : MAX_MESSAGE_LIMIT));\n            const response = await this.control.getMessages(id, { limit: keep });\n            const rows = response.body?.messages;\n            if (!response.ok || !Array.isArray(rows))\n                throw new Error('minimax_native_messages_unavailable');\n            if (rows.some(row => typeof row.session_id === 'string' && row.session_id !== id))\n                throw new Error('minimax_native_message_identity_mismatch');\n            return rows.slice(-keep).flatMap(row => {\n                const text = extractText(row.msg_content, MAX_MESSAGE_CHARS);\n                if (!text.trim())\n                    return [];\n                return [{ id: String(row.msg_id ?? ''), role: row.role === 'user' || row.role === 'assistant' || row.role === 'tool' ? row.role : 'system', text, parts: [{ type: 'text', text }], ...(typeof row.turn_id === 'string' ? { turnId: row.turn_id } : {}), ...(typeof row.timestamp === 'number' ? { timestamp: new Date(row.timestamp).toISOString() } : {}) }];\n            });\n        }\n        const stored = await this.readStoredSessions();\n        const entry = stored.find((candidate) => candidate.id === id);\n"
+    },
+    {
+      "path": "mesh/local.js",
+      "before": "import { homedir, hostname } from \"node:os\";",
+      "after": "import { MinimaxCodeControl } from \"../adapters/minimax-code-control.js\";\nimport { readMinimaxNativeSession } from \"../adapters/minimax-code-native-session.js\";\nimport { homedir, hostname } from \"node:os\";"
+    },
+    {
+      "path": "mesh/local.js",
+      "before": "        if (harness !== MINIMAX_CODE_HARNESS)\n            return null;\n        const observed = await observeMinimaxCode(1, undefined, this.hostId, nativeSessionId).catch(() => null);\n        const session = observed?.sessions[0];\n",
+      "after": "        if (harness !== MINIMAX_CODE_HARNESS)\n            return null;\n        const control = new MinimaxCodeControl();\n        if (await control.available()) {\n            const session = await readMinimaxNativeSession(control, nativeSessionId);\n            return session ? { nativeSessionId: session.id, status: session.status, cwd: session.cwd } : null;\n        }\n        const observed = await observeMinimaxCode(1, undefined, this.hostId, nativeSessionId).catch(() => null);\n        const session = observed?.sessions[0];\n"
+    },
+    {
+      "path": "session-supervisor.js",
+      "before": "const cachedSessions = options.quick\n            ? provider === \"codex\"",
+      "after": "const cachedSessions = options.quick\n            ? provider === \"minimax-code\" ? undefined : provider === \"codex\""
+    },
+    {
+      "path": "mesh/local.js",
+      "before": "    async deliverMinimaxCode(request, adapter) {\n        const notes = this.deps.notes ?? ((session, message) => coordinationNotes.inject(session, message));\n        return runMinimaxCodeDelivery(request, {\n            port: { enqueue: async (id, message, inputId) => adapter.sendMessage(id, { message, queue: true, inputId, origin: \"automation\" }) },\n            observe: id => this.observeNative(MINIMAX_CODE_HARNESS, id),\n            notes,\n        });\n",
+      "after": "    async deliverMinimaxCode(request, adapter) {\n        const notes = this.deps.notes ?? ((session, message) => coordinationNotes.inject(session, message));\n        let nativeRunning = false;\n        return runMinimaxCodeDelivery(request, {\n            port: { enqueue: async (id, message, inputId) => adapter.sendMessage(id, { message, ...(nativeRunning ? { steer: true } : { queue: true }), inputId, origin: \"automation\" }) },\n            observe: async (id) => { const observed = await this.observeNative(MINIMAX_CODE_HARNESS, id); nativeRunning = observed?.status === \"running\"; return observed; },\n            notes,\n        });\n"
+    }
+  ]
+}

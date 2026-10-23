@@ -1,0 +1,4 @@
+import {MinimaxCodeControl} from './dist/adapters/minimax-code-control.js';
+const id='mvs_f70ce650bbf94d789e4e4a2669f6743a',c=new MinimaxCodeControl({timeoutMs:5000});
+const meta=await c.getSession(id),current=await c.call('GET',`/session/${id}/turn-continuation`),messages=await c.getMessages(id,{limit:3}),queue=await c.call('GET',`/session/${id}/queue`);
+const q=queue.body??{};console.log(JSON.stringify({observedAt:new Date().toISOString(),id:meta.body?.session?.session_id,title:meta.body?.session?.title,metadataStatus:meta.status,controllerStatus:current.status,controller:current.body,messageStatus:messages.status,messages:(messages.body?.messages??[]).map(m=>({id:m.msg_id,role:m.role,turnId:m.turn_id,timestamp:m.timestamp})),queueStatus:queue.status,queueKeys:Object.keys(q),queueItems:(q.items??q.queue_items??q.messages??[]).map(m=>({itemId:m.item_id,status:m.status}))}));

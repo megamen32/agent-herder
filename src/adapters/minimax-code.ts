@@ -1,3 +1,4 @@
+import {readMinimaxNativeSession} from './minimax-code-native-session.js';
 import { open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
@@ -376,6 +377,7 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
   }
 
   async getSession(id: string): Promise<AgentSession | null> {
+    if (await this.control.available()) return readMinimaxNativeSession(this.control,id);
     const stored = await this.readStoredSessions();
     const entry = stored.find((candidate) => candidate.id === id);
     return entry ? this.toSession(entry) : null;
@@ -403,6 +405,20 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
   }
 
   async getSessionMessages(id: string, limit = 100): Promise<SessionMessageView[] | null> {
+    if (await this.control.available()) {
+      const identity=await this.control.getSession(id);if(identity.status===404)return null;
+      if(!identity.ok)throw new Error('minimax_native_session_unavailable');
+      if((identity.body as {session?:{session_id?:string}}|null)?.session?.session_id!==id)throw new Error('minimax_native_session_identity_mismatch');
+      const keep=Math.min(MAX_MESSAGE_LIMIT,Math.max(1,limit>0?Math.floor(limit):MAX_MESSAGE_LIMIT));
+      const response=await this.control.getMessages(id,{limit:keep});
+      const rows=(response.body as {messages?:Array<Record<string,any>>}|null)?.messages;
+      if(!response.ok||!Array.isArray(rows))throw new Error('minimax_native_messages_unavailable');
+      if(rows.some(row=>typeof row.session_id==='string'&&row.session_id!==id))throw new Error('minimax_native_message_identity_mismatch');
+      return rows.slice(-keep).flatMap(row=>{
+        const text=extractText(row.msg_content,MAX_MESSAGE_CHARS);if(!text.trim())return [];
+        return [{id:String(row.msg_id??''),role:row.role==='user'||row.role==='assistant'||row.role==='tool'?row.role:'system',text,parts:[{type:'text' as const,text}],...(typeof row.turn_id==='string'?{turnId:row.turn_id}:{}),...(typeof row.timestamp==='number'?{timestamp:new Date(row.timestamp).toISOString()}:{})} as SessionMessageView];
+      });
+    }
     const stored = await this.readStoredSessions();
     const entry = stored.find((candidate) => candidate.id === id);
     if (!entry) return null;

@@ -89,7 +89,7 @@ describe("MinimaxCodeAdapter", () => {
     await writeSession(root, "mvs_old", { day: "2026/10/10", updatedAtMs: 2000 });
     await writeSession(root, "mvs_new", { day: "2026/10/23", updatedAtMs: 3000 });
     await utimes(join(active, "messages.jsonl"), 5, 5);
-    const adapter = new MinimaxCodeAdapter({ sessionStore: root, maxSessions: 2 });
+    const adapter = new MinimaxCodeAdapter({ control: new MinimaxCodeControl({ manifestPath: join(root, "offline-manifest.json") }), sessionStore: root, maxSessions: 2 });
     expect((await adapter.listSessions({ limit: 1 }))[0]).toMatchObject({ id: "mvs_active", lastActivity: new Date(5000).toISOString() });
     expect((await adapter.getSession("mvs_new"))?.id).toBe("mvs_new");
   });
@@ -117,7 +117,7 @@ describe("MinimaxCodeAdapter", () => {
       messages: [{ message_id: "m1", turn_id: "t1", message: { role: "user", content: "свежая" } }],
     });
 
-    const adapter = new MinimaxCodeAdapter({ sessionStore: root });
+    const adapter = new MinimaxCodeAdapter({ control: new MinimaxCodeControl({ manifestPath: join(root, "offline-manifest.json") }), sessionStore: root });
     const sessions = await adapter.listSessions();
 
     expect(sessions).toHaveLength(2);
@@ -137,7 +137,7 @@ describe("MinimaxCodeAdapter", () => {
     const root = await store();
     await writeSession(root, "mvs_0000000000000000000000000000cccc", { manifest: null });
 
-    const adapter = new MinimaxCodeAdapter({ sessionStore: root });
+    const adapter = new MinimaxCodeAdapter({ control: new MinimaxCodeControl({ manifestPath: join(root, "offline-manifest.json") }), sessionStore: root });
     const session = await adapter.getSession("mvs_0000000000000000000000000000cccc");
 
     expect(session?.id).toBe("mvs_0000000000000000000000000000cccc");
@@ -149,7 +149,7 @@ describe("MinimaxCodeAdapter", () => {
     await writeSession(root, "mvs_0000000000000000000000000000dddd");
     await mkdir(join(root, "2026/10/19/20-31-52-444-session_broken"), { recursive: true });
 
-    const adapter = new MinimaxCodeAdapter({ sessionStore: root });
+    const adapter = new MinimaxCodeAdapter({ control: new MinimaxCodeControl({ manifestPath: join(root, "offline-manifest.json") }), sessionStore: root });
     const sessions = await adapter.listSessions();
 
     expect(sessions.map((session) => session.id)).toEqual(["mvs_0000000000000000000000000000dddd"]);
@@ -164,7 +164,7 @@ describe("MinimaxCodeAdapter", () => {
       ],
     });
 
-    const adapter = new MinimaxCodeAdapter({ sessionStore: root });
+    const adapter = new MinimaxCodeAdapter({ control: new MinimaxCodeControl({ manifestPath: join(root, "offline-manifest.json") }), sessionStore: root });
     const transcript = await adapter.getTranscript("mvs_0000000000000000000000000000eeee");
 
     expect(transcript).toContain("## user\nвопрос");
@@ -184,7 +184,7 @@ describe("MinimaxCodeAdapter", () => {
       ],
     });
 
-    const adapter = new MinimaxCodeAdapter({ sessionStore: root });
+    const adapter = new MinimaxCodeAdapter({ control: new MinimaxCodeControl({ manifestPath: join(root, "offline-manifest.json") }), sessionStore: root });
     const messages = await adapter.getSessionMessages("mvs_0000000000000000000000000000aabb");
 
     expect(messages).toHaveLength(2);
@@ -223,7 +223,7 @@ describe("MinimaxCodeAdapter", () => {
   it("initialises on an empty store directory", async () => {
     const root = await store();
     await mkdir(join(root, "2026/10/19"), { recursive: true });
-    const adapter = new MinimaxCodeAdapter({ sessionStore: root });
+    const adapter = new MinimaxCodeAdapter({ control: new MinimaxCodeControl({ manifestPath: join(root, "offline-manifest.json") }), sessionStore: root });
 
     await expect(adapter.init()).resolves.toBeUndefined();
     expect(await adapter.listSessions()).toEqual([]);
@@ -235,7 +235,7 @@ describe("MinimaxCodeAdapter", () => {
       messages: [{ message_id: "m1", turn_id: "t1", message: { role: "user", content: "вопрос" } }],
     });
 
-    const adapter = new MinimaxCodeAdapter({ sessionStore: root });
+    const adapter = new MinimaxCodeAdapter({ control: new MinimaxCodeControl({ manifestPath: join(root, "offline-manifest.json") }), sessionStore: root });
     expect((await adapter.listSessions())[0]?.title).toBe("вопрос");
 
     // The transcript becomes unreadable while its stamp stays the same, so a
@@ -250,7 +250,7 @@ describe("MinimaxCodeAdapter", () => {
       messages: [{ message_id: "m1", turn_id: "t1", message: { role: "user", content: "вопрос" } }],
     });
 
-    const adapter = new MinimaxCodeAdapter({ sessionStore: root });
+    const adapter = new MinimaxCodeAdapter({ control: new MinimaxCodeControl({ manifestPath: join(root, "offline-manifest.json") }), sessionStore: root });
     expect((await adapter.listSessions())[0]?.lastMessage).toBe("вопрос");
 
     await writeFile(

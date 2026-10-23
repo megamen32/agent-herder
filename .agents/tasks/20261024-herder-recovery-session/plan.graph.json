@@ -1,0 +1,37 @@
+{
+  "schema_version": 2,
+  "title": "Восстановить Codex → Mavis C2 через существующий Herder",
+  "goal": "исправить существующий Codex → Mavis C2 маршрут и проверить уже существующий общий межагентный чат.",
+  "business_result": "точная доставка новой директивы единственному владельцу C2 без replay старого UNKNOWN, без параллельного deploy/sync.",
+  "business_results": [
+    "точная доставка новой директивы единственному владельцу C2 без replay старого UNKNOWN, без параллельного deploy/sync."
+  ],
+  "current_progress": "",
+  "external_waits": "",
+  "slots": 1,
+  "updated_at": "2026-10-24T01:24:13",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "Воспроизвести identity failure и найти существующий чат",
+      "status": "done",
+      "depends_on": [],
+      "acceptance": "exact nativeID/owner/route read-only, чат прочитан штатным lhc_chat; предыдущий UNKNOWN сохранён."
+    },
+    {
+      "id": "L02",
+      "label": "Исправить точный Herder маршрут и установить owned delta",
+      "status": "done",
+      "depends_on": [],
+      "acceptance": "обязательный быстрый RED→fix→GREEN, затем installed affected read/capability proof."
+    },
+    {
+      "id": "L03",
+      "label": "Передать одну новую директиву и получить реальный readback",
+      "status": "done",
+      "depends_on": [],
+      "acceptance": "Root получил read-only checkpoint, новый stable inputId принят native interface и найден реальный ответ; queue ACK не PASS."
+    }
+  ],
+  "leaf_count": 3
+}

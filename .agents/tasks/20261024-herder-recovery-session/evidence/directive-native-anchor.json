@@ -1,0 +1,17 @@
+{
+  "observedAt": "2026-10-23T22:19:55.662Z",
+  "status": 200,
+  "inputId": "exmanager-c2-owner-directive-20261024-herder-01a16987-r1",
+  "anchor": [
+    {
+      "id": "msg-user-v1-L5RgDPWF7UgAZy-XJs0BG3E65toLTGmxaTWhfSnE1mk",
+      "role": "user",
+      "turnId": "1ee9a5b2-0dea-482d-b749-68c61b1e86c9",
+      "timestamp": 1792793950864,
+      "inputMatch": true,
+      "source": "api",
+      "contentSha256": "4245a7206fc02eb864e44db0da38cc750f922a2296e12301a24c205e74f980a5",
+      "rawKeys": []
+    }
+  ]
+}

@@ -25,6 +25,16 @@ describe("native MiniMax Code delivery (focused integration; expected 5s, maximu
    expect(sendMessage).toHaveBeenCalledTimes(1);
   }finally{await rm(dir,{recursive:true,force:true});}
  });
+ it("steers the current running native session instead of leaving a new directive queued",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-steer-"));try{
+   const sendMessage=vi.fn(async(_id:string,options:any)=>({ok:true,admitted:true,turnId:"current-turn",inputId:options.inputId}));
+   const adapter={type:"minimax-code",getSession:vi.fn(async()=>({...nativeSession,status:"running"})),sendMessage,isReady:()=>true};
+   const mesh=new LocalHarnessMesh({hostId:"h",adapters:new Map([["minimax-code",adapter]]) as any,ledgerPath:join(dir,"ledger.json"),nativeObserve:async(_h,id)=>({nativeSessionId:id,status:"running",cwd:"/work"})});
+   expect((await mesh.deliver(request)).state).toBe("admitted");
+   expect(sendMessage.mock.calls[0]?.[1]).toMatchObject({steer:true,inputId:"i-1"});
+   await mesh.deliver(request);expect(sendMessage).toHaveBeenCalledTimes(1);
+  }finally{await rm(dir,{recursive:true,force:true});}
+ });
  it("refuses another host and an unknown native session before the writer",async()=>{
   const dir=await mkdtemp(join(tmpdir(),"herder-minimax-delivery-"));try{
    const sendMessage=vi.fn();

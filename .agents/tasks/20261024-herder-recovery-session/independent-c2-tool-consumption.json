@@ -1,0 +1,20 @@
+{
+  "assistantId": "975e6145-b04c-4be4-b70f-852a013a662d",
+  "turnId": "1ee9a5b2-0dea-482d-b749-68c61b1e86c9",
+  "calls": [
+    {
+      "id": "call_function_szyovdazzffn_1",
+      "exactHandoffRead": true,
+      "exit0": true,
+      "missingFileOrPermissionError": false
+    },
+    {
+      "id": "call_function_szyovdazzffn_2",
+      "existingSharedChatRead": true,
+      "exit0": true,
+      "existingChatRef": "lhc-1.4.0-release.json",
+      "missingFileOrPermissionError": false
+    }
+  ],
+  "reviewerSends": 0
+}

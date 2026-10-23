@@ -1,0 +1,9 @@
+{
+  "hostId": "roomhacker-server-100",
+  "current": "/home/roomhacker/agents-projects/.fleet-candidate/releases/1deb35553bc0836a583ee19681b6a262932f287b",
+  "sourceSha": "1deb35553bc0836a583ee19681b6a262932f287b",
+  "ownedFiles": {
+    "mesh/gptadmin.js": "0ffe4261a1116f1103d2ea56df62ab8a72dee46b80addb1b49d6a831cc2172ac"
+  },
+  "execStart": "{ path=/usr/local/bin/node ; argv[]=/usr/local/bin/node /home/roomhacker/agents-projects/.fleet-candidate/releases/1deb35553bc0836a583ee19681b6a262932f287b/dist/index.js ; ignore_errors=no ; start_time=[Sat 2026-10-24 01:17:47 MSK] ; stop_time=[n/a] ; pid=1557452 ; code=(null) ; status=0/0 }"
+}

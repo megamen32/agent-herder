@@ -1,3 +1,5 @@
+import {MinimaxCodeControl} from '../adapters/minimax-code-control.js';
+import {readMinimaxNativeSession} from '../adapters/minimax-code-native-session.js';
 import {meshDiscoveryTimeoutMs} from "./discovery-timeout.js";
 import {homedir,hostname} from "node:os";
 import {join} from "node:path";
@@ -135,9 +137,10 @@ export class LocalHarnessMesh {
  /** One native MiniMax Code delivery, proven by the admission of the runtime. */
  private async deliverMinimaxCode(request:MeshDelivery,adapter:HarnessAdapter):Promise<NativeReceipt&{reason?:string}>{
   const notes=this.deps.notes??((session,message)=>coordinationNotes.inject(session,message));
+  let nativeRunning=false;
   return runMinimaxCodeDelivery(request,{
-   port:{enqueue:async(id,message,inputId)=>adapter.sendMessage(id,{message,queue:true,inputId,origin:"automation"})},
-   observe:id=>this.observeNative(MINIMAX_CODE_HARNESS,id),
+   port:{enqueue:async(id,message,inputId)=>adapter.sendMessage(id,{message,...(nativeRunning?{steer:true}:{queue:true}),inputId,origin:"automation"})},
+   observe:async id=>{const observed=await this.observeNative(MINIMAX_CODE_HARNESS,id);nativeRunning=observed?.status==="running";return observed;},
    notes,
   });
  }
@@ -145,6 +148,8 @@ export class LocalHarnessMesh {
  private async observeNative(harness:string,nativeSessionId:string):Promise<{nativeSessionId:string;status:string;cwd?:string|null}|null>{
   if(this.deps.nativeObserve)return this.deps.nativeObserve(harness,nativeSessionId);
   if(harness!==MINIMAX_CODE_HARNESS)return null;
+  const control=new MinimaxCodeControl();
+  if(await control.available()){const session=await readMinimaxNativeSession(control,nativeSessionId);return session?{nativeSessionId:session.id,status:session.status,cwd:session.cwd}:null;}
   const observed=await observeMinimaxCode(1,undefined,this.hostId,nativeSessionId).catch(()=>null);
   const session=observed?.sessions[0];
   return session?{nativeSessionId:session.address.nativeSessionId,status:session.status,cwd:session.project.currentCwd??session.project.launchCwd??MINIMAX_CODE_HARNESS_CWD}:null;
