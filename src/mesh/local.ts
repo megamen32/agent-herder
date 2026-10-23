@@ -137,9 +137,10 @@ export class LocalHarnessMesh {
  /** One native MiniMax Code delivery, proven by the admission of the runtime. */
  private async deliverMinimaxCode(request:MeshDelivery,adapter:HarnessAdapter):Promise<NativeReceipt&{reason?:string}>{
   const notes=this.deps.notes??((session,message)=>coordinationNotes.inject(session,message));
+  let nativeRunning=false;
   return runMinimaxCodeDelivery(request,{
-   port:{enqueue:async(id,message,inputId)=>adapter.sendMessage(id,{message,queue:true,inputId,origin:"automation"})},
-   observe:id=>this.observeNative(MINIMAX_CODE_HARNESS,id),
+   port:{enqueue:async(id,message,inputId)=>adapter.sendMessage(id,{message,...(nativeRunning?{steer:true}:{queue:true}),inputId,origin:"automation"})},
+   observe:async id=>{const observed=await this.observeNative(MINIMAX_CODE_HARNESS,id);nativeRunning=observed?.status==="running";return observed;},
    notes,
   });
  }
