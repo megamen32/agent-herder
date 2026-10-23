@@ -1,0 +1,19 @@
+{
+  "patchSourceSha": "1deb35553bc0836a583ee19681b6a262932f287b",
+  "sourceGitBlobs": {
+    "src/mesh/gptadmin.ts": "41147a5e3c43f7bce791e86ddd1ed382fe4401fe"
+  },
+  "files": [],
+  "replacements": [
+    {
+      "path": "mesh/gptadmin.js",
+      "before": "            return { state: \"not_attempted\", inputId: request.inputId, retryable: true, reason: \"mesh_input_capacity\" };\n        let route = this.routes.get(request.target.hostId);\n        // Stateless MCP may recreate this service between discovery and delivery.\n        // Re-resolve read-only identity/schema; never retry a native mutation here.\n        if (!route) {\n            try {\n                await this.discover(12);\n",
+      "after": "            return { state: \"not_attempted\", inputId: request.inputId, retryable: true, reason: \"mesh_input_capacity\" };\n        let route = this.routes.get(request.target.hostId);\n        // A known exact address needs owner identity, schema and its own current\n        // session read, not a historical snapshot of every session on every host.\n        if (!route && this.hub.readSession) {\n            try {\n                route = await this.resolveExactRoute(request.target);\n            }\n            catch (error) {\n                return { state: \"not_attempted\", inputId: request.inputId, retryable: true, reason: error instanceof Error ? shortReason(error.message) : \"mesh_route_unavailable\" };\n            }\n        }\n        else if (!route) {\n            try {\n                await this.discover(12);\n"
+    },
+    {
+      "path": "mesh/gptadmin.js",
+      "before": "            this.inputs.delete(key);\n        return receipt;\n    }\n    /**\n",
+      "after": "            this.inputs.delete(key);\n        return receipt;\n    }\n    async resolveExactRoute(address) {\n        const discovery = unwrapResult(await this.bounded(this.hub.discover()));\n        if (!Array.isArray(discovery.servers))\n            throw new Error(\"mesh_route_registry_unavailable\");\n        const prefix = `mcp:shell:${address.hostId}:`;\n        const peers = discovery.servers.filter(p => p.kind === \"child_mcp\" && p.server_id.startsWith(prefix) && /herder|harness.?mesh/i.test(p.server_id) && [\"online\", \"configured\"].includes(p.status));\n        if (peers.length !== 1)\n            throw new Error(\"mesh_route_owner_ambiguous\");\n        const target = peers[0].server_id, schema = unwrapResult(await this.bounded(this.hub.schema(target)));\n        const tools = Array.isArray(schema.tools) ? schema.tools : [];\n        if (!tools.some(t => t.name === \"mesh_deliver\") || !tools.some(t => t.name === \"fleet_node_info\"))\n            throw new Error(\"mesh_route_capability_missing\");\n        const owner = unwrapResult(await this.bounded(this.hub.call(target, \"fleet_node_info\", {})));\n        if (owner.hostId !== address.hostId)\n            throw new Error(\"native_host_identity_mismatch\");\n        const read = unwrapResult(await this.bounded(this.hub.readSession(target, address.harness, address.nativeSessionId)));\n        if (read.hostId !== undefined && read.hostId !== address.hostId)\n            throw new Error(\"native_host_identity_mismatch\");\n        const session = read.details?.session ?? read.session;\n        if (!session || session.id !== address.nativeSessionId || session.harness !== address.harness)\n            throw new Error(\"native_session_identity_mismatch\");\n        const key = addressKey(address);\n        return { target, nativeIds: new Set([key]), projects: new Map([[key, typeof session.cwd === \"string\" ? session.cwd : null]]) };\n    }\n    /**\n"
+    }
+  ]
+}

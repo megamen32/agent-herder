@@ -1,0 +1,22 @@
+{
+  "target": {
+    "hostId": "MacBook-Pro-User.local",
+    "harness": "minimax-code",
+    "nativeSessionId": "mvs_f70ce650bbf94d789e4e4a2669f6743a"
+  },
+  "sender": {
+    "hostId": "roomhacker-server-100",
+    "harness": "codex",
+    "nativeSessionId": "01a16987-f6fd-7351-b61d-a3647396a867"
+  },
+  "inputId": "exmanager-c2-owner-directive-20261024-herder-01a16987-r1",
+  "contentSha256": "96cda865f70467f19b7c81c17e506e4e6203f2b20a325a4fef9fecc7a6738ecd",
+  "semanticFlags": {
+    "ownerDirective": true,
+    "c2SoleNextInstallOwner": true,
+    "recoveryStopped": true,
+    "readExistingHandoff": true,
+    "readExistingSharedChat": true,
+    "newChatForbidden": true
+  }
+}

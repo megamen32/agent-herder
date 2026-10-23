@@ -1,0 +1,27 @@
+{
+  "status": "complete",
+  "completedLeaves": 3,
+  "totalLeaves": 3,
+  "nativeContentWrites": 1,
+  "preflightNotAttempted": 1,
+  "oldUnknownReplayed": false,
+  "inputId": "exmanager-c2-owner-directive-20261024-herder-01a16987-r1",
+  "turnId": "1ee9a5b2-0dea-482d-b749-68c61b1e86c9",
+  "userAnchorId": "msg-user-v1-L5RgDPWF7UgAZy-XJs0BG3E65toLTGmxaTWhfSnE1mk",
+  "assistantAcceptanceId": "975e6145-b04c-4be4-b70f-852a013a662d",
+  "assistantNextStepId": "f5c70901-bbc7-4a70-843b-29d1b31d56b2",
+  "handoffRead": true,
+  "existingSharedChatRead": true,
+  "sharedChatRecordId": "lhc-1.4.0-release.json",
+  "nativeResourceReadsExit0": 2,
+  "independentConsumer": "PASS",
+  "sourceTests": {
+    "nativeFocused": 25,
+    "routingFocused": 20,
+    "typescript": "PASS"
+  },
+  "installed": {
+    "roomhacker-server-100": "1deb35553bc0836a583ee19681b6a262932f287b",
+    "MacBook-Pro-User.local": "cbc4cc2fbbf0635258e550f760ecb8350568c9d2"
+  }
+}
