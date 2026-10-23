@@ -137,7 +137,7 @@ export class FleetDirectTransport implements GptAdminTransport {
   return this.rpc(this.peer(target),'herder_runtime_probe',{},this.deadlineMs) as Promise<{hasRuntime:boolean;hasDisarmTool?:boolean;reason?:string;tools?:string[]}>;
  }
  readSession(target:string,harness:string,sessionId:string):Promise<unknown>{
-  if(!['codex','zcode','opencode'].includes(harness)||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))throw new Error('direct_session_invalid');
+  if(!['codex','zcode','opencode','minimax-code'].includes(harness)||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))throw new Error('direct_session_invalid');
   return this.rpc(this.peer(target),'session/read',{harness,sessionId},this.deadlineMs);
  }
  readSessionPage(target:string,cursor?:string,limit=100):Promise<unknown>{return this.call(target,'fleet_session_page',{limit,...(cursor?{cursor}:{})});}

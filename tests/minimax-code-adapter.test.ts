@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, rm, writeFile, utimes } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -63,6 +63,8 @@ async function writeSession(
     join(dir, "messages.jsonl"),
     `${messages.map((message) => JSON.stringify(message)).join("\n")}\n`,
   );
+  const at = (options.updatedAtMs ?? 1_700_000_100_000) / 1000;
+  await utimes(join(dir, "messages.jsonl"), at, at);
   return dir;
 }
 
@@ -81,6 +83,16 @@ afterEach(async () => {
 });
 
 describe("MinimaxCodeAdapter", () => {
+  it("keeps a recently active old session visible before applying the store window", async () => {
+    const root = await store();
+    const active = await writeSession(root, "mvs_active", { day: "2026/10/09", updatedAtMs: 1000 });
+    await writeSession(root, "mvs_old", { day: "2026/10/10", updatedAtMs: 2000 });
+    await writeSession(root, "mvs_new", { day: "2026/10/23", updatedAtMs: 3000 });
+    await utimes(join(active, "messages.jsonl"), 5, 5);
+    const adapter = new MinimaxCodeAdapter({ sessionStore: root, maxSessions: 2 });
+    expect((await adapter.listSessions({ limit: 1 }))[0]).toMatchObject({ id: "mvs_active", lastActivity: new Date(5000).toISOString() });
+    expect((await adapter.getSession("mvs_new"))?.id).toBe("mvs_new");
+  });
   it("lists stored sessions newest first with title, model and last message", async () => {
     const root = await store();
     await writeSession(root, "mvs_0000000000000000000000000000aaaa", {

@@ -23,6 +23,10 @@ const POLICY_DIR='/tmp/herder-quota-policy-none';
 beforeEach(async()=>{const {tmpdir}=await vi.importActual<typeof import('node:os')>('node:os');state.home=await mkdtemp(join(tmpdir(),'direct-'));state.spawns=[];state.reply={tools:[]};state.mode='ok';state.auth=false;state.host='server-44';state.stderr='';vi.stubEnv('AGENT_HERDER_AUTOPILOT_STATE_DIR',POLICY_DIR);});
 afterEach(async()=>{await rm(state.home,{recursive:true,force:true});vi.useRealTimers();vi.unstubAllEnvs();});
 describe('owner direct route local logic only',()=>{
+ it('allows a read-only MiniMax session on the existing verified peer route',async()=>{
+  await new FleetDirectTransport([peer]).readSession('mcp:shell:roomhacker-server-88:AgentHerder','minimax-code','mvs_existing');
+  expect(state.spawns[0].body).toMatchObject({method:'session/read',params:{harness:'minimax-code',sessionId:'mvs_existing'}});
+ });
  // Focused integration expected1s/max3s: roaming Mac must use the authenticated canonical reverse route, never its LAN IP.
  it.each(['roomhacker-server-100','server-44'])('routes Mac through the existing server100 reverse SSH from %s',async(host)=>{
   state.host=host;await new FleetDirectTransport().call('mcp:shell:MacBook-Pro-User.local:AgentHerder','fleet_node_info',{});

@@ -66,7 +66,7 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
   return {structuredContent:{...result},content:[{type:'text' as const,text:'Session metadata page'}]};
  });
 
- server.registerTool('fleet_session_view',{description:'Read the latest three messages of one exact native session, on demand. Unavailable history is explicit; no activation or mutation.',annotations:{readOnlyHint:true},inputSchema:z.object({harness:z.enum(['codex','zcode','opencode']),sessionId:z.string().min(1).max(512).refine(s=>!/[\x00-\x1f\x7f]/.test(s))}).strict()},async({harness,sessionId})=>{
+ server.registerTool('fleet_session_view',{description:'Read the latest three messages of one exact native session, on demand. Unavailable history is explicit; no activation or mutation.',annotations:{readOnlyHint:true},inputSchema:z.object({harness:z.enum(['codex','zcode','opencode','minimax-code']),sessionId:z.string().min(1).max(512).refine(s=>!/[\x00-\x1f\x7f]/.test(s))}).strict()},async({harness,sessionId})=>{
   const routed=await deps.integratorRuntime?.adapterForSession({hostId:hostname(),harness,nativeSessionId:sessionId});
   if(routed?.kind==='deny')throw new Error('fleet_session_scope_unavailable');
   const adapter=routed?.kind==='scoped'?routed.adapter:deps.adapters.get(harness);if(!adapter||adapter.lazyStart&&(!adapter.isReady||!adapter.isReady()))throw new Error('fleet_session_native_not_ready');

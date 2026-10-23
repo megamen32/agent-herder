@@ -40,6 +40,8 @@ const MAX_TITLE_LENGTH = 120;
 const MAX_LAST_MESSAGE_LENGTH = 400;
 /** The session index is re-read at most this often. */
 const INDEX_TTL_MS = 10_000;
+/** Bound metadata enumeration independently from the displayed session window. */
+const MAX_ENUMERATED_DIRECTORIES = 4096;
 
 export interface MinimaxCodeAdapterOptions {
   /** Root of the MiniMax Code local-runtime session store. */
@@ -343,7 +345,7 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     // capability gate follows it instead of the process start.
     void this.liveControl();
     const stored = await this.readStoredSessions();
-    const limited = options.limit ? stored.slice(0, options.limit) : stored;
+    const limited = stored.slice(0, Math.min(options.limit ?? this.maxSessions, this.maxSessions));
     const sessions: AgentSession[] = [];
     for (const entry of limited) sessions.push(await this.toSession(entry));
     return sessions;
@@ -494,14 +496,17 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
   private async readStoredSessions(): Promise<MinimaxStoredSession[]> {
     const now = Date.now();
     if (this.indexCache && now - this.indexCache.at < INDEX_TTL_MS) return this.indexCache.entries;
-    const directories = await collectSessionDirectories(this.sessionStore, this.maxSessions);
+    const directories = await collectSessionDirectories(this.sessionStore, MAX_ENUMERATED_DIRECTORIES);
     const sessions: MinimaxStoredSession[] = [];
     for (const dir of directories) {
       const manifest = await readJsonFile<MinimaxManifest>(join(dir, "manifest.json"), MAX_MANIFEST_BYTES);
       const id = manifest?.sessionId || decodeSessionKey(dir.slice(dir.lastIndexOf("/") + 1));
       if (!id) continue;
       const createdAtMs = manifest?.createdAtMs ?? 0;
-      const updatedAtMs = manifest?.updatedAtMs ?? createdAtMs;
+      // The desktop's dated manifest is immutable after session creation.
+      // A resumed old session advances its message file, not that manifest.
+      const messages = await stampFile(join(dir, "messages.jsonl"));
+      const updatedAtMs = Math.max(manifest?.updatedAtMs ?? createdAtMs, messages?.mtimeMs ?? 0);
       sessions.push({ id, dir, manifest: manifest ?? {}, createdAtMs, updatedAtMs });
     }
     sessions.sort((left, right) => right.updatedAtMs - left.updatedAtMs);

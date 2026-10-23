@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {mkdtemp,mkdir,writeFile,rm} from "node:fs/promises";
+import {mkdtemp,mkdir,writeFile,rm,utimes} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {observeMinimaxCode} from "../src/mesh/native-minimax-code.js";
@@ -14,11 +14,30 @@ async function session(root:string,id:string,options:{at?:number;created?:number
  await mkdir(dir,{recursive:true});
  await writeFile(join(dir,"manifest.json"),JSON.stringify({schemaVersion:1,sessionId:id,createdAtMs:options.created??1000,updatedAtMs:options.at??2000,source:"local-runtime",layout:"v2-final-dated-session"}));
  if(options.record)await writeFile(join(dir,"snapshot.json"),JSON.stringify({schemaVersion:1,sessionId:id,record:options.record,displayMessages:[{role:"user",text:"SECRET TRANSCRIPT"}]}));
- if(options.transcript)await writeFile(join(dir,"messages.jsonl"),options.transcript);
+ if(options.transcript){await writeFile(join(dir,"messages.jsonl"),options.transcript);await utimes(join(dir,"messages.jsonl"),(options.at??2000)/1000,(options.at??2000)/1000);}
  return dir;
 }
 
 describe("native MiniMax Code observation (focused integration; expected 3s, maximum 30s)",()=>{
+ it("does not hide a new empty session behind the metadata window",async()=>{
+  const root=await mkdtemp(join(tmpdir(),"herder-minimax-observer-"));try{
+   for(let n=0;n<97;n++)await session(root,`mvs_old_${n}`,{at:1000,day:"2026/10/09",transcript:"PRIVATE"});
+   await session(root,"mvs_new_empty",{at:5000,day:"2026/10/23"});
+   const observed=await observeMinimaxCode(1,root,"mac");
+   expect(observed.sessions[0]?.address.nativeSessionId).toBe("mvs_new_empty");
+   expect(observed.complete).toBe(false);
+  }finally{await rm(root,{recursive:true,force:true});}
+ });
+ it("ranks an active old session ahead of newer directories without reading its transcript",async()=>{
+  const root=await mkdtemp(join(tmpdir(),"herder-minimax-observer-"));try{
+   const active=await session(root,"mvs_active",{at:1000,day:"2026/10/09",transcript:"PRIVATE"});
+   await utimes(join(active,"messages.jsonl"),5,5);
+   await session(root,"mvs_new",{at:3000,day:"2026/10/23"});
+   const observed=await observeMinimaxCode(1,root,"mac");
+   expect(observed.sessions[0]).toMatchObject({address:{nativeSessionId:"mvs_active"},lastActivity:new Date(5000).toISOString()});
+   expect(JSON.stringify(observed)).not.toContain("PRIVATE");
+  }finally{await rm(root,{recursive:true,force:true});}
+ });
  it("reads native metadata, keeps the store status and exports no transcript",async()=>{
   const root=await mkdtemp(join(tmpdir(),"herder-minimax-observer-"));try{
    await session(root,"mvs_one",{at:5000,created:1000,record:{sessionId:"mvs_one",workspaceDir:"/work/project",title:"Fix the parser",status:"running"},transcript:"{\"message\":{\"role\":\"user\",\"content\":\"SECRET TRANSCRIPT\"}}\n"});

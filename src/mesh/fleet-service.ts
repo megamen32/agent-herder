@@ -54,7 +54,7 @@ export class FleetCabinetService {
   return response;
  }
  async readSession(address:{hostId:string;harness:string;nativeSessionId:string}):Promise<unknown>{
-  if(!this.deps.hosts.some(h=>h.hostId===address.hostId)||!fleetHarnesses.includes(address.harness as any)||!validText(address.nativeSessionId,512))throw new Error('fleet_session_invalid');
+  if(!this.deps.hosts.some(h=>h.hostId===address.hostId)||!(address.harness==='minimax-code'||fleetHarnesses.includes(address.harness as any))||!validText(address.nativeSessionId,512))throw new Error('fleet_session_invalid');
   await this.selectedHost(address.hostId);
   const transport=this.transport(address.hostId);if(!transport.readSession||this.sessionReads>=3)throw new Error('fleet_session_read_unavailable');
   this.sessionReads++;
