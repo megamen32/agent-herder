@@ -1,0 +1,141 @@
+{
+  "schema_version": 2,
+  "title": "Настоящее переименование существующих сессий в Agent Herder (Codex)",
+  "goal": "настоящее переименование существующих Codex-сессий в Agent Herder через нативный",
+  "business_result": "читаемые названия «Проект | цель | этап» у существующих Codex-сессий",
+  "current_progress": "L01–L05 закрыты: нативный thread/name/set подтверждён на живом Codex app-server, MCP-инструмент rename_session и 14 тестов зелёные. L06 — зелёная ветка для интегратора. L07 ждёт интеграции: публикацию ведёт интегратор.",
+  "external_waits": "Интеграция ветки feat/session-rename-20261023 в следующий кандидат: публикацию, сборку релиза, drop-in и рестарт живого юнита выполняет интегратор (граница владельца, herder://m/3627e16f).",
+  "slots": 1,
+  "updated_at": "2026-10-23T14:55:04",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "Протокол Codex: thread/name/set и thread/read подтверждены",
+      "status": "done",
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "actual_minutes": 11,
+      "started_at": "14:41",
+      "finished_at": "14:52"
+    },
+    {
+      "id": "L02",
+      "label": "Адаптер Codex: renameSession через нативный thread/name/set и readback",
+      "status": "done",
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 30.0,
+        "maximum": 30.0
+      },
+      "actual_minutes": 14,
+      "started_at": "14:53",
+      "write_paths": [
+        "src/types/common.ts",
+        "src/adapters/codex-app-server.ts",
+        "tests/codex-rename-session.test.ts"
+      ],
+      "paths": [
+        "src/types/common.ts",
+        "src/adapters/codex-app-server.ts",
+        "tests/codex-rename-session.test.ts"
+      ],
+      "finished_at": "15:07"
+    },
+    {
+      "id": "L03",
+      "label": "Метаданные Herder: проект, цель, этап и название «Проект | цель | этап»",
+      "status": "done",
+      "depends_on": [
+        "L02"
+      ],
+      "estimate_minutes": {
+        "minimum": 25.0,
+        "maximum": 25.0
+      },
+      "started_at": "15:07",
+      "finished_at": "15:09",
+      "write_paths": [
+        "src/session-labels.ts",
+        "tests/session-labels.test.ts"
+      ],
+      "paths": [
+        "src/session-labels.ts",
+        "tests/session-labels.test.ts"
+      ],
+      "actual_minutes": 2
+    },
+    {
+      "id": "L04",
+      "label": "MCP-инструмент rename_session: локальный и удалённый хост",
+      "status": "done",
+      "depends_on": [
+        "L02",
+        "L03"
+      ],
+      "estimate_minutes": {
+        "minimum": 25.0,
+        "maximum": 25.0
+      },
+      "started_at": "15:09",
+      "finished_at": "15:11",
+      "write_paths": [
+        "src/mcp/session-tools.ts",
+        "src/mcp-tools/definitions.ts",
+        "tests/rename-session-tool.test.ts"
+      ],
+      "paths": [
+        "src/mcp/session-tools.ts",
+        "src/mcp-tools/definitions.ts",
+        "tests/rename-session-tool.test.ts"
+      ],
+      "actual_minutes": 2
+    },
+    {
+      "id": "L05",
+      "label": "Живая проверка: кириллица, тот же thread id, ни одного хода модели",
+      "status": "done",
+      "depends_on": [
+        "L04"
+      ],
+      "estimate_minutes": {
+        "minimum": 20.0,
+        "maximum": 20.0
+      },
+      "started_at": "15:11",
+      "finished_at": "15:16",
+      "actual_minutes": 5
+    },
+    {
+      "id": "L06",
+      "label": "Зелёная ветка для интегратора: коммит, тесты, описание",
+      "status": "running",
+      "depends_on": [
+        "L05"
+      ],
+      "estimate_minutes": {
+        "minimum": 20.0,
+        "maximum": 20.0
+      },
+      "started_at": "15:16",
+      "actual_minutes": 3
+    },
+    {
+      "id": "L07",
+      "label": "Применение к шести сессиям владельца с before/after",
+      "status": "blocked",
+      "depends_on": [
+        "L06"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "started_at": "15:16",
+      "actual_minutes": 0
+    }
+  ],
+  "leaf_count": 7
+}

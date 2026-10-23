@@ -33,6 +33,7 @@ import { auditWorktrees } from "../worktree-audit.js";
 import { BrowserWakeService } from "../browser-wake.js";
 import { deliveryBudgetFor } from "../coordination-delivery-budget.js";
 import { coordinationNotes, normalizeHostId } from "../coordination-notes.js";
+import { withSessionLabelMeta } from "../session-labels.js";
 import { unwrapResult } from "../mesh/protocol.js";
 import type { GptAdminTransport } from "../mesh/gptadmin.js";
 import { fleetDirectTransport } from "../mesh/fleet-direct-transport.js";
@@ -270,9 +271,11 @@ export async function listAgentsResult(
     const declared = declaredPlaces.get(session.id);
     const activeCwd = declared?.cwd;
     const hostId = declared?.hostId ?? session.hostId ?? hostname();
-    return activeCwd
+    const projected = activeCwd
       ? {...session, cwd:activeCwd, hostId, meta:{...session.meta,launchCwd:session.meta?.launchCwd??session.cwd,activeCwd,workspaceHostId:hostId,workspaceExpiresAt:declared?.expiresAt,projectSource:declared?.source??"coordination_activity"}}
       : {...session, hostId};
+    // The stored project, goal and stage travel with the session metadata.
+    return withSessionLabelMeta(projected);
   });
 
   // Filter by status
@@ -393,7 +396,7 @@ export async function agentInfoResult(adapters: Map<string, HarnessAdapter>, arg
   const parsed = AgentInfoSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   const session = found ? await found.adapter.getSession(found.session.id, {includeMetrics:true}) : null;
-  return session ? withSessionHost(session) : null;
+  return session ? withSessionLabelMeta(withSessionHost(session)) : null;
 }
 
 export async function handleAgentInfo(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {

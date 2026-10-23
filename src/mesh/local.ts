@@ -2,7 +2,7 @@ import {homedir,hostname} from "node:os";
 import {join} from "node:path";
 import type {HarnessAdapter} from "../types/index.js";
 import {handleSendMessage} from "../mcp-tools/handlers.js";
-import {compactSession,parseNativeReceipt,addressKey,type MeshAddress,type MeshSession,type NativeReceipt,type NativeStopReceipt} from "./protocol.js";
+import {compactSession,parseNativeReceipt,addressKey,type MeshAddress,type MeshSession,type NativeReceipt,type NativeStopReceipt,type NativeRenameReceipt,type MeshSessionLabel} from "./protocol.js";
 import type {MeshDelivery} from "./gptadmin.js";
 import {MeshDeliveryLedger} from "./delivery-ledger.js";
 import {inventoryHarnesses} from "./inventory.js";
@@ -12,6 +12,7 @@ import {holdManualStop} from "../human-stop-actions.js";
 import {getHumanStopStore} from "../human-stop-store.js";
 import {MINIMAX_CODE_HARNESS_CWD} from "../adapters/minimax-code-store.js";
 import {MINIMAX_CODE_HARNESS,observeMinimaxCode,runMinimaxCodeDelivery} from "./native-minimax-code.js";
+import {composeSessionTitle,mergeSessionLabel,writeSessionLabel} from "../session-labels.js";
 export interface HarnessMeshCapability {harness:string;discovery:"available"|"unavailable";delivery:"available"|"unsupported";reason?:string}
 /** Injects the active coordination notes of the target into a delivered message. */
 export type MeshNotesInjector=(session:{id:string;harness:string;cwd:string;hostId?:string},message:string)=>Promise<string>;
@@ -125,8 +126,7 @@ export class LocalHarnessMesh {
   const session=observed?.sessions[0];
   return session?{nativeSessionId:session.address.nativeSessionId,status:session.status,cwd:session.project.currentCwd??session.project.launchCwd??MINIMAX_CODE_HARNESS_CWD}:null;
  }
- /** Stop one exact native session of this host. An unproven stop is never replayed. */
- async stop(request:{target:MeshAddress;inputId:string}):Promise<NativeStopReceipt>{
+ /** Stop one exact native session of this host. An unproven stop is never replayed. */ async stop(request:{target:MeshAddress;inputId:string}):Promise<NativeStopReceipt>{
   addressKey(request.target);
   const rejected=(reason:string,retryable=true,state:"not_attempted"|"unknown"="not_attempted"):NativeStopReceipt=>({state,inputId:request.inputId,hostId:request.target.hostId,harness:request.target.harness,nativeSessionId:request.target.nativeSessionId,retryable,reason});
   if(request.target.hostId!==this.hostId)return rejected("native_host_identity_mismatch");
@@ -148,5 +148,34 @@ export class LocalHarnessMesh {
    return {state:"admitted" as const,inputId:request.inputId,retryable:false,reason:held?"native_session_stopped":"native_session_stopped_without_hold",held};
   });
   return {...receipt,hostId:this.hostId,harness:request.target.harness,nativeSessionId:request.target.nativeSessionId};
+ }
+ /**
+ * Rename one exact native session of this host.
+ *
+ * Only the title of the same session changes: no session is created, no
+ * model turn starts and no active turn is interrupted. The receipt carries
+ * the native titles of the readback, so a caller sees what the harness
+ * really shows.
+ */
+ async rename(request:{target:MeshAddress;title?:string;project?:string;goal?:string;stage?:string}):Promise<NativeRenameReceipt>{
+  addressKey(request.target);
+  const rejected=(reason:string,state:"not_attempted"|"unsupported"|"not_found"="not_attempted"):NativeRenameReceipt=>({state,hostId:this.hostId,harness:request.target.harness,nativeSessionId:request.target.nativeSessionId,reason});
+  if(request.target.hostId!==this.hostId)return rejected("native_host_identity_mismatch");
+  const adapter=this.deps.adapters.get(request.target.harness);
+  if(!adapter)return rejected("adapter_not_registered");
+  if(typeof adapter.renameSession!=="function")return rejected("native_rename_unsupported","unsupported");
+  const sessionId=this.ids.get(addressKey(request.target))||request.target.nativeSessionId;
+  const session=await adapter.getSession(sessionId).catch(()=>null);
+  if(!session)return rejected("native_session_not_found","not_found");
+  if(compactSession(this.hostId,session).address.nativeSessionId!==request.target.nativeSessionId)return rejected("native_session_identity_mismatch");
+  const patch={project:request.project,goal:request.goal,stage:request.stage};
+  const hasFields=request.project!==undefined||request.goal!==undefined||request.stage!==undefined;
+  const merged=hasFields?await mergeSessionLabel(session.harness,session.id,patch):await mergeSessionLabel(session.harness,session.id,{});
+  const title=request.title?.trim()||composeSessionTitle(merged);
+  if(!title)return rejected("native_title_required");
+  const result=await adapter.renameSession(session.id,{title});
+  if(!result.ok)return {...rejected(result.error||"native_rename_failed"),previousTitle:result.previousTitle??null};
+  const label:MeshSessionLabel=hasFields?await writeSessionLabel(session.harness,session.id,patch):merged;
+  return {state:"renamed",hostId:this.hostId,harness:session.harness,nativeSessionId:session.id,previousTitle:result.previousTitle??null,title:result.title??title,label};
  }
 }

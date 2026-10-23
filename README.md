@@ -156,6 +156,7 @@ deletable by the author, auto-pruned on expiry.
 | Group | Tools |
 |---|---|
 | Discover | `list_agents`, `agent_info`, `session_identity`, `audit_worktrees` |
+| Names | `rename_session` (renames one existing session in place; no new session, no model turn) |
 | Lineage and transcript | `find_parent`, `list_children`, `export_transcript` |
 | Named sessions | `create_session`, `new_or_resume` (OpenCode, Codex, and ZCode); existing ChatGPT chats are addressed by `sessionId` or title + `/home/roomhacker/.chatgpt` with `create=never` |
 | Control | `deliver` (activation policy + queue/sync), `send_message`, `resume_agent`, `stop_agent`; ChatGPT supports delivery/resume but not stop/create yet |
@@ -169,6 +170,21 @@ unavailable sources return `unknown`; values are never guessed. `new_or_resume`
 accepts an ordered `fallbackModels` list and switches only after a provider's
 specific quota rejection before message admission. Generic HTTP 429s, unknown or
 accepted admissions, and manual stops never start a second attempt.
+
+### Renaming a session
+
+`rename_session` changes the native title of one session that already exists:
+the same session id keeps its thread, its history and its running turn. No
+session is created, no model turn is started and no model quota is spent — for
+Codex the title is written with the native `thread/name/set` and read back with
+the native `thread/read`. Without a `title` the name is composed from the stored
+Herder metadata as «project | goal | stage»: the constant project, the current
+business goal and the current stage of the plan, all readable in the session
+metadata. The target is addressed by `hostId` + `harness` + `sessionId`, so a
+session of another machine is renamed there, by its own native session. A
+harness without a native rename channel reports `supported: false` instead of a
+false success. The rename is a manual action or a single update when the real
+task of a session changes; nothing renames sessions in the background.
 
 ### Session identity
 

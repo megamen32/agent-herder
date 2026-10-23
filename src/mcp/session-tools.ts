@@ -19,6 +19,7 @@ import {
   formatListAgentsResult,
   agentInfoResult,
   findParentResult,
+  findSession,
   listChildrenResult,
   listModelsResult,
   formatSession,
@@ -45,6 +46,7 @@ import { coordinationNotes, normalizeHostId, type CoordinationNoteStore } from "
 import type { GptAdminTransport } from "../mesh/gptadmin.js";
 import { unwrapResult, type MeshAddress } from "../mesh/protocol.js";
 import { FleetDirectTransport, directFleetPeers } from "../mesh/fleet-direct-transport.js";
+import { composeSessionTitle, mergeSessionLabel, writeSessionLabel } from "../session-labels.js";
 import { assertModelAllowedForDirectory, assertModelAllowedForDirectoryWithPolicy, policyRestrictsModels, type ProjectModelPolicyProvider } from "../project-model-gate.js";
 import { checkDeliveryModel, resolveSessionWorkDirectory, type ProjectModelPolicyStateProvider } from "../project-model-delivery-gate.js";
 import { applySessionTarget } from "../session-target.js";
@@ -101,6 +103,68 @@ export function registerSessionTools(server: McpServer, deps: {
       coordination,
       ...(peerTransport ? { transport: peerTransport } : {}),
     }, args);
+  }
+
+  /**
+   * Rename one native session of another machine through the fleet peer.
+   *
+   * The native title lives in the harness of the machine that owns the
+   * session, so the rename runs there. The address is checked against the
+   * machine the call really reaches, and an unproven rename is reported as
+   * such instead of being replayed.
+   */
+  async function renameRemoteSession(
+    args: { sessionId: string; harness?: string; title?: string; project?: string; goal?: string; stage?: string },
+    hostId: string,
+    transport?: GptAdminTransport,
+  ) {
+    const fail = (error: string) => ({
+      content: [{ type: "text" as const, text: error }],
+      structuredContent: { ok: false, supported: false, sessionId: args.sessionId, hostId, error },
+    });
+    if (!args.harness) {
+      return fail(`Session '${args.sessionId}' lives on host '${hostId}': name its harness to rename it there.`);
+    }
+    const peer = transport ?? new FleetDirectTransport(directFleetPeers.filter((candidate) => candidate.hostId !== "MacBook-Pro-User.local"));
+    let reply: Record<string, unknown>;
+    try {
+      reply = unwrapResult(await peer.call(`mcp:shell:${hostId}:AgentHerder`, "mesh_rename_session", {
+        target: { hostId, harness: args.harness, nativeSessionId: args.sessionId },
+        ...(args.title ? { title: args.title } : {}),
+        ...(args.project ? { project: args.project } : {}),
+        ...(args.goal ? { goal: args.goal } : {}),
+        ...(args.stage ? { stage: args.stage } : {}),
+      }));
+    } catch (error) {
+      return fail(`Failed to rename [${args.harness}] ${args.sessionId} on host '${hostId}': ${error instanceof Error ? error.message : String(error)}`);
+    }
+    const state = String(reply.state ?? "");
+    const reason = typeof reply.reason === "string" && reply.reason ? `: ${reply.reason}` : "";
+    const label = (reply.label ?? {}) as { project?: string; goal?: string; stage?: string };
+    if (state === "renamed") {
+      publishSessionsChanged();
+      const structured = {
+        ok: true,
+        supported: true,
+        sessionId: args.sessionId,
+        harness: args.harness,
+        hostId,
+        previousTitle: typeof reply.previousTitle === "string" ? reply.previousTitle : null,
+        title: typeof reply.title === "string" ? reply.title : undefined,
+        label,
+      };
+      return {
+        content: [{ type: "text" as const, text: `Renamed [${args.harness}] ${args.sessionId} on host '${hostId}': "${structured.previousTitle ?? ""}" -> "${structured.title ?? ""}".` }],
+        structuredContent: structured,
+      };
+    }
+    if (state === "unsupported") {
+      return fail(`Host '${hostId}' cannot rename a [${args.harness}] session${reason}`);
+    }
+    if (state === "not_found") {
+      return fail(`Session '${args.sessionId}' was not found on host '${hostId}'${reason}`);
+    }
+    return fail(`The rename of [${args.harness}] ${args.sessionId} on host '${hostId}' is unproven and must not be replayed${reason}`);
   }
   async function sessionRoute<T extends { sessionId?: string; harness?: string; hostId?: string }>(args: T) {
     if (!args.sessionId || !deps.integratorRuntime) return { adapters, args, denied: false, hostTargetUnavailable: undefined as string | undefined };
@@ -282,6 +346,94 @@ export function registerSessionTools(server: McpServer, deps: {
         ].join("\n")
       : `Session '${args.sessionId}' not found.`;
     return { content: [{ type: "text" as const, text }], structuredContent: identity };
+  });
+
+  server.registerTool("rename_session", {
+    description:
+      "Rename one existing session in place: the native title of the same session changes. " +
+      "No session is created, no model turn starts and no active turn is interrupted. " +
+      "Without a title the name is composed as 'project | goal | stage' from the stored Herder metadata. " +
+      "A harness without a native rename channel reports unsupported instead of a false success.",
+    inputSchema: z.object({
+      sessionId: z.string().trim().min(1).max(512),
+      harness: harnessSchema.optional(),
+      hostId: z.string().trim().min(1).max(512).optional()
+        .describe("Machine that owns the session. Omitted renames a session of this machine."),
+      title: z.string().trim().min(1).max(4096).optional()
+        .describe("Exact new title. Omitted composes 'project | goal | stage' from the stored metadata."),
+      project: z.string().trim().min(1).max(512).optional().describe("The constant project of the session."),
+      goal: z.string().trim().min(1).max(2048).optional().describe("The current business goal of the session."),
+      stage: z.string().trim().min(1).max(2048).optional().describe("The current stage of the plan."),
+    }),
+    outputSchema: z.object({
+      ok: z.boolean(),
+      supported: z.boolean().optional(),
+      sessionId: z.string().optional(),
+      harness: z.string().optional(),
+      hostId: z.string().optional(),
+      previousTitle: z.string().nullable().optional(),
+      title: z.string().optional(),
+      label: z.object({ project: z.string().optional(), goal: z.string().optional(), stage: z.string().optional() }).optional(),
+      error: z.string().optional(),
+    }),
+  }, async (args) => {
+    const owner = args.hostId ? normalizeHostId(args.hostId, hostname()) : hostname();
+    // Another machine owns its own native session, so the rename runs there.
+    if (owner !== hostname()) return renameRemoteSession(args, owner, peerTransport);
+    const route = await sessionRoute(args);
+    if (route.denied) throw new Error("project_session_scope_unavailable");
+    if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
+    const found = await findSession(route.adapters, args.sessionId, route.args.harness);
+    if (!found) {
+      const error = `Session '${args.sessionId}' was not found.`;
+      return { content: [{ type: "text" as const, text: error }], structuredContent: { ok: false, supported: false, error } };
+    }
+    const adapter = found.adapter;
+    if (typeof adapter.renameSession !== "function") {
+      const error = `${adapter.name} has no native rename channel, so the title of ${args.sessionId} cannot be changed.`;
+      return { content: [{ type: "text" as const, text: error }], structuredContent: { ok: false, supported: false, sessionId: args.sessionId, harness: found.session.harness, hostId: owner, error } };
+    }
+    const patch = { project: args.project, goal: args.goal, stage: args.stage };
+    const hasFields = args.project !== undefined || args.goal !== undefined || args.stage !== undefined;
+    // The composed title uses the stored fields and the new ones together, so
+    // a single-field update never empties the other two.
+    const merged = hasFields
+      ? await mergeSessionLabel(found.session.harness, found.session.id, patch)
+      : await mergeSessionLabel(found.session.harness, found.session.id, {});
+    const title = args.title?.trim() || composeSessionTitle(merged);
+    if (!title) {
+      const error = "A session title is required: give a title, or the project, the goal and the stage.";
+      return { content: [{ type: "text" as const, text: error }], structuredContent: { ok: false, supported: true, sessionId: args.sessionId, harness: found.session.harness, hostId: owner, error } };
+    }
+    const result = await adapter.renameSession(found.session.id, { title });
+    if (!result.ok) {
+      const error = result.error || "The native rename did not succeed.";
+      return {
+        content: [{ type: "text" as const, text: error }],
+        structuredContent: {
+          ok: false, supported: true, sessionId: args.sessionId, harness: found.session.harness, hostId: owner,
+          previousTitle: result.previousTitle ?? null, error,
+        },
+      };
+    }
+    const label = hasFields
+      ? await writeSessionLabel(found.session.harness, found.session.id, patch)
+      : merged;
+    publishSessionsChanged();
+    const structured = {
+      ok: true,
+      supported: true,
+      sessionId: args.sessionId,
+      harness: found.session.harness,
+      hostId: owner,
+      previousTitle: result.previousTitle ?? null,
+      title: result.title ?? title,
+      label,
+    };
+    return {
+      content: [{ type: "text" as const, text: `Renamed [${found.session.harness}] ${args.sessionId}: "${result.previousTitle ?? ""}" -> "${result.title ?? title}".` }],
+      structuredContent: structured,
+    };
   });
 
   server.registerTool("find_parent", { description: "Find the native parent session of an agent session.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }), outputSchema: z.object({ session: sessionSchema.nullable(), parent: sessionSchema.nullable(), supported: z.boolean(), error: z.string().optional() }) }, async (args) => {

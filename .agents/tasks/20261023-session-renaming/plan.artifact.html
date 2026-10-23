@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>План: переименование сессий Agent Herder</title>
+<style>
+  @page { size: A4; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "DejaVu Sans", "Segoe UI", sans-serif; color: #16202c; margin: 0; padding: 26px 30px;
+         background: #f6f8fb; font-size: 13px; line-height: 1.45; }
+  .sheet { background: #fff; border-radius: 14px; padding: 26px 30px; box-shadow: 0 2px 14px rgba(20,40,80,.10); }
+  h1 { font-size: 21px; margin: 0 0 4px; }
+  .sub { color: #5a6b80; font-size: 12px; margin-bottom: 16px; }
+  .headline { display: grid; gap: 7px; margin-bottom: 16px; }
+  .row { display: grid; grid-template-columns: 150px 1fr; gap: 10px; background: #eef3fa; border-radius: 9px; padding: 8px 12px; }
+  .row b { color: #23406b; }
+  .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+  .stat { background: #f0f6f2; border-left: 4px solid #2f855a; border-radius: 8px; padding: 8px 12px; }
+  .stat .n { font-size: 19px; font-weight: 700; }
+  .stat .t { font-size: 11px; color: #4b5c70; }
+  h2 { font-size: 14px; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .04em; color: #23406b; }
+  .leaf { border: 1px solid #dbe3ee; border-left-width: 5px; border-radius: 9px; padding: 9px 13px; margin-bottom: 8px; background: #fbfcfe; }
+  .leaf.done { border-left-color: #2f855a; }
+  .leaf.running { border-left-color: #2b6cb0; background: #f2f7fd; }
+  .leaf.queued { border-left-color: #a0aec0; }
+  .leaf.blocked { border-left-color: #c53030; }
+  .leaf-head { display: flex; gap: 8px; align-items: center; }
+  .badge { font-weight: 700; }
+  .state { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: #4b5c70; border: 1px solid #cbd6e4;
+            border-radius: 999px; padding: 1px 8px; }
+  .leaf h3 { font-size: 13.5px; margin: 4px 0 2px; }
+  .meta { font-size: 11px; color: #5a6b80; }
+  .leaf p { margin: 4px 0 0; font-size: 12px; color: #33414f; }
+  .paths { margin-top: 4px; font-size: 11px; color: #5a6b80; }
+  code { background: #edf1f7; border-radius: 4px; padding: 0 4px; }
+  .bounds { background: #fff8f0; border: 1px solid #f0d3a8; border-radius: 9px; padding: 10px 13px; font-size: 12px; }
+  .bounds ul { margin: 6px 0 0; padding-left: 18px; }
+  footer { margin-top: 14px; font-size: 10.5px; color: #6b7a8d; border-top: 1px solid #e2e8f0; padding-top: 8px; }
+</style></head>
+<body><div class="sheet">
+  <h1>Настоящее переименование существующих сессий в Agent Herder</h1>
+  <div class="sub">Codex · нативный thread/name/set · MCP-операция rename_session · задача 20261023-session-renaming</div>
+  <div class="headline">
+    <div class="row"><b>Цель</b><span>Переименовать уже существующие Codex-сессии по host+harness+sessionId:
+      меняется native title того же диалога — новый диалог не создаётся, модель не запускается, активный ход не прерывается.</span></div>
+    <div class="row"><b>Бизнес-результат</b><span>Владелец видит у своих сессий читаемые названия
+      «Проект | цель | этап» вместо технических заголовков; название меняется нативно и подтверждается readback'ом.</span></div>
+    <div class="row"><b>Декомпозиция</b><span>7 листьев · 1 параллельно · 7 волн · слотов: 1</span></div>
+  </div>
+  <div class="cols">
+    <div class="stat"><div class="n">5</div><div class="t">готово</div></div>
+    <div class="stat"><div class="n">1</div><div class="t">в работе</div></div>
+    <div class="stat"><div class="n">1</div><div class="t">в очереди</div></div>
+  </div>
+  <h2>Этапы</h2>
+  
+    <section class="leaf done">
+      <div class="leaf-head">
+        <span class="badge">✅ L01</span>
+        <span class="state">Готово</span>
+      </div>
+      <h3>Протокол Codex: thread/name/set и thread/read подтверждены</h3>
+      <div class="meta">начата 14:41 · закончена 14:52 · оценка 15–15 мин · факт 11 мин · · без зависимостей</div>
+      <p>Установленный codex-cli 0.162.1 отдаёт TS-схему протокола: найдены thread/name/set (ThreadSetNameParams = { threadId, name }) и thread/read. Это и есть нативный API переименования существующего диалога.</p>
+      
+    </section>
+    <section class="leaf done">
+      <div class="leaf-head">
+        <span class="badge">✅ L02</span>
+        <span class="state">Готово</span>
+      </div>
+      <h3>Адаптер Codex: renameSession через нативный thread/name/set и readback</h3>
+      <div class="meta">начата 14:53 · закончена 15:07 · оценка 30–30 мин · факт 14 мин · · без зависимостей</div>
+      <p>Метод renameSession в адаптере Codex: native thread/name/set, затем нативный readback. Ни thread/start, ни turn/* — новый диалог не создаётся, модель не запускается, активный ход не прерывается.</p>
+      <div class='paths'>файлы: <code>src/types/common.ts</code>, <code>src/adapters/codex-app-server.ts</code>, <code>tests/codex-rename-session.test.ts</code></div>
+    </section>
+    <section class="leaf done">
+      <div class="leaf-head">
+        <span class="badge">✅ L03</span>
+        <span class="state">Готово</span>
+      </div>
+      <h3>Метаданные Herder: проект, цель, этап и название «Проект | цель | этап»</h3>
+      <div class="meta">начата 15:07 · закончена 15:09 · оценка 25–25 мин · факт 2 мин · · ждёт: L02</div>
+      <p>Три поля владельца (постоянный проект, текущая бизнес-цель, текущий этап плана) в существующих метаданных Herder; название собирается как «Проект | цель | этап» без обрезания содержательных полей.</p>
+      <div class='paths'>файлы: <code>src/session-labels.ts</code>, <code>tests/session-labels.test.ts</code></div>
+    </section>
+    <section class="leaf done">
+      <div class="leaf-head">
+        <span class="badge">✅ L04</span>
+        <span class="state">Готово</span>
+      </div>
+      <h3>MCP-инструмент rename_session: локальный и удалённый хост</h3>
+      <div class="meta">начата 15:09 · закончена 15:11 · оценка 25–25 мин · факт 2 мин · · ждёт: L02, L03</div>
+      <p>MCP-инструмент rename_session: точный host + harness + sessionId, локальный и удалённый хост, явный unsupported для харнессов без нативного API. Модельная квота не затрагивается.</p>
+      <div class='paths'>файлы: <code>src/mcp/session-tools.ts</code>, <code>src/mcp-tools/definitions.ts</code>, <code>tests/rename-session-tool.test.ts</code></div>
+    </section>
+    <section class="leaf done">
+      <div class="leaf-head">
+        <span class="badge">✅ L05</span>
+        <span class="state">Готово</span>
+      </div>
+      <h3>Живая проверка: кириллица, тот же thread id, ни одного хода модели</h3>
+      <div class="meta">начата 15:11 · закончена 15:16 · оценка 20–20 мин · факт 5 мин · · ждёт: L04</div>
+      <p>Живой canary против настоящего Codex app-server 0.162.1: кириллица принята, thread id тот же, ходов 0 (модель не запускалась), след в нативном индексе 0. Плюс readback через Herder в тестах.</p>
+      
+    </section>
+    <section class="leaf running">
+      <div class="leaf-head">
+        <span class="badge">🔄 L06</span>
+        <span class="state">В работе</span>
+      </div>
+      <h3>Зелёная ветка для интегратора: коммит, тесты, описание</h3>
+      <div class="meta">начата 15:16 · оценка 20–20 мин · факт 3 мин · · ждёт: L05</div>
+      <p>Зелёная ветка для интегратора: коммит с тестами и описанием, база mavis/herder-harness-20261023 (включает e729320). Публикацию, сборку релиза, drop-in и рестарт ведёт интегратор: живой контур общий с флотом.</p>
+      
+    </section>
+    <section class="leaf blocked">
+      <div class="leaf-head">
+        <span class="badge">⛔ L07</span>
+        <span class="state">Блокер</span>
+      </div>
+      <h3>Применение к шести сессиям владельца с before/after</h3>
+      <div class="meta">начата 15:16 · оценка 15–15 мин · факт не измерено · · ждёт: L06</div>
+      <p>Применение к шести сессиям владельца только через опубликованный инструмент; цели и ход сессий не меняются. Блокер: ждёт интеграции ветки в следующий кандидат.</p>
+      
+    </section>
+  <h2>Границы, которые держим</h2>
+  <div class="bounds"><ul>
+    <li>«Бизнес-цель» — описательные метаданные. <code>thread/goal/set</code> не вызывается, native execution goal чужих сессий не меняется.</li>
+    <li>Кодекс-сессии владельца не будим и не запускаем ради проверки названий; проверка — на собственной нативной сессии и на unit-уровне протокола.</li>
+    <li>Никаких периодических LLM-запусков, daemon'ов и cron'ов ради заголовков: только ручное переименование или однократное обновление при смене задачи.</li>
+    <li>Живой контур общий с флотом: публикацию релиза и переключение current ведёт интегратор, исполнитель отдаёт готовый зелёный SHA.</li>
+    <li>Кандидат строится поверх e729320, чтобы работа владельца не разошлась с общим релизом.</li>
+    <li>Защита запуска и продолжения моделей не меняется; переименование не потребляет модельную квоту.</li>
+  </ul></div>
+  <footer>Текущий прогресс: L01–L05 закрыты: нативный thread/name/set подтверждён на живом Codex app-server, MCP-инструмент rename_session и 14 тестов зелёные. L06 — зелёная ветка для интегратора. L07 ждёт интеграции: публикацию ведёт интегратор. · источник: plan.graph.json · сгенерировано render-plan.py</footer>
+</div></body></html>

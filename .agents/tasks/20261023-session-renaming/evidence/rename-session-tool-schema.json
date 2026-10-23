@@ -1,0 +1,118 @@
+{
+  "name": "rename_session",
+  "description": "Rename one existing session in place: the native title of the same session changes. No session is created, no model turn starts and no active turn is interrupted. Without a title the name is composed as 'project | goal | stage' from the stored Herder metadata. A harness without a native rename channel reports unsupported instead of a false success.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "sessionId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "harness": {
+        "type": "string",
+        "enum": [
+          "opencode",
+          "claude",
+          "codex",
+          "qoder",
+          "hermes",
+          "zcode",
+          "fast-agent",
+          "chatgpt",
+          "minimax-code"
+        ]
+      },
+      "hostId": {
+        "description": "Machine that owns the session. Omitted renames a session of this machine.",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "title": {
+        "description": "Exact new title. Omitted composes 'project | goal | stage' from the stored metadata.",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      },
+      "project": {
+        "description": "The constant project of the session.",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "goal": {
+        "description": "The current business goal of the session.",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      },
+      "stage": {
+        "description": "The current stage of the plan.",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    },
+    "required": [
+      "sessionId"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema"
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean"
+      },
+      "supported": {
+        "type": "boolean"
+      },
+      "sessionId": {
+        "type": "string"
+      },
+      "harness": {
+        "type": "string"
+      },
+      "hostId": {
+        "type": "string"
+      },
+      "previousTitle": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "title": {
+        "type": "string"
+      },
+      "label": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "error": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  }
+}
