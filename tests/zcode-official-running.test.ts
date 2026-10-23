@@ -24,10 +24,10 @@ it('current official supervisor run overrides historical completed in active, hi
 
 it('uses only documented readonly control commands and rejects changing owner generations',async()=>{
  const {createServer}=await import('node:net');const {readZcodeOfficialRunning}=await import('../src/adapters/zcode-server-control.js');
- const root=await mkdtemp(join(tmpdir(),'zctl-'));const path=join(root,'s');let generation=1,changing=false;const seen:string[]=[];
+ const root=await mkdtemp(join(tmpdir(),'zctl-'));const path=join(root,'s');const lineage=join(root,'native.sqlite');const db=new DatabaseSync(lineage);db.exec('create table session(id text,parent_id text,directory text)');db.prepare('insert into session values(?,?,?)').run('live','actual-parent','/repo');db.close();let generation=1,changing=false;const seen:string[]=[];
  const server=createServer(socket=>{socket.once('data',raw=>{const r=JSON.parse(String(raw));seen.push(r.command);const result=r.command==='running-tasks'?[{sessionId:'live',workspacePath:'/repo',workspaceIdentity:'remote:server:id:/repo'}]:{state:'ready',pid:123,generation:changing?generation++:generation};socket.end(JSON.stringify({id:r.id,ok:true,result})+'\n');});});
  await new Promise<void>(resolve=>server.listen(path,resolve));
- try{expect(await readZcodeOfficialRunning(path)).toMatchObject({pid:123,tasks:[{sessionId:'live',workspacePath:'/repo'}]});expect(seen).toEqual(['status','running-tasks','status']);changing=true;await expect(readZcodeOfficialRunning(path)).rejects.toThrow('generation_changed');}
+ try{expect(await readZcodeOfficialRunning(path,lineage)).toMatchObject({pid:123,tasks:[{sessionId:'live',workspacePath:'/repo',parentSessionId:'actual-parent'}]});expect(seen).toEqual(['status','running-tasks','status']);changing=true;await expect(readZcodeOfficialRunning(path)).rejects.toThrow('generation_changed');}
  finally{await new Promise<void>(resolve=>server.close(()=>resolve()));await rm(root,{recursive:true,force:true})}
 });
 

@@ -159,3 +159,12 @@ describe("SessionSupervisor domain events", () => {
   });
 
 });
+it('publishes one native provider while another provider is still loading',async()=>{
+ let release!:()=>void;
+ const fast={type:'claude',name:'fast',listSessions:async()=>[{...session(),id:'fast',status:'running'}]};
+ const slow={type:'hermes',name:'slow',listSessions:()=>new Promise<AgentSession[]>(r=>{release=()=>r([]);})};
+ const supervisor=new SessionSupervisor(new Map([['claude',fast],['hermes',slow]])as unknown as Map<string,HarnessAdapter>,{async convert(){return{success:true};}}as any);
+ const stop=supervisor.startObservation(60000);
+ try{await new Promise(r=>setTimeout(r,20));expect(supervisor.nativeInventorySnapshot().sessions.map(s=>s.id)).toContain('fast');}
+ finally{stop();release();}
+});

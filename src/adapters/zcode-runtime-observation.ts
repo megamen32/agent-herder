@@ -36,7 +36,7 @@ export async function readExistingZcodeRuntimeObservation(
   if (!client.callIfReady) return { ...base, reason: "existing_transport_read_unsupported" };
   try {
     const value = await client.callIfReady("zcode-agent", "readSession", [{
-      ...workspace, sessionId, runtimePolicy: "existing-only", messageLimit: 0,
+      ...workspace, sessionId, runtimePolicy: "existing-only", messageLimit: 1,
     }]);
     if (!value || typeof value !== "object") return { ...base, reason: "native_snapshot_invalid" };
     const snapshot = value as Record<string, unknown>;

@@ -25,7 +25,7 @@ import {
 } from "../types/index.js";
 import { ZcodeAppServerClient, type ZcodeClientLike } from "./zcode-protocol.js";
 import { readZcodeActiveCandidates, zcodeStoredTailCanBeActive } from "./zcode-active.js";
-import {readZcodeOfficialRunning,type ZcodeOfficialRunning} from "./zcode-server-control.js";
+import {readZcodeOfficialRunning,connectZcodeOfficialWebSocket,type ZcodeOfficialRunning} from "./zcode-server-control.js";
 import { readExistingZcodeRuntimeObservation } from "./zcode-runtime-observation.js";
 import { lifecycleEntryFor, lifecycleStateFor, type SessionLifecycleSnapshot } from "../session-lifecycle.js";
 import { getHumanStopStore } from "../human-stop-store.js";
@@ -1009,6 +1009,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     events: true,
   };
 
+  private readonly officialWebSocketSelected:boolean;
   private readonly readOfficialRunningTasks?:()=>Promise<ZcodeOfficialRunning>;
   private officialRunning?:ZcodeOfficialRunning;
   private readonly cwd: string;
@@ -1056,6 +1057,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.cwd = resolve(options.cwd || process.env.ZCODE_CWD || process.cwd());
     this.modelIds = options.modelIds ?? [];
     this.useLocalConfig = !options.client;
+    this.officialWebSocketSelected=this.useLocalConfig&&!options.command&&!process.env.ZCODE_SERVER_NODE&&existsSync(join(homedir(),".zcode/server/run/control.sock"));
     this.readOfficialRunningTasks=options.readOfficialRunningTasks??(this.useLocalConfig?()=>readZcodeOfficialRunning():undefined);
     this.useLocalTurnMetadata = this.useLocalConfig || options.localDbPath !== undefined;
     this.localDbPath = options.localDbPath ?? (process.env.ZCODE_DB_PATH || join(homedir(), ".zcode", "cli", "db", "db.sqlite"));
@@ -1074,6 +1076,7 @@ export class ZcodeAdapter implements HarnessAdapter {
         ? [process.env.ZCODE_SERVER_ENTRY || join(process.env.ZCODE_SERVER_RUNTIME_ROOT || join(homedir(), ".zcode", "server"), "zcode-server.cjs")]
         : defaultCommand().args);
       this.client = new ZcodeAppServerClient({
+        connectWebSocket:this.officialWebSocketSelected?connectZcodeOfficialWebSocket:undefined,
         command,
         args,
         cwd: this.cwd,
@@ -1365,13 +1368,14 @@ export class ZcodeAdapter implements HarnessAdapter {
     const snapshot=this.officialRunning;if(!snapshot)return sessions;
     const rows=new Map(sessions.map(s=>[s.id,s]));
     for(const task of snapshot.tasks){
+      this.sessionWorkspaces.set(task.sessionId,{workspacePath:resolve(task.workspacePath),workspaceIdentity:task.workspaceIdentity??resolve(task.workspacePath),workspaceKey:task.workspaceIdentity??resolve(task.workspacePath)});
       const old=rows.get(task.sessionId);
       rows.set(task.sessionId,{...old,id:task.sessionId,harness:'zcode',title:old?.title??task.sessionId,
         cwd:resolve(task.workspacePath),hostId:localSessionHostId(),status:'running',needsPermission:false,
         lastActivity:snapshot.observedAt,meta:{...old?.meta,workspaceIdentity:task.workspaceIdentity,
           activityEvidence:'zcode-official-supervisor-running-tasks',activityObservedAt:snapshot.observedAt,activityExpiresAt:snapshot.expiresAt,
-          nativeRuntimePid:snapshot.pid,nativeRuntimeGeneration:snapshot.generation,
-          nativeActivityFresh:Date.parse(snapshot.expiresAt)>Date.now(),nativeExecutor:'official-server',deliveryRoute:'official-server-unverified'}});
+          nativeRuntimePid:snapshot.pid,nativeRuntimeGeneration:snapshot.generation,...(task.parentSessionId?{parentSessionId:task.parentSessionId}:{}),nativeParentKnown:task.parentKnown??false,
+          nativeActivityFresh:Date.parse(snapshot.expiresAt)>Date.now(),nativeExecutor:'official-server',deliveryRoute:this.officialWebSocketSelected?'official-server-ws':'official-server-unverified'}});
     }
     return [...rows.values()];
   }

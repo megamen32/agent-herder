@@ -1,3 +1,4 @@
+import type WebSocket from "ws";
 import { type ChildProcessWithoutNullStreams } from "node:child_process";
 import { spawnIsolatedWorkload } from "../workload-launcher.js";
 
@@ -13,6 +14,8 @@ const EVENT_FIRE_MESSAGE_TYPE = 204;
 
 export interface ZcodeAppServerClientOptions {
   command: string;
+  /** Attach to an existing official native server; never spawn or own it. */
+  connectWebSocket?:()=>Promise<WebSocket>;
   args?: string[];
   cwd?: string;
   env?: NodeJS.ProcessEnv;
@@ -186,6 +189,8 @@ function errorFromPayload(payload: unknown, fallback: string): Error {
  */
 export class ZcodeAppServerClient implements ZcodeClientLike {
   private readonly command: string;
+  private readonly connectWebSocket?:()=>Promise<WebSocket>;
+  private socket?:WebSocket;
   private readonly args: string[];
   private readonly cwd?: string;
   private readonly env?: NodeJS.ProcessEnv;
@@ -210,6 +215,7 @@ export class ZcodeAppServerClient implements ZcodeClientLike {
 
   constructor(options: ZcodeAppServerClientOptions) {
     this.command = options.command;
+    this.connectWebSocket=options.connectWebSocket;
     this.args = options.args ?? [];
     this.cwd = options.cwd;
     this.env = options.env;
@@ -226,7 +232,25 @@ export class ZcodeAppServerClient implements ZcodeClientLike {
     return this.startPromise;
   }
 
+  private async startWebSocket():Promise<void>{
+    const socket=await this.connectWebSocket!();this.socket=socket;
+    this.outputBuffer=Buffer.alloc(0);this.handshakeDone=true;this.ready=false;
+    const initialized=new Promise<void>((resolve,reject)=>{this.serverReady=resolve;this.serverReadyError=reject;});
+    socket.on('message',data=>{if(this.socket!==socket)return;this.outputBuffer=Buffer.concat([this.outputBuffer,Buffer.from(data as Buffer)]);this.consumeFrames();});
+    socket.on('error',()=>{const error=new Error('ZCode official WebSocket transport unavailable');this.serverReadyError?.(error);this.rejectPending(error);});
+    socket.once('close',()=>{if(this.socket!==socket)return;this.socket=undefined;this.ready=false;const error=new Error('ZCode official WebSocket disconnected; admission may be unknown; do not replay input');this.serverReadyError?.(error);this.rejectPending(error);this.subscriptions.clear();for(const handler of this.disconnectListeners)handler(error);});
+    try{await this.withTimeout(initialized,this.startupTimeoutMs,'ZCode official WebSocket handshake timed out');this.ready=true;}
+    catch(error){if(this.socket===socket)this.socket=undefined;socket.terminate();throw error;}
+    finally{this.serverReady=undefined;this.serverReadyError=undefined;}
+  }
+
+  private writeFrame(frame:Buffer):void{
+    if(this.socket){if(this.socket.readyState!==1)throw new Error('ZCode official WebSocket is not ready');this.socket.send(frame);return;}
+    if(!this.child)throw new Error('ZCode app-server is not ready');this.child.stdin.write(frame);
+  }
+
   private async startInternal(): Promise<void> {
+    if(this.connectWebSocket)return this.startWebSocket();
     const child = spawnIsolatedWorkload(this.command, this.args, {
       label: "zcode-app-server",
       resourceGuard: process.platform === "linux" ? "zcode-shared" : undefined,
@@ -372,7 +396,7 @@ export class ZcodeAppServerClient implements ZcodeClientLike {
 
   async callIfReady(channel: string, method: string, args: unknown[]): Promise<unknown> {
     const child = this.child;
-    if (!child || !this.ready) throw new Error("ZCode app-server is not ready");
+    if ((!child&&!this.socket) || !this.ready) throw new Error("ZCode app-server is not ready");
     const requestId = this.nextRequestId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -381,7 +405,7 @@ export class ZcodeAppServerClient implements ZcodeClientLike {
       }, this.requestTimeoutMs);
       this.pending.set(requestId, { resolve, reject, timer });
       try {
-        child.stdin.write(encodeZcodeRpcCall(requestId, channel, method, args));
+        this.writeFrame(encodeZcodeRpcCall(requestId, channel, method, args));
       } catch (error) {
         clearTimeout(timer);
         this.pending.delete(requestId);
@@ -397,17 +421,17 @@ export class ZcodeAppServerClient implements ZcodeClientLike {
       await this.start();
       if (disposed) return;
       const child = this.child;
-      if (!child || !this.ready) return;
+      if ((!child&&!this.socket) || !this.ready) return;
       this.subscriptions.set(requestId, { handler });
-      child.stdin.write(encodeZcodeRpcMessage(EVENT_LISTEN_MESSAGE_TYPE, requestId, channel, event, arg));
+      this.writeFrame(encodeZcodeRpcMessage(EVENT_LISTEN_MESSAGE_TYPE, requestId, channel, event, arg));
     };
     void begin().catch(() => undefined);
     return () => {
       disposed = true;
       this.subscriptions.delete(requestId);
       const child = this.child;
-      if (child && this.ready) {
-        try { child.stdin.write(encodeZcodeRpcMessage(EVENT_DISPOSE_MESSAGE_TYPE, requestId, undefined, undefined, undefined)); } catch { /* already closed */ }
+      if ((child||this.socket) && this.ready) {
+        try { this.writeFrame(encodeZcodeRpcMessage(EVENT_DISPOSE_MESSAGE_TYPE, requestId, undefined, undefined, undefined)); } catch { /* already closed */ }
       }
     };
   }
@@ -415,6 +439,7 @@ export class ZcodeAppServerClient implements ZcodeClientLike {
   getOwnedProcessId(): number | undefined { return this.ready ? this.child?.pid : undefined; }
 
   async close(): Promise<void> {
+    const socket=this.socket;this.socket=undefined;socket?.close();
     const child = this.child;
     this.ready = false;
     this.handshakeDone = false;
