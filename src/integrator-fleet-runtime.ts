@@ -227,6 +227,7 @@ export class IntegratorFleetRuntime {
       runtimeInstanceId: "", cwd: "", observedAtMs: Date.now(),
       pathResolution: { requestedCwd: "", canonicalCwd: "", rootPath: "", contained: false, identityMatches: false },
     });
+    // ORCHESTRATOR-CONFLICT: src/integrator-fleet-runtime.ts:231 — readiness проекта: его код закрепляет проверку за codex-маршрутом, наш контракт берёт гарн и модель из сохранённого маршрута (модельные правила, единый источник маршрута): его код / наш контракт; ждёт решения владельца
     const matched = await this.matchRoute(projectId);
     if (!matched.ok) return notReady(matched.reason);
     const designated = matched.match.route.harnesses[0];
@@ -461,6 +462,7 @@ export class IntegratorFleetRuntime {
     await this.options.bindingStore.record({ operationId: reservation.operationId, attempt: reservation.attempt, receipt });
   }
 
+  // ORCHESTRATOR-CONFLICT: src/integrator-fleet-runtime.ts:466 — контракт чека создания для не-codex гарна: его код отдаёт минимальный чек только с native-адресом, наш контракт отдаёт тот же projectExecution-контракт с наблюдаемым rootIdentity и policyRevision маршрута: его код / наш контракт; ждёт решения владельца
   private async createdReceipt(input: IntegratorFleetCreateInput, address: IntegratorNativeAddress, project: ConfiguredProject, observedRootIdentity?: string): Promise<FleetCreateReceipt> {
     if (project.harness !== "codex") {
       // The project-execution receipt is the same contract for the selected harness: the route
