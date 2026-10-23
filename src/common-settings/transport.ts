@@ -8,7 +8,10 @@
  *
  * The document itself travels from the owner to the node in the answer of the
  * owner, not in the request: a request of the fleet transport is small, and
- * the document of the common settings is not.
+ * the document of the common settings is not. The document travels as it is:
+ * the revision of the owner, the time of its assembly and the content travel
+ * together, so the node that takes it keeps the identity of the owner and
+ * never a revision of its own files.
  */
 
 import { FleetDirectTransport } from "../mesh/fleet-direct-transport.js";
@@ -26,11 +29,24 @@ export const COMMON_SETTINGS_TOOLS = [
 
 /** The transport that carries the common settings to the nodes of the fleet. */
 export interface CommonSettingsTransport {
-  /** The document the node holds. */
+  /**
+   * The document the node holds.
+   *
+   * The owner answers with the document it owns — the revision, the time of
+   * its assembly and the content together. A member answers with the document
+   * it took from the owner.
+   */
   read(target: string): Promise<CommonSettingsDocument | null>;
   /** The state of the node: opt-in, applied revision and deviations. */
   status(target: string): Promise<CommonSettingsNodeStatus | null>;
-  /** Tell the node that the document moved: it takes the document and applies it. */
+  /**
+   * Tell the node that the document moved: it takes the document of the owner
+   * and applies it.
+   *
+   * The revision that travels in the signal is the revision of the owner: the
+   * node answers with the revision it holds after the application, and the
+   * owner compares the two.
+   */
   notify(target: string, revision: string): Promise<CommonSettingsNodeStatus | null>;
   /** Set the opt-in flag of the node. */
   setOptIn(target: string, enabled: boolean): Promise<CommonSettingsNodeStatus | null>;
