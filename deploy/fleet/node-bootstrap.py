@@ -69,6 +69,19 @@ registry.write_text(json.dumps({'version': 1, 'enabled': {name: name in harnesse
 env.update(AGENT_HERDER_WEB_PORT=str(config.get('webPort', 18789)), AGENT_HERDER_WEB_HOST='0.0.0.0', AGENT_HERDER_ADAPTER_REGISTRY=str(registry), AGENT_HERDER_AUTOPILOT_STATE_DIR=str(state / 'autopilot'),
            AGENT_HERDER_HUMAN_REQUEST_STORE=str(state / 'human-requests.json'),
            AGENT_HERDER_SINGLETON_LOCK=str(runtime / 'node.lock'), TMPDIR=str(temp))
+# The node serves GET/PUT /api/automation/launch-policy from the autopilot state
+# directory. Seed the document at deploy time so the node has a policy version
+# to confirm and the endpoint answers instead of "absent". A seeding failure
+# must not take the node down: the node still runs, it just has no policy.
+try:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import launch_policy_seed
+    _models, _document = launch_policy_seed.default_models()
+    _receipt = launch_policy_seed.seed(str(state), harnesses, _models,
+                                        _document.get('preferredHarness'), _document.get('fallbackModels'))
+except Exception as exc:  # noqa: BLE001
+    print('launch-policy seed failed: ' + str(exc))
+
 if sys.argv[1:] == ['--check']:
     print(json.dumps({'hostId': socket.gethostname(), 'sourceSha': config['sourceSha'], 'harnesses': harnesses,
                       'nativeCodexSocket': 'codex' in harnesses, 'secretsPrinted': False}))

@@ -807,6 +807,18 @@ def prepare(base,config,artifact_cache=None):
         AGENT_HERDER_WEB_HOST='0.0.0.0',AGENT_HERDER_WEB_PORT=str(config.get('webPort',18789)),
         AGENT_HERDER_ADAPTER_REGISTRY=str(state/'adapters.json'),AGENT_HERDER_AUTOPILOT_STATE_DIR=str(state/'autopilot'),
         AGENT_HERDER_HUMAN_REQUEST_STORE=str(state/'human-requests.json'),AGENT_HERDER_SINGLETON_LOCK=str(base/'run/node.lock'),TMPDIR=str(temp))
+    # The node serves GET/PUT /api/automation/launch-policy from the autopilot
+    # state directory. Seed the document at deploy time so the node has a
+    # policy version to confirm and the endpoint answers instead of "absent".
+    # A seeding failure must not take the node down.
+    try:
+        sys.path.insert(0,str(Path(__file__).resolve().parent))
+        import launch_policy_seed
+        _models,_document=launch_policy_seed.default_models()
+        launch_policy_seed.seed(str(state),harnesses,_models,_document.get("preferredHarness"),_document.get("fallbackModels"))
+    except Exception as exc:
+        print("launch-policy seed failed: "+str(exc))
+
     port=config.get('webPort',18789)
     if type(port)!=int or not 1024<=port<=65535:raise Refused('node_port_invalid')
     probe_node_port(port)
