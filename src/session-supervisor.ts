@@ -111,6 +111,7 @@ export class SessionNotFoundError extends Error {
 export class SessionSupervisor {
   private readonly sessionCacheTtlMs: number;
   private sessionSnapshot: SessionSnapshot | null = null;
+  private readonly inventoryFailures = new Map<string,string>();
   /** The declared work place of every session, read once per update. */
   private projection: { observations: Map<string, WorkspaceObservation>; at: number } | null = null;
   /** The running projection update. */
@@ -303,6 +304,11 @@ export class SessionSupervisor {
     return {sessions: this.projectedSessions(), warming: Boolean(this.sessionRefresh) || !this.sessionSnapshot, observedAt: this.sessionSnapshot ? new Date(this.sessionSnapshot.refreshedAt).toISOString() : null};
   }
 
+  /** Owner-only raw inventory; legacy work-target projection cannot change runtime identity. */
+  nativeInventorySnapshot(): {sessions: AgentSession[]; warming: boolean; observedAt: string | null; failures:Record<string,string>} {
+    return {failures:Object.fromEntries(this.inventoryFailures),sessions:this.sessionSnapshot?.sessions ?? [],warming:Boolean(this.sessionRefresh)||!this.sessionSnapshot,observedAt:this.sessionSnapshot?new Date(this.sessionSnapshot.refreshedAt).toISOString():null};
+  }
+
   async refreshSessions(filters: SessionFilters = {}): Promise<AgentSession[]> {
     await this.refreshSessionSnapshot();
     return this.serveSessions(filters);
@@ -361,7 +367,7 @@ export class SessionSupervisor {
       !adapter.lazyStart || adapter.lazyDiscovery || !adapter.isReady || adapter.isReady()
     );
     const sessionGroups = await Promise.all(adapters.map(async ([provider, adapter]) => {
-      const sessions = await adapter.listSessions();
+      const sessions = await adapter.listSessions().then(rows=>{this.inventoryFailures.delete(provider);return rows;}).catch(() => {this.inventoryFailures.set(provider,"native_enumeration_failed");return [];});
       return Promise.all(sessions.map(async (session) => {
         const humanStopHeld = (provider === "codex" || provider === "zcode" || provider === "opencode") ? await this.humanStops.observe(session) : false;
         const record = await this.lineage.get(sessionKey(provider, nativeSessionId(session)));

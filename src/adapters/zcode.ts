@@ -24,6 +24,7 @@ import {
   localSessionHostId,
 } from "../types/index.js";
 import { ZcodeAppServerClient, type ZcodeClientLike } from "./zcode-protocol.js";
+import { readZcodeActiveCandidates, zcodeStoredTailCanBeActive } from "./zcode-active.js";
 import { readExistingZcodeRuntimeObservation } from "./zcode-runtime-observation.js";
 import { lifecycleEntryFor, lifecycleStateFor, type SessionLifecycleSnapshot } from "../session-lifecycle.js";
 import { getHumanStopStore } from "../human-stop-store.js";
@@ -1350,6 +1351,21 @@ export class ZcodeAdapter implements HarnessAdapter {
     if(entry?.turnId===proof.turnId&&entry.inputId===proof.inputId)this.observedActiveTurns.delete(proof.sessionId);
   }
 
+  private activeSessionReceipt: SessionSnapshotReceipt | null = null;
+
+  getActiveSessionSnapshotReceipt(): SessionSnapshotReceipt | null { return this.activeSessionReceipt; }
+
+  async listActiveSessions(): Promise<AgentSession[]> {
+    this.activeSessionReceipt = null;
+    const stored = await this.listPersistedSessions({});
+    if (!this.sessionSnapshotReceipt.exhaustive) throw new Error("zcode_active_task_directory_incomplete");
+    const candidates = stored.filter(session => session.status === "running" || session.status === "needs_input");
+    const active = await readZcodeActiveCandidates(candidates, session => this.observeExistingRuntime(session.id, session.cwd));
+    this.activeSessionReceipt = { exhaustive: false, observedAt: new Date().toISOString(),
+      source: "zcode-existing-native-runtime", reason: "known_task_candidates_only_loaded_identity_coverage_unknown" };
+    return active;
+  }
+
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
     await this.observeAcceptedWorkspaceTurns();
     const persisted = await this.listPersistedSessions(options);
@@ -1764,7 +1780,7 @@ export class ZcodeAdapter implements HarnessAdapter {
           });
           // Recent assistant tool work is evidence of a newer continuation;
           // a terminal-only usage row and a completed task index are historical.
-          if (status !== "needs_input" && native?.ongoingAssistantAt
+          if (status !== "needs_input" && zcodeStoredTailCanBeActive(rawStatus) && native?.ongoingAssistantAt
             && native.ongoingAssistantAt > (observedLifecycle?.at ?? 0)
             && native.ongoingAssistantAt <= Date.now()
             && Date.now() - native.ongoingAssistantAt < activeWindowMs) status = "running";
