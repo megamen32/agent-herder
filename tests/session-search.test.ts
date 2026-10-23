@@ -1,4 +1,4 @@
-import {afterEach,describe,expect,it} from 'vitest';
+import {afterEach,describe,expect,it,vi} from 'vitest';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -66,6 +66,17 @@ describe('disposable lexical session mirror',()=>{
   const writer=new DatabaseSync(index.path);writer.exec('BEGIN IMMEDIATE');let reader:SessionSearchIndex|undefined;
   try{reader=new SessionSearchIndex(index.path,'host-a',{readOnly:true});expect(reader.search({query:'visiblewhilewriting'}).results).toHaveLength(1);}
   finally{reader?.close();writer.exec('ROLLBACK');writer.close();}
+ });
+ it('keeps FTS as the driving index for a harness-filtered consumer query',async()=>{
+  const index=fixture();await index.ingest(session('filteredword'),'a');let query='';
+  const original=DatabaseSync.prototype.prepare;
+  const spy=vi.spyOn(DatabaseSync.prototype,'prepare').mockImplementation(function(this:DatabaseSync,sql:string){if(sql.startsWith('SELECT s.harness,s.native_id'))query=sql;return original.call(this,sql);});
+  try{expect(index.search({query:'filteredword',harnesses:['codex']}).results).toHaveLength(1);}finally{spy.mockRestore();}
+  const db=new DatabaseSync(index.path,{readOnly:true});try{
+   const plan=db.prepare('EXPLAIN QUERY PLAN '+query).all('"filteredword"','codex');
+   expect(String(plan[0].detail)).toMatch(/^SCAN chunks_fts VIRTUAL TABLE/);
+   expect(plan.some(row=>String(row.detail).includes('TEMP B-TREE'))).toBe(false);
+  }finally{db.close();}
  });
  it('treats operator-like input as plain Unicode words',()=>{expect(lexicalMatch('title:кот OR собака*')).toBe('"title" AND "кот" AND "OR" AND "собака"');expect(()=>lexicalMatch('***')).toThrow();});
 });
