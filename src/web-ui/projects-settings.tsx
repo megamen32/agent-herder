@@ -638,9 +638,13 @@ export function useFleetFacts() {
     alive.current = true;
     return () => { alive.current = false; };
   }, []);
-  const read = React.useCallback(async (): Promise<void> => {
+  const read = React.useCallback(async (options: { refresh?: boolean } = {}): Promise<void> => {
+    // The server keeps the answer of the fleet for a minute, so a manual
+    // refresh asks it for a fresh read of the nodes. Without that the button
+    // would only show the same old answer again.
+    const hostsPath = options.refresh ? "/api/fleet/hosts?refresh=1" : "/api/fleet/hosts";
     const [hostResult, sessionResult] = await Promise.all([
-      readFleetJson<{ hosts?: Array<{ hostId?: string; label?: string; state?: string; reason?: string }> }>("/api/fleet/hosts"),
+      readFleetJson<{ hosts?: Array<{ hostId?: string; label?: string; state?: string; reason?: string }> }>(hostsPath),
       readFleetJson<{ sessions?: Array<{ address?: { hostId?: string }; project?: { launchCwd?: string | null }; lastActivity?: string; model?: string }> }>("/api/fleet/sessions"),
     ]);
     if (!alive.current) return;
@@ -668,7 +672,7 @@ export function useFleetFacts() {
   const refresh = React.useCallback(async (): Promise<void> => {
     setRefreshing(true);
     try {
-      await read();
+      await read({ refresh: true });
     } finally {
       if (alive.current) setRefreshing(false);
     }
