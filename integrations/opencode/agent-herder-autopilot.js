@@ -264,31 +264,72 @@ function nativeModelRef(value) {
 }
 
 /**
- * Whether the route of these leaves may run, and why it may not.
+ * The answer of the guard about the route of a model.
  *
- * The rule of the owner is one rule for the whole product: the providers the
- * owner closed are refused always, a leaf of an allowed family is allowed, and
- * every other leaf is refused while the prohibitions are on. The switch of the
- * owner is read only when the rule actually needs it, exactly as before.
+ * The contract of the owner, in one place:
+ * - `closed-provider` — the provider the owner closed (codex, claude,
+ *   anthropic): refused always, the switch of the owner does not open it;
+ * - `route-broken` — the local route proof is broken (unavailable, mismatched,
+ *   malformed): the integrity of the route is broken, and the switch of the
+ *   owner does not repair a broken proof;
+ * - `route-forbidden` — the leaf is not confirmed, or it is not of an allowed
+ *   family: refused while the prohibitions are on, and allowed when the owner
+ *   switches them off, so the work of the session continues;
+ * - undefined — the route may run.
+ *
+ * The switch of the owner is read only when the answer depends on it, exactly
+ * as before.
  */
-async function leafRouteDenial(leaves) {
-  if (leaves.some(isClosedProviderLeaf)) return "closed-provider"
-  if (leaves.every(isLeafAllowedByOwnerRule)) return undefined
-  return (await prohibitionsEnabledByOwner()) ? "not-allowed" : undefined
+async function routeDenial(route) {
+  if (route.kind === "proof-broken") return "route-broken"
+  if (route.kind === "unconfirmed") return (await prohibitionsEnabledByOwner()) ? "route-forbidden" : undefined
+  if (route.leaves.some(isClosedProviderLeaf)) return "closed-provider"
+  if (route.leaves.every(isLeafAllowedByOwnerRule)) return undefined
+  return (await prohibitionsEnabledByOwner()) ? "route-forbidden" : undefined
 }
 
-const PLUGIN_BUILD_ID = "native-route-proof-v1"
+/** The words of one refusal: the closed provider is named apart from the route. */
+function refusalMessage(denial, messages) {
+  return denial === "closed-provider" ? messages.closedProvider : messages.routeForbidden
+}
+
+const PLUGIN_BUILD_ID = "native-route-proof-v2"
 const HERDER_ROUTE_PROOF_PATH = "/api/native-model-route-proof"
 
-async function resolveNativeModelLeaves(ctx, value) {
+/**
+ * The route of the model of a session, as far as it could be read.
+ *
+ * The three answers mean different things and are kept apart on purpose:
+ * - `leaves` — the route is proven, and the leaves are the routes of the
+ *   provider behind the model;
+ * - `proof-broken` — the local route proof could not be read, did not match,
+ *   or was malformed. The integrity of the route is broken, and the switch of
+ *   the owner does not repair a broken proof;
+ * - `unconfirmed` — the leaf could not be confirmed (the model is not in the
+ *   native catalog). The switch of the owner decides this one.
+ */
+function provenRoute(leaves) {
+  return { kind: "leaves", leaves };
+}
+
+function brokenProofRoute() {
+  return { kind: "proof-broken" };
+}
+
+function unconfirmedRoute() {
+  return { kind: "unconfirmed" };
+}
+
+async function resolveNativeModelRoute(ctx, value) {
   const model = nativeModelRef(value)
-  if (!model || typeof ctx.model?.list !== "function") return undefined
-  const available = responseData(await ctx.model.list())
-  if (!Array.isArray(available)) return undefined
+  if (!model || typeof ctx.model?.list !== "function") return unconfirmedRoute()
+  let available
+  try { available = responseData(await ctx.model.list()) } catch { return unconfirmedRoute() }
+  if (!Array.isArray(available)) return unconfirmedRoute()
   const entry = available.find(item => item?.providerID === model.providerID && item?.id === model.id)
-  if (!entry) return undefined
-  if (model.providerID !== "omniroute") return [{ providerId: model.providerID, modelId: model.id }]
-  if (typeof fetch !== "function") return undefined
+  if (!entry) return unconfirmedRoute()
+  if (model.providerID !== "omniroute") return provenRoute([{ providerId: model.providerID, modelId: model.id }])
+  if (typeof fetch !== "function") return brokenProofRoute()
   // The catalog id is the OpenCode-side name of the model. The route proof is
   // about the provider-facing model id that the gateway receives upstream, and
   // that is the id the gateway catalog and its mappings are keyed by.
@@ -298,9 +339,9 @@ async function resolveNativeModelLeaves(ctx, value) {
   try {
     const endpoint = process.env.AGENT_HERDER_URL || coordinationEndpoint
     url = new URL(HERDER_ROUTE_PROOF_PATH, endpoint)
-    if (!(["http:", "https:"].includes(url.protocol)) || url.username || url.password) return undefined
+    if (!(["http:", "https:"].includes(url.protocol)) || url.username || url.password) return brokenProofRoute()
     url.searchParams.set("modelId", nativeModelId)
-  } catch { return undefined }
+  } catch { return brokenProofRoute() }
   try {
     const response = await fetch(url, {
       method: "GET",
@@ -308,23 +349,23 @@ async function resolveNativeModelLeaves(ctx, value) {
       redirect: "error",
       signal: AbortSignal.timeout(5_000),
     })
-    if (!response.ok) return undefined
+    if (!response.ok) return brokenProofRoute()
     const proof = responseData(await response.json())
     const leaves = proof?.resolvedProviderLeaves
     if (!plainObject(proof) || proof.nativeHarness !== "opencode" || proof.nativeModelId !== nativeModelId
-      || !Array.isArray(leaves) || leaves.length === 0 || leaves.length > 64) return undefined
+      || !Array.isArray(leaves) || leaves.length === 0 || leaves.length > 64) return brokenProofRoute()
     const result = []
     const seen = new Set()
     for (const leaf of leaves) {
       if (!plainObject(leaf) || typeof leaf.providerId !== "string" || !leaf.providerId.trim()
-        || typeof leaf.modelId !== "string" || !leaf.modelId.trim()) return undefined
+        || typeof leaf.modelId !== "string" || !leaf.modelId.trim()) return brokenProofRoute()
       const key = `${leaf.providerId}\0${leaf.modelId}`
-      if (seen.has(key)) return undefined
+      if (seen.has(key)) return brokenProofRoute()
       seen.add(key)
       result.push({ providerId: leaf.providerId, modelId: leaf.modelId })
     }
-    return result
-  } catch { return undefined }
+    return provenRoute(result)
+  } catch { return brokenProofRoute() }
 }
 
 async function enforceRestrictedSubagent(ctx, event) {
@@ -347,19 +388,14 @@ async function enforceRestrictedSubagent(ctx, event) {
     const parentSession = responseData(await ctx.session.get({ sessionID: event.sessionID }))
     const configured = responseData(await ctx.agent.get({ agentID: target }))
     const model = configured?.model ?? parentSession?.model
-    const leaves = await resolveNativeModelLeaves(ctx, model)
-    if (leaves?.length) {
-      const denial = await leafRouteDenial(leaves)
-      if (denial === "closed-provider") {
-        event.effect = "deny"
-        event.message = LEAF_LAUNCH_REFUSAL_MESSAGES.subagent.closedProvider
-      } else if (denial === "not-allowed") {
-        event.effect = "deny"
-        event.message = LEAF_LAUNCH_REFUSAL_MESSAGES.subagent.routeForbidden
-      }
-      return
+    const route = await resolveNativeModelRoute(ctx, model)
+    const denial = await routeDenial(route)
+    if (denial) {
+      event.effect = "deny"
+      event.message = refusalMessage(denial, LEAF_LAUNCH_REFUSAL_MESSAGES.subagent)
     }
-  } catch { /* the route could not be read at all */ }
+    return
+  } catch { /* the route could not be read at all: the leaf is not confirmed */ }
   if (!(await prohibitionsEnabledByOwner())) return
   event.effect = "deny"
   event.message = LEAF_LAUNCH_REFUSAL_MESSAGES.subagent.routeForbidden
@@ -370,25 +406,18 @@ async function enforceRestrictedModelRequest(ctx, event) {
   try { lineage = await restrictedNativeRoot(ctx, event.sessionID) } catch { lineage = { known: false } }
   if (!lineage.known) throw new Error("Agent Herder cannot verify the native session lineage; model request is denied.")
   if (!lineage.restricted) return
-  const leaves = await resolveNativeModelLeaves(ctx, event.model)
-  if (leaves?.length) {
-    // The provider of the route is known. The providers the owner closed stay
-    // closed whatever the switch says, and a route outside the allowed
-    // families follows the switch of the owner.
-    const denial = await leafRouteDenial(leaves)
-    if (denial === "closed-provider") {
-      throw new Error(LEAF_LAUNCH_REFUSAL_MESSAGES.modelRequest.closedProvider)
-    }
-    if (denial === "not-allowed") {
-      throw new Error(LEAF_LAUNCH_REFUSAL_MESSAGES.modelRequest.routeForbidden)
-    }
-    return
+  // The route of the model, and the contract of the owner about it: the
+  // providers the owner closed stay closed whatever the switch says, a broken
+  // proof is not repaired by the switch, and a route that is merely not
+  // confirmed follows the switch of the owner.
+  const route = await resolveNativeModelRoute(ctx, event.model)
+  const denial = await routeDenial(route)
+  if (denial === "closed-provider") {
+    throw new Error(LEAF_LAUNCH_REFUSAL_MESSAGES.modelRequest.closedProvider)
   }
-  // The provider of the route could not be read. While the prohibitions are on,
-  // an unverified route is refused; the owner may switch them off from the
-  // panel, and then the work of the session continues.
-  if (!(await prohibitionsEnabledByOwner())) return
-  throw new Error(LEAF_LAUNCH_REFUSAL_MESSAGES.modelRequest.routeForbidden)
+  if (denial) {
+    throw new Error(LEAF_LAUNCH_REFUSAL_MESSAGES.modelRequest.routeForbidden)
+  }
 }
 
 async function installRestrictedProviderGuards(ctx) {
