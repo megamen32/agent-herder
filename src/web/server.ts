@@ -1,3 +1,5 @@
+import {startActiveInventoryOwner} from "../active-session-inventory.js";
+import {listActiveSessions} from "../mcp/active-session-tools.js";
 import type { BackgroundAutopilotStop } from "../autopilot/background-stop.js";
 import type { AutopilotRunnerInput } from "../autopilot-runner.js";
 import { projectSessionInventory } from "./session-inventory.js";
@@ -845,6 +847,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const userMessageDelivery = dependencies.jobs ? new UserMessageDelivery(dependencies.adapters, supervisor, dependencies.jobs) : undefined;
   const sessionImages = dependencies.sessionImageStore ?? new SessionImageStore(join(homedir(), ".local/state/agent-herder/session-images"));
   const rag = agentHerderRag();
+  const stopActiveInventory = process.env.VITEST ? undefined : startActiveInventoryOwner(()=>supervisor.nativeInventorySnapshot(),dependencies.adapters);
   const searchIndexer=process.env.VITEST?Promise.resolve(undefined):startSessionSearchBackground().catch(()=>undefined);
   // The health plan of a launch, remembered between the launch call and the
   // arming call of the same session: the center states the selected plan in
@@ -1041,6 +1044,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
     }
   });
   server.once("close", () => {
+    stopActiveInventory?.();
     void searchIndexer.then(owner=>owner?.close());
     userMessageDelivery?.close();
     stopSessionObservation?.();
@@ -2389,6 +2393,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }, { method: request.method === "POST" ? "POST" : "GET", body });
     if (outcome.status === 200 && request.method === "POST") events?.publish({ kind: "sessions", uri: "herder://sessions", action: "changed" });
     return sendJson(response, outcome.status, outcome.body);
+  }
+  if (request.method === "GET" && url.pathname === "/api/sessions/active") {
+    return sendJson(response,200,await listActiveSessions({hostId:url.searchParams.get("hostId")||undefined,runtimeHostId:url.searchParams.get("runtimeHostId")||undefined,harness:url.searchParams.get("harness")||undefined,...(url.searchParams.has("limit")?{limit:Math.max(1,Math.min(10000,Number(url.searchParams.get("limit"))||1))}:{}),...(url.searchParams.has("offset")?{offset:Math.max(0,Number(url.searchParams.get("offset"))||0)}:{})}));
   }
   if (request.method === "GET" && url.pathname === "/api/sessions") {
     const filters = {
