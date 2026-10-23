@@ -79,7 +79,7 @@ export function createSessionWorkspaceOwnerUpdater(deps:{store:SessionWorkspaceS
     const records=await deps.store.readMany(sessions);
     for(const session of sessions){
       const key=sessionWorkspaceKey(session),prior=attempted.get(key),record=records.get(key);
-      if(record?.workspaces.length || (prior && (prior.activity===session.lastActivity || now()-prior.at<60_000)))continue;
+      if(prior && (prior.activity===session.lastActivity || now()-prior.at<60_000))continue;
       attempted.set(key,{activity:session.lastActivity,at:now()});
       await backfillSessionWorkspaces(deps.store,await deps.readEvidence(session));
     }
@@ -87,13 +87,14 @@ export function createSessionWorkspaceOwnerUpdater(deps:{store:SessionWorkspaceS
     // that provenance. They never come from a matching title or GUI workspace.
     const refreshed=await deps.store.readMany([...sessions,...sessions.filter(s=>s.parentSessionId).map(s=>({...s,nativeSessionId:s.parentSessionId!}))]);
     for(const session of sessions){
-      if(refreshed.get(sessionWorkspaceKey(session))?.workspaces.length || !session.parentSessionId)continue;
+      if(!session.parentSessionId)continue;
       const parent=refreshed.get(sessionWorkspaceKey({...session,nativeSessionId:session.parentSessionId}));
       if(!parent?.workspaces.length)continue;
       const existing=await deps.store.read(session);
-      if(existing)continue; // Explicit unknown/clear is intentional, not permission to infer.
+      const parentPrefix=`parent_declaration:${session.parentSessionId}:v${parent.version}:`;
+      if(existing && (!existing.workspaces.length || !existing.workspaces.every(w=>w.evidence?.startsWith("parent_declaration:")) || existing.workspaces.every(w=>w.evidence?.startsWith(parentPrefix))))continue; // Own declarations and explicit unknown remain authoritative.
       const observedAt=new Date(now()).toISOString();
-      await deps.store.declare({...session,mode:"union",expectedVersion:0,observedAt,workspaces:parent.workspaces.map(w=>({...w,observedAt,source:"declared",evidence:`parent_declaration:${session.parentSessionId}:v${parent.version}:${w.evidence??"declared"}`}))});
+      await deps.store.declare({...session,mode:"replace",expectedVersion:existing?.version??0,observedAt,workspaces:parent.workspaces.map(w=>({...w,observedAt,source:"declared",evidence:`parent_declaration:${session.parentSessionId}:v${parent.version}:${w.evidence??"declared"}`}))});
     }
     const active=new Set(sessions.map(sessionWorkspaceKey));for(const key of attempted.keys())if(!active.has(key))attempted.delete(key);
   };
