@@ -1225,6 +1225,138 @@ async function withChildTasks(details: SessionDetails, harness: string): Promise
   };
 }
 
+/** Why a converted session is or is not visible in the running OpenCode. */
+export type ConvertVisibilityCause =
+  | "served"
+  | "no-session-id"
+  | "server-unreachable"
+  | "database-mismatch"
+  | "table-mismatch"
+  | "not-served"
+  | "row-missing";
+
+/** The verdict about one converted session, with the reason in the owner's words. */
+export type ConvertVisibility = { visible: boolean; cause: ConvertVisibilityCause; note: string };
+
+/** The global OpenCode database — the file the running OpenCode server opens. */
+function opencodeGlobalDbPath(): string {
+  const dataHome = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share");
+  return process.env.OPENCODE_DB_PATH || join(dataHome, "opencode", "opencode.db");
+}
+
+/** The project-local database the converter writes into when a project path is given. */
+function opencodeProjectDbPath(projectPath: string): string {
+  return join(projectPath, ".opencode", "opencode.db");
+}
+
+/**
+ * What one OpenCode database holds: its tables, and the table that carries
+ * the converted session. A database that cannot be opened is absent, not empty.
+ */
+type OpencodeDbProbe = { tables: string[]; rowTable: string | null };
+
+/** The session tables a converted row can land in, served table first. */
+const SESSION_TABLES = ["session_v2", "session", "sessions"] as const;
+
+async function probeOpencodeDb(dbPath: string, sessionId: string): Promise<OpencodeDbProbe | null> {
+  let db: import("node:sqlite").DatabaseSync;
+  try {
+    const { DatabaseSync } = await import("node:sqlite");
+    db = new DatabaseSync(dbPath, { readOnly: true });
+  } catch {
+    return null;
+  }
+  try {
+    const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map((row) => row.name);
+    let rowTable: string | null = null;
+    for (const table of SESSION_TABLES) {
+      if (!tables.includes(table)) continue;
+      try {
+        if (db.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(sessionId)) { rowTable = table; break; }
+      } catch { /* a table of another shape is not this row */ }
+    }
+    return { tables, rowTable };
+  } catch {
+    return null;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Whether the running OpenCode server serves a converted session.
+ *
+ * The server's own answer decides: the OpenCode adapter asks that server for
+ * the session, and a session the server does not return is one the owner will
+ * not see. The databases are read only to explain the refusal — which file and
+ * which table the row landed in, next to the file and the table the server
+ * reads.
+ */
+async function opencodeSessionVisibility(
+  supervisor: SessionSupervisor,
+  targetSessionId: string | undefined,
+  projectPath: string | undefined,
+): Promise<ConvertVisibility> {
+  if (!targetSessionId) {
+    return { visible: false, cause: "no-session-id", note: "OpenCode не вернул идентификатор новой сессии." };
+  }
+  // The live server is asked twice: a row that was just written can be a
+  // moment behind the read, and a single miss would be a wrong verdict.
+  let lastError: string | undefined;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 250));
+    try {
+      const served = await supervisor.getSession("opencode", targetSessionId, undefined, { includeModelOptions: false });
+      if (served) return { visible: true, cause: "served", note: "Новая сессия видна в работающем OpenCode." };
+      lastError = undefined;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+  }
+  if (lastError !== undefined) {
+    return {
+      visible: false,
+      cause: "server-unreachable",
+      note: `работающий OpenCode не ответил (${lastError}), поэтому видимость новой сессии не подтверждена`,
+    };
+  }
+
+  // The server answered and did not serve the session: name the cause.
+  const globalDb = opencodeGlobalDbPath();
+  const projectDb = projectPath ? opencodeProjectDbPath(projectPath) : undefined;
+  const global = await probeOpencodeDb(globalDb, targetSessionId);
+  const project = projectDb && projectDb !== globalDb ? await probeOpencodeDb(projectDb, targetSessionId) : undefined;
+  const servedTable = global?.tables.includes("session_v2") ? "session_v2" : global?.tables.includes("session") ? "session" : undefined;
+
+  if (project?.rowTable) {
+    return {
+      visible: false,
+      cause: "database-mismatch",
+      note: `перенос записан в project-local базу \`${projectDb}\` (таблица \`${project.rowTable}\`), а работающий OpenCode читает глобальную базу \`${globalDb}\`${servedTable ? ` (таблица \`${servedTable}\`)` : ""}`,
+    };
+  }
+  if (global?.rowTable && servedTable && global.rowTable !== servedTable) {
+    return {
+      visible: false,
+      cause: "table-mismatch",
+      note: `перенос записан в таблицу \`${global.rowTable}\`, а работающий OpenCode читает таблицу \`${servedTable}\``,
+    };
+  }
+  if (global?.rowTable) {
+    return {
+      visible: false,
+      cause: "not-served",
+      note: `перенос записан в таблицу \`${global.rowTable}\` глобальной базы, но работающий OpenCode её не отдаёт`,
+    };
+  }
+  const checked = [globalDb, ...(projectDb ? [projectDb] : [])].map((path) => `\`${path}\``).join(", ");
+  return {
+    visible: false,
+    cause: "row-missing",
+    note: `строка переноса не найдена ни в одной базе OpenCode (проверены: ${checked})`,
+  };
+}
+
 /** Edited files are attributed to the git repo that actually owns them, so
  * each repo's coordination board sees the sessions touching it — a session
  * working across several repos appears on several boards. Non-repo paths
@@ -3000,6 +3132,64 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }));
   }
 
+  const convertMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/convert$/);
+  if (convertMatch && request.method === "POST") {
+    const harness = decodeURIComponent(convertMatch[1]) as HarnessType;
+    const sessionId = decodeURIComponent(convertMatch[2]);
+    const body = await readJson(request);
+    const to = typeof body.to === "string" ? body.to as HarnessType : undefined;
+    if (to !== "opencode") return sendJson(response, 400, { error: "Доступен перевод только в OpenCode." });
+    if (harness !== "codex") return sendJson(response, 400, { error: "Перевод в OpenCode доступен только для сессий Codex." });
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { error: "Scoped session read port is unavailable." });
+    const details = route.kind === "scoped" ? await route.supervisor!.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" })
+      : await supervisor.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" });
+    if (!details) return sendJson(response, 404, { error: "Сессия не найдена." });
+    const nativeSessionId = typeof details.session.meta?.nativeSessionId === "string" ? details.session.meta.nativeSessionId : sessionId;
+    const readingSupervisor = route.kind === "scoped" ? route.supervisor! : supervisor;
+    const result = await supervisor.convertSession({
+      sessionId: nativeSessionId,
+      from: harness,
+      to,
+      projectPath: details.session.cwd || undefined,
+    });
+    if (!result.success) {
+      return sendJson(response, 502, {
+        ok: false,
+        from: harness,
+        to,
+        error: result.error || "Не удалось перевести сессию в OpenCode.",
+        warnings: result.warnings,
+      });
+    }
+    // The conversation was written into the OpenCode database. Whether the
+    // running OpenCode server serves that row is a separate fact, and it is
+    // measured against that server rather than assumed.
+    const visible = await opencodeSessionVisibility(readingSupervisor, result.targetSessionId, details.session.cwd || undefined);
+    return sendJson(response, 200, {
+      ok: true,
+      from: harness,
+      to,
+      // What was carried over to the new session.
+      transferred: {
+        messageCount: result.messageCount,
+        targetSessionId: result.targetSessionId,
+        targetPath: result.targetPath,
+      },
+      // What the running OpenCode server shows about that new session.
+      visibleInOpenCode: visible.visible,
+      visibilityCause: visible.cause,
+      visibilityNote: visible.note,
+      // What stays where it was: the original session is never moved or removed.
+      stayed: {
+        sessionId,
+        harness,
+        path: details.session.cwd || undefined,
+      },
+      warnings: result.warnings,
+    });
+  }
   if (request.method === "POST" && url.pathname === "/api/conversions") {
     const body = await readJson(request);
     if (typeof body.sessionId !== "string" || typeof body.from !== "string" || typeof body.to !== "string") {

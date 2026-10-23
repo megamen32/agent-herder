@@ -166,6 +166,88 @@ export async function applyWorkTarget(
 /** Value of the machine select that asks for a machine outside the known fleet. */
 const CUSTOM_HOST = "__custom__";
 
+/** What a conversion of a working session into OpenCode actually achieved. */
+export type SessionConvertOutcome = {
+  ok: boolean;
+  /** The conversation was carried over: how many messages, and where. */
+  transferred: { messageCount?: number; targetSessionId?: string; targetPath?: string };
+  /** Whether the running OpenCode server serves that new session. */
+  visibleInOpenCode: boolean;
+  /** Which refusal it was, when the new session is not visible. */
+  visibilityCause?: string;
+  /** Why the new session is or is not visible, in the owner's words. */
+  visibilityNote: string;
+  /** The original session stays exactly where it was. */
+  stayed: { sessionId: string; harness: string; path?: string };
+  error?: string;
+};
+
+/**
+ * What the owner reads after a conversion.
+ *
+ * A conversion that the running OpenCode server does not serve is never read
+ * as a success: the text says the conversation was carried over, then says
+ * that the owner will not see it and why.
+ */
+export function convertOutcomeText(outcome: SessionConvertOutcome): string {
+  if (!outcome.ok) return outcome.error || "Перевод не удался.";
+  const count = outcome.transferred.messageCount;
+  const where = outcome.transferred.targetPath ? ` в ${outcome.transferred.targetPath}` : "";
+  const carried = count !== undefined ? `Перенесено сообщений: ${count}${where}.` : `Перевод выполнен${where}.`;
+  if (outcome.visibleInOpenCode) return `${carried} Новая сессия видна в работающем OpenCode. Исходная сессия Codex осталась на месте.`;
+  const cause = outcome.visibilityNote || "причина не названа";
+  return `${carried} Переведено, но живой OpenCode её не показывает — причина: ${cause}. Исходная сессия Codex осталась на месте.`;
+}
+
+/** The owner sees what the action changes before pressing it. */
+export function convertActionHint(): string {
+  return "Переносит переписку этой сессии Codex в новую сессию OpenCode. Исходная сессия Codex остаётся на месте.";
+}
+
+/**
+ * Converts a working session into OpenCode through the mechanism Herder
+ * already has. The answer the owner gets says what was carried over and
+ * whether the new session is visible — never more than was proven.
+ */
+export async function convertSessionToOpenCode(session: { id: string; harness: string }): Promise<SessionConvertOutcome> {
+  try {
+    const response = await fetch(`/api/sessions/${encodeURIComponent(session.harness)}/${encodeURIComponent(session.id)}/convert`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ to: "opencode" }),
+    });
+    const body = await response.json().catch(() => undefined) as Partial<SessionConvertOutcome> | undefined;
+    if (!response.ok || !body) {
+      return {
+        ok: false,
+        transferred: {},
+        visibleInOpenCode: false,
+        visibilityNote: "",
+        stayed: { sessionId: session.id, harness: session.harness },
+        error: body?.error || `Сервер ответил ошибкой ${response.status}.`,
+      };
+    }
+    return {
+      ok: true,
+      transferred: body.transferred || {},
+      visibleInOpenCode: body.visibleInOpenCode === true,
+      visibilityCause: body.visibilityCause,
+      visibilityNote: body.visibilityNote || "",
+      stayed: body.stayed || { sessionId: session.id, harness: session.harness },
+      error: body.error,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      transferred: {},
+      visibleInOpenCode: false,
+      visibilityNote: "",
+      stayed: { sessionId: session.id, harness: session.harness },
+      error: `Перевод не удался: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
 /** Reads what the session inspector can prove about this session. */
 export async function readSessionInspectFacts(session: { id: string; harness: string }): Promise<SessionInspectFacts | undefined> {
   try {
@@ -220,12 +302,13 @@ export function SessionInspectBlock({ facts, pendingModel }: { facts?: SessionIn
  * directory it works in. The server owns the truth — this block shows it and
  * asks for a change, and it never presents an unreachable machine as done.
  */
-export function SessionWorkTarget({ session, hosts, localHostId, onApplied, showFacts = true }: {
+export function SessionWorkTarget({ session, hosts, localHostId, onApplied, showFacts = true, showConvert = true }: {
   session: WorkTargetSession;
   hosts: WorkTargetHost[];
   localHostId?: string;
   onApplied?: (receipt: SessionTargetReceipt) => void;
   showFacts?: boolean;
+  showConvert?: boolean;
 }) {
   const [current, setCurrent] = React.useState({ hostId: session.hostId ?? localHostId ?? "", cwd: session.cwd });
   const [hostId, setHostId] = React.useState(current.hostId);
@@ -237,6 +320,19 @@ export function SessionWorkTarget({ session, hosts, localHostId, onApplied, show
   const [pending, setPending] = React.useState(false);
   const [facts, setFacts] = React.useState<SessionInspectFacts>();
   const [pendingModel, setPendingModel] = React.useState<string>();
+  const [converting, setConverting] = React.useState(false);
+  const [convertResult, setConvertResult] = React.useState<string>();
+
+  const convert = async () => {
+    setConverting(true);
+    setConvertResult(undefined);
+    try {
+      const outcome = await convertSessionToOpenCode({ id: session.id, harness: session.harness });
+      setConvertResult(convertOutcomeText(outcome));
+    } finally {
+      setConverting(false);
+    }
+  };
 
   // The declared work target is the truth; the session row only knows where it started.
   React.useEffect(() => {
@@ -339,5 +435,13 @@ export function SessionWorkTarget({ session, hosts, localHostId, onApplied, show
     {outcome && <p className={`work-target-result work-target-${outcome.tone}`} role="status">{outcome.message}</p>}
     {error && <p className="work-target-result work-target-error" role="alert">{error}</p>}
     {showFacts && <SessionInspectBlock facts={facts} pendingModel={pendingModel} />}
+    {showConvert && session.harness === "codex" && <div className="work-target-convert">
+      <span className="eyebrow">ПЕРЕВОД В OPENCODE</span>
+      <p className="work-target-hint">{convertActionHint()}</p>
+      <button type="button" className="quiet-button" disabled={converting} onClick={() => void convert()}>
+        {converting ? "Переводим…" : "Перевести сессию в OpenCode"}
+      </button>
+      {convertResult && <p className="work-target-result" role="status">{convertResult}</p>}
+    </div>}
   </section>;
 }
