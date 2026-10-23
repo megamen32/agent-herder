@@ -1041,7 +1041,7 @@ describe("ZCode adapter", () => {
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
     try {
       await adapter.init();
-      await expect(adapter.sendMessage("session-1", { message: "queued automation", queue: true, inputId: "native-stop-queue" })).resolves.toEqual({ ok: true, admitted: true, pending: true, inputId: "native-stop-queue" });
+      await expect(adapter.sendMessage("session-1", { message: "queued automation", queue: true, inputId: "native-stop-queue" })).resolves.toEqual({ ok: true, admitted: true, pending: true, admission: "pending", inputId: "native-stop-queue" });
       await getHumanStopStore().hold({ harness: "zcode", id: "session-1" }, { id: "manual-stop-after-queue", at: new Date().toISOString(), reason: "operator stopped" });
       await vi.advanceTimersByTimeAsync(10_000);
       await expect(adapter.sendMessage("session-1", { message: "blocked automation", queue: true, inputId: "blocked-native-queue" })).resolves.toMatchObject({ ok: false, inputId: "blocked-native-queue", error: expect.stringContaining("остановлен") });
@@ -1937,7 +1937,7 @@ describe("ZCode adapter", () => {
     const client = new FakeClient(); const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
     try {
       await adapter.init();
-      await expect(adapter.sendMessage("session-1", { message: "second continuation", queue: true, inputId: "queue-native-1" })).resolves.toEqual({ ok: true, admitted: true, pending: true, inputId: "queue-native-1" });
+      await expect(adapter.sendMessage("session-1", { message: "second continuation", queue: true, inputId: "queue-native-1" })).resolves.toEqual({ ok: true, admitted: true, pending: true, admission: "pending", inputId: "queue-native-1" });
       await vi.advanceTimersByTimeAsync(10_000);
       const commands = client.calls.filter(call => call.method === "sendConversationCommandV4");
       expect(commands).toHaveLength(1);
@@ -1950,7 +1950,7 @@ describe("ZCode adapter", () => {
     const client = new FakeClient(); const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
     try {
       const result = await adapter.sendMessage("session-1", { message: "guide delta", steer: true, origin: "human", inputId: "human-guide-1" });
-      expect(result).toEqual({ ok: true, admitted: true, inputId: "human-guide-1" });
+      expect(result).toEqual({ ok: true, admitted: true, admission: "accepted", inputId: "human-guide-1" });
       expect(result.turnId).toBeUndefined();
       expect(client.calls.filter(call => call.method === "sendConversationCommandV4")[0]?.args[0]).toMatchObject({ envelope: { commandId: "human-guide-1", payload: { text: "guide delta", requestedDelivery: "guide" } } });
       expect(client.calls.some(call => ["sendPrompt", "resumeSession", "readSessionEvents", "stopGeneration"].includes(call.method))).toBe(false);
@@ -2210,7 +2210,7 @@ it("waits for a staged guide instead of declaring failure or replaying it", asyn
  }
  const client=new StagedGuideClient(), adapter=new ZcodeAdapter({cwd:"/workspace",client});
  try{
-  await expect(adapter.sendMessage("session-1",{message:"guide",steer:true,origin:"human",inputId:"guide-staged"})).resolves.toEqual({ok:true,pending:true,inputId:"guide-staged"});
+  await expect(adapter.sendMessage("session-1",{message:"guide",steer:true,origin:"human",inputId:"guide-staged"})).resolves.toEqual({ok:true,pending:true,admission:"pending",inputId:"guide-staged"});
   await expect(adapter.getMessageAdmission("session-1","guide-staged")).resolves.toEqual({state:"admitted"});
   expect(client.calls.filter(call=>call.method==="sendConversationCommandV4")).toHaveLength(1);
  }finally{await adapter.dispose();}

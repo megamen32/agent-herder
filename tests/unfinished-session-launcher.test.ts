@@ -814,6 +814,33 @@ describe("terminal quota recovery", () => {
     };
   }
 
+  it.each(["wait", "fallback", "accepted-reload", "unknown-reload"])("keeps ordinary native quota recovery separate from incident allowlists: %s", async mode => {
+    const root = await mkdtemp(join(tmpdir(), "quota-purpose-boundary-"));
+    try {
+      const model = "zai/glm-5.3-flash";
+      const current = quotaSession("error", model);
+      const evidence = { classification: "quota_exhausted" as const, nativeTurnId: "native-failed-1", inputId: "native-input-1", providerId: "zai", modelId: "glm-5.3-flash" };
+      const path = join(root, "unfinished.json");
+      const store = new UnfinishedSessionStore(path);
+      if (mode === "wait" || mode === "fallback") {
+        const record = await store.markQuotaRecoveryEligible(current, evidence, mode === "fallback" ? ["native-openai/gpt-native"] : [], "native-policy", new Date(), mode === "wait");
+        expect(record.quotaRecovery?.candidateModels).toEqual(mode === "wait" ? [model] : ["native-openai/gpt-native"]);
+      } else {
+        await store.markQuotaRecoveryEligible(current, { ...evidence, providerId: "omniroute", modelId: "minimax-combo-m3.1" }, [], "native-policy");
+        const file = JSON.parse(await readFile(path, "utf8"));
+        const quota = file.sessions[0].quotaRecovery;
+        quota.evidence = evidence;
+        quota.candidateModels = [model];
+        quota.state = mode === "accepted-reload" ? "accepted" : "dispatching";
+        quota.dispatchInputId = "already-submitted-never-replay";
+        quota.dispatchNativeInputId = "native-accepted-identity";
+        quota.reasonCode = mode === "unknown-reload" ? "delivery_unknown" : quota.reasonCode;
+        await writeFile(path, JSON.stringify(file));
+        expect((await new UnfinishedSessionStore(path).list())[0]?.quotaRecovery).toMatchObject({state: quota.state, dispatchInputId: quota.dispatchInputId, dispatchNativeInputId: quota.dispatchNativeInputId});
+      }
+    } finally { await rm(root, {recursive:true,force:true}); }
+  });
+
   it("waits independently with general autopilot disabled and no fallbacks", async () => {
     const root = await mkdtemp(join(tmpdir(), "quota-independent-wait-"));
     try {
