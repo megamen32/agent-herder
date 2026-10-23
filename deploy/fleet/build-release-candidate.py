@@ -160,6 +160,20 @@ def write_manifest(worktree: Path, receipt: Path):
     run(["python3", str(writer), "verify", "--root", str(worktree), "--dist", str(worktree / "dist")])
 
 
+def free_destination(path: Path) -> None:
+    """The path is free: nothing that is there survives the next write.
+
+    A file that is already there may be a hard link of another release. A
+    write over it would keep that inode and change the bytes of the other
+    release, so the path is removed first: the next write creates a file of
+    its own.
+    """
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
 def fresh_release_dir(catalog: Path, sha: str) -> Path:
     """A rebuild starts from an empty directory.
 
@@ -168,11 +182,14 @@ def fresh_release_dir(catalog: Path, sha: str) -> Path:
     trash/ next to the catalog.
     """
     release = catalog / "releases" / sha
-    if release.exists():
+    if release.exists() or release.is_symlink():
         trash = catalog / "trash" / f"{sha[:8]}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
         trash.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(release), str(trash / sha))
-        print(f"superseded release moved to {trash / sha}")
+        kept = trash / sha
+        while kept.exists() or kept.is_symlink():
+            kept = kept.with_name(kept.name + "-x")
+        shutil.move(str(release), str(kept))
+        print(f"superseded release moved to {kept}")
     release.mkdir(parents=True, exist_ok=True)
     return release
 
@@ -192,8 +209,10 @@ def release_packages_tree(release: Path, store: Path) -> str:
     for name in names:
         source = store / name
         destination = target / name
-        if destination.exists() or destination.is_symlink():
-            continue
+        # The destination is freed, not skipped: a file that is already there
+        # may be a hard link of another release, and the release owns the
+        # bytes of its own tool caches.
+        free_destination(destination)
         if release_rules.mutable_entry(name):
             # The tool caches of the store are copied, not linked: they are
             # rewritten in place, and a link would make the bytes of this
@@ -221,12 +240,17 @@ def release_packages_tree(release: Path, store: Path) -> str:
 
 def assemble(sha: str, worktree: Path, catalog: Path) -> Path:
     release = fresh_release_dir(catalog, sha)
+    # The destination of every file of the release is freed before it is
+    # written: a file that is already there may be a hard link of another
+    # release, and a copy over it would change the bytes of that release.
+    free_destination(release / "dist")
     shutil.copytree(worktree / "dist", release / "dist", dirs_exist_ok=True)
     # The node release carries the workspace packages and the lock files too:
     # the runtime resolves the agent-resume workspace from the release.
     for name in ("package.json", "package-lock.json"):
         source = worktree / name
         if source.is_file():
+            free_destination(release / name)
             shutil.copy2(source, release / name)
     packages = worktree / "packages"
     if packages.is_dir():
@@ -234,12 +258,15 @@ def assemble(sha: str, worktree: Path, catalog: Path) -> Path:
             if not package.is_dir():
                 continue
             target = release / "packages" / package.name
+            free_destination(target)
             target.mkdir(parents=True, exist_ok=True)
             for item in ("package.json", "scripts", "dist"):
                 source = package / item
                 if source.is_dir():
+                    free_destination(target / item)
                     shutil.copytree(source, target / item, dirs_exist_ok=True, symlinks=True)
                 elif source.is_file():
+                    free_destination(target / item)
                     shutil.copy2(source, target / item)
     manifest = json.loads((release / "dist" / "fleet-deployment-manifest.json").read_text())
     node_config = {
@@ -394,7 +421,13 @@ def write_bundle_manifest(sha: str, release: Path, catalog: Path, worktree: Path
         "excluded": topology["excluded"],
         "acceptance": topology["acceptance"],
     }
-    manifest_path.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n")
+    # The manifest is written aside and put in place. A write over an
+    # existing file would keep its inode, and that inode may belong to
+    # another release: the manifest of that release would describe this
+    # build. A reader never sees a half written manifest either.
+    temporary = manifest_path.with_name(f"{manifest_path.name}.tmp-{os.getpid()}")
+    temporary.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n")
+    os.replace(temporary, manifest_path)
     return document
 
 

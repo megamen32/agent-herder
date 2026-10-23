@@ -72,13 +72,47 @@ def remote_live_sha(node: dict) -> str:
     return os.path.basename(result.stdout.strip())
 
 
+def add_own_bytes(archive: tarfile.TarFile, source: Path, arcname: str) -> None:
+    """The path goes into the archive as bytes of its own.
+
+    A regular file is added as a regular file, never as a link: the hard links
+    of the tree are dereferenced, so the archive cannot carry the shared inode
+    of one release into the node. A symlink stays a symlink: it names a path,
+    not bytes.
+    """
+    if source.is_symlink():
+        info = archive.gettarinfo(str(source), arcname=arcname)
+        info.type = tarfile.SYMTYPE
+        info.linkname = os.readlink(source)
+        archive.addfile(info)
+        return
+    if source.is_dir():
+        info = archive.gettarinfo(str(source), arcname=arcname)
+        info.type = tarfile.DIRTYPE
+        archive.addfile(info)
+        for entry in sorted(source.iterdir()):
+            add_own_bytes(archive, entry, f"{arcname}/{entry.name}")
+        return
+    info = archive.gettarinfo(str(source), arcname=arcname)
+    info.type = tarfile.REGTYPE
+    info.linkname = ""
+    info.size = source.stat().st_size
+    with source.open("rb") as handle:
+        archive.addfile(info, handle)
+
+
 def pack_release(release: Path, target: Path) -> Path:
-    """The release without its own node_modules: the node builds its own."""
+    """The release without its own node_modules: the node builds its own.
+
+    The archive carries the bytes of every file. A hard link of the release is
+    stored as a file of its own, so the node cannot receive a release whose
+    bytes are the bytes of another one.
+    """
     with tarfile.open(target, "w") as archive:
         for name in PACKAGED:
             source = release / name
             if source.exists():
-                archive.add(source, arcname=f"./{name}")
+                add_own_bytes(archive, source, f"./{name}")
     return target
 
 
@@ -158,9 +192,24 @@ def trim_releases(releases_root: Path, rollback_root: Path, keep: str, prefer: s
 
 
 def unpack_release(archive: Path, release: Path) -> None:
+    """The release gets its own bytes: nothing is written over a link.
+
+    The archive is unpacked aside and the entries are put in place one by one.
+    A file that is unpacked over an existing one keeps its inode, and that
+    inode may belong to another release: the bytes of that release would
+    change with this one.
+    """
     release.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(archive) as handle:
-        handle.extractall(release)
+    with tempfile.TemporaryDirectory(dir=str(release.parent)) as staging:
+        with tarfile.open(archive) as handle:
+            handle.extractall(staging)
+        for entry in sorted(Path(staging).iterdir()):
+            target = release / entry.name
+            if target.is_symlink() or target.is_file():
+                target.unlink()
+            elif target.is_dir():
+                shutil.rmtree(target)
+            shutil.move(str(entry), str(target))
 
 
 def node_side_fleet(arguments) -> int:
