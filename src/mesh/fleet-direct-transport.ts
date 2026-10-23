@@ -1,6 +1,8 @@
 import {meshDiscoveryTimeoutMs} from "./discovery-timeout.js";
 import {assertRemoteCodexAdmission} from "../codex-quota-guard.js";
 import {spawn} from 'node:child_process';
+import {mkdirSync,lstatSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {hostname,userInfo} from 'node:os';
 import type {GptAdminTransport} from './gptadmin.js';
 /** Reuses owner-authorized fleet SSH, transporting HTTP to each existing singleton. Never starts MCP stdio or a native controller. */
@@ -13,6 +15,15 @@ export const directFleetPeers:readonly DirectPeer[]=[
  // The Mac maintains this authenticated reverse route even when it leaves the LAN.
  {hostId:'MacBook-Pro-User.local',sshHost:'127.0.0.1',sshPort:2222,nativeUser:'user',port:18789,python:'/opt/homebrew/bin/python3'},
 ];
+/** Reuse only authenticated exact-peer connections; idle masters expire in 30s. */
+export function sshMultiplexOptions(peer:DirectPeer):string[]{
+ const uid=process.getuid?.();if(uid===undefined)throw new Error('direct_control_owner_unavailable');
+ const dir='/tmp/ah-direct-'+uid;
+ try{mkdirSync(dir,{mode:0o700});}catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;}
+ const info=lstatSync(dir);if(!info.isDirectory()||info.isSymbolicLink()||info.uid!==uid||(info.mode&0o077)!==0)throw new Error('direct_control_directory_unverified');
+ const key=createHash('sha256').update(JSON.stringify([peer.hostId,peer.sshHost,peer.sshPort??22,peer.nativeUser,hostname()])).digest('hex').slice(0,32);
+ return ['-o','ControlMaster=auto','-o','ControlPersist=30','-o','ControlPath='+dir+'/'+key];
+}
 const quote=(s:string)=>"'"+s.replace(/'/g,"'\"'\"'")+"'";
 // Return fixed codes only: peer stderr can contain private paths or request data.
 const peerFailure=(stderr:string):string=>{
@@ -132,7 +143,7 @@ export class FleetDirectTransport implements GptAdminTransport {
   const local=peer.hostId===hostname()&&peer.nativeUser===userInfo().username;
   const executable=local?peer.python:'/usr/bin/ssh';
   const reverseVia100=peer.hostId==='MacBook-Pro-User.local'&&peer.sshHost==='127.0.0.1'&&hostname()!=='roomhacker-server-100';
-  const args=local?['-I','-S','-B','-c',bridge]:['-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=3','-o','ConnectionAttempts=1','-o','ServerAliveInterval=3','-o','ServerAliveCountMax=1',...(reverseVia100?['-J','roomhacker@192.168.2.100']:[]),...(peer.sshPort?['-p',String(peer.sshPort)]:[]),'-l',peer.nativeUser,peer.sshHost,`${quote(peer.python)} -I -S -B -c ${quote(bridge)}`];
+  const args=local?['-I','-S','-B','-c',bridge]:['-T',...sshMultiplexOptions(peer),'-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=3','-o','ConnectionAttempts=1','-o','ServerAliveInterval=3','-o','ServerAliveCountMax=1',...(reverseVia100?['-J','roomhacker@192.168.2.100']:[]),...(peer.sshPort?['-p',String(peer.sshPort)]:[]),'-l',peer.nativeUser,peer.sshHost,`${quote(peer.python)} -I -S -B -c ${quote(bridge)}`];
   return new Promise((resolve,reject)=>{
    const child=spawn(executable,args,{stdio:['pipe','pipe','pipe']});let size=0;const chunks:Buffer[]=[];let failure:Error|undefined;let stderr='';
    const timer=setTimeout(()=>{failure=new Error('direct_deadline');child.kill('SIGKILL');},timeoutMs+500);

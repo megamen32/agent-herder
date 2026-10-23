@@ -13,3 +13,10 @@ it('uses one bounded materialized owner HTTP read without MCP initialization',as
  await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));const port=(server.address()as any).port;
  try{const transport=new FleetDirectTransport([{hostId:hostname(),sshHost:'127.0.0.1',nativeUser:userInfo().username,port,python:'/usr/bin/python3'}],1000);const x=await transport.call(`mcp:shell:${hostname()}:AgentHerder`,'list_active_sessions_local',{});expect(x).toMatchObject({sessions:[],partial:false});expect(requests).toEqual(['GET /api/sessions/active?runtimeHostId='+encodeURIComponent(hostname())]);}finally{await new Promise<void>(r=>server.close(()=>r()));}
 });
+import {sshMultiplexOptions,directFleetPeers} from '../src/mesh/fleet-direct-transport.js';
+import {lstatSync} from 'node:fs';
+it('reuses one private bounded SSH connection per exact peer without changing host configuration',()=>{
+ const a=sshMultiplexOptions(directFleetPeers[1]),b=sshMultiplexOptions(directFleetPeers[1]),other=sshMultiplexOptions(directFleetPeers[2]);
+ expect(a).toEqual(b);expect(a).not.toEqual(other);expect(a).toContain('ControlMaster=auto');expect(a).toContain('ControlPersist=30');
+ const path=a.find(v=>v.startsWith('ControlPath='))!.slice('ControlPath='.length);expect(path.length).toBeLessThan(100);expect(lstatSync(path.slice(0,path.lastIndexOf('/'))).mode&0o077).toBe(0);
+});

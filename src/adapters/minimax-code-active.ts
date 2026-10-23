@@ -24,6 +24,9 @@ interface NativeSession {
   status?: { status_type?: number; error_code?: number };
   model?: { model_id?: string };
 }
+const METADATA_TTL_MS = 60_000;
+interface MetadataEntry { row?: NativeSession; at?: number; pending?: Promise<void> }
+const metadataCaches = new WeakMap<object, Map<string, MetadataEntry>>();
 const object = (value: unknown): Record<string, any> => {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("minimax_active_response_invalid");
   return value as Record<string, any>;
@@ -56,38 +59,22 @@ export async function readMinimaxActiveSessions(control: Pick<MinimaxCodeControl
     if (!response.ok) throw new Error(response.error || "minimax_active_runtime_unavailable");
     return object(response.body);
   };
-  const owners = await request("/agent");
-  if (!Array.isArray(owners.agents)) throw new Error("minimax_active_agents_invalid");
-  const rows = new Map<string, NativeSession>();
-  let pages = 0;
-  await Promise.all(owners.agents.map(async (owner: unknown) => {
-    const name = object(owner).name;
-    if (typeof name !== "string" || !name) throw new Error("minimax_active_agent_invalid");
-    const seen = new Set<string>();
-    let cursor: string | undefined;
-    do {
-      const query = new URLSearchParams({ limit: "200", include_hidden: "true" });
-      if (cursor) query.set("cursor", cursor);
-      const page = await request(`/agent/${encodeURIComponent(name)}/session?${query}`);
-      pages += 1;
-      if (!Array.isArray(page.sessions) || typeof page.has_more !== "boolean") throw new Error("minimax_active_page_invalid");
-      for (const row of page.sessions) {
-        const session = object(row) as NativeSession;
-        if (typeof session.session_id !== "string" || !session.session_id) throw new Error("minimax_active_identity_invalid");
-        if (!session.status || ![0, 1, 2, 3].includes(session.status.status_type!)) throw new Error("minimax_active_status_unknown");
-        rows.set(session.session_id, session);
-      }
-      cursor = page.has_more ? page.next_cursor : undefined;
-      if (page.has_more && (typeof cursor !== "string" || !cursor || seen.has(cursor))) throw new Error("minimax_active_cursor_invalid");
-      if (cursor) seen.add(cursor);
-    } while (cursor);
-  }));
+  // Activity never waits for a historical metadata enumeration. Cache only
+  // exact active-ID display records, independently from current runtime proof.
+  let rows = metadataCaches.get(control);
+  if (!rows) { rows = new Map(); metadataCaches.set(control, rows); }
+  const pages = 0;
   progress("candidate_seed");
   let seedComplete = true;
   let seedIds: string[] = [];
   try { seedIds = await (options.readRuntimeCandidateIds || readMinimaxRuntimeCandidateIds)(); }
   catch { seedComplete = false; }
-  const candidates = [...new Set([...seedIds, ...[...rows.values()].filter(row => row.status?.status_type === 1).map(row => row.session_id)])];
+  const candidates = [...new Set(seedComplete ? seedIds : [...rows.keys()])];
+  // An empty durable seed alone cannot prove that the live controller exists.
+  if (seedComplete && candidates.length === 0) {
+    const live = await request("/agent");
+    if (!Array.isArray(live.agents)) throw new Error("minimax_active_runtime_unavailable");
+  }
   progress("controller_validation");
   const active: NativeSession[] = [];
   let failedCandidateCount = 0;
@@ -98,13 +85,21 @@ export async function readMinimaxActiveSessions(control: Pick<MinimaxCodeControl
         const current = await request(`/session/${encodeURIComponent(id)}/turn-continuation`);
         if (![0, 1, 2, 3].includes(current.state)) throw new Error("minimax_active_runtime_state_invalid");
         if (current.state !== 2) return;
-        let row = rows.get(id);
-        if (!row) {
-          const response = await request(`/session/${encodeURIComponent(id)}`);
-          row = object(response.session || response) as NativeSession;
-          if (row.session_id !== id) throw new Error("minimax_active_metadata_identity_invalid");
+        let entry = rows.get(id);
+        if (!entry) { entry = {}; rows.set(id, entry); }
+        if (!entry.row || Date.now() - (entry.at || 0) >= METADATA_TTL_MS) {
+          if (!entry.pending) {
+            const target = entry;
+            target.pending = request(`/session/${encodeURIComponent(id)}`).then(response => {
+              const row = object(response.session || response) as NativeSession;
+              if (row.session_id !== id) throw new Error("minimax_active_metadata_identity_invalid");
+              target.row = row; target.at = Date.now();
+            }).catch(() => undefined).finally(() => { target.pending = undefined; });
+          }
+          // A delayed/missing title must not stall or discard a proven active ID.
+          await Promise.race([entry.pending, new Promise<void>(resolve => setTimeout(resolve, 300))]);
         }
-        active.push(row);
+        active.push(entry.row || {session_id: id});
       } catch { failedCandidateCount += 1; }
     }));
   }
@@ -112,9 +107,9 @@ export async function readMinimaxActiveSessions(control: Pick<MinimaxCodeControl
   const observedAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 15_000).toISOString();
   const exhaustive = seedComplete && failedCandidateCount === 0;
-  const receipt: MinimaxActiveReceipt = { exhaustive, metadataEnumerationExhaustive: true,
+  const receipt: MinimaxActiveReceipt = { exhaustive, metadataEnumerationExhaustive: false,
     activityCoverage: exhaustive ? "native_active_turn" : "partial", observedAt, expiresAt, source: "native_active_turn",
-    stageTimingsMs, totalSessions: rows.size, pages, candidateCount: candidates.length, failedCandidateCount,
+    stageTimingsMs, totalSessions: candidates.length, pages, candidateCount: candidates.length, failedCandidateCount,
     ...(!seedComplete ? { reason: "native_runtime_candidate_seed_unavailable" } : failedCandidateCount ? { reason: "native_runtime_candidate_validation_partial" } : {}),
   };
   const sessions: AgentSession[] = active.map(row => ({
@@ -122,10 +117,11 @@ export async function readMinimaxActiveSessions(control: Pick<MinimaxCodeControl
     status: "running", cwd: row.workspace_dir || "", hostId: localSessionHostId(),
     lastActivity: new Date(row.updated_at || row.created_at || 0).toISOString(),
     needsPermission: false, model: row.model?.model_id,
-    lineage: { kind: row.parent_session_id ? "subagent" : "root", ...(row.parent_session_id ? { parentId: row.parent_session_id } : {}), role: row.agent_name },
+    lineage: { kind: row.parent_session_id ? "subagent" : row.agent_name ? "root" : "unknown", ...(row.parent_session_id ? { parentId: row.parent_session_id } : {}), role: row.agent_name },
     meta: { activityEvidence: receipt.source, activityObservedAt: observedAt, activityExpiresAt: expiresAt,
       liveStatus: "running", nativeStatusType: row.status?.status_type, nativeContinuationState: 2, nativeAgentName: row.agent_name,
-      ...(row.parent_session_id ? { parentSessionId: row.parent_session_id, lineageKind: "subagent" } : { lineageKind: "root" }),
+      ...(row.parent_session_id ? { parentSessionId: row.parent_session_id, lineageKind: "subagent" } : { lineageKind: row.agent_name ? "root" : "unknown" }),
+      ...(!row.agent_name && !row.title ? { metadataUnavailable: true } : {}),
       ...(row.status?.error_code === undefined ? {} : { retainedNativeErrorCode: row.status.error_code }) },
   }));
   return { sessions, receipt };
