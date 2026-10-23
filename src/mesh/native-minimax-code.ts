@@ -237,13 +237,27 @@ export async function observeMinimaxCode(
   // The dated store path orders the sessions chronologically, so the newest
   // window is read first instead of the oldest one.
   const enumerated = await collectSessionDirectories(sessionStore, MAX_ENUMERATED_DIRECTORIES);
-  const directories = enumerated.sort().reverse().slice(0, MAX_SCAN_DIRECTORIES);
+  // A dated directory says when the session was created, not last used.
+  // Stat metadata only: a long-running old session must survive the window.
+  const candidates: Array<{dir:string;messageAt:number;manifest:MinimaxManifest|null;rankAt:number}> = [];
+  const selected = enumerated.filter(dir => !nativeSessionId || decodeSessionKey(dir.slice(dir.lastIndexOf("/") + 1)) === nativeSessionId);
+  for (let offset=0;offset<selected.length;offset+=32) {
+    candidates.push(...await Promise.all(selected.slice(offset,offset+32).map(async dir => {
+      const [manifest, messages] = await Promise.all([
+        readJson<MinimaxManifest>(join(dir,"manifest.json"),MAX_MANIFEST_BYTES),
+        stat(join(dir,"messages.jsonl")).catch(()=>null),
+      ]);
+      const messageAt = messages?.mtimeMs ?? 0;
+      return {dir,manifest,messageAt,rankAt:Math.max(manifest?.updatedAtMs ?? manifest?.createdAtMs ?? timestampFromPath(dir) ?? 0,messageAt)};
+    })));
+  }
+  candidates.sort((a,b) => b.rankAt - a.rankAt || b.dir.localeCompare(a.dir));
+  const directories = candidates.slice(0, MAX_SCAN_DIRECTORIES);
   const sessions: MeshSession[] = [];
   const seen = new Set<string>();
   let found = 0;
-  for (const dir of directories) {
+  for (const {dir, messageAt, manifest} of directories) {
     const name = dir.slice(dir.lastIndexOf("/") + 1);
-    const manifest = await readJson<MinimaxManifest>(join(dir, "manifest.json"), MAX_MANIFEST_BYTES);
     const id = manifest?.sessionId ?? decodeSessionKey(name);
     if (!id) continue;
     if (nativeSessionId && id !== nativeSessionId) continue;
@@ -252,7 +266,7 @@ export async function observeMinimaxCode(
     // A record of another session never describes this one.
     const trusted = record && (!record.sessionId || record.sessionId === id) ? record : null;
     const createdAtMs = manifest?.createdAtMs ?? trusted?.createdAtMs ?? timestampFromPath(dir) ?? 0;
-    const updatedAtMs = manifest?.updatedAtMs ?? trusted?.updatedAtMs ?? createdAtMs;
+    const updatedAtMs = Math.max(manifest?.updatedAtMs ?? trusted?.updatedAtMs ?? createdAtMs, messageAt);
     const cwd = safeCwd(trusted?.workspaceDir);
     const address = { hostId, harness: MINIMAX_CODE_HARNESS, nativeSessionId: id };
     const key = addressKey(address);
@@ -272,7 +286,7 @@ export async function observeMinimaxCode(
   sessions.sort((left, right) => right.lastActivity.localeCompare(left.lastActivity));
   const limited = sessions.slice(0, limit);
   // More sessions than the window or the limit means an incomplete answer.
-  return { sessions: limited, complete: enumerated.length <= MAX_ENUMERATED_DIRECTORIES && found <= limit };
+  return { sessions: limited, complete: enumerated.length < MAX_ENUMERATED_DIRECTORIES && candidates.length <= MAX_SCAN_DIRECTORIES && found <= limit };
 }
 
 /** One bounded admission into the live MiniMax Code runtime. */

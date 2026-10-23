@@ -1,6 +1,7 @@
 import type { HerderJob } from "./herder-jobs.js";
 import type { SessionLifecycleSnapshot } from "./session-lifecycle.js";
 import type { HarnessEvent, SessionDetails, SessionMessageView } from "./types/index.js";
+import type { DeliverableHumanQuestion } from "./human-request/notice-question.js";
 
 export type IntegratorProgressState =
   | "queued"
@@ -182,4 +183,46 @@ function toEpoch(value: string | number | undefined): number | undefined {
 function dataString(data: Record<string, unknown> | undefined, key: string): string | undefined {
   const value = data?.[key];
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/** The exact native session a stale-running question is bound to. */
+export interface StaleRunningQuestionTarget {
+  harness: string;
+  session_id: string;
+  cwd?: string;
+}
+
+/**
+ * Build the one Notice question of a stale-running session.
+ *
+ * A stale running session is not a dead session: the projection only says that
+ * the running evidence is old. The question asks the operator what to do, and
+ * the deterministic ids keep a redelivery on the same card instead of opening
+ * a second one. Every other state produces no question at all.
+ */
+export function staleRunningQuestionBinding(
+  progress: IntegratorProgressResult,
+  target: StaleRunningQuestionTarget,
+): DeliverableHumanQuestion | undefined {
+  if (progress.state !== "stale_running") return undefined;
+  const requestId = `stale-running:${target.harness}:${target.session_id}`;
+  const ageMinutes = Math.max(1, Math.round((progress.ageMs ?? 0) / 60_000));
+  return {
+    request_id: requestId,
+    dedup_key: requestId,
+    kind: "user",
+    native_target: {
+      harness: target.harness,
+      session_id: target.session_id,
+      ...(target.cwd ? { cwd: target.cwd } : {}),
+    },
+    question: {
+      message: `Сессия ${target.harness}/${target.session_id} считается запущенной, но последняя активность была ${ageMinutes} мин назад. Что делать с этой сессией?`,
+      choices: [
+        { choice_id: "inspect", label: "Проверить сессию" },
+        { choice_id: "resume", label: "Продолжить сессию" },
+        { choice_id: "keep", label: "Оставить как есть" },
+      ],
+    },
+  };
 }

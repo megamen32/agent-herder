@@ -359,12 +359,30 @@ def prepare_packages(fleet: Path, sha: str, previous_sha: str,
 
 def release_budget(fleet: Path) -> tuple[int, int]:
     releases = [p for p in (fleet / "releases").iterdir() if p.is_dir() and not p.is_symlink()]
+    if sys.platform == "darwin":
+        # Use the same bounded physical-tree census as the managed watchdog.
+        # Native packages are hard linked, so apparent bytes duplicate them.
+        probe = fleet / "mac-artifact-probe"
+        config = json.loads((fleet / "node-config.json").read_text())
+        expected = config.get("launcherHashes", {}).get("mac-artifact-probe")
+        if not isinstance(expected, str) or not re.fullmatch(r"[a-f0-9]{64}", expected) or sha256(probe) != expected:
+            raise RuntimeError("release_budget_probe_identity_mismatch")
+        result = subprocess.run([str(probe), str(512 * 1024**2), "30001"],
+                                cwd=fleet / "releases", capture_output=True, text=True, timeout=15)
+        match = re.fullmatch(r"BYTES ([0-9]+) ENTRIES ([0-9]+)\n", result.stdout)
+        if result.returncode != 0 or not match:
+            raise RuntimeError("release_budget_census_failed")
+        return len(releases), int(match[1])
     total = 0
     for release in releases:
         for path in release.rglob("*"):
             if path.is_file() and not path.is_symlink():
                 total += path.stat().st_size
     return len(releases), total
+
+
+def release_budget_admitted(count: int, size: int) -> bool:
+    return count <= (3 if sys.platform == "darwin" else 2) and size <= 512 * 1024**2
 
 
 def wait_codex_socket(config: dict, attempts: int = 30) -> bool:
@@ -435,7 +453,7 @@ def main() -> int:
 
     release_count, release_bytes = release_budget(fleet)
     print(f"release budget: directories={release_count} bytes={release_bytes}")
-    if release_count > 2 or release_bytes > 512 * 1024**2:
+    if not release_budget_admitted(release_count, release_bytes):
         print("release budget exceeded; nothing was switched")
         return 1
     previous_resolution = package_resolution(fleet / "releases" / arguments.previous_sha)

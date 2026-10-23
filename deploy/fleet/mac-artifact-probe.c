@@ -1,7 +1,8 @@
 /* Read-only bounded census. Emits numeric summaries, no paths.
  * Artifact mode retains physical FTS; mutable mode uses fd-relative/no-follow
  * traversal. Parent pins cwd, verifies root generations and enforces its wall.
- * No symlink traversal, hard-link deduplication, signal or mutation.
+ * Artifact hard links share one inode budget; every entry still counts.
+ * No symlink traversal, signal or mutation. Mutable mode counts each entry.
  */
 #include <sys/stat.h>
 #include <dirent.h>
@@ -120,6 +121,14 @@ int main(int argc, char **argv) {
     char path[] = "."; char *paths[] = {path, NULL};
     FTS *tree = fts_open(paths, FTS_PHYSICAL | FTS_NOCHDIR, NULL);
     if (!tree) return 66;
+    /* At most max_entries identities, with a bounded <= 1/2 load factor.
+     * Only regular hard links are deduplicated inside this census. A separate
+     * copy remains a separate inode and consumes the full byte budget.
+     */
+    struct seen_inode { dev_t dev; ino_t ino; int occupied; };
+    size_t capacity = (size_t)max_entries * 2 + 1;
+    struct seen_inode *seen = calloc(capacity, sizeof(*seen));
+    if (!seen) { fts_close(tree); return 66; }
     uint64_t bytes = 0, count = 0; int failure = 0;
     for (;;) {
         errno = 0; FTSENT *entry = fts_read(tree);
@@ -131,15 +140,22 @@ int main(int argc, char **argv) {
         }
         if (!entry->fts_statp || entry->fts_statp->st_size < 0) { failure = 66; break; }
         if (++count > max_entries) { failure = 67; break; }
-        /* Conservative apparent bytes: round each entry, including dirs and
-         * symlinks, upward. Count every hard-link entry as the previous du -l.
-         */
+        if (entry->fts_info == FTS_F && entry->fts_statp->st_nlink > 1) {
+            dev_t dev = entry->fts_statp->st_dev; ino_t ino = entry->fts_statp->st_ino;
+            size_t slot = ((uint64_t)ino ^ (uint64_t)dev * UINT64_C(11400714819323198485)) % capacity;
+            while (seen[slot].occupied && (seen[slot].dev != dev || seen[slot].ino != ino))
+                slot = (slot + 1) % capacity;
+            if (seen[slot].occupied) continue;
+            seen[slot] = (struct seen_inode){dev, ino, 1};
+        }
+        /* Round each distinct inode, directory and symlink upward. */
         uint64_t size = (uint64_t)entry->fts_statp->st_size;
         if (size > limit || size > UINT64_MAX - 1023) { failure = 68; break; }
         size = ((size + 1023) / 1024) * 1024;
         if (size > limit - bytes) { failure = 68; break; }
         bytes += size;
     }
+    free(seen);
     if (fts_close(tree) && !failure) failure = 66;
     if (failure || !count) return failure ? failure : 66;
     printf("BYTES %" PRIu64 " ENTRIES %" PRIu64 "\n", bytes, count);

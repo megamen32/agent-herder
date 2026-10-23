@@ -1045,7 +1045,7 @@ it('reads an exact native V2 linear turn packet without inventing a parentID',as
  const assistant={id:'assistant_linear',type:'assistant',model:{providerID:'omniroute',id:'zc/glm-5.3-flash'},time:{created:110,completed:120},finish:'error',error};
  const terminal={id:'idle_linear',type:'idle',outcome:'failed',time:{created:130},error};
  state.sessions[id]={id,title:'native linear',location:{directory:'/tmp/project'},outcome:'failed',messages:[user,assistant,terminal]};state.active[id]={type:'idle'};
- const server=v2Fixture(state);const client=new OpenCodeClient({baseUrl:await start(server)});
+ const server=v2Fixture(state);const baseUrl=await start(server);const client=new OpenCodeClient({baseUrl});
  try{
   await expect(client.getTerminalFailureContext(id)).resolves.toMatchObject({nativeTurnId:assistant.id,inputId:'stable_linear',statusCode:429});
   for(const messages of [
@@ -1095,6 +1095,19 @@ it('reads an exact native V2 linear turn packet without inventing a parentID',as
   delete state.sessions[id].tailEnvelope;
   delete state.sessions[id].emptyCursorTail;
   delete state.sessions[id].messageEnvelope;
+  const switched={id:'switch_linear',type:'model-switched',time:{created:140},previous:assistant.model,model:{providerID:'omniroute',id:'minimax/MiniMax-M3.1-Flash'}};
+  state.sessions[id].model=switched.model;
+  state.sessions[id].messages=[user,assistant,terminal,switched];
+  await expect(client.getTerminalFailureContext(id)).resolves.toMatchObject({inputId:'stable_linear',userMessageId:user.id});
+  const adapter=new OpenCodeAdapter({baseUrl});
+  expect((await adapter.getSession(id))?.meta?.nativeLastTurn).toMatchObject({inputId:'stable_linear',userMessageId:user.id});
+
+  for (const control of [{...switched,previous:{providerID:'foreign',id:'wrong'}},{...switched,model:{providerID:'foreign',id:'wrong'}},{...switched,tool_calls:[{id:'x'}]},{...switched,time:{created:90}},{...switched,sessionID:'foreign'},{...switched,model:{...switched.model,variant:{tool:'bad'}}}]) {
+    state.sessions[id].messages=[user,assistant,terminal,control];
+    expect(await client.getTerminalFailureContext(id)).toBeNull();
+  }
+  state.sessions[id].messages=[user,assistant,terminal,switched,{...switched,id:'second_switch'}];
+  expect(await client.getTerminalFailureContext(id)).toBeNull();
   state.sessions[id].messages=[{id:'old_user',type:'user'},{id:'old_assistant',type:'assistant'},{id:'old_idle',type:'idle',outcome:'succeeded',time:{created:90}},user,assistant,terminal];
   await expect(client.getTerminalFailureContext(id)).resolves.toMatchObject({nativeTurnId:assistant.id,inputId:'stable_linear'});
  }finally{server.close();}

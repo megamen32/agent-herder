@@ -39,3 +39,17 @@ it('MCP OpenCode stop persists the fence and blocks automatic tool delivery afte
   expect(await automaticDeliveryHeld(session as any,true,adapter)).toBe(false);
  }finally{vi.unstubAllEnvs();await rm(root,{recursive:true,force:true});}
 });
+
+it('reports OpenCode durable hold in native session and list readback after restart',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'opencode-stop-readback-'));
+ try{
+  const path=join(root,'stops.json');
+  const session={id:'own-readback',harness:'opencode',title:'own',cwd:root,status:'idle',lastActivity:new Date().toISOString(),needsPermission:false};
+  const adapter={type:'opencode',name:'fixture',listSessions:async()=>[session],getSession:async()=>session,cancelTurn:async()=>({ok:true})} as unknown as HarnessAdapter;
+  const create=()=>new SessionSupervisor(new Map([['opencode',adapter]]),{} as any,{get:async()=>undefined} as any,{humanStopStore:new HumanStopStore(path),sessionCacheTtlMs:0});
+  await create().cancelTurn('opencode',session.id);
+  const restarted=create();
+  expect((await restarted.getSession('opencode',session.id))?.meta?.humanStopHeld).toBe(true);
+  expect((await restarted.listSessions()).find(s=>s.id===session.id)?.meta?.humanStopHeld).toBe(true);
+ }finally{await rm(root,{recursive:true,force:true});}
+});

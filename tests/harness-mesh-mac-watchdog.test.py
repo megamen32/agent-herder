@@ -40,6 +40,71 @@ w = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(w)
 
 class MacWatchdogTests(unittest.TestCase):
+    def test_measured_m1_herder_rss_is_admitted_without_removing_memory_guards(self):
+        # Real 8040 exit sample: 279696 KiB, 37.76s, >21 GiB host available.
+        measured=self.sample(rss_kib=279696,host_available_kib=22817013)
+        policy=w.Policy('MacBookPro18,2')
+        anchor=w.soft_memory_anchor(measured['rss_kib'],0,None,policy.memory_soft_kib)
+        self.assertIsNone(anchor)
+        self.assertNotIn('memory_soft_sustained',w.violations(measured,w.Policy('MacBookPro18,2'),37.76,anchor))
+        high=self.sample(rss_kib=384*1024+1)
+        anchor=w.soft_memory_anchor(high['rss_kib'],0,None,policy.memory_soft_kib)
+        self.assertIn('memory_soft_sustained',w.violations(high,w.Policy('MacBookPro18,2'),30,anchor))
+        self.assertIn('memory_hard',w.violations(self.sample(rss_kib=512*1024+1),w.Policy('MacBookPro18,2'),0))
+        self.assertEqual(w.Policy('Macmini6,2').memory_soft_kib,256*1024)
+    def test_three_preserved_hardlinked_releases_fit_existing_byte_cap_and_fourth_refuses(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder);releases=base/'releases';releases.mkdir()
+            for name in ('one','two','three'):(releases/name).mkdir()
+            data=releases/'one'/'shared';data.write_bytes(b'abc')
+            for name in ('two','three'):(releases/name/'shared').hardlink_to(data)
+            self.assertEqual(w.release_usage(base),(3,3))
+            (releases/'four').mkdir()
+            with self.assertRaisesRegex(w.Refused,'release_budget_exceeded'):w.release_usage(base)
+
+    def test_three_releases_still_refuse_over_512mib_of_distinct_inode_bytes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder);releases=base/'releases';releases.mkdir()
+            for name in ('one','two','three'):(releases/name).mkdir()
+            # Sparse fixture: exercises metadata accounting without allocating 512 MiB.
+            data=releases/'one'/'large'
+            with data.open('wb') as handle:handle.truncate(512*w.MIB+1)
+            for name in ('two','three'):(releases/name/'large').hardlink_to(data)
+            with self.assertRaisesRegex(w.Refused,'storage_budget_exceeded'):w.release_usage(base)
+
+    def test_full_compiler_payload_of_553_files_is_admitted_and_every_hash_verified(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder);dist=base/'releases'/'one'/'dist';dist.mkdir(parents=True);(base/'current').symlink_to(dist.parent)
+            payload={}
+            for n in range(553):
+                name='index.js' if n==0 else f'm{n}.js'
+                (dist/name).write_bytes(b'compiled');payload[name]=hashlib.sha256(b'compiled').hexdigest()
+            path=dist/'fleet-deployment-manifest.json'
+            manifest={'source_sha':'a'*40,'source_dirty':False,'payload':payload}
+            path.write_text(json.dumps(manifest))
+            self.assertEqual(w.verify_manifest(base,'a'*40),dist/'index.js')
+            (dist/'m552.js').write_bytes(b'drift')
+            with self.assertRaisesRegex(w.Refused,'artifact_identity_mismatch'):w.verify_manifest(base,'a'*40)
+            payload.update({f'extra{n}.js':'b'*64 for n in range(472)})
+            path.write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(w.Refused,'artifact_identity_missing'):w.verify_manifest(base,'a'*40)
+
+    def test_artifact_hardlinks_are_deduplicated_without_changing_mutable_storage(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/'a').write_bytes(b'abc');(root/'b').hardlink_to(root/'a')
+            self.assertEqual(w.storage_bytes(root,10,artifact=True),3)
+            self.assertEqual(w.storage_bytes(root,10),6)
+
+    def test_full_source_pins_manifest_uses_1mib_cap_but_node_config_keeps_64k(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder);dist=base/'releases'/'one'/'dist';dist.mkdir(parents=True);(base/'current').symlink_to(dist.parent)
+            (dist/'index.js').write_bytes(b'compiled')
+            manifest={'source_sha':'a'*40,'source_dirty':False,'payload':{'index.js':hashlib.sha256(b'compiled').hexdigest()},'source_pins':{f'src/{n}.ts':'b'*64 for n in range(900)}}
+            path=dist/'fleet-deployment-manifest.json';path.write_text(json.dumps(manifest))
+            self.assertGreater(path.stat().st_size,65536)
+            self.assertEqual(w.verify_manifest(base,'a'*40),dist/'index.js')
+            with self.assertRaisesRegex(w.Refused,'config_size_limit'):w.json_file(path)
+
     def test_host_memory_quiet_query_preserves_percentage_without_vm_stats(self):
         # Use the kernel's read-only level directly, avoiding memory_pressure's
         # unrelated report path while preserving the same reserve calculation.
@@ -147,7 +212,7 @@ class MacWatchdogTests(unittest.TestCase):
         for field, value, reason in [('rss_kib',512*1024+1,'memory_hard'),
                 ('threads',129,'threads'),('processes',17,'processes'),
                 ('temp_bytes',128*1024**2+1,'temp'),('state_bytes',64*1024**2+1,'state'),
-                ('artifact_bytes',512*1024**2+1,'artifact'),('releases',3,'releases'),
+                ('artifact_bytes',512*1024**2+1,'artifact'),('releases',4,'releases'),
                 ('disk_free_bytes',2*1024**3-1,'host_disk')]:
             self.assertIn(reason, w.violations(self.sample(**{field:value}), p, 1))
         high = self.sample(cpu_percent=151, sustained_cpu_percent=101)
@@ -425,8 +490,10 @@ class MacWatchdogTests(unittest.TestCase):
                 now[0]=31;(releases/'two').mkdir()
                 self.assertEqual(w.release_usage(base,cache),(2,123));self.assertEqual(census.call_count,3)
                 (releases/'three').mkdir()
+                self.assertEqual(w.release_usage(base,cache),(3,123));self.assertEqual(census.call_count,4)
+                (releases/'four').mkdir()
                 with self.assertRaisesRegex(w.Refused,'release_budget_exceeded'):w.release_usage(base,cache)
-                self.assertEqual(census.call_count,3)
+                self.assertEqual(census.call_count,4)
 
     def test_artifact_generation_change_requires_fresh_success_never_old_usage(self):
         with tempfile.TemporaryDirectory() as folder:

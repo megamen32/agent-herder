@@ -184,7 +184,7 @@ export class FleetOwnerHttpTransport implements GptAdminTransport {
   });
  }
  readSession(target:string,harness:string,sessionId:string):Promise<unknown>{
-  if(!['codex','zcode','opencode'].includes(harness)||typeof sessionId!=='string'||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))return Promise.reject(new Error('owner_http_session_invalid'));
+  if(!['codex','zcode','opencode','minimax-code'].includes(harness)||typeof sessionId!=='string'||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))return Promise.reject(new Error('owner_http_session_invalid'));
   return this.operation(target,10000,async(state,signal)=>{
    await this.connect(state,signal);await this.info(state,signal);
    const path=`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(sessionId)}`;

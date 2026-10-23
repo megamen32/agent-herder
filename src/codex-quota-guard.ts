@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rmdir, writeFile, lstat } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { homedir, hostname } from "node:os";
 import { resolveAutopilotStateDir } from "./autopilot/state-dir.js";
 import { readCodexUsage } from "./web/quota-lens.js";
 
@@ -94,17 +95,45 @@ async function boundedRead(reader:QuotaReader):Promise<unknown> {
   try {return await Promise.race([reader(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error("quota_read_timeout")),6500);timer.unref?.();})]);}
   catch{return {error:"quota_source_unavailable"};} finally {if(timer)clearTimeout(timer);}
 }
-export async function checkCodexQuota(reader:QuotaReader=readCodexUsage,path=codexQuotaPolicyPath()) {
+const QUOTA_HISTORY_MAX_AGE_MS=5*60_000; // quota-lens sampler interval; no additional grace.
+const quotaHistoryPath=()=>process.env.QUOTA_LENS_HISTORY?.trim()||join(homedir(),".local","share","quota-lens","history.jsonl");
+/** History has no account ID; its local sampler provenance permits same-host fallback only. */
+async function recentLocalQuotaSnapshot(now:number):Promise<unknown|undefined>{
+  try{
+    const path=quotaHistoryPath(),info=await lstat(path);
+    if(!info.isFile()||info.isSymbolicLink()||info.size>1_048_576)return;
+    const lines=(await readFile(path,"utf8")).split("\n").filter(Boolean).slice(-64);
+    for(let i=lines.length-1;i>=0;i--){
+      let record:Record<string,unknown>;try{record=object(JSON.parse(lines[i]));}catch{continue;}
+      if(!finite(record.ts))continue;
+      const ts=record.ts>1e12?record.ts:record.ts*1000;
+      if(ts>now||now-ts>QUOTA_HISTORY_MAX_AGE_MS)continue;
+      if(typeof record.host==="string"&&record.host!==hostname())continue;
+      const q=object(record.quota),primary=q.primary??q.primary_used,secondary=q.secondary??q.secondary_used;
+      if(q.allowed!==true||q.limit_reached===true||(q.limit_reached!==undefined&&typeof q.limit_reached!=="boolean"))continue;
+      if(!finite(primary)||primary<0||primary>100)continue;
+      if(secondary!==undefined&&(!finite(secondary)||secondary<0||secondary>100))continue;
+      return {primary_window:{used_percent:primary,reset_at:q.primary_reset_at},...(secondary===undefined?{}:{secondary_window:{used_percent:secondary,reset_at:q.secondary_reset_at}}),allowed:true,limit_reached:false};
+    }
+  }catch{}
+  return undefined;
+}
+export async function checkCodexQuota(reader:QuotaReader=readCodexUsage,path=codexQuotaPolicyPath(),allowLocalHistory=true) {
   try {
     const loaded=await loadCodexQuotaPolicy(path);
     const raw=loaded.policy.enabled?await boundedRead(reader):{};
-    return {...loaded,decision:evaluateCodexQuota(raw,loaded.policy),lastDenial};
+    let decision=evaluateCodexQuota(raw,loaded.policy);
+    if(loaded.policy.enabled&&decision.reason==="quota_unknown"&&allowLocalHistory){
+      const snapshot=await recentLocalQuotaSnapshot(Date.now());
+      if(snapshot!==undefined){const fallback=evaluateCodexQuota(snapshot,loaded.policy);if(fallback.allowed)decision=fallback;}
+    }
+    return {...loaded,decision,lastDenial};
   } catch {
     return {policy:{...DEFAULT_CODEX_QUOTA_POLICY},revision:"",decision:{allowed:false,reason:"quota_policy_unavailable",remainingPercent:null,windows:[],checkedAt:new Date().toISOString()} as QuotaDecision,lastDenial};
   }
 }
-export async function assertCodexQuota(operation:string,reader:QuotaReader=readCodexUsage):Promise<void> {
-  const {decision}=await checkCodexQuota(reader);
+export async function assertCodexQuota(operation:string,reader:QuotaReader=readCodexUsage,allowLocalHistory=true):Promise<void> {
+  const {decision}=await checkCodexQuota(reader,codexQuotaPolicyPath(),allowLocalHistory);
   if(!decision.allowed){lastDenial={operation,decision};throw new CodexQuotaBlockedError(decision,operation);}
 }
 
@@ -131,5 +160,5 @@ export async function assertRemoteCodexAdmission(tool:string,args:Record<string,
       return {error:"recipient_codex_quota_unknown"};
     }
     return {error:"recipient_codex_quota_unknown"};
-  });
+  },false);
 }

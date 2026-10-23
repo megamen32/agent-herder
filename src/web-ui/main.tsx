@@ -154,7 +154,7 @@ const statusLabel = (status: string) => {
     case "needs_input": return "Ждёт ответа";
     case "waiting": return "Ожидает выбора";
     case "error": return "Ошибка";
-    case "idle": return "Ожидает запуска";
+    case "idle": return "Ожидает ввода";
     case "stopped":
     case "completed": return "Остановлена";
     case "archived": return "В архиве";

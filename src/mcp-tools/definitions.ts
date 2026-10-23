@@ -341,7 +341,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Session ID to inspect" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"], description: "Harness (optional)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"], description: "Harness (required for a remote host)" },
         hostId: { type: "string", description: "Machine the work runs on; defaults to localhost (this Agent Herder host)" },
       },
       required: ["sessionId"],

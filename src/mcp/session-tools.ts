@@ -214,7 +214,29 @@ export function registerSessionTools(server: McpServer, deps: {
     const result = await readModelQuotas();
     return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
   });
-  server.registerTool("agent_info", { description: "Get detailed info about a specific session. Always shows model and last message.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }), outputSchema: z.object({ session: sessionSchema.nullable() }) }, async (args) => {
+  server.registerTool("agent_info", { description: "Get detailed info about a specific session. Always shows model and last message. Select hostId and harness to read an existing session on another machine.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional() }), outputSchema: z.object({ session: sessionSchema.nullable() }) }, async (args) => {
+    const requestedHost = normalizeHostId(args.hostId, hostname());
+    if (requestedHost.toLowerCase() !== hostname().toLowerCase()) {
+      const peer = directFleetPeers.find(candidate => candidate.hostId.toLowerCase() === requestedHost.toLowerCase());
+      if (!peer || !args.harness) throw new Error("remote_session_host_and_harness_required");
+      const scope = await deps.integratorRuntime?.adapterForSession({ hostId: peer.hostId, harness: args.harness, nativeSessionId: args.sessionId });
+      if (scope?.kind === "deny") throw new Error("project_session_scope_unavailable");
+      // Scoped sessions must remain on their configured adapter; the ordinary
+      // native peer must never become a second way around that boundary.
+      if (scope?.kind === "scoped") {
+        const session = await agentInfoResult(new Map([[args.harness, scope.adapter]]), args);
+        return { content: [{ type: "text" as const, text: session ? formatSession(session, true) : `Session '${args.sessionId}' not found.` }], structuredContent: { session } };
+      }
+      // A personal Mac is selected explicitly here; this does not enroll it
+      // into the default mesh or grant any delivery/activation capability.
+      const transport = peerTransport ?? new FleetDirectTransport([peer]);
+      if (!transport.readSession) throw new Error("remote_session_read_unavailable");
+      const result = unwrapResult(await transport.readSession(`mcp:shell:${peer.hostId}:AgentHerder`, args.harness, args.sessionId));
+      const details = result.details as { session?: unknown } | undefined;
+      const parsed = sessionSchema.safeParse(details?.session);
+      if (result.hostId !== peer.hostId || !parsed.success || parsed.data.hostId !== peer.hostId || parsed.data.id !== args.sessionId || parsed.data.harness !== args.harness) throw new Error("remote_session_identity_mismatch");
+      return { content: [{ type: "text" as const, text: formatSession(parsed.data, true) }], structuredContent: { session: parsed.data } };
+    }
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
     if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
