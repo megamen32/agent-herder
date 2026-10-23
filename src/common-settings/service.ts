@@ -165,6 +165,10 @@ export async function readCommonSettingsFleet(input: {
  * The node pulls the document over the transport of the fleet and applies it.
  * A node that holds the wanted revision does nothing: the round of taking is
  * cheap and it leaves no trace when nothing moved.
+ *
+ * The document travels with the identity of the owner: its revision and the
+ * time of its assembly. The node therefore keeps the revision of the owner it
+ * took and never a revision of its own files.
  */
 export async function catchUpCommonSettings(input: {
   transport: CommonSettingsTransport;

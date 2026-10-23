@@ -113,7 +113,8 @@ describe("the model rules of the projects screen", () => {
 
   it("says that one model has two spellings and asks for the route", () => {
     expect(page).toContain("omniroute/minimax-combo-m3.1");
-    expect(page).toContain("omniroute/minimax/MiniMax-M3.1-Flash");
+    // The help names no internal id of the catalog: only the way to write a route.
+    expect(page).not.toContain("omniroute/minimax/MiniMax-M3.1-Flash");
     expect(page).toContain("одна и та же модель");
     expect(page).toContain("Пишите маршрут");
   });

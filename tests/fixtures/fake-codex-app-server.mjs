@@ -1,6 +1,20 @@
 import readline from "node:readline";
 import { appendFileSync } from "node:fs";
 
+/**
+ * The handles of the fixture travel in argv.
+ *
+ * The seam of the environment cuts every name that the allowlist of the
+ * product does not name, so the fixture cannot read its handles from the
+ * environment of the herder any more: the allowlist of the product must not
+ * carry the names of a test.
+ */
+function handle(name) {
+  const prefix = `--codex-app-server-${name}=`;
+  const found = process.argv.slice(2).find((arg) => arg.startsWith(prefix));
+  return found === undefined ? undefined : found.slice(prefix.length);
+}
+
 const thread = (id = "thread-1", overrides = {}) => ({
   id,
   sessionId: id,
@@ -17,20 +31,22 @@ const thread = (id = "thread-1", overrides = {}) => ({
 
 let activeTurnId = null;
 let nextId = 0;
-const configuredThreadCount = Math.max(1, Number(process.env.CODEX_APP_SERVER_THREAD_COUNT || 1));
+const configuredThreadCount = Math.max(1, Number(handle("thread-count") || 1));
 const threads = Array.from({ length: configuredThreadCount }, (_, index) => thread(index === 0 ? "thread-1" : `thread-${index + 1}`));
 const serverRequest = {
   id: 77,
   method: "tools/list",
   params: {},
 };
-const logPath = process.env.CODEX_APP_SERVER_LOG;
-const forcedStartedTurnId = process.env.CODEX_APP_SERVER_TURN_STARTED_ID;
-const forcedCompletedTurnId = process.env.CODEX_APP_SERVER_TURN_COMPLETED_ID;
-const externalRunningThread = process.env.CODEX_APP_SERVER_EXTERNAL_RUNNING_THREAD;
-const persistedFullAccessThread = process.env.CODEX_APP_SERVER_FULL_ACCESS_THREAD;
-const numericTimestamps = process.env.CODEX_APP_SERVER_NUMERIC_TIMESTAMPS === "1";
-const failListCursor = process.env.CODEX_APP_SERVER_FAIL_LIST_CURSOR;
+const logPath = handle("log");
+const forcedStartedTurnId = handle("turn-started-id");
+const forcedCompletedTurnId = handle("turn-completed-id");
+const externalRunningThread = handle("external-running-thread");
+const persistedFullAccessThread = handle("full-access-thread");
+const numericTimestamps = handle("numeric-timestamps") === "1";
+const failListCursor = handle("fail-list-cursor");
+const threadStatus = handle("thread-status");
+const permissionWait = handle("permission-wait") === "1";
 
 if (numericTimestamps) {
   threads[0].createdAt = Date.parse(threads[0].createdAt);
@@ -74,9 +90,9 @@ rl.on("line", (line) => {
   }
   if (request.method === "thread/read") {
     const found = threads.find((item) => item.id === request.params?.threadId);
-    const status = process.env.CODEX_APP_SERVER_THREAD_STATUS;
+    const status = threadStatus;
     const statusValue = status
-      ? { type: status, ...(process.env.CODEX_APP_SERVER_PERMISSION_WAIT === "1" ? { activeFlags: ["waitingOnApproval"] } : {}) }
+      ? { type: status, ...(permissionWait ? { activeFlags: ["waitingOnApproval"] } : {}) }
       : found?.status;
     return reply(request.id, found ? { thread: { ...found, ...(statusValue ? { status: statusValue } : {}) } } : {});
   }
@@ -114,7 +130,7 @@ rl.on("line", (line) => {
     return reply(request.id, {
       approvalPolicy: request.params?.approvalPolicy || "never",
       cwd: "/tmp/codex-fixture",
-      model: request.params.model || "gpt-test",
+      model: request.params?.model || "gpt-test",
       modelProvider: "openai",
       sandbox: fullAccess ? { type: "dangerFullAccess" } : "workspace-write",
       thread: thread(request.params.threadId),
@@ -125,7 +141,7 @@ rl.on("line", (line) => {
     return reply(request.id, {
       approvalPolicy: "never",
       cwd: "/tmp/codex-fixture",
-      model: request.params.model || "gpt-test",
+      model: "gpt-test",
       modelProvider: "openai",
       sandbox: "workspace-write",
       thread: thread(request.params.threadId),
