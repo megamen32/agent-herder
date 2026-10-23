@@ -98,3 +98,21 @@ export function createSessionWorkspaceOwnerUpdater(deps:{store:SessionWorkspaceS
     const active=new Set(sessions.map(sessionWorkspaceKey));for(const key of attempted.keys())if(!active.has(key))attempted.delete(key);
   };
 }
+
+/** Native reader for the owner updater. The work-host resolver must come from
+ * explicit per-session declarations or a verified execution transport; it must
+ * not default to the desktop/runtime hostname. */
+export function createMavisWorkspaceEvidenceReader(deps:{
+  control:{getMessages:(id:string,options:{limit:number})=>Promise<{ok:boolean;body:unknown}>};
+  workHostForSession:(session:WorkspaceOwnerSession)=>Promise<string|undefined>;
+}) {
+  return async(session:WorkspaceOwnerSession):Promise<NativeWorkspaceEvidence[]>=>{
+    if(session.harness!=="minimax-code")return [];
+    const workHostId=await deps.workHostForSession(session);if(!workHostId)return [];
+    const result=await deps.control.getMessages(session.nativeSessionId,{limit:40});
+    if(!result.ok)throw new Error("Native workspace evidence unavailable");
+    const body=result.body as {messages?:unknown};
+    if(!body||!Array.isArray(body.messages))throw new Error("Malformed native workspace evidence");
+    return workspaceEvidenceFromNativeMessages({...session,workHostId,messages:body.messages.filter((m):m is Record<string,unknown>=>!!m&&typeof m==="object")});
+  };
+}
