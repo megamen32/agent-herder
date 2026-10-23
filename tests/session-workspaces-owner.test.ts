@@ -39,3 +39,11 @@ const d=await mkdtemp(join(tmpdir(),"workspace-transport-"));try{
  const update=createSessionWorkspaceOwnerUpdater({store,readEvidence,now:()=>clock});await update([{...id,lastActivity:"one"}]);expect((await store.read(id))?.workspaces.map(w=>w.absolutePath)).toEqual(["/repo/a"]);
  phase=1;clock+=61_000;await update([{...id,lastActivity:"two"}]);expect((await store.read(id))?.workspaces.map(w=>w.absolutePath)).toEqual(["/repo/a","/repo/b"]);
 }finally{await rm(d,{recursive:true,force:true});}});
+it("continues other identities after reader failure and retries unchanged failed identity after cooldown",async()=>{
+const d=await mkdtemp(join(tmpdir(),"workspace-retry-"));try{
+ const store=new SessionWorkspaceStore(join(d,"store.json"));let clock=Date.parse("2026-10-23T18:00:00Z"),failed=true;
+ const a={runtimeHostId:"mac",harness:"minimax-code",nativeSessionId:"a",lastActivity:"same"},b={...a,nativeSessionId:"b"};
+ const readEvidence=vi.fn(async(session:typeof a)=>{if(session.nativeSessionId==="a"&&failed){failed=false;throw new Error("native temporarily unavailable");}return [{...session,hostId:"server100",absolutePath:"/repo/"+session.nativeSessionId,observedAt:"2026-10-23T17:00:00Z",evidenceRef:"native-proof",kind:"native_tool_execution" as const}];});
+ const update=createSessionWorkspaceOwnerUpdater({store,readEvidence,now:()=>clock});await expect(update([a,b])).resolves.toBeUndefined();expect(await store.read(a)).toBeNull();expect((await store.read(b))?.workspaces[0].absolutePath).toBe("/repo/b");
+ await update([a,b]);expect(readEvidence).toHaveBeenCalledTimes(2);clock+=61_000;await update([a,b]);expect(readEvidence).toHaveBeenCalledTimes(3);expect((await store.read(a))?.workspaces[0].absolutePath).toBe("/repo/a");
+}finally{await rm(d,{recursive:true,force:true});}});

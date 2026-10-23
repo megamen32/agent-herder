@@ -82,15 +82,21 @@ export interface WorkspaceOwnerSession extends SessionWorkspaceIdentity { parent
  * most once per changed/unknown session per minute. Inventory queries do no I/O.
  * readEvidence must use explicit/native execution contexts, never launch cwd. */
 export function createSessionWorkspaceOwnerUpdater(deps:{store:SessionWorkspaceStore;readEvidence:(session:WorkspaceOwnerSession)=>Promise<NativeWorkspaceEvidence[]>;now?:()=>number}) {
-  const attempted=new Map<string,{activity:string;at:number}>();
+  const attempted=new Map<string,{activity:string;at:number;success:boolean}>();
   const now=deps.now??Date.now;
   return async(sessions:WorkspaceOwnerSession[]):Promise<void>=>{
-    const records=await deps.store.readMany(sessions);
     for(const session of sessions){
-      const key=sessionWorkspaceKey(session),prior=attempted.get(key),record=records.get(key);
-      if(prior && (prior.activity===session.lastActivity || now()-prior.at<60_000))continue;
-      attempted.set(key,{activity:session.lastActivity,at:now()});
-      await backfillSessionWorkspaces(deps.store,await deps.readEvidence(session));
+      const key=sessionWorkspaceKey(session),prior=attempted.get(key);
+      if(prior && ((prior.success && prior.activity===session.lastActivity) || now()-prior.at<60_000))continue;
+      const attempt={activity:session.lastActivity,at:now(),success:false};
+      attempted.set(key,attempt);
+      try {
+        await backfillSessionWorkspaces(deps.store,await deps.readEvidence(session));
+        attempt.success=true;
+      } catch {
+        // A failed native source leaves its durable evidence unchanged and
+        // retries after cooldown, while independent identities still progress.
+      }
     }
     // Parent locations come from an exact native parent relationship and retain
     // that provenance. They never come from a matching title or GUI workspace.
