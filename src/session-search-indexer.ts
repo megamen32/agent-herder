@@ -3,8 +3,8 @@ import {SessionSearchIndex,type SearchSessionInput,type SearchSourceReceipt} fro
 
 export type SessionSearchScanner=(options:{signal?:AbortSignal;onStatus?:(status:SearchSourceReceipt)=>void})=>AsyncIterable<SearchSessionInput>;
 /** Only the persistent owner scans. MCP and API searches never invoke this. */
-export async function startSessionSearchIndexer(scanner:SessionSearchScanner,options:{path?:string;intervalMs?:number}={}){
- const index=new SessionSearchIndex(options.path),token=randomUUID();
+export async function startSessionSearchIndexer(scanner:SessionSearchScanner,options:{path?:string;intervalMs?:number;ownerToken?:string}={}){
+ const index=new SessionSearchIndex(options.path),token=options.ownerToken??randomUUID();
  if(!index.claimOwner(token)){index.close();return undefined;}
  index.pruneInterruptedGenerations();
  const abort=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;let closed=false;
