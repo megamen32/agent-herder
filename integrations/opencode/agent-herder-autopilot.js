@@ -9,7 +9,113 @@ const restrictedProjectRoots = new Set([
   "/home/roomhacker/PycharmProjects/TelegramAuto",
   "/home/roomhacker/PycharmProjects/video_watching",
 ])
-const restrictedModelToken = /(^|[^a-z0-9])(codex|claude|anthropic)([^a-z0-9]|$)/i
+// >>> agent-herder:leaf-launch-policy (generated; do not edit) >>>
+/**
+ * The rule of the owner about one leaf of a route — ONE place.
+ *
+ * A leaf is one route as the provider sees it: the provider id and the
+ * provider-facing model id. The rule says which leaves may be launched, and
+ * every consumer of the product asks this module:
+ *
+ * - the launcher (`src/autopilot/unfinished-session-launcher.ts`) admits only
+ *   the leaves of the allowed families;
+ * - the guard of the OpenCode integration
+ *   (`integrations/opencode/agent-herder-autopilot.js`) answers with the same
+ *   rule, so the panel never promises a route the guard revokes;
+ * - the resume client (`packages/agent-resume/src/harness/opencode/client.ts`)
+ *   answers with the same rule again.
+ *
+ * The rule is data, so the consumers that cannot import this module (the guard
+ * is one file without a bundler, the shared core is a separate package) get a
+ * generated copy of it. `scripts/generate-leaf-launch-policy.mjs` writes those
+ * copies and `tests/leaf-launch-policy-single-source.test.ts` fails when they
+ * drift apart, so the rule cannot be described twice by accident.
+ */
+/**
+ * The rule itself.
+ *
+ * The closed providers are refused whatever the owner switches: the switch of
+ * the prohibitions relaxes the routes that are merely unknown, never the
+ * providers the owner closed. The allowed families are the routes the
+ * launcher admits.
+ */
+const LEAF_LAUNCH_POLICY = {
+    version: 1,
+    closedProviderPattern: "codex|claude|anthropic",
+    allowedFamilies: [
+        { providers: ["minimax", "minimax-code", "minimax-coding-plan"], modelPattern: "minimax|mmcode" },
+        { providers: ["glm", "zai", "zai-coding-plan", "zhipu"], modelPattern: "(^|[/_-])glm([-_/]|$)" },
+    ],
+};
+/**
+ * How the refusals of the rule are announced.
+ *
+ * The texts live here because two consumers must say the same words: the
+ * guard of the OpenCode integration throws them, and the resume client
+ * recognizes the refusal of the model request by its exact text.
+ */
+const LEAF_LAUNCH_REFUSAL_MESSAGES = {
+    modelRequest: {
+        closedProvider: "Agent Herder blocked this model request: the provider of this route is closed by the rule of the owner.",
+        routeForbidden: "Agent Herder blocked this model request: the complete native provider route is forbidden or could not be verified for this project.",
+    },
+    subagent: {
+        closedProvider: "Agent Herder blocked this child: the provider of this route is closed by the rule of the owner.",
+        routeForbidden: "Agent Herder blocked this child: its complete native provider route is forbidden or could not be verified for this project.",
+    },
+};
+/** The pattern of the closed providers, compiled once. */
+const CLOSED_PROVIDER_PATTERN = new RegExp(LEAF_LAUNCH_POLICY.closedProviderPattern, "u");
+/** The patterns of the allowed families, compiled once. */
+const ALLOWED_FAMILY_PATTERNS = LEAF_LAUNCH_POLICY.allowedFamilies.map((family) => new RegExp(family.modelPattern, "u"));
+/** The provider id and the model id of a leaf, as the rule reads them. */
+function normalizedLeaf(leaf) {
+    return {
+        providerId: leaf.providerId.trim().toLocaleLowerCase("en-US"),
+        modelId: leaf.modelId.trim().toLocaleLowerCase("en-US"),
+    };
+}
+/**
+ * True when the route leads to a provider the owner closed.
+ *
+ * A closed provider is refused always: no switch of the owner opens it.
+ */
+function isClosedProviderLeaf(leaf) {
+    const { providerId, modelId } = normalizedLeaf(leaf);
+    if (!providerId || !modelId)
+        return false;
+    return CLOSED_PROVIDER_PATTERN.test(`${providerId}/${modelId}`);
+}
+/**
+ * True when the rule of the owner lets the launcher run this leaf.
+ *
+ * This is the rule of the launcher: the leaf must be of an allowed family, and
+ * a closed provider is never of one.
+ */
+function isLeafAllowedByOwnerRule(leaf) {
+    const { providerId, modelId } = normalizedLeaf(leaf);
+    if (!providerId || !modelId)
+        return false;
+    if (isClosedProviderLeaf(leaf))
+        return false;
+    return LEAF_LAUNCH_POLICY.allowedFamilies.some((family, index) => family.providers.includes(providerId) && ALLOWED_FAMILY_PATTERNS[index].test(modelId));
+}
+/**
+ * The answer of the rule about one leaf, with the switch of the owner.
+ *
+ * The provider the owner closed is refused always. The leaf of an allowed
+ * family is allowed. Every other leaf is refused while the prohibitions are
+ * on, and allowed when the owner switches them off — the switch relaxes the
+ * routes the rule does not know, never the providers the owner closed.
+ */
+function leafLaunchVerdict(leaf, options) {
+    if (isClosedProviderLeaf(leaf))
+        return "denied";
+    if (isLeafAllowedByOwnerRule(leaf))
+        return "allowed";
+    return options.prohibitionsEnabled ? "denied" : "allowed";
+}
+// <<< agent-herder:leaf-launch-policy <<<
 const MAX_NATIVE_SESSION_DEPTH = 64
 
 async function coordinationFetch(path, options = {}, observe) {
@@ -157,8 +263,18 @@ function nativeModelRef(value) {
     ? { providerID, id } : undefined
 }
 
-function hasRestrictedProviderLeaf(leaves) {
-  return leaves.some(leaf => restrictedModelToken.test(`${leaf.providerId}/${leaf.modelId}`))
+/**
+ * Whether the route of these leaves may run, and why it may not.
+ *
+ * The rule of the owner is one rule for the whole product: the providers the
+ * owner closed are refused always, a leaf of an allowed family is allowed, and
+ * every other leaf is refused while the prohibitions are on. The switch of the
+ * owner is read only when the rule actually needs it, exactly as before.
+ */
+async function leafRouteDenial(leaves) {
+  if (leaves.some(isClosedProviderLeaf)) return "closed-provider"
+  if (leaves.every(isLeafAllowedByOwnerRule)) return undefined
+  return (await prohibitionsEnabledByOwner()) ? "not-allowed" : undefined
 }
 
 const PLUGIN_BUILD_ID = "native-route-proof-v1"
@@ -233,16 +349,20 @@ async function enforceRestrictedSubagent(ctx, event) {
     const model = configured?.model ?? parentSession?.model
     const leaves = await resolveNativeModelLeaves(ctx, model)
     if (leaves?.length) {
-      if (hasRestrictedProviderLeaf(leaves)) {
+      const denial = await leafRouteDenial(leaves)
+      if (denial === "closed-provider") {
         event.effect = "deny"
-        event.message = "Agent Herder blocked this child: the provider of this route is closed by the rule of the owner."
+        event.message = LEAF_LAUNCH_REFUSAL_MESSAGES.subagent.closedProvider
+      } else if (denial === "not-allowed") {
+        event.effect = "deny"
+        event.message = LEAF_LAUNCH_REFUSAL_MESSAGES.subagent.routeForbidden
       }
       return
     }
   } catch { /* the route could not be read at all */ }
   if (!(await prohibitionsEnabledByOwner())) return
   event.effect = "deny"
-  event.message = "Agent Herder blocked this child: its complete native provider route is forbidden or could not be verified for this project."
+  event.message = LEAF_LAUNCH_REFUSAL_MESSAGES.subagent.routeForbidden
 }
 
 async function enforceRestrictedModelRequest(ctx, event) {
@@ -253,9 +373,14 @@ async function enforceRestrictedModelRequest(ctx, event) {
   const leaves = await resolveNativeModelLeaves(ctx, event.model)
   if (leaves?.length) {
     // The provider of the route is known. The providers the owner closed stay
-    // closed whatever the switch says.
-    if (hasRestrictedProviderLeaf(leaves)) {
-      throw new Error("Agent Herder blocked this model request: the provider of this route is closed by the rule of the owner.")
+    // closed whatever the switch says, and a route outside the allowed
+    // families follows the switch of the owner.
+    const denial = await leafRouteDenial(leaves)
+    if (denial === "closed-provider") {
+      throw new Error(LEAF_LAUNCH_REFUSAL_MESSAGES.modelRequest.closedProvider)
+    }
+    if (denial === "not-allowed") {
+      throw new Error(LEAF_LAUNCH_REFUSAL_MESSAGES.modelRequest.routeForbidden)
     }
     return
   }
@@ -263,7 +388,7 @@ async function enforceRestrictedModelRequest(ctx, event) {
   // an unverified route is refused; the owner may switch them off from the
   // panel, and then the work of the session continues.
   if (!(await prohibitionsEnabledByOwner())) return
-  throw new Error("Agent Herder blocked this model request: the complete native provider route is forbidden or could not be verified for this project.")
+  throw new Error(LEAF_LAUNCH_REFUSAL_MESSAGES.modelRequest.routeForbidden)
 }
 
 async function installRestrictedProviderGuards(ctx) {
