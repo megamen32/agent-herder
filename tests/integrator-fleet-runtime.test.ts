@@ -334,6 +334,49 @@ describe("integrator Fleet runtime", () => {
     }
   });
 
+  it("carries the harness and the model of the selected route in the readiness snapshot", async () => {
+    const f = await setup();
+    const model = "anthropic/claude-sonnet-4-5";
+    await f.policyStore.replace({
+      version: 1, allowedHarnesses: ["codex", "opencode"], preferredHarness: "codex",
+      models: { codex: CODEX_PROJECT_MODEL_ID, opencode: model },
+      projectRoutes: {
+        [f.projectRoot]: { harnesses: ["opencode"], aliases: ["project-alpha"], models: { opencode: model } },
+        [f.integratorRoot]: { harnesses: ["codex"], aliases: ["Олег и Никита"], models: { codex: CODEX_PROJECT_MODEL_ID }, nativeWebSearch: "live" },
+      },
+    });
+    const fake = fakeScopedFactory(f.bindingStore, f.nativeHome);
+    const runtime = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
+      codexDataHome: f.nativeHome, createScopedAdapter: fake.factory, createHarnessAdapter: vi.fn() as any });
+    // The opencode route reports its own harness and its own model: no codex constant.
+    const opencode = await runtime.readiness("project-alpha");
+    expect(opencode).toMatchObject({ state: "ready", harness: "opencode", model, projectRoot: f.projectRoot,
+      requiredTools: [], availableTools: [], resourceReady: true });
+    // The codex route keeps the codex snapshot: the same harness, the same model, the same probe.
+    const codex = await runtime.readiness("Олег и Никита");
+    expect(codex).toMatchObject({ state: "ready", harness: "codex", model: CODEX_PROJECT_MODEL_ID,
+      requiredTools: ["web_search"], availableTools: ["web_search"], availableModels: [CODEX_PROJECT_MODEL_ID] });
+    // A project without a route is named with the reason of the resolver.
+    const missing = await runtime.readiness("project-unknown");
+    expect(missing).toMatchObject({ state: "not_ready", reason: "project_route_unconfigured" });
+    // The node info answer carries the readiness of that same route.
+    const server = new McpServer({ name: "local-herder", version: "test" });
+    registerFleetNodeTools(server, { adapters: new Map(), integratorRuntime: runtime, ownerJournal: { once: vi.fn() } as any });
+    const client = new Client({ name: "fleet-test", version: "test" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const info = await client.callTool({ name: "fleet_node_info", arguments: { project: "project-alpha" } });
+      expect(info.structuredContent, JSON.stringify(info)).toMatchObject({ projectReadinessContract: "integrator-host-readiness-v1",
+        projectRoute: { state: "available", harness: "opencode", model }, projectReadiness: { harness: "opencode", model } });
+    } finally {
+      await client.close();
+      await server.close();
+    }
+    await runtime.dispose();
+  });
+
   it("creates for the selected harness: the reservation carries the harness and the adapter writes the created receipt", async () => {
     const f = await setup();
     const model = "anthropic/claude-sonnet-4-5";

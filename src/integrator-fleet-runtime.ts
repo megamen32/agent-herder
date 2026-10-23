@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { hostname, homedir } from "node:os";
 import { resolve } from "node:path";
 import { realpath, stat } from "node:fs/promises";
@@ -212,17 +213,28 @@ export class IntegratorFleetRuntime {
     return operation;
   }
 
-  /** Project-specific host capability readback. It starts only the scoped app-server and disposes it. */
+  /**
+   * Project-specific host capability readback of the route the project designates. The snapshot
+   * carries the harness and the model of that route, so a consumer never has to assume a codex
+   * constant. A codex route keeps its scoped app-server probe; a project without a route is named
+   * with the reason of the resolver.
+   */
   async readiness(projectId: string): Promise<IntegratorProjectReadiness> {
-    const notReady = (reason: string): IntegratorProjectReadiness => ({
+    const notReady = (reason: string, harness: FleetHarness = "codex", model: string = CODEX_PROJECT_MODEL_ID): IntegratorProjectReadiness => ({
       state: "not_ready", reason, projectId, projectRoot: "", rootIdentity: "", policyRevision: "",
-      hostId: this.hostId, harness: "codex", harnessVersion: "", model: CODEX_PROJECT_MODEL_ID,
+      hostId: this.hostId, harness, harnessVersion: "", model,
       requiredTools: [], availableTools: [], availableModels: [], resourceReady: false,
       runtimeInstanceId: "", cwd: "", observedAtMs: Date.now(),
       pathResolution: { requestedCwd: "", canonicalCwd: "", rootPath: "", contained: false, identityMatches: false },
     });
-    const configured = await this.resolveConfiguredProject(projectId, "codex");
-    if (!configured.ok) return notReady(configured.reason);
+    const matched = await this.matchRoute(projectId);
+    if (!matched.ok) return notReady(matched.reason);
+    const designated = matched.match.route.harnesses[0];
+    const harness = designated && (fleetHarnesses as readonly string[]).includes(designated) ? designated as FleetHarness : undefined;
+    if (!harness) return notReady("project_route_harness_unavailable");
+    const configured = await this.resolveConfiguredProject(projectId, harness, matched);
+    if (!configured.ok) return notReady(configured.reason, harness, this.routeModel(matched.match, harness));
+    if (harness !== "codex") return await this.routeReadiness(projectId, configured.project);
     let adapter: CodexAppServerAdapter | undefined;
     try {
       const policy = await this.createPolicy({
@@ -265,6 +277,39 @@ export class IntegratorFleetRuntime {
     } finally {
       await adapter?.dispose().catch(() => undefined);
     }
+  }
+
+  /** The model the route designates for one harness. It is the model a consumer must request. */
+  private routeModel(match: RouteMatch, harness: FleetHarness): string {
+    return match.route.models?.[harness] ?? match.document.policy.models[harness] ?? "";
+  }
+
+  /**
+   * The snapshot of a route whose harness has no scoped host probe in this runtime. It carries the
+   * harness and the model of that route and the identity of the project root the herder observed,
+   * so a consumer can build its binding from the route instead of from a codex constant. The host
+   * capability of such a harness is not probed here, so a route that needs a native tool stays not
+   * ready and names that reason.
+   */
+  private async routeReadiness(projectId: string, project: ConfiguredProject): Promise<IntegratorProjectReadiness> {
+    const root = await realpath(project.rootPath);
+    const rootStat = await stat(root);
+    const rootIdentity = JSON.stringify([root, rootStat.dev, rootStat.ino]);
+    const requiredTools = project.nativeWebSearch === "live" ? ["web_search"] : [];
+    const availableTools: string[] = [];
+    const rootAvailable = root === project.rootPath && rootStat.isDirectory();
+    const resourceReady = rootAvailable && requiredTools.length === 0;
+    return {
+      state: resourceReady ? "ready" : "not_ready",
+      ...(resourceReady ? {} : { reason: rootAvailable ? "project_host_capability_unprobed" : "project_root_unavailable" }),
+      projectId, projectRoot: root, rootIdentity, policyRevision: project.etag,
+      hostId: this.hostId, harness: project.harness, harnessVersion: "",
+      model: project.model, requiredTools, availableTools,
+      availableModels: [project.model], resourceReady,
+      runtimeInstanceId: randomUUID(), cwd: root, observedAtMs: Date.now(),
+      pathResolution: { requestedCwd: root, canonicalCwd: root, rootPath: root,
+        contained: rootAvailable, identityMatches: true },
+    };
   }
 
   async validateReadiness(input: IntegratorFleetCreateInput): Promise<boolean> {
