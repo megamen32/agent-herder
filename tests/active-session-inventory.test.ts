@@ -31,3 +31,14 @@ it('work host filter remains partial when unassigned sessions could match',()=>{
  const out=filterActiveInventory({sessions:[{id:'a',runtimeHostId:'m1',harness:'codex',title:'a',activity:{state:'active',observedAt:'x',evidence:'native'},workspaces:[]}],hosts:[],partial:false},{hostId:'server100'});
  expect(out.total).toBe(0);expect(out.partial).toBe(true);expect(out.activeCountExact).toBeNull();expect(out.unassignedWorkspaceCount).toBe(1);
 });
+import {startActiveInventoryOwner} from '../src/active-session-inventory.js';
+import type {HarnessAdapter,AgentSession} from '../src/types/index.js';
+it('publishes a fresh provider while another provider remains unresolved',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'active-isolation-'));const path=join(dir,'index.json');const at=new Date().toISOString();let release!:()=>void;
+ const session={id:'native-fast',harness:'minimax-code',status:'running',title:'fast',cwd:'',hostId:'owner',lastActivity:at,needsPermission:false,meta:{activityObservedAt:at,activityExpiresAt:new Date(Date.now()+30000).toISOString()}} as AgentSession;
+ const fast={type:'minimax-code',listActiveSessions:async()=>[session],getActiveSessionSnapshotReceipt:()=>({exhaustive:true,observedAt:at})};
+ const slow={type:'zcode',listActiveSessions:()=>new Promise<AgentSession[]>(resolve=>{release=()=>resolve([]);})};
+ const stop=startActiveInventoryOwner(()=>({sessions:[],observedAt:at,warming:false}),new Map([['minimax-code',fast],['zcode',slow]]) as unknown as Map<string,HarnessAdapter>,{path,hostId:'owner'});
+ try{let out;for(let i=0;i<40;i++){out=await readActiveInventory({path,hostId:'owner'});if(out.sessions.length)break;await new Promise(r=>setTimeout(r,25));}expect(out?.sessions[0]?.id).toBe('native-fast');expect(out?.partial).toBe(true);}
+ finally{stop();release();}
+});
