@@ -1364,6 +1364,11 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   getActiveSessionSnapshotReceipt(): SessionSnapshotReceipt | null { return this.activeSessionReceipt; }
 
+  /** V4 native queue admission; this does not promise current-turn CAS. */
+  getOfficialMeshAdmission():"official-ws-v4"|undefined {
+    return this.officialWebSocketSelected&&this.officialRunning&&Date.parse(this.officialRunning.expiresAt)>Date.now()?'official-ws-v4':undefined;
+  }
+
   private officialOverlay(sessions:AgentSession[]):AgentSession[]{
     const snapshot=this.officialRunning;if(!snapshot)return sessions;
     const rows=new Map(sessions.map(s=>[s.id,s]));

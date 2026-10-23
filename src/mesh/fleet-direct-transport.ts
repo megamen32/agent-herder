@@ -62,6 +62,15 @@ def rpc(method,params):
   value=json.loads(buf)
   if value.get('id')!=identity:raise RuntimeError('direct_rpc_identity_mismatch')
   return value
+# Exact read-only inventory path: reuse the existing owner API and materialized
+# backend, avoiding per-query MCP initialization and native-provider discovery.
+if r['method']=='tools/call' and r['params']=={'name':'list_active_sessions_local','arguments':{}}:
+ path='/api/sessions/active?runtimeHostId='+urllib.parse.quote(r['hostId'],safe='')
+ with opener.open(url[:-4]+path,timeout=max(.001,deadline-time.monotonic())) as response:body=response.read(1048577)
+ if len(body)>1048576:raise RuntimeError('direct_response_limit')
+ value=json.loads(body)
+ if len(value.get('hosts',[]))!=1 or value['hosts'][0].get('hostId')!=r['hostId']:raise RuntimeError('native_owner_identity_mismatch')
+ print(json.dumps(value));raise SystemExit(0)
 if r['method']=='herder_runtime_probe':
  # Answer whether this node runs a herder runtime at all. A node that answers
  # and is not one cannot initiate a launch, so it needs no copy of the owner
