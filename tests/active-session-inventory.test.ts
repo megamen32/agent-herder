@@ -48,3 +48,11 @@ it('does not overlap provider reads after an observation deadline',async()=>{
  const stop=startActiveInventoryOwner(()=>({sessions:[],observedAt:new Date().toISOString(),warming:false}),new Map([['minimax-code',adapter]])as unknown as Map<string,HarnessAdapter>,{path,hostId:'owner',intervalMs:5,nativeDeadlineMs:25});
  try{await new Promise(r=>setTimeout(r,100));expect(calls).toBe(1);}finally{stop();}
 });
+import {officialNativeWorkspace} from '../src/active-session-inventory.js';
+it('ingests only fresh exact local official ZCode execution workspaces, never generic launch cwd',()=>{
+ const at=new Date().toISOString();const s={id:'child',harness:'zcode',hostId:'owner',cwd:'/code/actual',meta:{activityEvidence:'zcode-official-supervisor-running-tasks',nativeExecutor:'official-server',nativeRuntimePid:123,nativeRuntimeGeneration:1,activityObservedAt:at,activityExpiresAt:new Date(Date.now()+15000).toISOString()}} as unknown as AgentSession;
+ expect(officialNativeWorkspace(s,'owner')?.absolutePath).toBe('/code/actual');
+ expect(officialNativeWorkspace({...s,hostId:'other'},'owner')).toBeUndefined();
+ expect(officialNativeWorkspace({...s,meta:{}},'owner')).toBeUndefined();
+ expect(officialNativeWorkspace({...s,meta:{...s.meta,activityExpiresAt:'2000-01-01'}},'owner')).toBeUndefined();
+});
