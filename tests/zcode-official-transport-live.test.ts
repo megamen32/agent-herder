@@ -18,14 +18,19 @@ it.skipIf(!process.env.ZCODE_OFFICIAL_WS_CANARY)('admits one harmless marker in 
  const receipt:any={at:new Date().toISOString(),cwd,inputId,phase:'before_create',marker};const save=()=>writeFile(receiptPath,JSON.stringify(receipt,null,2),{mode:0o600});await save();
  const client=new ZcodeAppServerClient({command:'must-not-run',connectWebSocket:connectZcodeOfficialWebSocket});
  const adapter=new ZcodeAdapter({client,cwd});
- try{const session=await adapter.createSession({name:'health_herder_ws_transport_20261023',cwd});receipt.sessionId=session.id;receipt.phase='created_before_send';await save();
+ try{
+  const project=await client.call('project','saveProject',[{name:'Herder isolated transport canary 20261023',roots:[cwd],primaryRoot:cwd}]) as any;
+  receipt.projectId=project.id;receipt.phase='project_created';await save();expect(project.id).toBeTruthy();
+  const prepared=await client.call('project','prepareSession',[{projectId:project.id}]) as any;expect(prepared.workspacePath).toBe(cwd);
+  const draft=await client.call('zcode-agent','createSession',[{workspacePath:cwd,workspaceIdentity:cwd,workspaceKey:cwd,projectId:project.id,mode:'build',persistence:'deferred',sessionTraceId:randomUUID()}]) as any;
+  const session={id:draft.session?.sessionId};expect(session.id).toBeTruthy();receipt.sessionId=session.id;receipt.phase='created_before_send';await save();
   const sent=await adapter.sendMessage(session.id,{message:`Ответь ровно ${marker}. Не используй инструменты и не меняй файлы.`,queue:true,inputId,origin:'human'});receipt.sendReceipt=sent;receipt.phase='send_returned_no_replay';await save();
   expect(sent.ok).toBe(true);
-  for(let i=0;i<45;i++){await new Promise(r=>setTimeout(r,1000));const x=await client.callIfReady('zcode-agent','readSession',[{workspacePath:cwd,workspaceIdentity:cwd,workspaceKey:cwd,sessionId:session.id,runtimePolicy:'existing-only',messageLimit:10}]) as any;
+  for(let i=0;i<60;i++){await new Promise(r=>setTimeout(r,1000));const x=await client.callIfReady('zcode-agent','readSession',[{workspacePath:cwd,workspaceIdentity:cwd,workspaceKey:cwd,sessionId:session.id,runtimePolicy:'existing-only',messageLimit:10}]) as any;
    const messages=Array.isArray(x.messages)?x.messages:[];const matched=messages.some((m:any)=>(m.info?.role??m.role)==='assistant'&&JSON.stringify(m).includes(marker));
    if(matched&&!x.runtime?.activeTurnId){receipt.phase='consumer_marker_observed';receipt.completedAt=new Date().toISOString();receipt.runtime={eventSeq:x.runtime?.eventSeq,stateRevision:x.runtime?.stateRevision,activeTurnId:x.runtime?.activeTurnId};await save();break;}
   }
   expect(receipt.phase).toBe('consumer_marker_observed');
  }catch(e){receipt.errorType=(e as any).name;receipt.phase+=':failed';await save();throw e;}
  finally{await adapter.dispose();}
-},60000);
+},120000);
