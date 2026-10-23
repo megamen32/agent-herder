@@ -105,7 +105,7 @@ describe("OpenCode native recovery controls", () => {
     await adapter.init();
     expect(await adapter.listChildren("parent")).toHaveLength(1);
     expect(await adapter.forkSession("parent")).toEqual({ ok: true, sessionId: "forked" });
-    expect(await adapter.recover("parent", "please continue after the error")).toEqual({ ok: true, admitted: true });
+    expect(await adapter.recover("parent", "please continue after the error")).toEqual({ ok: true, admitted: true, admission: "accepted" });
     expect(recoveryPrompts).toBe(1);
   });
 
@@ -270,6 +270,9 @@ describe("OpenCode native recovery controls", () => {
         return response.end(JSON.stringify([]));
       }
       if (request.url === "/session/status" && request.method === "GET") return response.end(JSON.stringify({}));
+      if ((request.url ?? "").split("?")[0] === "/session/health-session" && request.method === "GET") {
+        return response.end(JSON.stringify({ id: "health-session", title: "health", directory: "/tmp" }));
+      }
       if (request.url === "/session?directory=%2Ftmp" && request.method === "POST") {
         return response.end(JSON.stringify({ id: "health-session", title: "health", directory: "/tmp" }));
       }
