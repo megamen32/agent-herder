@@ -14,6 +14,35 @@ async function api(path: string, method = "GET", body?: unknown): Promise<any> {
   return value;
 }
 
+export type RagIndexRun = { status: string; processed?: number; indexed?: number; current?: string; error?: string };
+export type RagIndexNotice = { text: string; tone: "status" | "warning" };
+
+/**
+ * Статус индекса поиска — по-русски и без сырых счётчиков: пустой индекс
+ * называется прямо, иначе владелец не понимает, ищет панель или нет.
+ */
+export function ragIndexNoticeRu(run: RagIndexRun | undefined): RagIndexNotice | undefined {
+  if (!run) return undefined;
+  const processed = typeof run.processed === "number" && Number.isFinite(run.processed) ? Math.max(0, Math.floor(run.processed)) : 0;
+  const indexed = typeof run.indexed === "number" && Number.isFinite(run.indexed) ? Math.max(0, Math.floor(run.indexed)) : 0;
+  if (run.status === "running") {
+    if (indexed === 0) {
+      return { tone: "warning", text: processed === 0
+        ? "Индекс поиска пуст — ищите по списку сессий. Индексация ещё не началась."
+        : `Индекс поиска пуст: обработано ${processed} сессий, фрагментов пока нет — ищите по списку сессий.` };
+    }
+    return { tone: "status", text: `Индексируются сессии${run.current ? ` · ${run.current}` : ""}. Обработано ${processed}, фрагментов ${indexed}.` };
+  }
+  if (run.status === "complete") {
+    if (indexed === 0) return { tone: "warning", text: "Индекс поиска пуст — ищите по списку сессий." };
+    return { tone: "status", text: `Индекс готов · фрагментов: ${indexed}.` };
+  }
+  if (run.status === "error") {
+    return { tone: "warning", text: "Индексация остановилась — поиск по тексту и смыслу сейчас не работает. Ищите по списку сессий." };
+  }
+  return undefined;
+}
+
 export function RagSearchView({ initialQuery, onInitialQueryApplied, onOpenSession }: { initialQuery?: string; onInitialQueryApplied?: () => void; onOpenSession?: (harness: Harness, sessionId: string) => void }) {
   const [savedPreferences] = React.useState(() => readAdvancedSearchPreferences(window.localStorage));
   const [settings, setSettings] = React.useState<RagSettings>();
@@ -129,14 +158,14 @@ export function RagSearchView({ initialQuery, onInitialQueryApplied, onOpenSessi
   const renderHits = (hits: SearchHit[]) => hits.map((hit, index) => <article className="rag-result" key={`${hit.harness}:${hit.session_id}:${hit.message_id}:${index}`}><div className="rag-result-meta"><span>{labels[hit.harness] || hit.harness}</span><time>{hit.timestamp ? new Date(hit.timestamp).toLocaleDateString("ru-RU") : ""}</time></div><h3><button className="rag-result-open" onClick={() => onOpenSession?.(hit.harness, hit.session_id)}>{hit.title || hit.session_id} ↗</button></h3>{hit.directory && <small>{hit.directory}</small>}<p>{hit.text}</p></article>);
   const exactPending = busy && searchStage === "exact" && timings?.exactMs === undefined;
   const semanticPending = busy && searchStage !== null && timings?.semanticMs === undefined;
+  const indexNotice = ragIndexNoticeRu(settings?.run);
 
   return <section className="rag-search-page" aria-label="Расширенный поиск">
     <header className="rag-search-heading"><div><span className="eyebrow">AGENT HERDER · QDRANT</span><h1>Поиск по сессиям</h1><p>Ищите по тексту и смыслу в разговорах Codex, ZCode и OpenCode.</p></div>
       {settings?.enabled && <div className="rag-index-actions"><button className="quiet-button" onClick={() => void reindex()} disabled={busy || settings.run?.status === "running"}>Обновить индекс</button><button className="quiet-button" onClick={() => void disable()} disabled={busy}>Приостановить</button><button className="quiet-button" onClick={() => void forget()} disabled={busy}>Удалить индекс</button></div>}
     </header>
-    {settings?.run?.status === "running" && <div className="rag-index-status" role="status">Индексируются сессии{settings.run.current ? ` · ${settings.run.current}` : ""}. Обработано {settings.run.processed || 0}, фрагментов {settings.run.indexed || 0}.</div>}
-    {settings?.run?.status === "complete" && <div className="rag-index-status" role="status">Индекс готов · фрагментов: {settings.run.indexed || 0}.</div>}
-    {settings?.run?.status === "error" && <div className="rag-index-error" role="alert">Индексация остановилась: {settings.run.error || "ошибка подключения"}</div>}
+    {indexNotice && <div className="rag-index-status" role="status">{indexNotice.text}</div>}
+    {settings?.run?.status === "error" && <div className="rag-index-error" role="alert" title={settings.run.error || ""}>Индексация остановилась — поиск по тексту и смыслу сейчас не работает. Ищите по списку сессий.</div>}
     {!settings?.enabled ? <div className="rag-opt-in-card"><h2>Семантический поиск выключен</h2><p>При включении Agent Herder проиндексирует выбранные истории. Векторы и текст фрагментов хранятся в отдельной коллекции локального Qdrant; эмбеддинги создаёт внутренний Qwen gateway. В индекс попадают текстовые сообщения пользователя и агента, без результатов инструментов. Отключение приостанавливает обновление; «Удалить индекс» очищает векторные копии.</p><fieldset><legend>Источники</legend>{(Object.keys(labels) as Harness[]).map((harness) => <label key={harness}><input type="checkbox" checked={selected.includes(harness)} onChange={() => toggleHarness(harness)} /> {labels[harness]}</label>)}</fieldset><div className="rag-index-actions"><button className="primary-button" disabled={busy || selected.length === 0} onClick={() => void enable()}>{busy ? "Подключение…" : "Включить и проиндексировать"}</button>{settings?.run?.status === "paused" && <button className="quiet-button" onClick={() => void forget()} disabled={busy}>Удалить сохранённый индекс</button>}</div></div> : <>
       <form className="rag-search-form" onSubmit={(event) => void search(event)}>
         <label className="rag-query-label">Что ищем?<input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Например: как мы восстанавливали подключение ZCode" /></label>

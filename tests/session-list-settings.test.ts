@@ -24,8 +24,9 @@ describe("session list settings", () => {
     expect(expanded.map((entry) => [entry.session.id, entry.depth])).toEqual([["other", 0], ["parent", 0], ["child", 1]]);
   });
 
-  it("shows only active or decision-bound sessions by default", () => {
+  it("shows live or decision-bound sessions by default", () => {
+    // Живая сессия — и работающая, и ждущая задачи: обе могут принять её.
     const focused = filterAndArrangeSessions(sessions, { ...defaults, showAll: false }, new Set(), new Set(["opencode:other"]));
-    expect(focused.map((entry) => entry.session.id)).toEqual(["other", "child"]);
+    expect(focused.map((entry) => entry.session.id)).toEqual(["parent", "child", "other"]);
   });
 });
