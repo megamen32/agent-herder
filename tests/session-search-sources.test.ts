@@ -36,7 +36,7 @@ describe('persisted session search sources',()=>{
  it('marks a damaged native source unavailable without calling it exhaustive',async()=>{
   const root=await fixture(),home=join(root,'CODEX_HOME','sessions');await mkdir(home,{recursive:true});await writeFile(join(home,'broken.jsonl'),'not-json');const statuses:SearchSourceStatus[]=[];
   for await(const s of scanSessionSearchSources({onStatus:s=>statuses.push(s)}))for await(const _ of s.chunks){}
-  expect(statuses.find(s=>s.harness==='codex')).toMatchObject({state:'unavailable',sessions:0});
+  expect(statuses.find(s=>s.harness==='codex')).toMatchObject({state:'partial',sessions:0});
  });
  it('honors abort before opening native sources',async()=>{await fixture();const controller=new AbortController();controller.abort();await expect((async()=>{for await(const _ of scanSessionSearchSources({signal:controller.signal})){} })()).rejects.toThrow();});
 });

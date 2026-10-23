@@ -39,22 +39,26 @@ async function jsonSession(path:string,harness:string,options:Options,catalog?:a
  }
  return {harness,nativeSessionId:id,title:title||id,cwd,revision:`${revision}:${title}:${cwd}`,chunks:jsonChunks(path,harness,options.signal)};
 }
+async function safeJsonSession(path:string,harness:string,options:Options,catalog?:any):Promise<SearchSourceSession|undefined>{
+ try{return await jsonSession(path,harness,options,catalog);}catch(error){check(options.signal);options.onIssue?.('native_session_metadata_unavailable');if(catalog?.id)return {harness,nativeSessionId:str(catalog.id),title:str(catalog.title)||str(catalog.id),cwd:str(catalog.cwd),revision:JSON.stringify(catalog),contentUnavailable:true,chunks:(async function*(){})()};return undefined;}
+}
 async function* codex(options:Options):AsyncGenerator<SearchSourceSession>{
  const home=process.env.CODEX_HOME||join(homedir(),'.codex');const seen=new Set<string>();const localFiles:string[]=[];for(const name of ['sessions','archived_sessions']){const root=join(home,name);if(await stat(root).catch(()=>null))for await(const path of files(root,options.signal))if(path.endsWith('.jsonl'))localFiles.push(path);}const byName=new Map(localFiles.map(path=>[basename(path),path]));const dbPath=process.env.CODEX_STATE_DB||join(home,'state_5.sqlite');
  if(await stat(dbPath).catch(()=>null)){
-  const db=new DatabaseSync(dbPath,{readOnly:true});try{db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=1000');for(const row of db.prepare('SELECT id,title,cwd,rollout_path FROM threads ORDER BY id').iterate() as Iterable<any>){check(options.signal);let p=str(row.rollout_path);if(!p)continue;if(!await stat(p).catch(()=>null))p=byName.get(basename(p))||p;seen.add(p);if(!await stat(p).catch(()=>null)){options.onIssue?.('native_rollout_file_missing');yield {harness:'codex',nativeSessionId:str(row.id),title:str(row.title)||str(row.id),cwd:str(row.cwd),revision:JSON.stringify(row),contentUnavailable:true,chunks:(async function*(){})()};continue;}yield await jsonSession(p,'codex',options,row);}}finally{db.close();}
+  const db=new DatabaseSync(dbPath,{readOnly:true});try{db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=1000');for(const row of db.prepare('SELECT id,title,cwd,rollout_path FROM threads ORDER BY id').iterate() as Iterable<any>){check(options.signal);let p=str(row.rollout_path);if(!p)continue;if(!await stat(p).catch(()=>null))p=byName.get(basename(p))||p;seen.add(p);if(!await stat(p).catch(()=>null)){options.onIssue?.('native_rollout_file_missing');yield {harness:'codex',nativeSessionId:str(row.id),title:str(row.title)||str(row.id),cwd:str(row.cwd),revision:JSON.stringify(row),contentUnavailable:true,chunks:(async function*(){})()};continue;}const session=await safeJsonSession(p,'codex',options,row);if(session)yield session;}}finally{db.close();}
  }
- for(const p of localFiles){if(!seen.has(p))yield await jsonSession(p,'codex',options);}
+ for(const p of localFiles){if(!seen.has(p)){const session=await safeJsonSession(p,'codex',options);if(session)yield session;}}
  if(!localFiles.length&&!seen.size)throw new Error('codex_session_sources_missing');
 }
 async function* minimax(options:Options):AsyncGenerator<SearchSourceSession>{
  const root=process.env.MINIMAX_CODE_SESSION_STORE||join(homedir(),'.minimax/v2/sessions');
  for await(const p of files(root,options.signal)){
-  if(basename(p)!=='manifest.json')continue;const manifest=JSON.parse(await readFile(p,'utf8'));const dir=p.slice(0,-'/manifest.json'.length);const id=str(manifest.sessionId);if(!id)throw new Error('minimax_manifest_identity_missing');
+  if(basename(p)!=='manifest.json')continue;try{const manifest=JSON.parse(await readFile(p,'utf8'));const dir=p.slice(0,-'/manifest.json'.length);const id=str(manifest.sessionId);if(!id)throw new Error('minimax_manifest_identity_missing');
   const messagePath=join(dir,'messages.jsonl');let title=id,cwd='';let revision=await stamp(p);const exists=await stat(messagePath).catch(()=>null);if(!exists)options.onIssue?.('native_message_file_missing');
   if(exists){const session=await jsonSession(messagePath,'minimax-code',options);title=session.title==='messages'?id:session.title;revision+=':'+session.revision;}
   const snapshot=join(dir,'snapshot.json');if(await stat(snapshot).catch(()=>null)){const value=JSON.parse(await readFile(snapshot,'utf8'));title=str(value.record?.title)||title;cwd=str(value.record?.workspaceDir);revision+=':'+await stamp(snapshot);}
   yield {harness:'minimax-code',nativeSessionId:id,title,cwd,revision,...(!exists?{contentUnavailable:true}:{}),chunks:exists?jsonChunks(messagePath,'minimax-code',options.signal):(async function*(){})()};
+  }catch(error){check(options.signal);options.onIssue?.('native_session_metadata_unavailable');}
  }
 }
 async function* sqliteSessions(harness:'opencode'|'zcode'|'hermes',path:string,options:Options):AsyncGenerator<SearchSourceSession>{
@@ -83,7 +87,7 @@ export async function* scanSessionSearchSources(options:Options={}):AsyncGenerat
   {harness:'codex',source:process.env.CODEX_HOME||join(home,'.codex'),scan:()=>codex(options)},
   {harness:'minimax-code',source:process.env.MINIMAX_CODE_SESSION_STORE||join(home,'.minimax/v2/sessions'),scan:()=>minimax(options)},
   ...(['opencode','zcode','hermes'] as const).map(harness=>{const source=harness==='opencode'?process.env.OPENCODE_DB_PATH||join(home,'.local/share/opencode/opencode.db'):harness==='zcode'?process.env.ZCODE_DB_PATH||join(home,'.zcode/cli/db/db.sqlite'):process.env.HERMES_STATE_DB||join(process.env.HERMES_HOME||join(home,'.hermes'),'state.db');return {harness,source,scan:()=>sqliteSessions(harness,source,options)};}),
-  {harness:'claude',source:process.env.CLAUDE_PROJECTS_DIR||join(home,'.claude/projects'),scan:async function*(){for await(const p of files(process.env.CLAUDE_PROJECTS_DIR||join(home,'.claude/projects'),options.signal))if(p.endsWith('.jsonl'))yield await jsonSession(p,'claude',options);}},
+  {harness:'claude',source:process.env.CLAUDE_PROJECTS_DIR||join(home,'.claude/projects'),scan:async function*(){for await(const p of files(process.env.CLAUDE_PROJECTS_DIR||join(home,'.claude/projects'),options.signal))if(p.endsWith('.jsonl')){const session=await safeJsonSession(p,'claude',options);if(session)yield session;}}},
  ];
  const originalIssue=options.onIssue;
  for(const source of sources){let sessions=0,textSessions=0,missingContent=0,chunks=0;let issue:string|undefined;options.onIssue=(reason)=>{issue=reason;originalIssue?.(reason);};try{check(options.signal);for await(const session of source.scan()){const original=session.chunks;let hasText=false;if(session.contentUnavailable)missingContent++;session.chunks=(async function*(){try{for await(const chunk of original){if(!hasText){hasText=true;textSessions++;}chunks++;yield chunk;}}catch(error){issue='native_session_content_read_failed';throw error;}})();yield session;sessions++;}options.onStatus?.({harness:source.harness,source:source.source,state:issue?'partial':'complete',sessions,catalogSessions:sessions,textSessions,missingContent,chunks,...(issue?{reason:issue}:{})});}catch(error){check(options.signal);options.onStatus?.({harness:source.harness,source:source.source,state:sessions?'partial':'unavailable',sessions,reason:error instanceof Error?error.message:'source_read_failed'});}}
