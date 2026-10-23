@@ -33,13 +33,13 @@ export async function readActiveInventory(options:{path?:string;hostId?:string;n
   return {...value,sessions,partial:value.partial||sessions.some(s=>s.activity.state==='unknown')};
  }catch(error){return {sessions:[],partial:true,hosts:[{hostId,state:'unavailable',observedAt:null,reason:(error as NodeJS.ErrnoException).code==='ENOENT'?'activity_snapshot_not_ready':'activity_snapshot_unreadable'}]};}
 }
-/** Existing owner polling supplies current native sessions; no additional native scan. */
+/** Materialize generic snapshots and independently refreshed native activity. Consumers never scan native history. */
 export function startActiveInventoryOwner(snapshot:()=>{sessions:AgentSession[];observedAt:string|null;warming:boolean;failures?:Record<string,string>},adapters:Map<string,HarnessAdapter>,options:{path?:string;hostId?:string;intervalMs?:number}={}){
  const hostId=options.hostId??hostname(),path=options.path??activeInventoryPath();let closed=false,pending=false;let lastGeneration='';let workspaceUpdatePending=false;let publishAgain=false;
- const live=new Map<string,{harness:string;sessions:AgentSession[];failed:boolean;observedAt:string|null;exhaustive:boolean;reason?:string}>();
+ const live=new Map<string,{harness:string;sessions:AgentSession[];failed:boolean;observedAt:string|null;exhaustive:boolean;reason?:string;coverage?:Record<string,unknown>}>();
  const refreshing=new Set<string>();
  for(const [harness,adapter] of adapters)if(typeof (adapter as HarnessAdapter & {listActiveSessions?:unknown}).listActiveSessions==='function')live.set(harness,{harness,sessions:[],failed:true,observedAt:null,exhaustive:false,reason:'native_activity_warming'});
- const nativeWorkspaceReader=createMavisWorkspaceEvidenceReader({control:new MinimaxCodeControl(),workHostForSession:async identity=>{const record=await sessionWorkspaces.read(identity);const hosts=[...new Set(record?.workspaces.map(w=>w.hostId)??[])];return hosts.length===1?hosts[0]:undefined;}});
+ const nativeWorkspaceReader=createMavisWorkspaceEvidenceReader({control:new MinimaxCodeControl()});
  const updateWorkspaces=createSessionWorkspaceOwnerUpdater({store:sessionWorkspaces,readEvidence:nativeWorkspaceReader});
  const tick=async()=>{
   if(closed)return;if(pending){publishAgain=true;return;}pending=true;
@@ -52,7 +52,7 @@ export function startActiveInventoryOwner(snapshot:()=>{sessions:AgentSession[];
    if(!workspaceUpdatePending){workspaceUpdatePending=true;void updateWorkspaces(nativeSessions.map(s=>({runtimeHostId:hostId,harness:s.harness,nativeSessionId:s.id,lastActivity:s.lastActivity,...(typeof s.meta?.parentSessionId==='string'?{parentSessionId:s.meta.parentSessionId}:{})}))).catch(()=>{}).finally(()=>{workspaceUpdatePending=false;});}
    const identities=nativeSessions.map(s=>({runtimeHostId:hostId,harness:s.harness,nativeSessionId:s.id}));
    const places=await sessionWorkspaces.readMany(identities);
-   const sources=[...adapters].map(([harness,adapter])=>{const r=adapter.getSessionSnapshotReceipt?.();const live=dedicated.find(d=>d.harness===harness);if(!live&&!current.observedAt)return {harness,exhaustive:false,source:r?.source??'native-adapter',reason:'native_snapshot_warming'};if(!live&&current.failures?.[harness])return {harness,exhaustive:false,source:r?.source??'native-adapter',reason:current.failures[harness]};if(live)return {harness,exhaustive:live.exhaustive&&!live.failed,source:'native-active-observer',observedAt:live.observedAt,...(live.reason?{reason:live.reason}:{})};return {harness,exhaustive:r?.exhaustive??false,source:r?.source??'native-adapter',...(!r?{reason:'native_enumeration_coverage_unknown'}:r.reason?{reason:r.reason}:{})};});
+   const sources=[...adapters].map(([harness,adapter])=>{const r=adapter.getSessionSnapshotReceipt?.();const live=dedicated.find(d=>d.harness===harness);if(!live&&!current.observedAt)return {harness,exhaustive:false,source:r?.source??'native-adapter',reason:'native_snapshot_warming'};if(!live&&current.failures?.[harness])return {harness,exhaustive:false,source:r?.source??'native-adapter',reason:current.failures[harness]};if(live)return {harness,exhaustive:live.exhaustive&&!live.failed,source:'native-active-observer',observedAt:live.observedAt,...live.coverage,...(live.reason?{reason:live.reason}:{})};return {harness,exhaustive:r?.exhaustive??false,source:r?.source??'native-adapter',...(!r?{reason:'native_enumeration_coverage_unknown'}:r.reason?{reason:r.reason}:{})};});
    const sessions=nativeSessions.filter(s=>s.status==='running'||s.status==='needs_input').map(s=>({id:s.id,harness:s.harness,title:s.title,runtimeHostId:hostId,status:s.status,...(typeof s.meta?.parentSessionId==='string'?{parentSessionId:s.meta.parentSessionId}:typeof s.meta?.parentThreadId==='string'?{parentSessionId:s.meta.parentThreadId}:typeof s.meta?.parentID==='string'?{parentSessionId:s.meta.parentID}:{}),activity:{state:'active',observedAt:String(s.meta?.activityObservedAt??current.observedAt!),evidence:String(s.meta?.activityEvidence??s.meta?.transport??'native-adapter-status'),expiresAt:String(s.meta?.activityExpiresAt??new Date(Date.parse(current.observedAt!)+30000).toISOString())},workspaces:places.get(sessionWorkspaceKey({runtimeHostId:hostId,harness:s.harness,nativeSessionId:s.id}))?.workspaces??[]}));
    const value:ActiveInventory={sessions,partial:sources.some(s=>!s.exhaustive),hosts:[{hostId,state:'available',observedAt:[current.observedAt,...dedicated.map(d=>d.observedAt)].filter((v):v is string=>Boolean(v)).sort().at(-1)??null,sources}]};
    const serialized=JSON.stringify(value);if(serialized===lastGeneration)return;
@@ -62,11 +62,12 @@ export function startActiveInventoryOwner(snapshot:()=>{sessions:AgentSession[];
  const publish=()=>void tick().catch(()=>{});
  const refreshDedicated=()=>{for(const [harness,adapter] of adapters){
   if(!live.has(harness)||refreshing.has(harness)||closed)continue;refreshing.add(harness);
-  const native=adapter as HarnessAdapter & {listActiveSessions():Promise<AgentSession[]>;getActiveSessionSnapshotReceipt?():{exhaustive:boolean;observedAt:string;reason?:string}|null};
+  const native=adapter as HarnessAdapter & {listActiveSessions():Promise<AgentSession[]>;getActiveSessionSnapshotReceipt?():{exhaustive:boolean;observedAt:string;reason?:string;[key:string]:unknown}|null};
   let timeout:ReturnType<typeof setTimeout>|undefined;
   void Promise.race([native.listActiveSessions(),new Promise<never>((_,reject)=>{timeout=setTimeout(()=>reject(new Error('native_activity_deadline')),20000);})]).then(sessions=>{
    const receipt=native.getActiveSessionSnapshotReceipt?.();
-   if(!closed)live.set(harness,{harness,sessions,failed:false,observedAt:receipt?.observedAt??new Date().toISOString(),exhaustive:receipt?.exhaustive??false,...(receipt?.reason?{reason:receipt.reason}:{})});
+   const coverage=Object.fromEntries(['source','activityCoverage','metadataEnumerationExhaustive','candidateCount','failedCandidateCount','totalSessions','pages','expiresAt'].filter(key=>receipt?.[key]!==undefined).map(key=>[key,receipt![key]]));
+   if(!closed)live.set(harness,{harness,sessions,failed:false,observedAt:receipt?.observedAt??new Date().toISOString(),exhaustive:receipt?.exhaustive??false,coverage,...(receipt?.reason?{reason:receipt.reason}:{})});
   }).catch(()=>{const prior=live.get(harness)!;live.set(harness,{...prior,failed:true,exhaustive:false,reason:'native_activity_unavailable'});}).finally(()=>{if(timeout)clearTimeout(timeout);refreshing.delete(harness);publish();});
  }};
  const timer=setInterval(publish,1000);timer.unref();const observer=setInterval(refreshDedicated,options.intervalMs??5000);observer.unref();publish();refreshDedicated();return ()=>{closed=true;clearInterval(timer);clearInterval(observer);};
