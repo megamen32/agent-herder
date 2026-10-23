@@ -50,6 +50,46 @@ describe("Codex quota reserve",()=>{
  });
 });
 
+describe("Codex quota history fallback",()=>{
+ const historyRecord=(ts:number,quota:Record<string,unknown>={primary:24,allowed:true,limit_reached:false})=>JSON.stringify({ts,quota});
+ async function withHistory(records:string[],run:(path:string)=>Promise<void>){
+  const dir=await mkdtemp(join(tmpdir(),"quota-history-"));const path=join(dir,"history.jsonl");
+  vi.stubEnv("QUOTA_LENS_HISTORY",path);
+  try{await writeFile(path,records.join("\n")+"\n");await run(path);}finally{await rm(dir,{recursive:true,force:true});}
+ }
+ it("admits after transient local quota fetch failure with a recent allowed sample",async()=>{
+  await withHistory([historyRecord(Math.floor(Date.now()/1000)-60)],async()=>{
+   const result=await checkCodexQuota(async()=>({error:"fetch failed"}));
+   expect(result.decision).toMatchObject({allowed:true,reason:"reserve_available"});
+  });
+ });
+ it.each([
+  ["stale",(now:number)=>historyRecord(now-301)],
+  ["host mismatch",(now:number)=>JSON.stringify({ts:now-30,host:"some-other-host",quota:{primary:24,allowed:true,limit_reached:false}})],
+  ["limit reached",(now:number)=>historyRecord(now-30,{primary:24,allowed:true,limit_reached:true})],
+ ])("keeps admission blocked for %s history",async(_name,make)=>{
+  await withHistory([make(Math.floor(Date.now()/1000))],async()=>{
+   const result=await checkCodexQuota(async()=>({error:"fetch failed"}));
+   expect(result.decision.allowed).toBe(false);
+  });
+ });
+ it("prefers a successful live read over a recent history sample",async()=>{
+  await withHistory([historyRecord(Math.floor(Date.now()/1000)-30)],async()=>{
+   const result=await checkCodexQuota(async()=>sample(86));
+   expect(result.decision).toMatchObject({allowed:false,reason:"below_reserve"});
+  });
+ });
+ it("never applies the local history to remote Codex admission",async()=>{
+  await withHistory([historyRecord(Math.floor(Date.now()/1000)-30)],async()=>{
+   const dir=await mkdtemp(join(tmpdir(),"quota-remote-history-"));vi.stubEnv("AGENT_HERDER_AUTOPILOT_STATE_DIR",dir);
+   try{
+    const read=async()=>({content:[{type:"text",text:JSON.stringify({providers:[{provider:"codex",state:"unknown"}]})}]});
+    await expect(assertRemoteCodexAdmission("create_session",{harness:"codex"},read)).rejects.toBeInstanceOf(CodexQuotaBlockedError);
+   }finally{await rm(dir,{recursive:true,force:true});}
+  });
+ });
+});
+
 it("fleet uses the addressed provider and does not fetch or gate a non-Codex action",async()=>{
  const dir=await mkdtemp(join(tmpdir(),"quota-fleet-"));vi.stubEnv("AGENT_HERDER_AUTOPILOT_STATE_DIR",dir);
  try{
