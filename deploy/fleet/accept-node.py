@@ -19,8 +19,9 @@ The checks are the acceptance of the owner:
   * every import of the runtime resolves from the release, never from the
     working directory and never from the store;
   * the workspace package is imported from the release and not from the store;
-  * the release carries the full set of the store, and not one byte of it was
-    copied;
+  * the release carries the full set of the build of the manifest - the set of
+    the manifest is the truth, the store of the node is its own state - and not
+    one byte of it was copied;
   * the management answers: sessions, launch policy, MCP, and on the owner node
     the settings API;
   * the automation prohibition is named by state, scope and mechanism - not by
@@ -34,6 +35,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import platform
 import subprocess
 import sys
 import urllib.error
@@ -337,26 +339,171 @@ def import_check_workspace(release: Path, store_modules: Path, node_bin: str) ->
     }
 
 
-def dependency_check(release: Path, store_modules: Path) -> dict:
-    """The release carries the full set of the store, and not one copied byte."""
+def platform_tags() -> tuple:
+    """The os and the cpu of this node, in the names the lock file uses."""
+    os_names = {"linux": "linux", "darwin": "darwin", "win32": "win32"}
+    machine = platform.machine().lower()
+    cpu_names = {"x86_64": "x64", "amd64": "x64", "aarch64": "arm64", "arm64": "arm64"}
+    return os_names.get(sys.platform, sys.platform), cpu_names.get(machine, machine)
+
+
+def libc_family() -> str:
+    """The libc of this node: glibc, musl, or unknown."""
+    try:
+        name = (platform.libc_ver() or ("", ""))[0].lower()
+    except Exception:  # noqa: BLE001 - the platform must not break the measurement
+        return "unknown"
+    if "glibc" in name or "gnu" in name:
+        return "glibc"
+    if "musl" in name:
+        return "musl"
+    return "unknown"
+
+
+def manifest_package_set(release: Path) -> dict:
+    """The set of packages the release must carry, taken from the build manifest.
+
+    The manifest of the build pins the package lock of the build, and the rule
+    it names is the runtime set of that lock for this platform, without the dev
+    packages. That set is the truth of the comparison: the store of the node is
+    the state of the node, and the release of a fleet node carries the packages
+    of the farm of that node. The store of the node is never the basis.
+
+    A package that the lock marks optional is named, but it is not required:
+    the runtime must not depend on it, so its absence is not a trimming. A
+    package of another platform is not required either.
+    """
+    manifest_path = release / "build-manifest.json"
+    if not manifest_path.is_file():
+        return {"ok": False, "error": "the build manifest of the release is missing"}
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except json.JSONDecodeError as error:
+        return {"ok": False, "error": f"the build manifest is not readable: {error}"}
+    lock_path = release / "package-lock.json"
+    if not lock_path.is_file():
+        return {"ok": False, "error": "the package lock of the release is missing"}
+    lock_sha = release_rules.sha256_file(lock_path)
+    pinned = (manifest.get("artifacts") or {}).get("package-lock.json")
+    if pinned and pinned != lock_sha:
+        return {"ok": False,
+                "error": "the package lock of the release is not the one of the build",
+                "manifest_lock_sha256": pinned,
+                "release_lock_sha256": lock_sha}
+    os_name, cpu = platform_tags()
+    family = libc_family()
+    lock = json.loads(lock_path.read_text())
+    required = set()
+    optional = set()
+    foreign = set()
+    dev = set()
+    for path, meta in (lock.get("packages") or {}).items():
+        if not path.startswith("node_modules/"):
+            continue
+        name = path[len("node_modules/"):]
+        if "/node_modules/" in name:
+            continue  # a nested package, not a package of the farm
+        if name == release_rules.WORKSPACE_PACKAGE or meta.get("link"):
+            continue  # the workspace package is a link into the release, checked apart
+        if meta.get("inBundle"):
+            continue
+        if meta.get("dev"):
+            dev.add(name)
+            continue
+        if meta.get("os") and os_name not in meta["os"]:
+            foreign.add(name)
+            continue
+        if meta.get("cpu") and cpu not in meta["cpu"]:
+            foreign.add(name)
+            continue
+        if meta.get("libc"):
+            if family == "unknown":
+                optional.add(name)  # the platform is unknown: named, but not required
+                continue
+            if family not in meta["libc"]:
+                foreign.add(name)
+                continue
+        if meta.get("optional"):
+            optional.add(name)
+            continue
+        required.add(name)
+    return {
+        "ok": True,
+        "required": sorted(required),
+        "optional": sorted(optional),
+        "foreign": len(foreign),
+        "dev": len(dev),
+        "os": os_name,
+        "cpu": cpu,
+        "libc": family,
+        "lock_sha256": lock_sha,
+        "manifest_lock_sha256": pinned or "not pinned",
+        "rule": "the runtime set of the package lock of the build for this platform, without the dev packages",
+        "source": f"build-manifest.json -> package-lock.json sha256 {lock_sha[:12]}",
+    }
+
+
+def node_store_modules(arguments, release: Path) -> tuple:
+    """The store of the node: named by the caller, or named by the layout.
+
+    The store of the node is its own state. It is not the basis of the
+    comparison of the packages of the release, but it is the place the
+    workspace package must not come from, so it is named: by the caller, or by
+    the layout of the fleet (the farm of the node is the node_modules of the
+    fleet directory, the releases live inside it).
+    """
+    if arguments.store_node_modules:
+        path = Path(arguments.store_node_modules).expanduser()
+        return path, "named by the caller"
+    if release.parent.name == "releases":
+        candidate = release.parent.parent / "node_modules"
+        if candidate.is_dir():
+            return candidate, "the farm of the fleet directory of the node"
+    return None, "not named"
+
+
+def dependency_check(release: Path, store_modules) -> dict:
+    """The release carries the full set of the build, and not one copied byte.
+
+    The set of the comparison is the set of the build manifest, not the store
+    of the node. The store of the node is named here as an observation: it is
+    the state of the node, and a divergence between it and the release of a
+    fleet node is normal.
+    """
     packages = release / "node_modules"
     release_set = release_rules.store_contents(packages)
-    store_set = release_rules.store_contents(store_modules) if store_modules else []
-    difference = release_rules.diff(store_set, release_set) if store_set else {
-        "expected": 0, "actual": len(release_set), "missing": [], "extra": []}
+    source = manifest_package_set(release)
+    required = set(source.get("required") or [])
+    missing = sorted(required - set(release_set))
+    extra = sorted(set(release_set) - required)
+    optional = set(source.get("optional") or [])
     copied, offenders = release_rules.copied_bytes(packages)
     linked_cache = sorted(name for name in offenders
                           if name.split("/")[0] not in release_rules.MUTABLE_ENTRIES)
     shared_cache = release_rules.shared_cache_files(packages)
-    resume = packages / "agent-resume-mcp"
+    resume = packages / release_rules.WORKSPACE_PACKAGE
+    store_set = release_rules.store_contents(store_modules) if store_modules else []
     return {
-        "ok": (not difference["missing"] and not difference["extra"] and not linked_cache
+        "ok": (source.get("ok", False) and not missing and not linked_cache
                and not shared_cache and resume.is_symlink()
                and os.readlink(resume) == "../packages/agent-resume"),
-        "store_packages": difference["expected"],
-        "release_packages": difference["actual"],
-        "missing": difference["missing"][:5],
-        "extra": difference["extra"][:5],
+        "source_ok": source.get("ok", False),
+        "source": source.get("source"),
+        "rule": source.get("rule"),
+        "error": source.get("error"),
+        "lock_sha256": source.get("lock_sha256"),
+        "required_packages": len(required),
+        "release_packages": len(release_set),
+        "missing": missing[:5],
+        "missing_count": len(missing),
+        "extra": extra[:5],
+        "extra_count": len(extra),
+        "optional_packages": len(optional),
+        "optional_missing": sorted(optional - set(release_set))[:5],
+        "optional_missing_count": len(optional - set(release_set)),
+        "foreign_packages": source.get("foreign"),
+        "dev_packages": source.get("dev"),
+        "store_packages": len(store_set) if store_modules else None,
         "copied_bytes": copied,
         "copied_files": len(offenders),
         "copied_only_tool_caches": not linked_cache,
@@ -659,7 +806,10 @@ def main() -> int:
     parser.add_argument("--state-dir", required=True)
     parser.add_argument("--working-directory", default="")
     parser.add_argument("--drop-in", default="")
-    parser.add_argument("--store-node-modules", default="")
+    parser.add_argument("--store-node-modules", default="",
+                        help="the store of this node: an observation, and the place the workspace "
+                             "package must not come from; it is not the basis of the comparison "
+                             "of the packages of the release")
     parser.add_argument("--releases-root", default="")
     parser.add_argument("--rollback-root", default="")
     parser.add_argument("--expect-host", default="", help="the host id this node must answer to")
@@ -682,7 +832,7 @@ def main() -> int:
     drop_in = Path(arguments.drop_in).expanduser() if arguments.drop_in else None
     releases_root = Path(arguments.releases_root).expanduser() if arguments.releases_root else release.parent
     rollback_root = Path(arguments.rollback_root).expanduser() if arguments.rollback_root else releases_root.parent / "rollback"
-    store_modules = Path(arguments.store_node_modules).expanduser() if arguments.store_node_modules else Path("")
+    store_modules, store_origin = node_store_modules(arguments, release)
 
     process = find_running_process(release)
     properties = unit_properties(arguments.unit)
@@ -759,11 +909,18 @@ def main() -> int:
         ("the tool caches of the release are its own bytes (nlink=1)",
          dependencies.get("cache_owns_its_bytes", False),
          f"shared with the store: {dependencies.get('shared_cache_files', []) or 'none'}"),
-        ("the release carries the full set of the store, nothing copied",
+        ("the release carries the full set of the build of the manifest, nothing copied",
          dependencies.get("ok", False),
-         f"store={dependencies.get('store_packages')} release={dependencies.get('release_packages')} "
-         f"missing={len(dependencies.get('missing', []))} extra={len(dependencies.get('extra', []))} "
-         f"copied={dependencies.get('copied_bytes')} B (only the tool caches of the store)"),
+         f"node={identity['hostname']} truth={dependencies.get('source')} "
+         f"({dependencies.get('rule')}) "
+         f"required={dependencies.get('required_packages')} "
+         f"release={dependencies.get('release_packages')} "
+         f"missing={dependencies.get('missing_count')} extra={dependencies.get('extra_count')} "
+         f"copied={dependencies.get('copied_bytes')} B (only the tool caches of the store) "
+         f"the store of the node="
+         f"{dependencies.get('store_packages') if dependencies.get('store_packages') is not None else 'not named'} "
+         f"({store_origin}, not the basis of the comparison)"
+         + (f" error={dependencies.get('error')}" if dependencies.get("error") else "")),
         ("the management answers", all(value == 200 for value in management.values()),
          " ".join(f"{name}={value}" for name, value in management.items())),
         ("the automation prohibition is armed, by state, scope and mechanism",
@@ -801,16 +958,37 @@ def main() -> int:
          f"releases={budget.get('releases')} rollback={len(budget.get('rollback', []))} entries"),
     ]
 
+    warnings = []
+    if dependencies.get("extra_count"):
+        warnings.append(
+            f"node={identity['hostname']} the release carries {dependencies['extra_count']} packages beyond "
+            f"the set of the build ({dependencies.get('source')}): {dependencies.get('extra')}; "
+            f"the set of the build is the truth, the packages beyond it are named, not a refusal")
+    if dependencies.get("optional_missing_count"):
+        warnings.append(
+            f"node={identity['hostname']} the release does not carry "
+            f"{dependencies['optional_missing_count']} optional packages of this platform "
+            f"({dependencies.get('optional_missing')}); an optional dependency is not part of the "
+            f"guaranteed runtime set")
+    if dependencies.get("store_packages") is None:
+        warnings.append(
+            f"node={identity['hostname']} the store of the node is not named; the workspace package "
+            f"cannot be compared against it")
+
     failed = 0
     for name, ok, detail in checks:
         print(f"[{'OK ' if ok else 'FAIL'}] {name}: {detail}")
         failed += 0 if ok else 1
+    for warning in warnings:
+        print(f"[WARN] {warning}")
     summary = {
         "host": identity,
         "sha": arguments.sha,
         "kind": arguments.kind,
         "release": str(release),
         "release_size": release_size,
+        "dependencies": dependencies,
+        "store_origin": store_origin,
         "peer_reachability": reachability,
         "fleet_confirmation": confirmation,
         "guard_policy": guard,
