@@ -257,6 +257,70 @@ describe("integrator Fleet runtime", () => {
     await runtime.dispose();
   });
 
+  it("validates the readiness of the harness the project route designates", async () => {
+    const f = await setup();
+    const model = "anthropic/claude-sonnet-4-5";
+    await f.policyStore.replace({
+      version: 1, allowedHarnesses: ["codex", "opencode"], preferredHarness: "codex",
+      models: { codex: CODEX_PROJECT_MODEL_ID, opencode: model },
+      projectRoutes: { [f.projectRoot]: { harnesses: ["opencode"], aliases: ["project-alpha"], models: { opencode: model } } },
+    });
+    const runtime = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
+      codexDataHome: f.nativeHome, createHarnessAdapter: vi.fn() as any });
+    const document = await f.policyStore.readDocument();
+    if (document.kind !== "valid") throw new Error("test policy unavailable");
+    const rootStat = await stat(f.projectRoot);
+    const snapshot = {
+      state: "ready" as const, projectId: "project-alpha", projectRoot: f.projectRoot,
+      rootIdentity: JSON.stringify([f.projectRoot, rootStat.dev, rootStat.ino]), policyRevision: document.etag,
+      hostId: hostname(), harness: "opencode" as const, harnessVersion: "opencode 1.0.0", model,
+      requiredTools: [], availableTools: [], availableModels: [model],
+      resourceReady: true, runtimeInstanceId: "test-runtime", cwd: f.projectRoot,
+      pathResolution: { requestedCwd: f.projectRoot, canonicalCwd: f.projectRoot, rootPath: f.projectRoot,
+        contained: true, identityMatches: true }, observedAtMs: Date.now(),
+    };
+    const base = { project: "project-alpha", inputId: "8".repeat(64), name: "research", cwd: f.projectRoot,
+      harness: "opencode" as const, projectReadinessContract: "integrator-host-readiness-v1" as const };
+    expect(await runtime.validateReadiness({ ...base, projectReadiness: snapshot })).toBe(true);
+    // A snapshot of another harness does not validate this route.
+    expect(await runtime.validateReadiness({ ...base, projectReadiness: { ...snapshot, harness: "codex", model: CODEX_PROJECT_MODEL_ID } })).toBe(false);
+    await runtime.dispose();
+  });
+
+  it("creates for the selected harness: the reservation carries the harness and the adapter writes the created receipt", async () => {
+    const f = await setup();
+    const model = "anthropic/claude-sonnet-4-5";
+    await f.policyStore.replace({
+      version: 1, allowedHarnesses: ["codex", "opencode"], preferredHarness: "codex",
+      models: { codex: CODEX_PROJECT_MODEL_ID, opencode: model },
+      projectRoutes: { [f.projectRoot]: { harnesses: ["opencode"], aliases: ["project-alpha"], models: { opencode: model } } },
+    });
+    const inputId = "7".repeat(64);
+    const factory = vi.fn(async ({ harness, reservation, bindingStore }: any) => {
+      expect(harness).toBe("opencode");
+      expect(reservation.harness).toBe("opencode");
+      expect(reservation.operationId).toBe(inputId);
+      await bindingStore.recordCreated({ operationId: reservation.operationId, attempt: reservation.attempt,
+        harness, nativeSessionId: "native-opencode-1", launchCwd: f.projectRoot });
+      return { createSession: vi.fn(async () => ({ id: "native-opencode-1", harness: "opencode", cwd: f.projectRoot })) };
+    });
+    const runtime = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
+      codexDataHome: f.nativeHome, createHarnessAdapter: factory as any });
+    const receipt = await runtime.create({ project: "project-alpha", inputId, name: "task", cwd: f.projectRoot, harness: "opencode" });
+    expect(receipt).toMatchObject({ state: "created", inputId, launchCwd: f.projectRoot,
+      address: { hostId: hostname(), harness: "opencode", nativeSessionId: "native-opencode-1" } });
+    expect(factory).toHaveBeenCalledTimes(1);
+    const binding = await f.bindingStore.get(inputId);
+    expect(binding?.harness).toBe("opencode");
+    expect(binding?.state).toBe("accepted");
+    expect(binding?.attempts.at(-1)?.receipt?.state).toBe("created");
+    // A repeated create must not open a second native session.
+    const repeated = await runtime.create({ project: "project-alpha", inputId, name: "task", cwd: f.projectRoot, harness: "opencode" });
+    expect(repeated).toEqual(receipt);
+    expect(factory).toHaveBeenCalledTimes(1);
+    await runtime.dispose();
+  });
+
   it("never creates for an existing unknown operation and never falls through an unresolved scoped address", async () => {
     const f = await setup();
     const reserved = await f.bindingStore.reserve({ operationId: "f".repeat(64), hostId: hostname(), harness: "codex" });
