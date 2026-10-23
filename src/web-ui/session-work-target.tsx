@@ -1,4 +1,5 @@
 import * as React from "react";
+import { latestModel, readModelTimeline } from "./session-model-timeline.js";
 
 /** The four states of one work-target operation; the same states the MCP tool returns. */
 export type SessionTargetState = "updated" | "unchanged" | "unreachable" | "unsupported";
@@ -22,6 +23,72 @@ export type WorkTargetHost = { hostId: string; label: string };
 
 /** The live session whose work place is shown. */
 export type WorkTargetSession = { id: string; harness: string; cwd: string; hostId?: string };
+
+/** One file the agent changed, as the server proves it. */
+export type SessionFileFact = { path: string; operation: string };
+
+/** One child session, as the owner reads it. */
+export type SessionSubagentFact = { id: string; name: string; named: boolean; role?: string; status: string };
+
+/** What the session inspector knows for certain about the session. */
+export type SessionInspectFacts = {
+  model: { native?: string };
+  lastAction: { label: string; tool?: string; at?: string } | null;
+  files: SessionFileFact[];
+  worktreeFiles: string[];
+  subagents: { count: number; items: SessionSubagentFact[] };
+  history: { source: string; complete: boolean };
+};
+
+/**
+ * The machine labels the owner already knows. A raw host id says nothing about
+ * which machine it is, so the fleet names them in words.
+ */
+const MACHINE_LABELS: Record<string, string> = {
+  "roomhacker-server-100": "Сервер 100",
+  "server-100": "Сервер 100",
+  "roomhacker-server-88": "Сервер 88",
+  "server-88": "Сервер 88",
+  "roomhacker-server-44": "Сервер 44",
+  "server-44": "Сервер 44",
+  "roomhacker-mac-mini": "Mac Mini",
+  "mac-mini": "Mac Mini",
+  "roomhacker-mac-m1": "Mac M1",
+  "mac-m1": "Mac M1",
+};
+
+/** The machine a session works on, named in the owner's words. */
+export function machineLabel(hostId: string | undefined, hostLabel?: string): string {
+  if (!hostId) return hostLabel || "Машина не подтверждена";
+  const known = MACHINE_LABELS[hostId.toLowerCase()];
+  if (known) return known;
+  return hostLabel || hostId;
+}
+
+/** The status of a child session, in the owner's words. */
+export function subagentStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    running: "Работает",
+    idle: "Ожидает запуска",
+    needs_input: "Ждёт ответа",
+    stopped: "Остановлена",
+    completed: "Завершена",
+    error: "Ошибка",
+  };
+  return labels[status] || status;
+}
+
+/**
+ * The one model line the owner reads. A pending next-answer model is not the
+ * same fact as the model the session runs on now, so it is marked apart.
+ */
+export function modelRows(native: string | undefined, pending: string | undefined): { label: string; value: string; pending?: boolean }[] {
+  const current = native?.trim() || "";
+  const next = pending?.trim() || "";
+  const rows: { label: string; value: string; pending?: boolean }[] = [{ label: "Модель", value: current || "не подтверждена" }];
+  if (next && next !== current) rows.push({ label: "Следующий ответ", value: next, pending: true });
+  return rows;
+}
 
 /**
  * Human-facing result of one operation. An unreachable machine never reads as
@@ -99,16 +166,66 @@ export async function applyWorkTarget(
 /** Value of the machine select that asks for a machine outside the known fleet. */
 const CUSTOM_HOST = "__custom__";
 
+/** Reads what the session inspector can prove about this session. */
+export async function readSessionInspectFacts(session: { id: string; harness: string }): Promise<SessionInspectFacts | undefined> {
+  try {
+    const query = new URLSearchParams({ sessionId: session.id, harness: session.harness });
+    const response = await fetch(`/api/sessions/${encodeURIComponent(session.harness)}/${encodeURIComponent(session.id)}/inspect`, { headers: { accept: "application/json" }, cache: "no-store" });
+    if (!response.ok) return undefined;
+    const body = await response.json().catch(() => undefined) as SessionInspectFacts | undefined;
+    return body && typeof body === "object" ? body : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The block that answers "what is the agent doing now", "which files did it
+ * change" and "who are the subagents". What the server cannot prove is said
+ * plainly instead of being invented.
+ */
+export function SessionInspectBlock({ facts, pendingModel }: { facts?: SessionInspectFacts; pendingModel?: string; loading?: boolean }) {
+  if (!facts) {
+    return <section className="inspector-facts" aria-label="Работа по сессии">
+      <span className="eyebrow">РАБОТА ПО СЕССИИ</span>
+      <p className="inspector-facts-empty">Данных о работе сессии пока нет — обновите сессию.</p>
+    </section>;
+  }
+  const rows = modelRows(facts.model.native, pendingModel);
+  const files = facts.files.length ? facts.files : facts.worktreeFiles.map((path) => ({ path, operation: "Изменение файлов" }));
+  return <section className="inspector-facts" aria-label="Работа по сессии">
+    <span className="eyebrow">РАБОТА ПО СЕССИИ</span>
+    <dl>
+      {rows.map((row) => <React.Fragment key={row.label}>
+        <dt>{row.label}</dt>
+        <dd className={row.pending ? "inspector-facts-pending" : undefined}>{row.value}</dd>
+      </React.Fragment>)}
+      <dt>Сейчас</dt>
+      <dd>{facts.lastAction ? `${facts.lastAction.label}${facts.lastAction.tool ? ` · ${facts.lastAction.tool}` : ""}` : "действий пока нет"}</dd>
+      <dt>Файлы</dt>
+      <dd>{files.length ? <ul className="inspector-facts-files">{files.slice(0, 20).map((file) => <li key={file.path} title={file.path}>{file.path}</li>)}</ul> : "изменённых файлов не зафиксировано"}</dd>
+      <dt>Субагенты</dt>
+      <dd>{facts.subagents.count
+        ? <ul className="inspector-facts-subagents">{facts.subagents.items.map((child) => <li key={child.id}>
+          <strong>{child.name}</strong>
+          <small>{[child.role, subagentStatusLabel(child.status)].filter(Boolean).join(" · ")}</small>
+        </li>)}</ul>
+        : "дочерних сессий нет"}</dd>
+    </dl>
+  </section>;
+}
+
 /**
  * The work target of one live session: the machine it works on and the
  * directory it works in. The server owns the truth — this block shows it and
  * asks for a change, and it never presents an unreachable machine as done.
  */
-export function SessionWorkTarget({ session, hosts, localHostId, onApplied }: {
+export function SessionWorkTarget({ session, hosts, localHostId, onApplied, showFacts = true }: {
   session: WorkTargetSession;
   hosts: WorkTargetHost[];
   localHostId?: string;
   onApplied?: (receipt: SessionTargetReceipt) => void;
+  showFacts?: boolean;
 }) {
   const [current, setCurrent] = React.useState({ hostId: session.hostId ?? localHostId ?? "", cwd: session.cwd });
   const [hostId, setHostId] = React.useState(current.hostId);
@@ -118,6 +235,8 @@ export function SessionWorkTarget({ session, hosts, localHostId, onApplied }: {
   const [outcome, setOutcome] = React.useState<SessionTargetOutcome>();
   const [error, setError] = React.useState<string>();
   const [pending, setPending] = React.useState(false);
+  const [facts, setFacts] = React.useState<SessionInspectFacts>();
+  const [pendingModel, setPendingModel] = React.useState<string>();
 
   // The declared work target is the truth; the session row only knows where it started.
   React.useEffect(() => {
@@ -137,6 +256,25 @@ export function SessionWorkTarget({ session, hosts, localHostId, onApplied }: {
       setCwd(receipt.cwd);
     });
     return () => { live = false; };
+  }, [session.id, session.harness]);
+
+  // The facts of the session: what it did last, what it changed, who its children are.
+  React.useEffect(() => {
+    let live = true;
+    setFacts(undefined);
+    void readSessionInspectFacts({ id: session.id, harness: session.harness }).then((read) => {
+      if (live && read) setFacts(read);
+    });
+    return () => { live = false; };
+  }, [session.id, session.harness]);
+
+  // The model the owner picked for the next answer, when it differs from the one in use.
+  React.useEffect(() => {
+    const key = `${session.harness}:${session.id}`;
+    const read = () => setPendingModel(latestModel(readModelTimeline(window.localStorage, key)));
+    read();
+    window.addEventListener("storage", read);
+    return () => window.removeEventListener("storage", read);
   }, [session.id, session.harness]);
 
   const knownHosts = hosts.slice();
@@ -170,9 +308,10 @@ export function SessionWorkTarget({ session, hosts, localHostId, onApplied }: {
   return <section className="work-target" aria-label="Рабочая машина">
     <div className="work-target-current">
       <span className="eyebrow">РАБОЧАЯ МАШИНА</span>
-      <strong>{workTargetHostLabel(hosts, current.hostId)}</strong>
+      <strong>{machineLabel(current.hostId, workTargetHostLabel(hosts, current.hostId))}</strong>
       <code title={current.hostId}>{current.hostId || "машина не подтверждена"}</code>
       <small>Каталог: <code title={current.cwd}>{current.cwd || "не задан"}</code></small>
+      <p className="work-target-hint">Рабочий каталог агента на этой машине. Папка проекта сессии — «Папка» в панели сессии; это другая величина.</p>
     </div>
     <div className="work-target-form">
       <label>Машина
@@ -190,7 +329,7 @@ export function SessionWorkTarget({ session, hosts, localHostId, onApplied }: {
         <input aria-label="Идентификатор рабочей машины" value={customHostId} placeholder="например, server-44"
           onChange={(event) => setCustomHostId(event.target.value)} />
       </label>}
-      <label>Каталог
+      <label>Рабочий каталог агента
         <input aria-label="Рабочий каталог" value={cwd} onChange={(event) => setCwd(event.target.value)} />
       </label>
       <button type="button" className="quiet-button" disabled={pending} onClick={() => void apply()}>
@@ -199,5 +338,6 @@ export function SessionWorkTarget({ session, hosts, localHostId, onApplied }: {
     </div>
     {outcome && <p className={`work-target-result work-target-${outcome.tone}`} role="status">{outcome.message}</p>}
     {error && <p className="work-target-result work-target-error" role="alert">{error}</p>}
+    {showFacts && <SessionInspectBlock facts={facts} pendingModel={pendingModel} />}
   </section>;
 }

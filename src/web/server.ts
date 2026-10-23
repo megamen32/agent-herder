@@ -24,6 +24,7 @@ import { buildSessionProgress } from "../health-progress.js";
 import { buildIntegratorProgress } from "../integrator-progress.js";
 import { deliverStaleRunningQuestion } from "../human-request/notice-question.js";
 import { loadAskHumanProducer, type AskHumanProducer } from "../human-request/ask-human-producer.js";
+import { sessionInspectFacts, type SessionInspectFacts } from "../session-visualization.js";
 import { NoticeplaceHealthObserver } from "../automation/noticeplace-health-observer.js";
 import { appendHealthRefusalAudit, healthRefusalAuditPath, type HealthReasonRefusal } from "../automation/health-reason-codes.js";
 import { NOTICEPLACE_HEALTH_MODELS, resolveLaunchHealthPlan } from "../automation/noticeplace-health-policy.js";
@@ -1156,6 +1157,72 @@ export function createWebServer(dependencies: WebDependencies): Server {
     server.once("close", () => clearInterval(timer));
   }
   return server;
+}
+
+/**
+ * The facts the session inspector shows: the model's real state, the agent's
+ * last action, the files it changed, and who its children are.
+ *
+ * Every fact comes from a canonical source: the session transcript, the
+ * lineage store, or the working directory. What is not measured stays absent.
+ */
+async function sessionInspectorFacts(details: SessionDetails): Promise<SessionInspectFacts> {
+  const facts = sessionInspectFacts(details);
+  return { ...facts, worktreeFiles: await dirtyWorktreeFiles(details.session.cwd) };
+}
+
+/**
+ * The task a child session was given, when the lineage store recorded one.
+ * A child the provider never named stays unnamed — it is not given a fake title.
+ */
+async function childTaskNames(
+  harness: string,
+  children: AgentSession[],
+): Promise<Map<string, { task?: string; role?: string }>> {
+  const named = new Map<string, { task?: string; role?: string }>();
+  if (!children.length) return named;
+  try {
+    const store = new LineageStore(lineageStorePath());
+    await store.load();
+    for (const child of children) {
+      const provider = typeof child.meta?.provider === "string" ? child.meta.provider : harness;
+      const record = await store.get(`${provider}:${child.id}`) ?? await store.get(`${harness}:${child.id}`);
+      if (record?.task || record?.role) named.set(child.id, { task: record.task, role: record.role });
+    }
+  } catch { /* the lineage store is optional; an absent task stays unnamed */ }
+  return named;
+}
+
+/** The lineage file the supervisor itself reads. */
+function lineageStorePath(): string {
+  const dataHome = process.env.XDG_DATA_HOME || `${process.env.HOME || process.cwd()}/.local/share`;
+  return `${dataHome}/agent-herder/lineage.json`;
+}
+
+/** Files changed in the session's working directory, by git itself. */
+async function dirtyWorktreeFiles(cwd: string): Promise<string[]> {
+  if (!cwd || !isAbsolute(cwd)) return [];
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", cwd, "status", "--porcelain=v1", "--untracked-files=all"], { timeout: 4000, maxBuffer: 1024 * 1024 });
+    return stdout.split("\n").filter(Boolean).map((line) => line.slice(3).trim()).filter(Boolean);
+  } catch { return []; }
+}
+
+/**
+ * A child session carries the task it was given, when Herder recorded one.
+ * The provider's own title stays the fallback; a missing name stays missing.
+ */
+async function withChildTasks(details: SessionDetails, harness: string): Promise<SessionDetails> {
+  const named = await childTaskNames(harness, details.children || []);
+  if (!named.size) return details;
+  return {
+    ...details,
+    children: (details.children || []).map((child) => {
+      const found = named.get(child.id);
+      if (!found) return child;
+      return { ...child, meta: { ...child.meta, ...(found.task ? { task: found.task } : {}), ...(found.role ? { agentRole: found.role } : {}) } };
+    }),
+  };
 }
 
 /** Edited files are attributed to the git repo that actually owns them, so
@@ -2773,14 +2840,14 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         { limit: Number.isFinite(limitValue) ? limitValue : 3, history: history || "auto", quick },
       );
       if (details.session.id !== sessionId || details.session.harness !== harness) return sendJson(response, 409, { error: "Exact native session identity mismatch." });
-      return sendJson(response, 200, details);
+      return sendJson(response, 200, quick ? details : await withChildTasks(details, harness));
     }
     const details = await supervisor.getSessionDetails(
       harness,
       sessionId,
       { limit: Number.isFinite(limitValue) ? limitValue : 3, history: history || "auto", quick },
     );
-    return sendJson(response, 200, details);
+    return sendJson(response, 200, quick ? details : await withChildTasks(details, harness));
   }
   const visualizationMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/visualization$/);
   if (visualizationMatch && request.method === "GET") {
@@ -2792,10 +2859,22 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { error: "Scoped session read port is unavailable." });
     const details = route.kind === "scoped" ? await route.supervisor!.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" })
       : await supervisor.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" });
-    const html = await sessionVisualizer(details);
+    const html = await sessionVisualizer(await withChildTasks(details, harness));
     response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
     response.end(html);
     return;
+  }
+  const inspectMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/inspect$/);
+  if (inspectMatch && request.method === "GET") {
+    const harness = decodeURIComponent(inspectMatch[1]);
+    const sessionId = decodeURIComponent(inspectMatch[2]);
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { error: "Scoped session read port is unavailable." });
+    const details = route.kind === "scoped" ? await route.supervisor!.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" })
+      : await supervisor.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" });
+    if (!details) return sendJson(response, 404, { error: "Session not found" });
+    return sendJson(response, 200, await sessionInspectorFacts(await withChildTasks(details, harness)));
   }
   const progressMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/progress$/);
   if (progressMatch && request.method === "GET") {
