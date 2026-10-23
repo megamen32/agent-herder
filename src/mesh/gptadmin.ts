@@ -125,9 +125,11 @@ export class GptAdminMesh {
     if(previous)return previous.digest===digest?previous.result:{state:"not_attempted",inputId:request.inputId,retryable:false,reason:"input_id_conflict"};
     if(this.inputs.size>=4096)return {state:"not_attempted",inputId:request.inputId,retryable:true,reason:"mesh_input_capacity"};
     let route=this.routes.get(request.target.hostId);
-    // Stateless MCP may recreate this service between discovery and delivery.
-    // Re-resolve read-only identity/schema; never retry a native mutation here.
-    if(!route){try{await this.discover(12);route=this.routes.get(request.target.hostId);}catch{/* unavailable remains explicit */}}
+    // A known exact address needs owner identity, schema and its own current
+    // session read, not a historical snapshot of every session on every host.
+    if(!route&&this.hub.readSession){
+      try{route=await this.resolveExactRoute(request.target);}catch(error){return {state:"not_attempted",inputId:request.inputId,retryable:true,reason:error instanceof Error?shortReason(error.message):"mesh_route_unavailable"};}
+    }else if(!route){try{await this.discover(12);route=this.routes.get(request.target.hostId);}catch{/* unavailable remains explicit */}}
     if(!route)return {state:"not_attempted",inputId:request.inputId,retryable:true,reason:"mesh_route_unavailable"};
     // A native session of another machine never passed through the tool gate
     // of herder, so the delivery guards the model the session would run on.
@@ -147,6 +149,23 @@ export class GptAdminMesh {
     const receipt=await result;
     if(receipt.state==="not_attempted"&&receipt.retryable)this.inputs.delete(key);
     return receipt;
+  }
+  private async resolveExactRoute(address:MeshAddress):Promise<Route|undefined>{
+    const discovery=unwrapResult(await this.bounded(this.hub.discover()));
+    if(!Array.isArray(discovery.servers))throw new Error("mesh_route_registry_unavailable");
+    const prefix=`mcp:shell:${address.hostId}:`;
+    const peers=(discovery.servers as Array<{server_id:string;kind:string;status:string}>).filter(p=>p.kind==="child_mcp"&&p.server_id.startsWith(prefix)&&/herder|harness.?mesh/i.test(p.server_id)&&["online","configured"].includes(p.status));
+    if(peers.length!==1)throw new Error("mesh_route_owner_ambiguous");
+    const target=peers[0].server_id,schema=unwrapResult(await this.bounded(this.hub.schema(target)));
+    const tools=Array.isArray(schema.tools)?schema.tools as Array<{name:string}>:[];
+    if(!tools.some(t=>t.name==="mesh_deliver")||!tools.some(t=>t.name==="fleet_node_info"))throw new Error("mesh_route_capability_missing");
+    const owner=unwrapResult(await this.bounded(this.hub.call(target,"fleet_node_info",{})));
+    if(owner.hostId!==address.hostId)throw new Error("native_host_identity_mismatch");
+    const read=unwrapResult(await this.bounded(this.hub.readSession!(target,address.harness,address.nativeSessionId)));
+    if(read.hostId!==undefined&&read.hostId!==address.hostId)throw new Error("native_host_identity_mismatch");
+    const session=(read.details as {session?:Record<string,unknown>}|undefined)?.session??read.session as Record<string,unknown>|undefined;
+    if(!session||session.id!==address.nativeSessionId||session.harness!==address.harness)throw new Error("native_session_identity_mismatch");
+    const key=addressKey(address);return {target,nativeIds:new Set([key]),projects:new Map([[key,typeof session.cwd==="string"?session.cwd:null]])};
   }
   /**
    * The message of one delivery to another machine.
