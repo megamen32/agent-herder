@@ -64,6 +64,8 @@ export class SessionSearchIndex {
   }catch(error){this.db.exec('ROLLBACK');throw error;}
  }
  releaseOwner(token:string){this.db.prepare('DELETE FROM search_owner WHERE id=1 AND token=?').run(token);}
+ /** Owner-only recovery after an interrupted generation; never a query action. */
+ pruneInterruptedGenerations(){this.db.exec('DELETE FROM chunks WHERE NOT EXISTS(SELECT 1 FROM sessions s WHERE s.harness=chunks.harness AND s.native_id=chunks.native_id AND s.generation=chunks.generation)');}
  status(){
   const run=this.db.prepare('SELECT status,updated_at AS updatedAt,processed,error FROM search_run WHERE id=1').get();
   const counts=Object.fromEntries(this.db.prepare('SELECT name,n FROM search_counts').all().map(row=>[String(row.name),Number(row.n)]));
@@ -117,11 +119,14 @@ export class SessionSearchIndex {
   record('running');
   try{
    const failures=new Map<string,number>();
+   let recorded=0;
+   const flushReceipts=()=>{for(;recorded<receipts.length;recorded++){const receipt=receipts[recorded];this.finishSource(failures.has(receipt.harness)?{...receipt,state:'partial',reason:`session_content_read_failed:${failures.get(receipt.harness)}`} : receipt,scan);}};
+   try{
    for await(const session of sessions){
     try{await this.ingest(session,scan);}catch{failures.set(session.harness,(failures.get(session.harness)??0)+1);}
-    processed++;record('running');if(processed%16===0)await yieldToConsumers();
+    processed++;record('running');flushReceipts();if(processed%16===0)await yieldToConsumers();
    }
-   for(const receipt of receipts)this.finishSource(failures.has(receipt.harness)?{...receipt,state:'partial',reason:`session_content_read_failed:${failures.get(receipt.harness)}`} : receipt,scan);
+   }finally{flushReceipts();}
    record('complete');
   }
   catch(error){record('error',error instanceof Error?error.message.slice(0,160):'source_scan_failed');throw error;}
@@ -132,11 +137,12 @@ export class SessionSearchIndex {
   if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error('search_limit_invalid');
   const harnesses=input.harnesses??[];
   if(harnesses.length>32||harnesses.some(h=>!h||h.length>64))throw new Error('search_harness_invalid');
-  // Materialize rank before grouping: FTS auxiliary functions cannot run inside
-  // aggregate contexts. SQLite's min() selects the matching chunk's bare columns.
-  const rows=this.db.prepare(`WITH candidates AS MATERIALIZED (SELECT rowid,bm25(chunks_fts,4.0,1.0) rank FROM chunks_fts WHERE chunks_fts MATCH ?) SELECT s.harness,s.native_id,s.title,s.cwd,s.revision,c.id,c.chunk_id,min(m.rank) rank FROM candidates m JOIN chunks c ON c.id=m.rowid JOIN sessions s ON s.harness=c.harness AND s.native_id=c.native_id AND s.generation=c.generation ${harnesses.length?'WHERE s.harness IN ('+harnesses.map(()=>'?').join(',')+')':''} GROUP BY s.harness,s.native_id ORDER BY rank LIMIT ?`).all(match,...harnesses,limit);
+  // The hidden FTS rank column gives SQLite its indexed rank-order iterator.
+  // Compute snippets only for winning sessions, not every matching message.
+  const rows=this.db.prepare(`SELECT s.harness,s.native_id,s.title,s.cwd,s.revision,c.id,c.chunk_id,chunks_fts.rank rank FROM chunks_fts JOIN chunks c ON c.id=chunks_fts.rowid JOIN sessions s ON s.harness=c.harness AND s.native_id=c.native_id AND s.generation=c.generation WHERE chunks_fts MATCH ? AND rank MATCH 'bm25(4.0,1.0)' ${harnesses.length?'AND s.harness IN ('+harnesses.map(()=>'?').join(',')+')':''} ORDER BY rank`).iterate(match,...harnesses);
   const snippet=this.db.prepare("SELECT snippet(chunks_fts,1,'','', ' … ',24) snippet FROM chunks_fts WHERE rowid=? AND chunks_fts MATCH ?");
-  const results=rows.map(row=>({hostId:this.hostId,harness:row.harness,nativeSessionId:row.native_id,title:row.title,cwd:row.cwd,revision:row.revision,chunkId:row.chunk_id,snippet:snippet.get(row.id,match)?.snippet??'',rank:row.rank}));
+  const results=[];const seen=new Set<string>();
+  for(const row of rows){const key=JSON.stringify([row.harness,row.native_id]);if(seen.has(key))continue;seen.add(key);results.push({hostId:this.hostId,harness:row.harness,nativeSessionId:row.native_id,title:row.title,cwd:row.cwd,revision:row.revision,chunkId:row.chunk_id,snippet:snippet.get(row.id,match)?.snippet??'',rank:row.rank});if(results.length>=limit)break;}
   const status=this.status();
   return {hostId:this.hostId,results,index:status,partial:status.sources.length===0||status.indexing||status.run?.status==='error'||status.sources.some((source:SearchSourceReceipt)=>source.state!=='complete'),elapsedMs:Math.round((performance.now()-started)*100)/100};
  }

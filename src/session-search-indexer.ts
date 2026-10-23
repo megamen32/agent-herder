@@ -6,6 +6,7 @@ export type SessionSearchScanner=(options:{signal?:AbortSignal;onStatus?:(status
 export async function startSessionSearchIndexer(scanner:SessionSearchScanner,options:{path?:string;intervalMs?:number}={}){
  const index=new SessionSearchIndex(options.path),token=randomUUID();
  if(!index.claimOwner(token)){index.close();return undefined;}
+ index.pruneInterruptedGenerations();
  const abort=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;let closed=false;
  let pending:Promise<void>=Promise.resolve();
  const run=()=>{
