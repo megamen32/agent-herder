@@ -44,7 +44,10 @@ describe("the card of a project answers the owner without the internals", () => 
     // The answer of the fleet is re-read, not remembered from the first load.
     expect(page).toContain("/api/fleet/hosts");
     expect(page).toContain("/api/fleet/sessions");
-    expect(page).toContain("await read();");
+    // The server keeps the answer of the fleet for a minute, so the manual
+    // refresh asks it for a fresh read of the nodes.
+    expect(page).toContain('"/api/fleet/hosts?refresh=1"');
+    expect(page).toContain("await read({ refresh: true });");
     // The button must not fold the card while it refreshes it.
     expect(page).toContain("event.preventDefault(); event.stopPropagation(); onRefresh();");
   });
