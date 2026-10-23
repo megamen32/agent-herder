@@ -1,7 +1,6 @@
 import { probeRecoveryModelQuota, type RecoveryModelQuota } from "../model-quota.js";
 import { normalizeSendAdmission } from "../adapters/quota-failure.js";
 import { isRecoveryModelReference, quotaEvidenceModelReference } from "../recovery-model-reference.js";
-import { NOTICEPLACE_HEALTH_MODELS } from "../automation/noticeplace-health-policy.js";
 import { isLeafAllowedByOwnerRule } from "../model-launch-policy.js";
 import { JudgeRequestTrace, JudgeRequestError } from "./judge-request.js";
 import { UserStyleStore, USER_STYLE_PROMPT, type StyleObservation } from "./user-style.js";
@@ -260,7 +259,7 @@ export type QuotaRecoveryWaitStatus = {
   state: QuotaRecoveryState;
   origin: "native_quota" | "operator_cohort";
   reason: string;
-  nextAttemptAt: string;
+  nextAttemptAt?: string;
   resetAt?: string;
   currentModel: string;
   selectedModel?: string;
@@ -503,64 +502,9 @@ function exactTerminalRecoverySnapshot(session: AgentSession | null | undefined,
 }
 
 /** Ordered native session models. Incident-purpose restrictions remain in the incident launcher. */
-/**
- * True for a model a quota recovery of a session may continue on.
- *
- * The route choices are limited by the allowlist of the Notice Place health
- * work: the launcher must not be a way around it. The own model of the
- * session is not a route choice, the session already runs on it. It stays
- * admissible when the provider of the evidence is the provider of the harness
- * itself (Codex and ZCode talk to their own provider); for a provider of a
- * gateway the own model has to be an approved health route as well.
- */
-function quotaRecoveryCandidateAllowed(model: string, evidence: QuotaRecoveryEvidence, ownModel: string | undefined, harness?: string): boolean {
-  // The operator path is not the health work: its candidates are native model
-  // references, and the launch policy and the catalog of the environment decide.
-  if (evidence.classification !== "quota_exhausted") return isRecoveryModelReference(model) || isRecoveryModelReference(model, "codex");
-  if (NOTICEPLACE_HEALTH_MODELS.includes(model)) return true;
-  if (!ownModel || model !== ownModel) return false;
-  if (harness) return harness === "codex" || harness === "zcode";
-  const provider = typeof evidence.providerId === "string" ? evidence.providerId.trim().toLowerCase() : "";
-  return provider === "codex" || provider === "minimax" || provider === "minimax-code";
-}
-
-/**
- * The models a quota recovery of the health work may continue on.
- *
- * The candidates are limited by the allowlist of the Notice Place health
- * work: the launcher must not be a way around it. A route of the OmniRoute
- * gateway and the MiniMax subscription route are approved; no other provider
- * is, and there is no automatic fallback outside the allowlist.
- */
-function quotaCandidateModels(fallbackModels: readonly string[], currentModel: string | readonly string[], evidence: QuotaFailureEvidence, harness?: string): string[] {
+function quotaCandidateModels(fallbackModels: readonly string[], currentModel: string | readonly string[]): string[] {
   const currentModels = typeof currentModel === "string" ? [currentModel] : [...currentModel];
   const seen = new Set<string>(currentModels.map((model) => model.toLocaleLowerCase("en-US")));
-  const candidates: string[] = [];
-  for (const raw of fallbackModels) {
-    const model = typeof raw === "string" ? raw.trim() : "";
-    if (!model || model.length > 256 || /[\u0000-\u0020\u007f]/u.test(model) || !NOTICEPLACE_HEALTH_MODELS.includes(model)) continue;
-    const key = model.toLocaleLowerCase("en-US");
-    if (seen.has(key)) continue;
-    seen.add(key);
-    candidates.push(model);
-    if (candidates.length >= 8) break;
-  }
-  const ownModel = typeof currentModel === "string" ? currentModel : undefined;
-  candidates.push(...currentModels.filter((model) => quotaRecoveryCandidateAllowed(model, evidence, ownModel, harness)));
-  return candidates;
-}
-
-/**
- * The models an operator cohort may fall back to.
- *
- * This path is not the health work of Notice Place. Its candidates are native
- * model references, and the launch policy of the project and the catalog of
- * the adapter decide whether a route may be used: the allowlist of the health
- * work does not apply here.
- */
-function operatorCandidateModels(fallbackModels: readonly string[], currentModel: string | readonly string[]): string[] {
-  const currentModels = typeof currentModel === "string" ? [currentModel] : [...currentModel];
-  const seen = new Set(currentModels.map((model) => model.toLocaleLowerCase("en-US")));
   const candidates: string[] = [];
   for (const raw of fallbackModels) {
     const model = typeof raw === "string" ? raw.trim() : "";
@@ -577,7 +521,7 @@ function operatorCandidateModels(fallbackModels: readonly string[], currentModel
 
 function operatorFallbackCandidates(fallbackModels: readonly string[], currentModels: readonly string[]): string[] {
   const current = new Set(currentModels.map((model) => model.toLocaleLowerCase("en-US")));
-  return operatorCandidateModels(fallbackModels, currentModels).filter((model) => !current.has(model.toLocaleLowerCase("en-US")));
+  return quotaCandidateModels(fallbackModels, currentModels).filter((model) => !current.has(model.toLocaleLowerCase("en-US")));
 }
 
 function operatorContinuationModelCandidates(fallbackModels: readonly string[], currentModel: string): string[] {
@@ -734,7 +678,7 @@ function quotaRecoveryReason(quota: QuotaRecoveryRecord): string {
     : "Ожидает ограниченной повторной попытки; неизвестная квота не считается доступной.";
   if (quota.state === "dispatching" && quota.reasonCode === "delivery_unknown") return "Квитанция отправки пока не подтверждена; повторная отправка запрещена, идёт точная сверка.";
   if (quota.state === "dispatching") return "Продолжение отправляется; повторная отправка запрещена до сверки нативной квитанции.";
-  if (quota.state === "accepted") return "Нативный ввод принят; ожидается результат этого точного ввода.";
+  if (quota.state === "accepted") return "Нативный ввод принят. Автоматические повторы остановлены; состояние ответа смотрите в переписке.";
   if (quota.state === "exhausted" || quota.reasonCode === "candidate_exhausted") return "Запасные модели исчерпаны; автоматическая отправка остановлена.";
   if (quota.reasonCode === "delivery_unknown") return "Результат доставки неизвестен; автоматическая повторная отправка остановлена.";
   if (quota.reasonCode === "model_unavailable") return "Выбранная модель недоступна или не подтверждена нативным runtime.";
@@ -1487,7 +1431,7 @@ export class UnfinishedSessionStore {
     if (!evidence || !currentModel || !["opencode", "zcode", "codex"].includes(session.harness)) throw new Error("invalid terminal quota recovery evidence");
     const normalized = normalizeRecordTarget({ harness: harnessType(session.harness), sessionId: session.id, cwd: session.cwd,
       model: session.model, title: session.title, threadSource: nonEmptyText(session.meta?.threadSource) });
-    const candidates = quotaCandidateModels(fallbackModels, currentModel, evidence, session.harness).filter(model => waitForOriginal || model !== currentModel);
+    const candidates = quotaCandidateModels(fallbackModels, currentModel).filter(model => waitForOriginal || model !== currentModel);
     if (!candidates.length) throw new Error("quota recovery mode has no candidates");
     const nowIso = now.toISOString();
     const nextAttemptAt = quotaNextAttemptAt(evidence, now).toISOString();
@@ -1866,7 +1810,7 @@ export class UnfinishedSessionStore {
       state: quota.state,
       origin: quota.evidence.classification === "quota_exhausted" ? "native_quota" : "operator_cohort",
       reason: quotaRecoveryReason(quota),
-      nextAttemptAt: quota.nextAttemptAt,
+      ...(quota.state === "waiting" && quota.nextAttemptAt ? { nextAttemptAt: quota.nextAttemptAt } : {}),
       ...(quota.evidence.classification === "quota_exhausted" && quota.evidence.resetAt ? { resetAt: quota.evidence.resetAt } : {}),
       currentModel: recoveryEvidenceModelId(quota.evidence),
       ...(quota.selectedModel ? { selectedModel: quota.selectedModel } : {}),
@@ -6358,8 +6302,7 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
     ...(record.nonRetryableAdmission === true ? { nonRetryableAdmission: true } : {}),
     ...(record.recoveryCause === "turn.failed" || record.recoveryCause === "process.disconnected" || record.recoveryCause === "stalled" || record.recoveryCause === "quota_exhausted"
       ? { recoveryCause: record.recoveryCause } : {}),
-    ...(parseQuotaRecovery(record.quotaRecovery, typeof record.harness === "string" ? record.harness : undefined)
-      ? { quotaRecovery: parseQuotaRecovery(record.quotaRecovery, typeof record.harness === "string" ? record.harness : undefined)! } : {}),
+    ...(parseQuotaRecovery(record.quotaRecovery) ? { quotaRecovery: parseQuotaRecovery(record.quotaRecovery)! } : {}),
     ...(Array.isArray(record.quotaRecoveryHistory)
       ? { quotaRecoveryHistory: record.quotaRecoveryHistory.map(parseQuotaRecoveryHistoryEntry).filter((entry): entry is QuotaRecoveryHistoryEntry => Boolean(entry)).slice(-16) }
       : {}),
@@ -6380,19 +6323,14 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
   };
 }
 
-function parseQuotaRecovery(value: unknown, harness?: string): QuotaRecoveryRecord | undefined {
+function parseQuotaRecovery(value: unknown): QuotaRecoveryRecord | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
   const evidence = normalizeQuotaRecoveryEvidence(record.evidence);
   if (!evidence || !["waiting", "dispatching", "accepted", "held", "exhausted"].includes(String(record.state))) return undefined;
-  // The producer of the health path writes the routes of the health allowlist
-  // and the validator of the read reads the same allowlist: a candidate
-  // outside it refuses the record and all. The operator path writes native
-  // references; the launch policy and the catalog of the environment decide.
-  const ownModel = evidence.classification === "quota_exhausted" ? quotaModelId(evidence) : undefined;
-  const candidateAllowed = (item: string) => quotaRecoveryCandidateAllowed(item, evidence, ownModel, harness);
+  // Native syntax matches the producer. Catalog and current execution policy are rechecked before dispatch.
   if (!Array.isArray(record.candidateModels) || !record.candidateModels.length || record.candidateModels.length > 9
-    || !record.candidateModels.every((item) => typeof item === "string" && candidateAllowed(item))) return undefined;
+    || !record.candidateModels.every((item) => typeof item === "string" && (isRecoveryModelReference(item) || isRecoveryModelReference(item, "codex")))) return undefined;
   const candidateIndex = nonNegativeInteger(record.candidateIndex, -1);
   const attempts = nonNegativeInteger(record.attempts, -1);
   const revision = positiveInteger(record.revision, -1);
