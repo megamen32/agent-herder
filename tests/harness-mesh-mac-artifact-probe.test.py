@@ -3,6 +3,18 @@ import pathlib,subprocess,tempfile,unittest
 SOURCE=pathlib.Path(__file__).resolve().parents[1]/'deploy/fleet/mac-artifact-probe.c'
 
 class ArtifactProbe(unittest.TestCase):
+    def test_artifact_budget_counts_shared_regular_inode_once_but_keeps_entry_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=pathlib.Path(directory);(root/'a').write_bytes(b'a'*2049)
+            (root/'b').hardlink_to(root/'a')
+            r=self.run_probe(root)
+            self.assertEqual(r.returncode,0)
+            expected=sum(((p.lstat().st_size+1023)//1024)*1024 for p in [root,root/'a'])
+            self.assertEqual(int(r.stdout.split()[1]),expected)
+            self.assertEqual(int(r.stdout.split()[-1]),3)
+            self.assertEqual(self.run_probe(root,entries=2).returncode,67)
+            (root/'copy').write_bytes((root/'a').read_bytes())
+            self.assertEqual(self.run_probe(root,limit=expected).returncode,68)
     @classmethod
     def setUpClass(cls):
         cls.temp=tempfile.TemporaryDirectory();cls.exe=pathlib.Path(cls.temp.name)/'probe'
@@ -11,13 +23,14 @@ class ArtifactProbe(unittest.TestCase):
     def tearDownClass(cls):cls.temp.cleanup()
     def run_probe(self,root,limit=536870912,entries=30001):
         return subprocess.run([str(self.exe),str(limit),str(entries)],cwd=root,text=True,capture_output=True,timeout=2)
-    def test_physical_tree_counts_hardlinks_and_does_not_follow_symlinks(self):
+    def test_physical_tree_counts_unique_hardlinks_and_does_not_follow_symlinks(self):
         with tempfile.TemporaryDirectory() as directory:
             base=pathlib.Path(directory);root=base/'releases';root.mkdir();(root/'a').write_bytes(b'a'*2049)
             (root/'b').hardlink_to(root/'a');(base/'outside').write_bytes(b'x'*1000000);(root/'link').symlink_to(base/'outside')
             r=self.run_probe(root);self.assertEqual(r.returncode,0,r.stderr)
             self.assertEqual(int(r.stdout.split()[-1]),4)
-            self.assertGreaterEqual(int(r.stdout.split()[1]),2*3072)
+            expected=sum(((p.lstat().st_size+1023)//1024)*1024 for p in [root,root/'a',root/'link'])
+            self.assertEqual(int(r.stdout.split()[1]),expected)
             self.assertLess(int(r.stdout.split()[1]),1000000)
     def test_newline_names_are_one_entry_and_directory_postorder_is_not_double_counted(self):
         with tempfile.TemporaryDirectory() as directory:

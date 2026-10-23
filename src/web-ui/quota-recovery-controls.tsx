@@ -174,7 +174,7 @@ function statusLine(wait: QuotaRecoveryWait | null) {
     {wait.reason && <p>{wait.reason}</p>}
     {wait.nextAttemptAt && <p>Следующая проверка или попытка: {describeTime(wait.nextAttemptAt)}</p>}
     {wait.resetAt && <p>Ориентир сброса квоты: {describeTime(wait.resetAt)}. Это не подтверждение её восстановления.</p>}
-    {wait.currentModel && <p>Текущая модель: <code>{wait.currentModel}</code></p>}
+    {wait.currentModel && <p>Исходная модель: <code>{wait.currentModel}</code></p>}
     {wait.selectedModel && <p>Выбранная модель: <code>{wait.selectedModel}</code></p>}
     {!quotaWaitStateLabel(wait.state) && <small>Код состояния: {wait.state}</small>}
   </div>;

@@ -269,7 +269,7 @@ export type QuotaRecoveryWaitStatus = {
   state: QuotaRecoveryState;
   origin: "native_quota" | "operator_cohort";
   reason: string;
-  nextAttemptAt: string;
+  nextAttemptAt?: string;
   resetAt?: string;
   currentModel: string;
   selectedModel?: string;
@@ -1820,7 +1820,7 @@ export class UnfinishedSessionStore {
       state: quota.state,
       origin: quota.evidence.classification === "quota_exhausted" ? "native_quota" : "operator_cohort",
       reason: quotaRecoveryReason(quota),
-      nextAttemptAt: quota.nextAttemptAt,
+      ...(quota.state === "waiting" && quota.nextAttemptAt ? { nextAttemptAt: quota.nextAttemptAt } : {}),
       ...(quota.evidence.classification === "quota_exhausted" && quota.evidence.resetAt ? { resetAt: quota.evidence.resetAt } : {}),
       currentModel: recoveryEvidenceModelId(quota.evidence),
       ...(quota.selectedModel ? { selectedModel: quota.selectedModel } : {}),

@@ -4,7 +4,7 @@
 Contract: ~/.local/share/agent-herder/fleet/{node-config.json,current/dist,
 releases}; config sourceSha/hostId/nodeBin/harnesses and native pointers match
 Linux. launcherHashes seals installed Python wrappers; every declared payload
-file is SHA-checked (<=512 files/512MiB/5s); external deps remain owner proof.
+file is SHA-checked (<=1024 files/512MiB/5s); external deps remain owner proof.
 Codex JOIN also requires approved codexOwnerPid/codexOwnerStartedAt
 (ps lstart) /codexOwnerBin; canonical rendezvous +UID/PID/executable/listen/
 inode proof is refreshed each sample, no unknown owner/forward adoption.
@@ -13,7 +13,7 @@ Never inspect /proc, create a native daemon, copy credentials or prune releases.
 
 Owned child process group: RSS soft256MiB (30s sustained), hard512MiB;
 CPU100% over20s,150% per sample after10s startup;128 threads/16 processes;
-temp128/state64MiB; <=2 release directories/512MiB; host reserve Mini2/M1 4GiB,
+temp128/state64MiB; <=3 release directories/512MiB; host reserve Mini2/M1 4GiB,
 disk2GiB. Poll delay2s plus bounded probes, metadata commands5s/two attempts10s total,
 storage scan1s/30000 entries
 (one deadline-only fresh retry within2s total; artifact-only15s, census every30s);
@@ -104,10 +104,10 @@ def command(argv,deadline=None):
         raise Refused('native_observation_failed')
     return result.stdout.decode('utf8', errors='strict')
 
-def json_file(path):
+def json_file(path, max_bytes=65536):
     with path.open('rb') as handle:
-        data=handle.read(65537)
-    if len(data)>65536:raise Refused('config_size_limit')
+        data=handle.read(max_bytes+1)
+    if len(data)>max_bytes:raise Refused('config_size_limit')
     value=json.loads(data)
     if not isinstance(value,dict):raise Refused('config_shape_invalid')
     return value
@@ -301,7 +301,7 @@ def storage_bytes(root, limit, *, artifact=False, _native_mutable=True):
     flags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW
     for attempt in (1,2):
         if time.monotonic()>=overall_deadline:refuse('storage_observation_limit','deadline')
-        count=0;total=0;stack=[];deadline=min(time.monotonic()+attempt_window,overall_deadline)
+        count=0;total=0;stack=[];seen_inodes=set();deadline=min(time.monotonic()+attempt_window,overall_deadline)
         def push(fd):
             try:
                 context=os.scandir(fd);entries=context.__enter__()
@@ -327,7 +327,11 @@ def storage_bytes(root, limit, *, artifact=False, _native_mutable=True):
                 count+=1
                 if count>30000:refuse('storage_observation_limit','file_limit')
                 info=entry.stat(follow_symlinks=False)
-                if not stat.S_ISDIR(info.st_mode):total+=info.st_size
+                if not stat.S_ISDIR(info.st_mode):
+                    key=(info.st_dev,info.st_ino)
+                    shared=artifact and stat.S_ISREG(info.st_mode) and info.st_nlink>1
+                    if not shared or key not in seen_inodes:total+=info.st_size
+                    if shared:seen_inodes.add(key)
                 if total>limit:refuse('storage_budget_exceeded','byte_limit')
                 if time.monotonic()>deadline:raise Deadline()
                 if stat.S_ISDIR(info.st_mode):
@@ -657,7 +661,7 @@ def violations(sample,policy,elapsed,soft_since=None):
         ('memory_soft_sustained',soft_since is not None and elapsed-soft_since>=SOFT_WINDOW),
         ('processes',sample['processes']>16),('threads',sample['threads']>128),
         ('temp',sample['temp_bytes']>128*MIB),('state',sample['state_bytes']>64*MIB),
-        ('artifact',sample['artifact_bytes']>512*MIB),('releases',sample['releases']>2),
+        ('artifact',sample['artifact_bytes']>512*MIB),('releases',sample['releases']>3),
         ('host_memory',sample['host_available_kib']<policy.host_reserve_kib),
         ('host_disk',sample['disk_free_bytes']<2*GIB)]
     if elapsed>10:rules.extend([('cpu_instantaneous',sample['cpu_percent']>150),('cpu_sustained',sample['sustained_cpu_percent']>100)])
@@ -686,7 +690,7 @@ def release_closure(base):
         if generation(os.fstat(fd))!=generation(initial):raise Refused('release_generation_changed')
         with os.scandir(fd) as entries:
             for entry in entries:
-                if len(releases)>=2:raise Refused('release_budget_exceeded')
+                if len(releases)>=3:raise Refused('release_budget_exceeded')
                 info=entry.stat(follow_symlinks=False)
                 if not stat.S_ISDIR(info.st_mode) or info.st_uid!=os.getuid():raise Refused('release_layout_invalid')
                 releases.append((entry.name,generation(info)))
@@ -696,7 +700,7 @@ def release_closure(base):
     return generation(initial),tuple(sorted(releases))
 
 class ArtifactCensus:
-    """Process-local, dated accounting of the two immutable release generations.
+    """Process-local, dated accounting of at most three immutable release generations.
     Validate ROOT/release closure each tick; full accounting after30s or on
     closure change. In-place payload writes are detected by the next full census,
     not by the shallow closure check. Never describe cached bytes as live bytes.
@@ -734,14 +738,16 @@ def validate_launchagent(path,entrypoint='mac-node-watchdog.py'):
     return value
 
 def verify_manifest(base,source):
-    manifest=json_file(base/'current/dist/fleet-deployment-manifest.json')
+    # Full payload and source pins require their own bounded JSON envelope;
+    # the node config retains the original 64 KiB cap.
+    manifest=json_file(base/'current/dist/fleet-deployment-manifest.json',1024*1024)
     if (not isinstance(source,str) or not re.fullmatch('[a-f0-9]{40}',source)
             or manifest.get('source_sha')!=source or manifest.get('source_dirty') is not False):
         raise Refused('source_identity_mismatch')
     entry=(base/'current/dist/index.js').resolve(strict=True)
     if base.resolve()/'releases' not in entry.parents:raise Refused('release_layout_invalid')
     payload=manifest.get('payload')
-    if not isinstance(payload,dict) or not 1<=len(payload)<=512 or 'index.js' not in payload:
+    if not isinstance(payload,dict) or not 1<=len(payload)<=1024 or 'index.js' not in payload:
         raise Refused('artifact_identity_missing')
     root=(base/'current/dist').resolve(strict=True);total=0;deadline=time.monotonic()+5
     for name,digest in payload.items():
