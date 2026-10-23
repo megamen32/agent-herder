@@ -1,3 +1,4 @@
+import { readCodexActiveRuntime, type CodexActiveReceipt } from "./codex-active-runtime.js";
 import { terminalQuotaFailure, type TerminalQuotaFailure } from "./quota-failure.js";
 import { execFile, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -481,6 +482,22 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       this.initialized = false;
     }
     await pendingInitialization?.catch(() => undefined);
+  }
+
+  private activeSessionSnapshotReceipt: CodexActiveReceipt | null = null;
+
+  getActiveSessionSnapshotReceipt(): CodexActiveReceipt | null { return this.activeSessionSnapshotReceipt; }
+
+  /** Existing connected controller only; no historical index or runtime startup. */
+  async listActiveSessions(): Promise<AgentSession[]> {
+    this.activeSessionSnapshotReceipt = null;
+    if (!this.isReady()) throw new Error("codex_active_existing_transport_unavailable");
+    if (this.projectRuntimePolicy && !(await this.hasCurrentProjectRoot())) throw new Error("codex_active_project_root_changed");
+    const result = await readCodexActiveRuntime((method, params) => this.request(method, params),
+      thread => this.toSession(thread),
+      thread => !this.projectRuntimePolicy || (this.projectThreadIds.has(thread.id) && thread.cwd === this.projectRuntimePolicy.rootPath));
+    this.activeSessionSnapshotReceipt = result.receipt;
+    return result.sessions;
   }
 
   async listSessions(options: {limit?: number} = {}): Promise<AgentSession[]> {
