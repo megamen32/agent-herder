@@ -35,14 +35,14 @@ export async function readActiveInventory(options:{path?:string;hostId?:string;n
 }
 /** Existing owner polling supplies current native sessions; no additional native scan. */
 export function startActiveInventoryOwner(snapshot:()=>{sessions:AgentSession[];observedAt:string|null;warming:boolean;failures?:Record<string,string>},adapters:Map<string,HarnessAdapter>,options:{path?:string;hostId?:string;intervalMs?:number}={}){
- const hostId=options.hostId??hostname(),path=options.path??activeInventoryPath();let closed=false,pending=false;let lastGeneration='';let workspaceUpdatePending=false;
+ const hostId=options.hostId??hostname(),path=options.path??activeInventoryPath();let closed=false,pending=false;let lastGeneration='';let workspaceUpdatePending=false;let publishAgain=false;
  const live=new Map<string,{harness:string;sessions:AgentSession[];failed:boolean;observedAt:string|null;exhaustive:boolean;reason?:string}>();
  const refreshing=new Set<string>();
  for(const [harness,adapter] of adapters)if(typeof (adapter as HarnessAdapter & {listActiveSessions?:unknown}).listActiveSessions==='function')live.set(harness,{harness,sessions:[],failed:true,observedAt:null,exhaustive:false,reason:'native_activity_warming'});
  const nativeWorkspaceReader=createMavisWorkspaceEvidenceReader({control:new MinimaxCodeControl(),workHostForSession:async identity=>{const record=await sessionWorkspaces.read(identity);const hosts=[...new Set(record?.workspaces.map(w=>w.hostId)??[])];return hosts.length===1?hosts[0]:undefined;}});
  const updateWorkspaces=createSessionWorkspaceOwnerUpdater({store:sessionWorkspaces,readEvidence:nativeWorkspaceReader});
  const tick=async()=>{
-  if(pending||closed)return;pending=true;
+  if(closed)return;if(pending){publishAgain=true;return;}pending=true;
   try{
    const current=snapshot();
    // Workspace declarations may change independently of the native generation.
@@ -57,7 +57,7 @@ export function startActiveInventoryOwner(snapshot:()=>{sessions:AgentSession[];
    const value:ActiveInventory={sessions,partial:sources.some(s=>!s.exhaustive),hosts:[{hostId,state:'available',observedAt:[current.observedAt,...dedicated.map(d=>d.observedAt)].filter((v):v is string=>Boolean(v)).sort().at(-1)??null,sources}]};
    const serialized=JSON.stringify(value);if(serialized===lastGeneration)return;
    await mkdir(dirname(path),{recursive:true});const tmp=`${path}.${randomUUID()}.tmp`;await writeFile(tmp,serialized,{mode:0o600});await rename(tmp,path);lastGeneration=serialized;
-  }finally{pending=false;}
+  }finally{pending=false;if(publishAgain&&!closed){publishAgain=false;void tick().catch(()=>{});}}
  };
  const publish=()=>void tick().catch(()=>{});
  const refreshDedicated=()=>{for(const [harness,adapter] of adapters){
