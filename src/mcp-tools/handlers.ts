@@ -1,3 +1,4 @@
+import {meshDiscoveryTimeoutMs} from "../mesh/discovery-timeout.js";
 import { HarnessAdapter, AgentSession } from "../types/index.js";
 import { z } from "zod";
 import {
@@ -245,13 +246,14 @@ export async function listAgentsResult(
 
   const unavailable: Array<{harness: string; error: string}> = [];
   let discoveryLimited = false;
+  const discoveryTimeoutMs=meshDiscoveryTimeoutMs();
   await Promise.all(targets.map(async adapter => {
     if (adapter.lazyStart && !adapter.lazyDiscovery && adapter.isReady && !adapter.isReady()) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const sessions = await Promise.race([
         adapter.listSessions({limit:parsed.limit,...(adapter.type === "opencode" && parsed.folder ? {cwd:expandPath(parsed.folder)} : {})}),
-        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Discovery exceeded 3 seconds")), 3000); }),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`Discovery exceeded ${discoveryTimeoutMs} ms`)), discoveryTimeoutMs); }),
       ]);
       discovered.push(...sessions);
       const receipt = adapter.getSessionSnapshotReceipt?.();
