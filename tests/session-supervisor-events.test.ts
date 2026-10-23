@@ -85,9 +85,11 @@ describe("SessionSupervisor domain events", () => {
     await supervisor.refreshSessions();
     events.length = 0;
 
+    const observedBeforeNative = supervisor.nativeInventorySnapshot().observedAt;
     current.status = "running";
     current.messageCount = 2;
     listener?.({ kind: "message.updated", harness: "opencode", sessionId: "external-1", nativeType: "message.updated" });
+    expect(supervisor.nativeInventorySnapshot().observedAt).toBe(observedBeforeNative);
     expect(events.map((event) => event.source)).toContain("native:opencode:message.updated");
     expect(health.get("opencode")).toMatchObject({ mode: "native", connected: true });
     const afterNative = events.length;

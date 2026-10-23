@@ -90,6 +90,7 @@ interface AutomaticResumeState {
 interface SessionSnapshot {
   sessions: AgentSession[];
   refreshedAt: number;
+  observedAt: number;
 }
 
 export interface HarnessModelCache {
@@ -301,12 +302,12 @@ export class SessionSupervisor {
 
   /** Metadata pages reuse this process's actual snapshot generation, without renewing freshness. */
   sessionInventorySnapshot(): {sessions: AgentSession[]; warming: boolean; observedAt: string | null} {
-    return {sessions: this.projectedSessions(), warming: Boolean(this.sessionRefresh) || !this.sessionSnapshot, observedAt: this.sessionSnapshot ? new Date(this.sessionSnapshot.refreshedAt).toISOString() : null};
+    return {sessions: this.projectedSessions(), warming: Boolean(this.sessionRefresh) || !this.sessionSnapshot, observedAt: this.sessionSnapshot ? new Date(this.sessionSnapshot.observedAt).toISOString() : null};
   }
 
   /** Owner-only raw inventory; legacy work-target projection cannot change runtime identity. */
   nativeInventorySnapshot(): {sessions: AgentSession[]; warming: boolean; observedAt: string | null; failures:Record<string,string>} {
-    return {failures:Object.fromEntries(this.inventoryFailures),sessions:this.sessionSnapshot?.sessions ?? [],warming:Boolean(this.sessionRefresh)||!this.sessionSnapshot,observedAt:this.sessionSnapshot?new Date(this.sessionSnapshot.refreshedAt).toISOString():null};
+    return {failures:Object.fromEntries(this.inventoryFailures),sessions:this.sessionSnapshot?.sessions ?? [],warming:Boolean(this.sessionRefresh)||!this.sessionSnapshot,observedAt:this.sessionSnapshot?new Date(this.sessionSnapshot.observedAt).toISOString():null};
   }
 
   async refreshSessions(filters: SessionFilters = {}): Promise<AgentSession[]> {
@@ -349,7 +350,8 @@ export class SessionSupervisor {
     this.sessionRefresh = this.readSessionSnapshot()
       .then((sessions) => {
         this.seedModelCacheFromSessions(sessions);
-        this.sessionSnapshot = { sessions, refreshedAt: Date.now() };
+        const observedAt = Date.now();
+        this.sessionSnapshot = { sessions, refreshedAt: observedAt, observedAt };
         if (previous) this.publishSnapshotDiff(previous, sessions);
         this.refreshStaleModelCaches();
         // The declared work places of the new snapshot are read in the
