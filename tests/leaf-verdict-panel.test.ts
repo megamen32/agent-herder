@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { transformWithOxc } from "vite";
 
 import { createWebServer, isAllowedRestrictedProviderLeaf } from "../src/web/server.js";
+import { isLeafAllowedByOwnerRule } from "../src/model-launch-policy.js";
 import {
   MODEL_VERDICT_LABELS,
   RESTRICTED_PROJECT_ROOTS,
@@ -302,16 +303,17 @@ describe("the rule of the server is the rule of the launcher", () => {
   const launcherSource = readFileSync(new URL("../src/autopilot/unfinished-session-launcher.ts", import.meta.url), "utf8");
   const pluginSource = readFileSync(new URL("../integrations/opencode/agent-herder-autopilot.js", import.meta.url), "utf8");
 
-  /** The rule of the launcher, taken from its own source. */
+  /**
+   * The rule of the launcher, taken from the one source of the rule.
+   *
+   * The launcher does not keep a copy of the rule any more: it asks the one
+   * module (`src/model-launch-policy.ts`). The server keeps its own copy only
+   * so the panel can answer with the word of the verdict, and this test is the
+   * fence that keeps that copy equal to the rule of the launcher.
+   */
   async function launcherRule(): Promise<(leaf: { providerId: string; modelId: string }) => boolean> {
-    const start = launcherSource.indexOf("function isAllowedRestrictedProviderLeaf");
-    expect(start, "the launcher must keep the rule of the provider").toBeGreaterThan(-1);
-    const end = launcherSource.indexOf("\n}\n", start);
-    expect(end, "the rule of the launcher must be a whole function").toBeGreaterThan(start);
-    const snippet = launcherSource.slice(start, end + 3);
-    const { code } = await transformWithOxc(snippet, "launcher-rule.ts", { lang: "ts" });
-    const factory = new Function(`${code}\nreturn isAllowedRestrictedProviderLeaf;`) as () => (leaf: { providerId: string; modelId: string }) => boolean;
-    return factory();
+    expect(launcherSource, "the launcher must ask the one source of the rule").toContain('from "../model-launch-policy.js"');
+    return isLeafAllowedByOwnerRule;
   }
 
   /** The closed projects of the launcher, taken from its own source. */

@@ -9,6 +9,13 @@ import type {
   HarnessSendResult,
   HarnessSessionSummary,
 } from "../client.js";
+import {
+  LEAF_LAUNCH_REFUSAL_MESSAGES,
+  isClosedProviderLeaf,
+  leafLaunchVerdict,
+  type LeafLaunchVerdict,
+  type ProviderLeaf,
+} from "./leaf-launch-policy.generated.js";
 
 /**
  * OpenCode protocol client.
@@ -181,7 +188,7 @@ export interface OpenCodeStatusSnapshot {
 }
 
 /** Last resort catalog: what a caller can still try when no catalog endpoint answered. */
-const defaultModels = [
+const defaultModelRoutes = [
   "openai/gpt-4o",
   "openai/gpt-4o-mini",
   "anthropic/claude-sonnet-4-20250514",
@@ -189,11 +196,26 @@ const defaultModels = [
   "deepseek/deepseek-chat",
 ];
 
+/**
+ * The routes of the last resort catalog the rule of the owner does not close.
+ *
+ * A provider the owner closed can never run, so the client does not offer it
+ * even when no catalog endpoint answered: the catalog must not promise what
+ * the guard of the OpenCode integration revokes. The routes the rule only
+ * refuses while the prohibitions are on stay in the catalog — the switch of
+ * the owner is known to the guard, not to the catalog, and
+ * `openCodeRouteVerdict` answers what the rule allows.
+ */
+const defaultModels = defaultModelRoutes.filter((route) => {
+  const leaf = openCodeRouteLeaf(route);
+  return leaf !== undefined && !isClosedProviderLeaf(leaf);
+});
+
 const textLimit = 16_384;
 const thinkingLimit = 2_048;
 const toolOutputLimit = 4_096;
 const toolInputLimit = 4_096;
-const restrictedModelRequestFailureMessage = "Agent Herder blocked this model request: the complete native provider route is forbidden or could not be verified for this project.";
+const restrictedModelRequestFailureMessage = LEAF_LAUNCH_REFUSAL_MESSAGES.modelRequest.routeForbidden;
 
 function boundedText(value: unknown, limit: number): string | undefined {
   return typeof value === "string" && value.length > 0 ? value.slice(0, limit) : undefined;
@@ -221,6 +243,42 @@ function safeEventError(value: unknown): string | undefined {
     .replace(/((?:api[_-]?key|token|password|secret)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;}]+)/gi, "$1[redacted]")
     .replace(/[\u0000-\u001f\u007f]+/g, " ")
     .slice(0, 384);
+}
+
+/**
+ * The leaf of one route of the model catalog.
+ *
+ * The catalog names a route as `provider/model`, and the rule of the owner
+ * reads the provider and the provider-facing model id.
+ */
+export function openCodeRouteLeaf(route: string): ProviderLeaf | undefined {
+  const value = route.trim();
+  const separator = value.indexOf("/");
+  if (separator <= 0 || separator === value.length - 1) return undefined;
+  return { providerId: value.slice(0, separator), modelId: value.slice(separator + 1) };
+}
+
+/**
+ * The verdict of the rule of the owner about one leaf of a route.
+ *
+ * The same rule the launcher and the guard of the OpenCode integration use:
+ * the provider the owner closed is refused always, a leaf of an allowed family
+ * is allowed, and every other leaf follows the switch of the owner.
+ */
+export function openCodeLeafLaunchVerdict(leaf: ProviderLeaf, options: { prohibitionsEnabled: boolean }): LeafLaunchVerdict {
+  return leafLaunchVerdict(leaf, options);
+}
+
+/**
+ * The verdict of the rule of the owner about one route of the model catalog.
+ *
+ * The resume asks this before it offers a route, so the resume never promises
+ * a route the guard of the OpenCode integration would revoke.
+ */
+export function openCodeRouteVerdict(route: string, options: { prohibitionsEnabled: boolean }): LeafLaunchVerdict {
+  const leaf = openCodeRouteLeaf(route);
+  if (!leaf) return "denied";
+  return leafLaunchVerdict(leaf, options);
 }
 
 export function unwrapEnvelope<T>(value: unknown): T {
@@ -1072,6 +1130,11 @@ export class OpenCodeClient implements HarnessClient {
     if (res.status !== 404) return { ok: false, error: `HTTP ${res.status}` };
     const abort = await this.fetch(`/session/${id}/abort`, { method: "POST" });
     return abort.ok ? { ok: true } : { ok: false, error: `HTTP ${abort.status}` };
+  }
+
+  /** The verdict of the rule of the owner about one route of a model. */
+  modelRouteVerdict(route: string, options: { prohibitionsEnabled: boolean }): LeafLaunchVerdict {
+    return openCodeRouteVerdict(route, options);
   }
 
   async listModels(): Promise<string[]> {

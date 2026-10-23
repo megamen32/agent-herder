@@ -2,6 +2,7 @@ import { probeRecoveryModelQuota, type RecoveryModelQuota } from "../model-quota
 import { normalizeSendAdmission } from "../adapters/quota-failure.js";
 import { isRecoveryModelReference, quotaEvidenceModelReference } from "../recovery-model-reference.js";
 import { NOTICEPLACE_HEALTH_MODELS } from "../automation/noticeplace-health-policy.js";
+import { isLeafAllowedByOwnerRule } from "../model-launch-policy.js";
 import { JudgeRequestTrace, JudgeRequestError } from "./judge-request.js";
 import { UserStyleStore, USER_STYLE_PROMPT, type StyleObservation } from "./user-style.js";
 import type { RecoveryAdmissionGate, RecoveryOperation } from "./recovery-admission.js";
@@ -156,17 +157,6 @@ function isCodexClaudeRestrictedCohortProject(cwd: string): boolean {
   });
 }
 
-function isAllowedRestrictedProviderLeaf(leaf: OpenCodeResolvedProviderLeaf): boolean {
-  const providerId = leaf.providerId.trim().toLocaleLowerCase("en-US");
-  const modelId = leaf.modelId.trim().toLocaleLowerCase("en-US");
-  if (!providerId || !modelId || /codex|claude/u.test(`${providerId}/${modelId}`)) return false;
-  const allowedMiniMax = new Set(["minimax", "minimax-code", "minimax-coding-plan"]);
-  const allowedGlm = new Set(["glm", "zai", "zai-coding-plan", "zhipu"]);
-  const isMiniMax = allowedMiniMax.has(providerId) && /minimax|mmcode/u.test(modelId);
-  const isGlm = allowedGlm.has(providerId) && /(^|[/_-])glm([-_/]|$)/u.test(modelId);
-  return isMiniMax || isGlm;
-}
-
 function isAllowedRestrictedProviderResolution(
   resolution: OpenCodeModelProviderResolution | null | undefined,
   requestedModel: string,
@@ -175,7 +165,7 @@ function isAllowedRestrictedProviderResolution(
     && resolution.nativeModelId === requestedModel
     && Array.isArray(resolution.resolvedProviderLeaves)
     && resolution.resolvedProviderLeaves.length > 0
-    && resolution.resolvedProviderLeaves.every((leaf) => isAllowedRestrictedProviderLeaf(leaf));
+    && resolution.resolvedProviderLeaves.every((leaf) => isLeafAllowedByOwnerRule(leaf));
 }
 
 function isSubagentSession(session: AgentSession | null | undefined): boolean {
