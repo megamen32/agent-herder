@@ -25,6 +25,7 @@ export {
   type HarnessEvent,
   type HarnessEventSourceHealth,
   type ControlResult,
+  type SessionRenameOutcome,
   type CompactSessionOptions,
   type MessageImage,
   getHarnessCapabilities,

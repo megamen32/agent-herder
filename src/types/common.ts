@@ -136,6 +136,20 @@ export interface ControlResult extends SendMessageResult {
   sessionId?: string;
 }
 
+/**
+ * The receipt of one in-place rename.
+ *
+ * The previous title and the new title are the native ones: the adapter reads
+ * the title back from the harness itself, so the receipt proves what the
+ * harness really shows instead of what was requested.
+ */
+export interface SessionRenameOutcome extends ControlResult {
+  /** The native title before the rename; null when the session had none. */
+  previousTitle?: string | null;
+  /** The native title after the rename, as the native readback returned it. */
+  title?: string;
+}
+
 export interface CompactSessionOptions {
   inputId: string;
   expectedUserMessageId?: string;
@@ -330,6 +344,16 @@ export interface HarnessAdapter {
 
   /** Create a new named native session when supported by the harness. */
   createSession?(options: CreateSessionOptions): Promise<AgentSession>;
+
+  /**
+   * Rename one existing native session in place.
+   *
+   * The native title of the same session changes. No session is created, no
+   * model turn is started and no active turn is interrupted: a harness that
+   * has no native rename channel does not implement this method at all, so an
+   * unsupported rename is never reported as a success.
+   */
+  renameSession?(id: string, options: { title: string }): Promise<SessionRenameOutcome>;
 
   /** Find the native parent session, when the transport exposes lineage. */
   getParent?(id: string): Promise<AgentSession | null>;

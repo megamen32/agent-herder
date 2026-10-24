@@ -3,7 +3,8 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import { resolveAutopilotStateDir } from "../autopilot/state-dir.js";
-import { HOOK_CATALOG, isHookKind, type HookKind } from "./catalog.js";
+import { HOOK_CATALOG, HOOK_KINDS, isHookKind, type HookKind } from "./catalog.js";
+import { hookTimeoutContracts, type HookTimeoutContract } from "./timeout-contract.js";
 import {
   HooksProhibitionsStore,
   type HooksProhibitionsAuditRecord,
@@ -43,7 +44,7 @@ export interface HooksPanelHook {
   scope: string;
   canProhibit: boolean;
   prohibition: string;
-  /** «включены», «выключены», «неизвестно» or «не запрещает». */
+  /** «выполняется», «не выполняется», «неизвестно» or «не запрещает». */
   state: string;
   /** When the hook fired last, if it ever did. */
   lastFiredAt?: string;
@@ -56,16 +57,28 @@ export interface HooksPanelView {
   ok: true;
   /** False when the state of the lever cannot be trusted. */
   known: boolean;
+  /** True when the optional hooks runtime of the herder runs at all. */
+  hooksEnabled: boolean;
   /** True when the hooks may forbid something. */
   prohibitionsEnabled: boolean;
   /** The hooks whose own prohibitions are off. */
   disabledHooks: HookKind[];
+  /** The hooks that do not run at all. */
+  inactiveHooks: HookKind[];
   changedBy: string;
   changedAt: string;
   reason: string;
   etag: string;
   hooks: HooksPanelHook[];
   audit: HooksProhibitionsAuditRecord[];
+  /**
+   * The timeout contract of every harness, as the machine has it right now.
+   *
+   * The numbers are read from the manifests of the installed packages and
+   * from the runtimes themselves. A number that was not read is «нет данных»,
+   * never a guess.
+   */
+  timeouts: HookTimeoutContract[];
 }
 
 /** The light answer of the hooks: what they must know to stay quiet. */
@@ -73,6 +86,10 @@ export interface HooksProhibitionsRead {
   ok: true;
   /** False when the state of the lever cannot be trusted. */
   known: boolean;
+  /** True when the optional hooks runtime of the herder runs at all. */
+  hooksEnabled: boolean;
+  /** True when this hook runs at all. */
+  active: boolean;
   prohibitionsEnabled: boolean;
   disabledHooks: HookKind[];
   etag: string;
@@ -94,7 +111,9 @@ export interface HooksActivityReport {
  * Does this hook still forbid anything?
  *
  * An unknown state forbids nothing: a hook that cannot learn the decision of
- * the owner must stay quiet rather than guess. A hook that is named in the
+ * the owner must stay quiet rather than guess. The switch of the whole hooks
+ * runtime comes first: while the optional runtime is off, no hook of the
+ * herder runs at all, so nothing forbids anything. A hook that is named in the
  * disabled set forbids nothing even when the other hooks still do.
  */
 export function hookProhibitionsEnabled(
@@ -103,8 +122,29 @@ export function hookProhibitionsEnabled(
   kind: HookKind,
 ): boolean {
   if (!known) return false;
+  if (!state.hooksEnabled) return false;
   if (!state.prohibitionsEnabled) return false;
   if (state.disabledHooks.includes(kind)) return false;
+  // A hook that does not run at all cannot forbid anything either.
+  if (state.inactiveHooks.includes(kind)) return false;
+  return true;
+}
+
+/**
+ * Does this hook run at all?
+ *
+ * The runtime switch comes first: while the optional runtime of the herder is
+ * off, no hook runs. A hook that the owner switched off on its own does not
+ * run either, even when the runtime is on.
+ */
+export function hookRuntimeActive(
+  state: HooksProhibitionsDocument,
+  known: boolean,
+  kind: HookKind,
+): boolean {
+  if (!known) return false;
+  if (!state.hooksEnabled) return false;
+  if (state.inactiveHooks.includes(kind)) return false;
   return true;
 }
 
@@ -209,13 +249,25 @@ export class HooksService {
   }
 
   /** The light answer the hooks ask for before they forbid something. */
-  async readProhibitions(): Promise<HooksProhibitionsRead> {
+  async readProhibitions(kind?: HookKind): Promise<HooksProhibitionsRead> {
     const { state, known, reason, etag } = await this.prohibitions.readState();
+    // The answer the hooks ask for is the effective one: while the optional
+    // runtime is off, no hook of the herder forbids anything, and the hook
+    // that the owner switched off on its own forbids nothing either. The
+    // scripts of the packages ask without naming their hook, so the list of
+    // the hooks that may not forbid carries both lists.
+    const mayForbid = known && state.hooksEnabled && state.prohibitionsEnabled;
     return {
       ok: true,
       known,
-      prohibitionsEnabled: known ? state.prohibitionsEnabled : false,
-      disabledHooks: [...state.disabledHooks],
+      // An unknown state runs no hook at all: a hook that cannot learn the
+      // decision of the owner stays quiet instead of guessing.
+      hooksEnabled: known ? state.hooksEnabled : false,
+      active: kind ? hookRuntimeActive(state, known, kind) : known && state.hooksEnabled,
+      prohibitionsEnabled: kind ? hookProhibitionsEnabled(state, known, kind) : mayForbid,
+      disabledHooks: [...new Set([...state.disabledHooks, ...state.inactiveHooks])].sort(
+        (left, right) => HOOK_KINDS.indexOf(left) - HOOK_KINDS.indexOf(right),
+      ),
       etag,
       ...(reason ? { reason } : {}),
     };
@@ -228,6 +280,7 @@ export class HooksService {
     const audit = await this.prohibitions.audit(20);
     const hooks: HooksPanelHook[] = HOOK_CATALOG.map((descriptor) => {
       const enabled = hookProhibitionsEnabled(state, known, descriptor.kind);
+      const active = hookRuntimeActive(state, known, descriptor.kind);
       return {
         kind: descriptor.kind,
         humanName: descriptor.humanName,
@@ -235,7 +288,18 @@ export class HooksService {
         scope: descriptor.scope,
         canProhibit: descriptor.canProhibit,
         prohibition: descriptor.prohibition,
-        state: !known ? "неизвестно" : !descriptor.canProhibit ? "не запрещает" : enabled ? "включены" : "выключены",
+        // The true state of the hook: while the whole optional runtime is off,
+        // the hook does not run at all — that is not the same thing as a hook
+        // that runs and forbids nothing.
+        state: !known
+          ? "неизвестно"
+          : !active
+            ? "не выполняется"
+            : !descriptor.canProhibit
+              ? "выполняется, не запрещает"
+              : enabled
+                ? "выполняется, может запрещать"
+                : "выполняется, не запрещает",
         ...(activity.lastFired[descriptor.kind] ? { lastFiredAt: activity.lastFired[descriptor.kind] } : {}),
         ...(activity.lastRefusal[descriptor.kind] ? { lastRefusal: activity.lastRefusal[descriptor.kind] } : {}),
       };
@@ -243,14 +307,17 @@ export class HooksService {
     return {
       ok: true,
       known,
+      hooksEnabled: known ? state.hooksEnabled : false,
       prohibitionsEnabled: state.prohibitionsEnabled,
       disabledHooks: [...state.disabledHooks],
+      inactiveHooks: [...state.inactiveHooks],
       changedBy: state.changedBy,
       changedAt: state.changedAt,
       reason: reason ?? state.reason,
       etag,
       hooks,
       audit,
+      timeouts: hookTimeoutContracts(),
     };
   }
 

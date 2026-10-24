@@ -36,6 +36,7 @@ import type {
   HarnessEvent,
   MessageAdmissionResult,
   SendMessageOptions,
+  SessionRenameOutcome,
   SetPermissionsOptions,
   RawTranscriptExport,
   SessionMessageView,
@@ -1571,6 +1572,52 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       return { ok: true, sessionId: id };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  /**
+   * Rename one existing native thread in place.
+   *
+   * Only the user-facing title of the same thread changes. The native
+   * `thread/name/set` writes it and the native `thread/read` proves it: no
+   * thread is created, no turn is started, and an active turn keeps running.
+   */
+  async renameSession(id: string, options: { title: string }): Promise<SessionRenameOutcome> {
+    const title = typeof options?.title === "string" ? options.title.trim() : "";
+    if (!title) return { ok: false, nonRetryable: true, error: "A session title is required" };
+    if (this.projectRuntimePolicy) {
+      // A project-scoped thread is ephemeral and keeps its own presentation
+      // name; the native name of such a thread is not Herder's to write.
+      return { ok: false, nonRetryable: true, error: "A project-scoped Codex thread keeps its own name" };
+    }
+    try {
+      await this.ensureReady();
+      this.assertLifecycleActive();
+      const before = await this.request("thread/read", { threadId: id, includeTurns: false }) as { thread?: CodexThread };
+      if (before.thread?.id !== id) {
+        return { ok: false, nonRetryable: true, error: `Codex thread ${id} was not found`, sessionId: id };
+      }
+      const previousTitle = before.thread.name ?? null;
+      await this.request("thread/name/set", { threadId: id, name: title });
+      this.assertLifecycleActive();
+      const after = await this.request("thread/read", { threadId: id, includeTurns: false }) as { thread?: CodexThread };
+      if (after.thread?.id !== id) {
+        return { ok: false, error: `Codex thread ${id} could not be read back after the rename`, sessionId: id };
+      }
+      const nativeTitle = after.thread.name ?? "";
+      if (nativeTitle !== title) {
+        return {
+          ok: false,
+          error: `Codex kept the title "${nativeTitle}" instead of "${title}"`,
+          sessionId: id,
+          previousTitle,
+        };
+      }
+      this.threads.set(id, after.thread);
+      this.emitEvent({ kind: "session.updated", harness: "codex", sessionId: id, nativeType: "thread/name/set" });
+      return { ok: true, sessionId: id, previousTitle, title: nativeTitle };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error), sessionId: id };
     }
   }
 

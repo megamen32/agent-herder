@@ -74,6 +74,13 @@ import { createMcpHandler, type McpServer } from "@modelcontextprotocol/server";
 import { createHash } from "node:crypto";
 import { toNodeHandler, type NodeMcpRequestHandler } from "@modelcontextprotocol/node";
 import type { AdapterRegistry } from "../adapter-registry.js";
+import {
+  composeSessionTitle,
+  mergeSessionLabel,
+  readSessionLabel,
+  writeSessionLabel,
+  SESSION_LABEL_LIMITS,
+} from "../session-labels.js";
 import { publishHealthRefusal, type HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import { checkCodexQuota, saveCodexQuotaPolicy } from "../codex-quota-guard.js";
@@ -1531,18 +1538,24 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const sessionId = url.searchParams.get("sessionId")?.trim();
     const cwd = url.searchParams.get("cwd")?.trim();
     if (!harness || !sessionId || !cwd) return sendJson(response, 400, { error: "harness, sessionId, and cwd are required" });
+    // The optional hooks runtime of the herder is off: the hook carries
+    // nothing into the session. The answer is empty, so a handler that is
+    // already loaded in a running harness becomes quiet at once — no restart
+    // of the harness and no loss of its sessions. The lifecycle of the
+    // session is still marked: the listing keeps reporting a running turn.
+    const hooksEnabled = await hooksRuntimeEnabled();
     const coordinationHeld=async()=>await getHumanStopStore().isHeld(harness,sessionId)||await supervisor.isAutomationHeld(harness,sessionId);
     let humanStopHeld = await coordinationHeld();
     if (url.searchParams.get("touch") === "1" && !coordinationNotes.activeWorkspaceForSession(sessionId)) await coordinationNotes.heartbeatSession({ sessionId, cwd });
-    const coordinationContext = await coordinationNotes.renderForSession({ harness, id: sessionId, cwd });
+    const coordinationContext = hooksEnabled ? await coordinationNotes.renderForSession({ harness, id: sessionId, cwd }) : null;
     if (response.destroyed) return;
     humanStopHeld = humanStopHeld || await coordinationHeld();
     if(humanStopHeld)await deferredMessages.discardActive(harness,sessionId);
-    const inboxMessages = humanStopHeld ? [] : await deferredMessages.list(sessionId);
+    const inboxMessages = humanStopHeld || !hooksEnabled ? [] : await deferredMessages.list(sessionId);
     const activeTurnId=url.searchParams.get('activeTurnId')?.trim();
     const currentAdapter=adapters.get(harness);
     const contextConnected=()=>!response.destroyed&&!request.aborted&&!request.socket.destroyed;
-    const activeMessages=!humanStopHeld&&activeTurnId&&url.searchParams.get('consumeActive')==='1'
+    const activeMessages=!humanStopHeld&&hooksEnabled&&activeTurnId&&url.searchParams.get('consumeActive')==='1'
       ?await deferredMessages.offerActive(harness,sessionId,activeTurnId,async()=>{
         if(!currentAdapter?.getCoordinationActiveTurnId)return false;
         try{return await currentAdapter.getCoordinationActiveTurnId(sessionId)===activeTurnId;}
@@ -1555,9 +1568,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     // The hook may have waited for store/native reads. A late Stop suppresses output.
     if(humanStopHeld||activeMessages.length&&await coordinationHeld()){activeMessages.length=0;humanStopHeld=true;await deferredMessages.discardActive(harness,sessionId);}
     if(!contextConnected())return;
-    const inboxContext = humanStopHeld ? null : renderDeferredMessages(inboxMessages);
-    const context = [inboxContext, coordinationContext].filter(Boolean).join("\n\n") || null;
-    return sendJson(response, 200, { context, inboxContext, inboxCount: inboxMessages.length, inboxIds:inboxMessages.map(message=>message.id), activeInboxContext:renderDeferredMessages(activeMessages), activeInboxIds:activeMessages.map(message=>message.id), active: Boolean(context), humanStopHeld });
+    const inboxContext = humanStopHeld || !hooksEnabled ? null : renderDeferredMessages(inboxMessages);
+    const context = hooksEnabled ? ([inboxContext, coordinationContext].filter(Boolean).join("\n\n") || null) : null;
+    return sendJson(response, 200, { context, inboxContext, inboxCount: inboxMessages.length, inboxIds:inboxMessages.map(message=>message.id), activeInboxContext:renderDeferredMessages(activeMessages), activeInboxIds:activeMessages.map(message=>message.id), active: Boolean(context), humanStopHeld, hooksEnabled });
   }
   if (url.pathname === "/api/coordination/inbox-ack" && request.method === "POST") {
     const body = await readJson(request);
@@ -1595,12 +1608,19 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
 
     // The tool-call hooks fired: the panel shows when they ran last.
     const activityHook = typeof body.hook === "string" ? body.hook : "";
-    if (activityHook === "PreToolUse" || activityHook === "PostToolUse") {
+    const hooksEnabled = await hooksRuntimeEnabled();
+    if (hooksEnabled && (activityHook === "PreToolUse" || activityHook === "PostToolUse")) {
       await hooksServiceOf().recordActivity({ hook: activityHook, outcome: "fired", sessionId, harness });
     }
     const blocks: string[] = [];
     const reservations: CoordinationNote[] = [];
     const conflicts: CoordinationConflict[] = [];
+    // The optional hooks runtime is off: no context is carried into the
+    // session. The lifecycle of the session is still marked, so the listing
+    // keeps reporting a running turn.
+    if (!hooksEnabled) {
+      return sendJson(response, 200, { reservations, conflicts, context: null, hooksEnabled: false });
+    }
     for (const [board, boardPaths] of groups) {
       try {
         await coordinationNotes.heartbeatSession({ sessionId, cwd: board, ttlSeconds });
@@ -1690,7 +1710,10 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   }
   if (url.pathname === "/api/hooks/prohibitions" && request.method === "GET") {
     // The light answer the hook scripts ask for before they forbid anything.
-    const read = await hooksServiceOf().readProhibitions();
+    // The kind names the hook that asks: a hook that the owner switched off on
+    // its own is quiet even when the runtime of the others is on.
+    const kind = url.searchParams.get("kind")?.trim();
+    const read = await hooksServiceOf().readProhibitions(isHookKind(kind) ? kind : undefined);
     response.setHeader("etag", read.etag);
     response.setHeader("cache-control", "no-store");
     return sendJson(response, 200, read);
@@ -1719,6 +1742,13 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         error: `Такого хука нет. Доступны: ${HOOK_KINDS.join(", ")}.`,
       });
     }
+    const inactive = body.inactiveHooks;
+    if (inactive !== undefined && (!Array.isArray(inactive) || inactive.some((kind) => !isHookKind(kind)))) {
+      return sendJson(response, 400, {
+        ok: false,
+        error: `Такого хука нет. Доступны: ${HOOK_KINDS.join(", ")}.`,
+      });
+    }
     // The revision of the state the owner read: a state that moved on is a
     // conflict, and nothing is written over it.
     const ifMatchHeader = request.headers["if-match"];
@@ -1738,8 +1768,12 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const result = await hooksServiceOf().applyProhibitions({
       source: "owner",
       actor: typeof body.actor === "string" && body.actor.trim() ? body.actor.trim() : "owner",
+      // The switch of the whole optional hooks runtime. It moves only here,
+      // by an explicit action of the owner: an automatic path never writes it.
+      ...(typeof body.hooksEnabled === "boolean" ? { hooksEnabled: body.hooksEnabled } : {}),
       ...(typeof body.prohibitionsEnabled === "boolean" ? { prohibitionsEnabled: body.prohibitionsEnabled } : {}),
       ...(Array.isArray(disabled) ? { disabledHooks: disabled as HookKind[] } : {}),
+      ...(Array.isArray(inactive) ? { inactiveHooks: inactive as HookKind[] } : {}),
       ...(typeof body.reason === "string" && body.reason.trim() ? { reason: body.reason.trim() } : {}),
     });
     if (!result.ok) {
@@ -2218,6 +2252,22 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!harness || !sessionId) return sendJson(response, 400, { error: "harness and sessionId are required" });
     if (!["opencode", "zcode", "codex", "claude", "qoder", "hermes", "fast-agent", "chatgpt", "minimax-code"].includes(harness)) return sendJson(response, 400, { error: "unknown harness" });
     return sendJson(response, 200, { harness, sessionId, held: await getHumanStopStore().isHeld(harness, sessionId) });
+  }
+  if (url.pathname === "/api/human-stop/generated-prompt" && request.method === "POST") {
+    // The digest of an automatic input of a harness.
+    //
+    // The hook of the runtime writes the text of its decision here, and the
+    // store remembers it as an automatic input. The route only registers the
+    // text: it does not release the fence and it does not hold it — that is
+    // the work of `releaseHumanStop`. The state of the lever of the owner is
+    // not read and not written here.
+    const body = await readJson(request);
+    const harness = typeof body.harness === "string" ? body.harness.trim() : "";
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+    const text = typeof body.text === "string" ? body.text : "";
+    if (!harness || !sessionId || !text.trim()) return sendJson(response, 400, { error: "harness, sessionId and text are required" });
+    await getHumanStopStore().rememberGeneratedPrompt(harness, sessionId, text);
+    return sendJson(response, 200, { ok: true });
   }
   if (url.pathname === "/api/quota-recovery/operator-cohort/enroll" && request.method === "POST") {
     if (!automationLaunchPolicyStore) return sendJson(response, 503, { error: "Project launch policy is unavailable" });
@@ -2808,6 +2858,72 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     });
     return;
   }
+  if (request.method === "GET" && url.pathname === "/api/sessions/label") {
+    // The metadata of one session: the project, the goal and the stage.
+    // The answer is the stored label, nothing more and nothing less.
+    const sessionId = (url.searchParams.get("sessionId") || "").trim();
+    const harness = (url.searchParams.get("harness") || "").trim();
+    if (!sessionId || !harness) return sendJson(response, 400, { error: "sessionId and harness are required" });
+    const label = await readSessionLabel(harness, sessionId);
+    return sendJson(response, 200, { sessionId, harness, label });
+  }
+  if (request.method === "POST" && url.pathname === "/api/sessions/label") {
+    // The native rename of one session and the metadata that goes with it.
+    //
+    // The title is written through the native channel of the harness and read
+    // back by the adapter itself: the panel never writes a name of its own.
+    // The project, the goal and the stage are stored next to the sessions and
+    // compose the title when the owner names none.
+    const body = await readJson(request);
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+    const harness = typeof body.harness === "string" ? body.harness.trim() : "";
+    if (!sessionId || !harness) return sendJson(response, 400, { ok: false, error: "sessionId and harness are required" });
+    const hostId = typeof body.hostId === "string" ? body.hostId.trim() : "";
+    if (hostId && hostId.toLowerCase() !== hostname().toLowerCase()) {
+      return sendJson(response, 409, {
+        ok: false,
+        error: "Сессия другой машины: переименование идёт через mesh-инструмент, а не через панель этого узла.",
+      });
+    }
+    const patch = {
+      ...(typeof body.project === "string" ? { project: body.project.trim().slice(0, SESSION_LABEL_LIMITS.project) } : {}),
+      ...(typeof body.goal === "string" ? { goal: body.goal.trim().slice(0, SESSION_LABEL_LIMITS.goal) } : {}),
+      ...(typeof body.stage === "string" ? { stage: body.stage.trim().slice(0, SESSION_LABEL_LIMITS.stage) } : {}),
+    };
+    const adapter = adapters.get(harness);
+    if (!adapter) {
+      return sendJson(response, 404, { ok: false, error: `Среда '${harness}' недоступна на этом узле.` });
+    }
+    if (typeof adapter.renameSession !== "function") {
+      return sendJson(response, 409, { ok: false, error: `У среды '${harness}' нет нативного канала переименования.` });
+    }
+    const merged = await mergeSessionLabel(harness, sessionId, patch);
+    const title = (typeof body.title === "string" ? body.title.trim() : "") || composeSessionTitle(merged);
+    if (!title) {
+      return sendJson(response, 400, {
+        ok: false,
+        error: "Нужно название: дайте название или проект, цель и этап.",
+      });
+    }
+    const result = await adapter.renameSession(sessionId, { title });
+    if (!result.ok) {
+      return sendJson(response, 409, {
+        ok: false,
+        error: result.error || "Нативное переименование не удалось.",
+        previousTitle: result.previousTitle ?? null,
+      });
+    }
+    const label = Object.keys(patch).length ? await writeSessionLabel(harness, sessionId, patch) : merged;
+    events?.publish({ kind: "sessions", uri: "herder://sessions", action: "changed" });
+    return sendJson(response, 200, {
+      ok: true,
+      sessionId,
+      harness,
+      title: result.title ?? title,
+      previousTitle: result.previousTitle ?? null,
+      label,
+    });
+  }
   if (request.method === "GET" && url.pathname === "/api/health/remediation") {
     return sendJson(response, 405, { error: "method_not_allowed", route: "/api/health/remediation" });
   }
@@ -3305,6 +3421,18 @@ function hooksServiceOf(): HooksService {
     hooksServiceDirectory = directory;
   }
   return hooksService;
+}
+
+/**
+ * Does the optional hooks runtime of the herder run at all?
+ *
+ * The switch is read from the durable document of the node, so it survives a
+ * restart and it is the same answer for every caller. A state that cannot be
+ * read runs no hook: an optional integration never comes back by itself.
+ */
+async function hooksRuntimeEnabled(): Promise<boolean> {
+  const read = await hooksServiceOf().readProhibitions();
+  return read.known && read.hooksEnabled;
 }
 
 /**

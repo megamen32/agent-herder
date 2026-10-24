@@ -47,17 +47,54 @@ export interface HooksPanelHook {
   lastRefusal?: HooksRefusal;
 }
 
+/** One hook of one harness and the timeout its manifest gives it. */
+export interface HookTimeoutRowView {
+  kind?: string;
+  timeoutSeconds?: number | null;
+  reason?: string;
+}
+
+/**
+ * The timeout contract of one harness, as the machine has it right now.
+ *
+ * The numbers come from the installed manifest and from the runtime itself.
+ * A number that was not read is «нет данных»: the screen never guesses.
+ */
+export interface HookTimeoutContractView {
+  harness?: string;
+  humanName?: string;
+  found?: boolean;
+  source?: string;
+  reason?: string;
+  limitSeconds?: number | null;
+  limitRange?: string;
+  limitSource?: string;
+  limitReason?: string;
+  diagnosticCode?: string;
+  diagnosticSource?: string;
+  diagnosticCondition?: string;
+  rows?: HookTimeoutRowView[];
+}
+
 export interface HooksView {
   ok?: boolean;
   /** False when the state of the lever cannot be trusted. */
   known?: boolean;
+  /** True when the optional hooks runtime of the herder runs at all. */
+  hooksEnabled?: boolean;
   prohibitionsEnabled?: boolean;
   disabledHooks?: HookKind[];
+  /** The hooks that do not run at all, even when the runtime is on. */
+  inactiveHooks?: HookKind[];
   changedBy?: string;
   changedAt?: string;
   reason?: string;
   etag?: string;
   hooks?: HooksPanelHook[];
+  /**
+   * The timeout contract of every harness, as the machine has it right now.
+   */
+  timeouts?: HookTimeoutContractView[];
   /** The journal of the changes of the lever. */
   audit?: Array<{ at?: string; actor?: string; reason?: string }>;
   error?: string;
@@ -142,6 +179,11 @@ export function hooksLeverText(view: HooksView | null): string {
   if (view.prohibitionsEnabled === false) {
     return "Запреты хуков выключены: хуки не отказывают в вызове инструментов и не держат ход.";
   }
+  // The runtime of the hooks comes first: while it is off, no hook runs at
+  // all, and the lever of the prohibitions means nothing yet.
+  if (view.hooksEnabled === false) {
+    return "Рантайм хуков выключен: ни один хук не выполняется и ничего не запрещает. Рычаг запретов пока не действует.";
+  }
   return "Запреты хуков включены: хуки могут отказывать в вызове инструментов и не давать сессии остановиться.";
 }
 
@@ -219,6 +261,12 @@ export function hooksStateLabel(hook: HooksPanelHook): string {
   if (hook.canProhibit === false) return "не запрещает";
   if (hook.state === "неизвестно") return "неизвестно";
   if (hook.state === "выключены") return "выключены";
+  // The true state of the hook: while the optional runtime of the herder is
+  // off, the hook does not run at all. That is not the same thing as a hook
+  // that runs and forbids nothing.
+  if (hook.state === "не выполняется") return "не выполняется";
+  if (hook.state === "выполняется, не запрещает") return "выполняется, не запрещает";
+  if (hook.state === "выполняется, может запрещать") return "выполняется, может запрещать";
   return "включены";
 }
 
@@ -232,6 +280,9 @@ export function hooksProhibitionText(hook: HooksPanelHook): string {
   if (hook.canProhibit === false) return "Запреты не действуют";
   const state = hooksStateLabel(hook);
   if (state === "неизвестно") return "Неизвестно";
+  if (state === "не выполняется") return "Не выполняется";
+  if (state === "выполняется, может запрещать") return "Может запрещать";
+  if (state === "выполняется, не запрещает") return "Не запрещает";
   return state === "выключены" ? "Запреты выключены" : "Запреты включены";
 }
 
@@ -272,6 +323,9 @@ export function hooksStopStatusText(view: HooksView | null): string {
   if (stop && stop.canProhibit === false) return "Остановка сессии: разрешена";
   const disabled = view.disabledHooks?.includes("Stop") === true;
   if (view.prohibitionsEnabled === false || disabled) return "Остановка сессии: разрешена";
+  // The runtime of the hooks comes first: while it is off, the Stop hook does
+  // not run, so it holds nothing.
+  if (view.hooksEnabled === false) return "Остановка сессии: разрешена (рантайм хуков выключен)";
   return "Остановка сессии: запрещена";
 }
 
@@ -368,7 +422,7 @@ export async function loadHooks(): Promise<HooksView> {
 
 /** Move the lever of the owner. */
 export async function saveHooksProhibitions(
-  change: { prohibitionsEnabled?: boolean; disabledHooks?: HookKind[]; reason: string },
+  change: { prohibitionsEnabled?: boolean; disabledHooks?: HookKind[]; hooksEnabled?: boolean; inactiveHooks?: HookKind[]; reason: string },
   etag?: string,
 ): Promise<HooksView> {
   const response = await fetch(HOOKS_PROHIBITIONS_ENDPOINT, {
@@ -431,6 +485,7 @@ export function HooksPanel({
 }: HooksPanelProps): React.ReactElement {
   const intent = hooksToggleIntent(view);
   const hooks = view?.hooks ?? [];
+  const timeouts = view?.timeouts ?? [];
   const stopDisabled = view?.disabledHooks?.includes("Stop") === true;
   const toggleTone = hooksToggleTone(view);
   const stopTone = hooksStopTone(view);
@@ -553,6 +608,64 @@ export function HooksPanel({
           </tbody>
         </table>
       </div>
+
+      {/* The timeout of every hook, as the runtime has it. The number comes
+          from the manifest of the installed package and the limit comes from
+          the runtime itself; the file of every number is named, and a number
+          that was not read is «нет данных». */}
+      {timeouts.length ? (
+        <div className="herder-settings-block herder-hooks-timeouts">
+          <h3>Срок хука (HOOK_TIMEOUT)</h3>
+          {/* The measured facts of the run of the leaf L37 on its stand: the
+              numbers are a measurement, not a promise of the runtime. */}
+          <p className="herder-settings-hint">
+            Замер L37 (стенд, 24.10.2026): решение → панель 0,133 с; решение → возврат хука рантайму 0,750 с; сам хук 235–508 мс.
+          </p>
+          <p className="herder-settings-hint">
+            После прогона панель записала отказ: harness=minimax-code, причина «сессия не остановлена: хук продолжил ход по входящему сообщению» — живой журнал отказов в таблице выше.
+          </p>
+          {timeouts.map((contract) => (
+            <div key={contract.harness ?? "harness"} className="herder-settings-block">
+              <p><strong>{contract.humanName ?? contract.harness}</strong></p>
+              <p className="herder-settings-hint">
+                {contract.found
+                  ? <>Манифест: {contract.source}</>
+                  : <>Нет данных: {contract.reason ?? "манифест хуков не найден"}</>}
+              </p>
+              <p className="herder-settings-hint">
+                {`Предел рантайма: ${contract.limitSeconds === null || contract.limitSeconds === undefined ? "нет данных" : `${contract.limitSeconds} с`}`}
+                {contract.limitRange ? ` (${contract.limitRange} с)` : ""}
+                {contract.limitSource ? ` · файл: ${contract.limitSource}` : ""}
+                {!contract.limitSource && contract.limitReason ? ` · ${contract.limitReason}` : ""}
+              </p>
+              {contract.diagnosticCode ? (
+                <p className="herder-settings-hint">
+                  {`Диагностика рантайма: ${contract.diagnosticCode}`}
+                  {contract.diagnosticSource ? ` · файл: ${contract.diagnosticSource}` : ""}
+                  {contract.diagnosticCondition ? ` · условие: ${contract.diagnosticCondition}` : ""}
+                </p>
+              ) : null}
+              {contract.rows?.length ? (
+                <table className="herder-settings-table">
+                  <thead><tr><th>Хук</th><th>Таймаут</th></tr></thead>
+                  <tbody>
+                    {contract.rows.map((row) => (
+                      <tr key={row.kind ?? "hook"}>
+                        <td>{row.kind}</td>
+                        <td>
+                          {row.timeoutSeconds === null || row.timeoutSeconds === undefined
+                            ? row.reason ?? "нет данных"
+                            : `${row.timeoutSeconds} с`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {view?.audit?.length ? (
         <details className="herder-settings-details">

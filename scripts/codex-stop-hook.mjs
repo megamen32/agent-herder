@@ -55,7 +55,35 @@ async function humanStopHeld() {
   return context.humanStopHeld === true;
 }
 
+/**
+ * Remember the prompt that the hook is about to hand to the session.
+ *
+ * The store of the fence lives on the panel, not on the node of the session:
+ * the panel owns the human-stop store, and the session of MiniMax Code may
+ * run on another machine (the panel of 100 is reached from a Mac session
+ * through the tunnel). The packaged plugin of MiniMax Code carries no
+ * dist/ at all, so the old local import could never work there — the digest
+ * was lost, and the hook refused to continue the turn every time.
+ *
+ * So the digest is written by the panel, over the same channel the hook
+ * already uses. When the panel does not know the route yet, the digest
+ * cannot be written; the hook then falls back to the local module when the
+ * package carries one (the layout of Codex), and reports the refusal when
+ * there is none — the turn is never continued on a fence the hook could not
+ * record.
+ */
 async function rememberGeneratedPrompt(text) {
+  try {
+    const response = await fetch(`${endpoint}/api/human-stop/generated-prompt`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ harness, sessionId, text }),
+      signal: AbortSignal.timeout(1200),
+    });
+    if (response.ok) return true;
+  } catch {
+    // The panel is unreachable or does not know the route yet.
+  }
   try {
     const moduleUrl = pathToFileURL(resolve(pluginRoot, "dist/human-stop-store.js")).href;
     const { getHumanStopStore } = await import(moduleUrl);
