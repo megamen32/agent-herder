@@ -3,7 +3,7 @@ import { open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { readMinimaxActiveSessions, type MinimaxActiveReceipt } from "./minimax-code-active.js";
-import { readMinimaxRuntimeActiveSessions } from "./minimax-code-runtime-activity.js";
+import { minimaxRuntimeStatePath, readMinimaxRuntimeActiveSessions } from "./minimax-code-runtime-activity.js";
 import { MinimaxCodeControl } from "./minimax-code-control.js";
 import { MINIMAX_CODE_HARNESS_CWD, MINIMAX_CODE_SESSION_STORE } from "./minimax-code-store.js";
 import type {
@@ -43,6 +43,8 @@ const MAX_TITLE_LENGTH = 120;
 const MAX_LAST_MESSAGE_LENGTH = 400;
 /** The session index is re-read at most this often. */
 const INDEX_TTL_MS = 10_000;
+/** The live proof of the runtime is kept for as long as it stays valid. */
+const LIVE_PROOF_TTL_MS = 15_000;
 /** Bound metadata enumeration independently from the displayed session window. */
 const MAX_ENUMERATED_DIRECTORIES = 4096;
 
@@ -55,6 +57,8 @@ export interface MinimaxCodeAdapterOptions {
   maxSessions?: number;
   /** Live control transport published by the desktop app. */
   control?: MinimaxCodeControl;
+  /** State file of the local MiniMax Code runtime, where the turns live. */
+  runtimeDb?: string;
 }
 
 interface MinimaxManifest {
@@ -271,6 +275,22 @@ async function collectSessionDirectories(root: string, limit: number): Promise<s
 }
 
 /**
+ * The later of two times of the last activity of one session.
+ *
+ * The store knows when the transcript was written last, and the runtime knows
+ * when it updated the session last. Both are facts about the same session, so
+ * the last activity of the session is the later of the two. A time that cannot
+ * be read is not a time: the readable one wins.
+ */
+function latestActivity(left: string | undefined, right: string | undefined): string {
+  const leftTime = Date.parse(String(left ?? ""));
+  const rightTime = Date.parse(String(right ?? ""));
+  if (!Number.isFinite(leftTime)) return right ?? left ?? "";
+  if (!Number.isFinite(rightTime)) return left ?? "";
+  return rightTime > leftTime ? right! : left!;
+}
+
+/**
  * Read-only MiniMax Code harness.
  *
  * MiniMax Code sessions live in the desktop local runtime store
@@ -299,11 +319,14 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
   private readonly cwd: string;
   private readonly maxSessions: number;
   private readonly control: MinimaxCodeControl;
+  private readonly runtimeDb: string;
   private indexCache: { at: number; entries: MinimaxStoredSession[] } | null = null;
   private contentCache = new Map<string, { stamp: string; session: AgentSession }>();
   private liveControlAvailable = false;
   private activeReceipt: MinimaxActiveReceipt | null = null;
   private activeRefreshProgress: {stage:string;stageStartedAt:string}|null = null;
+  /** Live proof of the runtime, shared by the list and the active inventory. */
+  private liveProofCache: { at: number; sessions: AgentSession[] } | null = null;
   getActiveSessionRefreshProgress(){return this.activeRefreshProgress;}
 
   getActiveSessionSnapshotReceipt(): MinimaxActiveReceipt | null { return this.activeReceipt; }
@@ -316,7 +339,70 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     // its own turns.
     const result = await readMinimaxActiveSessions(this.control,{onProgress:stage=>{this.activeRefreshProgress={stage,stageStartedAt:new Date().toISOString()};},readRuntimeActivity:()=>readMinimaxRuntimeActiveSessions()});
     this.activeReceipt = result.receipt;
+    this.liveProofCache = { at: Date.now(), sessions: result.sessions };
     return result.sessions;
+  }
+
+  /**
+   * The live sessions of the local runtime, proved by the runtime itself.
+   *
+   * The proof is the same one the active inventory uses: the runtime holds a
+   * lease of the turn it executes and releases it when the turn ends. A host
+   * without that runtime has no proof, and then the answer is an empty list,
+   * not a refusal and not an invented session.
+   *
+   * The proof is kept for the time it stays valid. The list is refreshed every
+   * few seconds, and the proof of a running turn does not get more true by
+   * being read again within the same second.
+   */
+  private async readLiveProof(): Promise<AgentSession[]> {
+    const cached = this.liveProofCache;
+    if (cached && Date.now() - cached.at < LIVE_PROOF_TTL_MS) return cached.sessions;
+    try {
+      const proof = await readMinimaxRuntimeActiveSessions(this.runtimeDb);
+      this.liveProofCache = { at: Date.now(), sessions: proof.sessions };
+      return proof.sessions;
+    } catch {
+      // No runtime state on this host: the stored status of the sessions stays
+      // what it is, and the last known proof is not invented anew.
+      this.liveProofCache = { at: Date.now(), sessions: cached?.sessions ?? [] };
+      return this.liveProofCache.sessions;
+    }
+  }
+
+  /**
+   * The stored sessions with the live proof of the runtime laid over them.
+   *
+   * The store knows which sessions exist; the runtime knows which of them work
+   * right now. The list says both honestly: a session the runtime proves live
+   * is `running`, and its time of the last activity is the time the runtime
+   * reports. A proven live session that the store has not listed yet is added
+   * to the list, because it is a real session of this host.
+   */
+  private async withLiveProof(sessions: AgentSession[]): Promise<AgentSession[]> {
+    const live = await this.readLiveProof();
+    if (!live.length) return sessions;
+    const merged = [...sessions];
+    const positions = new Map(sessions.map((session, index) => [session.id, index]));
+    for (const proven of live) {
+      const position = positions.get(proven.id);
+      if (position === undefined) {
+        // The work directory of a session is only known once the session
+        // declares it, so the harness reports its pseudo project and keeps the
+        // real place in the metadata.
+        merged.push({ ...proven, cwd: this.cwd, meta: { ...proven.meta, nativeWorkspaceDir: proven.cwd || undefined } });
+        continue;
+      }
+      const stored = merged[position];
+      merged[position] = {
+        ...stored,
+        status: proven.status,
+        lastActivity: latestActivity(stored.lastActivity, proven.lastActivity),
+        title: stored.title || proven.title,
+        meta: { ...stored.meta, ...proven.meta, nativeWorkspaceDir: proven.cwd || stored.meta?.nativeWorkspaceDir },
+      };
+    }
+    return merged;
   }
 
   constructor(options: MinimaxCodeAdapterOptions = {}) {
@@ -324,6 +410,7 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     this.cwd = options.cwd || MINIMAX_CODE_HARNESS_CWD;
     this.maxSessions = options.maxSessions || 500;
     this.control = options.control || new MinimaxCodeControl();
+    this.runtimeDb = options.runtimeDb || minimaxRuntimeStatePath();
   }
 
   /**
@@ -369,7 +456,7 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     const limited = stored.slice(0, Math.min(options.limit ?? this.maxSessions, this.maxSessions));
     const sessions: AgentSession[] = [];
     for (const entry of limited) sessions.push(await this.toSession(entry));
-    return sessions;
+    return this.withLiveProof(sessions);
   }
 
   async findNamedSessions(name: string, cwd: string): Promise<AgentSession[]> {

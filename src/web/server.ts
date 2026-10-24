@@ -2,6 +2,7 @@ import {startActiveFleetInventoryOwner} from '../active-session-fleet.js';
 import {startActiveInventoryOwner} from "../active-session-inventory.js";
 import {listActiveSessions} from "../mcp/active-session-tools.js";
 import {readMinimaxThreadGoals} from "../adapters/minimax-code-thread-goals.js";
+import {orderSessionListForPanel} from "../session-listing.js";
 import type { BackgroundAutopilotStop } from "../autopilot/background-stop.js";
 import type { AutopilotRunnerInput } from "../autopilot-runner.js";
 import { projectSessionInventory } from "./session-inventory.js";
@@ -2918,7 +2919,10 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       // The answer is a window: the sessions of the window and the counter
       // of the whole list. `truncated`, `total` and `limit` travel with it,
       // so the panel knows that the list is longer than it shows.
-      const visible = sessionListWindow(snapshot.sessions, asked);
+      // The window is a prefix, so the list is ordered first: the live
+      // sessions and then the newest ones, or the harness that was registered
+      // last would never reach the window at all.
+      const visible = sessionListWindow(orderSessionListForPanel(snapshot.sessions), asked);
       const truncated = visible.length < total;
       return sendJson(response, 200, url.searchParams.get("inventory") === "1"
         ? { sessions: projectSessionInventory(visible), warming: snapshot.warming, total, limit: asked, truncated }
@@ -2926,7 +2930,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
     const sessions = await supervisor.listSessions(filters);
     const total = sessions.length;
-    const visible = sessionListWindow(sessions, asked);
+    const visible = sessionListWindow(orderSessionListForPanel(sessions), asked);
     sendJson(response, 200, {
       sessions: url.searchParams.get("inventory") === "1" ? projectSessionInventory(visible) : visible,
       warming: false,

@@ -68,6 +68,31 @@ async function writeSession(
   return dir;
 }
 
+/** Рантайм-БД с одним выполняемым прогоном и одной завершённой сессией. */
+async function runtimeStateWithTurn(root: string, liveId: string, updatedAtMs: number): Promise<string> {
+  const { DatabaseSync } = await import("node:sqlite");
+  const path = join(root, "runtime-state.sqlite");
+  const db = new DatabaseSync(path);
+  const future = Date.now() + 60_000;
+  db.exec(`create table local_runtime_session_locks(session_id text,owner_id text,owner_kind text,acquired_at_ms integer,expires_at_ms integer);
+    create table local_runtime_sessions(session_id text,title text,workspace_dir text,parent_session_id text,agent_name text,updated_at_ms integer,created_at_ms integer);
+    create table local_runtime_turn_ingress(session_id text,status text,completed_at_ms integer);
+    create table local_runtime_session_agent_state(session_id text,terminal_outcome text);
+    create table local_runtime_message_rows(session_id text,role text,created_at_ms integer,data_json text);`);
+  const owner = `turn-lease:${process.pid}:owner`;
+  db.exec(`insert into local_runtime_session_locks values('${liveId}','${owner}','turn',${Date.now()},${future});
+    insert into local_runtime_session_locks values('settled','${owner}','turn',${Date.now()},${future});
+    insert into local_runtime_sessions values('${liveId}','Цель живой сессии','/work',null,'mavis',${updatedAtMs},${updatedAtMs});
+    insert into local_runtime_sessions values('settled','Устаревшая','/work',null,'mavis',${updatedAtMs},${updatedAtMs});
+    insert into local_runtime_turn_ingress values('${liveId}','accepted',null);
+    insert into local_runtime_turn_ingress values('settled','completed',${Date.now()});
+    insert into local_runtime_session_agent_state values('${liveId}',null);
+    insert into local_runtime_session_agent_state values('settled',null);
+    insert into local_runtime_message_rows values('${liveId}','user',${Date.now()},'{"msg_content":"первый промпт цели"}');`);
+  db.close();
+  return path;
+}
+
 afterEach(async () => {
   while (servers.length > 0) {
     const server = servers.pop();
@@ -352,5 +377,77 @@ describe("MinimaxCodeAdapter with the published desktop transport", () => {
     const result = await adapter.sendMessage("mvs_0000000000000000000000000000bbb1", { message: "привет" });
     expect(result.ok).toBe(false);
     expect(result.error).toContain("local runtime");
+  });
+
+  /**
+   * Список сессий MiniMax Code должен говорить правду о живости.
+   *
+   * Стор на диске знает, какие сессии существуют, но не знает, какие из них
+   * работают сейчас: до правки каждая сохранённая сессия получала статус
+   * `idle`. Рантайм знает: он держит lease прогона, который выполняет прямо
+   * сейчас. Список обязан совпадать с активным инвентарём, иначе живая
+   * сессия, которую рантайм доказывает, в панели не видна.
+   */
+  it("приводит в списке сессию, которую рантайм доказывает как выполняемую", async () => {
+    const root = await store();
+    const storedId = "mvs_0000000000000000000000000000c001";
+    const liveId = "mvs_0000000000000000000000000000c002";
+    const updatedAtMs = 1_700_000_100_000;
+    await writeSession(root, storedId, { updatedAtMs });
+    const runtimeDb = await runtimeStateWithTurn(root, liveId, updatedAtMs);
+    const adapter = new MinimaxCodeAdapter({
+      sessionStore: root,
+      cwd: "/tmp/minimax",
+      runtimeDb,
+      control: new MinimaxCodeControl({ manifestPath: join(root, "offline-manifest.json") }),
+    });
+
+    const sessions = await adapter.listSessions();
+    const live = sessions.find((session) => session.id === liveId);
+    expect(live).toBeDefined();
+    expect(live?.status).toBe("running");
+    expect(live?.meta?.activityEvidence).toBe("native_runtime_turn_lease");
+    // Время последней активности — реальное, а не штамп старого файла.
+    expect(live?.lastActivity).toBe(new Date(updatedAtMs).toISOString());
+    // Сохранённая сессия остаётся в списке и не выдумывает живость.
+    const stored = sessions.find((session) => session.id === storedId);
+    expect(stored).toBeDefined();
+    expect(stored?.status).toBe("idle");
+  });
+
+  it("берёт время последней активности как позднейшую из двух реальных отметок", async () => {
+    const root = await store();
+    const liveId = "mvs_0000000000000000000000000000c003";
+    const storedAt = 1_700_000_100_000;
+    const runtimeAt = 1_700_000_900_000;
+    await writeSession(root, "mvs_0000000000000000000000000000c004", { updatedAtMs: storedAt });
+    const runtimeDb = await runtimeStateWithTurn(root, liveId, runtimeAt);
+    const adapter = new MinimaxCodeAdapter({
+      sessionStore: root,
+      cwd: "/tmp/minimax",
+      runtimeDb,
+      control: new MinimaxCodeControl({ manifestPath: join(root, "offline-manifest.json") }),
+    });
+
+    const live = (await adapter.listSessions()).find((session) => session.id === liveId);
+    // Рантайм обновил сессию позже транскрипта — значит позже и последняя активность.
+    expect(live?.lastActivity).toBe(new Date(runtimeAt).toISOString());
+  });
+
+  it("без рантайм-БД список остаётся правдивым и не выдумывает живых сессий", async () => {
+    const root = await store();
+    const storedId = "mvs_0000000000000000000000000000c005";
+    await writeSession(root, storedId, { updatedAtMs: 1_700_000_100_000 });
+    const adapter = new MinimaxCodeAdapter({
+      sessionStore: root,
+      cwd: "/tmp/minimax",
+      runtimeDb: join(root, "нет-такой-базы.sqlite"),
+      control: new MinimaxCodeControl({ manifestPath: join(root, "offline-manifest.json") }),
+    });
+
+    const sessions = await adapter.listSessions();
+    expect(sessions.map((session) => session.id)).toEqual([storedId]);
+    expect(sessions[0]?.status).toBe("idle");
+    expect(sessions[0]?.meta?.liveStatus).toBe("unknown");
   });
 });
