@@ -29,12 +29,32 @@ export const COMMON_SETTINGS_OWNER_ENV = "AGENT_HERDER_COMMON_SETTINGS_OWNER";
 /** The interval between two rounds of taking the document, in milliseconds. */
 export const COMMON_SETTINGS_SYNC_INTERVAL_MS = 30_000;
 
+/**
+ * What the owner knows about one node of the fleet.
+ *
+ * Four facts and not two: a node that holds the wanted revision applied it, a
+ * node that holds another one diverged, a node that answered and applied
+ * nothing has not applied it yet, and a node that did not answer is
+ * unreachable — nothing at all is known about it.
+ */
+export type CommonSettingsNodeFact = "применена" | "расходится" | "не применена" | "недоступна";
+
 /** One node of the fleet, as the owner reads it. */
 export interface CommonSettingsNodeView {
   /** The name of the node. */
   hostId: string;
-  /** Whether the node takes the common settings. */
-  optIn: boolean;
+  /**
+   * Whether the node takes the common settings.
+   *
+   * `null` — the node did not answer, and nothing is known about it. An
+   * unknown fact is never written as `false`: a node that did not answer is not
+   * a node that refuses the common settings.
+   */
+  optIn: boolean | null;
+  /** Whether the node answered the round of asking. */
+  reachable: boolean;
+  /** What is known about the node: applied, diverged, not applied, unreachable. */
+  fact: CommonSettingsNodeFact;
   /** The state of the node: it confirmed, it diverged, or it is unknown. */
   status: "подтвердил" | "расходится" | "не подтвердил";
   /** The revision the node holds. */
@@ -61,6 +81,8 @@ export interface CommonSettingsFleetView {
   total: number;
   /** The nodes that did not confirm, by name. */
   unconfirmed: string[];
+  /** The nodes that did not answer the round of asking, by name. */
+  unreachable: string[];
   /** Whether a round of asking was made. */
   attempted: boolean;
 }
@@ -118,9 +140,22 @@ export async function readCommonSettingsFleet(input: {
     const appliedRevision = status?.appliedRevision ?? null;
     const confirmedAt = status?.appliedAt ?? null;
     const holds = appliedRevision !== null && appliedRevision === input.revision;
+    // The fact of the node is what the answer of the node says: a node that
+    // did not answer is unreachable and nothing is known about it, and a node
+    // that answered and holds nothing has not applied the document yet. The
+    // two are never one state.
+    const reachable = status !== null;
     const view: CommonSettingsNodeView = {
       hostId: peer.hostId,
-      optIn: status?.optIn ?? false,
+      optIn: status ? status.optIn : null,
+      reachable,
+      fact: !reachable
+        ? "недоступна"
+        : holds
+          ? "применена"
+          : appliedRevision === null
+            ? "не применена"
+            : "расходится",
       status: !status
         ? "не подтвердил"
         : holds
@@ -130,8 +165,8 @@ export async function readCommonSettingsFleet(input: {
             : "расходится",
       appliedRevision,
       confirmedAt,
-      reason: reason ?? (holds ? null : status?.appliedRevision === null
-        ? "Нода не назвала ревизию, которую она держит."
+      reason: reason ?? (holds ? null : appliedRevision === null
+        ? "Нода ответила и берёт общие настройки, но общий документ к ней ещё не доехал: ревизия не названа."
         : `Нода держит другую ревизию (${appliedRevision}).`),
       conflicts: status?.conflicts ?? [],
     };
@@ -155,6 +190,9 @@ export async function readCommonSettingsFleet(input: {
     confirmed: summary.confirmed,
     total: summary.total,
     unconfirmed: summary.unconfirmed,
+    // The nodes that did not answer are named apart: a node that is down is
+    // not a node that holds another revision.
+    unreachable: nodes.filter((node) => !node.reachable).map((node) => node.hostId),
     attempted: true,
   };
 }
