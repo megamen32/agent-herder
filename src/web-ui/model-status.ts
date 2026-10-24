@@ -131,7 +131,7 @@ export function approvedModelId(
  * The current route of the harness comes first, then the route of the product,
  * then the common model of the harness, then the catalog of the environment.
  * The list is bounded: the server resolves every id of it against the gateway
- * of the route, and a long catalog would cost more than it is worth.
+ * of the route, and a long catalog takes more effort than it is worth.
  */
 export function modelCandidates(
   harness: string,

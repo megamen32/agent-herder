@@ -773,9 +773,9 @@ export function incidentModelIssue(value: string): string | undefined {
   if (issue) return issue;
   const model = value.trim();
   const gateway = model.toLocaleLowerCase("en-US").startsWith("omniroute/");
-  const subscription = model.toLocaleLowerCase("en-US").startsWith("minimax-coding-plan/");
-  if (model.includes("/") && !gateway && !subscription) {
-    return "Маршрут инцидента должен вести через OmniRoute (или через MiniMax по подписке), без подмены провайдера.";
+  const miniMaxRoute = model.toLocaleLowerCase("en-US").startsWith("minimax-coding-plan/");
+  if (model.includes("/") && !gateway && !miniMaxRoute) {
+    return "Маршрут инцидента должен вести через OmniRoute (или через маршрут MiniMax), без подмены провайдера.";
   }
   return undefined;
 }
@@ -827,8 +827,8 @@ export function LaunchPolicySettings({ onOpenProjects }: { onOpenProjects?: () =
       const model = route.models?.[harness] ?? policy.models[harness];
       return Boolean(model?.trim()) && model.length <= 256;
     }));
-  // The gateway combo route stays the first choice; the MiniMax subscription
-  // route is allowed as a fallback, so nothing is filtered out of the list.
+  // The gateway combo route stays the first choice; the MiniMax route
+  // is allowed as a fallback, so nothing is filtered out of the list.
   const incidentModelOptions = (() => {
     const options = [...(modelOptions.opencode ?? [])];
     const first = "omniroute/minimax-combo-m3.1";
