@@ -235,6 +235,7 @@ export interface ListAgentsResult {
 export async function listAgentsResult(
   adapters: Map<string, HarnessAdapter>,
   args: unknown,
+  options?: { discoveryTimeoutMs?: number },
 ): Promise<ListAgentsResult> {
   const parsed = ListAgentsSchema.parse(args);
   const discovered: AgentSession[] = [];
@@ -246,7 +247,7 @@ export async function listAgentsResult(
 
   const unavailable: Array<{harness: string; error: string}> = [];
   let discoveryLimited = false;
-  const discoveryTimeoutMs=meshDiscoveryTimeoutMs();
+  const discoveryTimeoutMs=options?.discoveryTimeoutMs??meshDiscoveryTimeoutMs();
   await Promise.all(targets.map(async adapter => {
     if (adapter.lazyStart && !adapter.lazyDiscovery && adapter.isReady && !adapter.isReady()) return;
     let timer: ReturnType<typeof setTimeout> | undefined;

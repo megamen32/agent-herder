@@ -44,7 +44,7 @@ import type { IntegratorFleetRuntime } from "../integrator-fleet-runtime.js";
 import { coordinationNotes, normalizeHostId, type CoordinationNoteStore } from "../coordination-notes.js";
 import type { GptAdminTransport } from "../mesh/gptadmin.js";
 import { unwrapResult, type MeshAddress } from "../mesh/protocol.js";
-import { FleetDirectTransport, directFleetPeers } from "../mesh/fleet-direct-transport.js";
+import { FleetDirectTransport, fleetPeers, type DirectPeer } from "../mesh/fleet-direct-transport.js";
 import { assertModelAllowedForDirectory, assertModelAllowedForDirectoryWithPolicy, policyRestrictsModels, type ProjectModelPolicyProvider } from "../project-model-gate.js";
 import { checkDeliveryModel, resolveSessionWorkDirectory, type ProjectModelPolicyStateProvider } from "../project-model-delivery-gate.js";
 import { applySessionTarget } from "../session-target.js";
@@ -79,6 +79,8 @@ export function registerSessionTools(server: McpServer, deps: {
   coordination?: CoordinationNoteStore;
   /** Peer transport used to verify a work directory on another machine. */
   transport?: GptAdminTransport;
+  /** Peers this process may call. Defaults to the fleet; a unit test narrows it to nobody. */
+  routingPeers?: readonly DirectPeer[];
   /** Fleet router used to retarget a session that lives on another machine. */
   fleet?: FleetSessionTargetRouter;
   /** Reads the current launch policy for the per-project model gate. */
@@ -89,12 +91,15 @@ export function registerSessionTools(server: McpServer, deps: {
   const { adapters, jobs, events } = deps;
   const coordination = deps.coordination ?? coordinationNotes;
   let peerTransport: GptAdminTransport | undefined = deps.transport;
-  function selectedRemotePeer(hostId?: string) {
+  /**
+   * The peer that owns the named machine, if this process may call it. A machine
+   * that is not callable is not an error here: the caller decides what it means
+   * (a browse has no sessions of it, a message has no route to it).
+   */
+  function selectedRemotePeer(hostId?: string): DirectPeer | undefined {
     const requested = normalizeHostId(hostId, hostname());
     if (requested.toLowerCase() === hostname().toLowerCase()) return undefined;
-    const peer = directFleetPeers.find(candidate => candidate.hostId.toLowerCase() === requested.toLowerCase());
-    if (!peer) throw new Error(`host_target_unavailable:${requested}`);
-    return peer;
+    return (deps.routingPeers ?? fleetPeers()).find(candidate => candidate.hostId.toLowerCase() === requested.toLowerCase());
   }
   /**
    * Override the work machine and/or work directory of a live session.
@@ -238,7 +243,7 @@ export function registerSessionTools(server: McpServer, deps: {
   server.registerTool("agent_info", { description: "Get detailed info about a specific session. Always shows model and last message. Select hostId and harness to read an existing session on another machine.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional() }), outputSchema: z.object({ session: sessionSchema.nullable() }) }, async (args) => {
     const requestedHost = normalizeHostId(args.hostId, hostname());
     if (requestedHost.toLowerCase() !== hostname().toLowerCase()) {
-      const peer = directFleetPeers.find(candidate => candidate.hostId.toLowerCase() === requestedHost.toLowerCase());
+      const peer = (deps.routingPeers ?? fleetPeers()).find(candidate => candidate.hostId.toLowerCase() === requestedHost.toLowerCase());
       if (!peer || !args.harness) throw new Error("remote_session_host_and_harness_required");
       const scope = await deps.integratorRuntime?.adapterForSession({ hostId: peer.hostId, harness: args.harness, nativeSessionId: args.sessionId });
       if (scope?.kind === "deny") throw new Error("project_session_scope_unavailable");

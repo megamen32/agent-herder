@@ -4,7 +4,7 @@ import type { AgentSession, HarnessAdapter } from "./types/index.js";
 import { normalizeHostId, type CoordinationNoteStore } from "./coordination-notes.js";
 import { SetSessionTargetSchema } from "./mcp-tools/definitions.js";
 import type { GptAdminTransport } from "./mesh/gptadmin.js";
-import { FleetDirectTransport, directFleetPeers } from "./mesh/fleet-direct-transport.js";
+import { FleetDirectTransport, fleetPeers, type DirectPeer } from "./mesh/fleet-direct-transport.js";
 import { unwrapResult } from "./mesh/protocol.js";
 
 /** The four states a work-target operation can end in. */
@@ -37,6 +37,8 @@ export interface SessionTargetContext {
   coordination: CoordinationNoteStore;
   /** Peer transport used to verify a work directory on another machine. */
   transport?: GptAdminTransport;
+  /** The known machines of the fleet. Defaults to the fleet of this process. */
+  peers?: readonly DirectPeer[];
   /** Resolves one named harness of this process; the web surface uses its own session route. */
   resolveSession?: (harness: string, sessionId: string) => Promise<AgentSession | null | undefined>;
 }
@@ -50,14 +52,14 @@ let defaultPeerTransport: GptAdminTransport | undefined;
 function peerTransport(context: SessionTargetContext): GptAdminTransport {
   if (context.transport) return context.transport;
   if (!defaultPeerTransport) {
-    defaultPeerTransport = new FleetDirectTransport(directFleetPeers.filter((peer) => peer.hostId !== "MacBook-Pro-User.local"));
+    defaultPeerTransport = new FleetDirectTransport(fleetPeers().filter((peer) => peer.hostId !== "MacBook-Pro-User.local"));
   }
   return defaultPeerTransport;
 }
 
 /** Canonical spelling of a machine, so one machine always has one name. */
-function canonicalPeer(hostId: string) {
-  return directFleetPeers.find((peer) => peer.hostId.toLowerCase() === hostId.toLowerCase());
+function canonicalPeer(context: SessionTargetContext, hostId: string) {
+  return (context.peers ?? fleetPeers()).find((peer) => peer.hostId.toLowerCase() === hostId.toLowerCase());
 }
 
 /** Finds a live session by its native ID, optionally narrowed to one harness. */
@@ -116,7 +118,7 @@ export async function applySessionTarget(context: SessionTargetContext, args: Se
     return receipt("updated", localHostId, targetCwd);
   }
   // Another machine: the directory must be proven on that machine first.
-  const peer = canonicalPeer(targetHostId);
+  const peer = canonicalPeer(context, targetHostId);
   if (!peer) return receipt("unreachable", targetHostId, targetCwd, `host_target_unavailable:${targetHostId}`);
   let verifiedCwd: string;
   try {

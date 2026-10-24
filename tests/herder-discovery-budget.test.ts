@@ -9,7 +9,9 @@ it('returns healthy harnesses within a bounded deadline and keeps incompleteness
  const hung={...common,type:'codex',name:'hung',listSessions:()=>new Promise(()=>{})} as HarnessAdapter;
  const healthy={...common,type:'zcode',name:'healthy',async listSessions(){return[session]}} as HarnessAdapter;
  try{
-  const pending=listAgentsResult(new Map([['codex',hung],['zcode',healthy]]),{harness:'all',folder:'/repo',status:'running'});
+  // The deadline of the contract is given by the caller. The thirty-second
+  // window of the installation is a product decision, not a condition of the test.
+  const pending=listAgentsResult(new Map([['codex',hung],['zcode',healthy]]),{harness:'all',folder:'/repo',status:'running'},{discoveryTimeoutMs:3000});
   await vi.advanceTimersByTimeAsync(3100);
   const result=await pending;
   expect(result.sessions.map(s=>s.id)).toEqual(['z']);

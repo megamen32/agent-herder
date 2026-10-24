@@ -12,7 +12,7 @@ import { join } from "node:path";
 
 import { AutomationLaunchPolicyStore } from "../automation-launch-policy.js";
 import { resolveAutopilotStateDir } from "../autopilot/state-dir.js";
-import { directFleetPeers } from "../mesh/fleet-direct-transport.js";
+import { fleetPeers as fleetMembers } from "../mesh/fleet-direct-transport.js";
 import { SettingsStore } from "../web/settings-store.js";
 import { CommonSettingsStateStore, type CommonSettingsRole } from "./node-state.js";
 import { CommonSettingsNodeService, launchPolicyTarget } from "./node-service.js";
@@ -21,7 +21,7 @@ import { DirectCommonSettingsTransport, type CommonSettingsTransport } from "./t
 
 /** The peers of the fleet: the node and the address of its runtime. */
 function fleetPeers(): { hostId: string; target: string }[] {
-  return directFleetPeers
+  return fleetMembers()
     .filter((peer) => peer.hostId !== "MacBook-Pro-User.local")
     .map((peer) => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` }));
 }
@@ -29,7 +29,7 @@ function fleetPeers(): { hostId: string; target: string }[] {
 /** The address of the node that owns the document. */
 function ownerTarget(ownerHostId: string | null, localHostId: string): string | null {
   if (!ownerHostId || ownerHostId === localHostId) return null;
-  const peer = directFleetPeers.find((candidate) => candidate.hostId === ownerHostId);
+  const peer = fleetMembers().find((candidate) => candidate.hostId === ownerHostId);
   return peer ? `mcp:shell:${peer.hostId}:AgentHerder` : null;
 }
 
