@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -76,11 +76,16 @@ async function runStopHook(options: {
 
   const pluginRoot = options.pluginRoot ?? await mkdtemp(join(tmpdir(), "agent-herder-hook-"));
   if (!options.pluginRoot) roots.push(pluginRoot);
+  // The journal of the hook belongs to the installation unless the hook gets a
+  // private directory of its own: a test never writes into the live state.
+  const hookState = await mkdtemp(join(tmpdir(), "agent-herder-hook-state-"));
+  roots.push(hookState);
 
   const child = spawn(process.execPath, [stopHook], {
     env: {
       ...process.env,
       AGENT_HERDER_URL: `http://127.0.0.1:${address.port}`,
+      AGENT_HERDER_HOOK_STATE_DIR: hookState,
       PLUGIN_ROOT: pluginRoot,
       ...(options.harness ? { AGENT_HERDER_HARNESS: options.harness } : {}),
     },
@@ -101,6 +106,26 @@ async function runStopHook(options: {
     child.once("exit", (value) => resolve(value));
   });
   return { stdout, code, activity, digests };
+}
+
+/**
+ * A plugin root whose local store records the digest of a generated prompt.
+ * The layout of Codex carries the module; the package of MiniMax Code does not.
+ */
+async function pluginRootWithLocalStore(): Promise<{ root: string; capture: string }> {
+  const root = await mkdtemp(join(tmpdir(), "agent-herder-hook-local-"));
+  roots.push(root);
+  const capture = join(root, "generated-input.jsonl");
+  await mkdir(join(root, "dist"), { recursive: true });
+  await writeFile(join(root, "dist", "human-stop-store.js"), [
+    "export function getHumanStopStore() {",
+    "  return { async rememberGeneratedPrompt(harness, id, text) {",
+    "    const fs = await import('node:fs/promises');",
+    "    await fs.appendFile(" + JSON.stringify(capture) + ", JSON.stringify({ harness, id, text }) + " + JSON.stringify("\n") + ");",
+    "  } };",
+    "}",
+  ].join("\n"), "utf8");
+  return { root, capture };
 }
 
 describe("the Stop hook of the plugin of MiniMax Code", () => {
@@ -132,14 +157,54 @@ describe("the Stop hook of the plugin of MiniMax Code", () => {
     expect(run.activity.some((entry) => entry.outcome === "fired")).toBe(true);
   });
 
+  it("falls back to the local store of the plugin when the panel does not know the route of the digest", async () => {
+    // The panel of the fleet can be older than the plugin of the node: the
+    // route of the digest is then unknown to it. The digest still has to be
+    // recorded and the turn still has to continue, and the local store of the
+    // plugin is the last place where the record can live.
+    const local = await pluginRootWithLocalStore();
+    const run = await runStopHook({
+      inboxContext: "сообщение панели",
+      digestRoute: false,
+      harness: "codex",
+      pluginRoot: local.root,
+    });
+    // The panel is asked first, even when it cannot answer.
+    expect(run.digests).toEqual([{ harness: "codex", sessionId: "session-1", text: "сообщение панели" }]);
+    expect(JSON.parse(run.stdout)).toEqual({ decision: "block", reason: "сообщение панели" });
+    expect(run.code).toBe(0);
+    // And the local store holds the digest of the continued turn.
+    const recorded = (await readFile(local.capture, "utf8")).trim().split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(recorded).toEqual([{ harness: "codex", id: "session-1", text: "сообщение панели" }]);
+  });
+
+  it("refuses the turn when neither the panel nor the local store can record the digest", async () => {
+    // The guard of the fallback: with a local store that cannot record, there
+    // is nowhere to keep the digest, and the turn must not continue.
+    const pluginRoot = await mkdtemp(join(tmpdir(), "agent-herder-hook-broken-"));
+    roots.push(pluginRoot);
+    await mkdir(join(pluginRoot, "dist"), { recursive: true });
+    await writeFile(join(pluginRoot, "dist", "human-stop-store.js"), [
+      "export function getHumanStopStore() {",
+      "  return { async rememberGeneratedPrompt() { throw new Error('the local store is broken'); } };",
+      "}",
+    ].join("\n"), "utf8");
+    const run = await runStopHook({ inboxContext: "сообщение панели", digestRoute: false, harness: "codex", pluginRoot });
+    expect(JSON.parse(run.stdout)).toEqual({});
+    expect(run.code).toBe(0);
+  });
+
   it("leaves the session alone when the panel does not answer at all", async () => {
     const server = createServer(() => { /* the panel is silent */ });
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("the silent panel did not bind");
+    const hookState = await mkdtemp(join(tmpdir(), "agent-herder-hook-state-"));
+    roots.push(hookState);
     const child = spawn(process.execPath, [stopHook], {
-      env: { ...process.env, AGENT_HERDER_URL: `http://127.0.0.1:${address.port}`, PLUGIN_ROOT: "/nonexistent" },
+      env: { ...process.env, AGENT_HERDER_URL: `http://127.0.0.1:${address.port}`, AGENT_HERDER_HOOK_STATE_DIR: hookState, PLUGIN_ROOT: "/nonexistent" },
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
