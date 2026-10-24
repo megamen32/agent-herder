@@ -389,6 +389,7 @@ async function enforceRestrictedSubagent(ctx, event) {
     const configured = responseData(await ctx.agent.get({ agentID: target }))
     const model = configured?.model ?? parentSession?.model
     // ORCHESTRATOR-CONFLICT: integrations/opencode/agent-herder-autopilot.js:392 — контракт гарда L70 в старте листа: его код смотрит закрытого провайдера только по листьям маршрута, наш контракт fail-closed на сломанной proof + отказ закрытого провайдера всегда + неподтверждённый leaf по выключателю: его код / наш контракт; ждёт решения владельца
+    // РЕШЕНО 24.10.2026 измерением: наш контракт (L70, routeDenial). Его вариант (616312f:187-212) даёт 9/16 тестов гарда и вообще не читает выключатель «Хуки» панели; наш: closed-provider и сломанная proof — отказ всегда, неподтверждённый leaf — по выключателю.
     const route = await resolveNativeModelRoute(ctx, model)
     const denial = await routeDenial(route)
     if (denial) {
@@ -412,6 +413,7 @@ async function enforceRestrictedModelRequest(ctx, event) {
   // proof is not repaired by the switch, and a route that is merely not
   // confirmed follows the switch of the owner.
   // ORCHESTRATOR-CONFLICT: integrations/opencode/agent-herder-autopilot.js:415 — контракт гарда L70 в запросе модели: его код отказывает только по закрытому провайдеру среди листьев, наш контракт различает closed-provider и route-forbidden и fail-closed при сломанной proof: его код / наш контракт; ждёт решения владельца
+  // РЕШЕНО 24.10.2026 измерением: наш контракт (L70, routeDenial). Его вариант (616312f:214-223) даёт 9/16 тестов гарда, общий текст отказа и без выключателя. Сняты 5 лишних строк (были 423-427): хвост его варианта инвертировал решение и отбивал доказанный разрешённый маршрут при включённых запретах — гард 13/16 -> 16/16.
   const route = await resolveNativeModelRoute(ctx, event.model)
   const denial = await routeDenial(route)
   if (denial === "closed-provider") {
@@ -420,11 +422,6 @@ async function enforceRestrictedModelRequest(ctx, event) {
   if (denial) {
     throw new Error(LEAF_LAUNCH_REFUSAL_MESSAGES.modelRequest.routeForbidden)
   }
-  // The provider of the route could not be read. While the prohibitions are on,
-  // an unverified route is refused; the owner may switch them off from the
-  // panel, and then the work of the session continues.
-  if (!(await prohibitionsEnabledByOwner())) return
-  throw new Error("Agent Herder blocked this model request: the complete native provider route is forbidden or could not be verified for this project.")
 }
 
 async function installRestrictedProviderGuards(ctx) {
