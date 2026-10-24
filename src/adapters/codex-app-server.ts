@@ -940,16 +940,12 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       }
     }
     if (reservation && this.integratorSessionBindingStore) {
-      await this.integratorSessionBindingStore.record({
+      await this.integratorSessionBindingStore.recordCreated({
         operationId: reservation.operationId,
         attempt: reservation.attempt,
-        receipt: {
-          state: "created",
-          inputId: reservation.inputId,
-          address: { hostId: reservation.hostId, harness: "codex", nativeSessionId: thread.id },
-          launchCwd: this.projectRuntimePolicy!.rootPath,
-          retryable: false,
-        },
+        harness: "codex",
+        nativeSessionId: thread.id,
+        launchCwd: this.projectRuntimePolicy!.rootPath,
       });
       materializationStage = "h34_accepted";
       this.reportMaterializationProgress({ phase: "accepted", operationId: reservation.operationId,

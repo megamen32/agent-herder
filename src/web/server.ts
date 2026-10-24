@@ -23,6 +23,9 @@ import type { ProjectLaunchDispatcher } from "../automation/project-launch-dispa
 import type { IntegratorFleetRuntime } from "../integrator-fleet-runtime.js";
 import { NOTICEPLACE_HEALTH_AUTHORIZED, NOTICEPLACE_HEALTH_PURPOSE, hasNoticeplaceHealthBearer, qualifyNoticeplaceHealthModel, validateNoticeplaceHealthLaunch } from "../automation/noticeplace-health-launch.js";
 import { buildSessionProgress } from "../health-progress.js";
+import { buildIntegratorProgress } from "../integrator-progress.js";
+import { deliverStaleRunningQuestion } from "../human-request/notice-question.js";
+import { loadAskHumanProducer, type AskHumanProducer } from "../human-request/ask-human-producer.js";
 import { NoticeplaceHealthObserver } from "../automation/noticeplace-health-observer.js";
 import { appendHealthRefusalAudit, healthRefusalAuditPath, type HealthReasonRefusal } from "../automation/health-reason-codes.js";
 import { NOTICEPLACE_HEALTH_MODELS, resolveLaunchHealthPlan } from "../automation/noticeplace-health-policy.js";
@@ -60,7 +63,7 @@ import type { AutomationDisarmDocument } from "../automation-disarm/state.js";
 import { renderSessionGraph } from "../session-visualization.js";
 import { boundedCoordinationContext, coordinationNotes, type CoordinationConflict, type CoordinationNote } from "../coordination-notes.js";
 import { sessionTargetRequest } from "../session-target.js";
-import { markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
+import { lifecycleEntryFor, markLifecycleEvent, type SessionLifecycleEvent } from "../session-lifecycle.js";
 import { getAgentActivityStatistics, withSessionPortfolioStatistics } from "../session-statistics.js";
 import { createMcpHandler, type McpServer } from "@modelcontextprotocol/server";
 import { createHash } from "node:crypto";
@@ -2665,6 +2668,10 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const details = route.kind === "scoped" ? await route.supervisor!.getSessionDetails(harness, sessionId,
       { limit: Number.isFinite(limitValue) ? limitValue : 5, history: history || "auto" })
       : await supervisor.getSessionDetails(harness, sessionId, { limit: Number.isFinite(limitValue) ? limitValue : 5, history: history || "auto" });
+    // A stale running session asks the operator exactly one question. The stale
+    // fact is the only trigger, and the delivery is the existing Notice
+    // producer, so no second channel and no second card appear.
+    void reportStaleRunningSession(harness, sessionId, details).catch(() => undefined);
     return sendJson(response, 200, buildSessionProgress(details, Number.isFinite(limitValue) ? limitValue : 5));
   }
   const actionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/(resume|message|stop|terminate|cancel|recover|fork|archive|compact|model|permissions\/([^/]+))$/);
@@ -2944,4 +2951,52 @@ function sendNamedSessionResult(
 ): void {
   const conflict = result.error?.startsWith("Ambiguous named session") || result.error?.includes("already exists");
   sendJson(response, result.ok ? 200 : conflict ? 409 : 502, result);
+}
+
+/** The age of the running evidence that makes a session stale for the operator. */
+const STALE_RUNNING_AFTER_MS = 15 * 60_000;
+
+/** The sessions already asked about: one question per stale session per process. */
+const staleRunningAsked = new Set<string>();
+let staleRunningProducer: Promise<AskHumanProducer | undefined> | undefined;
+
+/**
+ * Ask the operator about one stale-running session.
+ *
+ * The stale fact is the only trigger, and the same session is never asked
+ * twice from one process. The delivery goes through the existing Notice
+ * producer, so the question lands in the same scope as every other human
+ * question and the answer returns through the existing completion path.
+ */
+async function reportStaleRunningSession(harness: string, sessionId: string, details: SessionDetails): Promise<void> {
+  const key = `${harness}:${sessionId}`;
+  if (staleRunningAsked.has(key)) return;
+  const lifecycle = lifecycleEntryFor(harness, sessionId);
+  const progress = buildIntegratorProgress({
+    now: Date.now(),
+    staleAfterMs: STALE_RUNNING_AFTER_MS,
+    details,
+    ...(lifecycle ? { lifecycle } : {}),
+  });
+  if (progress.state !== "stale_running") return;
+  staleRunningAsked.add(key);
+  try {
+    staleRunningProducer ??= loadAskHumanProducer(process.env);
+    const producer = await staleRunningProducer;
+    if (!producer) { staleRunningAsked.delete(key); return; }
+    await deliverStaleRunningQuestion(progress, {
+      harness,
+      session_id: sessionId,
+      ...(details.session.cwd ? { cwd: details.session.cwd } : {}),
+    }, {
+      endpoint: producer.endpoint,
+      token: producer.token,
+      project: producer.project,
+      recipient: producer.recipient,
+      ...(producer.allowedActors ? { allowedActors: producer.allowedActors } : {}),
+    });
+  } catch (error) {
+    staleRunningAsked.delete(key);
+    console.error(`[agent-herder] the stale running question for ${key} was not delivered: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }

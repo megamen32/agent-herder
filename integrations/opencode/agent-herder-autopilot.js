@@ -34,6 +34,33 @@ async function coordinationFetch(path, options = {}, observe) {
   }
 }
 
+/**
+ * Whether the owner left the prohibitions on.
+ *
+ * The owner switches them from the panel (the section "Хуки"). While they are
+ * on, the guard below forbids what the rule of the owner forbids. When the
+ * owner switches them off, the guard stops forbidding anything: the work of
+ * the session continues. The state is read from the same service the panel
+ * writes, and it is remembered for two seconds, so a model request does not
+ * wait for the network.
+ */
+let prohibitionsState = { at: 0, enabled: true }
+
+async function prohibitionsEnabledByOwner() {
+  const now = Date.now()
+  if (now - prohibitionsState.at < 2000) return prohibitionsState.enabled
+  let enabled = true
+  try {
+    const response = await fetch(`${coordinationEndpoint}/api/hooks/prohibitions`, { signal: AbortSignal.timeout(900) })
+    if (response.ok) {
+      const data = await response.json()
+      if (data?.known === true) enabled = data.prohibitionsEnabled !== false
+    }
+  } catch { /* the service is unreachable: the prohibitions stay as they were */ }
+  prohibitionsState = { at: now, enabled }
+  return enabled
+}
+
 function coordinationPaths(value, out = new Set()) {
   if (typeof value === "string") {
     for (const match of value.matchAll(/\*\*\* (?:Update|Add|Delete) File:\s*([^\n]+)/g)) out.add(match[1].trim())
@@ -205,8 +232,15 @@ async function enforceRestrictedSubagent(ctx, event) {
     const configured = responseData(await ctx.agent.get({ agentID: target }))
     const model = configured?.model ?? parentSession?.model
     const leaves = await resolveNativeModelLeaves(ctx, model)
-    if (leaves?.length && !hasRestrictedProviderLeaf(leaves)) return
-  } catch { /* unknown route stays denied */ }
+    if (leaves?.length) {
+      if (hasRestrictedProviderLeaf(leaves)) {
+        event.effect = "deny"
+        event.message = "Agent Herder blocked this child: the provider of this route is closed by the rule of the owner."
+      }
+      return
+    }
+  } catch { /* the route could not be read at all */ }
+  if (!(await prohibitionsEnabledByOwner())) return
   event.effect = "deny"
   event.message = "Agent Herder blocked this child: its complete native provider route is forbidden or could not be verified for this project."
 }
@@ -217,9 +251,19 @@ async function enforceRestrictedModelRequest(ctx, event) {
   if (!lineage.known) throw new Error("Agent Herder cannot verify the native session lineage; model request is denied.")
   if (!lineage.restricted) return
   const leaves = await resolveNativeModelLeaves(ctx, event.model)
-  if (!leaves?.length || hasRestrictedProviderLeaf(leaves)) {
-    throw new Error("Agent Herder blocked this model request: the complete native provider route is forbidden or could not be verified for this project.")
+  if (leaves?.length) {
+    // The provider of the route is known. The providers the owner closed stay
+    // closed whatever the switch says.
+    if (hasRestrictedProviderLeaf(leaves)) {
+      throw new Error("Agent Herder blocked this model request: the provider of this route is closed by the rule of the owner.")
+    }
+    return
   }
+  // The provider of the route could not be read. While the prohibitions are on,
+  // an unverified route is refused; the owner may switch them off from the
+  // panel, and then the work of the session continues.
+  if (!(await prohibitionsEnabledByOwner())) return
+  throw new Error("Agent Herder blocked this model request: the complete native provider route is forbidden or could not be verified for this project.")
 }
 
 async function installRestrictedProviderGuards(ctx) {
