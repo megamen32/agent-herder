@@ -21,6 +21,7 @@ import {
   type CommonSettingsConflict,
   type CommonSettingsNodeStatus,
 } from "./node-state.js";
+import { CommonSettingsPeerCache } from "./peer-status-cache.js";
 
 /** The tools of the common settings on a node of the fleet. */
 export const COMMON_SETTINGS_TOOLS = [
@@ -56,6 +57,15 @@ export interface CommonSettingsTransport {
   setOptIn(target: string, enabled: boolean): Promise<CommonSettingsNodeStatus | null>;
   /** Put the local values of the node back. */
   restore(target: string): Promise<CommonSettingsNodeStatus | null>;
+  /**
+   * The memory of the owner about the nodes, when the transport keeps one.
+   *
+   * The owner asks the nodes what they hold on every answer of the panel, and
+   * a node that is down costs its full timeout every time. The transport that
+   * keeps the memory of the last answers serves them while they are fresh, and
+   * it asks the nodes again in the background.
+   */
+  readonly cache?: CommonSettingsPeerCache;
 }
 
 /**
@@ -66,6 +76,15 @@ export interface CommonSettingsTransport {
  * agreement.
  */
 export class DirectCommonSettingsTransport implements CommonSettingsTransport {
+  /**
+   * The memory of the owner about the nodes.
+   *
+   * One transport serves one owner for the whole life of the process, so the
+   * memory lives with it: the panel asks the fleet many times a minute, and
+   * the state of a node does not move that fast.
+   */
+  readonly cache = new CommonSettingsPeerCache();
+
   constructor(private readonly transport: FleetDirectTransport = new FleetDirectTransport()) {}
 
   /** The document the node holds. */

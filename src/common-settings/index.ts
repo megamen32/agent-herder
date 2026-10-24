@@ -65,6 +65,14 @@ export {
 } from "./node-state.js";
 
 export {
+  CommonSettingsPeerCache,
+  COMMON_SETTINGS_PEER_BUDGET_MS,
+  COMMON_SETTINGS_PEER_FRESH_TTL_MS,
+  unansweredPeerEntry,
+  type CommonSettingsPeerEntry,
+} from "./peer-status-cache.js";
+
+export {
   applyCommonSettingsDocument,
   restoreCommonSettingsLocalValues,
   type CommonSettingsApplyResult,

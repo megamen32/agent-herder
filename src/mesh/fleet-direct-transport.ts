@@ -156,6 +156,41 @@ export function fleetDirectTransport():GptAdminTransport{
  if(!sharedFleetTransport)sharedFleetTransport=new FleetDirectTransport(fleetPeers().filter(peer=>peer.hostId!=="MacBook-Pro-User.local"));
  return sharedFleetTransport;
 }
+/**
+ * The asks that only read what a node holds.
+ *
+ * A node that is down must not be paid for on every read: the fleet reads it
+ * many times a minute and the read costs its full timeout every time. The
+ * commands of the owner are never paused: a document that has to reach a node
+ * always tries to reach it.
+ */
+const peerPollTools=new Set(['common_settings_read','common_settings_status','list_active_sessions_local','fleet_node_info']);
+/** The first pause of a node that did not answer. */
+const peerPauseBaseMs=15_000;
+/** The longest pause of a node that keeps not answering. */
+const peerPauseMaxMs=300_000;
+type PeerAvailability={until:number;error:string;failures:number};
+const peerAvailability=new Map<string,PeerAvailability>();
+const peerAvailabilityKey=(peer:DirectPeer):string=>[peer.hostId,peer.sshHost,peer.sshPort??22,peer.port].join('|');
+const isLocalPeer=(peer:DirectPeer):boolean=>peer.hostId===hostname()&&peer.nativeUser===userInfo().username;
+/** Remember that the node did not answer, and for how long it is not asked again. */
+function rememberPeerFailure(key:string,error:unknown):void{
+ const message=error instanceof Error?error.message:String(error);
+ // Only the fixed codes of the transport are remembered: the stderr of a peer
+ // may hold private paths, and a pause must not keep them.
+ if(!/^[a-z_]+$/.test(message))return;
+ const previous=peerAvailability.get(key);
+ const failures=(previous?.failures??0)+1;
+ const pause=Math.min(peerPauseBaseMs*2**(failures-1),peerPauseMaxMs);
+ peerAvailability.set(key,{until:Date.now()+pause,error:message,failures});
+}
+/** What is known about the availability of the node: the pause and the reason of the last failure. */
+export function peerAvailabilityOf(hostId:string):{until:number;error:string;failures:number}|undefined{
+ for(const [key,value] of peerAvailability)if(key.startsWith(hostId+'|'))return value;
+ return undefined;
+}
+/** Forget what is known about the availability of the nodes: the pause is a thing of the runtime. */
+export function resetPeerAvailability():void{peerAvailability.clear();}
 export class FleetDirectTransport implements GptAdminTransport {
  constructor(private readonly peers:readonly DirectPeer[]=fleetPeers(),private readonly deadlineMs=10000){
   if(!peers.length||peers.length>5||new Set(peers.map(p=>p.hostId)).size!==peers.length)throw new Error('direct_peer_limit');
@@ -195,11 +230,31 @@ export class FleetDirectTransport implements GptAdminTransport {
   // A rename writes the title of one native session of the peer itself, so
   // the peer must be the machine the call really reaches.
   if(tool==='mesh_rename_session' && (args.target as any)?.hostId!==this.peer(target).hostId)throw new Error('direct_rename_host_mismatch');
-  await assertRemoteCodexAdmission(tool,args,()=>this.rpc(this.peer(target),'tools/call',{name:'model_quotas',arguments:{}},this.deadlineMs));
+  const peer=this.peer(target);
+  const key=peerAvailabilityKey(peer);
+  // A node that is down is not asked again and again: the ask costs its full
+  // timeout every time, and the fleet asks it many times a minute. The pause
+  // grows with every failure and the reason of the last failure is kept, so
+  // the node still fails in the words it failed before.
+  if(peerPollTools.has(tool)&&!isLocalPeer(peer)){
+   const known=peerAvailability.get(key);
+   if(known&&Date.now()<known.until)throw new Error(known.error);
+  }
+  try{
+   const result=await this.dispatch(peer,tool,args,idempotencyKey);
+   peerAvailability.delete(key);
+   return result;
+  }catch(error){
+   rememberPeerFailure(key,error);
+   throw error;
+  }
+ }
+ private async dispatch(peer:DirectPeer,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
+  await assertRemoteCodexAdmission(tool,args,()=>this.rpc(peer,'tools/call',{name:'model_quotas',arguments:{}},this.deadlineMs));
   if(tool==='create_session'){
    if(!idempotencyKey||!/^[a-f0-9]{64}$/.test(idempotencyKey))throw new Error('direct_create_identity_missing');
-   return this.rpc(this.peer(target),'tools/call',{name:'fleet_create_session',arguments:{...args,inputId:idempotencyKey}},30000);
+   return this.rpc(peer,'tools/call',{name:'fleet_create_session',arguments:{...args,inputId:idempotencyKey}},30000);
   }
-  return this.rpc(this.peer(target),'tools/call',{name:tool,arguments:args},tool==='mesh_snapshot'?Math.max(this.deadlineMs,meshDiscoveryTimeoutMs()+5000):this.deadlineMs);
+  return this.rpc(peer,'tools/call',{name:tool,arguments:args},tool==='mesh_snapshot'?Math.max(this.deadlineMs,meshDiscoveryTimeoutMs()+5000):this.deadlineMs);
  }
 }
