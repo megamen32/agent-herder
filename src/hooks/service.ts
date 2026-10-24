@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { resolveAutopilotStateDir } from "../autopilot/state-dir.js";
 import { HOOK_CATALOG, isHookKind, type HookKind } from "./catalog.js";
+import { hookTimeoutContracts, type HookTimeoutContract } from "./timeout-contract.js";
 import {
   HooksProhibitionsStore,
   type HooksProhibitionsAuditRecord,
@@ -70,6 +71,14 @@ export interface HooksPanelView {
   etag: string;
   hooks: HooksPanelHook[];
   audit: HooksProhibitionsAuditRecord[];
+  /**
+   * The timeout contract of every harness, as the machine has it right now.
+   *
+   * The numbers are read from the manifests of the installed packages and
+   * from the runtimes themselves. A number that was not read is «нет данных»,
+   * never a guess.
+   */
+  timeouts: HookTimeoutContract[];
 }
 
 /** The light answer of the hooks: what they must know to stay quiet. */
@@ -298,6 +307,7 @@ export class HooksService {
       etag,
       hooks,
       audit,
+      timeouts: hookTimeoutContracts(),
     };
   }
 

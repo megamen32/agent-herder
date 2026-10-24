@@ -74,6 +74,13 @@ import { createMcpHandler, type McpServer } from "@modelcontextprotocol/server";
 import { createHash } from "node:crypto";
 import { toNodeHandler, type NodeMcpRequestHandler } from "@modelcontextprotocol/node";
 import type { AdapterRegistry } from "../adapter-registry.js";
+import {
+  composeSessionTitle,
+  mergeSessionLabel,
+  readSessionLabel,
+  writeSessionLabel,
+  SESSION_LABEL_LIMITS,
+} from "../session-labels.js";
 import { publishHealthRefusal, type HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import { checkCodexQuota, saveCodexQuotaPolicy } from "../codex-quota-guard.js";
@@ -2250,6 +2257,22 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!["opencode", "zcode", "codex", "claude", "qoder", "hermes", "fast-agent", "chatgpt", "minimax-code"].includes(harness)) return sendJson(response, 400, { error: "unknown harness" });
     return sendJson(response, 200, { harness, sessionId, held: await getHumanStopStore().isHeld(harness, sessionId) });
   }
+  if (url.pathname === "/api/human-stop/generated-prompt" && request.method === "POST") {
+    // The digest of an automatic input of a harness.
+    //
+    // The hook of the runtime writes the text of its decision here, and the
+    // store remembers it as an automatic input. The route only registers the
+    // text: it does not release the fence and it does not hold it — that is
+    // the work of `releaseHumanStop`. The state of the lever of the owner is
+    // not read and not written here.
+    const body = await readJson(request);
+    const harness = typeof body.harness === "string" ? body.harness.trim() : "";
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+    const text = typeof body.text === "string" ? body.text : "";
+    if (!harness || !sessionId || !text.trim()) return sendJson(response, 400, { error: "harness, sessionId and text are required" });
+    await getHumanStopStore().rememberGeneratedPrompt(harness, sessionId, text);
+    return sendJson(response, 200, { ok: true });
+  }
   if (url.pathname === "/api/quota-recovery/operator-cohort/enroll" && request.method === "POST") {
     if (!automationLaunchPolicyStore) return sendJson(response, 503, { error: "Project launch policy is unavailable" });
     const loadedLaunchPolicy = await automationLaunchPolicyStore.load();
@@ -2838,6 +2861,72 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       truncated: visible.length < total,
     });
     return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/sessions/label") {
+    // The metadata of one session: the project, the goal and the stage.
+    // The answer is the stored label, nothing more and nothing less.
+    const sessionId = (url.searchParams.get("sessionId") || "").trim();
+    const harness = (url.searchParams.get("harness") || "").trim();
+    if (!sessionId || !harness) return sendJson(response, 400, { error: "sessionId and harness are required" });
+    const label = await readSessionLabel(harness, sessionId);
+    return sendJson(response, 200, { sessionId, harness, label });
+  }
+  if (request.method === "POST" && url.pathname === "/api/sessions/label") {
+    // The native rename of one session and the metadata that goes with it.
+    //
+    // The title is written through the native channel of the harness and read
+    // back by the adapter itself: the panel never writes a name of its own.
+    // The project, the goal and the stage are stored next to the sessions and
+    // compose the title when the owner names none.
+    const body = await readJson(request);
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+    const harness = typeof body.harness === "string" ? body.harness.trim() : "";
+    if (!sessionId || !harness) return sendJson(response, 400, { ok: false, error: "sessionId and harness are required" });
+    const hostId = typeof body.hostId === "string" ? body.hostId.trim() : "";
+    if (hostId && hostId.toLowerCase() !== hostname().toLowerCase()) {
+      return sendJson(response, 409, {
+        ok: false,
+        error: "Сессия другой машины: переименование идёт через mesh-инструмент, а не через панель этого узла.",
+      });
+    }
+    const patch = {
+      ...(typeof body.project === "string" ? { project: body.project.trim().slice(0, SESSION_LABEL_LIMITS.project) } : {}),
+      ...(typeof body.goal === "string" ? { goal: body.goal.trim().slice(0, SESSION_LABEL_LIMITS.goal) } : {}),
+      ...(typeof body.stage === "string" ? { stage: body.stage.trim().slice(0, SESSION_LABEL_LIMITS.stage) } : {}),
+    };
+    const adapter = adapters.get(harness);
+    if (!adapter) {
+      return sendJson(response, 404, { ok: false, error: `Среда '${harness}' недоступна на этом узле.` });
+    }
+    if (typeof adapter.renameSession !== "function") {
+      return sendJson(response, 409, { ok: false, error: `У среды '${harness}' нет нативного канала переименования.` });
+    }
+    const merged = await mergeSessionLabel(harness, sessionId, patch);
+    const title = (typeof body.title === "string" ? body.title.trim() : "") || composeSessionTitle(merged);
+    if (!title) {
+      return sendJson(response, 400, {
+        ok: false,
+        error: "Нужно название: дайте название или проект, цель и этап.",
+      });
+    }
+    const result = await adapter.renameSession(sessionId, { title });
+    if (!result.ok) {
+      return sendJson(response, 409, {
+        ok: false,
+        error: result.error || "Нативное переименование не удалось.",
+        previousTitle: result.previousTitle ?? null,
+      });
+    }
+    const label = Object.keys(patch).length ? await writeSessionLabel(harness, sessionId, patch) : merged;
+    events?.publish({ kind: "sessions", uri: "herder://sessions", action: "changed" });
+    return sendJson(response, 200, {
+      ok: true,
+      sessionId,
+      harness,
+      title: result.title ?? title,
+      previousTitle: result.previousTitle ?? null,
+      label,
+    });
   }
   if (request.method === "GET" && url.pathname === "/api/health/remediation") {
     return sendJson(response, 405, { error: "method_not_allowed", route: "/api/health/remediation" });
