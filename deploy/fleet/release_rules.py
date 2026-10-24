@@ -253,6 +253,73 @@ def shared_store_dir(fleet_root: Path, identity: str) -> Path:
     return shared_store_root(fleet_root) / identity
 
 
+def area_package_root_state(fleet_root: Path, store_dir: Path) -> dict:
+    """The state of the package root of the area, read only.
+
+    "link" - the area offers the shared store under the name the resolver of
+    Node looks for; "points_at_store" tells whether it offers the store of the
+    dependency set in question.
+    "legacy-directory" - a real directory at that place: the legacy root store
+    of a node, which is the source the shared store is materialized from.
+    "absent" - nothing there: the runtime of a release of this area cannot
+    resolve the siblings of a package of the store.
+    """
+    fleet_root = Path(fleet_root)
+    root = fleet_root / "node_modules"
+    if root.is_symlink():
+        current = (root.parent / os.readlink(root)).resolve()
+        try:
+            points = current == Path(store_dir).resolve()
+        except OSError:
+            points = False
+        return {"state": "link", "path": str(root), "target": str(current),
+                "points_at_store": points}
+    if root.exists():
+        return {"state": "legacy-directory", "path": str(root)}
+    return {"state": "absent", "path": str(root)}
+
+
+def ensure_area_package_root(fleet_root: Path, store_dir: Path) -> dict:
+    """The area must offer the store of the packages to the resolver of Node.
+
+    A package of the store is a link of the release, and the resolver of Node
+    follows the real path of the file: it walks up the parents of the file and
+    looks for a directory named "node_modules" in every one of them. The store
+    is named "shared-node-modules/<identity>", so the walk leaves the store and
+    finds nothing - the import of a sibling package fails with
+    ERR_MODULE_NOT_FOUND, and the runtime does not start.
+
+    The area therefore offers the store under the name the resolver looks for:
+    "<area>/node_modules" is a link to the store of the dependency set of the
+    release. The link is relative, so the area travels with its releases.
+
+    A real directory at that place is the legacy root store of a node: it is
+    the source the shared store is materialized from, and it is left alone.
+    The runtime of such a node then resolves its imports from that legacy
+    directory instead of the verified store - the acceptance has to see that,
+    because the new store would not be the source of the resolution.
+    """
+    fleet_root = Path(fleet_root)
+    store_dir = Path(store_dir)
+    root = fleet_root / "node_modules"
+    state = area_package_root_state(fleet_root, store_dir)
+    if state["state"] == "link":
+        if state["points_at_store"]:
+            return {"state": "already", "path": str(root), "target": str(store_dir)}
+        # A link of ours to an older dependency set: it follows the current one.
+        os.unlink(root)
+    elif state["state"] == "legacy-directory":
+        return {"state": "legacy-directory", "path": str(root),
+                "target": str(store_dir),
+                "note": "the legacy root store of the area resolves the imports; "
+                        "the shared store is not their source"}
+    if not store_dir.is_dir():
+        raise RuntimeError(f"the shared store of the area is absent: {store_dir}")
+    relative = os.path.relpath(store_dir, root.parent)
+    os.symlink(relative, root)
+    return {"state": "created", "path": str(root), "target": str(store_dir)}
+
+
 def lock_digest(release: Path) -> str | None:
     """The identity of the dependency set of a release: the hash of its lock.
 

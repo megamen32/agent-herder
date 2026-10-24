@@ -198,6 +198,7 @@ const requireFromRelease = createRequire(entry);
 
 const visited = new Set();
 const bare = new Map();
+const importers = new Map();
 const pattern = /(?:^|[\s;{(])(?:import|export)[^'"`]*?from\s*["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)|require\s*\(\s*["']([^"']+)["']\s*\)/g;
 
 function walk(file) {
@@ -216,6 +217,8 @@ function walk(file) {
     }
     if (spec.startsWith("node:")) continue;
     if (!bare.has(spec)) bare.set(spec, real);
+    if (!importers.has(spec)) importers.set(spec, new Set());
+    importers.get(spec).add(real);
   }
 }
 
@@ -266,6 +269,29 @@ for (const [spec, from] of bare) {
   const inside = insideRelease || insideShared;
   resolved.push({spec, kind: insideRelease ? "release" : (insideShared ? "shared" : "outside"), target, via});
   if (!inside) outside.push({spec, target, via});
+  // The import of a package of the store is resolved by the importer of the
+  // package, not by the release: the resolver follows the real path of the
+  // importer and walks up its parents. That resolution must land in the
+  // release or in the verified store as well - a legacy root store of the
+  // area would otherwise resolve the import silently, and the new store
+  // would not be the source of the resolution at all.
+  if (via === "require") {
+    for (const importer of (importers.get(spec) || new Set())) {
+      let nested = null;
+      let nestedError = null;
+      try { nested = fs.realpathSync(createRequire(importer).resolve(spec)); }
+      catch (error) { nestedError = String(error.message).slice(0, 140); }
+      if (nested === null) {
+        if (nestedError) unresolved.push({spec, from: importer, via: "nested", error: nestedError});
+        continue;
+      }
+      const nestedRelease = nested.startsWith(path.resolve(release) + path.sep);
+      const nestedShared = shared ? nested.startsWith(path.resolve(shared) + path.sep) : false;
+      if (!nestedRelease && !nestedShared) {
+        outside.push({spec, target: nested, via: "nested", from: importer});
+      }
+    }
+  }
 }
 console.log(JSON.stringify({
   modules: visited.size,
@@ -310,12 +336,17 @@ def import_check(release: Path, node_bin: str) -> dict:
     """
     probe = Path("/tmp/acceptance-import-probe.cjs")
     probe.write_text(IMPORT_PROBE, encoding="utf-8")
+    shared = release_shared_store(release)
     try:
-        result = subprocess.run([node_bin, str(probe), str(release), release_shared_store(release)],
+        result = subprocess.run([node_bin, str(probe), str(release), shared],
                                 capture_output=True, text=True, check=False, timeout=120)
         data = json.loads(result.stdout.strip().splitlines()[-1])
     except Exception as error:
         return {"ok": False, "error": str(error)[:200]}
+    area = {}
+    if shared:
+        area = release_rules.area_package_root_state(
+            release_rules.fleet_root_of(release), Path(shared))
     return {
         "ok": not data["outside"] and not data["unresolved"],
         "modules": data["modules"],
@@ -324,7 +355,8 @@ def import_check(release: Path, node_bin: str) -> dict:
         "builtins": data["builtins"],
         "outside": data["outside"],
         "unresolved": data["unresolved"],
-        "shared_store": release_shared_store(release),
+        "shared_store": shared,
+        "area_package_root": area,
     }
 
 def import_check_workspace(release: Path, store_modules: Path, node_bin: str) -> dict:

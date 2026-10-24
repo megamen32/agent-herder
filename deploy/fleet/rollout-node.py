@@ -486,16 +486,24 @@ def prepare_packages(fleet: Path, sha: str, previous_sha: str,
         source = previous / "node_modules"
         if source.is_symlink() or not source.is_dir():
             source = store
-    if source.is_symlink() or not source.is_dir():
+    # The root of the area can be the link to the shared store of the
+    # dependency set (ensure_area_package_root): a link carries no packages of
+    # its own, so the store it names is the source of the packages.
+    materialization_source = source
+    if materialization_source.is_symlink():
+        resolved = materialization_source.resolve()
+        if resolved.is_dir():
+            materialization_source = resolved
+    if materialization_source.is_symlink() or not materialization_source.is_dir():
         raise RuntimeError(
             f"the shared package store of the node is absent: {store}")
-    identity = release_rules.dependency_identity(release, previous, source)
+    identity = release_rules.dependency_identity(release, previous, materialization_source)
     store_dir = release_rules.shared_store_dir(fleet, identity)
     if store_dir.is_dir():
         release_rules.verify_shared_store(store_dir, identity)
         created = False
     else:
-        release_rules.materialize_shared_store(source, store_dir, identity)
+        release_rules.materialize_shared_store(materialization_source, store_dir, identity)
         created = True
     if target.is_symlink() or target.is_file():
         target.unlink()
@@ -515,9 +523,14 @@ def prepare_packages(fleet: Path, sha: str, previous_sha: str,
     previous_resolution = package_resolution(previous)
     if previous_resolution and package_resolution(previous) != previous_resolution:
         raise RuntimeError("previous release package resolution changed during preparation")
+    # The resolver of Node walks up the real path of a package of the store and
+    # looks for a directory named "node_modules" in every parent. The area must
+    # offer the store under that name, or the runtime does not start at all.
+    area_root = release_rules.ensure_area_package_root(fleet, store_dir)
     return (f"shared store {store_dir} (created={created}); {linked}; "
             f"{len(caches)} tool caches owned by the release; "
-            f"agent-resume-mcp -> {candidate_resolution}")
+            f"agent-resume-mcp -> {candidate_resolution}; "
+            f"area package root {area_root['path']} state={area_root['state']}")
 
 def linux_release_bytes(release: Path) -> int:
     """Count allocated blocks introduced by this release, once per inode.
