@@ -12,7 +12,9 @@ try { input = JSON.parse(raw || "{}"); } catch { process.exit(0); }
 const event = input.hook_event_name || input.hookEventName || "";
 const sessionId = String(input.session_id || input.sessionId || "");
 const cwd = String(input.cwd || process.cwd());
-const harness = process.env.AGENT_HERDER_HARNESS || "codex";
+// The harness of the session. The package of MiniMax Code always says so;
+// the variable wins, so the same scripts still serve the other formats.
+const harness = process.env.AGENT_HERDER_HARNESS || (process.env.MINIMAX_PLUGIN_ROOT ? "minimax-code" : "codex");
 // The lever of the owner. While the prohibitions of this hook are on, the
 // hook may put a conflict into the context of the tool call. When they are
 // off — or when the state of the lever cannot be read at all — the hook
@@ -234,6 +236,14 @@ function normalizePaths(paths, workdir = cwd) {
 try {
   if (event === "SessionStart" || event === "UserPromptSubmit") await reportActivity(event, { outcome: "fired", sessionId, harness });
   if (event === "SessionStart") {
+    // The panel learns that the session exists: the lifecycle of the session
+    // of MiniMax Code starts here, and the goal of the turn arrives with the
+    // prompt that follows.
+    await fetchJson(`${endpoint}/api/coordination/lifecycle`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ harness, sessionId, cwd, event: "start", at: new Date().toISOString() }),
+    }).catch(() => undefined);
     const q = new URLSearchParams({ harness, sessionId, cwd, touch: "1", consume: "1" });
     const data = await fetchJson(`${endpoint}/api/coordination/context?${q}`);
     output(event, data.context || undefined);
