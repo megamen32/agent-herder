@@ -340,6 +340,15 @@ describe("MinimaxCodeAdapter with the published desktop transport", () => {
     expect(steered.ok).toBe(true);
     expect(steered.turnId).toBe("turn-1");
 
+    const active = await adapter.sendActiveMessage("mvs_0000000000000000000000000000aaa1", {
+      message: "ответь на текущее сообщение",
+      origin: "human",
+      inputId: "active-turn-1",
+      activeTurnOnly: true,
+      steer: true,
+    });
+    expect(active).toMatchObject({ ok: true, admitted: true, turnId: "turn-1", inputId: "active-turn-1" });
+
     const queued = await adapter.sendMessage("mvs_0000000000000000000000000000aaa1", {
       message: "в очередь",
       queue: true,
@@ -352,6 +361,8 @@ describe("MinimaxCodeAdapter with the published desktop transport", () => {
 
     expect(calls.map((call) => call.url)).toEqual([
       "/minimax-desktop/api/v1/session/mvs_0000000000000000000000000000aaa1/message",
+      "/minimax-desktop/api/v1/session/mvs_0000000000000000000000000000aaa1/queue",
+      "/minimax-desktop/api/v1/session/mvs_0000000000000000000000000000aaa1/steer",
       "/minimax-desktop/api/v1/session/mvs_0000000000000000000000000000aaa1/queue",
       "/minimax-desktop/api/v1/session/mvs_0000000000000000000000000000aaa1/steer",
       "/minimax-desktop/api/v1/session/mvs_0000000000000000000000000000aaa1/queue",

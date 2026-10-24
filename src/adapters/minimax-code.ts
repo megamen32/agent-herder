@@ -578,6 +578,10 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     return { ok: true, admitted: true, turnId: body.turn_id ?? body.id, ...(options.inputId ? { inputId: options.inputId } : {}) };
   }
 
+  async sendActiveMessage(id: string, options: SendMessageOptions): Promise<ControlResult> {
+    return this.sendMessage(id, { ...options, activeTurnOnly: true, steer: true });
+  }
+
   async stopSession(id: string): Promise<ControlResult> {
     const control = await this.liveControl();
     if (!control) {
