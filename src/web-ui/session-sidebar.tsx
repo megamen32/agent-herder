@@ -79,7 +79,7 @@ export function SessionSidebarRow({session, title, selected, pinned, canPin, sta
     <button className={`session-row ${selected ? 'selected' : ''}`} aria-label={`${title}, ${subtitle}, ${context.status}`}
       aria-describedby={anchor ? id : undefined} onClick={onSelect}>
       <span className={`status-dot status-${statusClass}`} aria-hidden="true" />
-      <span className="session-copy"><strong>{title}</strong><small className="session-identity">{subtitle}</small></span>
+      <span className="session-copy"><strong>{title}</strong><small className="session-identity">{subtitle}</small>{context.goal && context.goal !== title ? <small className="session-goal">Цель: {context.goal}</small> : null}</span>
     </button>
     <button type="button" className="session-pin" aria-pressed={pinned} aria-label={`${pinned ? 'Открепить' : 'Закрепить'} сессию: ${title}`}
       disabled={!canPin} title={!canPin ? 'Данные машины и кабинета ещё загружаются' : pinned ? 'Открепить сессию' : 'Закрепить сессию'} onClick={onPin}>
@@ -91,6 +91,8 @@ export function SessionSidebarRow({session, title, selected, pinned, canPin, sta
         {context.currentCwd ? <><dt>Проект (CWD)</dt><dd>{context.currentCwd}</dd></> : <><dt>Текущий CWD</dt><dd>Не подтверждён</dd></>}
         {context.launchCwd && context.launchCwd !== context.currentCwd && <><dt>Каталог запуска</dt><dd>{context.launchCwd}</dd></>}
         <dt>Модель</dt><dd>{context.model}</dd><dt>Статус</dt><dd>{context.status}</dd><dt>Обновлено</dt><dd>{context.updated}</dd>
+        {context.goal ? <><dt>Цель</dt><dd>{context.goal}</dd></> : null}
+        {context.result ? <><dt>Результат</dt><dd>{context.result}</dd></> : null}
       </dl>
     </div>, document.body)}
   </div>;

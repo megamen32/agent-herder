@@ -3,6 +3,8 @@
 .session-row-actions .session-copy { min-width:0; }
 .session-row-actions .session-copy strong { line-height:21px; }
 .session-list .session-copy .session-identity { display:block; color:var(--muted); font-size:11px; line-height:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin:1px 0 0; }
+/* The goal of a working session: it says what the session is busy with. */
+.session-list .session-copy .session-goal { display:block; color:var(--text); font-size:11px; line-height:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin:1px 0 0; opacity:.85; }
 .session-pin { border:0; background:transparent; color:var(--muted); flex:0 0 32px; width:32px; height:32px; padding:0; display:grid; place-items:center; border-radius:8px; opacity:0; cursor:pointer; }
 .session-pin:disabled { cursor:wait; }
 .session-row-actions:hover .session-pin, .session-row-actions:focus-within .session-pin, .session-row-actions.is-pinned .session-pin { opacity:1; }
