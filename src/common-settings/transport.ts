@@ -16,7 +16,11 @@
 
 import { FleetDirectTransport } from "../mesh/fleet-direct-transport.js";
 import { parseCommonSettingsDocument, type CommonSettingsDocument } from "./document.js";
-import type { CommonSettingsConflict, CommonSettingsNodeStatus } from "./node-state.js";
+import {
+  redactCommonSettingsConflicts,
+  type CommonSettingsConflict,
+  type CommonSettingsNodeStatus,
+} from "./node-state.js";
 
 /** The tools of the common settings on a node of the fleet. */
 export const COMMON_SETTINGS_TOOLS = [
@@ -110,8 +114,11 @@ export class DirectCommonSettingsTransport implements CommonSettingsTransport {
 
 /** The state of a node, as the tool of the node answered it. */
 export function readStatus(payload: Record<string, unknown>): CommonSettingsNodeStatus {
+  // The node answers with the deviations it holds. A node that runs an older
+  // build answers with the values of the secrets in them, and they are closed
+  // here: the value of a secret never reaches the owner.
   const conflicts = Array.isArray(payload.conflicts)
-    ? payload.conflicts.filter((item): item is CommonSettingsConflict => Boolean(item) && typeof item === "object")
+    ? redactCommonSettingsConflicts(payload.conflicts.filter((item): item is CommonSettingsConflict => Boolean(item) && typeof item === "object"))
     : [];
   return {
     hostId: typeof payload.hostId === "string" ? payload.hostId : "",
