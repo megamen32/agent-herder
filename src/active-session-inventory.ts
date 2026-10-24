@@ -43,13 +43,18 @@ export function activeWorkspaceIdentity(s:AgentSession,hostId:string){
  return {runtimeHostId:hostId,harness:s.harness,nativeSessionId:s.id,lastActivity:s.lastActivity,...(typeof parent==='string'?{parentSessionId:parent}:{})};
 }
 /** Materialize generic snapshots and independently refreshed native activity. Consumers never scan native history. */
-export function startActiveInventoryOwner(snapshot:()=>{sessions:AgentSession[];observedAt:string|null;warming:boolean;failures?:Record<string,string>;sources?:Record<string,SessionSnapshotReceipt>},adapters:Map<string,HarnessAdapter>,options:{path?:string;hostId?:string;intervalMs?:number;nativeDeadlineMs?:number}={}){
+export function startActiveInventoryOwner(snapshot:()=>{sessions:AgentSession[];observedAt:string|null;warming:boolean;failures?:Record<string,string>;sources?:Record<string,SessionSnapshotReceipt>},adapters:Map<string,HarnessAdapter>,options:{path?:string;hostId?:string;intervalMs?:number;nativeDeadlineMs?:number;publishIntervalMs?:number;nativeStartDelayMs?:number}={}){
  const hostId=options.hostId??hostname(),path=options.path??activeInventoryPath();let closed=false,pending=false;let lastGeneration='';let workspaceUpdatePending=false;let publishAgain=false;
  const live=new Map<string,{harness:string;sessions:AgentSession[];failed:boolean;observedAt:string|null;exhaustive:boolean;reason?:string;coverage?:Record<string,unknown>;refreshDurationMs?:number;errorName?:string}>();
  const refreshing=new Set<string>();
  for(const [harness,adapter] of adapters)if(typeof (adapter as HarnessAdapter & {listActiveSessions?:unknown}).listActiveSessions==='function')live.set(harness,{harness,sessions:[],failed:true,observedAt:null,exhaustive:false,reason:'native_activity_warming'});
  const nativeWorkspaceReader=createMavisWorkspaceEvidenceReader({control:new MinimaxCodeControl()});
  const updateWorkspaces=createSessionWorkspaceOwnerUpdater({store:sessionWorkspaces,readEvidence:nativeWorkspaceReader});
+ // The workspace ledger is durable evidence, not a per-tick log. A declaration
+ // is written only when the ledger does not already carry this observation or a
+ // newer one, so an unchanged owner does not rewrite the whole ledger once per
+ // second and the next read does not have to parse it again.
+ const declaredWorkspaces=new Map<string,string>();
  const tick=async()=>{
   if(closed)return;if(pending){publishAgain=true;return;}pending=true;
   try{
@@ -58,9 +63,12 @@ export function startActiveInventoryOwner(snapshot:()=>{sessions:AgentSession[];
    const dedicated=[...live.values()];
    const dedicatedNames=new Set(dedicated.map(d=>d.harness));
    const nativeSessions=[...current.sessions.filter(s=>!dedicatedNames.has(s.harness)&&(s.status==='running'||s.status==='needs_input')),...dedicated.flatMap(d=>d.sessions)];
-   if(!workspaceUpdatePending){workspaceUpdatePending=true;void (async()=>{for(const s of nativeSessions){const workspace=officialNativeWorkspace(s,hostId);if(workspace){try{await sessionWorkspaces.declare({runtimeHostId:hostId,harness:s.harness,nativeSessionId:s.id,workspaces:[workspace],mode:'union',observedAt:workspace.observedAt});}catch{/* isolate each native identity */}}}await updateWorkspaces(nativeSessions.map(s=>activeWorkspaceIdentity(s,hostId)));})().catch(()=>{}).finally(()=>{workspaceUpdatePending=false;});}
+   if(!workspaceUpdatePending){workspaceUpdatePending=true;void (async()=>{for(const s of nativeSessions){const workspace=officialNativeWorkspace(s,hostId);if(workspace){const key=sessionWorkspaceKey({runtimeHostId:hostId,harness:s.harness,nativeSessionId:s.id});const seen=declaredWorkspaces.get(key);if(seen!==undefined&&Date.parse(seen)>=Date.parse(workspace.observedAt))continue;try{await sessionWorkspaces.declare({runtimeHostId:hostId,harness:s.harness,nativeSessionId:s.id,workspaces:[workspace],mode:'union',observedAt:workspace.observedAt});declaredWorkspaces.set(key,workspace.observedAt);}catch{/* isolate each native identity */}}}await updateWorkspaces(nativeSessions.map(s=>activeWorkspaceIdentity(s,hostId)));})().catch(()=>{}).finally(()=>{workspaceUpdatePending=false;});}
    const identities=nativeSessions.map(s=>({runtimeHostId:hostId,harness:s.harness,nativeSessionId:s.id}));
    const places=await sessionWorkspaces.readMany(identities);
+   // A declaration this owner believes it made must still be in the ledger:
+   // if the durable record lost the observation, the next tick declares it again.
+   for(const [key,observedAt] of declaredWorkspaces){const record=places.get(key);const kept=record?.workspaces.some(w=>Date.parse(w.observedAt)>=Date.parse(observedAt));if(!kept)declaredWorkspaces.delete(key);}
    const sources=[...adapters].map(([harness,adapter])=>{const r=current.sources?.[harness]??adapter.getSessionSnapshotReceipt?.();const live=dedicated.find(d=>d.harness===harness);if(!live&&!current.observedAt)return {harness,exhaustive:false,source:r?.source??'native-adapter',reason:'native_snapshot_warming'};if(!live&&current.failures?.[harness])return {harness,exhaustive:false,source:r?.source??'native-adapter',reason:current.failures[harness]};if(live)return {harness,exhaustive:live.exhaustive&&!live.failed,source:'native-active-observer',observedAt:live.observedAt,...live.coverage,refreshDurationMs:live.refreshDurationMs,errorName:live.errorName,...(live.reason?{reason:live.reason}:{})};return {harness,exhaustive:r?.exhaustive??false,source:r?.source??'native-adapter',...(!r?{reason:'native_enumeration_coverage_unknown'}:r.reason?{reason:r.reason}:{})};});
    const sessions=nativeSessions.filter(s=>s.status==='running'||s.status==='needs_input').map(s=>({id:s.id,harness:s.harness,title:s.title,runtimeHostId:hostId,status:s.status,...(typeof s.meta?.parentSessionId==='string'?{parentSessionId:s.meta.parentSessionId}:typeof s.meta?.parentThreadId==='string'?{parentSessionId:s.meta.parentThreadId}:typeof s.meta?.parentID==='string'?{parentSessionId:s.meta.parentID}:{}),activity:{state:'active',observedAt:String(s.meta?.activityObservedAt??current.observedAt!),evidence:String(s.meta?.activityEvidence??s.meta?.transport??'native-adapter-status'),expiresAt:String(s.meta?.activityExpiresAt??new Date(Date.parse(current.observedAt!)+30000).toISOString())},workspaces:places.get(sessionWorkspaceKey({runtimeHostId:hostId,harness:s.harness,nativeSessionId:s.id}))?.workspaces??[]}));
    const value:ActiveInventory={sessions,partial:sources.some(s=>!s.exhaustive),hosts:[{hostId,ownerPid:process.pid,state:'available',observedAt:[current.observedAt,...dedicated.map(d=>d.observedAt)].filter((v):v is string=>Boolean(v)).sort().at(-1)??null,sources}]};
@@ -69,19 +77,44 @@ export function startActiveInventoryOwner(snapshot:()=>{sessions:AgentSession[];
   }finally{pending=false;if(publishAgain&&!closed){publishAgain=false;void tick().catch(()=>{});}}
  };
  const publish=()=>void tick().catch(()=>{});
- const refreshDedicated=()=>{for(const [harness,adapter] of adapters){
-  if(!live.has(harness)||refreshing.has(harness)||closed)continue;refreshing.add(harness);
+ // The native read of a harness is scheduled by the expiry of the evidence it
+ // produced, not by a blind timer. A harness whose evidence is still valid for
+ // another 15 s does not need a full re-read of the native database now, and a
+ // harness that failed comes back quickly. The evidence keeps its own
+ // observedAt, so a published row never claims to be fresher than the
+ // observation behind it, and a row whose evidence expired is marked unknown by
+ // the reader instead of being carried forward as fresh.
+ const dueAt=new Map<string,number>();
+ const fallbackMs=options.intervalMs??5000;
+ const nowMs=()=>Date.now();
+ const refreshDedicated=()=>{const now=nowMs();for(const [harness,adapter] of adapters){
+  if(!live.has(harness)||refreshing.has(harness)||closed)continue;
+  const due=dueAt.get(harness);if(due!==undefined&&now<due)continue;
+  refreshing.add(harness);
   const native=adapter as HarnessAdapter & {listActiveSessions():Promise<AgentSession[]>;getActiveSessionRefreshProgress?():{stage:string;stageStartedAt:string}|null;getActiveSessionSnapshotReceipt?():{exhaustive:boolean;observedAt:string;reason?:string;[key:string]:unknown}|null};
   const refreshStarted=performance.now();
-  const deadline=setTimeout(()=>{const prior=live.get(harness)!;live.set(harness,{...prior,failed:true,exhaustive:false,reason:'native_activity_deadline',refreshDurationMs:Math.round(performance.now()-refreshStarted),coverage:{...prior.coverage,refreshProgress:native.getActiveSessionRefreshProgress?.()??null}});publish();},options.nativeDeadlineMs??20000);deadline.unref?.();
+  const deadline=setTimeout(()=>{const prior=live.get(harness)!;live.set(harness,{...prior,failed:true,exhaustive:false,reason:'native_activity_deadline',refreshDurationMs:Math.round(performance.now()-refreshStarted),coverage:{...prior.coverage,refreshProgress:native.getActiveSessionRefreshProgress?.()??null}});dueAt.set(harness,nowMs()+fallbackMs);publish();},options.nativeDeadlineMs??20000);deadline.unref?.();
   // A deadline changes evidence, not ownership of a still-running native read.
   void native.listActiveSessions().then(sessions=>{
    const receipt=native.getActiveSessionSnapshotReceipt?.();
    const coverage=Object.fromEntries(['source','activityCoverage','metadataEnumerationExhaustive','candidateCount','failedCandidateCount','totalSessions','pages','expiresAt','stageTimingsMs'].filter(key=>receipt?.[key]!==undefined).map(key=>[key,receipt![key]]));
    if(!closed)live.set(harness,{harness,sessions,failed:false,observedAt:receipt?.observedAt??new Date().toISOString(),exhaustive:receipt?.exhaustive??false,coverage,refreshDurationMs:Math.round(performance.now()-refreshStarted),...(receipt?.reason?{reason:receipt.reason}:{})});
-  }).catch(error=>{const prior=live.get(harness)!;const code=error instanceof Error&&/^[a-z_]+$/.test(error.message)?error.message:'native_activity_unavailable';live.set(harness,{...prior,failed:true,exhaustive:false,reason:code,errorName:error instanceof Error?error.name:'UnknownError',refreshDurationMs:Math.round(performance.now()-refreshStarted),coverage:{...prior.coverage,refreshProgress:native.getActiveSessionRefreshProgress?.()??null}});}).finally(()=>{clearTimeout(deadline);refreshing.delete(harness);publish();});
+   // The next read is due before the evidence this one produced expires, so the
+   // published row never goes stale while the owner is still running.
+   const expiries:number[]=[];const receiptExpiry=Date.parse(String(receipt?.expiresAt??''));if(Number.isFinite(receiptExpiry))expiries.push(receiptExpiry);
+   for(const session of sessions){const expiry=Date.parse(String(session.meta?.activityExpiresAt??''));if(Number.isFinite(expiry))expiries.push(expiry);}
+   const earliest=expiries.length?Math.min(...expiries):undefined;
+   const ttl=earliest!==undefined?Math.max(0,earliest-nowMs()):undefined;
+   dueAt.set(harness,earliest!==undefined?Math.max(nowMs()+1000,earliest-Math.max(4000,Math.floor((ttl??0)/3))):nowMs()+fallbackMs);
+  }).catch(error=>{const prior=live.get(harness)!;const code=error instanceof Error&&/^[a-z_]+$/.test(error.message)?error.message:'native_activity_unavailable';live.set(harness,{...prior,failed:true,exhaustive:false,reason:code,errorName:error instanceof Error?error.name:'UnknownError',refreshDurationMs:Math.round(performance.now()-refreshStarted),coverage:{...prior.coverage,refreshProgress:native.getActiveSessionRefreshProgress?.()??null}});dueAt.set(harness,nowMs()+fallbackMs);}).finally(()=>{clearTimeout(deadline);refreshing.delete(harness);publish();});
  }};
- const timer=setInterval(publish,1000);timer.unref();const observer=setInterval(refreshDedicated,options.intervalMs??5000);observer.unref();publish();refreshDedicated();return ()=>{closed=true;clearInterval(timer);clearInterval(observer);};
+ const timer=setInterval(publish,options.publishIntervalMs??1000);timer.unref();const observer=setInterval(refreshDedicated,1000);observer.unref();publish();
+ // The first native read starts on the next turn of the event loop, after the
+ // owner has bound its HTTP listener: the port is up before a slow native
+ // database can occupy the loop, and the first read is never later than the
+ // moment the owner was ready to serve.
+ const firstRead=setTimeout(()=>{refreshDedicated();},options.nativeStartDelayMs??0);firstRead.unref?.();
+ return ()=>{closed=true;clearInterval(timer);clearInterval(observer);clearTimeout(firstRead);};
 }
 export async function activeInventoryFleet(input:ActiveInventoryQuery,peers:readonly {hostId:string;target:string}[],call:(peer:{hostId:string;target:string})=>Promise<unknown>,deadlineMs=3000){
  const selected=peers.filter(p=>!input.runtimeHostId||p.hostId.toLowerCase()===input.runtimeHostId.toLowerCase());
