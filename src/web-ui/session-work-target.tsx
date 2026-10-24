@@ -1,5 +1,4 @@
 import * as React from "react";
-import { latestModel, readModelTimeline } from "./session-model-timeline.js";
 
 /** The four states of one work-target operation; the same states the MCP tool returns. */
 export type SessionTargetState = "updated" | "unchanged" | "unreachable" | "unsupported";
@@ -265,6 +264,10 @@ export async function readSessionInspectFacts(session: { id: string; harness: st
  * The block that answers "what is the agent doing now", "which files did it
  * change" and "who are the subagents". What the server cannot prove is said
  * plainly instead of being invented.
+ *
+ * The block lives in the inspector of the right panel: the chat itself keeps
+ * its height for the conversation. Every long list is folded behind its own
+ * summary, so the panel shows the count first and the details on demand.
  */
 export function SessionInspectBlock({ facts, pendingModel }: { facts?: SessionInspectFacts; pendingModel?: string; loading?: boolean }) {
   if (!facts) {
@@ -275,6 +278,7 @@ export function SessionInspectBlock({ facts, pendingModel }: { facts?: SessionIn
   }
   const rows = modelRows(facts.model.native, pendingModel);
   const files = facts.files.length ? facts.files : facts.worktreeFiles.map((path) => ({ path, operation: "Изменение файлов" }));
+  const shown = files.slice(0, 200);
   return <section className="inspector-facts" aria-label="Работа по сессии">
     <span className="eyebrow">РАБОТА ПО СЕССИИ</span>
     <dl>
@@ -284,16 +288,23 @@ export function SessionInspectBlock({ facts, pendingModel }: { facts?: SessionIn
       </React.Fragment>)}
       <dt>Сейчас</dt>
       <dd>{facts.lastAction ? `${facts.lastAction.label}${facts.lastAction.tool ? ` · ${facts.lastAction.tool}` : ""}` : "действий пока нет"}</dd>
-      <dt>Файлы</dt>
-      <dd>{files.length ? <ul className="inspector-facts-files">{files.slice(0, 20).map((file) => <li key={file.path} title={file.path}>{file.path}</li>)}</ul> : "изменённых файлов не зафиксировано"}</dd>
-      <dt>Субагенты</dt>
-      <dd>{facts.subagents.count
+    </dl>
+    <details className="inspector-fold" open>
+      <summary>Файлы <span>{files.length}</span></summary>
+      {files.length
+        ? <ul className="inspector-facts-files">{shown.map((file) => <li key={file.path} title={file.path}>{file.path}</li>)}</ul>
+        : <p className="inspector-facts-empty">изменённых файлов не зафиксировано</p>}
+      {files.length > shown.length && <small className="settings-hint">Показаны первые {shown.length} из {files.length}.</small>}
+    </details>
+    <details className="inspector-fold">
+      <summary>Субагенты <span>{facts.subagents.count}</span></summary>
+      {facts.subagents.count
         ? <ul className="inspector-facts-subagents">{facts.subagents.items.map((child) => <li key={child.id}>
           <strong>{child.name}</strong>
           <small>{[child.role, subagentStatusLabel(child.status)].filter(Boolean).join(" · ")}</small>
         </li>)}</ul>
-        : "дочерних сессий нет"}</dd>
-    </dl>
+        : <p className="inspector-facts-empty">дочерних сессий нет</p>}
+    </details>
   </section>;
 }
 
@@ -302,13 +313,17 @@ export function SessionInspectBlock({ facts, pendingModel }: { facts?: SessionIn
  * directory it works in. The server owns the truth — this block shows it and
  * asks for a change, and it never presents an unreachable machine as done.
  */
-export function SessionWorkTarget({ session, hosts, localHostId, onApplied, showFacts = true, showConvert = true }: {
+export function SessionWorkTarget({ session, hosts, localHostId, onApplied, showConvert = true, expanded = false, onExpandedChange, settingsMenu }: {
   session: WorkTargetSession;
   hosts: WorkTargetHost[];
   localHostId?: string;
   onApplied?: (receipt: SessionTargetReceipt) => void;
-  showFacts?: boolean;
   showConvert?: boolean;
+  /** The header of the chat is folded by default; the owner unfolds it when the work place matters. */
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
+  /** The menu of every setting of the panel; the small gear of the header opens it. */
+  settingsMenu?: React.ReactNode;
 }) {
   const [current, setCurrent] = React.useState({ hostId: session.hostId ?? localHostId ?? "", cwd: session.cwd });
   const [hostId, setHostId] = React.useState(current.hostId);
@@ -318,8 +333,7 @@ export function SessionWorkTarget({ session, hosts, localHostId, onApplied, show
   const [outcome, setOutcome] = React.useState<SessionTargetOutcome>();
   const [error, setError] = React.useState<string>();
   const [pending, setPending] = React.useState(false);
-  const [facts, setFacts] = React.useState<SessionInspectFacts>();
-  const [pendingModel, setPendingModel] = React.useState<string>();
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [converting, setConverting] = React.useState(false);
   const [convertResult, setConvertResult] = React.useState<string>();
 
@@ -354,24 +368,7 @@ export function SessionWorkTarget({ session, hosts, localHostId, onApplied, show
     return () => { live = false; };
   }, [session.id, session.harness]);
 
-  // The facts of the session: what it did last, what it changed, who its children are.
-  React.useEffect(() => {
-    let live = true;
-    setFacts(undefined);
-    void readSessionInspectFacts({ id: session.id, harness: session.harness }).then((read) => {
-      if (live && read) setFacts(read);
-    });
-    return () => { live = false; };
-  }, [session.id, session.harness]);
-
-  // The model the owner picked for the next answer, when it differs from the one in use.
-  React.useEffect(() => {
-    const key = `${session.harness}:${session.id}`;
-    const read = () => setPendingModel(latestModel(readModelTimeline(window.localStorage, key)));
-    read();
-    window.addEventListener("storage", read);
-    return () => window.removeEventListener("storage", read);
-  }, [session.id, session.harness]);
+  // The facts of the session live in the inspector of the right panel, not here.
 
   const knownHosts = hosts.slice();
   if (current.hostId && !knownHosts.some((host) => host.hostId.toLowerCase() === current.hostId.toLowerCase())) {
@@ -401,47 +398,67 @@ export function SessionWorkTarget({ session, hosts, localHostId, onApplied, show
     onApplied?.(receipt);
   };
 
-  return <section className="work-target" aria-label="Рабочая машина">
-    <div className="work-target-current">
-      <span className="eyebrow">РАБОЧАЯ МАШИНА</span>
-      <strong>{machineLabel(current.hostId, workTargetHostLabel(hosts, current.hostId))}</strong>
-      <code title={current.hostId}>{current.hostId || "машина не подтверждена"}</code>
-      <small>Каталог: <code title={current.cwd}>{current.cwd || "не задан"}</code></small>
-      <p className="work-target-hint">Рабочий каталог агента на этой машине. Папка проекта сессии — «Папка» в панели сессии; это другая величина.</p>
-    </div>
-    <div className="work-target-form">
-      <label>Машина
-        <select aria-label="Рабочая машина" value={custom ? CUSTOM_HOST : hostId} onChange={(event) => {
-          const value = event.target.value;
-          if (value === CUSTOM_HOST) { setCustom(true); return; }
-          setCustom(false);
-          setHostId(value);
-        }}>
-          {knownHosts.map((host) => <option key={host.hostId} value={host.hostId}>{host.label} · {host.hostId}</option>)}
-          <option value={CUSTOM_HOST}>Другая машина…</option>
-        </select>
-      </label>
-      {custom && <label>Машина (hostId)
-        <input aria-label="Идентификатор рабочей машины" value={customHostId} placeholder="например, server-44"
-          onChange={(event) => setCustomHostId(event.target.value)} />
-      </label>}
-      <label>Рабочий каталог агента
-        <input aria-label="Рабочий каталог" value={cwd} onChange={(event) => setCwd(event.target.value)} />
-      </label>
-      <button type="button" className="quiet-button" disabled={pending} onClick={() => void apply()}>
-        {pending ? "Применяем…" : "Применить"}
+  return <section className={`work-target ${expanded ? "work-target-open" : "work-target-closed"}`} aria-label="Рабочая машина">
+    <div className="work-target-bar">
+      <button type="button" className="work-target-summary" aria-expanded={expanded} onClick={() => onExpandedChange?.(!expanded)}
+        title={expanded ? "Свернуть рабочую машину" : "Развернуть рабочую машину"}>
+        <span className="work-target-caret" aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+        <span className="work-target-label">Рабочая машина</span>
+        <strong>{machineLabel(current.hostId, workTargetHostLabel(hosts, current.hostId))}</strong>
+        <code title={current.cwd || "каталог не задан"}>{current.cwd || "каталог не задан"}</code>
       </button>
+      <div className="work-target-bar-actions">
+        <button type="button" className="icon-button work-target-settings" aria-label="Настройки" title="Настройки панели"
+          aria-expanded={settingsOpen} onClick={() => setSettingsOpen((value) => !value)}>
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8" />
+          </svg>
+        </button>
+      </div>
+      {settingsOpen && settingsMenu && <div className="work-target-popover" role="menu" aria-label="Настройки панели">{settingsMenu}</div>}
     </div>
-    {outcome && <p className={`work-target-result work-target-${outcome.tone}`} role="status">{outcome.message}</p>}
-    {error && <p className="work-target-result work-target-error" role="alert">{error}</p>}
-    {showFacts && <SessionInspectBlock facts={facts} pendingModel={pendingModel} />}
-    {showConvert && session.harness === "codex" && <div className="work-target-convert">
-      <span className="eyebrow">ПЕРЕВОД В OPENCODE</span>
-      <p className="work-target-hint">{convertActionHint()}</p>
-      <button type="button" className="quiet-button" disabled={converting} onClick={() => void convert()}>
-        {converting ? "Переводим…" : "Перевести сессию в OpenCode"}
-      </button>
-      {convertResult && <p className="work-target-result" role="status">{convertResult}</p>}
+    {expanded && <div className="work-target-details">
+      <div className="work-target-current">
+        <span className="eyebrow">РАБОЧАЯ МАШИНА</span>
+        <strong>{machineLabel(current.hostId, workTargetHostLabel(hosts, current.hostId))}</strong>
+        <code title={current.hostId}>{current.hostId || "машина не подтверждена"}</code>
+        <small>Каталог: <code title={current.cwd}>{current.cwd || "не задан"}</code></small>
+        <p className="work-target-hint">Рабочий каталог агента на этой машине. Папка проекта сессии — «Папка» в панели сессии; это другая величина.</p>
+      </div>
+      <div className="work-target-form">
+        <label>Машина
+          <select aria-label="Рабочая машина" value={custom ? CUSTOM_HOST : hostId} onChange={(event) => {
+            const value = event.target.value;
+            if (value === CUSTOM_HOST) { setCustom(true); return; }
+            setCustom(false);
+            setHostId(value);
+          }}>
+            {knownHosts.map((host) => <option key={host.hostId} value={host.hostId}>{host.label} · {host.hostId}</option>)}
+            <option value={CUSTOM_HOST}>Другая машина…</option>
+          </select>
+        </label>
+        {custom && <label>Машина (hostId)
+          <input aria-label="Идентификатор рабочей машины" value={customHostId} placeholder="например, server-44"
+            onChange={(event) => setCustomHostId(event.target.value)} />
+        </label>}
+        <label>Рабочий каталог агента
+          <input aria-label="Рабочий каталог" value={cwd} onChange={(event) => setCwd(event.target.value)} />
+        </label>
+        <button type="button" className="quiet-button" disabled={pending} onClick={() => void apply()}>
+          {pending ? "Применяем…" : "Применить"}
+        </button>
+      </div>
+      {outcome && <p className={`work-target-result work-target-${outcome.tone}`} role="status">{outcome.message}</p>}
+      {error && <p className="work-target-result work-target-error" role="alert">{error}</p>}
+      {showConvert && session.harness === "codex" && <div className="work-target-convert">
+        <span className="eyebrow">ПЕРЕВОД В OPENCODE</span>
+        <p className="work-target-hint">{convertActionHint()}</p>
+        <button type="button" className="quiet-button" disabled={converting} onClick={() => void convert()}>
+          {converting ? "Переводим…" : "Перевести сессию в OpenCode"}
+        </button>
+        {convertResult && <p className="work-target-result" role="status">{convertResult}</p>}
+      </div>}
     </div>}
   </section>;
 }

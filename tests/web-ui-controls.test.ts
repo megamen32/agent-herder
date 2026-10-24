@@ -82,14 +82,15 @@ describe("mobile chat and session controls", () => {
     const headerStart = main.indexOf('<div className="header-actions">');
     const headerEnd = main.indexOf("{chatMenuOpen &&", headerStart);
     const header = main.slice(headerStart, headerEnd);
-    const menuStart = main.indexOf('<div className="chat-menu"');
-    const menuEnd = main.indexOf("</div>", main.indexOf("Квота</button>"));
+    // Один список настроек на весь экран: и меню чата, и шестерёнка в шапке.
+    const menuStart = main.indexOf('const chatMenuContent = (');
+    const menuEnd = main.indexOf("Квота</button>", menuStart);
     const menu = main.slice(menuStart, menuEnd);
 
     expect(headerStart).toBeGreaterThan(-1);
     expect(menuStart).toBeGreaterThan(-1);
     expect(main).toContain('const AUTOCONTINUE_HARNESSES = new Set<string>(AUTOCONTINUE_HARNESS_IDS)');
-    expect(header).toContain('aria-label="Настройки сессии"');
+    expect(header).toContain('aria-label="Панель сессии"');
     expect(header).toContain('aria-label="Меню чата"');
     for (const label of ['>Машины<', '>Задачи<', '>Статистика<', '>Автопилот<', '>Автопродолжение<']) expect(header).not.toContain(label);
     expect(main).toContain('onMachines={() => { setShowSearch(false); setFleetCreationMode(false);setShowFleet(true)');
@@ -97,6 +98,8 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('>Автопродолжение</button>');
     expect(menu).toContain('Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})');
     expect(menu).toContain('Автопилот · общие настройки (в этом чате ${activeAutopilotEnabled ? "включён" : "выключен"})');
+    expect(main).toContain('<div className="chat-menu" aria-label="Меню чата">{chatMenuContent}</div>');
+    expect(main).toContain('settingsMenu={chatMenuContent}');
   });
 
   it("puts live agent activity immediately above the composer and session automation in the inspector", () => {
@@ -126,7 +129,8 @@ describe("mobile chat and session controls", () => {
   });
 
   it("keeps automation modes discoverable on mobile with their current state", () => {
-    expect(main).toContain('React.useState(() => window.innerWidth > 1180)');
+    // Правая панель показывается по выбору владельца, и выбор переживает перезагрузку.
+    expect(main).toContain('React.useState(() => readPanelLayout())');
     expect(main).toContain('aria-label="Меню чата" aria-expanded={chatMenuOpen}');
     expect(main).toContain('Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})');
     expect(main).toContain('Автопилот · общие настройки (в этом чате ${activeAutopilotEnabled ? "включён" : "выключен"})');

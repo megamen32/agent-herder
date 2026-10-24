@@ -185,3 +185,59 @@
 .work-target-ok { color: var(--accent); }
 .work-target-neutral { color: var(--muted); }
 .work-target-error { color: var(--status-error); }
+
+/* The header of the session is folded by default: one line with the machine
+   and the directory, a gear that opens every setting and a caret that unfolds
+   the details. The conversation keeps the height of the screen. */
+.work-target { flex: 0 0 auto; display: grid; gap: 0; padding: 0; border-bottom: 1px solid var(--border); background: var(--surface-1); }
+.work-target-bar { position: relative; display: flex; align-items: center; gap: var(--space-2); min-height: 38px; padding: 5px 14px 5px 22px; }
+.work-target-summary { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 8px; padding: 2px 0; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.work-target-summary:hover .work-target-label { color: var(--text); }
+.work-target-caret { flex: 0 0 auto; color: var(--muted); font-size: 11px; }
+.work-target-label { flex: 0 0 auto; color: var(--muted); font-size: var(--text-xs); letter-spacing: .08em; text-transform: uppercase; }
+.work-target-summary strong { flex: 0 0 auto; font-weight: 500; font-size: 13px; }
+.work-target-summary code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+.work-target-bar-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; }
+.work-target-settings { width: 26px; height: 26px; }
+.work-target-settings svg { width: 15px; height: 15px; }
+.work-target-details { display: grid; gap: 10px; padding: 12px 22px 14px; border-top: 1px solid var(--border); }
+.work-target-hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.work-target-convert { display: grid; gap: 8px; justify-items: start; padding-top: 4px; }
+.work-target-popover { position: absolute; top: calc(100% + 6px); right: 14px; z-index: 30; display: grid; gap: 9px; min-width: 230px; max-width: 320px; max-height: 70vh; overflow-y: auto; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-2); box-shadow: 0 12px 28px var(--shadow-menu); }
+.work-target-popover label { display: flex; align-items: center; gap: var(--space-2); color: var(--text); font-size: var(--text-sm); }
+.work-target-popover input { accent-color: var(--accent); }
+.work-target-popover .quiet-button { padding: 5px 0; text-align: left; }
+
+/* The list of chats can go away: the chat takes the whole width. */
+@media (min-width: 901px) {
+  .oc-app.no-sessions { grid-template-columns: 60px 0 minmax(0, 1fr); }
+  .oc-app.no-sessions .sessions-pane { display: none; }
+}
+@media (min-width: 1181px) {
+  .oc-app.no-sessions:not(.no-inspector) { grid-template-columns: 60px 0 minmax(0, 1fr) 320px; }
+}
+@media (max-width: 900px) {
+  .chat-list-toggle { display: none; }
+}
+
+/* The folds of the inspector: the count first, the list on demand. */
+.inspector-fold { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
+.inspector-fold > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: var(--text-xs); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; list-style: none; }
+.inspector-fold > summary::-webkit-details-marker { display: none; }
+.inspector-fold > summary span { color: var(--text); font-size: var(--text-xs); }
+.inspector-facts-files { max-height: 220px; overflow-y: auto; margin: 8px 0 0; padding-left: 18px; }
+.inspector-facts-files li { color: var(--muted); font-size: var(--text-xs); overflow-wrap: anywhere; }
+.inspector-facts-subagents, .inspector-mcp-list { display: grid; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+.inspector-facts-subagents li, .inspector-mcp-list li { display: grid; gap: 1px; }
+.inspector-facts-subagents strong, .inspector-mcp-list strong { font-weight: 500; font-size: var(--text-sm); overflow-wrap: anywhere; }
+.inspector-facts-subagents small, .inspector-mcp-list small { color: var(--muted); font-size: var(--text-xs); }
+.inspector-mcp-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.inspector-timeline { display: grid; gap: 8px; max-height: 260px; overflow-y: auto; margin: 8px 0 0; padding: 0; list-style: none; }
+.inspector-timeline li { display: grid; gap: 1px; padding-left: 9px; border-left: 2px solid var(--border); }
+.inspector-timeline .timeline-time { color: var(--muted); font-size: 11px; }
+.inspector-timeline strong { font-weight: 500; font-size: var(--text-sm); }
+.inspector-timeline small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.inspector-timeline .timeline-kind-files { border-left-color: var(--accent); }
+.inspector-timeline .timeline-kind-git { border-left-color: #6ea8fe; }
+.inspector-timeline .timeline-kind-test { border-left-color: #7dd3a0; }
+.inspector-timeline .timeline-kind-error { border-left-color: var(--status-error); }
