@@ -63,6 +63,15 @@ import {
 } from "../automation-disarm/index.js";
 import { DirectFleetDisarmTransport } from "../automation-disarm/direct-transport.js";
 import { AUTOMATION_CANNOT_CHANGE_PROHIBITIONS_REASON, HOOK_KINDS, HooksService, isHookKind, type HookKind } from "../hooks/index.js";
+import {
+  hooksReading,
+  prohibitionsReading,
+  quotaPolicyReading,
+  readNetworkPauseReading,
+  readSeparatedStateView,
+  sessionStopReading,
+  sessionStopUnknown,
+} from "../hooks/state-separation-read.js";
 import type { FleetDisarmNodeResult, FleetDisarmTransport } from "../automation-disarm/service.js";
 import type { AutomationDisarmDocument } from "../automation-disarm/state.js";
 import { renderSessionGraph } from "../session-visualization.js";
@@ -83,7 +92,7 @@ import {
 } from "../session-labels.js";
 import { publishHealthRefusal, type HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
-import { checkCodexQuota, saveCodexQuotaPolicy } from "../codex-quota-guard.js";
+import { checkCodexQuota, loadCodexQuotaPolicy, saveCodexQuotaPolicy } from "../codex-quota-guard.js";
 import { handleQuotaLensRequest } from "./quota-lens.js";
 import { createSettingsApi } from "./settings-api.js";
 import { SettingsStore } from "./settings-store.js";
@@ -1698,6 +1707,75 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     markLifecycleEvent(harness, sessionId, event as SessionLifecycleEvent, typeof body.cwd === "string" ? body.cwd : undefined, events);
     if (event === "end") await coordinationNotes.endSession(sessionId);
     return sendJson(response, 200, { ok: true });
+  }
+  // The five states of the product, each one read on its own.
+  //
+  // The stop of one session, the prohibitions, the runtime of the hooks, the
+  // quota policy and the emergency network pause of Notice Place are five
+  // different levers with different owners. This route answers with them
+  // apart, so the panel never has to read one of them as another. It writes
+  // nothing, changes no lever and starts no agent.
+  if (url.pathname === "/api/state-separation" && request.method === "GET") {
+    response.setHeader("cache-control", "no-store");
+    const harness = url.searchParams.get("harness")?.trim();
+    const sessionId = url.searchParams.get("sessionId")?.trim();
+    // The prohibitions and the runtime of the hooks are two fields of one
+    // document. The document is read once, so the panel sees one moment in
+    // time, and the two states stay apart inside it.
+    let hooksDocument: Promise<Awaited<ReturnType<HooksService["prohibitions"]["readState"]>>> | undefined;
+    const hooksDocumentOf = () => (hooksDocument ??= hooksServiceOf().prohibitions.readState());
+    const view = await readSeparatedStateView({
+      readSessionStop: async () => {
+        if (!harness || !sessionId) {
+          return sessionStopUnknown({
+            harness,
+            sessionId,
+            reason: "Для остановки конкретной сессии нужны harness и sessionId",
+          });
+        }
+        try {
+          return sessionStopReading({
+            harness,
+            sessionId,
+            held: await getHumanStopStore().isHeld(harness, sessionId),
+          });
+        } catch (error) {
+          return sessionStopUnknown({
+            harness,
+            sessionId,
+            reason: `Остановка сессии не прочитана: ${(error as Error).message}`,
+          });
+        }
+      },
+      readProhibitions: async () => {
+        const read = await hooksDocumentOf();
+        return prohibitionsReading({
+          enabled: read.state.prohibitionsEnabled,
+          known: read.known,
+          changedAt: read.state.changedAt,
+          changedBy: read.state.changedBy,
+          ...(read.reason ? { reason: read.reason } : {}),
+        });
+      },
+      readHooks: async () => {
+        const read = await hooksDocumentOf();
+        return hooksReading({
+          state: read.state,
+          known: read.known,
+          ...(read.reason ? { reason: read.reason } : {}),
+        });
+      },
+      readQuotaPolicy: async () => {
+        const loaded = await loadCodexQuotaPolicy();
+        return quotaPolicyReading({
+          policy: loaded.policy,
+          known: true,
+          revision: loaded.revision,
+        });
+      },
+      readNetworkPause: async () => await readNetworkPauseReading(),
+    });
+    return sendJson(response, 200, view);
   }
   // The hooks of the product: the lever of the owner and what the hooks did.
   // The lever belongs to the hooks alone: it never touches the automation
