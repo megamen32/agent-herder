@@ -6,6 +6,7 @@ state, not a failure. The node finds the live OpenCode for its own port and
 records that pid; when nothing of OpenCode survived, the node starts it and
 only a real failure stops the node.
 """
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -247,6 +248,47 @@ def opencode_environment(config, config_path, proc_root=PROC_ROOT, start=True):
     return pid, environment
 
 
+def verify_release_packages(release: Path):
+    """The packages of the release must resolve before the node starts.
+
+    The packages of a release live in the shared store of the node, one
+    directory per lock file. A store that is absent is a clear refusal, not
+    a broken link that the runtime would discover as a missing module.
+    """
+    packages = release / 'node_modules'
+    if packages.is_symlink() or not packages.is_dir():
+        fail('Fleet node release has no node_modules: %s' % packages)
+    missing = []
+    for entry in sorted(packages.iterdir()):
+        if entry.name == 'agent-resume-mcp':
+            continue
+        children = []
+        if entry.is_dir() and not entry.is_symlink():
+            children = sorted(entry.iterdir())
+        else:
+            children = [entry]
+        for child in children:
+            if not child.exists():
+                missing.append(child.name)
+    if missing:
+        fail('Fleet node shared package store is absent: %d packages of %s do not resolve (%s)'
+             % (len(missing), shared_store_of(release), ', '.join(missing[:5])))
+
+
+def shared_store_of(release: Path) -> str:
+    """The shared store of a release: the hash of the lock file of the release.
+
+    The store of the node lives next to the releases of the node, one
+    directory per lock file.
+    """
+    lock = release / 'package-lock.json'
+    try:
+        digest = hashlib.sha256(lock.read_bytes()).hexdigest()
+    except OSError:
+        digest = ''
+    return str(release.parent.parent / 'shared-node-modules' / digest)
+
+
 def main():
     base = Path.home() / '.local/share/agent-herder/fleet'
     config_path = base / 'node-config.json'
@@ -254,6 +296,10 @@ def main():
     manifest = json.loads((base / 'current/dist/fleet-deployment-manifest.json').read_text())
     if manifest['source_sha'] != config['sourceSha'] or manifest.get('source_dirty'):
         fail('Fleet node source identity mismatch')
+    # The packages of the release must be there before anything else starts:
+    # a store that is absent is a clear refusal, not a missing module at the
+    # first import of the runtime.
+    verify_release_packages((base / 'current').resolve(strict=True))
     if config['hostId'] != socket.gethostname():
         fail('Fleet node native host identity mismatch')
     node = Path(config['nodeBin'])

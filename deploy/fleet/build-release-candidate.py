@@ -11,9 +11,11 @@ is never overwritten.
 
 The release is built from the committed head and nothing else:
   * the build happens in its own worktree with its own package tree;
-  * the release carries its own node_modules: the runtime dependencies of
-    this platform, taken from the lock file of the release - not the whole
-    development tree of the checkout, and not a symlink into the shared store;
+  * the release carries no copy of the packages: its node_modules is a set of
+    links into the shared store of the area, one directory per lock file,
+    named by sha256(package-lock.json) of the release; the workspace package
+    stays a link into the release, so the import from the release is never
+    lost;
   * the workspace package agent-resume-mcp is a link into the release, so the
     running node imports the package of the release and not the one of the store;
   * the bundle manifest is written from scratch for this build and carries the
@@ -226,48 +228,24 @@ def fresh_release_dir(catalog: Path, sha: str) -> Path:
 
 
 def release_packages_tree(release: Path, store: Path) -> str:
-    """Give the release the full set of the store of this host, as hard links.
+    """Give the release the packages of the shared store of its lock file.
 
-    Nothing is trimmed and nothing is copied: the release carries every
-    package of the store, and every byte of it stays shared with the store.
-    A partial node_modules would let the resolution drift into the store, and
-    the import from the release - the invariant of L53 - would be lost. The
-    workspace package is the one exception: it is a link into the release.
+    The packages do not live in the release: they live in one directory of
+    the shared store, named by the hash of the lock file of the release. Two
+    releases with the same lock file share one directory, and the bytes of
+    the packages are hard links of the store of the host, so the shared
+    store costs no new disk. The release carries no copy of the packages:
+    its node_modules is a set of links into that store. The workspace
+    package is a link into the release, so the import from the release -
+    the invariant of the acceptance - is never lost.
     """
-    target = release / "node_modules"
-    target.mkdir(parents=True, exist_ok=True)
-    names = release_rules.store_contents(store)
-    for name in names:
-        source = store / name
-        destination = target / name
-        # The destination is freed, not skipped: a file that is already there
-        # may be a hard link of another release, and the release owns the
-        # bytes of its own tool caches.
-        free_destination(destination)
-        if release_rules.mutable_entry(name):
-            # The tool caches of the store are copied, not linked: they are
-            # rewritten in place, and a link would make the bytes of this
-            # release change under a running service.
-            if source.is_dir():
-                shutil.copytree(source, destination, symlinks=True, dirs_exist_ok=True)
-            else:
-                shutil.copy2(source, destination)
-            continue
-        if source.is_symlink():
-            os.symlink(os.readlink(source), destination)
-            continue
-        if name.startswith("@"):
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            subprocess.run(["cp", "-al", str(source), str(destination)], check=True)
-            continue
-        subprocess.run(["cp", "-al", str(source), str(destination)], check=True)
-    resume = target / release_rules.WORKSPACE_PACKAGE
-    if resume.exists() or resume.is_symlink():
-        resume.unlink()
-    os.symlink("../packages/agent-resume", resume)
-    return (f"{len(names)} packages of the store {store}, hard links, nothing trimmed, nothing copied; "
-            f"{release_rules.WORKSPACE_PACKAGE} -> ../packages/agent-resume")
-
+    identity = release_rules.dependency_identity(release)
+    store_dir = release_rules.shared_store_dir(release_rules.fleet_root_of(release), identity)
+    release_rules.materialize_shared_store(store, store_dir, identity)
+    linked = release_rules.link_release_packages(release, store_dir)
+    caches = release_rules.own_tool_caches(store, release / "node_modules")
+    return (f"{linked}; {len(caches)} tool caches of the store copied into the release; "
+            f"shared store {store_dir}")
 
 def assemble(sha: str, worktree: Path, catalog: Path) -> Path:
     release = fresh_release_dir(catalog, sha)
@@ -439,7 +417,7 @@ def write_bundle_manifest(sha: str, release: Path, catalog: Path, worktree: Path
             "totalBytes": total_bytes,
         },
         "layoutContract": {
-            "nodeModules": "release-local: a real directory of the runtime packages of this platform, hard links of the store of the host",
+            "nodeModules": "shared store: a real directory of links into shared-node-modules/<sha256(package-lock.json)>; the bytes are hard links of the store of the host",
             "workspacePackage": "node_modules/agent-resume-mcp -> ../packages/agent-resume (inside the release)",
             "storePolicy": "the root package store of the node is never modified; it keeps the package of the rollback release",
             "dependencyRule": "deploy/fleet/release-rules.py: the runtime set of package-lock.json of this platform, without dev packages",
@@ -507,7 +485,7 @@ def checks(sha: str, release: Path, catalog: Path, node_config_before: bytes | N
          f"store={package_diff['expected']} release={package_diff['actual']} missing={len(package_diff['missing'])} extra={len(package_diff['extra'])}"),
         ("no byte of the package set was copied", copied_ok,
          f"copied={copied} B in {len(copied_files)} files (only the tool caches of the store are copied; "
-         f"every package stays a hard link of the store)"),
+         f"every package is a link into the shared store of the lock file)"),
         ("the workspace package is a link into the release", resume_target == "../packages/agent-resume", resume_target or "absent"),
         ("bundle fingerprint of the release == the fingerprint of the manifest",
          fingerprint == bundle_manifest["bundleFingerprint"], f"{fingerprint} vs {bundle_manifest['bundleFingerprint']}"),

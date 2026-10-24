@@ -192,6 +192,7 @@ const {createRequire} = require("module");
 const fs = require("fs");
 const path = require("path");
 const release = process.argv[2];
+const shared = process.argv[3] || "";
 const entry = path.join(release, "dist", "index.js");
 const requireFromRelease = createRequire(entry);
 
@@ -260,8 +261,10 @@ for (const [spec, from] of bare) {
       continue;
     }
   }
-  const inside = target.startsWith(path.resolve(release) + path.sep);
-  resolved.push({spec, kind: inside ? "release" : "outside", target, via});
+  const insideRelease = target.startsWith(path.resolve(release) + path.sep);
+  const insideShared = shared ? target.startsWith(path.resolve(shared) + path.sep) : false;
+  const inside = insideRelease || insideShared;
+  resolved.push({spec, kind: insideRelease ? "release" : (insideShared ? "shared" : "outside"), target, via});
   if (!inside) outside.push({spec, target, via});
 }
 console.log(JSON.stringify({
@@ -276,12 +279,39 @@ console.log(JSON.stringify({
 """
 
 
+def release_shared_store(release: Path) -> str:
+    """The shared store of a release, when its packages live in one.
+
+    A release whose packages are a farm of links resolves its third party
+    packages inside the shared store of its own lock file: the store is
+    named by the hash of that lock file, and the acceptance verifies the
+    store before it accepts an import from it.
+
+    A release that still carries its own packages has no shared store: every
+    import of it must resolve inside the release, as before.
+    """
+    if not release_rules.is_package_farm(release / "node_modules"):
+        return ""
+    identity = release_rules.dependency_identity(release)
+    store_dir = release_rules.shared_store_dir(release_rules.fleet_root_of(release), identity)
+    try:
+        release_rules.verify_shared_store(store_dir, identity)
+    except (RuntimeError, OSError, ValueError) as error:
+        return ""
+    return str(store_dir)
+
+
 def import_check(release: Path, node_bin: str) -> dict:
-    """Every import of the runtime must resolve from the release."""
+    """Every import of the runtime must resolve from the release.
+
+    An import that resolves inside the shared store of the lock file of the
+    release is an import of the release: the store holds exactly the runtime
+    set of that lock file, and the store is verified before it is used.
+    """
     probe = Path("/tmp/acceptance-import-probe.cjs")
     probe.write_text(IMPORT_PROBE, encoding="utf-8")
     try:
-        result = subprocess.run([node_bin, str(probe), str(release)],
+        result = subprocess.run([node_bin, str(probe), str(release), release_shared_store(release)],
                                 capture_output=True, text=True, check=False, timeout=120)
         data = json.loads(result.stdout.strip().splitlines()[-1])
     except Exception as error:
@@ -294,8 +324,8 @@ def import_check(release: Path, node_bin: str) -> dict:
         "builtins": data["builtins"],
         "outside": data["outside"],
         "unresolved": data["unresolved"],
+        "shared_store": release_shared_store(release),
     }
-
 
 def import_check_workspace(release: Path, store_modules: Path, node_bin: str) -> dict:
     """The workspace package must be imported from the release."""

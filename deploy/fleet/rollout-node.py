@@ -453,99 +453,71 @@ def verify_agent_resume_layout(fleet: Path, sha: str) -> bool:
 
 
 def own_tool_caches(source: Path, target: Path) -> list:
-    """The release owns the bytes of the tool caches; the packages stay links.
+    """The release owns the bytes of its tool caches; the packages stay links.
 
     The tool caches are rewritten in place by the tools of the runtime. A hard
     link to one of them would make the bytes of this release change under a
     running service, and the release would not own its own cache. The caches
-    are copied, the packages stay hard links of the store.
+    are copied, the packages stay links of the shared store.
     """
-    owned = []
-    for entry in sorted(source.iterdir()):
-        if not release_rules.mutable_entry(entry.name):
-            continue
-        destination = target / entry.name
-        if destination.is_symlink() or destination.is_file():
-            destination.unlink()
-        elif destination.is_dir():
-            shutil.rmtree(destination)
-        if entry.is_dir() and not entry.is_symlink():
-            shutil.copytree(entry, destination, symlinks=True)
-        else:
-            shutil.copy2(entry, destination, follow_symlinks=False)
-        owned.append(entry.name)
-    return owned
-
+    return release_rules.own_tool_caches(source, target)
 
 def prepare_packages(fleet: Path, sha: str, previous_sha: str,
                      release_local_packages: bool = False) -> str:
     """Give the new release the packages of the node.
 
-    The dependency set did not change between the releases (package.json and
-    the lock file are identical), so the packages of the previous release are
-    exactly the ones this release needs. How they are carried differs per node:
-    some keep the packages inside the release, others use a shared store. The
-    new release mirrors the way of the node it replaces.
-    """
-    target = fleet / "releases" / sha / "node_modules"
-    source = fleet / "releases" / previous_sha / "node_modules"
-    if release_local_packages:
-        store = fleet / "node_modules"
-        candidate_package = fleet / "releases" / sha / "packages" / "agent-resume"
-        package_json = candidate_package / "package.json"
-        if not store.is_dir() or store.is_symlink():
-            raise RuntimeError("release-local package mode requires the root node_modules store")
-        if not candidate_package.is_dir() or not package_json.is_file():
-            raise RuntimeError("candidate release is missing packages/agent-resume")
-        metadata = json.loads(package_json.read_text())
-        if metadata.get("name") != "agent-resume-mcp":
-            raise RuntimeError("candidate packages/agent-resume is not agent-resume-mcp")
-        if target.exists() or target.is_symlink():
-            # Only the symlink to the store may be replaced: a symlink carries
-            # no bytes, and the store itself stays untouched, because the
-            # rollback release still resolves its package through it.
-            link_target = os.path.realpath(target.parent / os.readlink(target)) if target.is_symlink() else ""
-            if link_target != os.path.realpath(store):
-                raise RuntimeError("release-local node_modules must be absent before package preparation")
-            target.unlink()
-        previous_resolution = package_resolution(fleet / "releases" / previous_sha)
-        target.mkdir(parents=True)
-        # Hard links: the release gets its own tree that shares the bytes of
-        # the store. The store element agent-resume-mcp is left out on purpose,
-        # because the release must use its own package, not the one of the
-        # store. The store element may be a symlink or a real directory; in
-        # both cases it stays exactly as it is.
-        children = [child for child in sorted(store.iterdir()) if child.name != "agent-resume-mcp"]
-        if children:
-            subprocess.run(["cp", "-al"] + [str(child) for child in children] + [str(target)], check=True)
-        # The tool caches of the store are copied, not linked: the release owns
-        # the bytes it writes into them.
-        own_tool_caches(store, target)
-        resume = target / "agent-resume-mcp"
-        if resume.exists() or resume.is_symlink():
-            raise RuntimeError("release-local node_modules already carries agent-resume-mcp")
-        os.symlink("../packages/agent-resume", resume)
-        candidate_resolution = package_resolution(fleet / "releases" / sha)
-        if candidate_resolution != str(candidate_package.resolve(strict=True)):
-            raise RuntimeError("candidate agent-resume-mcp does not resolve inside the new release")
-        if previous_resolution and package_resolution(fleet / "releases" / previous_sha) != previous_resolution:
-            raise RuntimeError("previous release package resolution changed during preparation")
-        return f"release-local hard-link copy of {store}; agent-resume-mcp -> {candidate_resolution}; rollback resolves to {previous_resolution or 'UNRESOLVED'}"
-    if target.is_symlink() and not target.exists():
-        target.unlink()
-    if target.exists() or target.is_symlink():
-        return "already present"
-    if not source.exists() and not source.is_symlink():
-        return "no source"
-    if source.is_symlink():
-        os.symlink(os.readlink(source), target)
-        return "symlink -> " + os.readlink(source)
-    subprocess.run(["cp", "-al", str(source), str(target)], check=True)
-    # The tool caches of the previous release are copied, not linked: they are
-    # rewritten in place, and the new release owns the bytes it writes into them.
-    own_tool_caches(source, target)
-    return "copied from the previous release (hard links of the packages, own bytes of the tool caches)"
+    The packages live in the shared store of the node: one directory per
+    dependency set, named by the hash of the lock file of the release. The
+    release links them, and the bytes of the packages are hard links of the
+    store of the node, so the shared store costs no new disk. The workspace
+    package stays a link into the release, so the import from the release is
+    never lost.
 
+    A node whose store is absent is refused with a clear reason: the release
+    is never given a link that points nowhere.
+    """
+    release = fleet / "releases" / sha
+    target = release / "node_modules"
+    previous = fleet / "releases" / previous_sha
+    store = fleet / "node_modules"
+    if release_local_packages:
+        source = store
+    else:
+        source = previous / "node_modules"
+        if source.is_symlink() or not source.is_dir():
+            source = store
+    if source.is_symlink() or not source.is_dir():
+        raise RuntimeError(
+            f"the shared package store of the node is absent: {store}")
+    identity = release_rules.dependency_identity(release, previous, source)
+    store_dir = release_rules.shared_store_dir(fleet, identity)
+    if store_dir.is_dir():
+        release_rules.verify_shared_store(store_dir, identity)
+        created = False
+    else:
+        release_rules.materialize_shared_store(source, store_dir, identity)
+        created = True
+    if target.is_symlink() or target.is_file():
+        target.unlink()
+    elif target.is_dir():
+        if not release_rules.is_package_farm(target):
+            raise RuntimeError(
+                f"the release already carries a package tree of its own: {target}")
+        shutil.rmtree(target)
+    linked = release_rules.link_release_packages(release, store_dir)
+    caches = release_rules.own_tool_caches(source, target)
+    candidate_package = release / "packages" / "agent-resume"
+    if not candidate_package.is_dir():
+        raise RuntimeError("candidate release is missing packages/agent-resume")
+    candidate_resolution = package_resolution(release)
+    if candidate_resolution != str(candidate_package.resolve(strict=True)):
+        raise RuntimeError("candidate agent-resume-mcp does not resolve inside the new release")
+    previous_resolution = package_resolution(previous)
+    if previous_resolution and package_resolution(previous) != previous_resolution:
+        raise RuntimeError("previous release package resolution changed during preparation")
+    return (f"shared store {store_dir} (created={created}); {linked}; "
+            f"{len(caches)} tool caches owned by the release; "
+            f"agent-resume-mcp -> {candidate_resolution}")
 
 def linux_release_bytes(release: Path) -> int:
     """Count allocated blocks introduced by this release, once per inode.

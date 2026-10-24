@@ -29,6 +29,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 
 WORKSPACE_PACKAGE = "agent-resume-mcp"
@@ -207,6 +209,268 @@ def payload_fingerprint(entries: dict) -> str:
 def bundle_fingerprint(entries: dict) -> str:
     payload = "".join(f"{name}\0{entries[name]}\n" for name in sorted(entries)).encode()
     return hashlib.sha256(payload).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# The shared package store: one directory per dependency set.
+#
+# The packages of a release do not live in the release. They live in one
+# directory of the shared store, named by the hash of the lock file of the
+# release, and the release links them. Two releases with the same lock file
+# share one directory, and the bytes of the packages are hard links of the
+# store of the host, so the shared store costs no new disk.
+#
+# The workspace package is never shared: it is a link into the release, so the
+# runtime imports the package of the release and not the one of the store.
+# The acceptance of the fleet requires exactly that.
+# ---------------------------------------------------------------------------
+
+SHARED_STORE_DIRNAME = "shared-node-modules"
+SHARED_STORE_MANIFEST = "shared-node-modules.json"
+
+
+def fleet_root_of(release: Path) -> Path:
+    """The area of the fleet that holds the releases of a release directory.
+
+    The area is the parent of the directory of the releases: the catalog of a
+    build and the farm of a node have the same shape, and the shared store of
+    the area lives next to the releases of the area.
+    """
+    release = Path(release).resolve()
+    for parent in release.parents:
+        if parent.name == "releases":
+            return parent.parent
+    return release.parent.parent
+
+
+def shared_store_root(fleet_root: Path) -> Path:
+    """The directory of the shared store of an area."""
+    return Path(fleet_root) / SHARED_STORE_DIRNAME
+
+
+def shared_store_dir(fleet_root: Path, identity: str) -> Path:
+    """The directory of the shared store of one dependency set."""
+    return shared_store_root(fleet_root) / identity
+
+
+def lock_digest(release: Path) -> str | None:
+    """The identity of the dependency set of a release: the hash of its lock.
+
+    None when the release carries no lock file: the node materializes a
+    release before the archive of the rollout carries one.
+    """
+    lock = Path(release) / "package-lock.json"
+    if not lock.is_file():
+        return None
+    return sha256_file(lock)
+
+
+def package_set_digest(source: Path) -> str:
+    """The identity of a package set that has no lock file.
+
+    The names of the packages and the hash of their content: two releases
+    with the same packages share one directory of the store.
+    """
+    entries = {}
+    for name in store_contents(source):
+        path = Path(source) / name
+        if path.is_symlink():
+            entries[name] = "symlink:" + os.readlink(path)
+        elif path.is_file():
+            entries[name] = sha256_file(path)
+        else:
+            entries[name] = "tree:" + bundle_fingerprint(bundle_entries(path))
+    payload = "".join(f"{name}\0{entries[name]}\n" for name in sorted(entries)).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def dependency_identity(release: Path, fallback: Path | None = None,
+                        source: Path | None = None) -> str:
+    """The name of the shared store of a release.
+
+    The hash of the lock file of the release names the store of that
+    dependency set. A release without a lock file takes the lock of the
+    release it replaces: the dependency set did not change between them.
+    Without any lock file the identity is the hash of the package set
+    itself, under a name that can never be the name of a lock file.
+    """
+    for candidate in (release, fallback):
+        if candidate is None:
+            continue
+        digest = lock_digest(candidate)
+        if digest:
+            return digest
+    if source is not None and Path(source).is_dir():
+        return "packages-" + package_set_digest(source)
+    raise RuntimeError(f"no lock file names the dependency set of the release: {release}")
+
+
+def shared_store_packages(source: Path) -> list[str]:
+    """The packages of the shared store: the runtime set of the host store.
+
+    The workspace package is not shared: it is a link into the release. The
+    tool caches are not shared either: they are rewritten in place, and the
+    release owns its own bytes of them.
+    """
+    return [name for name in store_contents(source)
+            if name != SHARED_STORE_MANIFEST
+            and not mutable_entry(name.split("/")[0])]
+
+
+def shared_store_manifest_path(store_dir: Path) -> Path:
+    """The manifest of a shared store: what it holds and for which lock."""
+    return Path(store_dir) / SHARED_STORE_MANIFEST
+
+
+def verify_shared_store(store_dir: Path, identity: str) -> dict:
+    """The shared store must be the store of this dependency set.
+
+    A store of another lock file, or one that lost a package, is refused: a
+    release that links it would resolve a set of packages that its own lock
+    file does not name.
+    """
+    store_dir = Path(store_dir)
+    if not store_dir.is_dir():
+        raise RuntimeError(f"the shared package store is absent: {store_dir}")
+    manifest_path = shared_store_manifest_path(store_dir)
+    if not manifest_path.is_file():
+        raise RuntimeError(f"the shared package store has no manifest: {manifest_path}")
+    document = json.loads(manifest_path.read_text())
+    if document.get("identity") != identity:
+        raise RuntimeError(
+            f"the shared package store belongs to another dependency set: {store_dir} "
+            f"({document.get('identity')} != {identity})")
+    missing = sorted(set(document.get("packages") or []) - set(store_contents(store_dir)))
+    if missing:
+        raise RuntimeError(
+            f"the shared package store lost {len(missing)} packages: {missing[:5]}")
+    return document
+
+
+def materialize_shared_store(source: Path, store_dir: Path, identity: str) -> dict:
+    """Materialize the shared store of one dependency set, once.
+
+    The bytes of the packages are hard links of the store of the host: the
+    shared store costs no new disk, and every release of that dependency set
+    shares the same bytes. An existing store is never rewritten: a live
+    release may be using it.
+    """
+    store_dir = Path(store_dir)
+    if store_dir.is_dir():
+        verify_shared_store(store_dir, identity)
+        return {"created": False, "dir": str(store_dir)}
+    packages = shared_store_packages(source)
+    store_dir.mkdir(parents=True, exist_ok=True)
+    for name in packages:
+        entry = Path(source) / name
+        destination = store_dir / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if entry.is_symlink():
+            resolved = entry.resolve()
+            if resolved.is_dir():
+                subprocess.run(["cp", "-al", str(resolved), str(destination)], check=True)
+            elif resolved.is_file():
+                os.link(resolved, destination)
+            else:
+                os.symlink(os.readlink(entry), destination)
+            continue
+        subprocess.run(["cp", "-al", str(entry), str(destination)], check=True)
+    document = {
+        "kind": "fleet-shared-node-modules",
+        "identity": identity,
+        "packages": sorted(packages),
+        "source": str(source),
+    }
+    manifest_path = shared_store_manifest_path(store_dir)
+    temporary = manifest_path.with_name(manifest_path.name + ".tmp")
+    temporary.write_text(json.dumps(document, indent=2) + "\n")
+    os.replace(temporary, manifest_path)
+    return {"created": True, "dir": str(store_dir), "packages": len(packages)}
+
+
+def is_package_farm(target: Path) -> bool:
+    """Is this node_modules a farm of links into a shared store?
+
+    A farm holds links and its own tool caches, and nothing else. A
+    directory of real packages is not a farm: it is a package tree of its
+    own, and nothing may replace it silently.
+    """
+    target = Path(target)
+    if target.is_symlink() or not target.is_dir():
+        return False
+    for entry in target.iterdir():
+        if mutable_entry(entry.name):
+            continue
+        if entry.name.startswith("@") and entry.is_dir() and not entry.is_symlink():
+            # A scope is a real directory of links, not a package.
+            for child in entry.iterdir():
+                if not child.is_symlink():
+                    return False
+            continue
+        if not entry.is_symlink():
+            return False
+    return True
+
+
+def link_release_packages(release: Path, store_dir: Path) -> str:
+    """Give the release its packages as links into the shared store.
+
+    The release carries no copy of the packages: every entry of its
+    node_modules is a link into the store of its dependency set. The
+    workspace package is the one exception: it is a link into the release
+    itself, so the runtime imports the package of the release and not the
+    one of the store - the invariant of the acceptance.
+    """
+    release = Path(release)
+    target = release / "node_modules"
+    target.mkdir(parents=True, exist_ok=True)
+    linked = 0
+    for name in shared_store_packages(store_dir):
+        destination = target / name
+        if destination.is_symlink() or destination.is_file():
+            destination.unlink()
+        elif destination.is_dir():
+            shutil.rmtree(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        # The link is relative to the directory that holds it: the store and
+        # the release travel together, from the build host to the node.
+        os.symlink(os.path.relpath(Path(store_dir) / name, destination.parent), destination)
+        linked += 1
+    resume = target / WORKSPACE_PACKAGE
+    if resume.exists() or resume.is_symlink():
+        resume.unlink()
+    os.symlink("../packages/agent-resume", resume)
+    return (f"{linked} packages linked into {store_dir}; "
+            f"{WORKSPACE_PACKAGE} -> ../packages/agent-resume")
+
+
+def own_tool_caches(source: Path, target: Path) -> list[str]:
+    """The release owns the bytes of the tool caches.
+
+    The tool caches are rewritten in place by the tools of the runtime. A
+    link to one of them would make the bytes of this release change under a
+    running service, and the release would not own its own cache. The caches
+    are copied, the packages stay links of the shared store.
+    """
+    owned = []
+    source = Path(source)
+    target = Path(target)
+    if source.is_symlink() or not source.is_dir():
+        return owned
+    for entry in sorted(source.iterdir()):
+        if not mutable_entry(entry.name):
+            continue
+        destination = target / entry.name
+        if destination.is_symlink() or destination.is_file():
+            destination.unlink()
+        elif destination.is_dir():
+            shutil.rmtree(destination)
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.copytree(entry, destination, symlinks=True)
+        else:
+            shutil.copy2(entry, destination, follow_symlinks=False)
+        owned.append(entry.name)
+    return owned
 
 
 def main() -> int:

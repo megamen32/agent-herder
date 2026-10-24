@@ -15,6 +15,10 @@ import subprocess
 import sys
 import urllib.request
 
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import release_rules  # noqa: E402
+
 
 def http_status(url, data=None, headers=None, timeout=8.0):
     request = urllib.request.Request(url, data=data, headers=headers or {},
@@ -43,27 +47,39 @@ def main() -> int:
     rollback.mkdir(parents=True, exist_ok=True)
 
     # 1. The store of the packages belongs to the root, under the exact name.
+    #    A farm of links is never moved: its bytes live in the shared store.
     if not store.exists():
         for release in sorted(releases.iterdir()):
             candidate = release / "node_modules"
-            if candidate.is_dir() and not candidate.is_symlink():
+            if candidate.is_dir() and not candidate.is_symlink() and not release_rules.is_package_farm(candidate):
                 os.rename(candidate, store)
                 print(f"store moved from {release.name} into the root")
                 break
     print("store:", store, "exists" if store.exists() else "MISSING")
 
-    # 2. Every release points at the store, not at another release.
+    # 2. Every release points at the shared store of its own lock file, and the
+    #    workspace package stays a link into the release.
     for release in sorted(releases.iterdir()):
         link = release / "node_modules"
-        if link.is_symlink() and os.readlink(link) == str(store):
-            continue
         if link.is_symlink():
             link.unlink()
-        elif link.exists():
-            print(f"  {release.name}: keeps its own packages")
+        elif link.is_dir():
+            if release_rules.is_package_farm(link):
+                shutil.rmtree(link)
+            else:
+                print(f"  {release.name}: keeps its own packages")
+                continue
+        try:
+            identity = release_rules.dependency_identity(release)
+        except RuntimeError as error:
+            print(f"  {release.name}: no shared store ({error})")
             continue
-        os.symlink(str(store), link)
-        print(f"  {release.name}: linked to the root store")
+        store_dir = release_rules.shared_store_dir(fleet, identity)
+        if not store_dir.is_dir():
+            release_rules.materialize_shared_store(store, store_dir, identity)
+        release_rules.link_release_packages(release, store_dir)
+        release_rules.own_tool_caches(store, release / "node_modules")
+        print(f"  {release.name}: linked to {store_dir}")
 
     # 3. Trim the superseded releases, keeping the bytes in rollback.
     for name in arguments.trim:
@@ -76,12 +92,17 @@ def main() -> int:
     print("rollback:", sorted(p.name for p in rollback.iterdir()))
     try:
         count = len(os.listdir(store))
-        print(f"store packages: {count}")
+        print("store packages:", count)
     except OSError as error:
         print("store unreadable:", error)
     for release in sorted(releases.iterdir()):
         link = release / "node_modules"
-        print(f"  {release.name[:8]} node_modules -> {os.readlink(link) if link.is_symlink() else 'own directory'}")
+        if link.is_symlink():
+            print(f"  {release.name[:8]} node_modules -> {os.readlink(link)}")
+        elif release_rules.is_package_farm(link):
+            print(f"  {release.name[:8]} node_modules -> shared store ({len(os.listdir(link))} links)")
+        else:
+            print(f"  {release.name[:8]} node_modules -> own directory")
     print("current ->", os.readlink(fleet / "current"))
 
     port = arguments.port
@@ -90,11 +111,13 @@ def main() -> int:
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize",
                        "params": {"protocolVersion": "2024-11-05", "capabilities": {},
                                   "clientInfo": {"name": "l", "version": "1"}}}).encode()
+    request = urllib.request.Request(f"http://127.0.0.1:{port}/mcp", data=body, method="POST",
+                                     headers={"Content-Type": "application/json",
+                                              "Accept": "application/json, text/event-stream"})
     print("mcp:", http_status(f"http://127.0.0.1:{port}/mcp", data=body,
                               headers={"Content-Type": "application/json",
                                        "Accept": "application/json, text/event-stream"}))
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
