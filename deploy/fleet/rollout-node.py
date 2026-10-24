@@ -11,14 +11,17 @@ and the endpoints must answer. If anything fails the node is put back on the
 previous release and restarted.
 """
 import argparse
+import base64
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 
@@ -101,7 +104,25 @@ def switch_current(fleet: Path, sha: str):
 
 
 def restart(command: list):
-    subprocess.run(command, check=False, capture_output=True, text=True)
+    return subprocess.run(command, check=False, capture_output=True, text=True)
+
+
+def systemd_daemon_reload() -> bool:
+    result = subprocess.run(["systemctl", "--user", "daemon-reload"],
+                            check=False, capture_output=True, text=True)
+    return result.returncode == 0
+
+
+def restore_install(fleet: Path, config_path: Path, config_backup: Path,
+                    release_sha: str, previous_sha: str, dropin_path: Path | None,
+                    dropin_snapshot: Path | None, restart_command: list) -> None:
+    atomic_copy(config_backup, config_path)
+    switch_current(fleet, previous_sha)
+    if dropin_path and dropin_snapshot:
+        restore_systemd_release_dropin(dropin_path, dropin_snapshot, release_sha)
+        if not systemd_daemon_reload():
+            print("rollback systemd daemon-reload failed")
+    restart(restart_command)
 
 
 def wait_port(port: int, attempts: int = 30) -> bool:
@@ -112,12 +133,27 @@ def wait_port(port: int, attempts: int = 30) -> bool:
     return False
 
 
-def linux_running_release() -> str:
-    """The release directory the live node process actually runs from.
+def release_from_cmdline(cmdline: bytes, fleet: Path) -> str:
+    """Return the immutable SHA named by an absolute release entrypoint arg."""
+    root = (fleet.expanduser().resolve() / "releases").as_posix().rstrip("/")
+    prefix = root + "/"
+    for argument in cmdline.split(b"\0"):
+        if not argument or not argument.startswith(b"/"):
+            continue
+        value = os.fsdecode(argument)
+        if not value.startswith(prefix):
+            continue
+        match = re.fullmatch(r"([a-f0-9]{40})/dist/index\.js", value[len(prefix):])
+        if match:
+            return match.group(1)
+    return ""
 
-    The bootstrap chdirs into the resolved release, so the working directory of
-    the process is the release itself: that is the fact, not a guess about the
-    command line.
+
+def linux_running_release(fleet: Path) -> str:
+    """Read release identity from the live absolute Node entrypoint argument.
+
+    The systemd WorkingDirectory intentionally remains the canonical checkout;
+    cwd therefore cannot identify the immutable runtime release.
     """
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
@@ -126,14 +162,9 @@ def linux_running_release() -> str:
             cmdline = (entry / "cmdline").read_bytes()
         except OSError:
             continue
-        if b"dist/index.js" not in cmdline:
-            continue
-        try:
-            cwd = os.readlink(entry / "cwd")
-        except OSError:
-            continue
-        if "releases/" in cwd:
-            return cwd.split("releases/")[1].split("/")[0]
+        release = release_from_cmdline(cmdline, fleet)
+        if release:
+            return release
     return ""
 
 
@@ -162,10 +193,122 @@ def darwin_running_release(label: str) -> str:
     return ""
 
 
-def running_release(launchd_label: str) -> str:
+def running_release(fleet: Path, launchd_label: str) -> str:
     if sys.platform == "darwin":
         return darwin_running_release(launchd_label)
-    return linux_running_release()
+    return linux_running_release(fleet)
+
+
+def atomic_write(path: Path, content: bytes, mode: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise RuntimeError(f"refusing to replace symlink: {path}")
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.tmp-", dir=path.parent)
+    try:
+        os.fchmod(fd, mode)
+        with os.fdopen(fd, "wb") as handle:
+            fd = -1
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        directory_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def atomic_copy(source: Path, destination: Path) -> None:
+    atomic_write(destination, source.read_bytes(), stat.S_IMODE(source.stat().st_mode))
+
+
+def systemd_release_dropin_path(unit: str, home: Path | None = None) -> Path:
+    if not re.fullmatch(r"[A-Za-z0-9_.@:-]+\.service", unit) or "/" in unit or ".." in unit:
+        raise ValueError("unit must be a plain systemd .service name")
+    base = (home or Path.home()).expanduser()
+    return base / ".config" / "systemd" / "user" / f"{unit}.d" / "10-release-exec.conf"
+
+
+def preserve_systemd_release_dropin(path: Path, sha: str) -> Path:
+    if not re.fullmatch(r"[a-f0-9]{40}", sha):
+        raise ValueError("release SHA must be a full Git commit")
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise RuntimeError("release drop-in is not a regular file")
+    existed = path.is_file()
+    content = path.read_bytes() if existed else b""
+    mode = stat.S_IMODE(path.stat().st_mode) if existed else 0o644
+    snapshot = path.with_name(f"{path.name}.rollback-{sha}.json")
+    if snapshot.exists() or snapshot.is_symlink():
+        raise FileExistsError(f"release rollback snapshot already exists: {snapshot}")
+    document = {
+        "schemaVersion": 1,
+        "sourceSha": sha,
+        "existed": existed,
+        "mode": mode,
+        "contentBase64": base64.b64encode(content).decode("ascii"),
+    }
+    atomic_write(snapshot, (json.dumps(document, sort_keys=True) + "\n").encode(), 0o600)
+    return snapshot
+
+
+def systemd_exec_argument(value: str) -> str:
+    if not value or any(ord(char) < 0x20 or ord(char) == 0x7f for char in value):
+        raise ValueError("systemd ExecStart arguments must be nonempty and contain no control characters")
+    escaped = value.replace("%", "%%")
+    if any(char.isspace() for char in escaped) or any(char in escaped for char in '\\"'):
+        return '"' + escaped.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return escaped
+
+
+def write_systemd_release_dropin(path: Path, node_bin: str, release: Path, sha: str) -> None:
+    if not re.fullmatch(r"[a-f0-9]{40}", sha):
+        raise ValueError("release SHA must be a full Git commit")
+    if not Path(node_bin).is_absolute():
+        raise ValueError("nodeBin must be an absolute path")
+    entrypoint = (release.expanduser().resolve() / "dist" / "index.js").as_posix()
+    content = (
+        f"# Agent Herder immutable release {sha}\n"
+        "[Service]\n"
+        "ExecStart=\n"
+        f"ExecStart={systemd_exec_argument(node_bin)} {systemd_exec_argument(entrypoint)}\n"
+    ).encode()
+    mode = stat.S_IMODE(path.stat().st_mode) if path.is_file() and not path.is_symlink() else 0o644
+    atomic_write(path, content, mode)
+
+
+def restore_systemd_release_dropin(path: Path, snapshot: Path, sha: str) -> None:
+    document = json.loads(snapshot.read_text())
+    if document.get("schemaVersion") != 1 or document.get("sourceSha") != sha:
+        raise RuntimeError("release drop-in rollback snapshot identity mismatch")
+    if document.get("existed") is True:
+        raw = base64.b64decode(document["contentBase64"], validate=True)
+        mode = document.get("mode")
+        if not isinstance(mode, int) or mode < 0 or mode > 0o7777:
+            raise RuntimeError("release drop-in rollback mode is invalid")
+        atomic_write(path, raw, mode)
+    elif document.get("existed") is False:
+        if path.is_symlink():
+            raise RuntimeError("refusing to remove a release drop-in symlink")
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        if path.parent.exists():
+            directory_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+    else:
+        raise RuntimeError("release drop-in rollback snapshot is malformed")
 
 
 def disarm_state(fleet: Path, state_dir: str = "") -> str:
@@ -409,10 +552,18 @@ def release_budget(fleet: Path) -> tuple[int, int]:
             raise RuntimeError("release_budget_census_failed")
         return len(releases), int(match[1])
     total = 0
+    seen: set[tuple[int, int]] = set()
     for release in releases:
-        for path in release.rglob("*"):
-            if path.is_file() and not path.is_symlink():
-                total += path.stat().st_size
+        for path in (release, *release.rglob("*")):
+            info = path.lstat()
+            identity = (info.st_dev, info.st_ino)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            blocks = getattr(info, "st_blocks", None)
+            if not isinstance(blocks, int) or blocks < 0:
+                raise RuntimeError(f"release inode physical allocation is unavailable: {path}")
+            total += blocks * 512
     return len(releases), total
 
 
@@ -500,28 +651,63 @@ def main() -> int:
     if not wait_codex_socket(config):
         print("the managed Codex socket is not there; nothing was switched")
         return 1
+    previous_sha = config.get("sourceSha")
+    if previous_sha != arguments.previous_sha or not re.fullmatch(r"[a-f0-9]{40}", str(previous_sha or "")):
+        print("node-config sourceSha does not match the declared rollback release; nothing was switched")
+        return 1
     backup = fleet / f"node-config-before-{arguments.sha[:8]}.json"
     if backup.exists():
         # An earlier record of this release must not be overwritten: it holds
         # the configuration of the node from before that release was installed.
         backup = fleet / (f"node-config-before-{arguments.sha[:8]}."
-                          f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json")
-    shutil.copy2(config_path, backup)
-    previous_sha = config.get("sourceSha")
+                          f"{time.strftime('%Y%m%dT%H%M%S', time.gmtime())}-{time.time_ns() % 1_000_000_000:09d}.json")
+    try:
+        atomic_copy(config_path, backup)
+    except OSError as error:
+        print("node-config rollback snapshot failed:", error)
+        return 1
+
+    dropin_path: Path | None = None
+    dropin_snapshot: Path | None = None
+    if sys.platform.startswith("linux"):
+        try:
+            dropin_path = systemd_release_dropin_path(arguments.unit)
+            dropin_snapshot = preserve_systemd_release_dropin(dropin_path, arguments.sha)
+            write_systemd_release_dropin(dropin_path, config["nodeBin"], release, arguments.sha)
+        except (KeyError, OSError, RuntimeError, ValueError) as error:
+            print("systemd release drop-in update failed:", error)
+            if dropin_snapshot:
+                try:
+                    restore_systemd_release_dropin(dropin_path, dropin_snapshot, arguments.sha)
+                except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as rollback_error:
+                    print("systemd release drop-in restore failed:", rollback_error)
+            return 1
+
     config["sourceSha"] = arguments.sha
-    temporary = config_path.with_suffix(".json.new")
-    temporary.write_text(json.dumps(config, indent=1) + "\n")
-    os.chmod(temporary, 0o600)
-    os.replace(temporary, config_path)
-    switch_current(fleet, arguments.sha)
+    config_mode = stat.S_IMODE(config_path.stat().st_mode)
+    try:
+        atomic_write(config_path, (json.dumps(config, indent=1) + "\n").encode(), config_mode)
+        switch_current(fleet, arguments.sha)
+        if dropin_path and not systemd_daemon_reload():
+            raise RuntimeError("systemd daemon-reload failed")
+    except (OSError, RuntimeError, ValueError) as error:
+        print("release configuration switch failed:", error)
+        try:
+            restore_install(fleet, config_path, backup, arguments.sha, previous_sha,
+                            dropin_path, dropin_snapshot, arguments.restart_cmd.split())
+        except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as rollback_error:
+            print("rollback configuration restore failed:", rollback_error)
+        return 1
     print(f"switched: current -> releases/{arguments.sha}")
 
-    restart(arguments.restart_cmd.split())
+    restart_result = restart(arguments.restart_cmd.split())
+    if restart_result.returncode != 0:
+        print("release restart command failed:", restart_result.returncode)
     if not wait_port(arguments.port):
         print("the node did not come back on its port")
     time.sleep(3)
 
-    live_sha = running_release(arguments.launchd_label)
+    live_sha = running_release(fleet, arguments.launchd_label)
     sessions = http_status(f"http://127.0.0.1:{arguments.port}/api/sessions")
     policy = http_status(f"http://127.0.0.1:{arguments.port}/api/automation/launch-policy")
     mcp = mcp_status(arguments.port)
@@ -540,11 +726,14 @@ def main() -> int:
 
     if failed:
         print("rolling back to", previous_sha)
-        shutil.copy2(backup, config_path)
-        switch_current(fleet, previous_sha)
-        restart(arguments.restart_cmd.split())
+        try:
+            restore_install(fleet, config_path, backup, arguments.sha, previous_sha,
+                            dropin_path, dropin_snapshot, arguments.restart_cmd.split())
+        except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
+            print("rollback configuration restore failed:", error)
+            return 1
         wait_port(arguments.port)
-        rollback_live = running_release(arguments.launchd_label)
+        rollback_live = running_release(fleet, arguments.launchd_label)
         rollback_sessions = http_status(f"http://127.0.0.1:{arguments.port}/api/sessions")
         rollback_policy = http_status(f"http://127.0.0.1:{arguments.port}/api/automation/launch-policy")
         rollback_mcp = mcp_status(arguments.port)

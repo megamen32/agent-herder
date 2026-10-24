@@ -10,7 +10,9 @@ class RolloutBudget(unittest.TestCase):
         fleet=pathlib.Path(folder);releases=fleet/'releases';releases.mkdir()
         for n in range(count):(releases/str(n)).mkdir()
         source=releases/'0'/'package'
-        with source.open('wb') as handle:handle.truncate(512*1024**2+1 if large else 10000)
+        with source.open('wb') as handle:
+            if large:handle.truncate(512*1024**2+1)
+            else:handle.write(b'x'*10000)
         for n in range(1,count):(releases/str(n)/'package').hardlink_to(source)
         subprocess.run(['cc','-std=c11','-D_DEFAULT_SOURCE','-Wall','-Wextra','-Werror',str(ROOT/'deploy/fleet/mac-artifact-probe.c'),'-o',str(fleet/'mac-artifact-probe')],check=True,timeout=5)
         (fleet/'node-config.json').write_text(json.dumps({'launcherHashes':{'mac-artifact-probe':w.sha256(fleet/'mac-artifact-probe')}}))
@@ -29,10 +31,16 @@ class RolloutBudget(unittest.TestCase):
             fleet=self.tree(folder,3,large=True)
             with self.assertRaisesRegex(RuntimeError,'release_budget_census_failed'):w.release_budget(fleet)
 
-    def test_linux_keeps_two_release_limit_and_apparent_byte_accounting(self):
+    def test_linux_keeps_two_release_limit_and_counts_unique_physical_blocks(self):
         with tempfile.TemporaryDirectory() as folder,patch.object(w.sys,'platform','linux'):
             fleet=self.tree(folder,3)
-            self.assertEqual(w.release_budget(fleet),(3,30000))
+            paths=[p for release in (fleet/'releases').iterdir() for p in (release,*release.rglob('*'))]
+            seen=set();expected=0
+            for path in paths:
+                info=path.lstat();identity=(info.st_dev,info.st_ino)
+                if identity not in seen:
+                    expected+=info.st_blocks*512;seen.add(identity)
+            self.assertEqual(w.release_budget(fleet),(3,expected))
             self.assertFalse(w.release_budget_admitted(*w.release_budget(fleet)))
 
     def test_darwin_rejects_probe_drift_before_executing_it(self):
