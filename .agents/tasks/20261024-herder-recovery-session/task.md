@@ -20,3 +20,9 @@ Native C2 mvs_f70ce650bbf94d789e4e4a2669f6743a, runtime MacBook-Pro-User.local, 
 ## Подтверждённый итог
 
 Все 3 листа завершены. Исправлены live exact read, обязательный quick-details prerequisite на M1, независимая native identity проверка, steer активного turn и targeted bootstrap существующего remote peer. Source/main опубликован; runtime100 1deb355, M1 cbc4cc2. Единственная новая директива принята в текущий turn; C2 прочитал handoff и существующий общий канал и назвал следующий шаг. Старый UNKNOWN и три прежних queued item сохранены; новых чатов/сессий нет. Подробные IDs/SHA и границы доказательств: result.md и independent-review.md.
+
+## Продолжение: связь и readback / уточнение defaultsteer
+
+Current connection/readback завершён отдельно от прежней доставки: route доступен без ремонта, nativecurrentstate2/newturn8cddb, три20s health reads и independent exact host-scoped consumer PASS. Astra input `exmanager-c2-astra-narrow-release-20261024-r1` остаётся UNKNOWN в проверенном native-visible scope; native sends/replay0. См. continuation-connection-brief.md и верх result.md.
+
+По последующему прямому поручению schema/legacy defaultsend_message изменён sync→steer, descriptions поясняют explicitsteer и intentional deferred queue/hours. Sourceb8f8470/18focusedGREEN/tscGREEN; installed100/M1b8f8470 и freshMCPtools/listdefaultsteerPASS. Explicitqueue/sync и inactive/HumanStop/humanRequested guards сохранены. Новой отправки нет. Старые proof/план не мигрировались и не потеряны.

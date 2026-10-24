@@ -1,0 +1,10 @@
+{
+  "inputId": "exmanager-c2-astra-narrow-release-20261024-r1",
+  "logicalInputEncodedInContent": true,
+  "literalPrefixPresent": true,
+  "nativeContentSha256": "95d076eea79c412160a529242a33a12a535c88a6e125e274f561eacc4ea66d25",
+  "writerSourceSha256": "a72b14e8f772b7507ed687a8b843894fc4863050adadc659a46615857fe78920",
+  "nativeQueueItemId": "not recorded; control.steer auto-enqueues and then steers returned native item",
+  "idempotencyMapping": "logical ID is literal content only; no native inputId/header passed by archived call",
+  "attemptAt": "2026-10-23T23:44:38.055291+00:00"
+}

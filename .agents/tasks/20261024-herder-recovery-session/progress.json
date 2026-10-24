@@ -23,5 +23,41 @@
   "installed": {
     "roomhacker-server-100": "1deb35553bc0836a583ee19681b6a262932f287b",
     "MacBook-Pro-User.local": "cbc4cc2fbbf0635258e550f760ecb8350568c9d2"
+  },
+  "connectionContinuation": {
+    "status": "complete-connection-readback-only",
+    "sourceChanged": false,
+    "runtimeChanged": false,
+    "nativeContentWrites": 0,
+    "unknownInputId": "exmanager-c2-astra-narrow-release-20261024-r1",
+    "unknownOutcome": "UNKNOWN",
+    "retryable": false,
+    "exactNativeController": 2,
+    "currentMessageTurnId": "turn_8cddb244-b825-470f-a7d9-3a62964185c3",
+    "healthSamples": 3,
+    "healthWindowSeconds": 20,
+    "visibleMessagesChecked": 40,
+    "logicalInputFound": false,
+    "nativeQueueMatch": false,
+    "historicalSshFailureCause": "unknown",
+    "scope": "connection and readback only",
+    "independentReview": "PASS-current-route; UNKNOWN-prior-input"
+  },
+  "steerDefault": {
+    "status": "source-tests-installed-schema-PASS",
+    "sourceSha": "b8f8470a69aa46bc0f848b813a17a2b91ee35c18",
+    "priorDefault": "sync",
+    "currentDefault": "steer",
+    "focusedRed": 2,
+    "focusedGreen": 18,
+    "typescript": "PASS",
+    "installedOwners": [
+      "roomhacker-server-100",
+      "MacBook-Pro-User.local"
+    ],
+    "installedSourceSha": "b8f8470a69aa46bc0f848b813a17a2b91ee35c18",
+    "nativeContentWrites": 0,
+    "actualNewDeliveryTested": false,
+    "meshRouteModeParameterAdded": false
   }
 }

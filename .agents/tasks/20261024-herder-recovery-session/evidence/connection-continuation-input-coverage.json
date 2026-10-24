@@ -1,0 +1,1 @@
+{"at":"2026-10-23T23:52:36.977Z","inputId":"exmanager-c2-astra-narrow-release-20261024-r1","pages":[{"page":0,"status":200,"count":40,"firstTimestamp":1792797529893,"lastTimestamp":1792799469592,"hasMore":true}],"matches":[],"scope":"exact native C2 only; at most 3 pages, stop after crossing send-intent timestamp margin; no mutation"}
