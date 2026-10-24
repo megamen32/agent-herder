@@ -49,6 +49,16 @@ import type { ProjectExecutionBinding } from "../project-execution-scope.js";
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * The names that the app-server child inherits from the address of the caller.
+ *
+ * The data home of the app instance is one of them: the app-server of a
+ * project must use the home of its instance, and not the home directory of
+ * the user. The seam of the environment keeps an addressed name even when
+ * the background of the herder names the same value.
+ */
+const APP_SERVER_OWNED_ENV: readonly string[] = ["CODEX_HOME"];
+
 interface ProjectScopeDirectoryIdentity {
   path: string;
   device: number;
@@ -1206,9 +1216,20 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
   }
 
+  /**
+   * The environment of the app-server child process.
+   *
+   * The data home of the app instance is named in it: the app-server of a
+   * project must use the home of its instance, and not fall back to the home
+   * directory of the user.
+   */
+  private appServerChildEnvironment(): NodeJS.ProcessEnv {
+    return { ...process.env, CODEX_HOME: this.appServerDataHome };
+  }
+
   private projectChildEnvironment(): NodeJS.ProcessEnv | undefined {
     if (!this.projectRuntimePolicy) return undefined;
-    return { ...process.env, CODEX_HOME: this.appServerDataHome };
+    return this.appServerChildEnvironment();
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<ControlResult> {
@@ -2087,7 +2108,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       label: "codex-app-server",
       cwd: this.cwd,
       stdio: ["pipe", "pipe", "pipe"],
-      env: this.projectChildEnvironment(),
+      env: this.appServerChildEnvironment(),
+      ownedEnv: APP_SERVER_OWNED_ENV,
     }) as ChildProcessWithoutNullStreams;
     this.child = child;
     this.stderrTail = "";

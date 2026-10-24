@@ -50,6 +50,7 @@ function build(
   env: Record<string, string> | undefined,
   allowedEnv?: readonly string[],
   isolated = true,
+  ownedEnv?: readonly string[],
 ): ReturnType<typeof buildDetachedWorkloadCommand> {
   if (isolated) {
     delete process.env.VITEST;
@@ -59,6 +60,7 @@ function build(
   }
   const options: DetachedWorkloadOptions = { label: "harness-env", env };
   if (allowedEnv) options.allowedEnv = allowedEnv;
+  if (ownedEnv) options.ownedEnv = ownedEnv;
   return buildDetachedWorkloadCommand("/usr/bin/example-agent", ["run"], options);
 }
 
@@ -67,11 +69,15 @@ function environmentOf(launch: ReturnType<typeof buildDetachedWorkloadCommand>):
 }
 
 /** The environment that a real spawned child sees. */
-async function spawnedEnvironment(env: NodeJS.ProcessEnv | undefined): Promise<Record<string, string | undefined>> {
+async function spawnedEnvironment(
+  env: NodeJS.ProcessEnv | undefined,
+  ownedEnv?: readonly string[],
+): Promise<Record<string, string | undefined>> {
   const child = spawnIsolatedWorkload(process.execPath, ["-e", "process.stdout.write(JSON.stringify(process.env))"], {
     label: "harness-env-probe",
     env,
     stdio: ["ignore", "pipe", "pipe"],
+    ...(ownedEnv ? { ownedEnv } : {}),
   });
   const chunks: Buffer[] = [];
   for await (const chunk of child.stdout as Readable) chunks.push(Buffer.from(chunk as Buffer));
@@ -155,6 +161,46 @@ describe("the environment of a spawned workload", () => {
     expect(environment.NOTIFY_CENTER_TOKEN).toBeUndefined();
     expect(environment.NOTICEPLACE_HEALTH_LAUNCH_TOKEN).toBeUndefined();
     expect(environment.AGENT_HERDER_DISARM_TOKEN).toBeUndefined();
+  });
+
+  it("keeps the data home that the caller addressed when the background names the same value", () => {
+    // The background of the herder names the same value as the app instance:
+    // the address of the caller must survive it, or the app-server falls back
+    // to the home directory of the user.
+    vi.stubEnv("CODEX_HOME", PROJECT_CODEX_HOME);
+    const environment = environmentOf(build(
+      { PATH: "/usr/bin", CODEX_HOME: PROJECT_CODEX_HOME },
+      undefined,
+      true,
+      ["CODEX_HOME"],
+    ));
+    expect(environment.CODEX_HOME).toBe(PROJECT_CODEX_HOME);
+  });
+
+  it("keeps no secret of the herder when the caller addresses the data home", () => {
+    vi.stubEnv("CODEX_HOME", PROJECT_CODEX_HOME);
+    const environment = environmentOf(build(
+      { PATH: "/usr/bin", CODEX_HOME: PROJECT_CODEX_HOME, ...SECRET_VALUES },
+      undefined,
+      true,
+      ["CODEX_HOME"],
+    ));
+    expect(environment.CODEX_HOME).toBe(PROJECT_CODEX_HOME);
+    for (const name of ALWAYS_FORBIDDEN_ENV) expect(environment[name]).toBeUndefined();
+  });
+
+  it("spawns a child that sees the data home that the caller addressed against the same background", async () => {
+    vi.stubEnv("CODEX_HOME", PROJECT_CODEX_HOME);
+    const environment = await spawnedEnvironment(
+      { ...process.env, CODEX_HOME: PROJECT_CODEX_HOME, ...SECRET_VALUES },
+      ["CODEX_HOME"],
+    );
+    expect(environment.CODEX_HOME).toBe(PROJECT_CODEX_HOME);
+    for (const name of ALWAYS_FORBIDDEN_ENV) expect(environment[name]).toBeUndefined();
+  });
+
+  it("does not hand the owned names to the process as an option of the spawn", () => {
+    expect(build({ PATH: "/usr/bin" }, undefined, true, ["CODEX_HOME"]).options).not.toHaveProperty("ownedEnv");
   });
 
   it("keeps the bus of the herder that the workload talks back through", () => {
