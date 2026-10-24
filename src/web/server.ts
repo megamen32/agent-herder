@@ -1,6 +1,7 @@
 import {startActiveFleetInventoryOwner} from '../active-session-fleet.js';
 import {startActiveInventoryOwner} from "../active-session-inventory.js";
 import {listActiveSessions} from "../mcp/active-session-tools.js";
+import {readMinimaxThreadGoals} from "../adapters/minimax-code-thread-goals.js";
 import type { BackgroundAutopilotStop } from "../autopilot/background-stop.js";
 import type { AutopilotRunnerInput } from "../autopilot-runner.js";
 import { projectSessionInventory } from "./session-inventory.js";
@@ -2756,6 +2757,19 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   if (request.method === "GET" && url.pathname === "/api/sessions/active") {
     return sendJson(response,200,await listActiveSessions({hostId:url.searchParams.get("hostId")||undefined,runtimeHostId:url.searchParams.get("runtimeHostId")||undefined,harness:url.searchParams.get("harness")||undefined,...(url.searchParams.has("limit")?{limit:Math.max(1,Math.min(10000,Number(url.searchParams.get("limit"))||1))}:{}),...(url.searchParams.has("offset")?{offset:Math.max(0,Number(url.searchParams.get("offset"))||0)}:{})}));
   }
+  if (request.method === "GET" && url.pathname === "/api/sessions/activity/goals") {
+    // The business goal and the business result of the sessions the runtime of
+    // this host writes down. A session without a goal row has no result, and
+    // the answer says so instead of leaving the panel to guess.
+    const ids = (url.searchParams.get("ids") || "").split(",").map(value => value.trim()).filter(value => value.length > 0);
+    if (!ids.length) return sendJson(response, 200, { goals: [], source: "minimax_runtime_thread_goals" });
+    try {
+      const goals = await readMinimaxThreadGoals(ids);
+      return sendJson(response, 200, { goals, source: "minimax_runtime_thread_goals" });
+    } catch {
+      return sendJson(response, 200, { goals: [], source: "unavailable", reason: "runtime_state_unavailable" });
+    }
+  }
   if (request.method === "GET" && url.pathname === "/api/sessions") {
     const filters = {
       harness: url.searchParams.get("harness") || undefined,
@@ -2953,7 +2967,8 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const receipt = await userMessageDelivery?.reconcile(harness, sessionId, inputId, route.kind === "scoped" ? route.adapter : undefined);
     return sendJson(response, receipt ? 200 : 404, receipt || { error: "Доставка сообщения не найдена; автоматический повтор запрещён" });
   }
-  const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)$/);
+  // The reserved activity path is never a harness/session pair: it has its own reader.
+  const sessionMatch = url.pathname === "/api/sessions/activity/goals" ? null : url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)$/);
   if (sessionMatch && request.method === "GET") {
     const harness = decodeURIComponent(sessionMatch[1]), sessionId = decodeURIComponent(sessionMatch[2]);
     const route = await resolveSessionRoute(harness, sessionId);

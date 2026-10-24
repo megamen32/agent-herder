@@ -67,11 +67,16 @@ export function sidebarContext(session: SidebarSession, statusOverride?: string)
   const date = new Date(session.lastActivity);
   const harness = harnessLabels[session.harness] ?? session.harness;
   const host = session.hostId ? hostLabels[session.hostId] ?? session.hostLabel ?? session.hostId : 'Машина не подтверждена';
+  // The goal and the result of a working session come with the activity. They
+  // are shown only when the runtime of the machine wrote them down.
+  const goal = typeof session.meta?.activityGoal === 'string' && session.meta.activityGoal.trim() ? session.meta.activityGoal.trim() : undefined;
+  const result = typeof session.meta?.activityResult === 'string' && session.meta.activityResult.trim() ? session.meta.activityResult.trim() : undefined;
   return {
     subtitle: `${harness} · ${host}`, harness,
     host: session.hostId ? `${session.hostLabel || session.hostId}${session.hostLabel && session.hostLabel !== session.hostId ? ` · ${session.hostId}` : ''}` : 'Машина не подтверждена',
     currentCwd, launchCwd: project.launchCwd || undefined,
     model: session.model || 'Не указана', status: statusOverride ?? statuses[session.status] ?? 'Статус не подтверждён',
     updated: Number.isFinite(date.getTime()) ? date.toLocaleString('ru-RU') : 'Не подтверждено',
+    goal, result,
   };
 }
