@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,11 +15,11 @@ const cleanups: string[] = [];
 beforeEach(async () => {
   const root = await mkdtemp(join(tmpdir(), "agent-herder-l54-routes-"));
   cleanups.push(root);
-  process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR = root;
+  vi.stubEnv("AGENT_HERDER_AUTOPILOT_STATE_DIR", root);
 });
 
 afterEach(async () => {
-  delete process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR;
+  vi.unstubAllEnvs();
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
   await Promise.all(cleanups.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });

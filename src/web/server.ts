@@ -1541,25 +1541,21 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     // The optional hooks runtime of the herder is off: the hook carries
     // nothing into the session. The answer is empty, so a handler that is
     // already loaded in a running harness becomes quiet at once — no restart
-    // of the harness and no loss of its sessions.
-    if (!(await hooksRuntimeEnabled())) {
-      return sendJson(response, 200, {
-        context: null, inboxContext: null, inboxCount: 0, inboxIds: [], activeInboxContext: null,
-        activeInboxIds: [], active: false, humanStopHeld: false, hooksEnabled: false,
-      });
-    }
+    // of the harness and no loss of its sessions. The lifecycle of the
+    // session is still marked: the listing keeps reporting a running turn.
+    const hooksEnabled = await hooksRuntimeEnabled();
     const coordinationHeld=async()=>await getHumanStopStore().isHeld(harness,sessionId)||await supervisor.isAutomationHeld(harness,sessionId);
     let humanStopHeld = await coordinationHeld();
     if (url.searchParams.get("touch") === "1" && !coordinationNotes.activeWorkspaceForSession(sessionId)) await coordinationNotes.heartbeatSession({ sessionId, cwd });
-    const coordinationContext = await coordinationNotes.renderForSession({ harness, id: sessionId, cwd });
+    const coordinationContext = hooksEnabled ? await coordinationNotes.renderForSession({ harness, id: sessionId, cwd }) : null;
     if (response.destroyed) return;
     humanStopHeld = humanStopHeld || await coordinationHeld();
     if(humanStopHeld)await deferredMessages.discardActive(harness,sessionId);
-    const inboxMessages = humanStopHeld ? [] : await deferredMessages.list(sessionId);
+    const inboxMessages = humanStopHeld || !hooksEnabled ? [] : await deferredMessages.list(sessionId);
     const activeTurnId=url.searchParams.get('activeTurnId')?.trim();
     const currentAdapter=adapters.get(harness);
     const contextConnected=()=>!response.destroyed&&!request.aborted&&!request.socket.destroyed;
-    const activeMessages=!humanStopHeld&&activeTurnId&&url.searchParams.get('consumeActive')==='1'
+    const activeMessages=!humanStopHeld&&hooksEnabled&&activeTurnId&&url.searchParams.get('consumeActive')==='1'
       ?await deferredMessages.offerActive(harness,sessionId,activeTurnId,async()=>{
         if(!currentAdapter?.getCoordinationActiveTurnId)return false;
         try{return await currentAdapter.getCoordinationActiveTurnId(sessionId)===activeTurnId;}
@@ -1572,9 +1568,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     // The hook may have waited for store/native reads. A late Stop suppresses output.
     if(humanStopHeld||activeMessages.length&&await coordinationHeld()){activeMessages.length=0;humanStopHeld=true;await deferredMessages.discardActive(harness,sessionId);}
     if(!contextConnected())return;
-    const inboxContext = humanStopHeld ? null : renderDeferredMessages(inboxMessages);
-    const context = [inboxContext, coordinationContext].filter(Boolean).join("\n\n") || null;
-    return sendJson(response, 200, { context, inboxContext, inboxCount: inboxMessages.length, inboxIds:inboxMessages.map(message=>message.id), activeInboxContext:renderDeferredMessages(activeMessages), activeInboxIds:activeMessages.map(message=>message.id), active: Boolean(context), humanStopHeld });
+    const inboxContext = humanStopHeld || !hooksEnabled ? null : renderDeferredMessages(inboxMessages);
+    const context = hooksEnabled ? ([inboxContext, coordinationContext].filter(Boolean).join("\n\n") || null) : null;
+    return sendJson(response, 200, { context, inboxContext, inboxCount: inboxMessages.length, inboxIds:inboxMessages.map(message=>message.id), activeInboxContext:renderDeferredMessages(activeMessages), activeInboxIds:activeMessages.map(message=>message.id), active: Boolean(context), humanStopHeld, hooksEnabled });
   }
   if (url.pathname === "/api/coordination/inbox-ack" && request.method === "POST") {
     const body = await readJson(request);
