@@ -177,6 +177,11 @@ def prepare_worktree(sha: str, worktrees: Path) -> Path:
 
 def build(worktree: Path):
     run(["npm", "run", "build"], cwd=str(worktree))
+    # The portable payload of the plugin of Codex travels with the release: a
+    # node of the fleet has nothing else to lay the plugin out with. The
+    # payload lands in dist/plugin/codex/agent-herder, and the runtime of the
+    # release is what the release packages.
+    run(["node", "scripts/build-codex-plugin-payload.mjs"], cwd=str(worktree))
 
 
 def write_manifest(worktree: Path, receipt: Path):
