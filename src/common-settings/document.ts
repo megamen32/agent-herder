@@ -5,10 +5,15 @@
  * It holds the common settings of the product — the values that mean the same
  * thing on every node — and nothing else: a machine setting never enters it.
  *
- * The revision of the document is derived from its content alone. Every node
- * that holds the document computes the same revision from the same content, so
- * two nodes agree without talking to each other: the owner compares the
- * revision it wants with the revision a node names.
+ * The identity of the document belongs to its owner: the revision and the time
+ * of the assembly are built once, by the owner, and travel with the content.
+ * A node that takes the document records the identity it received and never a
+ * revision of its own, so the owner and the node speak of one document and the
+ * owner can compare the revision it wants with the revision a node names.
+ *
+ * The revision is still the hash of the content: the owner computes it from
+ * the values it holds, and the node only checks that the content it received
+ * is the content the revision names.
  */
 
 import { createHash } from "node:crypto";
@@ -175,6 +180,32 @@ export function commonSettingsRevision(input: { environment: Record<string, stri
 }
 
 /**
+ * The identity of the document of every owner, by owner.
+ *
+ * The owner builds the document once per content: the same content keeps the
+ * same revision and the same time of the assembly, so every reader of the
+ * owner — the panel of the owner and the nodes of the fleet — holds one
+ * identity of one document. A changed content is another document: another
+ * revision and another time of the assembly.
+ */
+const ownerIdentities = new Map<string, { revision: string; createdAt: string }>();
+
+/**
+ * The time of the assembly of the document of the owner.
+ *
+ * The time belongs to the revision: the same revision keeps the same time, so
+ * the node that takes the document holds the same identity as the owner and
+ * not only the same values.
+ */
+function ownerDocumentCreatedAt(owner: string, revision: string, now: () => Date): string {
+  const known = ownerIdentities.get(owner);
+  if (known && known.revision === revision) return known.createdAt;
+  const createdAt = now().toISOString();
+  ownerIdentities.set(owner, { revision, createdAt });
+  return createdAt;
+}
+
+/**
  * The document of the owner.
  *
  * Only the common settings enter the document: a machine setting of the
@@ -261,7 +292,18 @@ export async function readOwnerDocument(input: {
   }
   return buildCommonDocument({
     owner: input.owner,
-    createdAt: (input.now ?? (() => new Date()))().toISOString(),
+    // The identity of the document belongs to the owner: the same content
+    // keeps the same time of the assembly, so every reader of the owner and
+    // every node that takes the document hold one identity of one document.
+    createdAt: ownerDocumentCreatedAt(
+      input.owner,
+      commonSettingsRevision({
+        environment: values,
+        ...(launchPolicy !== undefined ? { launchPolicy } : {}),
+        ...(hooks !== undefined ? { hooks } : {}),
+      }),
+      input.now ?? (() => new Date()),
+    ),
     environment: values,
     ...(launchPolicy !== undefined ? { launchPolicy } : {}),
     ...(hooks !== undefined ? { hooks } : {}),
@@ -363,6 +405,9 @@ export function parseCommonSettingsDocument(value: unknown): CommonSettingsDocum
     ...(launchPolicy !== undefined ? { launchPolicy } : {}),
     ...(hooks !== undefined ? { hooks } : {}),
   });
+  // The revision that travels with the document is the one of the owner: the
+  // node records it and never a revision of its own. The hash of the content
+  // is only the check that the content was not changed on the way.
   if (typeof raw.revision !== "string" || raw.revision !== revision) {
     throw new CommonSettingsDocumentError(
       `Общий документ настроек не соответствует своей ревизии (${String(raw.revision)} вместо ${revision}).`,
@@ -370,7 +415,7 @@ export function parseCommonSettingsDocument(value: unknown): CommonSettingsDocum
   }
   const document: CommonSettingsDocument = {
     format: COMMON_SETTINGS_FORMAT,
-    revision,
+    revision: raw.revision,
     owner: raw.owner,
     createdAt: raw.createdAt,
     environment,

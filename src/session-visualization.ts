@@ -1,7 +1,130 @@
-import type { SessionDetails } from "./types/index.js";
+import type { SessionDetails, SessionMessagePart, SessionMessageView } from "./types/index.js";
 
 function jsonForHtml(value: unknown): string {
   return JSON.stringify(value).replace(/</g, "\\u003c");
+}
+
+/** What the owner can read as "the agent changed these files". */
+export type SessionFileEvidence = { path: string; operation: string; at?: string };
+
+/** The last recorded action of the agent, in plain words. */
+export type SessionActionEvidence = { label: string; tool?: string; at?: string };
+
+/** One child session as the owner reads it: name, role, status. */
+export type SessionSubagentEvidence = {
+  id: string;
+  name: string;
+  /** True when the provider gave a real name; false when it did not. */
+  named: boolean;
+  role?: string;
+  status: string;
+};
+
+export type SessionInspectFacts = {
+  model: { native?: string };
+  lastAction: SessionActionEvidence | null;
+  /** Files the session's own transcript proves were written. */
+  files: SessionFileEvidence[];
+  /** Uncommitted changes in the session's working directory; not attributable to this session alone. */
+  worktreeFiles: string[];
+  subagents: { count: number; items: SessionSubagentEvidence[] };
+  history: { source: string; complete: boolean };
+};
+
+const OPERATION_LABELS: Record<string, string> = {
+  files: "Изменение файлов",
+  git: "Работа с git",
+  test: "Проверки",
+  runtime: "Запуск и сервисы",
+  error: "Ошибка инструмента",
+};
+
+/** The command a tool call carried, or an empty string when it carried none. */
+export function toolCommand(part: SessionMessagePart): string {
+  if (typeof part.input === "string") return part.input;
+  if (part.input && typeof part.input === "object") {
+    const value = part.input as Record<string, unknown>;
+    for (const key of ["command", "cmd", "script", "query", "input"]) {
+      if (typeof value[key] === "string") return value[key] as string;
+    }
+    return JSON.stringify(value);
+  }
+  return part.text || part.output || "";
+}
+
+/** File paths a command mentions, without the surrounding shell noise. */
+export function commandPaths(command: string): string[] {
+  const found = command.match(/(?:^|[\s"'])((?:\.?\/|~\/)[^\s"']+|(?:src|test|tests|app|lib|packages|integrations)\/[A-Za-z0-9_./-]+\.[A-Za-z0-9_-]+)(?=$|[\s"',;:)])/g) || [];
+  return [...new Set(found.map((value) => value.trim().replace(/^["']/, "").replace(/["',;:)]+$/, "")))].filter((value) => /\.[A-Za-z0-9_-]+$/.test(value));
+}
+
+/** The kind of work a tool call did, decided by its name and its command. */
+export function toolKind(part: SessionMessagePart, command: string, paths: string[]): string | null {
+  const lower = `${part.name || ""} ${command.toLowerCase()}`;
+  if (part.error || /\b(error|failed|failure)\b/.test(lower)) return "error";
+  if (/\b(git|commit|checkout|merge|branch|diff)\b/.test(lower)) return "git";
+  if (/\b(test|vitest|jest|pytest|npm run build|tsc|lint)\b/.test(lower)) return "test";
+  if (/\b(deploy|systemctl|restart|curl|docker|nginx)\b/.test(lower)) return "runtime";
+  if (paths.length || /\b(apply_patch|write|edit|create|delete|mkdir|mv|cp|tee|sed -i)\b/.test(lower)) return "files";
+  return null;
+}
+
+/** A child session without a provider name says so instead of pretending. */
+export function childSessionName(child: { title?: string; id?: string; meta?: Record<string, unknown> }): { name: string; named: boolean } {
+  const task = typeof child.meta?.task === "string" ? child.meta.task.trim() : "";
+  if (task) return { name: task, named: true };
+  const title = (child.title || "").trim();
+  if (!title || /^untitled session$/i.test(title)) return { name: "название не сохранилось", named: false };
+  return { name: title, named: true };
+}
+
+/**
+ * The facts a session inspector shows: what the agent did last, which files it
+ * touched, and who its children are. Missing evidence stays missing.
+ */
+export function sessionInspectFacts(details: SessionDetails, worktreeFiles: string[] = []): SessionInspectFacts {
+  const events: { kind: string; part: SessionMessagePart; command: string; paths: string[]; at?: string }[] = [];
+  for (const message of details.messages || []) {
+    for (const part of message.parts || []) {
+      if (part.type !== "tool_call" && part.type !== "tool_result") continue;
+      const command = toolCommand(part);
+      const paths = commandPaths(command);
+      const kind = toolKind(part, command, paths);
+      if (!kind) continue;
+      events.push({ kind, part, command, paths, at: message.timestamp });
+    }
+  }
+
+  const files: SessionFileEvidence[] = [];
+  const seen = new Set<string>();
+  for (const event of events) {
+    if (event.kind !== "files") continue;
+    for (const path of event.paths) {
+      const key = `${path} ${event.at || ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      files.push({ path, operation: OPERATION_LABELS[event.kind], at: event.at });
+    }
+  }
+
+  const last = events.at(-1);
+  const lastAction: SessionActionEvidence | null = last
+    ? { label: OPERATION_LABELS[last.kind] || "Действие агента", tool: last.part.name || last.part.type, at: last.at }
+    : null;
+
+  const items: SessionSubagentEvidence[] = (details.children || []).map((child) => {
+    const named = childSessionName(child);
+    const role = typeof child.meta?.agentRole === "string" ? child.meta.agentRole : undefined;
+    return { id: child.id, name: named.name, named: named.named, role, status: child.status };
+  });
+  return {
+    model: { native: details.session.model },
+    lastAction,
+    files,
+    worktreeFiles,
+    subagents: { count: items.length, items },
+    history: { source: details.history?.source || "unknown", complete: details.history?.complete === true },
+  };
 }
 
 /** Render canonical session data as the interactive message/file graph used by the audit tool. */

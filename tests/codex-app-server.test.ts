@@ -20,8 +20,23 @@ import { HerderJobRegistry } from "../src/herder-jobs.js";
 import { getHumanStopStore } from "../src/human-stop-store.js";
 import { createNamedSession } from "../src/named-session.js";
 import { IntegratorSessionBindingStore } from "../src/integrator-session-binding.js";
+import { ALWAYS_FORBIDDEN_ENV } from "../src/web/settings-harness-env.js";
+import { setTimeout as delay } from "node:timers/promises";
 
 const fixture = join(process.cwd(), "tests/fixtures/fake-codex-app-server.mjs");
+
+/**
+ * The handles of the fixture travel in argv.
+ *
+ * The seam of the environment of a spawned workload cuts every name that the
+ * allowlist of the product does not name, so the fixture reads its handles
+ * from argv: the allowlist of the product must not carry the names of a test.
+ */
+function fixtureArgs(handles: Record<string, string | undefined> = {}): string[] {
+  return [fixture, ...Object.entries(handles)
+    .filter(([, value]) => value !== undefined)
+    .map(([name, value]) => `--codex-app-server-${name}=${value}`)];
+}
 
 type ScopedCollectionThread = { id: string; name?: string; cwd?: string; status?: string };
 
@@ -1302,11 +1317,59 @@ describe("Codex app-server adapter", () => {
     }
   });
 
+  it("addresses the data home of the app instance to the spawned app-server and inherits no secret of the herder", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-child-home-"));
+    const appHome = await mkdtemp(join(tmpdir(), "agent-herder-codex-app-home-"));
+    const envDump = join(codexDir, "child-env.json");
+    const previousCodexHome = process.env.CODEX_HOME;
+    const previousOmniRoute = process.env.OMNIROUTE_API_KEY;
+    const previousMinimax = process.env.MINIMAX_API_KEY;
+    // The background of the herder names the same value as the app instance:
+    // the address of the caller must survive it, or the app-server falls back
+    // to the home directory of the user.
+    process.env.CODEX_HOME = appHome;
+    process.env.OMNIROUTE_API_KEY = "the-omniroute-key";
+    process.env.MINIMAX_API_KEY = "the-minimax-key";
+    let adapter: CodexAppServerAdapter | undefined;
+    try {
+      adapter = new CodexAppServerAdapter({
+        quotaReader: async () => ({ rateLimits: { primary: { usedPercent: 0 } } }),
+        codexBin: process.execPath,
+        args: fixtureArgs({ "dump-env": envDump }),
+        codexDir,
+      });
+      await adapter.init();
+      let childEnv: Record<string, string | undefined> | undefined;
+      for (let attempt = 0; attempt < 50 && childEnv === undefined; attempt += 1) {
+        try {
+          childEnv = JSON.parse(await readFile(envDump, "utf8")) as Record<string, string | undefined>;
+        } catch {
+          await delay(50);
+        }
+      }
+      expect(childEnv).toBeDefined();
+      // The data home of the app instance reaches the app-server by name.
+      expect(childEnv?.CODEX_HOME).toBe(appHome);
+      // The home of the user is not the home of the instance.
+      expect(childEnv?.CODEX_HOME).not.toBe(join(homedir(), ".codex"));
+      // The secrets of the herder never reach the app-server.
+      for (const name of ALWAYS_FORBIDDEN_ENV) expect(childEnv?.[name]).toBeUndefined();
+    } finally {
+      await adapter?.dispose();
+      if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
+      else process.env.CODEX_HOME = previousCodexHome;
+      if (previousOmniRoute === undefined) delete process.env.OMNIROUTE_API_KEY;
+      else process.env.OMNIROUTE_API_KEY = previousOmniRoute;
+      if (previousMinimax === undefined) delete process.env.MINIMAX_API_KEY;
+      else process.env.MINIMAX_API_KEY = previousMinimax;
+      await rm(codexDir, { recursive: true, force: true });
+      await rm(appHome, { recursive: true, force: true });
+    }
+  });
+
   it("normalizes numeric native timestamps into AgentSession ISO strings", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-numeric-timestamp-"));
-    const previous = process.env.CODEX_APP_SERVER_NUMERIC_TIMESTAMPS;
-    process.env.CODEX_APP_SERVER_NUMERIC_TIMESTAMPS = "1";
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: fixtureArgs({ "numeric-timestamps": "1" }), codexDir });
     try {
       await adapter.init();
       const [session] = await adapter.listSessions();
@@ -1314,8 +1377,6 @@ describe("Codex app-server adapter", () => {
       expect(typeof session.lastActivity).toBe("string");
     } finally {
       await adapter.dispose();
-      if (previous === undefined) delete process.env.CODEX_APP_SERVER_NUMERIC_TIMESTAMPS;
-      else process.env.CODEX_APP_SERVER_NUMERIC_TIMESTAMPS = previous;
       await rm(codexDir, { recursive: true, force: true });
     }
   });
@@ -1323,11 +1384,7 @@ describe("Codex app-server adapter", () => {
   it("enumerates every native thread page and proves the snapshot exhaustive", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-pagination-"));
     const logPath = join(codexDir, "app-server.log");
-    const previousCount = process.env.CODEX_APP_SERVER_THREAD_COUNT;
-    const previousLogPath = process.env.CODEX_APP_SERVER_LOG;
-    process.env.CODEX_APP_SERVER_THREAD_COUNT = "325";
-    process.env.CODEX_APP_SERVER_LOG = logPath;
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: fixtureArgs({ "thread-count": "325", log: logPath }), codexDir });
     try {
       await adapter.init();
       const sessions = await adapter.listSessions();
@@ -1343,21 +1400,13 @@ describe("Codex app-server adapter", () => {
       expect(listRequests.map((entry) => entry.params?.cursor)).toEqual([undefined, "200"]);
     } finally {
       await adapter.dispose();
-      if (previousCount === undefined) delete process.env.CODEX_APP_SERVER_THREAD_COUNT;
-      else process.env.CODEX_APP_SERVER_THREAD_COUNT = previousCount;
-      if (previousLogPath === undefined) delete process.env.CODEX_APP_SERVER_LOG;
-      else process.env.CODEX_APP_SERVER_LOG = previousLogPath;
       await rm(codexDir, { recursive: true, force: true });
     }
   });
 
   it("marks a multi-page snapshot incomplete when a later native page fails", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-pagination-failure-"));
-    const previousCount = process.env.CODEX_APP_SERVER_THREAD_COUNT;
-    const previousFailure = process.env.CODEX_APP_SERVER_FAIL_LIST_CURSOR;
-    process.env.CODEX_APP_SERVER_THREAD_COUNT = "325";
-    process.env.CODEX_APP_SERVER_FAIL_LIST_CURSOR = "200";
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: fixtureArgs({ "thread-count": "325", "fail-list-cursor": "200" }), codexDir });
     try {
       await adapter.init();
       await expect(adapter.listSessions()).rejects.toThrow(/forced thread\/list failure at 200/);
@@ -1367,10 +1416,6 @@ describe("Codex app-server adapter", () => {
       });
     } finally {
       await adapter.dispose();
-      if (previousCount === undefined) delete process.env.CODEX_APP_SERVER_THREAD_COUNT;
-      else process.env.CODEX_APP_SERVER_THREAD_COUNT = previousCount;
-      if (previousFailure === undefined) delete process.env.CODEX_APP_SERVER_FAIL_LIST_CURSOR;
-      else process.env.CODEX_APP_SERVER_FAIL_LIST_CURSOR = previousFailure;
       await rm(codexDir, { recursive: true, force: true });
     }
   });
@@ -1415,15 +1460,8 @@ describe("Codex app-server adapter", () => {
     ["active", true],
   ] as const)("refuses native Codex archive for status %s (permission pending: %s)", async (status, permissionPending) => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-archive-guard-"));
-    const previousLogPath = process.env.CODEX_APP_SERVER_LOG;
-    const previousStatus = process.env.CODEX_APP_SERVER_THREAD_STATUS;
-    const previousPermissionWait = process.env.CODEX_APP_SERVER_PERMISSION_WAIT;
     const logPath = join(codexDir, "app-server.log");
-    process.env.CODEX_APP_SERVER_LOG = logPath;
-    process.env.CODEX_APP_SERVER_THREAD_STATUS = status;
-    if (permissionPending) process.env.CODEX_APP_SERVER_PERMISSION_WAIT = "1";
-    else delete process.env.CODEX_APP_SERVER_PERMISSION_WAIT;
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: fixtureArgs({ log: logPath, "thread-status": status, "permission-wait": permissionPending ? "1" : undefined }), codexDir });
     try {
       await adapter.init();
       await expect(adapter.archiveSession("thread-1")).resolves.toMatchObject({ ok: false });
@@ -1431,12 +1469,6 @@ describe("Codex app-server adapter", () => {
       expect(requests.some((entry) => entry.kind === "request" && entry.method === "thread/archive")).toBe(false);
     } finally {
       await adapter.dispose();
-      if (previousLogPath === undefined) delete process.env.CODEX_APP_SERVER_LOG;
-      else process.env.CODEX_APP_SERVER_LOG = previousLogPath;
-      if (previousStatus === undefined) delete process.env.CODEX_APP_SERVER_THREAD_STATUS;
-      else process.env.CODEX_APP_SERVER_THREAD_STATUS = previousStatus;
-      if (previousPermissionWait === undefined) delete process.env.CODEX_APP_SERVER_PERMISSION_WAIT;
-      else process.env.CODEX_APP_SERVER_PERMISSION_WAIT = previousPermissionWait;
       await rm(codexDir, { recursive: true, force: true });
     }
   });
@@ -1618,17 +1650,13 @@ describe("Codex app-server adapter", () => {
 
   it("reports a turn running in another app-server instance from native thread status", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-external-running-"));
-    const previous = process.env.CODEX_APP_SERVER_EXTERNAL_RUNNING_THREAD;
-    process.env.CODEX_APP_SERVER_EXTERNAL_RUNNING_THREAD = "thread-1";
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: fixtureArgs({ "external-running-thread": "thread-1" }), codexDir });
     try {
       await adapter.init();
       const session = (await adapter.listSessions()).find((item) => item.id === "thread-1");
       expect(session?.status).toBe("running");
     } finally {
       await adapter.dispose();
-      if (previous === undefined) delete process.env.CODEX_APP_SERVER_EXTERNAL_RUNNING_THREAD;
-      else process.env.CODEX_APP_SERVER_EXTERNAL_RUNNING_THREAD = previous;
       await rm(codexDir, { recursive: true, force: true });
     }
   });
@@ -1910,11 +1938,9 @@ describe("Codex app-server adapter", () => {
   it("admits a cold same-thread continue only through initialize, resume, and turn/start", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-same-thread-"));
     const logPath = join(codexDir, "app-server.log");
-    const previousLogPath = process.env.CODEX_APP_SERVER_LOG;
-    process.env.CODEX_APP_SERVER_LOG = logPath;
     const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),
       codexBin: process.execPath,
-      args: [fixture],
+      args: fixtureArgs({ log: logPath }),
       codexDir,
     });
     try {
@@ -1928,8 +1954,6 @@ describe("Codex app-server adapter", () => {
       expect(log).not.toContain('"method":"thread/start"');
     } finally {
       await adapter.dispose();
-      if (previousLogPath === undefined) delete process.env.CODEX_APP_SERVER_LOG;
-      else process.env.CODEX_APP_SERVER_LOG = previousLogPath;
       await rm(codexDir, { recursive: true, force: true });
     }
   });
@@ -1970,9 +1994,7 @@ describe("Codex app-server adapter", () => {
   it("delivers two sequential turns to the same native thread without creating a replacement", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-sequential-turns-"));
     const logPath = join(codexDir, "app-server.log");
-    const previousLogPath = process.env.CODEX_APP_SERVER_LOG;
-    process.env.CODEX_APP_SERVER_LOG = logPath;
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: fixtureArgs({ log: logPath }), codexDir });
     try {
       await expect(adapter.sendMessage("thread-1", { message: "first continuation" })).resolves.toMatchObject({ ok: true, admitted: true, turnId: expect.any(String) });
       await expect(adapter.sendMessage("thread-1", { message: "second continuation" })).resolves.toMatchObject({ ok: true, admitted: true, turnId: expect.any(String) });
@@ -1986,8 +2008,6 @@ describe("Codex app-server adapter", () => {
       expect(requests.some((entry) => entry.method === "thread/start")).toBe(false);
     } finally {
       await adapter.dispose();
-      if (previousLogPath === undefined) delete process.env.CODEX_APP_SERVER_LOG;
-      else process.env.CODEX_APP_SERVER_LOG = previousLogPath;
       await rm(codexDir, { recursive: true, force: true });
     }
   });
@@ -2063,9 +2083,7 @@ describe("Codex app-server adapter", () => {
   it("shares one cold app-server initialization between observer and control callers", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-single-control-"));
     const logPath = join(codexDir, "app-server.log");
-    const previousLogPath = process.env.CODEX_APP_SERVER_LOG;
-    process.env.CODEX_APP_SERVER_LOG = logPath;
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: fixtureArgs({ log: logPath }), codexDir });
     try {
       const [initialized, observed, resumed] = await Promise.all([
         adapter.init().then(() => true),
@@ -2081,21 +2099,15 @@ describe("Codex app-server adapter", () => {
       expect(log.match(/"method":"thread\/resume"/g)).toHaveLength(1);
     } finally {
       await adapter.dispose();
-      if (previousLogPath === undefined) delete process.env.CODEX_APP_SERVER_LOG;
-      else process.env.CODEX_APP_SERVER_LOG = previousLogPath;
       await rm(codexDir, { recursive: true, force: true });
     }
   });
 
   it("fails closed when turn/started is for the wrong turn id", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-same-thread-mismatch-"));
-    const previousStarted = process.env.CODEX_APP_SERVER_TURN_STARTED_ID;
-    const previousCompleted = process.env.CODEX_APP_SERVER_TURN_COMPLETED_ID;
-    process.env.CODEX_APP_SERVER_TURN_STARTED_ID = "turn-other";
-    process.env.CODEX_APP_SERVER_TURN_COMPLETED_ID = "turn-1";
     const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),
       codexBin: process.execPath,
-      args: [fixture],
+      args: fixtureArgs({ "turn-started-id": "turn-other", "turn-completed-id": "turn-1" }),
       codexDir,
     });
     try {
@@ -2103,10 +2115,6 @@ describe("Codex app-server adapter", () => {
       expect(result).toMatchObject({ ok: false, error: expect.stringMatching(/admission mismatch/i) });
     } finally {
       await adapter.dispose();
-      if (previousStarted === undefined) delete process.env.CODEX_APP_SERVER_TURN_STARTED_ID;
-      else process.env.CODEX_APP_SERVER_TURN_STARTED_ID = previousStarted;
-      if (previousCompleted === undefined) delete process.env.CODEX_APP_SERVER_TURN_COMPLETED_ID;
-      else process.env.CODEX_APP_SERVER_TURN_COMPLETED_ID = previousCompleted;
       await rm(codexDir, { recursive: true, force: true });
     }
   });
@@ -2204,18 +2212,14 @@ describe("Codex app-server adapter", () => {
   it("creates and resumes full-access threads with native approval and sandbox settings", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-full-access-"));
     const logPath = join(codexDir, "app-server.jsonl");
-    const previousLogPath = process.env.CODEX_APP_SERVER_LOG;
-    const previousPersistedThread = process.env.CODEX_APP_SERVER_FULL_ACCESS_THREAD;
-    process.env.CODEX_APP_SERVER_LOG = logPath;
-    let adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
+    let adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: fixtureArgs({ log: logPath }), codexDir });
     try {
       await adapter.init();
       const created = await adapter.createSession({ name: "unattended task", cwd: "/tmp/codex-fixture", fullAccess: true });
       expect(await adapter.resumeSession(created.id)).toEqual({ ok: true });
       await adapter.dispose();
 
-      process.env.CODEX_APP_SERVER_FULL_ACCESS_THREAD = created.id;
-      adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: [fixture], codexDir });
+      adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: fixtureArgs({ log: logPath, "full-access-thread": created.id }), codexDir });
       await adapter.init();
       expect(await adapter.resumeSession(created.id)).toEqual({ ok: true });
       expect(await adapter.resumeSession(created.id)).toEqual({ ok: true });
@@ -2241,10 +2245,6 @@ describe("Codex app-server adapter", () => {
       });
     } finally {
       await adapter.dispose();
-      if (previousLogPath === undefined) delete process.env.CODEX_APP_SERVER_LOG;
-      else process.env.CODEX_APP_SERVER_LOG = previousLogPath;
-      if (previousPersistedThread === undefined) delete process.env.CODEX_APP_SERVER_FULL_ACCESS_THREAD;
-      else process.env.CODEX_APP_SERVER_FULL_ACCESS_THREAD = previousPersistedThread;
       await rm(codexDir, { recursive: true, force: true });
     }
   });
@@ -2254,13 +2254,12 @@ describe("Codex app-server adapter", () => {
 // Focused integration expected1s/max5s: native image input shape is preserved in RPC.
 it("sends a local image through Codex native turn/start", async () => {
  const codexDir=await mkdtemp(join(tmpdir(),"herder-codex-image-")), logPath=join(codexDir,"rpc.log");
- const previous=process.env.CODEX_APP_SERVER_LOG; process.env.CODEX_APP_SERVER_LOG=logPath;
- const adapter=new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),codexBin:process.execPath,args:[fixture],codexDir});
+ const adapter=new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),codexBin:process.execPath,args:fixtureArgs({ log: logPath }),codexDir});
  try {
   await expect(adapter.sendMessage("thread-1",{message:"describe",images:[{id:"a".repeat(64),path:"/protected/image.png",fileName:"figure.png",mimeType:"image/png",bytes:90}]})).resolves.toMatchObject({ok:true,admitted:true});
   const requests=(await readFile(logPath,"utf8")).trim().split("\n").map(line=>JSON.parse(line));
   expect(requests.find(row=>row.kind==="request"&&row.method==="turn/start").params.input).toEqual([{type:"text",text:"describe"},{type:"localImage",path:"/protected/image.png"}]);
- }finally {await adapter.dispose();if(previous===undefined)delete process.env.CODEX_APP_SERVER_LOG;else process.env.CODEX_APP_SERVER_LOG=previous;await rm(codexDir,{recursive:true,force:true});}
+ }finally {await adapter.dispose();await rm(codexDir,{recursive:true,force:true});}
 });
 
 it("reads only the latest Codex turn summary when this process missed its events", async () => {

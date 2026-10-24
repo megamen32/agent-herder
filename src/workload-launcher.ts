@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { DEFAULT_ALLOWED_ENV, harnessWorkloadEnv } from "./web/settings-harness-env.js";
 
 export interface DetachedWorkloadOptions extends SpawnOptions {
   /** Short harness/workload label used only for the transient systemd scope name. */
@@ -8,6 +9,21 @@ export interface DetachedWorkloadOptions extends SpawnOptions {
   resourceProperties?: string[];
   /** Mandatory Linux guard for the shared ZCode SDK/native descendant tree. */
   resourceGuard?: "zcode-shared";
+  /**
+   * The names of the variables that a spawned workload is allowed to see.
+   * The default is the allowlist of the product; the secrets of the herder
+   * never pass, whatever this list names.
+   */
+  allowedEnv?: readonly string[];
+  /**
+   * The names of the variables that the caller of the spawn addresses by
+   * name. They reach the workload even when the background of the herder
+   * names the same value: the data home of a project app-server (CODEX_HOME)
+   * is one of them, and the app-server of a project must not fall back to
+   * the home directory of the user. The secrets of the herder never pass,
+   * whatever this list names.
+   */
+  ownedEnv?: readonly string[];
 }
 
 export interface IsolatedWorkloadCommand {
@@ -42,6 +58,7 @@ read -r tasks < "$base/pids.max" || fail
 read -r quota period < "$base/cpu.max" || fail
 [ "$high" = 32212254720 ] && [ "$maximum" = 36507222016 ] &&
 [ "$swap" = 2147483648 ] && [ "$tasks" = 4096 ] || fail
+[ "$period" -gt 0 ] && [ "$quota" -gt 0 ] &&
 case "$quota:$period" in *[!0-9:]*|:*|*:) fail ;; esac
 [ "$period" -gt 0 ] && [ "$quota" -gt 0 ] &&
 [ "$quota" -le "$((period * 16))" ] || fail
@@ -59,6 +76,32 @@ function runtimeBusEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   };
 }
 
+/**
+ * The names that runtimeBusEnv owns: the bus of the user session, through
+ * which a workload talks back to the herder. They pass the filter of the
+ * allowlist, and the rule of the deny still wins over them.
+ */
+const RUNTIME_BUS_ENV_NAMES = ["XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"];
+
+/**
+ * The environment of a spawned workload.
+ *
+ * The background of the herder is filtered by the allowlist of the product,
+ * and the names that the caller of the spawn set on purpose are kept: the
+ * data home of a project app-server (CODEX_HOME) is one of them, and the
+ * project app-server must not fall back to the data home of the herder. A
+ * name that the caller addresses by name is kept even when the background of
+ * the herder names the same value. The secrets of the herder never pass, not
+ * even when the caller named them.
+ */
+function workloadEnv(
+  source: NodeJS.ProcessEnv | undefined,
+  allowed: readonly string[],
+  owned: readonly string[] = [],
+): Record<string, string> {
+  return harnessWorkloadEnv(process.env, source ?? process.env, [...allowed, ...RUNTIME_BUS_ENV_NAMES], owned);
+}
+
 function safeLabel(label: string): string {
   return label.toLowerCase().replace(/[^a-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "workload";
 }
@@ -68,7 +111,7 @@ export function buildDetachedWorkloadCommand(
   args: string[],
   options: DetachedWorkloadOptions,
 ): IsolatedWorkloadCommand {
-  const { label, env, resourceProperties = [], resourceGuard, ...spawnOptions } = options;
+  const { label, env, resourceProperties = [], resourceGuard, allowedEnv = DEFAULT_ALLOWED_ENV, ownedEnv = [], ...spawnOptions } = options;
   const isolationDisabled = process.env.AGENT_HERDER_WORKLOAD_ISOLATION === "off" || process.env.VITEST === "true";
   if (resourceGuard && (isolationDisabled || process.platform !== "linux")) {
     throw new Error("ZCode shared resource guard requires Linux systemd isolation");
@@ -80,7 +123,7 @@ export function buildDetachedWorkloadCommand(
     return {
       command,
       args,
-      options: { ...spawnOptions, env, detached: true, stdio: spawnOptions.stdio ?? "ignore" },
+      options: { ...spawnOptions, env: workloadEnv(env, allowedEnv, ownedEnv), detached: true, stdio: spawnOptions.stdio ?? "ignore" },
       isolated: false,
     };
   }
@@ -102,7 +145,7 @@ export function buildDetachedWorkloadCommand(
     ],
     options: {
       ...spawnOptions,
-      env: runtimeBusEnv(env || process.env),
+      env: workloadEnv(runtimeBusEnv(env ?? process.env), allowedEnv, ownedEnv),
       detached: true,
       stdio: spawnOptions.stdio ?? "ignore",
     },

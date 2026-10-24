@@ -3,6 +3,7 @@ import { open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { readMinimaxActiveSessions, type MinimaxActiveReceipt } from "./minimax-code-active.js";
+import { readMinimaxRuntimeActiveSessions } from "./minimax-code-runtime-activity.js";
 import { MinimaxCodeControl } from "./minimax-code-control.js";
 import { MINIMAX_CODE_HARNESS_CWD, MINIMAX_CODE_SESSION_STORE } from "./minimax-code-store.js";
 import type {
@@ -310,7 +311,10 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
   /** Full native metadata inventory; never hydrates historical transcripts. */
   async listActiveSessions(): Promise<AgentSession[]> {
     this.activeReceipt = null;
-    const result = await readMinimaxActiveSessions(this.control,{onProgress:stage=>{this.activeRefreshProgress={stage,stageStartedAt:new Date().toISOString()};}});
+    // The runtime state is the fallback proof of activity: a host that runs
+    // the runtime without the desktop transport still owns the truth about
+    // its own turns.
+    const result = await readMinimaxActiveSessions(this.control,{onProgress:stage=>{this.activeRefreshProgress={stage,stageStartedAt:new Date().toISOString()};},readRuntimeActivity:()=>readMinimaxRuntimeActiveSessions()});
     this.activeReceipt = result.receipt;
     return result.sessions;
   }

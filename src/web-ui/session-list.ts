@@ -9,6 +9,18 @@ const STATUS_RU: Record<string, string> = {
   completed: "Остановлена",
 };
 
+/**
+ * Живая сессия — та, что может взять задачу: работает, ждёт ответа владельца
+ * или ждёт задачи. Остальные (остановленные, завершённые, ошибочные) скрыты
+ * переключателем «Показывать завершённые».
+ */
+export const LIVE_SESSION_STATUSES: readonly string[] = ["running", "needs_input", "idle"];
+
+/** Живая сессия способна принять задачу; остановленная или завершённая — нет. */
+export function isLiveSessionStatus(status: string | undefined): boolean {
+  return typeof status === "string" && LIVE_SESSION_STATUSES.includes(status);
+}
+
 const MONTHS_RU = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 
 /** Человекочитаемый статус сессии по-русски. */
@@ -187,7 +199,7 @@ export function filterAndArrangeSessions(
 ): SessionListEntry[] {
   const byKey = new Map(sessions.map((session) => [sessionKey(session), session]));
   const filtered = sessions.filter((session) => {
-    if (!settings.showAll && !["running", "needs_input"].includes(session.status) && !choiceSessionKeys.has(sessionKey(session))) return false;
+    if (!settings.showAll && !isLiveSessionStatus(session.status) && !choiceSessionKeys.has(sessionKey(session))) return false;
     if (settings.hostId && session.hostId !== settings.hostId) return false;
     if (settings.harness && session.harness !== settings.harness) return false;
     if (settings.cwd && !session.cwd.startsWith(settings.cwd)) return false;
@@ -226,4 +238,174 @@ export function filterAndArrangeSessions(
   for (const root of roots) walk(root, 0);
   for (const session of filtered) walk(session, 0);
   return result;
+}
+
+/** Русское склонение по числу: 1 сессия, 2 сессии, 5 сессий. */
+export function pluralRu(count: number, one: string, few: string, many: string): string {
+  const abs = Math.abs(Math.trunc(count));
+  if (abs > 10 && abs < 20) return many;
+  const last = abs % 10;
+  if (last > 1 && last < 5) return few;
+  if (last === 1) return one;
+  return many;
+}
+
+/** Счётчик списка: сколько строк на экране и сколько их в выборке. */
+export type SessionListCounts = {
+  /** Строк реально нарисовано на экране. */
+  rendered: number;
+  /** Строк в выборке после фильтров и поиска, до окна отрисовки. */
+  available: number;
+  /** Сколько сессий знает сервер. */
+  total?: number;
+};
+
+export function sessionListCounts(available: number, windowSize: number, total?: number): SessionListCounts {
+  const scope = Number.isFinite(available) ? Math.max(0, Math.floor(available)) : 0;
+  const window = Number.isFinite(windowSize) ? Math.max(0, Math.floor(windowSize)) : scope;
+  return {
+    rendered: Math.min(scope, window),
+    available: scope,
+    total: typeof total === "number" && Number.isFinite(total) ? total : undefined,
+  };
+}
+
+/**
+ * Счётчик шапки говорит ровно то, что на экране: «показано N из M» — это
+ * отрисованные строки и размер выборки, а не то, что панель догрузила.
+ * С поиском счётчик говорит, сколько найдено, а не сколько загружено.
+ */
+export function sessionListCounterRu(counts: SessionListCounts, query = ""): string {
+  const search = query.trim();
+  if (search) {
+    if (counts.available === 0) return "ничего не найдено";
+    return counts.rendered < counts.available
+      ? `найдено ${counts.available} · показано ${counts.rendered}`
+      : `найдено ${counts.available}`;
+  }
+  return `показано ${counts.rendered} из ${counts.available}`;
+}
+
+/** Сводка загруженной выборки: сколько сессий, сколько живых, сколько по средам и машинам. */
+export type SessionSampleCounts = {
+  total: number;
+  live: number;
+  /** Неживые сессии — те, что показывает переключатель «Показывать завершённые». */
+  completed: number;
+  /** Сколько сессий выборки подходит под запрос поиска. */
+  queryMatches: number;
+  byHarness: Record<string, { total: number; live: number; completed: number }>;
+  byHost: Record<string, { total: number; live: number; completed: number }>;
+};
+
+export function summarizeSessionSample(sessions: SessionListSession[], query = ""): SessionSampleCounts {
+  const summary: SessionSampleCounts = { total: 0, live: 0, completed: 0, queryMatches: 0, byHarness: {}, byHost: {} };
+  const search = query.trim();
+  for (const session of sessions) {
+    const live = isLiveSessionStatus(session.status);
+    summary.total += 1;
+    if (live) summary.live += 1; else summary.completed += 1;
+    const harness = summary.byHarness[session.harness] ?? { total: 0, live: 0, completed: 0 };
+    harness.total += 1;
+    if (live) harness.live += 1; else harness.completed += 1;
+    summary.byHarness[session.harness] = harness;
+    const hostId = session.hostId ?? "";
+    const host = summary.byHost[hostId] ?? { total: 0, live: 0, completed: 0 };
+    host.total += 1;
+    if (live) host.live += 1; else host.completed += 1;
+    summary.byHost[hostId] = host;
+    if (search && matchesSessionQuery(session, search)) summary.queryMatches += 1;
+  }
+  return summary;
+}
+
+/** Какие фильтры сейчас включены — одной строкой, по-русски. */
+export function sessionListFiltersHint(settings: SessionListSettings, hostLabel = ""): string {
+  const parts: string[] = [];
+  if (settings.harness) parts.push(`агент ${settings.harness}`);
+  if (settings.hostId) parts.push(`машина ${hostLabel || settings.hostId}`);
+  if (settings.cwd) parts.push(`папка ${settings.cwd}`);
+  if (settings.project) parts.push(`проект ${settings.project}`);
+  if (!settings.showAll) parts.push("только живые сессии");
+  return parts.length ? `Сейчас включены фильтры: ${parts.join(", ")}.` : "";
+}
+
+/** Почему список пуст: заголовок, подсказка и — если есть — кнопка «показать завершённые». */
+export type SessionListEmptyReason = {
+  title: string;
+  hint?: string;
+  showCompleted?: boolean;
+};
+
+/**
+ * Пустой список обязан объяснять причину: иначе владелец читает его как
+ * «сессий нет», хотя живая сессия может быть за другим фильтром.
+ */
+export function sessionListEmptyReason(input: {
+  query: string;
+  settings: SessionListSettings;
+  sample: SessionSampleCounts;
+  hostLabel?: string;
+}): SessionListEmptyReason {
+  const search = input.query.trim();
+  const { settings, sample } = input;
+  const filters = sessionListFiltersHint(settings, input.hostLabel);
+  if (search) {
+    if (sample.queryMatches > 0) {
+      return {
+        title: `По запросу «${search}» совпадений: ${sample.queryMatches} — их не видно из-за фильтров.`,
+        hint: filters,
+      };
+    }
+    return {
+      title: `По запросу «${search}» ничего не найдено.`,
+      hint: `Поиск идёт по загруженному списку: ${sample.total} ${pluralRu(sample.total, "сессия", "сессии", "сессий")}.`,
+    };
+  }
+  if (settings.harness) {
+    const counts = sample.byHarness[settings.harness] ?? { total: 0, live: 0, completed: 0 };
+    if (!settings.showAll && counts.live === 0) {
+      if (counts.completed > 0) {
+        return {
+          title: `Живых сессий ${settings.harness} сейчас нет.`,
+          hint: `Завершённых сессий ${settings.harness} в загруженном списке: ${counts.completed}. Включите «Показывать завершённые», чтобы увидеть их.`,
+          showCompleted: true,
+        };
+      }
+      return {
+        title: `Живых сессий ${settings.harness} сейчас нет.`,
+        hint: `Сессий ${settings.harness} в загруженном списке нет.`,
+      };
+    }
+    if (counts.total === 0) {
+      return {
+        title: `Сессий ${settings.harness} в загруженном списке нет.`,
+        hint: `Всего в списке ${sample.total} ${pluralRu(sample.total, "сессия", "сессии", "сессий")}.`,
+      };
+    }
+  }
+  if (settings.hostId) {
+    const counts = sample.byHost[settings.hostId] ?? { total: 0, live: 0, completed: 0 };
+    const machine = input.hostLabel || settings.hostId;
+    if (!settings.showAll && counts.live === 0) {
+      if (counts.completed > 0) {
+        return {
+          title: `Живых сессий на машине ${machine} сейчас нет.`,
+          hint: `Завершённых сессий на этой машине: ${counts.completed}. Включите «Показывать завершённые», чтобы увидеть их.`,
+          showCompleted: true,
+        };
+      }
+      return { title: `Живых сессий на машине ${machine} сейчас нет.`, hint: `Всего в списке ${sample.total} ${pluralRu(sample.total, "сессия", "сессии", "сессий")}.` };
+    }
+    if (counts.total === 0) {
+      return { title: `Сессий на машине ${machine} в загруженном списке нет.`, hint: `Всего в списке ${sample.total} ${pluralRu(sample.total, "сессия", "сессии", "сессий")}.` };
+    }
+  }
+  if (settings.cwd) {
+    return { title: `В папке ${settings.cwd} сессий нет.`, hint: filters };
+  }
+  if (settings.project) {
+    return { title: `В проекте ${settings.project} сессий нет.`, hint: filters };
+  }
+  return { title: "Нет сессий по этим настройкам.", hint: filters };
 }

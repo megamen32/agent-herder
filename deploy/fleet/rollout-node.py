@@ -22,6 +22,10 @@ import sys
 import time
 import urllib.request
 
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import release_rules  # noqa: E402
+
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -293,6 +297,31 @@ def verify_agent_resume_layout(fleet: Path, sha: str) -> bool:
         return False
 
 
+def own_tool_caches(source: Path, target: Path) -> list:
+    """The release owns the bytes of the tool caches; the packages stay links.
+
+    The tool caches are rewritten in place by the tools of the runtime. A hard
+    link to one of them would make the bytes of this release change under a
+    running service, and the release would not own its own cache. The caches
+    are copied, the packages stay hard links of the store.
+    """
+    owned = []
+    for entry in sorted(source.iterdir()):
+        if not release_rules.mutable_entry(entry.name):
+            continue
+        destination = target / entry.name
+        if destination.is_symlink() or destination.is_file():
+            destination.unlink()
+        elif destination.is_dir():
+            shutil.rmtree(destination)
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.copytree(entry, destination, symlinks=True)
+        else:
+            shutil.copy2(entry, destination, follow_symlinks=False)
+        owned.append(entry.name)
+    return owned
+
+
 def prepare_packages(fleet: Path, sha: str, previous_sha: str,
                      release_local_packages: bool = False) -> str:
     """Give the new release the packages of the node.
@@ -334,6 +363,9 @@ def prepare_packages(fleet: Path, sha: str, previous_sha: str,
         children = [child for child in sorted(store.iterdir()) if child.name != "agent-resume-mcp"]
         if children:
             subprocess.run(["cp", "-al"] + [str(child) for child in children] + [str(target)], check=True)
+        # The tool caches of the store are copied, not linked: the release owns
+        # the bytes it writes into them.
+        own_tool_caches(store, target)
         resume = target / "agent-resume-mcp"
         if resume.exists() or resume.is_symlink():
             raise RuntimeError("release-local node_modules already carries agent-resume-mcp")
@@ -354,7 +386,10 @@ def prepare_packages(fleet: Path, sha: str, previous_sha: str,
         os.symlink(os.readlink(source), target)
         return "symlink -> " + os.readlink(source)
     subprocess.run(["cp", "-al", str(source), str(target)], check=True)
-    return "copied from the previous release (hard links)"
+    # The tool caches of the previous release are copied, not linked: they are
+    # rewritten in place, and the new release owns the bytes it writes into them.
+    own_tool_caches(source, target)
+    return "copied from the previous release (hard links of the packages, own bytes of the tool caches)"
 
 
 def release_budget(fleet: Path) -> tuple[int, int]:

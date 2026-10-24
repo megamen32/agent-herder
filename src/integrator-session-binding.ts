@@ -378,6 +378,41 @@ export class IntegratorSessionBindingStore {
     }));
   }
 
+  /**
+   * Record that the selected harness now owns a native session.
+   *
+   * Harness-neutral by contract: the durable `created` receipt and its native
+   * address are written the same way for every selected harness, so the Codex
+   * path keeps its exact behavior while another harness gets the same evidence.
+   */
+  async recordCreated(input: {
+    operationId: string;
+    attempt: number;
+    harness: IntegratorHarness;
+    nativeSessionId: string;
+    launchCwd: string;
+  }): Promise<IntegratorOperationBinding> {
+    requiredText(input.operationId, "operation_id");
+    requiredText(input.harness, "harness");
+    requiredText(input.nativeSessionId, "native_session_id");
+    requiredText(input.launchCwd, "launch_cwd");
+    const binding = await this.get(input.operationId);
+    if (!binding) throw new Error("integrator_session_binding_intent_missing");
+    const attempt = binding.attempts[input.attempt - 1];
+    if (!attempt) throw new Error("integrator_session_binding_attempt_missing");
+    return this.record({
+      operationId: input.operationId,
+      attempt: input.attempt,
+      receipt: {
+        state: "created",
+        inputId: attempt.inputId,
+        address: { hostId: attempt.hostId, harness: input.harness, nativeSessionId: input.nativeSessionId },
+        launchCwd: input.launchCwd,
+        retryable: false,
+      },
+    });
+  }
+
   /** Persist a monotonic checkpoint without changing the launch outcome. */
   async checkpoint(input: { operationId: string; attempt: number; checkpoint: IntegratorLaunchCheckpoint }): Promise<IntegratorOperationBinding> {
     requiredText(input.operationId, "operation_id");

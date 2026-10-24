@@ -8,31 +8,24 @@
  * right to use a key is not the right to read it.
  *
  * The rule is deny by default. A variable reaches a spawned process only when
- * the owner named it in the allowlist, and the secrets of the herder are
- * never in it. The values themselves are never written anywhere by this
- * module.
+ * the owner named it in the allowlist, or when the caller of the spawn named
+ * it on purpose; the secrets of the herder are never in it. The values
+ * themselves are never written anywhere by this module.
  *
- * REQUIREMENT TO THE CONTOUR OF THE ADAPTERS.
+ * THE SEAM WHERE THE RULE IS IN FORCE.
  *
- * The module is the rule of the allowlist, and the rule is not in force
- * while the adapters spawn a process with the whole environment of the
- * herder. Two places do that today, and they are the places that must call
- * this module:
+ * The module is the rule of the allowlist, and the rule is in force at the
+ * seam that builds the environment of a spawned process:
  *
- *   - src/adapters/acp.ts:343 — the process of the adapter of the ACP is
- *     spawned with the environment of the herder;
- *   - src/adapters/fast-agent.ts:157 — the process of the fast agent is
- *     spawned with the environment of the herder.
+ *   - src/workload-launcher.ts — buildDetachedWorkloadCommand, the launcher
+ *     that every adapter shares (src/adapters/acp.ts:340,
+ *     src/adapters/fast-agent.ts:155, src/adapters/codex-app-server.ts:2073
+ *     and the other callers of the launcher).
  *
- * The workload launcher that they share is src/workload-launcher.ts:105: it
- * is the seam where the environment of a spawned process is built, and the
- * allowlist of this module belongs there.
- *
- * The files of the adapters are not the files of this change: the requirement
- * is recorded here so that it lives in the code and not only in the body of
- * a commit. Until the adapters call this module, a spawned agent can still
- * read the secrets of the herder, and the isolation of the secrets of the
- * contour is not in force.
+ * The launcher calls this module for every workload it spawns, so the
+ * adapters do not have to call it themselves: a spawned agent sees the names
+ * of the allowlist and never the secrets of the herder. The owner names the
+ * allowlist, and the rule of the deny wins over what the owner names.
  */
 
 /** The names that never reach a spawned process, whatever the allowlist says. */
@@ -83,6 +76,58 @@ export function harnessEnv(
     const value = source[name];
     if (value === undefined) continue;
     result[name] = value;
+  }
+  return result;
+}
+
+/**
+ * The environment of a spawned process, built from two sources.
+ *
+ * `background` is the environment of the herder that a workload would
+ * inherit: only the names of the allowlist pass it. The secrets of the herder
+ * are in the background, and they never pass.
+ *
+ * `caller` is the environment that the caller of the spawn built on purpose.
+ * Its names pass even when the allowlist does not name them, because the
+ * caller named them on purpose: the data home of a project app-server
+ * (CODEX_HOME) is such a name, and the seam must not take it away from the
+ * process that has to use it.
+ *
+ * `addressed` names the variables that the caller of the spawn addressed by
+ * name. Such a name reaches the workload even when its value is the same as
+ * in the background of the herder: the caller named it, so the seam must not
+ * guess from the value that the name is only inherited. The data home of a
+ * project app-server (CODEX_HOME) is such a name: the app-server of a
+ * project must use the home of its instance and not the home directory of
+ * the user.
+ *
+ * The rule of the deny wins over all of them: a name of ALWAYS_FORBIDDEN_ENV
+ * never reaches a spawned process, not even when the caller set it.
+ */
+export function harnessWorkloadEnv(
+  background: NodeJS.ProcessEnv,
+  caller?: NodeJS.ProcessEnv,
+  allowed: readonly string[] = DEFAULT_ALLOWED_ENV,
+  addressed: readonly string[] = [],
+): Record<string, string> {
+  const forbidden = new Set(ALWAYS_FORBIDDEN_ENV);
+  const permitted = new Set(allowed);
+  const owned = new Set(addressed);
+  const result: Record<string, string> = {};
+  for (const [name, value] of Object.entries(caller ?? background)) {
+    if (value === undefined) continue;
+    if (forbidden.has(name)) continue;
+    if (permitted.has(name)) {
+      result[name] = value;
+      continue;
+    }
+    // A name that the caller addressed by name is the caller's own.
+    if (owned.has(name)) {
+      result[name] = value;
+      continue;
+    }
+    // A name that the caller changed against the background is the caller's own.
+    if (background[name] !== value) result[name] = value;
   }
   return result;
 }
