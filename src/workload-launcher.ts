@@ -15,6 +15,15 @@ export interface DetachedWorkloadOptions extends SpawnOptions {
    * never pass, whatever this list names.
    */
   allowedEnv?: readonly string[];
+  /**
+   * The names of the variables that the caller of the spawn addresses by
+   * name. They reach the workload even when the background of the herder
+   * names the same value: the data home of a project app-server (CODEX_HOME)
+   * is one of them, and the app-server of a project must not fall back to
+   * the home directory of the user. The secrets of the herder never pass,
+   * whatever this list names.
+   */
+  ownedEnv?: readonly string[];
 }
 
 export interface IsolatedWorkloadCommand {
@@ -80,14 +89,17 @@ const RUNTIME_BUS_ENV_NAMES = ["XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"];
  * The background of the herder is filtered by the allowlist of the product,
  * and the names that the caller of the spawn set on purpose are kept: the
  * data home of a project app-server (CODEX_HOME) is one of them, and the
- * project app-server must not fall back to the data home of the herder. The
- * secrets of the herder never pass, not even when the caller named them.
+ * project app-server must not fall back to the data home of the herder. A
+ * name that the caller addresses by name is kept even when the background of
+ * the herder names the same value. The secrets of the herder never pass, not
+ * even when the caller named them.
  */
 function workloadEnv(
   source: NodeJS.ProcessEnv | undefined,
   allowed: readonly string[],
+  owned: readonly string[] = [],
 ): Record<string, string> {
-  return harnessWorkloadEnv(process.env, source ?? process.env, [...allowed, ...RUNTIME_BUS_ENV_NAMES]);
+  return harnessWorkloadEnv(process.env, source ?? process.env, [...allowed, ...RUNTIME_BUS_ENV_NAMES], owned);
 }
 
 function safeLabel(label: string): string {
@@ -99,7 +111,7 @@ export function buildDetachedWorkloadCommand(
   args: string[],
   options: DetachedWorkloadOptions,
 ): IsolatedWorkloadCommand {
-  const { label, env, resourceProperties = [], resourceGuard, allowedEnv = DEFAULT_ALLOWED_ENV, ...spawnOptions } = options;
+  const { label, env, resourceProperties = [], resourceGuard, allowedEnv = DEFAULT_ALLOWED_ENV, ownedEnv = [], ...spawnOptions } = options;
   const isolationDisabled = process.env.AGENT_HERDER_WORKLOAD_ISOLATION === "off" || process.env.VITEST === "true";
   if (resourceGuard && (isolationDisabled || process.platform !== "linux")) {
     throw new Error("ZCode shared resource guard requires Linux systemd isolation");
@@ -111,7 +123,7 @@ export function buildDetachedWorkloadCommand(
     return {
       command,
       args,
-      options: { ...spawnOptions, env: workloadEnv(env, allowedEnv), detached: true, stdio: spawnOptions.stdio ?? "ignore" },
+      options: { ...spawnOptions, env: workloadEnv(env, allowedEnv, ownedEnv), detached: true, stdio: spawnOptions.stdio ?? "ignore" },
       isolated: false,
     };
   }
@@ -133,7 +145,7 @@ export function buildDetachedWorkloadCommand(
     ],
     options: {
       ...spawnOptions,
-      env: workloadEnv(runtimeBusEnv(env ?? process.env), allowedEnv),
+      env: workloadEnv(runtimeBusEnv(env ?? process.env), allowedEnv, ownedEnv),
       detached: true,
       stdio: spawnOptions.stdio ?? "ignore",
     },

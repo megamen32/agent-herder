@@ -1,5 +1,5 @@
 import readline from "node:readline";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
 
 /**
  * The handles of the fixture travel in argv.
@@ -47,11 +47,21 @@ const numericTimestamps = handle("numeric-timestamps") === "1";
 const failListCursor = handle("fail-list-cursor");
 const threadStatus = handle("thread-status");
 const permissionWait = handle("permission-wait") === "1";
+const envDumpPath = handle("dump-env");
 
 if (numericTimestamps) {
   threads[0].createdAt = Date.parse(threads[0].createdAt);
   threads[0].updatedAt = Date.parse(threads[0].updatedAt);
 }
+
+/**
+ * The environment of the fixture, as the seam of the spawn delivered it.
+ *
+ * The fixture writes it to a file named in argv: the seam of the environment
+ * cuts every name that the allowlist of the product does not name, so the
+ * fixture cannot name its own dump file in the environment.
+ */
+if (envDumpPath) writeFileSync(envDumpPath, JSON.stringify(process.env));
 
 function log(event) {
   if (!logPath) return;

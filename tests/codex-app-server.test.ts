@@ -20,6 +20,8 @@ import { HerderJobRegistry } from "../src/herder-jobs.js";
 import { getHumanStopStore } from "../src/human-stop-store.js";
 import { createNamedSession } from "../src/named-session.js";
 import { IntegratorSessionBindingStore } from "../src/integrator-session-binding.js";
+import { ALWAYS_FORBIDDEN_ENV } from "../src/web/settings-harness-env.js";
+import { setTimeout as delay } from "node:timers/promises";
 
 const fixture = join(process.cwd(), "tests/fixtures/fake-codex-app-server.mjs");
 
@@ -1312,6 +1314,56 @@ describe("Codex app-server adapter", () => {
     } finally {
       await adapter.dispose();
       await rm(codexDir, { recursive: true, force: true });
+    }
+  });
+
+  it("addresses the data home of the app instance to the spawned app-server and inherits no secret of the herder", async () => {
+    const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-child-home-"));
+    const appHome = await mkdtemp(join(tmpdir(), "agent-herder-codex-app-home-"));
+    const envDump = join(codexDir, "child-env.json");
+    const previousCodexHome = process.env.CODEX_HOME;
+    const previousOmniRoute = process.env.OMNIROUTE_API_KEY;
+    const previousMinimax = process.env.MINIMAX_API_KEY;
+    // The background of the herder names the same value as the app instance:
+    // the address of the caller must survive it, or the app-server falls back
+    // to the home directory of the user.
+    process.env.CODEX_HOME = appHome;
+    process.env.OMNIROUTE_API_KEY = "the-omniroute-key";
+    process.env.MINIMAX_API_KEY = "the-minimax-key";
+    let adapter: CodexAppServerAdapter | undefined;
+    try {
+      adapter = new CodexAppServerAdapter({
+        quotaReader: async () => ({ rateLimits: { primary: { usedPercent: 0 } } }),
+        codexBin: process.execPath,
+        args: fixtureArgs({ "dump-env": envDump }),
+        codexDir,
+      });
+      await adapter.init();
+      let childEnv: Record<string, string | undefined> | undefined;
+      for (let attempt = 0; attempt < 50 && childEnv === undefined; attempt += 1) {
+        try {
+          childEnv = JSON.parse(await readFile(envDump, "utf8")) as Record<string, string | undefined>;
+        } catch {
+          await delay(50);
+        }
+      }
+      expect(childEnv).toBeDefined();
+      // The data home of the app instance reaches the app-server by name.
+      expect(childEnv?.CODEX_HOME).toBe(appHome);
+      // The home of the user is not the home of the instance.
+      expect(childEnv?.CODEX_HOME).not.toBe(join(homedir(), ".codex"));
+      // The secrets of the herder never reach the app-server.
+      for (const name of ALWAYS_FORBIDDEN_ENV) expect(childEnv?.[name]).toBeUndefined();
+    } finally {
+      await adapter?.dispose();
+      if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
+      else process.env.CODEX_HOME = previousCodexHome;
+      if (previousOmniRoute === undefined) delete process.env.OMNIROUTE_API_KEY;
+      else process.env.OMNIROUTE_API_KEY = previousOmniRoute;
+      if (previousMinimax === undefined) delete process.env.MINIMAX_API_KEY;
+      else process.env.MINIMAX_API_KEY = previousMinimax;
+      await rm(codexDir, { recursive: true, force: true });
+      await rm(appHome, { recursive: true, force: true });
     }
   });
 

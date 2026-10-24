@@ -93,21 +93,36 @@ export function harnessEnv(
  * (CODEX_HOME) is such a name, and the seam must not take it away from the
  * process that has to use it.
  *
- * The rule of the deny wins over both: a name of ALWAYS_FORBIDDEN_ENV never
- * reaches a spawned process, not even when the caller set it.
+ * `addressed` names the variables that the caller of the spawn addressed by
+ * name. Such a name reaches the workload even when its value is the same as
+ * in the background of the herder: the caller named it, so the seam must not
+ * guess from the value that the name is only inherited. The data home of a
+ * project app-server (CODEX_HOME) is such a name: the app-server of a
+ * project must use the home of its instance and not the home directory of
+ * the user.
+ *
+ * The rule of the deny wins over all of them: a name of ALWAYS_FORBIDDEN_ENV
+ * never reaches a spawned process, not even when the caller set it.
  */
 export function harnessWorkloadEnv(
   background: NodeJS.ProcessEnv,
   caller?: NodeJS.ProcessEnv,
   allowed: readonly string[] = DEFAULT_ALLOWED_ENV,
+  addressed: readonly string[] = [],
 ): Record<string, string> {
   const forbidden = new Set(ALWAYS_FORBIDDEN_ENV);
   const permitted = new Set(allowed);
+  const owned = new Set(addressed);
   const result: Record<string, string> = {};
   for (const [name, value] of Object.entries(caller ?? background)) {
     if (value === undefined) continue;
     if (forbidden.has(name)) continue;
     if (permitted.has(name)) {
+      result[name] = value;
+      continue;
+    }
+    // A name that the caller addressed by name is the caller's own.
+    if (owned.has(name)) {
       result[name] = value;
       continue;
     }
