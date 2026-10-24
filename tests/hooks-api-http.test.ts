@@ -48,7 +48,41 @@ describe("the API of the hooks", () => {
     const hooks = view.hooks as Array<Record<string, unknown>>;
     expect(hooks.map((hook) => hook.kind)).toEqual(["Stop", "PreToolUse", "PostToolUse", "SessionStart", "UserPromptSubmit"]);
     expect(hooks[0]?.humanName).toContain("Stop");
-    expect(hooks[0]?.state).toBe("включены");
+    // The runtime of the hooks is off until the owner turns it on.
+    expect(view.hooksEnabled).toBe(false);
+    expect(hooks[0]?.state).toBe("не выполняется");
+    // The answer carries the timeout contract of every harness.
+    const timeouts = view.timeouts as Array<Record<string, unknown>>;
+    expect(timeouts.length).toBeGreaterThan(0);
+    expect(timeouts.map((contract) => contract.harness)).toContain("minimax-code");
+  });
+
+  it("moves the switch of the whole runtime as an explicit action of the owner", async () => {
+    const base = await startServer();
+    const moved = await fetch(`${base}/api/hooks/prohibitions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: "owner", hooksEnabled: true, reason: "хуки нужны" }),
+    });
+    expect(moved.status).toBe(200);
+    const view = await readJson(moved);
+    expect(view.hooksEnabled).toBe(true);
+    expect(view.reason).toBe("хуки нужны");
+    // The hooks read the light answer: the runtime runs.
+    const read = await readJson(await fetch(`${base}/api/hooks/prohibitions?kind=Stop`));
+    expect(read.hooksEnabled).toBe(true);
+    expect(read.active).toBe(true);
+  });
+
+  it("refuses a hook that does not exist in the list of the inactive hooks", async () => {
+    const base = await startServer();
+    const refused = await fetch(`${base}/api/hooks/prohibitions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: "owner", inactiveHooks: ["NoSuchHook"] }),
+    });
+    expect(refused.status).toBe(400);
+    expect((await readJson(refused)).error).toContain("Такого хука нет");
   });
 
   it("moves the lever as an explicit action of the owner", async () => {
