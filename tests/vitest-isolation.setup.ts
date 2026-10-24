@@ -13,6 +13,10 @@ process.env.AGENT_HERDER_DEFERRED_MESSAGES ??= join(root, "deferred-messages.jso
 process.env.AGENT_HERDER_HUMAN_STOP_STORE ??= join(root, "human-stops.json");
 process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR ??= root;
 process.env.AGENT_HERDER_NATIVE_STOCK_CASES_PATH ??= join(root, "native-stock-cases.json");
+// The coordination ledger of the installation is a live file: the running
+// herder rewrites it under a write lock. A unit test that shares it waits for
+// that lock and times out, so the test environment keeps its own ledger.
+process.env.AGENT_HERDER_COORDINATION_NOTES ??= join(root, "coordination-notes.json");
 // The fleet of the installation is injected: the same machine names, but with
 // addresses that refuse at once. A unit test never addresses a live neighbour.
 process.env.AGENT_HERDER_FLEET_PEERS ??= JSON.stringify([
