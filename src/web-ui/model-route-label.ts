@@ -39,9 +39,10 @@ export function modelProvider(modelId: string): string {
  *
  * A model the environment does not confirm is stale: its route cannot be
  * verified, and the request of it is refused by the guard of the node. The
- * rest is working: the environment confirms it. The panel says nothing
- * about money: a subscription, a free pool and a metered route look the
- * same to the environment, and the name of the plan is part of the id.
+ * rest is working: the environment confirms it. The panel reads only what
+ * the environment answers: whether the id is in the catalog of the
+ * environment, and whether the server lets the route start. How a route is
+ * named or grouped is part of the id, and the panel does not guess it.
  *
  * An empty catalog means the environment has not answered yet, and an unknown
  * state is not a state: the panel says nothing until the catalog is known.
