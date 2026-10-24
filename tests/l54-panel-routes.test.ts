@@ -16,6 +16,9 @@ beforeEach(async () => {
   const root = await mkdtemp(join(tmpdir(), "agent-herder-l54-routes-"));
   cleanups.push(root);
   vi.stubEnv("AGENT_HERDER_AUTOPILOT_STATE_DIR", root);
+  // The label store of Herder itself, in a scratch file: the test never
+  // touches the metadata of a live session.
+  vi.stubEnv("AGENT_HERDER_SESSION_LABELS", join(root, "session-labels.json"));
 });
 
 afterEach(async () => {
@@ -100,15 +103,21 @@ describe("the metadata of a session in the panel", () => {
     expect(stored.label?.stage).toBe("приёмка");
   });
 
-  it("says plainly that a harness has no native rename channel", async () => {
+  it("stores the metadata of a harness that has no native rename channel", async () => {
     const base = await startServer(new Map([["zcode", { name: "zcode" } as unknown as HarnessAdapter]]));
     const response = await fetch(`${base}/api/sessions/label`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ sessionId: "s-3", harness: "zcode", project: "Herder" }),
     });
-    expect(response.status).toBe(409);
-    expect((await response.json() as { error?: string }).error).toContain("нет нативного канала переименования");
+    // The metadata is stored for every harness, with or without a rename channel.
+    expect(response.status).toBe(200);
+    const answer = await response.json() as { ok?: boolean; renamed?: boolean; renameError?: string; label?: { project?: string } };
+    expect(answer.ok).toBe(true);
+    expect(answer.label?.project).toBe("Herder");
+    // The answer says that the name did not change instead of pretending it did.
+    expect(answer.renamed).toBe(false);
+    expect(answer.renameError).toContain("нет нативного канала переименования");
   });
 
   it("does not rename a session of another machine", async () => {

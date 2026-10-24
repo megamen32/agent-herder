@@ -2946,12 +2946,14 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     return sendJson(response, 200, { sessionId, harness, label });
   }
   if (request.method === "POST" && url.pathname === "/api/sessions/label") {
-    // The native rename of one session and the metadata that goes with it.
+    // The metadata of one session and, when the harness has one, its native name.
     //
-    // The title is written through the native channel of the harness and read
-    // back by the adapter itself: the panel never writes a name of its own.
-    // The project, the goal and the stage are stored next to the sessions and
-    // compose the title when the owner names none.
+    // The project, the goal and the stage belong to Herder and are stored next
+    // to the sessions: that store is the source of truth for the metadata, and
+    // it is written for every harness, with or without a native rename channel.
+    // The native name of the session is a separate and optional operation of
+    // the harness: a rename that did not happen never takes the stored metadata
+    // away, and the answer tells the two outcomes apart.
     const body = await readJson(request);
     const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
     const harness = typeof body.harness === "string" ? body.harness.trim() : "";
@@ -2972,9 +2974,6 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!adapter) {
       return sendJson(response, 404, { ok: false, error: `Среда '${harness}' недоступна на этом узле.` });
     }
-    if (typeof adapter.renameSession !== "function") {
-      return sendJson(response, 409, { ok: false, error: `У среды '${harness}' нет нативного канала переименования.` });
-    }
     const merged = await mergeSessionLabel(harness, sessionId, patch);
     const title = (typeof body.title === "string" ? body.title.trim() : "") || composeSessionTitle(merged);
     if (!title) {
@@ -2983,22 +2982,38 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         error: "Нужно название: дайте название или проект, цель и этап.",
       });
     }
-    const result = await adapter.renameSession(sessionId, { title });
-    if (!result.ok) {
-      return sendJson(response, 409, {
-        ok: false,
-        error: result.error || "Нативное переименование не удалось.",
-        previousTitle: result.previousTitle ?? null,
-      });
-    }
+    // The metadata is written first and on its own: it belongs to Herder and
+    // does not depend on what the harness can or cannot do with a name.
     const label = Object.keys(patch).length ? await writeSessionLabel(harness, sessionId, patch) : merged;
+    // The native name is an optional operation of the harness. The answer tells
+    // the two outcomes apart: the name changed, or it did not change and says
+    // why. A failed rename never takes the stored metadata away.
+    let renamed = false;
+    let previousTitle: string | null = null;
+    let nativeTitle: string | undefined;
+    let renameError: string | undefined;
+    if (typeof adapter.renameSession !== "function") {
+      renameError = `У среды '${harness}' нет нативного канала переименования: имя сессии осталось прежним.`;
+    } else {
+      const result = await adapter.renameSession(sessionId, { title });
+      previousTitle = result.previousTitle ?? null;
+      if (result.ok) {
+        renamed = true;
+        nativeTitle = result.title ?? title;
+      } else {
+        renameError = result.error || "Нативное переименование не удалось.";
+      }
+    }
     events?.publish({ kind: "sessions", uri: "herder://sessions", action: "changed" });
     return sendJson(response, 200, {
       ok: true,
       sessionId,
       harness,
-      title: result.title ?? title,
-      previousTitle: result.previousTitle ?? null,
+      title,
+      renamed,
+      previousTitle,
+      ...(nativeTitle !== undefined ? { nativeTitle } : {}),
+      ...(renameError !== undefined ? { renameError } : {}),
       label,
     });
   }
