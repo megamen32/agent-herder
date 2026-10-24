@@ -36,8 +36,8 @@ class RolloutNodeInstallTests(unittest.TestCase):
             second.parent.mkdir(parents=True)
             first.write_bytes(b"x" * 65536)
             second.hardlink_to(first)
-            paths = [path for release in (releases / "first", releases / "second")
-                     for path in (release, *release.rglob("*"))]
+            candidate = releases / "second"
+            paths = [candidate, *candidate.rglob("*")]
             seen = set()
             expected = 0
             for path in paths:
@@ -47,8 +47,8 @@ class RolloutNodeInstallTests(unittest.TestCase):
                     expected += info.st_blocks * 512
                     seen.add(identity)
             with patch.object(rollout.sys, "platform", "linux"):
-                self.assertEqual(rollout.release_budget(fleet), (2, expected))
-                self.assertTrue(rollout.release_budget_admitted(*rollout.release_budget(fleet)))
+                self.assertEqual(rollout.release_budget(fleet, "second"), (2, expected))
+                self.assertTrue(rollout.release_budget_admitted(*rollout.release_budget(fleet, "second")))
 
     def test_systemd_exec_dropin_update_preserves_exact_rollback_and_restores_it(self):
         with tempfile.TemporaryDirectory() as temporary:

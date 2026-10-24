@@ -535,40 +535,47 @@ def prepare_packages(fleet: Path, sha: str, previous_sha: str,
     return "copied from the previous release (hard links of the packages, own bytes of the tool caches)"
 
 
-def release_budget(fleet: Path) -> tuple[int, int]:
+def linux_release_bytes(release: Path) -> int:
+    """Count this release's allocated inode blocks once, including hard links."""
+    total = 0
+    seen: set[tuple[int, int]] = set()
+    for path in (release, *release.rglob("*")):
+        info = path.lstat()
+        identity = (info.st_dev, info.st_ino)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        blocks = getattr(info, "st_blocks", None)
+        if not isinstance(blocks, int) or blocks < 0:
+            raise RuntimeError(f"release inode physical allocation is unavailable: {path}")
+        total += blocks * 512
+    return total
+
+
+def release_budget(fleet: Path, candidate_sha: str) -> tuple[int, int]:
     releases = [p for p in (fleet / "releases").iterdir() if p.is_dir() and not p.is_symlink()]
+    candidate = fleet / "releases" / candidate_sha
+    if candidate not in releases:
+        raise RuntimeError("candidate release is absent from the release catalog")
     if sys.platform == "darwin":
-        # Use the same bounded physical-tree census as the managed watchdog.
-        # Native packages are hard linked, so apparent bytes duplicate them.
+        # Census only the candidate: the previous release remains for rollback
+        # and must not be charged against the candidate's own 512 MiB budget.
         probe = fleet / "mac-artifact-probe"
         config = json.loads((fleet / "node-config.json").read_text())
         expected = config.get("launcherHashes", {}).get("mac-artifact-probe")
         if not isinstance(expected, str) or not re.fullmatch(r"[a-f0-9]{64}", expected) or sha256(probe) != expected:
             raise RuntimeError("release_budget_probe_identity_mismatch")
         result = subprocess.run([str(probe), str(512 * 1024**2), "30001"],
-                                cwd=fleet / "releases", capture_output=True, text=True, timeout=15)
+                                cwd=candidate, capture_output=True, text=True, timeout=15)
         match = re.fullmatch(r"BYTES ([0-9]+) ENTRIES ([0-9]+)\n", result.stdout)
         if result.returncode != 0 or not match:
             raise RuntimeError("release_budget_census_failed")
         return len(releases), int(match[1])
-    total = 0
-    seen: set[tuple[int, int]] = set()
-    for release in releases:
-        for path in (release, *release.rglob("*")):
-            info = path.lstat()
-            identity = (info.st_dev, info.st_ino)
-            if identity in seen:
-                continue
-            seen.add(identity)
-            blocks = getattr(info, "st_blocks", None)
-            if not isinstance(blocks, int) or blocks < 0:
-                raise RuntimeError(f"release inode physical allocation is unavailable: {path}")
-            total += blocks * 512
-    return len(releases), total
+    return len(releases), linux_release_bytes(candidate)
 
 
 def release_budget_admitted(count: int, size: int) -> bool:
-    return count <= (3 if sys.platform == "darwin" else 2) and size <= 512 * 1024**2
+    return count <= 2 and size <= 512 * 1024**2
 
 
 def wait_codex_socket(config: dict, attempts: int = 30) -> bool:
@@ -637,7 +644,7 @@ def main() -> int:
         print("imported agent-resume is not the exact package inside this release; nothing was switched")
         return 1
 
-    release_count, release_bytes = release_budget(fleet)
+    release_count, release_bytes = release_budget(fleet, arguments.sha)
     print(f"release budget: directories={release_count} bytes={release_bytes}")
     if not release_budget_admitted(release_count, release_bytes):
         print("release budget exceeded; nothing was switched")
