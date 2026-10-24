@@ -211,10 +211,13 @@
 /* The list of chats can go away: the chat takes the whole width. */
 @media (min-width: 901px) {
   .oc-app.no-sessions { grid-template-columns: 60px 0 minmax(0, 1fr); }
-  .oc-app.no-sessions .sessions-pane { display: none; }
+  /* Колонка остаётся на месте: скрытая панель не сдвигает чат и инспектор
+     на соседние колонки сетки, а просто занимает ноль ширины. */
+  .oc-app.no-sessions .sessions-pane { overflow: hidden; min-width: 0; padding: 0; border-right: 0; }
 }
 @media (min-width: 1181px) {
   .oc-app.no-sessions:not(.no-inspector) { grid-template-columns: 60px 0 minmax(0, 1fr) 320px; }
+  .oc-app.no-sessions.no-inspector { grid-template-columns: 60px 0 minmax(0, 1fr); }
 }
 @media (max-width: 900px) {
   .chat-list-toggle { display: none; }

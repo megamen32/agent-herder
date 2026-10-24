@@ -411,8 +411,8 @@ export function SessionWorkTarget({ session, hosts, localHostId, onApplied, show
         <button type="button" className="icon-button work-target-settings" aria-label="Настройки" title="Настройки панели"
           aria-expanded={settingsOpen} onClick={() => setSettingsOpen((value) => !value)}>
           <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8" />
+            <path d="M4 7h10M18 7h2M4 12h4M12 12h8M4 17h12M20 17h0" />
+            <circle cx="16" cy="7" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="18" cy="17" r="2" />
           </svg>
         </button>
       </div>
