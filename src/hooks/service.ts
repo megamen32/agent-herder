@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import { resolveAutopilotStateDir } from "../autopilot/state-dir.js";
-import { HOOK_CATALOG, isHookKind, type HookKind } from "./catalog.js";
+import { HOOK_CATALOG, HOOK_KINDS, isHookKind, type HookKind } from "./catalog.js";
 import { hookTimeoutContracts, type HookTimeoutContract } from "./timeout-contract.js";
 import {
   HooksProhibitionsStore,
@@ -125,6 +125,8 @@ export function hookProhibitionsEnabled(
   if (!state.hooksEnabled) return false;
   if (!state.prohibitionsEnabled) return false;
   if (state.disabledHooks.includes(kind)) return false;
+  // A hook that does not run at all cannot forbid anything either.
+  if (state.inactiveHooks.includes(kind)) return false;
   return true;
 }
 
@@ -249,6 +251,12 @@ export class HooksService {
   /** The light answer the hooks ask for before they forbid something. */
   async readProhibitions(kind?: HookKind): Promise<HooksProhibitionsRead> {
     const { state, known, reason, etag } = await this.prohibitions.readState();
+    // The answer the hooks ask for is the effective one: while the optional
+    // runtime is off, no hook of the herder forbids anything, and the hook
+    // that the owner switched off on its own forbids nothing either. The
+    // scripts of the packages ask without naming their hook, so the list of
+    // the hooks that may not forbid carries both lists.
+    const mayForbid = known && state.hooksEnabled && state.prohibitionsEnabled;
     return {
       ok: true,
       known,
@@ -256,8 +264,10 @@ export class HooksService {
       // decision of the owner stays quiet instead of guessing.
       hooksEnabled: known ? state.hooksEnabled : false,
       active: kind ? hookRuntimeActive(state, known, kind) : known && state.hooksEnabled,
-      prohibitionsEnabled: known ? state.prohibitionsEnabled : false,
-      disabledHooks: [...state.disabledHooks],
+      prohibitionsEnabled: kind ? hookProhibitionsEnabled(state, known, kind) : mayForbid,
+      disabledHooks: [...new Set([...state.disabledHooks, ...state.inactiveHooks])].sort(
+        (left, right) => HOOK_KINDS.indexOf(left) - HOOK_KINDS.indexOf(right),
+      ),
       etag,
       ...(reason ? { reason } : {}),
     };
