@@ -213,7 +213,9 @@ describe("the lever of the prohibitions of the hooks: the view of the panel", ()
     const service = new HooksService(HooksProhibitionsStore.at(dir), (await import("../src/hooks/service.js")).HooksActivityStore.at(dir));
     const before = await service.readProhibitions();
     expect(before.known).toBe(true);
-    expect(before.prohibitionsEnabled).toBe(true);
+    // The lever of the owner is untouched, but the answer the hooks get is the
+    // effective one: the runtime is off, so no hook forbids anything.
+    expect(before.prohibitionsEnabled).toBe(false);
     // The hooks ask for the light state: while the runtime is off, no hook runs.
     expect(before.hooksEnabled).toBe(false);
     expect(before.active).toBe(false);
