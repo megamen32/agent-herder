@@ -323,6 +323,9 @@ export function hooksStopStatusText(view: HooksView | null): string {
   if (stop && stop.canProhibit === false) return "Остановка сессии: разрешена";
   const disabled = view.disabledHooks?.includes("Stop") === true;
   if (view.prohibitionsEnabled === false || disabled) return "Остановка сессии: разрешена";
+  // The runtime of the hooks comes first: while it is off, the Stop hook does
+  // not run, so it holds nothing.
+  if (view.hooksEnabled === false) return "Остановка сессии: разрешена (рантайм хуков выключен)";
   return "Остановка сессии: запрещена";
 }
 
