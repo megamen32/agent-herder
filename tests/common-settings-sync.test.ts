@@ -8,6 +8,9 @@
  * answer is unknown, and unknown is never agreement.
  */
 
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -15,9 +18,13 @@ import {
   buildCommonDocument,
   catchUpCommonSettings,
   commonSettingsRevision,
+  CommonSettingsNodeService,
+  CommonSettingsStateStore,
   emptyCommonSettingsState,
   parseCommonSettingsDocument,
   readCommonSettingsFleet,
+  readOwnerDocument,
+  type CommonSettingsDocument,
   type CommonSettingsHooksLever,
   type CommonSettingsNodeState,
   type CommonSettingsTarget,
@@ -342,5 +349,225 @@ describe("the fleet names the state of every node", () => {
     const fleet = await readCommonSettingsFleet({ transport, peers: [peers[0]], revision });
     expect(fleet.total).toBe(0);
     expect(fleet.notParticipating).toEqual(["server-44"]);
+  });
+});
+
+/**
+ * The identity of the document belongs to its owner.
+ *
+ * A node that takes the document of the owner keeps the revision of the owner:
+ * the values of the node, its own secret and its own machine settings never
+ * make another revision, or the confirmation of the owner could never close.
+ */
+describe("the identity of the document belongs to its owner", () => {
+  /** The durable state of a node of the test. */
+  const stateStoreOf = (dir: string): CommonSettingsStateStore => new CommonSettingsStateStore({
+    path: join(dir, "common-settings.json"),
+  });
+
+  /** The transport of the fleet, as a fake that holds the document of the owner. */
+  const transportOf = (document: CommonSettingsDocument | null): CommonSettingsTransport => ({
+    async read() { return document; },
+    async status() { return null; },
+    async notify() { return null; },
+    async setOptIn() { return null; },
+    async restore() { return null; },
+  });
+
+  it("the node keeps the revision of the owner and not its own", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "herder-common-settings-identity-"));
+    try {
+      const owner = buildCommonDocument({
+        owner: "roomhacker-server-100",
+        environment: { NOTIFY_CENTER_PROJECT: "agent-herder", NOTIFY_CENTER_TOKEN: "token-of-the-owner" },
+      });
+      // The node holds its own value, its own secret and its own machine setting.
+      const node = fakeTarget({
+        NOTIFY_CENTER_PROJECT: "value-of-the-node",
+        NOTIFY_CENTER_TOKEN: "token-of-the-node",
+        AGENT_HERDER_BROWSER_WORKER_PORT: "9911",
+      });
+      const service = new CommonSettingsNodeService({
+        hostId: "server-44",
+        role: "member",
+        ownerHostId: "roomhacker-server-100",
+        ownerTarget: "mcp:shell:roomhacker-server-100:AgentHerder",
+        stateStore: stateStoreOf(dir),
+        target: node.target,
+        transport: transportOf(owner),
+      });
+      const result = await service.notice(owner.revision);
+      expect(result.ok).toBe(true);
+      expect(result.appliedRevision).toBe(owner.revision);
+      expect(result.reason).toBeUndefined();
+      // The values of the owner are written; the machine setting of the node stays.
+      expect(node.values.NOTIFY_CENTER_PROJECT).toBe("agent-herder");
+      expect(node.values.NOTIFY_CENTER_TOKEN).toBe("token-of-the-owner");
+      expect(node.values.AGENT_HERDER_BROWSER_WORKER_PORT).toBe("9911");
+      const status = await service.status();
+      expect(status.appliedRevision).toBe(owner.revision);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("the owner and the node show one revision of one document", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "herder-common-settings-identity-"));
+    try {
+      const ownerNode = fakeTarget({ NOTIFY_CENTER_PROJECT: "agent-herder", NOTIFY_CENTER_TOKEN: "token-of-the-owner" });
+      const owner = new CommonSettingsNodeService({
+        hostId: "roomhacker-server-100",
+        role: "owner",
+        stateStore: stateStoreOf(join(dir, "owner")),
+        target: ownerNode.target,
+      });
+      const document = await owner.document();
+      expect(document).not.toBeNull();
+      const memberNode = fakeTarget({ NOTIFY_CENTER_PROJECT: "old", NOTIFY_CENTER_TOKEN: "token-of-the-node" });
+      const member = new CommonSettingsNodeService({
+        hostId: "server-44",
+        role: "member",
+        ownerHostId: "roomhacker-server-100",
+        ownerTarget: "mcp:shell:roomhacker-server-100:AgentHerder",
+        stateStore: stateStoreOf(join(dir, "member")),
+        target: memberNode.target,
+        transport: transportOf(document),
+      });
+      // The owner tells the node that the document moved.
+      const result = await member.notice(document!.revision);
+      expect(result.ok).toBe(true);
+      expect(result.appliedRevision).toBe(document!.revision);
+      // The node never says that it took another revision.
+      expect(result.reason).toBeUndefined();
+      const status = await member.status();
+      expect(status.appliedRevision).toBe(document!.revision);
+      // The revision of the owner did not move while the node took it.
+      expect((await owner.document())!.revision).toBe(document!.revision);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("the node that was off takes the current revision of the owner", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "herder-common-settings-identity-"));
+    try {
+      const owner = buildCommonDocument({
+        owner: "roomhacker-server-100",
+        environment: { NOTIFY_CENTER_PROJECT: "agent-herder" },
+      });
+      const node = fakeTarget({ NOTIFY_CENTER_PROJECT: "old" });
+      const service = new CommonSettingsNodeService({
+        hostId: "server-88",
+        role: "member",
+        ownerHostId: "roomhacker-server-100",
+        ownerTarget: "mcp:shell:roomhacker-server-100:AgentHerder",
+        stateStore: stateStoreOf(dir),
+        target: node.target,
+        transport: transportOf(owner),
+      });
+      // The node was off: it holds nothing of the document.
+      const result = await service.catchUp();
+      expect(result.ok).toBe(true);
+      expect(result.appliedRevision).toBe(owner.revision);
+      expect(node.values.NOTIFY_CENTER_PROJECT).toBe("agent-herder");
+      const status = await service.status();
+      expect(status.appliedRevision).toBe(owner.revision);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("the round of the owner closes: the node confirms the revision of the owner", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "herder-common-settings-identity-"));
+    try {
+      const ownerNode = fakeTarget({ NOTIFY_CENTER_PROJECT: "agent-herder" });
+      const owner = new CommonSettingsNodeService({
+        hostId: "roomhacker-server-100",
+        role: "owner",
+        stateStore: stateStoreOf(join(dir, "owner")),
+        target: ownerNode.target,
+      });
+      const memberNode = fakeTarget({ NOTIFY_CENTER_PROJECT: "old" });
+      let ownerDocument: CommonSettingsDocument | null = null;
+      let member: CommonSettingsNodeService | null = null;
+      // The transport of the fleet: the owner asks the node, the node answers
+      // with what it holds and takes the document of the owner when the owner
+      // tells it that the document moved.
+      const transport: CommonSettingsTransport = {
+        async read() { return ownerDocument; },
+        async status() { return member ? await member.status() : null; },
+        async notify(_target: string, revision: string) {
+          const result = await member!.notice(revision);
+          // The node never says that it took another revision.
+          expect(result.ok).toBe(true);
+          expect(result.reason).toBeUndefined();
+          return await member!.status();
+        },
+        async setOptIn() { return null; },
+        async restore() { return null; },
+      };
+      member = new CommonSettingsNodeService({
+        hostId: "server-44",
+        role: "member",
+        ownerHostId: "roomhacker-server-100",
+        ownerTarget: "mcp:shell:roomhacker-server-100:AgentHerder",
+        stateStore: stateStoreOf(join(dir, "member")),
+        target: memberNode.target,
+        transport,
+      });
+      // The node takes the common settings of the owner.
+      await member.setOptIn(true);
+      ownerDocument = await owner.document();
+      const fleet = await readCommonSettingsFleet({
+        transport,
+        peers: [{ hostId: "server-44", target: "mcp:shell:server-44:AgentHerder" }],
+        revision: ownerDocument!.revision,
+        distribute: true,
+      });
+      expect(fleet.nodes[0].status).toBe("подтвердил");
+      expect(fleet.nodes[0].appliedRevision).toBe(ownerDocument!.revision);
+      expect(fleet.nodes[0].reason).toBeNull();
+      expect(fleet.confirmed).toBe(1);
+      expect(fleet.total).toBe(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("the owner hands one identity to every reader of the document", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "herder-common-settings-identity-"));
+    try {
+      const policy = { version: 1, allowedHarnesses: ["codex"] };
+      const ownerNode = fakeTarget({ NOTIFY_CENTER_PROJECT: "agent-herder" });
+      const store = {
+        readEnvironment: async () => await ownerNode.target.readEnvironment(),
+        readSecretValue: async (key: string) => await ownerNode.target.readSecretValue(key),
+      };
+      // The panel of the owner reads the document with the policy of the launch.
+      const forPanel = await readOwnerDocument({
+        owner: "roomhacker-server-100",
+        store,
+        launchPolicy: { read: async () => ({ kind: "valid" as const, policy }) },
+      });
+      // The nodes of the fleet read the same document with the same policy.
+      const owner = new CommonSettingsNodeService({
+        hostId: "roomhacker-server-100",
+        role: "owner",
+        stateStore: stateStoreOf(join(dir, "owner")),
+        target: ownerNode.target,
+        launchPolicy: {
+          read: async () => ({ kind: "valid" as const, policy }),
+          replace: async (value: unknown) => ({ policy: value, etag: "1" }),
+        },
+      });
+      const forNodes = await owner.document();
+      expect(forNodes!.revision).toBe(forPanel.revision);
+      expect(forNodes!.createdAt).toBe(forPanel.createdAt);
+      // The policy of the launch is a part of the document: it moves the revision.
+      const withoutPolicy = await readOwnerDocument({ owner: "roomhacker-server-100", store });
+      expect(withoutPolicy.revision).not.toBe(forPanel.revision);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

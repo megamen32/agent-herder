@@ -40,7 +40,8 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('aria-label={isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}');
     expect(main).toContain('{isResumeMode ? "Продолжить ▶" : "↑"}');
     expect(main).toContain("details?.children?.length");
-    expect(main).toContain('aria-label="Показывать все сессии"');
+    expect(main).toContain("SESSION_LIST_SHOW_COMPLETED_ARIA");
+    expect(main).toContain("SESSION_LIST_SHOW_COMPLETED_LABEL");
     expect(main).toContain('aria-label={`Выбрать: ${choice.label}`}');
     expect(main).toContain('/api/autopilot/choices?status=pending');
     expect(main).toContain('/api/autopilot/choices/select');

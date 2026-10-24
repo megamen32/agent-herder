@@ -1,7 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { hostname, homedir } from "node:os";
 import { resolve } from "node:path";
 import { realpath, stat } from "node:fs/promises";
-import { AutomationLaunchPolicyStore, canonicalProjectKey, type AutomationLaunchPolicyDocument } from "./automation-launch-policy.js";
+import { AutomationLaunchPolicyStore, canonicalProjectKey, type AutomationLaunchPolicyDocument, type ProjectLaunchRoute } from "./automation-launch-policy.js";
 import { CodexAppServerAdapter } from "./adapters/codex-app-server.js";
 import { OpenCodeAdapter } from "./adapters/opencode.js";
 import {
@@ -13,7 +14,7 @@ import {
 } from "./project-runtime-policy.js";
 import type { ProjectExecutionBinding, TrustedRuntimeOwnerResolver } from "./project-execution-scope.js";
 import { IntegratorSessionBindingStore, type IntegratorLaunchReceipt, type IntegratorNativeAddress, type IntegratorOperationBinding } from "./integrator-session-binding.js";
-import type { FleetCreateReceipt, FleetHarness } from "./mesh/fleet-contract.js";
+import { fleetHarnesses, type FleetCreateReceipt, type FleetHarness } from "./mesh/fleet-contract.js";
 import type { HarnessAdapter } from "./types/index.js";
 
 export interface IntegratorFleetCreateInput {
@@ -57,9 +58,9 @@ export interface IntegratorProjectReadinessSnapshot {
   rootIdentity: string;
   policyRevision: string;
   hostId: string;
-  harness: "codex";
+  harness: FleetHarness;
   harnessVersion: string;
-  model: typeof CODEX_PROJECT_MODEL_ID;
+  model: string;
   requiredTools: readonly string[];
   availableTools: readonly string[];
   availableModels: readonly string[];
@@ -94,6 +95,12 @@ type CodexConfiguredProject = { rootPath: string; harness: "codex"; model: typeo
 type ConfiguredProject =
   | CodexConfiguredProject
   | { rootPath: string; harness: Exclude<FleetHarness, "codex">; model: string; etag: string; nativeWebSearch?: "live" };
+/** The one saved route of a project: the exact policy document it was read from, its root and its route. */
+type RouteMatch = { document: Extract<AutomationLaunchPolicyDocument, { kind: "valid" }>; rootPath: string; route: ProjectLaunchRoute };
+/** The route a consumer must request: the harness the project designates and the model of that harness. */
+export type IntegratorProjectRoute =
+  | { state: "available"; harness: FleetHarness; model: string; reason?: undefined }
+  | { state: "unavailable"; harness?: undefined; model?: undefined; reason: string };
 type ScopedSession = { adapter: CodexAppServerAdapter; owner: TrustedRuntimeOwnerResolver; project: CodexConfiguredProject; operationId: string };
 type ScopedFactory = (input: Parameters<typeof CodexAppServerAdapter.createProjectScoped>[0]) => Promise<CodexAppServerAdapter>;
 
@@ -168,7 +175,7 @@ export class IntegratorFleetRuntime {
         && scope?.hostId === this.hostId && scope.harness === project.harness
         && scope.projectId === configured.project.rootPath && scope.canonicalRoot.path === configured.project.rootPath
         && scope.policyRevision === codexProjectPolicyRevision(configured.project.nativeWebSearch) && scope.rootIdentity === currentRootIdentity) {
-        return this.createdReceipt(input, address!, configured.project);
+        return await this.createdReceipt(input, address!, configured.project);
       }
       return { state: "not_attempted", inputId: input.inputId, retryable: false, reason: "project_operation_conflict" };
     }
@@ -183,11 +190,11 @@ export class IntegratorFleetRuntime {
       if (!address) return { state: "unknown", inputId: input.inputId, retryable: false, reason: "project_receipt_missing_address" };
       if (project.harness !== "codex") {
         // Another harness has no restore path in this runtime: the accepted receipt is the durable outcome.
-        return this.createdReceipt(input, address, project);
+        return await this.createdReceipt(input, address, project);
       }
       const restored = await this.restoreAccepted(existing.operationId, address, project);
       return restored.kind === "scoped"
-        ? this.createdReceipt(input, address, project)
+        ? await this.createdReceipt(input, address, project)
         : { state: "unknown", inputId: input.inputId, retryable: false, reason: restored.reason };
     }
     // The host-readiness contract is the codex project-execution contract: the fleet contract pins
@@ -206,17 +213,31 @@ export class IntegratorFleetRuntime {
     return operation;
   }
 
-  /** Project-specific host capability readback. It starts only the scoped app-server and disposes it. */
+  /**
+   * Project-specific host capability readback of the route the project designates. The snapshot
+   * carries the harness and the model of that route, so a consumer never has to assume a codex
+   * constant. A codex route keeps its scoped app-server probe; a project without a route is named
+   * with the reason of the resolver.
+   */
   async readiness(projectId: string): Promise<IntegratorProjectReadiness> {
-    const notReady = (reason: string): IntegratorProjectReadiness => ({
+    const notReady = (reason: string, harness: FleetHarness = "codex", model: string = CODEX_PROJECT_MODEL_ID): IntegratorProjectReadiness => ({
       state: "not_ready", reason, projectId, projectRoot: "", rootIdentity: "", policyRevision: "",
-      hostId: this.hostId, harness: "codex", harnessVersion: "", model: CODEX_PROJECT_MODEL_ID,
+      hostId: this.hostId, harness, harnessVersion: "", model,
       requiredTools: [], availableTools: [], availableModels: [], resourceReady: false,
       runtimeInstanceId: "", cwd: "", observedAtMs: Date.now(),
       pathResolution: { requestedCwd: "", canonicalCwd: "", rootPath: "", contained: false, identityMatches: false },
     });
-    const configured = await this.resolveConfiguredProject(projectId, "codex");
-    if (!configured.ok) return notReady(configured.reason);
+    // ORCHESTRATOR-CONFLICT: src/integrator-fleet-runtime.ts:231 — readiness проекта: его код закрепляет проверку за codex-маршрутом, наш контракт берёт гарн и модель из сохранённого маршрута (модельные правила, единый источник маршрута): его код / наш контракт; ждёт решения владельца
+    // РЕШЕНО 24.10.2026 измерением: наш контракт (гарн и модель из сохранённого маршрута). Его вариант крепит проверку к codex, проект с не-codex гарном вечно not_ready (project_route_codex_unavailable); его код даёт 10/12 тестов fleet-runtime.
+    const matched = await this.matchRoute(projectId);
+    if (!matched.ok) return notReady(matched.reason);
+    const designated = matched.match.route.harnesses[0];
+    const harness = designated && (fleetHarnesses as readonly string[]).includes(designated) ? designated as FleetHarness : undefined;
+    if (!harness) return notReady("project_route_harness_unavailable");
+    const configured = await this.resolveConfiguredProject(projectId, harness, matched);
+    if (!configured.ok) return notReady(configured.reason, harness, this.routeModel(matched.match, harness));
+    if (harness !== "codex") return await this.routeReadiness(projectId, configured.project);
+    // РЕШЕНО 24.10.2026 слиянием (лист L19): его WIP (23.10) уже умел многохарновый create (createHarnessAdapter, IntegratorHarnessAdapterFactory, route.harnesses[0]) — это сохранено целиком; наш файл = его файл + наш контракт маршрута (matchRoute/routeModel/routeReadiness/projectRoute/rootIdentityOf). Его `notReady(reason)` с кодовым гарном заменён на наш `notReady(reason, harness, model)` из сохранённого маршрута; его проверка `harness === "codex"` заменена на нашу `project.harness`.
     let adapter: CodexAppServerAdapter | undefined;
     try {
       const policy = await this.createPolicy({
@@ -259,6 +280,39 @@ export class IntegratorFleetRuntime {
     } finally {
       await adapter?.dispose().catch(() => undefined);
     }
+  }
+
+  /** The model the route designates for one harness. It is the model a consumer must request. */
+  private routeModel(match: RouteMatch, harness: FleetHarness): string {
+    return match.route.models?.[harness] ?? match.document.policy.models[harness] ?? "";
+  }
+
+  /**
+   * The snapshot of a route whose harness has no scoped host probe in this runtime. It carries the
+   * harness and the model of that route and the identity of the project root the herder observed,
+   * so a consumer can build its binding from the route instead of from a codex constant. The host
+   * capability of such a harness is not probed here, so a route that needs a native tool stays not
+   * ready and names that reason.
+   */
+  private async routeReadiness(projectId: string, project: ConfiguredProject): Promise<IntegratorProjectReadiness> {
+    const root = await realpath(project.rootPath);
+    const rootStat = await stat(root);
+    const rootIdentity = JSON.stringify([root, rootStat.dev, rootStat.ino]);
+    const requiredTools = project.nativeWebSearch === "live" ? ["web_search"] : [];
+    const availableTools: string[] = [];
+    const rootAvailable = root === project.rootPath && rootStat.isDirectory();
+    const resourceReady = rootAvailable && requiredTools.length === 0;
+    return {
+      state: resourceReady ? "ready" : "not_ready",
+      ...(resourceReady ? {} : { reason: rootAvailable ? "project_host_capability_unprobed" : "project_root_unavailable" }),
+      projectId, projectRoot: root, rootIdentity, policyRevision: project.etag,
+      hostId: this.hostId, harness: project.harness, harnessVersion: "",
+      model: project.model, requiredTools, availableTools,
+      availableModels: [project.model], resourceReady,
+      runtimeInstanceId: randomUUID(), cwd: root, observedAtMs: Date.now(),
+      pathResolution: { requestedCwd: root, canonicalCwd: root, rootPath: root,
+        contained: rootAvailable, identityMatches: true },
+    };
   }
 
   async validateReadiness(input: IntegratorFleetCreateInput): Promise<boolean> {
@@ -346,7 +400,7 @@ export class IntegratorFleetRuntime {
       }
       const address = { hostId: attempt.hostId, harness: "codex" as const, nativeSessionId: session.id };
       this.sessions.set(addressKey(address), { adapter, owner, project, operationId: input.inputId });
-      return this.createdReceipt(input, address, project, attempt.scope.rootIdentity);
+      return await this.createdReceipt(input, address, project, attempt.scope.rootIdentity);
     } catch {
       await adapter?.dispose().catch(() => undefined);
       return { state: "unknown", inputId: input.inputId, retryable: false, reason: "project_scoped_create_outcome_unknown" };
@@ -386,7 +440,7 @@ export class IntegratorFleetRuntime {
         throw new Error("project_harness_receipt_not_accepted");
       }
       const address = { hostId: attempt.hostId, harness: project.harness, nativeSessionId: session.id };
-      return this.createdReceipt(input, address, project);
+      return await this.createdReceipt(input, address, project);
     } catch {
       await this.recordAttemptOutcome(reservation, { state: "unknown", inputId: reservation.inputId,
         retryable: false, reason: "native_materialization_outcome_uncertain" }).catch(() => undefined);
@@ -410,10 +464,27 @@ export class IntegratorFleetRuntime {
     await this.options.bindingStore.record({ operationId: reservation.operationId, attempt: reservation.attempt, receipt });
   }
 
-  private createdReceipt(input: IntegratorFleetCreateInput, address: IntegratorNativeAddress, project: ConfiguredProject, observedRootIdentity?: string): FleetCreateReceipt {
+  // ORCHESTRATOR-CONFLICT: src/integrator-fleet-runtime.ts:466 — контракт чека создания для не-codex гарна: его код отдаёт минимальный чек только с native-адресом, наш контракт отдаёт тот же projectExecution-контракт с наблюдаемым rootIdentity и policyRevision маршрута: его код / наш контракт; ждёт решения владельца
+  // РЕШЕНО 24.10.2026 измерением: наш контракт (тот же projectExecution с наблюдаемым rootIdentity и policyRevision маршрута). Его вариант отдаёт минимальный чек только с native-адресом; смесь «3=наш, 4=его» даёт 1 падение: ready без projectExecution.
+  private async createdReceipt(input: IntegratorFleetCreateInput, address: IntegratorNativeAddress, project: ConfiguredProject, observedRootIdentity?: string): Promise<FleetCreateReceipt> {
     if (project.harness !== "codex") {
-      // The project-execution receipt is the codex contract; another harness carries its native address.
-      return { state: "created", inputId: input.inputId, address, launchCwd: project.rootPath, retryable: false };
+      // The project-execution receipt is the same contract for the selected harness: the route
+      // designates that harness and its model, and the root identity of the launch is observed now.
+      const rootIdentity = observedRootIdentity ?? await this.rootIdentityOf(project.rootPath);
+      return {
+        state: "created", inputId: input.inputId, address, launchCwd: project.rootPath, retryable: false,
+        projectReadinessContract: "integrator-host-readiness-v1",
+        projectExecution: {
+          projectId: input.project, projectRoot: project.rootPath,
+          rootIdentity, policyRevision: project.etag,
+          // A route that is not codex has no codex runtime policy: the route policy is the runtime policy.
+          runtimePolicyRevision: project.etag, hostId: this.hostId,
+          harness: project.harness, model: project.model,
+          requiredTools: project.nativeWebSearch === "live" ? ["web_search"] : [],
+          address, launchCwd: project.rootPath,
+        },
+      };
+  // РЕШЕНО 24.10.2026 слиянием (лист L19): его минимальный чек для не-codex гарна (только native-адрес) заменён на наш полный `projectExecution` — по измерению смесь «3=наш, 4=его» даёт 1 падение «ready без projectExecution». Работа владельца не потеряна: не-codex гарн по-прежнему создаётся через `createHarnessAdapter`, его тест «creates for the selected harness...» сохранён (tests/integrator-fleet-runtime.test.ts).
     }
     const readiness = input.projectReadiness!;
     return {
@@ -427,6 +498,15 @@ export class IntegratorFleetRuntime {
         address, launchCwd: project.rootPath,
       },
     };
+  }
+
+  /** The identity of a project root: its canonical path, device and inode. */
+  private async rootIdentityOf(rootPath: string): Promise<string> {
+    try {
+      const root = await realpath(rootPath);
+      const details = await stat(root);
+      return JSON.stringify([root, details.dev, details.ino]);
+    } catch { return ""; }
   }
 
   private async restoreAccepted(operationId: string, address: IntegratorNativeAddress, project: CodexConfiguredProject): Promise<ScopedResolution> {
@@ -489,8 +569,8 @@ export class IntegratorFleetRuntime {
     };
   }
 
-  /** Resolves one project route for one explicitly selected harness. The route designates its primary harness; another harness is never substituted. */
-  private async resolveConfiguredProject(project: string, harness: FleetHarness): Promise<{ ok: true; project: ConfiguredProject } | { ok: false; reason: string }> {
+  /** Matches the one saved route of a project. The route designates its own harness; the caller decides what to do with it. */
+  private async matchRoute(project: string): Promise<{ ok: true; match: RouteMatch } | { ok: false; reason: string }> {
     let document: AutomationLaunchPolicyDocument;
     try { document = await this.options.policyStore.readDocument(); }
     catch { return { ok: false, reason: "project_route_policy_unavailable" }; }
@@ -507,6 +587,32 @@ export class IntegratorFleetRuntime {
     if (!rootPath.startsWith("/") || resolve(rootPath) !== rootPath) {
       return { ok: false, reason: "project_route_codex_unavailable" };
     }
+    return { ok: true, match: { document, rootPath, route } };
+  }
+
+  /**
+   * The route a consumer must request: the harness the project designates and the model of that harness.
+   * The values come from the same resolver the create path uses, so a caller never asks for a harness the
+   * route does not designate. A project without a route is named with the reason of the resolver, never thrown.
+   */
+  async projectRoute(projectId: string): Promise<IntegratorProjectRoute> {
+    const matched = await this.matchRoute(projectId);
+    if (!matched.ok) return { state: "unavailable", reason: matched.reason };
+    const designated = matched.match.route.harnesses[0];
+    const fleetHarness = designated && (fleetHarnesses as readonly string[]).includes(designated) ? designated as FleetHarness : undefined;
+    if (!fleetHarness || !matched.match.document.policy.allowedHarnesses.includes(fleetHarness)) {
+      return { state: "unavailable", reason: "project_route_harness_unavailable" };
+    }
+    const configured = await this.resolveConfiguredProject(projectId, fleetHarness, matched);
+    if (!configured.ok) return { state: "unavailable", reason: configured.reason };
+    return { state: "available", harness: configured.project.harness, model: configured.project.model };
+  }
+
+  /** Resolves one project route for one explicitly selected harness. The route designates its primary harness; another harness is never substituted. */
+  private async resolveConfiguredProject(project: string, harness: FleetHarness, matchedRoute?: { ok: true; match: RouteMatch }): Promise<{ ok: true; project: ConfiguredProject } | { ok: false; reason: string }> {
+    const matched = matchedRoute ?? await this.matchRoute(project);
+    if (!matched.ok) return { ok: false, reason: matched.reason };
+    const { document, rootPath, route } = matched.match;
     const routeHarness = route.harnesses[0];
     if (!routeHarness || routeHarness !== harness || !document.policy.allowedHarnesses.includes(harness)) {
       return { ok: false, reason: harness === "codex" ? "project_route_codex_unavailable" : "project_route_harness_unavailable" };
@@ -548,7 +654,7 @@ function validReadiness(
   return !!value && fresh && value.projectId === input.project && value.projectRoot === project.rootPath
     && value.state === "ready"
     && value.rootIdentity.length > 0 && value.policyRevision === project.etag
-    && value.hostId === hostId && value.harness === "codex" && value.model === project.model
+    && value.hostId === hostId && value.harness === project.harness && value.model === project.model
     && JSON.stringify(value.requiredTools) === JSON.stringify(project.nativeWebSearch === "live" ? ["web_search"] : [])
     && value.requiredTools.every(tool => value.availableTools.includes(tool)) && value.availableModels.includes(project.model)
     && value.resourceReady && value.runtimeInstanceId.length > 0

@@ -46,6 +46,16 @@ Public Mini cannot assume outgoing SSH keys exist. Its approved owner credential
 
 Mini ecd603e stopped after an artifact census deadline at5.012s/count14341, not RAM/CPU exhaustion. Recovery retains one active release plus the exact inactive f9b95ea rollback directory under promotion-backups/retained-inactive-<SHA>; moving it back to releases/<SHA> precedes selecting the saved prior config on rollback. No artifact bytes were deleted, limits raised, or shared native/browser restarted. Measured active71682153 plus rollback71682022 bytes remain below the original combined512MiB envelope; active census0.322s and both measurements0.514s. Keep cold rollback storage finite and immutable; do not treat moving arbitrary data outside the observed tree as a resource exemption. See .tmp/herder-fleet-20261010/mini-single-release-census-recovery.json for the exact restoration pointer.
 
+### The packages of a release are compared with the build of the manifest, not with the store of the node (23 October 2026)
+
+The acceptance of a node compares the packages of the release with the set of the build of the manifest, not with the store of the node. The manifest of the build pins the package lock of the build (`artifacts.package-lock.json`), and the rule the manifest itself names is the runtime set of that lock for this platform, without the dev packages. That set is the truth of the comparison. The store of the node is the state of the node: on a fleet node the release carries the packages of the farm of that node, the farm is never modified by a rollout, so the two sets differ by design and the difference is normal.
+
+Measured on the live nodes on release 8040df1e: the set of the build is 246 packages on 44, 88 and 100; the release of the fleet nodes carries 246 and the release of the owner carries 305, the extra 59 being the dev packages of the store of the builder. Before this change the check compared the release with the store named by `--store-node-modules`, and with no store named it fell back on the listing of the working directory: the fleet nodes were refused with `store=4 release=246 missing=4 extra=5` (the number is the listing of the directory the measurement ran in), while every fact of the release was sound. The check now names the node, the compared set, the source of truth and the real count of both directions.
+
+The refusals stay strict where they matter: a package of the set of the build that the release does not carry is a trimming of the release and refuses; a package of the release that was copied instead of hard linked refuses; the tool caches of the release must stay its own bytes. The packages the release carries beyond the set of the build are named as a warning and do not refuse, because the release of the owner carries the dev packages of the store of the builder. The optional packages of this platform are named as well: an optional dependency is not part of the guaranteed runtime set, so its absence is not a trimming.
+
+The store of the node is still named in the output, by the caller or by the layout of the fleet, because it is the place the workspace package must not come from. It is an observation, never the basis of the comparison.
+
 ## Current finite node candidates and rollback
 
 Linux44/88: RAM384MiB soft/768MiB hard, CPU1, swap0, Tasks128, NOFILE4096, IOWeight10; own temp128MiB/state64MiB/log16MiB, two immutable releases at most512MiB, host reserve4GiB and disk reserve2GiB. Actual post-upgrade44 memory72884224bytes/tasks9;88 memory106618880bytes/tasks10. SSH ingress tunnel has separate16/64MiB RAM, CPU5%, swap0, Tasks16, IOWeight10 and NOFILE128. Only verified local harnesses are advertised;44 OpenCode service and ZCode server payload were absent. The daemon joins the existing shared Codex socket and88's existing authenticated OpenCode4097; no private Codex writer or copied token.
@@ -357,3 +367,42 @@ and native ZCode completion. Task: `.agents/tasks/20261015-native-sqlite-file-bu
 
 Пока приложение не перезапущено или не публикует транспорт, адаптер остаётся
 read-only по доставке и честно отвечает отказом с причиной.
+
+## Устаревший pid нативного OpenCode (23 октября 2026)
+
+Записанный в `node-config.json` `opencodePid` — состояние, а не причина падения
+узла. На 88 `opencodePid=3688` пережил собственный перезапуск OpenCode: bootstrap
+читал `/proc/3688/cmdline`, получал `FileNotFoundError`, выходил с кодом 1, и
+`agent-herder-fleet.service` уходил в цикл `activating (auto-restart)`, пока
+запись не поправили вручную.
+
+Linux-узел (`deploy/fleet/node-bootstrap.py`):
+
+- записанный pid проверяется по факту наличия (`/proc/<pid>`), а не чтением
+  cmdline без проверки: отсутствие процесса — состояние, не исключение;
+- мёртвый или переиспользованный pid не валит узел: живой OpenCode того же
+  порта находится по процессам и по таблице ядра (`/proc/net/tcp`), а его
+  cmdline и environ доказывают, что это `opencode serve --port <порт>`;
+- если OpenCode не запущен вовсе, узел запускает его сам
+  (`opencode serve --hostname 127.0.0.1 --port <порт>`), берёт учётные данные
+  из защищённого `opencodeEnvFile` или из своего окружения и ждёт порт до 30 с;
+  поднятый процесс живёт в control group юнита, поэтому перезапуск юнита
+  перезапускает и его, а следующий bootstrap поднимает OpenCode снова;
+- только реальная неудача останавливает узел, и сообщение называет причину:
+  `could not start OpenCode on port <порт>: the opencode binary was not found`,
+  `... the process exited with <код>`, `... the port did not open in 30 seconds`,
+  `has no live OpenCode serve on port <порт>`;
+- после того как узел убедился, с кем работает, `opencodePid` обновляется на
+  живой (атомарная запись, 0600). Верная запись не переписывается заново.
+
+mac-узел (`deploy/fleet/mac-node-watchdog.py`): тот же класс дефекта — `ps -p`
+для отсутствующего процесса давал `native_observation_failed` вместо ответа
+«процесса нет». Watchdog допускает пустой результат `ps -p` (с проверкой
+отсутствия в ядре), находит живой OpenCode по слушающему сокету (`lsof`),
+доказывает его через `ps` и записывает живой pid в `node-config.json`.
+Создавать нативный демон watchdog не вправе (контракт файла): без живого
+OpenCode он отказывается и называет нужный порт.
+
+Проверка: `tests/fleet-bootstrap-stale-pid.test.py` (устаревший pid,
+переиспользованный pid, отсутствие OpenCode, отсутствие бинаря, режим
+`--check`) и два теста в `tests/harness-mesh-mac-watchdog.test.py`.
