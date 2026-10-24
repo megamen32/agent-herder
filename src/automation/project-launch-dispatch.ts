@@ -111,7 +111,7 @@ export type ProjectLaunchRunner = (request: {
   fallbackModels?: string[];
   /** Stable per operation and harness, so a repeat attempt is deduplicated natively. */
   inputId: string;
-  /** Only an explicit project route may authorize subscription quota fallback. */
+  /** Only an explicit project route may authorize the route quota fallback. */
   configuredRoute?: boolean;
   sourceSessions?: ProjectLaunchSourceSession[];
   requireSourceHostId?: boolean;
