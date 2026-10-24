@@ -9,9 +9,10 @@ import {createWebServer} from '../src/web/server.js';
 import {OpenCodeAdapter} from '../src/adapters/opencode.js';
 import {ZcodeAdapter} from '../src/adapters/zcode.js';
 import plugin from '../integrations/opencode/agent-herder-autopilot.js';
+import { turnHooksRuntimeOn } from './helpers/hooks-runtime.js';
 // Focused integration; actual store/HTTP/plugin and native read-only adapter contracts.
 // Expected3/max15s. Real model/race acceptance belongs to Root, never claimed here.
-afterEach(()=>vi.restoreAllMocks());
+afterEach(()=>{vi.restoreAllMocks();vi.unstubAllEnvs();});
 it('scoped context never enters regular deferred take, withDeferred, or a later identity',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'active-context-'));try{
   const store=new DeferredMessageStore(join(dir,'inbox.json'));
@@ -37,7 +38,7 @@ it('TTL is checked after awaited native guard, and offers are durable/query-only
   expect((await store.activeReceipt('opencode','s','fresh'))?.activeTurn?.state).toBe('hook_returned');
  }finally{await rm(dir,{recursive:true,force:true})}
 });
-it('OpenCode only reads native busy/root-user identity and current plugin context; no prompt POST',async()=>{
+it('OpenCode only reads native busy/root-user identity and current plugin context; no prompt POST',async()=>{ await turnHooksRuntimeOn();
  const id='opencode-'+randomUUID();let busy=true;let root='native-root-user';const mutations:string[]=[];
  const native=createServer((req,res)=>{res.setHeader('content-type','application/json');if(req.method!=='GET')mutations.push(req.url||'');
   const p=new URL(req.url||'','http://local').pathname;

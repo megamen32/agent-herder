@@ -4,11 +4,16 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { createWebServer } from '../src/web/server.js';
 import { OpenCodeAdapter } from '../src/adapters/opencode.js';
 import { deferredMessages } from '../src/deferred-messages.js';
 import { getHumanStopStore } from '../src/human-stop-store.js';
+import { turnHooksRuntimeOn } from './helpers/hooks-runtime.js';
+
+// The switch of the hooks lives in an isolated state directory: the test never
+// changes the state of the machine.
+afterEach(()=>{vi.unstubAllEnvs();});
 
 // Focused integration: real ESM physical paths + existing HTTP/store/native read adapter.
 // Expected 2s/max 10s; fake read-only native server, no provider/model or installed writes.
@@ -38,7 +43,7 @@ async function fixture() {
     async done(){if(priorEndpoint===undefined)delete process.env.AGENT_HERDER_URL;else process.env.AGENT_HERDER_URL=priorEndpoint;await getHumanStopStore().release('opencode',id);await close(server);await close(native);await rm(directory,{recursive:true,force:true});}};
 }
 
-it('fresh physical messages-only bridge coexists with a cached passive plugin and offers once',async()=>{
+it('fresh physical messages-only bridge coexists with a cached passive plugin and offers once',async()=>{ await turnHooksRuntimeOn();
   const f=await fixture();try{
     // Real module caching, in a private directory. This models a passive cached
     // legacy factory; it does not claim that live cached bytes were inspected.
@@ -76,7 +81,7 @@ it.each(['stop','idle','new-user'] as const)('global bridge refuses %s and never
   }finally{await f.done();}
 });
 
-it('two current bridge factories share the existing durable once-offer instead of duplicating context',async()=>{
+it('two current bridge factories share the existing durable once-offer instead of duplicating context',async()=>{ await turnHooksRuntimeOn();
   const f=await fixture();try{
     const second=await f.module.default({directory:f.directory});
     const nonce='ACTIVE-'+randomUUID();await f.adapter.sendActiveMessage(f.id,{message:nonce,inputId:'once'});
@@ -87,7 +92,7 @@ it('two current bridge factories share the existing durable once-offer instead o
   }finally{await f.done();}
 });
 
-it('an offered context with a lost ACK is receipt-only, never fetched again as a retry',async()=>{
+it('an offered context with a lost ACK is receipt-only, never fetched again as a retry',async()=>{ await turnHooksRuntimeOn();
   const f=await fixture(),originalFetch=globalThis.fetch;
   const fetching=vi.spyOn(globalThis,'fetch').mockImplementation((input,init)=>{
     if(new URL(String(input)).pathname==='/api/coordination/inbox-ack')return Promise.reject(new Error('simulated lost ACK'));
@@ -103,7 +108,7 @@ it('an offered context with a lost ACK is receipt-only, never fetched again as a
   }finally{fetching.mockRestore();await f.done();}
 });
 
-it('a changed output root during the context await refuses the old offer without replay',async()=>{
+it('a changed output root during the context await refuses the old offer without replay',async()=>{ await turnHooksRuntimeOn();
   const f=await fixture(),output=f.output(),originalFetch=globalThis.fetch;
   const fetching=vi.spyOn(globalThis,'fetch').mockImplementation(async(input,init)=>{
     const response=await originalFetch(input,init);
