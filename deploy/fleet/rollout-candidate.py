@@ -14,9 +14,10 @@ What happens on the node:
     budget of releases/ holds: at most two directories and 512 MiB;
   * the release is unpacked into releases/<sha>;
   * the node is switched to it: on a fleet node the `current` symlink and the
-    sourceSha of node-config.json, on the owner node the systemd drop-in that
-    points at the release - the working directory of the owner node stays the
-    checkout, the live data paths must not move;
+    sourceSha of node-config.json, on the owner node the `current` symlink, the
+    sourceSha of node-config.json and the systemd drop-in that points at the
+    release - the working directory of the owner node stays the checkout, the
+    live data paths must not move;
   * the node is restarted and the port is waited for;
   * the point of rollback stays real: on the owner node the saved drop-in
     points at the release that actually exists, wherever it now lives.
@@ -212,6 +213,21 @@ def unpack_release(archive: Path, release: Path) -> None:
             shutil.move(str(entry), str(target))
 
 
+def switch_current(catalog: Path, sha: str) -> None:
+    """The `current` symlink names the release that is live now.
+
+    The link is moved with rename(2): a link that is removed and created
+    again leaves a moment where `current` names nothing. The target is the
+    relative name the builder writes: `releases/<sha>`.
+    """
+    link = catalog / "current"
+    temporary = catalog / ".current.new"
+    if temporary.is_symlink() or temporary.exists():
+        temporary.unlink()
+    os.symlink(os.path.join("releases", sha), temporary)
+    os.rename(temporary, link)
+
+
 def node_side_fleet(arguments) -> int:
     fleet = Path(arguments.fleet_dir).expanduser()
     sha = arguments.sha
@@ -269,6 +285,11 @@ def node_side_owner(arguments) -> int:
             if line.startswith("ExecStart=") and "dist/index.js" in line:
                 previous = line.split("=", 1)[1].strip()
     unpack_release(Path(arguments.archive), release)
+    # The `current` symlink names the release that is live now. It is moved
+    # before the release that was live is sent to rollback/, so the link never
+    # names a directory that is gone: after the rollout it names the release
+    # of this rollout, not the place the old one moved to.
+    switch_current(catalog, sha)
     # The owner node keeps one release directory: the new one. The release that
     # is live now moves to rollback/ with its bytes, and the saved drop-in is
     # rewritten below to the place it moved to, so the rollback stays real.
@@ -394,11 +415,14 @@ def main() -> int:
             print("  2. unpack the release into releases/" + arguments.sha)
             if node["kind"] == "owner":
                 print("  3. write the native values of the node into node-config.json (sourceSha only changes)")
-                print("  4. write the drop-in, daemon-reload, restart " + node["unit"])
+                print("  4. point current at releases/" + arguments.sha)
+                print("  5. write the drop-in, daemon-reload, restart " + node["unit"])
                 print("     working directory stays " + expand(node["workingDirectory"]))
+                last_step = 5
             else:
                 print("  3. rollout-node.py: packages, payload, switch, restart, rollback proof")
-            print("  4. the acceptance is a separate command: accept-node.py")
+                last_step = 3
+            print(f"  {last_step + 1}. the acceptance is a separate command: accept-node.py")
             return 0
 
         remote_archive = f"/tmp/rel-{arguments.sha}.tar"
