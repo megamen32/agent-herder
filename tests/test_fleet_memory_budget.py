@@ -8,6 +8,7 @@ the unit template and its drop-in.
 
 Expected 1s. Pure file parsing, no service, no database.
 """
+import json
 import re
 import unittest
 from pathlib import Path
@@ -48,6 +49,28 @@ class FleetMemoryBudgetTest(unittest.TestCase):
 
     def test_memory_dropin_exists_and_is_shipped(self):
         self.assertTrue((DEPLOY / '30-memory.conf').is_file())
+
+
+class FleetMemoryBudgetCoverageTest(unittest.TestCase):
+    """L64: node 44 carries the budget of node 88 from one and the same source.
+
+    The budget is a drop-in of the fleet unit, so it survives a reinstall only
+    when its bytes live in the repository. One file serves every fleet node
+    that carries it; a per-node copy would be a second truth.
+    """
+
+    def test_shared_dropin_source_names_both_fleet_nodes(self):
+        text = (DEPLOY / '30-memory.conf').read_text()
+        for node in ('44', '88'):
+            self.assertRegex(text, r'(?m)^#.*\b' + node + r'\b',
+                             'the shared memory drop-in must name node ' + node)
+
+    def test_fleet_nodes_44_and_88_share_one_unit(self):
+        topology = json.loads((DEPLOY / 'nodes.json').read_text())
+        fleet = {node['id']: node for node in topology['nodes'] if node.get('kind') == 'fleet'}
+        self.assertEqual(sorted(fleet), ['44', '88'])
+        self.assertEqual({node['unit'] for node in fleet.values()},
+                         {'agent-herder-fleet.service'})
 
 
 if __name__ == '__main__':
