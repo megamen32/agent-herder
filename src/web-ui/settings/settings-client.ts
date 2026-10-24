@@ -321,6 +321,14 @@ export function baseVersions(view: SettingsView, ids: string[]): Record<string, 
 /** The state of one node of the fleet, in the words of the owner. */
 export type CommonSettingsNodeStatus = "подтвердил" | "расходится" | "не подтвердил";
 
+/**
+ * What the owner knows about one node of the fleet.
+ *
+ * Four facts and not two: applied, diverged, not applied and unreachable. A
+ * node that did not answer is unreachable, and it is never shown as applied.
+ */
+export type CommonSettingsNodeFact = "применена" | "расходится" | "не применена" | "недоступна";
+
 /** One deviation of a node from the common value. */
 export type CommonSettingsConflict = {
   /** The setting the node holds differently. */
@@ -348,7 +356,12 @@ export type CommonSettingsConflict = {
 /** One node of the fleet, as the owner reads it. */
 export type CommonSettingsNodeView = {
   hostId: string;
-  optIn: boolean;
+  /** `null` — the node did not answer and nothing is known about it. */
+  optIn: boolean | null;
+  /** Whether the node answered the round of asking. */
+  reachable: boolean;
+  /** What is known about the node: applied, diverged, not applied, unreachable. */
+  fact: CommonSettingsNodeFact;
   status: CommonSettingsNodeStatus;
   appliedRevision: string | null;
   confirmedAt: string | null;
@@ -378,6 +391,8 @@ export type CommonSettingsView = {
   confirmed: number;
   total: number;
   unconfirmed: string[];
+  /** The nodes that did not answer the round of asking, by name. */
+  unreachable: string[];
   checkedAt: string;
   error?: string;
 };
@@ -418,4 +433,15 @@ export async function restoreCommonSettingsLocal(hostId?: string): Promise<Commo
     headers: { "content-type": "application/json" },
     body: JSON.stringify(hostId ? { hostId } : {}),
   });
+}
+
+/**
+ * Whether the change touched a setting that travels to the nodes of the fleet.
+ *
+ * The owner changes a common setting in one place, and the panel asks the
+ * fleet to take the new document only when the change was common.
+ */
+export function touchesCommonSettings(view: SettingsView | null, ids: readonly string[]): boolean {
+  const keys = view?.commonSettings?.keys ?? [];
+  return ids.some((id) => keys.some((key) => id === `herder.env/${key}`));
 }

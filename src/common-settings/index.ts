@@ -84,6 +84,7 @@ export {
   readCommonSettingsFleet,
   restoreLocalCommonSettings,
   type CommonSettingsFleetView,
+  type CommonSettingsNodeFact,
   type CommonSettingsNodeView,
 } from "./service.js";
 
