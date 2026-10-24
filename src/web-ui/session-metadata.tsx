@@ -15,6 +15,48 @@ export interface SessionMetadataLabel {
   stage?: string;
 }
 
+/** The answer of POST /api/sessions/label: the label is stored even when the name is not changed. */
+export interface SessionLabelSaveAnswer {
+  ok?: boolean;
+  title?: string;
+  nativeTitle?: string;
+  renamed?: boolean;
+  renameError?: string;
+  error?: string;
+}
+
+/** What the panel shows after a save: the text and whether it is a failure. */
+export interface SessionLabelSaveOutcome {
+  message: string;
+  failed: boolean;
+}
+
+/**
+ * The outcome of a save follows the field `renamed`, not the presence of an
+ * error: a harness without a native rename channel still stores the label,
+ * so the panel says so calmly instead of crying about a failure.
+ */
+export function sessionLabelSaveOutcome(answer: SessionLabelSaveAnswer, status: number): SessionLabelSaveOutcome {
+  const accepted = status >= 200 && status < 300;
+  if (!accepted || answer.ok !== true) {
+    return { failed: true, message: answer.error || `Нативное переименование не удалось (${status}).` };
+  }
+  if (answer.renamed === true) {
+    return { failed: false, message: `Сохранено. Название сессии: «${answer.nativeTitle ?? answer.title ?? ""}».` };
+  }
+  const reason = answer.renameError?.trim() ? answer.renameError : "у среды нет нативного канала переименования";
+  return { failed: false, message: `Метка сохранена. Имя сессии не изменилось — ${reason}` };
+}
+
+/** The line under the fields: a calm hint for a stored label, an error only for a real refusal. */
+export function SessionLabelNotice({ message, failed }: { message: string; failed: boolean }): React.ReactElement {
+  return (
+    <small className={failed ? "autopilot-error" : "settings-hint"} role={failed ? "alert" : "status"}>
+      {message}
+    </small>
+  );
+}
+
 interface SessionMetadataProps {
   sessionId: string;
   harness: string;
@@ -59,18 +101,10 @@ export function SessionMetadata({ sessionId, harness }: SessionMetadataProps): R
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({ sessionId, harness, project, goal, stage }),
       });
-      const data = (await response.json().catch(() => ({}))) as {
-        ok?: boolean;
-        title?: string;
-        error?: string;
-      };
-      if (!response.ok || data.ok !== true) {
-        setFailed(true);
-        setMessage(data.error || `Нативное переименование не удалось (${response.status}).`);
-        return;
-      }
-      setFailed(false);
-      setMessage(`Сохранено. Название сессии: «${data.title ?? ""}».`);
+      const data = (await response.json().catch(() => ({}))) as SessionLabelSaveAnswer;
+      const outcome = sessionLabelSaveOutcome(data, response.status);
+      setFailed(outcome.failed);
+      setMessage(outcome.message);
     } catch (error) {
       setFailed(true);
       setMessage(`Нативное переименование не удалось: ${error instanceof Error ? error.message : String(error)}`);
@@ -83,7 +117,8 @@ export function SessionMetadata({ sessionId, harness }: SessionMetadataProps): R
     <div className="settings-block session-metadata" aria-label="Проект, цель и этап">
       <span className="eyebrow">ПРОЕКТ · ЦЕЛЬ · ЭТАП</span>
       <small className="settings-hint">
-        Название сессии собирается из этих трёх полей и записывается в нативное имя сессии среды.
+        ПРОЕКТ, ЦЕЛЬ и ЭТАП сохраняются в Herder. Имя сессии меняется только там, где у среды есть нативный канал
+        переименования.
       </small>
       <label className="herder-settings-field">
         Проект
@@ -99,10 +134,10 @@ export function SessionMetadata({ sessionId, harness }: SessionMetadataProps): R
       </label>
       <div className="inspector-actions">
         <button type="button" className="quiet-button" disabled={saving} onClick={() => void save()}>
-          {saving ? "Сохраняю…" : "Сохранить и переименовать"}
+          {saving ? "Сохраняю…" : "Сохранить"}
         </button>
       </div>
-      {message ? <small className={failed ? "autopilot-error" : "settings-hint"} role={failed ? "alert" : "status"}>{message}</small> : null}
+      {message ? <SessionLabelNotice message={message} failed={failed} /> : null}
     </div>
   );
 }
