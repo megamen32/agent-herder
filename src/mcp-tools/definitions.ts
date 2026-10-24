@@ -102,8 +102,8 @@ export const SendMessageSchema = z.object({
   fromSessionId: z.string().optional().describe("Supply your full native sender session ID for AI messages. Herder checks that session for reply attribution; this does not authenticate the caller. Omitted/unverified sources are labelled unknown."),
   fromHarness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().describe("Declared sender harness for checked reply attribution, not caller authentication."),
   meshSender: MeshSenderSchema.optional().describe("Declared remote mesh sender for the full-address automatic budget and attribution; not authentication. Takes precedence over legacy sender fields without local sender lookup. Cannot claim humanRequested."),
-  mode: z.enum(["queue", "steer", "sync"]).optional().default("sync").describe(
-    "queue = fire-and-forget, steer = redirect agent, sync = wait for response"
+  mode: z.enum(["queue", "steer", "sync"]).optional().default("steer").describe(
+    "For ordinary inter-agent exchange use explicit mode:\"steer\" (default): redirect the current active turn. queue is only intentional deferred work after current work finishes; it may wait hours and is not immediate exchange. sync waits for a response."
   ),
 });
 
@@ -396,7 +396,7 @@ export const toolDefinitions: Tool[] = [
     name: "send_message",
     description:
       "Ordinary coordination sends only to an active native turn; it never wakes an inactive/completed target or stores deferred debt. humanRequested=true is for an explicit human new task/send/resume. Agent Herder automatically injects active coordination notes for the target workspace before delivery. Supports three modes: " +
-      "'sync' (wait for response), 'queue' (fire-and-forget), 'steer' (redirect agent's direction).",
+      "Use explicit mode:\"steer\" for ordinary inter-agent exchange; steer is the default and redirects the current active turn. 'queue' is only intentional deferred work after current work finishes, may wait hours, and is not immediate exchange. 'sync' waits for response.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -413,7 +413,7 @@ export const toolDefinitions: Tool[] = [
           harness: { type: "string", minLength: 1, maxLength: 64, pattern: "^[^\\x00-\\x1f\\x7f]*$" },
           nativeSessionId: { type: "string", minLength: 1, maxLength: 512, pattern: "^[^\\x00-\\x1f\\x7f]*$" },
         }, required: ["hostId", "harness", "nativeSessionId"], description: "Declared automatic mesh sender; full-address budget, no local lookup, not authentication or human origin. Overrides legacy sender attribution when supplied." },
-        mode: { type: "string", enum: ["queue", "steer", "sync"], default: "sync", description: "Delivery mode" },
+        mode: { type: "string", enum: ["queue", "steer", "sync"], default: "steer", description: "Use explicit steer for ordinary exchange (default). queue intentionally waits until current work finishes and may wait hours; sync waits for response." },
       },
       required: ["sessionId", "message"],
     },

@@ -346,7 +346,7 @@ export function registerSessionTools(server: McpServer, deps: {
     return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
   });
 
-  server.registerTool("send_message", { description: "Send a message to an agent. Ordinary coordination is active-turn-only, including queue mode: inactive/completed targets return skipped_inactive without new turns or deferred debt. Explicit humanRequested=true permits a human new task/send/resume. inputId deduplicates retries for 24 hours. Active coordination notes are injected automatically. fromSessionId/fromHarness add verified reply attribution, do not authenticate the caller. Modes: sync (wait), queue (fire-and-forget), steer (redirect).", inputSchema: SendMessageSchema }, async (args) => {
+  server.registerTool("send_message", { description: "Send a message to an agent. Ordinary coordination is active-turn-only, including queue mode: inactive/completed targets return skipped_inactive without new turns or deferred debt. Explicit humanRequested=true permits a human new task/send/resume. inputId deduplicates retries for 24 hours. Active coordination notes are injected automatically. fromSessionId/fromHarness add verified reply attribution, do not authenticate the caller. For ordinary inter-agent exchange use explicit mode:\"steer\" (default) to redirect the current active turn. queue is only intentional deferred work after current work finishes; it may wait hours and is not immediate exchange. sync waits for response.", inputSchema: SendMessageSchema }, async (args) => {
     const peer = selectedRemotePeer(args.hostId);
     if (peer) {
       if (!args.harness) throw new Error("remote_session_host_and_harness_required");
