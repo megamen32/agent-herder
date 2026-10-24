@@ -121,4 +121,17 @@ describe("durable exact-thread cadence",()=>{
     expect(supervisor.sendMessage).toHaveBeenCalledWith("codex","exact-thread",expect.objectContaining({origin:"automation",inputId:row.id+":1",queue:true}));
     expect((await runtime.list())[0].result).toMatchObject({status:"accepted",sessionId:"exact-thread"});
   });
+  it("wakes a ChatGPT chat on the same durable schedule",async()=>{
+    const f=await fixture();
+    const getSession=vi.fn(async()=>({id:"route:abc",status:"idle",needsPermission:false,meta:{}}));
+    const adapters=new Map([["chatgpt",{getSession} as unknown as HarnessAdapter]]);
+    const supervisor={isAutomationHeld:vi.fn(async()=>false),sendMessage:vi.fn(async()=>({ok:true,admitted:true,sessionId:"route:abc"}))};
+    const runtime=createCadenceRuntime(adapters,supervisor,f.options.path);
+    const row=await runtime.schedule({sessionId:"route:abc",requestId:"task",harness:"chatgpt"});
+    expect(row.harness).toBe("chatgpt");
+    await writeFile(f.options.path,JSON.stringify([{...row,nextAt:new Date(0).toISOString()}]));
+    await runtime.sweep();
+    expect(supervisor.sendMessage).toHaveBeenCalledWith("chatgpt","route:abc",expect.objectContaining({origin:"automation",inputId:row.id+":1",queue:true}));
+    expect((await runtime.list())[0].result).toMatchObject({status:"accepted",sessionId:"route:abc"});
+  });
 });

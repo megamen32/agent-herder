@@ -1,6 +1,7 @@
 import type {
   AgentSession,
   ControlResult,
+  CreateSessionOptions,
   HarnessAdapter,
   HarnessCapabilities,
   ListSessionsOptions,
@@ -14,8 +15,10 @@ export const CHATGPT_HARNESS_CWD = "/home/roomhacker/.chatgpt";
 
 /**
  * ChatGPT adapter over Agent Herder's already-owned ChatGPT browser driver.
- * Existing ChatGPT conversations are sessions. The adapter never opens a
- * second browser lease and intentionally does not create chats yet.
+ *
+ * Existing ChatGPT conversations are sessions, and the adapter can create one
+ * more disposable chat when a session is launched. It never opens a second
+ * browser lease: the chat page belongs to the driver.
  */
 export class ChatGptAdapter implements HarnessAdapter {
   readonly type = "chatgpt" as const;
@@ -27,7 +30,7 @@ export class ChatGptAdapter implements HarnessAdapter {
     terminate: false,
     recover: false,
     fork: false,
-    modelSwitch: false,
+    modelSwitch: true,
     subagents: false,
     events: false,
   };
@@ -43,16 +46,44 @@ export class ChatGptAdapter implements HarnessAdapter {
   }
 
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
-    if (options.cwd && options.cwd !== this.cwd) return [];
+    void options;
     return (await this.driver.listChats()).map((chat) => this.toSession(chat));
   }
 
   async findNamedSessions(name: string, cwd: string): Promise<AgentSession[]> {
-    if (cwd !== this.cwd) return [];
+    void cwd;
     const normalized = name.trim();
     return (await this.driver.listChats())
       .filter((chat) => chat.title.trim() === normalized)
       .map((chat) => this.toSession(chat));
+  }
+
+  /** Launch one ChatGPT session: a new disposable chat becomes the session. */
+  async createSession(options: CreateSessionOptions): Promise<AgentSession> {
+    if (!this.driver.createChat) {
+      throw new Error("This ChatGPT driver does not create chats");
+    }
+    const chat = await this.driver.createChat({ title: options.name });
+    return {
+      ...this.toSession(chat),
+      meta: {
+        ...this.toSession(chat).meta,
+        ...(options.model ? { model: options.model } : {}),
+      },
+    };
+  }
+
+  /** Models the page's own model picker offers. */
+  async listModels(): Promise<string[]> {
+    return this.driver.listModels ? this.driver.listModels() : [];
+  }
+
+  /** Select one model for one chat through the page's own picker. */
+  async changeModel(sessionId: string, model: string): Promise<{ ok: boolean; error?: string }> {
+    if (!this.driver.changeModel) {
+      return { ok: false, error: "This ChatGPT driver does not expose a model picker" };
+    }
+    return this.driver.changeModel({ chatId: sessionId, model });
   }
 
   async getSession(id: string): Promise<AgentSession | null> {
@@ -104,7 +135,7 @@ export class ChatGptAdapter implements HarnessAdapter {
       meta: {
         unread: chat.unread,
         sourceRoute: chat.sourceRoute,
-        transport: "browserclaw-owned-page",
+        transport: chat.sourceRoute ? "browserclaw-owned-page" : "owned-chat-page",
         timestampSemantics: chat.updatedAtSemantics ?? "native-or-visible-order",
       },
     };

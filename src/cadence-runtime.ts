@@ -6,12 +6,14 @@ interface Supervisor {
 }
 export function createCadenceRuntime(adapters:Map<string,HarnessAdapter>,supervisor:Supervisor,path:string):CadenceScheduler {
   return new CadenceScheduler({path,
-    inspect:async id=>{
+    inspect:async (id,harness)=>{
+      const owner=harness??"codex";
       try {
-      if(await supervisor.isAutomationHeld("codex",id))return "held";
-      const session=await adapters.get("codex")?.getSession(id);
-      if(!session || session.meta?.nativeTurnStateUnavailable===true || session.meta?.nativeStateObserved===false)return "unavailable";
-      if(await supervisor.isAutomationHeld("codex",id))return "held";
+      if(await supervisor.isAutomationHeld(owner,id))return "held";
+      const session=await adapters.get(owner)?.getSession(id);
+      if(!session)return "unavailable";
+      if(owner==="codex" && (session.meta?.nativeTurnStateUnavailable===true || session.meta?.nativeStateObserved===false))return "unavailable";
+      if(await supervisor.isAutomationHeld(owner,id))return "held";
       if(session.status==="running" || session.status==="needs_input" || session.needsPermission || session.meta?.activeTurnId || session.meta?.nativeActiveTurnId)return "busy";
       // CLI index describes quiescent sessions as stopped; explicit stops are
       // independently fenced by isAutomationHeld/adapter native stop evidence.
@@ -19,7 +21,7 @@ export function createCadenceRuntime(adapters:Map<string,HarnessAdapter>,supervi
       } catch { return "unavailable"; }
     },
     deliver:async row=>{
-      const result=await supervisor.sendMessage("codex",row.sessionId,{message:row.message,origin:"automation",inputId:row.inputId!,queue:true});
+      const result=await supervisor.sendMessage(row.harness??"codex",row.sessionId,{message:row.message,origin:"automation",inputId:row.inputId!,queue:true});
       if(result.admissionUnknown || result.delivery==="deferred")return {status:"unknown",receipt:{...result}};
       if(result.admitted || result.ok)return {status:"accepted",receipt:{...result}};
       return {status:result.notSubmitted?"rejected":"unknown",receipt:{...result}};
