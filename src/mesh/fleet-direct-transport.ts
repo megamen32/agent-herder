@@ -15,6 +15,30 @@ export const directFleetPeers:readonly DirectPeer[]=[
  // The Mac maintains this authenticated reverse route even when it leaves the LAN.
  {hostId:'MacBook-Pro-User.local',sshHost:'127.0.0.1',sshPort:2222,nativeUser:'user',port:18789,python:'/opt/homebrew/bin/python3'},
 ];
+/** Reads the fleet injected into this process. An unusable value leaves the fleet empty: the process must never fall back to live neighbours. */
+function injectedFleetPeers():readonly DirectPeer[]|undefined{
+ const raw=process.env.AGENT_HERDER_FLEET_PEERS;
+ if(raw===undefined||raw.trim()==="")return undefined;
+ try{
+  const parsed=JSON.parse(raw);
+  if(!Array.isArray(parsed))throw new Error('fleet_peers_not_a_list');
+  return parsed.map((entry:Partial<DirectPeer>)=>{
+   if(typeof entry.hostId!=='string'||!entry.hostId.trim())throw new Error('fleet_peer_host_missing');
+   if(typeof entry.sshHost!=='string'||!entry.sshHost.trim())throw new Error('fleet_peer_ssh_host_missing');
+   if(typeof entry.nativeUser!=='string'||!entry.nativeUser.trim())throw new Error('fleet_peer_native_user_missing');
+   if(!Number.isInteger(entry.port))throw new Error('fleet_peer_port_invalid');
+   return {hostId:entry.hostId.trim(),sshHost:entry.sshHost.trim(),...(entry.sshPort===undefined?{}:{sshPort:entry.sshPort}),nativeUser:entry.nativeUser.trim(),port:entry.port as number,python:typeof entry.python==='string'&&entry.python.trim()?entry.python:'/usr/bin/python3'};
+  });
+ }catch(error){
+  console.error(`[agent-herder] AGENT_HERDER_FLEET_PEERS is unusable (${error instanceof Error?error.message:String(error)}); the fleet stays empty`);
+  return [];
+ }
+}
+/** The fleet this process knows. An injected fleet replaces the installed one, so a unit test states its own topology instead of inheriting the live one. */
+export function fleetPeers():readonly DirectPeer[]{
+ const injected=injectedFleetPeers();
+ return injected??directFleetPeers;
+}
 /** Reuse only authenticated exact-peer connections; idle masters expire in 30s. */
 export function sshMultiplexOptions(peer:DirectPeer):string[]{
  const uid=process.getuid?.();if(uid===undefined)throw new Error('direct_control_owner_unavailable');
@@ -129,11 +153,11 @@ else:
 let sharedFleetTransport:GptAdminTransport|undefined;
 /** The peer transport of the fleet that the native mesh operations work with. */
 export function fleetDirectTransport():GptAdminTransport{
- if(!sharedFleetTransport)sharedFleetTransport=new FleetDirectTransport(directFleetPeers.filter(peer=>peer.hostId!=="MacBook-Pro-User.local"));
+ if(!sharedFleetTransport)sharedFleetTransport=new FleetDirectTransport(fleetPeers().filter(peer=>peer.hostId!=="MacBook-Pro-User.local"));
  return sharedFleetTransport;
 }
 export class FleetDirectTransport implements GptAdminTransport {
- constructor(private readonly peers:readonly DirectPeer[]=directFleetPeers,private readonly deadlineMs=10000){
+ constructor(private readonly peers:readonly DirectPeer[]=fleetPeers(),private readonly deadlineMs=10000){
   if(!peers.length||peers.length>5||new Set(peers.map(p=>p.hostId)).size!==peers.length)throw new Error('direct_peer_limit');
  }
  async discover():Promise<unknown>{return {servers:this.peers.flatMap(p=>[{server_id:`shell:${p.hostId}`,kind:'virtual_shell',status:'configured'},{server_id:`mcp:shell:${p.hostId}:AgentHerder`,kind:'child_mcp',status:'configured'}])};}

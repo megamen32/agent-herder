@@ -17,7 +17,13 @@ import {
   type CommonSettingsTarget,
 } from "./apply.js";
 import { readOwnerDocument, type CommonSettingsDocument, type CommonSettingsHooksLever } from "./document.js";
-import { CommonSettingsStateStore, type CommonSettingsNodeState, type CommonSettingsNodeStatus, type CommonSettingsRole } from "./node-state.js";
+import {
+  CommonSettingsStateStore,
+  redactCommonSettingsConflicts,
+  type CommonSettingsNodeState,
+  type CommonSettingsNodeStatus,
+  type CommonSettingsRole,
+} from "./node-state.js";
 import { catchUpCommonSettings } from "./service.js";
 import type { CommonSettingsTransport } from "./transport.js";
 
@@ -98,7 +104,7 @@ export class CommonSettingsNodeService {
       optIn: state.optIn,
       appliedRevision: state.appliedRevision,
       appliedAt: state.appliedAt,
-      conflicts: state.conflicts,
+      conflicts: redactCommonSettingsConflicts(state.conflicts),
     };
   }
 

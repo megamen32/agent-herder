@@ -18,6 +18,8 @@ import {isDirectOwnerRequest,createManagedFleetHttpGuard,createConfiguredFleetAp
 import {FleetCabinetService} from '../src/mesh/fleet-service.js';
 import {registerFleetNodeTools} from '../src/mesh/fleet-node.js';
 const peer={hostId:'roomhacker-server-88',sshHost:'192.168.2.75',nativeUser:'roomhacker',port:18791,python:'/usr/bin/python3'};
+// The personal Mac answers through the authenticated reverse route of server-100.
+const macPeer={hostId:'MacBook-Pro-User.local',sshHost:'127.0.0.1',sshPort:2222,nativeUser:'user',port:18789,python:'/opt/homebrew/bin/python3'};
 // An empty state dir means the default quota policy: enabled, reserve 20%.
 const POLICY_DIR='/tmp/herder-quota-policy-none';
 beforeEach(async()=>{const {tmpdir}=await vi.importActual<typeof import('node:os')>('node:os');state.home=await mkdtemp(join(tmpdir(),'direct-'));state.spawns=[];state.reply={tools:[]};state.mode='ok';state.auth=false;state.host='server-44';state.stderr='';vi.stubEnv('AGENT_HERDER_AUTOPILOT_STATE_DIR',POLICY_DIR);});
@@ -25,7 +27,7 @@ afterEach(async()=>{await rm(state.home,{recursive:true,force:true});vi.useRealT
 describe('owner direct route local logic only',()=>{
  it('keeps personal Mac in native discovery while workspace mutation scope stays separate',()=>{
   const entry=readFileSync(new URL('../src/index.ts',import.meta.url),'utf8');
-  expect(entry).toContain('registerHarnessMeshTools(server, { adapters, gptadmin: new FleetDirectTransport(directFleetPeers)');
+  expect(entry).toContain('registerHarnessMeshTools(server, { adapters, gptadmin: new FleetDirectTransport(fleetPeers())');
   expect(entry).toContain('registerWorkspaceTools(server, { transport: workspaceTransport })');
  });
  it('gives a native snapshot thirty seconds plus transport margin',async()=>{
@@ -38,7 +40,7 @@ describe('owner direct route local logic only',()=>{
  });
  // Focused integration expected1s/max3s: roaming Mac must use the authenticated canonical reverse route, never its LAN IP.
  it.each(['roomhacker-server-100','server-44'])('routes Mac through the existing server100 reverse SSH from %s',async(host)=>{
-  state.host=host;await new FleetDirectTransport().call('mcp:shell:MacBook-Pro-User.local:AgentHerder','fleet_node_info',{});
+  state.host=host;await new FleetDirectTransport([macPeer]).call('mcp:shell:MacBook-Pro-User.local:AgentHerder','fleet_node_info',{});
   const call=state.spawns[0];expect(call.args).toEqual(expect.arrayContaining(['-p','2222','127.0.0.1','StrictHostKeyChecking=yes','BatchMode=yes']));expect(call.args).not.toContain('192.168.2.8');expect(call.body.hostId).toBe('MacBook-Pro-User.local');expect(call.body.nativeUser).toBe('user');
   if(host==='server-44')expect(call.args).toEqual(expect.arrayContaining(['-J','roomhacker@192.168.2.100']));else expect(call.args).not.toContain('-J');
  });
