@@ -57,6 +57,9 @@ describe("unit test fleet isolation", () => {
     const session: AgentSession = { id: "on-44", harness: "codex", status: "running", title: "on-44", cwd: "/w/44", hostId: "server-44", lastActivity: new Date().toISOString(), needsPermission: false };
     const { callbacks } = fixture([session], []);
     const answer = await callbacks.get("list_agents")!({ hostId: "Server-44" });
+    console.log("fleet of the test environment:", JSON.stringify(fleetPeers().map((peer) => `${peer.hostId}@${peer.sshHost}:${peer.sshPort ?? 22}`)));
+    console.log("answer of the browse of server-44:", JSON.stringify(answer.structuredContent.sessions.map((item: AgentSession) => item.id)));
+    console.log("processes started:", JSON.stringify(started.commands));
     expect(answer.structuredContent.sessions.map((item: AgentSession) => item.id)).toEqual(["on-44"]);
     expect(started.commands).toEqual([]);
   });
@@ -66,6 +69,7 @@ describe("unit test fleet isolation", () => {
     const { callbacks } = fixture([session], fleetPeers());
     await expect(callbacks.get("list_agents")!({ hostId: "Server-44" })).rejects.toThrow("unit_test_forbids_process_start");
     // The route that was taken points at the machine of the test, never at the neighbour of the installation.
+    console.log("route that was taken:", JSON.stringify(started.commands));
     expect(started.commands.join("\n")).not.toContain("192.168.2.5");
     expect(started.commands.join("\n")).not.toContain("192.168.2.75");
   });
