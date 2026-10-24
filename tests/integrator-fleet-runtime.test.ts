@@ -377,7 +377,7 @@ describe("integrator Fleet runtime", () => {
     await runtime.dispose();
   });
 
-  // РЕШЕНО 24.10.2026 слиянием (лист L19): его WIP добавил тест «creates for the selected harness: the reservation carries the harness and the adapter writes the created receipt» — он сохранён (автослияние, строка 380). Спорные хунки — только наши добавленные тесты маршрута (L68/L69/L70); его тест не тронут.
+  // РЕШЕНО 24.10.2026 слиянием (лист L19): его WIP добавил тест «creates for the selected harness: the reservation carries the harness and the adapter writes the created receipt» — он сохранён (автослияние, строка 381). Спорные хунки — только наши добавленные тесты маршрута (L68/L69/L70); его тест не тронут.
   it("creates for the selected harness: the reservation carries the harness and the adapter writes the created receipt", async () => {
     const f = await setup();
     const model = "anthropic/claude-sonnet-4-5";
@@ -461,7 +461,7 @@ describe("integrator Fleet runtime", () => {
     }
   });
 
-  // РЕШЕНО 24.10.2026 слиянием (лист L19): его WIP добавил тест «creates for the selected harness: the reservation carries the harness and the adapter writes the created receipt» — он сохранён (автослияние, строка 380). Спорные хунки — только наши добавленные тесты маршрута (L68/L69/L70); его тест не тронут.
+  // РЕШЕНО 24.10.2026 слиянием (лист L19): его WIP добавил тест «creates for the selected harness: the reservation carries the harness and the adapter writes the created receipt» — он сохранён (автослияние, строка 381). Спорные хунки — только наши добавленные тесты маршрута (L68/L69/L70); его тест не тронут.
   it("never creates for an existing unknown operation and never falls through an unresolved scoped address", async () => {
     const f = await setup();
     const reserved = await f.bindingStore.reserve({ operationId: "f".repeat(64), hostId: hostname(), harness: "codex" });
