@@ -1,5 +1,6 @@
 import React from "react";
 
+import { StateSeparationRows } from "./state-separation-rows.js";
 import "./hooks-section.css";
 
 /**
@@ -463,6 +464,10 @@ export interface HooksPanelProps {
   onRefresh?: () => void;
   onConfirm?: () => void;
   onCancel?: () => void;
+  /** The state of the hooks, as the block of the separated states reads it. */
+  hooksKnown?: boolean;
+  hooksEnabled?: boolean;
+  prohibitionsEnabled?: boolean;
 }
 
 /**
@@ -482,6 +487,9 @@ export function HooksPanel({
   onRefresh,
   onConfirm,
   onCancel,
+  hooksKnown = view?.known !== false,
+  hooksEnabled = view?.hooksEnabled,
+  prohibitionsEnabled = view?.prohibitionsEnabled,
 }: HooksPanelProps): React.ReactElement {
   const intent = hooksToggleIntent(view);
   const hooks = view?.hooks ?? [];
@@ -496,13 +504,23 @@ export function HooksPanel({
       {/* The state comes first: on a phone the owner sees the state and the
           action before anything else. */}
       <p className="herder-settings-state-line" role="status">{hooksLeverText(view)}</p>
-      {/* The Stop hook has its own line: the owner reads whether the session
-          may stop, without reading the table. */}
-      <p className="herder-hooks-stop-status" role="status">{hooksStopStatusText(view)}</p>
+      {/* The Stop hook has its own line: the owner reads whether the hook may
+          hold the session back, without reading the table. The line names the
+          lever it speaks about: the sessions that are really held are in the
+          block of the separated states below. */}
+      <p className="herder-hooks-stop-status" role="status">
+        {hooksStopStatusText(view)} — это состояние хука Stop, а не остановка конкретной сессии; остановленные сессии — в блоке «Состояния автоматики».
+      </p>
       <p className="herder-settings-hint">
         Хуки — это то, что агент-herder подвешивает к сессии: проверка перед вызовом инструмента и решение, можно ли остановить ход.
         Запрет автоматики и аварийная пауза — другие рычаги, они здесь не меняются.
       </p>
+
+      <StateSeparationRows
+        hooksKnown={hooksKnown}
+        hooksEnabled={hooksEnabled}
+        prohibitionsEnabled={prohibitionsEnabled}
+      />
 
       <div className="herder-settings-actions">
         <button
