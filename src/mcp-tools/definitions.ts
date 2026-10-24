@@ -111,7 +111,7 @@ const NamedSessionBaseSchema = z.object({
   sourceSessions: z.array(z.object({ harness: z.enum(["codex", "zcode", "opencode", "fast-agent"]), sessionId: z.string().min(1).max(512) })).max(32).optional().describe("All verified native source/ancestor receipts for an automatic continuation. Any stopped source prohibits launch."),
   sourceSessionId: z.string().min(1).optional().describe("Original session ID when this creation is a continuation/replacement; a stopped source prohibits automatic creation."),
   sourceHarness: z.enum(["codex", "zcode", "opencode", "fast-agent"]).optional(),
-  harness: z.enum(["opencode", "codex", "zcode", "fast-agent"]).describe("Harness that owns the named session."),
+  harness: z.enum(["opencode", "codex", "zcode", "fast-agent", "chatgpt"]).describe("Harness that owns the named session."),
   name: z.string().trim().min(1).max(128).describe("Stable session name, for example repair_100."),
   cwd: z.string().min(1).describe("Absolute working directory. It is canonicalized before identity matching."),
   hostId: hostTarget(HOST_TARGET_DESCRIPTION),

@@ -9,6 +9,10 @@ injected Chrome CDP page. It has two MCP entrypoints:
   names when `CDP_CHAT_DRIVER_MODULE` is configured. Its existing coding-agent
   tools, including `send_message`, remain unchanged.
 
+A driver module that also exposes an `agentHarnessDriver` registers the
+`chatgpt` harness, so the chats of the owned page become Agent Herder
+sessions. See [the ChatGPT harness guide](chatgpt-harness.md).
+
 Agent Herder creates one `CdpChatClient` for each MCP server/session. The
 fixture binding, opaque references, page lease, and write gates therefore do
 not cross between separate stdio or HTTP MCP sessions. The HTTP route creates

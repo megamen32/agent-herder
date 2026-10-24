@@ -6,12 +6,14 @@ import lockfile from "proper-lockfile";
 export type CadenceState = "scheduled" | "dispatching" | "delivery_unknown" | "blocked" | "paused" | "complete";
 export interface CadenceSchedule {
   id: string; sessionId: string; requestId: string; message: string;
+  /** Harness that owns the session. Older rows are Codex threads. */
+  harness: string;
   activatedAt: string; nextAt: string; state: CadenceState; sequence: number;
   lastWakeAt?: string; inputId?: string; result?: Record<string, unknown>; reason?: string;
 }
 export interface CadenceOptions {
   path: string; now?: () => number;
-  inspect: (sessionId: string) => Promise<"idle" | "busy" | "held" | "unavailable">;
+  inspect: (sessionId: string, harness: string) => Promise<"idle" | "busy" | "held" | "unavailable">;
   deliver: (schedule: CadenceSchedule) => Promise<{ status: "accepted" | "rejected" | "unknown"; receipt?: Record<string, unknown> }>;
 }
 const MINUTE = 60_000;
@@ -52,10 +54,11 @@ export class CadenceScheduler {
     } finally { await release(); }
   }
   list(): Promise<CadenceSchedule[]> { return this.transaction(rows=>rows, true); }
-  async schedule(input:{sessionId:string;requestId:string;message?:string}):Promise<CadenceSchedule> {
+  async schedule(input:{sessionId:string;requestId:string;message?:string;harness?:string}):Promise<CadenceSchedule> {
     const {sessionId,requestId}=input; const message=input.message??CADENCE_MESSAGE;
+    const harness=input.harness??"codex";
     if(!sessionId?.trim() || sessionId.length>512 || !requestId?.trim() || requestId.length>256 || !message.trim() || message.length>16000)throw new Error("Exact sessionId, requestId and bounded continuation required");
-    const observation=await this.options.inspect(sessionId);
+    const observation=await this.options.inspect(sessionId,harness);
     if(observation==="held" || observation==="unavailable")throw new Error("Exact Codex session is stopped or unavailable");
     return this.transaction(rows=>{
       const id="cadence_"+createHash("sha256").update(JSON.stringify([sessionId,requestId])).digest("hex").slice(0,32);
@@ -63,7 +66,7 @@ export class CadenceScheduler {
       if(existing){if(existing.message!==message)throw new Error("requestId already belongs to another continuation");return existing;}
       if(rows.some(row=>row.sessionId===sessionId && ["scheduled","dispatching","delivery_unknown"].includes(row.state)))throw new Error("Session already has a live or unresolved cadence");
       const now=this.now();
-      const row:CadenceSchedule={id,sessionId,requestId,message,activatedAt:new Date(now).toISOString(),nextAt:new Date(nextCadenceAt(now,now)).toISOString(),state:"scheduled",sequence:0};
+      const row:CadenceSchedule={id,sessionId,requestId,message,harness,activatedAt:new Date(now).toISOString(),nextAt:new Date(nextCadenceAt(now,now)).toISOString(),state:"scheduled",sequence:0};
       rows.push(row);return row;
     });
   }
@@ -79,7 +82,7 @@ export class CadenceScheduler {
     try {
       for(const candidate of await this.list()) {
         if(candidate.state!=="scheduled")continue;
-        const observation=await this.options.inspect(candidate.sessionId);
+        const observation=await this.options.inspect(candidate.sessionId,candidate.harness??"codex");
         if(observation==="held") {
           await this.transaction(rows=>{const row=rows.find(r=>r.id===candidate.id);if(row?.state==="scheduled"){row.state="paused";row.reason="HumanStop";}});continue;
         }
@@ -99,7 +102,7 @@ export class CadenceScheduler {
         if(!claim)continue;
         // Re-check immediately before submission. The native adapter and supervisor
         // provide the final HumanStop fence and reject a conflicting native writer.
-        const fresh=await this.options.inspect(claim.sessionId);
+        const fresh=await this.options.inspect(claim.sessionId,claim.harness??"codex");
         const current=(await this.list()).find(row=>row.id===claim.id);
         if(current?.state!=="dispatching")continue;
         if(fresh!=="idle") {
