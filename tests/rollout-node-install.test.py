@@ -26,7 +26,7 @@ class RolloutNodeInstallTests(unittest.TestCase):
             self.assertEqual(rollout.release_from_cmdline(
                 b"node\0" + os.fsencode(pathlib.Path(temporary) / "releases" / sha / "dist/index.js"), fleet), "")
 
-    def test_linux_release_budget_counts_physical_blocks_once_per_hardlinked_inode(self):
+    def test_linux_release_budget_excludes_rollback_hardlinks(self):
         with tempfile.TemporaryDirectory() as temporary:
             fleet = pathlib.Path(temporary)
             releases = fleet / "releases"
@@ -37,15 +37,11 @@ class RolloutNodeInstallTests(unittest.TestCase):
             first.write_bytes(b"x" * 65536)
             second.hardlink_to(first)
             candidate = releases / "second"
+            entrypoint = candidate / "dist" / "index.js"
+            entrypoint.parent.mkdir(parents=True)
+            entrypoint.write_bytes(b"candidate-owned bytes")
             paths = [candidate, *candidate.rglob("*")]
-            seen = set()
-            expected = 0
-            for path in paths:
-                info = path.lstat()
-                identity = (info.st_dev, info.st_ino)
-                if identity not in seen:
-                    expected += info.st_blocks * 512
-                    seen.add(identity)
+            expected = sum(path.lstat().st_blocks * 512 for path in paths if path != second)
             with patch.object(rollout.sys, "platform", "linux"):
                 self.assertEqual(rollout.release_budget(fleet, "second"), (2, expected))
                 self.assertTrue(rollout.release_budget_admitted(*rollout.release_budget(fleet, "second")))

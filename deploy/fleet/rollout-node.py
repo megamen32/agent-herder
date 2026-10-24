@@ -536,15 +536,26 @@ def prepare_packages(fleet: Path, sha: str, previous_sha: str,
 
 
 def linux_release_bytes(release: Path) -> int:
-    """Count this release's allocated inode blocks once, including hard links."""
-    total = 0
-    seen: set[tuple[int, int]] = set()
-    for path in (release, *release.rglob("*")):
+    """Count allocated blocks introduced by this release, once per inode.
+
+    The installer hard-links packages from the rollback release. Those blocks
+    already exist on disk and must not be charged as new candidate allocation.
+    """
+    paths = (release, *release.rglob("*"))
+    inodes: dict[tuple[int, int], tuple[os.stat_result, int, Path]] = {}
+    for path in paths:
         info = path.lstat()
         identity = (info.st_dev, info.st_ino)
-        if identity in seen:
+        previous = inodes.get(identity)
+        inodes[identity] = (info, 1 if previous is None else previous[1] + 1,
+                            path if previous is None else previous[2])
+
+    total = 0
+    for info, candidate_links, path in inodes.values():
+        # A link count larger than the number of candidate paths means this
+        # inode is shared with an already-existing release or package store.
+        if stat.S_ISREG(info.st_mode) and info.st_nlink > candidate_links:
             continue
-        seen.add(identity)
         blocks = getattr(info, "st_blocks", None)
         if not isinstance(blocks, int) or blocks < 0:
             raise RuntimeError(f"release inode physical allocation is unavailable: {path}")
