@@ -25,8 +25,8 @@ The checks at the end are the acceptance criteria of a candidate:
   * the payload lists every file of the build and sha256(dist/index.js) is the
     payload hash of index.js;
   * the bundle fingerprint of the release equals the fingerprint of the manifest;
-  * node-config.sourceSha equals manifest.source_sha, and node-config and the
-    `current` symlink move together;
+  * the candidate template sourceSha equals manifest.source_sha, and the live
+    node-config.json remains byte-for-byte unchanged;
   * the package directory is named exactly node_modules and carries exactly the
     runtime set of the lock file;
   * the release fits the launcher budget (<= 512 MiB).
@@ -37,6 +37,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -59,6 +60,31 @@ def run(command, cwd=None):
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def snapshot_node_config(path: Path) -> bytes | None:
+    """Capture exact live config bytes before the build can touch the catalog."""
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISREG(info.st_mode):
+        raise RuntimeError(f"live node config is not a regular file: {path}")
+    return path.read_bytes()
+
+
+def node_config_matches_snapshot(path: Path, before: bytes | None) -> tuple[bool, str]:
+    """Require the live node config bytes (including absence) to be unchanged."""
+    try:
+        after = snapshot_node_config(path)
+    except (OSError, RuntimeError) as error:
+        return False, f"could not read live node config after build: {error}"
+    if after == before:
+        digest = hashlib.sha256(after).hexdigest() if after is not None else "absent"
+        return True, f"exact snapshot unchanged: {digest}"
+    before_digest = hashlib.sha256(before).hexdigest() if before is not None else "absent"
+    after_digest = hashlib.sha256(after).hexdigest() if after is not None else "absent"
+    return False, f"live node config changed: {before_digest} -> {after_digest}"
 
 
 def sha256_tree(root: Path) -> dict:
@@ -431,7 +457,7 @@ def write_bundle_manifest(sha: str, release: Path, catalog: Path, worktree: Path
     return document
 
 
-def checks(sha: str, release: Path, catalog: Path) -> list:
+def checks(sha: str, release: Path, catalog: Path, node_config_before: bytes | None) -> list:
     manifest = json.loads((release / "dist" / "fleet-deployment-manifest.json").read_text())
     payload = manifest["payload"]
     actual = sha256_tree(release / "dist")
@@ -467,10 +493,8 @@ def checks(sha: str, release: Path, catalog: Path) -> list:
          f"payload={len(payload)} files={len(actual)} missing={len(missing)} extra={len(extra)} mismatched={len(mismatched)}"),
         ("sha256(dist/index.js) == payload['index.js']", index_actual == payload.get("index.js"), index_actual),
         ("the candidate template carries the source sha of the manifest", node_config["sourceSha"] == manifest["source_sha"], node_config["sourceSha"]),
-        ("the build did not touch the config of the node",
-         (not (catalog / "node-config.json").is_file())
-         or json.loads((catalog / "node-config.json").read_text()).get("sourceSha") in (None, manifest["source_sha"]),
-         "the working config of the node is not the template"),
+        ("the live node config matches its exact before-build snapshot",
+         *node_config_matches_snapshot(catalog / "node-config.json", node_config_before)),
         ("current points at the candidate release", os.readlink(catalog / "current") == f"releases/{sha}", os.readlink(catalog / "current")),
         ("packages dir is a real directory named node_modules", packages.name == "node_modules" and packages.is_dir() and not packages.is_symlink(), str(packages)),
         ("the release carries the full set of the store, nothing trimmed",
@@ -499,6 +523,7 @@ def main() -> int:
     sha = run(["git", "-C", str(REPO), "rev-parse", arguments.sha])
     store = REPO / "node_modules"
     store_before = release_rules.mutable_state(store)
+    node_config_before = snapshot_node_config(Path(arguments.catalog) / "node-config.json")
     worktree = prepare_worktree(sha, Path(arguments.worktrees))
     if not arguments.skip_build:
         build(worktree)
@@ -509,7 +534,8 @@ def main() -> int:
     print("packages:", packages)
     bundle = write_bundle_manifest(sha, release, Path(arguments.catalog), worktree)
     store_after = release_rules.mutable_state(store)
-    results, manifest, unique_mib, bundle_manifest = checks(sha, release, Path(arguments.catalog))
+    results, manifest, unique_mib, bundle_manifest = checks(
+        sha, release, Path(arguments.catalog), node_config_before)
     results = list(results) + [
         ("the build did not write into the store", store_before == store_after,
          f"{len(store_before)} cache files of the store, unchanged = {store_before == store_after}"),
