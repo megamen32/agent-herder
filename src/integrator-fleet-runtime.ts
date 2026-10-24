@@ -16,6 +16,7 @@ import type { ProjectExecutionBinding, TrustedRuntimeOwnerResolver } from "./pro
 import { IntegratorSessionBindingStore, type IntegratorLaunchReceipt, type IntegratorNativeAddress, type IntegratorOperationBinding } from "./integrator-session-binding.js";
 import { fleetHarnesses, type FleetCreateReceipt, type FleetHarness } from "./mesh/fleet-contract.js";
 import type { HarnessAdapter } from "./types/index.js";
+  // ORCHESTRATOR-CONFLICT: src/integrator-fleet-runtime.ts:16 — его импорты (IntegratorLaunchReceipt, FleetHarness, HarnessAdapter) сохранены; добавлен наш value-импорт fleetHarnesses (маршрут гарна): набор ours ⊃ theirs, потеря его кода нет.
 
 export interface IntegratorFleetCreateInput {
   project: string;
@@ -102,6 +103,7 @@ export type IntegratorProjectRoute =
   | { state: "available"; harness: FleetHarness; model: string; reason?: undefined }
   | { state: "unavailable"; harness?: undefined; model?: undefined; reason: string };
 type ScopedSession = { adapter: CodexAppServerAdapter; owner: TrustedRuntimeOwnerResolver; project: CodexConfiguredProject; operationId: string };
+  // ORCHESTRATOR-CONFLICT: src/integrator-fleet-runtime.ts:103 — его типы (CodexConfiguredProject/ConfiguredProject/ScopedSession) сохранены; добавлены наши RouteMatch и IntegratorProjectRoute (контракт маршрута для панели).
 type ScopedFactory = (input: Parameters<typeof CodexAppServerAdapter.createProjectScoped>[0]) => Promise<CodexAppServerAdapter>;
 
 export interface IntegratorFleetRuntimeOptions {
@@ -190,11 +192,13 @@ export class IntegratorFleetRuntime {
       if (!address) return { state: "unknown", inputId: input.inputId, retryable: false, reason: "project_receipt_missing_address" };
       if (project.harness !== "codex") {
         // Another harness has no restore path in this runtime: the accepted receipt is the durable outcome.
-        return await this.createdReceipt(input, address, project);
+        return this.createdReceipt(input, address, project);
       }
       const restored = await this.restoreAccepted(existing.operationId, address, project);
+  // ORCHESTRATOR-CONFLICT: src/integrator-fleet-runtime.ts:211 — взят его вариант: отличие от нашего ровно одно — нет await у createdReceipt (метод асинхронный, семантика возврата та же); его restoreAccepted(..., project) уже совпадает с нашим.
       return restored.kind === "scoped"
-        ? await this.createdReceipt(input, address, project)
+        ? this.createdReceipt(input, address, project)
+  // ORCHESTRATOR-CONFLICT: src/integrator-fleet-runtime.ts:227 — взят его вариант: то же отличие (await у createdReceipt в тернарном выражении), семантика идентична.
         : { state: "unknown", inputId: input.inputId, retryable: false, reason: restored.reason };
     }
     // The host-readiness contract is the codex project-execution contract: the fleet contract pins
@@ -238,6 +242,7 @@ export class IntegratorFleetRuntime {
     if (!configured.ok) return notReady(configured.reason, harness, this.routeModel(matched.match, harness));
     if (harness !== "codex") return await this.routeReadiness(projectId, configured.project);
     // РЕШЕНО 24.10.2026 слиянием (лист L19): его WIP (23.10) уже умел многохарновый create (createHarnessAdapter, IntegratorHarnessAdapterFactory, route.harnesses[0]) — это сохранено целиком; наш файл = его файл + наш контракт маршрута (matchRoute/routeModel/routeReadiness/projectRoute/rootIdentityOf). Его `notReady(reason)` с кодовым гарном заменён на наш `notReady(reason, harness, model)` из сохранённого маршрута; его проверка `harness === "codex"` заменена на нашу `project.harness`.
+  // ORCHESTRATOR-CONFLICT: src/integrator-fleet-runtime.ts:266 — его вариант жёстко крепит проверку к codex (resolveConfiguredProject(projectId,"codex")): проект с не-codex гарном вечно not_ready и теряет модель маршрута. Взят наш вариант (гарн и модель из сохранённого маршрута) — это контракт «проекты» и наши тесты маршрута.
     let adapter: CodexAppServerAdapter | undefined;
     try {
       const policy = await this.createPolicy({
@@ -486,6 +491,7 @@ export class IntegratorFleetRuntime {
       };
   // РЕШЕНО 24.10.2026 слиянием (лист L19): его минимальный чек для не-codex гарна (только native-адрес) заменён на наш полный `projectExecution` — по измерению смесь «3=наш, 4=его» даёт 1 падение «ready без projectExecution». Работа владельца не потеряна: не-codex гарн по-прежнему создаётся через `createHarnessAdapter`, его тест «creates for the selected harness...» сохранён (tests/integrator-fleet-runtime.test.ts).
     }
+  // ORCHESTRATOR-CONFLICT: src/integrator-fleet-runtime.ts:454 — его хелперы createHarnessFirst/reserveOperation/recordAttemptOutcome сохранены (createHarnessFirst отличается только отсутствием await); его createdReceipt отдаёт для не-codex гарна минимальный чек (без projectExecution) — ломает контракт «returns the project execution of the selected harness with the route model» (измерение L19: смесь даёт 1 падение «ready без projectExecution»), поэтому оставлен наш полный чек с rootIdentity.
     const readiness = input.projectReadiness!;
     return {
       state: "created", inputId: input.inputId, address, launchCwd: project.rootPath, retryable: false,
@@ -510,6 +516,7 @@ export class IntegratorFleetRuntime {
   }
 
   private async restoreAccepted(operationId: string, address: IntegratorNativeAddress, project: CodexConfiguredProject): Promise<ScopedResolution> {
+  // ORCHESTRATOR-CONFLICT: src/integrator-fleet-runtime.ts:614 — его сигнатура restoreAccepted(..., CodexConfiguredProject) сохранена; добавлен наш rootIdentityOf (наблюдаемая идентичность корня проекта).
     let adapter: CodexAppServerAdapter | undefined;
     try {
       const binding = await this.options.bindingStore.get(operationId);
@@ -571,6 +578,7 @@ export class IntegratorFleetRuntime {
 
   /** Matches the one saved route of a project. The route designates its own harness; the caller decides what to do with it. */
   private async matchRoute(project: string): Promise<{ ok: true; match: RouteMatch } | { ok: false; reason: string }> {
+  // ORCHESTRATOR-CONFLICT: src/integrator-fleet-runtime.ts:689 — его resolveConfiguredProject(project, harness) взять нельзя: наши вызовы передают третий аргумент matchRoute (ошибка числа аргументов в TS). Наш head (matchedRoute опционален) совместим с его двухаргументными вызовами.
     let document: AutomationLaunchPolicyDocument;
     try { document = await this.options.policyStore.readDocument(); }
     catch { return { ok: false, reason: "project_route_policy_unavailable" }; }
@@ -627,6 +635,7 @@ export class IntegratorFleetRuntime {
     if (!model) return { ok: false, reason: "project_route_model_unavailable" };
     if (!await this.projectRootAvailable(rootPath)) return { ok: false, reason: "project_route_root_unavailable" };
     return { ok: true, project: { rootPath, harness, model, etag: document.etag,
+  // ORCHESTRATOR-CONFLICT: src/integrator-fleet-runtime.ts:714 — его тело resolveConfiguredProject совпадает с нашим побайтно (sha256 2c0036c1363b808d); добавлены наши matchRoute и projectRoute (контракт маршрута для панели).
       ...(route.nativeWebSearch ? { nativeWebSearch: route.nativeWebSearch } : {}) } };
   }
 

@@ -461,7 +461,7 @@ describe("integrator Fleet runtime", () => {
     }
   });
 
-  // РЕШЕНО 24.10.2026 слиянием (лист L19): его WIP добавил тест «creates for the selected harness: the reservation carries the harness and the adapter writes the created receipt» — он сохранён (автослияние, строка 381). Спорные хунки — только наши добавленные тесты маршрута (L68/L69/L70); его тест не тронут.
+  // ORCHESTRATOR-CONFLICT: tests/integrator-fleet-runtime.test.ts:265 — его WIP добавил тот же тест «creates for the selected harness: the reservation carries the harness and the adapter writes the created receipt», что и наш (обе копии побайтно совпадают, sha256 5b8ac9c1aff7a2a5): оставлена одна копия (наша, строка 382), его дубль удалён; наши тесты маршрута (L68/L69/L70) сохранены.
   it("never creates for an existing unknown operation and never falls through an unresolved scoped address", async () => {
     const f = await setup();
     const reserved = await f.bindingStore.reserve({ operationId: "f".repeat(64), hostId: hostname(), harness: "codex" });

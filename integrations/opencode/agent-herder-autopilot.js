@@ -400,6 +400,7 @@ async function enforceRestrictedSubagent(ctx, event) {
   } catch { /* the route could not be read at all: the leaf is not confirmed */ }
     // РЕШЕНО 24.10.2026 слиянием (лист L19): его WIP (рабочее дерево владельца, 23.10) добавлял выключатель запретов `prohibitionsEnabledByOwner()` — сохранена ПОБАЙТНО (sha256 блока совпадает с его файлом, строки 155-168) и она уже подключена к гарду через routeDenial (строки 285, 288). Его вариант функции гарда (его :214-247) заменён на наш контракт L70; его хардкод-регекс `restrictedModelToken` заменён единым источником LEAF_LAUNCH_POLICY (single-source, 21/21).
   if (!(await prohibitionsEnabledByOwner())) return
+  // ORCHESTRATOR-CONFLICT: integrations/opencode/agent-herder-autopilot.js:391 — гард в старте листа: взят наш контракт routeDenial. Его вариант (resolveNativeModelLeaves/hasRestrictedProviderLeaf) ссылается на функции, которых в слитом файле НЕТ (измерено: определения отсутствуют, остались только вызовы) — его текст дал бы ReferenceError в рантайме; его семантика (закрытый провайдер — отказ всегда, выключатель запретов уважается) сохранена в routeDenial; его вариант не отказывал маршрут вне разрешённых семейств при включённых запретах — ломал бы tests/leaf-launch-policy-single-source.test.ts.
   event.effect = "deny"
   event.message = LEAF_LAUNCH_REFUSAL_MESSAGES.subagent.routeForbidden
 }
@@ -423,7 +424,9 @@ async function enforceRestrictedModelRequest(ctx, event) {
   if (denial) {
     throw new Error(LEAF_LAUNCH_REFUSAL_MESSAGES.modelRequest.routeForbidden)
   // РЕШЕНО 24.10.2026 слиянием (лист L19): хвост его варианта (5 строк: проверка выключателя перед отказом) снят — он инвертировал решение гарда и отбивал доказанный разрешённый маршрут при включённых запретах (гард 13/16 -> 16/16). Его выключатель сохранён и подключён внутри routeDenial: выключатель ВЫКЛЮЧЕН => route-forbidden не отказывает (регресс-тест tests/opencode-prohibitions-switch.test.ts).
+  // ORCHESTRATOR-CONFLICT: integrations/opencode/agent-herder-autopilot.js:429 — гард в запросе модели: тот же выбор по тем же причинам (нет определений resolveNativeModelLeaves/hasRestrictedProviderLeaf в слитом файле; нет различения closed-provider/route-forbidden; нет fail-closed на сломанной proof). Наш routeDenial закрывает оба случая и уважает выключатель запретов.
   }
+  // ORCHESTRATOR-CONFLICT: integrations/opencode/agent-herder-autopilot.js:433 — снят хвост его WIP в enforceRestrictedModelRequest («маршрут не прочитан → отказ при включённых запретах»), который слился ЧИСТЫМ (вне конфликтных хунктов) и ломал разрешённый путь: в нашей функции нет раннего return для разрешённого маршрута, поэтому этот throw срабатывал на каждом разрешённом запросе — измерение: 4 красных теста (tests/leaf-launch-policy-single-source.test.ts, tests/opencode-native-subagent-guard.test.ts), на чистом c80c5f6 те же 37 тестов зелёные. Его смысл уже внутри нашего routeDenial (unconfirmed → route-forbidden при включённых запретах, разрешено при выключенных), а fail-closed на сломанной proof — наш контракт (L19: хвост его варианта был снят тем же измерением, гард 13/16 -> 16/16).
 }
 
 async function installRestrictedProviderGuards(ctx) {

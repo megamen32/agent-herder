@@ -29,6 +29,7 @@ import { deliverStaleRunningQuestion } from "../human-request/notice-question.js
 import { loadAskHumanProducer, type AskHumanProducer } from "../human-request/ask-human-producer.js";
 import { sessionInspectFacts, type SessionInspectFacts } from "../session-visualization.js";
 // РЕШЕНО 24.10.2026 слиянием (лист L19): его WIP добавил `reportStaleRunningSession` (устаревшая сессия -> ровно один вопрос оператору) и импорты `buildIntegratorProgress` / `deliverStaleRunningQuestion` / `loadAskHumanProducer` / `lifecycleEntryFor` — всё это сохранено автослиянием без конфликта; спорный хунк — только импорт нашего инспектора сессии `sessionInspectFacts` (L68), он нужен инспектору.
+  // ORCHESTRATOR-CONFLICT: src/web/server.ts:27 — его три импорта (buildIntegratorProgress/deliverStaleRunningQuestion/loadAskHumanProducer) сохранены; добавлен наш sessionInspectFacts (инспектор сессии).
 import { NoticeplaceHealthObserver } from "../automation/noticeplace-health-observer.js";
 import { appendHealthRefusalAudit, healthRefusalAuditPath, type HealthReasonRefusal } from "../automation/health-reason-codes.js";
 import { NOTICEPLACE_HEALTH_MODELS, resolveLaunchHealthPlan } from "../automation/noticeplace-health-policy.js";
