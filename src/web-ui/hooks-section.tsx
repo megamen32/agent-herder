@@ -179,6 +179,11 @@ export function hooksLeverText(view: HooksView | null): string {
   if (view.prohibitionsEnabled === false) {
     return "Запреты хуков выключены: хуки не отказывают в вызове инструментов и не держат ход.";
   }
+  // The runtime of the hooks comes first: while it is off, no hook runs at
+  // all, and the lever of the prohibitions means nothing yet.
+  if (view.hooksEnabled === false) {
+    return "Рантайм хуков выключен: ни один хук не выполняется и ничего не запрещает. Рычаг запретов пока не действует.";
+  }
   return "Запреты хуков включены: хуки могут отказывать в вызове инструментов и не давать сессии остановиться.";
 }
 
@@ -256,6 +261,12 @@ export function hooksStateLabel(hook: HooksPanelHook): string {
   if (hook.canProhibit === false) return "не запрещает";
   if (hook.state === "неизвестно") return "неизвестно";
   if (hook.state === "выключены") return "выключены";
+  // The true state of the hook: while the optional runtime of the herder is
+  // off, the hook does not run at all. That is not the same thing as a hook
+  // that runs and forbids nothing.
+  if (hook.state === "не выполняется") return "не выполняется";
+  if (hook.state === "выполняется, не запрещает") return "выполняется, не запрещает";
+  if (hook.state === "выполняется, может запрещать") return "выполняется, может запрещать";
   return "включены";
 }
 
@@ -269,6 +280,9 @@ export function hooksProhibitionText(hook: HooksPanelHook): string {
   if (hook.canProhibit === false) return "Запреты не действуют";
   const state = hooksStateLabel(hook);
   if (state === "неизвестно") return "Неизвестно";
+  if (state === "не выполняется") return "Не выполняется";
+  if (state === "выполняется, может запрещать") return "Может запрещать";
+  if (state === "выполняется, не запрещает") return "Не запрещает";
   return state === "выключены" ? "Запреты выключены" : "Запреты включены";
 }
 
