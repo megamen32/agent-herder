@@ -30,6 +30,19 @@ export const minimaxRuntimeStatePath = () =>
 /** Upper bound of the published goal text. */
 const MAX_GOAL_LENGTH = 160;
 
+/** A prompt that opens with an instruction of the system, not with the request of the user. */
+const SYSTEM_PROMPT_MARKER = /^\s*(?:\[system\]|<system>)/i;
+
+/** The marker that opens the part of the prompt that belongs to the user. */
+const USER_PART_MARKER = /^\s*\[user\]\s*$/i;
+
+/** The marker that names the current request inside the part of the user. */
+const CURRENT_REQUEST_MARKER = /^\s*Текущая реплика:\s*/im;
+
+/** Blocks that carry context for the model, not the request of the user. */
+const SERVICE_BLOCK_MARKER =
+  /^(?:Частичная сохранённая память|Частичные L2-сводки|Предыдущий собственный разговор|Предыдущие реплики)/i;
+
 export interface MinimaxRuntimeActiveRow {
   session_id: string;
   owner_id: string;
@@ -72,11 +85,67 @@ function processAlive(pid: number): boolean {
   }
 }
 
-/** The first user message is the goal of a session that has no title yet. */
-function goalFromMessage(content: string): string {
-  const flat = content.replace(/[\x00-\x1f\x7f]/g, " ").replace(/\s+/g, " ").trim();
+/** One readable line out of a text, bounded by the published goal length. */
+function flattenGoal(text: string): string {
+  const flat = text.replace(/[\x00-\x1f\x7f]/g, " ").replace(/\s+/g, " ").trim();
   if (!flat) return "";
   return flat.length > MAX_GOAL_LENGTH ? `${flat.slice(0, MAX_GOAL_LENGTH - 1)}…` : flat;
+}
+
+/** The blocks of the user part of a prompt, split at the user marker. */
+function userBlocks(lines: string[]): string[][] {
+  const blocks: string[][] = [];
+  let current: string[] = [];
+  for (const line of lines) {
+    if (USER_PART_MARKER.test(line)) {
+      if (current.length) blocks.push(current);
+      current = [];
+      continue;
+    }
+    current.push(line);
+  }
+  if (current.length) blocks.push(current);
+  return blocks;
+}
+
+/** The request of the user inside the blocks of the user part of a prompt. */
+function goalFromUserBlocks(blocks: string[][]): string {
+  // The current request wins over every context block that only feeds the model.
+  for (const block of blocks) {
+    const text = block.join("\n");
+    const current = CURRENT_REQUEST_MARKER.exec(text);
+    if (!current) continue;
+    const goal = flattenGoal(text.slice(current.index + current[0].length));
+    if (goal) return goal;
+  }
+  for (const block of blocks) {
+    const text = block.join("\n").trim();
+    if (!text) continue;
+    if (SERVICE_BLOCK_MARKER.test(text)) continue;
+    if (/^[[{]/.test(text)) continue;
+    const goal = flattenGoal(text);
+    if (goal) return goal;
+  }
+  return "";
+}
+
+/**
+ * The goal of a session is the request of the user, never the instruction of the system.
+ *
+ * A prompt that opens with a system instruction carries the request of the user
+ * after the user marker. The system part is dropped, so what the panel shows is
+ * what the person asked and not the instruction that opened the session.
+ */
+function goalFromMessage(content: string): string {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  if (!SYSTEM_PROMPT_MARKER.test(lines[0] ?? "")) return flattenGoal(lines.join("\n"));
+  const userStart = lines.findIndex((line) => USER_PART_MARKER.test(line));
+  if (userStart < 0) {
+    // No user part: the prompt holds nothing but the instruction of the system.
+    const current = CURRENT_REQUEST_MARKER.exec(lines.join("\n"));
+    return current ? flattenGoal(lines.join("\n").slice(current.index + current[0].length)) : "";
+  }
+  return goalFromUserBlocks(userBlocks(lines.slice(userStart + 1)));
 }
 
 /** Goal of a session without a title: the prompt that opened the session. */
@@ -133,8 +202,12 @@ export async function readMinimaxRuntimeActiveSessions(
         unprovenLeaseCount += 1;
         continue;
       }
+      // A stored title that opens with a system instruction is not the goal of
+      // the session, so the goal is read from the first message of the user.
       const storedTitle = row.title?.trim() || "";
-      const goal = storedTitle || readGoal(db as never, row.session_id);
+      const titleIsSystem = SYSTEM_PROMPT_MARKER.test(storedTitle);
+      const goal = !titleIsSystem && storedTitle ? storedTitle : readGoal(db as never, row.session_id);
+      const goalSource = !titleIsSystem && storedTitle ? "runtime_state" : "runtime_first_message";
       sessions.push({
         id: row.session_id, harness: "minimax-code", title: goal || row.session_id,
         status: "running", cwd: row.workspace_dir || "", hostId: localSessionHostId(),
@@ -144,7 +217,7 @@ export async function readMinimaxRuntimeActiveSessions(
           activityEvidence: "native_runtime_turn_lease", activityObservedAt: observedAt, activityExpiresAt: expiresAt,
           liveStatus: "running", nativeAgentName: row.agent_name,
           ...(row.parent_session_id ? { parentSessionId: row.parent_session_id, lineageKind: "subagent" } : { lineageKind: row.agent_name ? "root" : "unknown" }),
-          ...(goal ? { goalSource: storedTitle ? "runtime_state" : "runtime_first_message" } : { metadataUnavailable: true }),
+          ...(goal ? { goalSource } : { metadataUnavailable: true }),
         },
       });
     }
