@@ -73,7 +73,7 @@ import { registerCdpTools } from "./mcp/cdp-tools.js";
 import { registerSessionTools } from "./mcp/session-tools.js";
 import { registerResourceOwnershipTools } from "./mcp/resource-ownership-tools.js";
 import { registerHarnessMeshTools } from "./mesh/register-tools.js";
-import { FleetDirectTransport, directFleetPeers } from "./mesh/fleet-direct-transport.js";
+import { FleetDirectTransport, fleetPeers } from "./mesh/fleet-direct-transport.js";
 import { registerWorkspaceTools } from "./mesh/workspace-tools.js";
 import { registerBackgroundTools } from "./mcp/background-tools.js";
 import { registerRagTools } from "./mcp/rag-tools.js";
@@ -647,13 +647,13 @@ function registerTools(
   registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate });
   registerRagTools(server, adapters);
   registerResourceOwnershipTools(server);
-  const workspaceTransport = new FleetDirectTransport(directFleetPeers.filter(peer => peer.hostId !== "MacBook-Pro-User.local"));
+  const workspaceTransport = new FleetDirectTransport(fleetPeers().filter(peer => peer.hostId !== "MacBook-Pro-User.local"));
   registerActiveSessionTools(server);
   registerSessionWorkspaceTools(server);
-  registerSessionSearchTools(server,{transport:new FleetDirectTransport(directFleetPeers),peers:directFleetPeers.map(peer=>({hostId:peer.hostId,target:`mcp:shell:${peer.hostId}:AgentHerder`}))});
-  registerHarnessMeshTools(server, { adapters, gptadmin: new FleetDirectTransport(directFleetPeers), deliveryPolicy: readLaunchPolicyStateForGate });
+  registerSessionSearchTools(server,{transport:new FleetDirectTransport(fleetPeers()),peers:fleetPeers().map(peer=>({hostId:peer.hostId,target:`mcp:shell:${peer.hostId}:AgentHerder`}))});
+  registerHarnessMeshTools(server, { adapters, gptadmin: new FleetDirectTransport(fleetPeers()), deliveryPolicy: readLaunchPolicyStateForGate });
   registerWorkspaceTools(server, { transport: workspaceTransport });
-  registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, launchPolicyRevision: readLaunchPolicyRevision, fleetTransport: workspaceTransport, fleetPeers: directFleetPeers.filter(peer => peer.hostId !== "MacBook-Pro-User.local").map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), policyRevisionLedgerPath: fleetPolicyRevisionLedgerPath(autopilotStateDir) });
+  registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, launchPolicyRevision: readLaunchPolicyRevision, fleetTransport: workspaceTransport, fleetPeers: fleetPeers().filter(peer => peer.hostId !== "MacBook-Pro-User.local").map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), policyRevisionLedgerPath: fleetPolicyRevisionLedgerPath(autopilotStateDir) });
   // The common settings of the fleet: a node that has no owner of the document
   // named in its environment registers no tool and claims nothing.
   const commonSettings = commonSettingsService({ hooks: hooksLeverFromStore(hooksLeverStore) });

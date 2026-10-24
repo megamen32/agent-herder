@@ -59,6 +59,8 @@ describe("work machine defaults", () => {
         adapters: new Map(),
         jobs: new HerderJobRegistry(events),
         events,
+        // No machine is callable here: the machine of this test is this one only.
+        routingPeers: [],
         integratorRuntime: {
           adapterForSession: async (address: { hostId: string; harness: string; nativeSessionId: string }) => {
             seen.push(address);

@@ -14,7 +14,7 @@ import { readFile } from "node:fs/promises";
 import { hostname } from "node:os";
 
 import { resolveAutopilotStateDir } from "../autopilot/state-dir.js";
-import { FleetDirectTransport, directFleetPeers } from "../mesh/fleet-direct-transport.js";
+import { FleetDirectTransport, fleetPeers } from "../mesh/fleet-direct-transport.js";
 import {
   fleetPolicyRevisionLedgerPath,
   readFleetPolicyRevisions,
@@ -170,7 +170,7 @@ function ledgerNodes(ledger: SettingsConfirmationLedger): SettingsConfirmationNo
 
 /** The peers of the fleet, as the confirmation asks them. */
 export function defaultFleetConfirmationPeers(localHostId?: string): FleetPolicyRevisionPeer[] {
-  return directFleetPeers
+  return fleetPeers()
     .filter((peer) => peer.hostId !== "MacBook-Pro-User.local")
     .filter((peer) => peer.hostId !== localHostId)
     .map((peer) => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` }));
@@ -178,7 +178,7 @@ export function defaultFleetConfirmationPeers(localHostId?: string): FleetPolicy
 
 /** The transport to the other nodes, as the confirmation asks them. */
 function defaultFleetConfirmationTransport(localHostId?: string): FleetPolicyRevisionTransport {
-  return new FleetDirectTransport(directFleetPeers.filter((peer) => (
+  return new FleetDirectTransport(fleetPeers().filter((peer) => (
     peer.hostId !== "MacBook-Pro-User.local" && peer.hostId !== localHostId
   )));
 }
