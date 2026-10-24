@@ -3,14 +3,15 @@ import { join } from "node:path";
 import type { AgentSession } from "../types/index.js";
 import { localSessionHostId } from "../types/index.js";
 import type { MinimaxCodeControl } from "./minimax-code-control.js";
+import type { MinimaxRuntimeActiveProof } from "./minimax-code-runtime-activity.js";
 
 export interface MinimaxActiveReceipt {
   exhaustive: boolean;
   observedAt: string;
   expiresAt: string;
-  source: "native_active_turn";
+  source: "native_active_turn" | "native_runtime_turn_lease";
   metadataEnumerationExhaustive: boolean;
-  activityCoverage: "native_active_turn" | "partial";
+  activityCoverage: "native_active_turn" | "native_runtime_turn_lease" | "partial";
   candidateCount: number;
   failedCandidateCount: number;
   reason?: string;
@@ -35,6 +36,9 @@ const object = (value: unknown): Record<string, any> => {
 export interface MinimaxActiveOptions {
   readRuntimeCandidateIds?: () => Promise<string[]>;
   onProgress?: (stage:string)=>void;
+  /** Runtime-state proof of activity, used when the desktop transport cannot prove it.
+   * The caller wires the real source; without it the answer stays controller-only. */
+  readRuntimeActivity?: () => Promise<MinimaxRuntimeActiveProof>;
 }
 
 /** Both normal turns and manual compaction call repository.admit before controller.register.
@@ -50,13 +54,18 @@ export async function readMinimaxRuntimeCandidateIds(
 }
 
 /** Current runtime work, including compaction. GUI optimistic loading is not execution proof. */
-export async function readMinimaxActiveSessions(control: Pick<MinimaxCodeControl, "call">, options: MinimaxActiveOptions = {}): Promise<{ sessions: AgentSession[]; receipt: MinimaxActiveReceipt }> {
+async function proveMinimaxActiveTurns(control: Pick<MinimaxCodeControl, "call">, options: MinimaxActiveOptions = {}): Promise<{ sessions: AgentSession[]; receipt: MinimaxActiveReceipt }> {
   const stageTimingsMs:Record<string,number>={};let stage='metadata',stageStart=performance.now();
   const progress=(next:string)=>{stageTimingsMs[stage]=Math.round(performance.now()-stageStart);stage=next;stageStart=performance.now();options.onProgress?.(next);};
   options.onProgress?.(stage);
   const request = async (path: string) => {
     const response = await control.call("GET", path);
-    if (!response.ok) throw new Error(response.error || "minimax_active_runtime_unavailable");
+    // A fixed code keeps the reason of the refusal readable in the panel: a
+    // free-text message would collapse into one generic "unavailable" code.
+    if (!response.ok) {
+      const unpublished = response.status === 0 || /not published/i.test(response.error ?? "");
+      throw new Error(unpublished ? "minimax_control_transport_unavailable" : "minimax_control_request_failed");
+    }
     return object(response.body);
   };
   // Activity never waits for a historical metadata enumeration. Cache only
@@ -125,4 +134,50 @@ export async function readMinimaxActiveSessions(control: Pick<MinimaxCodeControl
       ...(row.status?.error_code === undefined ? {} : { retainedNativeErrorCode: row.status.error_code }) },
   }));
   return { sessions, receipt };
+}
+
+/**
+ * Activity of the MiniMax Code sessions of this host.
+ *
+ * The desktop transport stays the primary proof: it reaches the very runtime
+ * the app is showing. A host that runs the MiniMax Code runtime without that
+ * transport (a fleet node that executes turns for other machines) cannot
+ * answer through it at all, and the refusal of the controller must not become
+ * "no activity anywhere". Such a host still owns the truth about its own
+ * turns: the runtime holds a turn lease while it executes a turn.
+ *
+ * The lease proof is used only when the controller proved nothing: it either
+ * refused or it confirmed no turn at all. It is marked as its own evidence, so
+ * a lease is never presented as a controller proof. Without any proof the
+ * answer stays a refusal: an empty activity list is never invented.
+ */
+export async function readMinimaxActiveSessions(control: Pick<MinimaxCodeControl, "call">, options: MinimaxActiveOptions = {}): Promise<{ sessions: AgentSession[]; receipt: MinimaxActiveReceipt }> {
+  let proven: { sessions: AgentSession[]; receipt: MinimaxActiveReceipt } | null = null;
+  let refusal: unknown = null;
+  try {
+    proven = await proveMinimaxActiveTurns(control, options);
+  } catch (error) {
+    refusal = error;
+  }
+  if (!proven || proven.sessions.length === 0) {
+    let proof: MinimaxRuntimeActiveProof | null = null;
+    try {
+      proof = options.readRuntimeActivity ? await options.readRuntimeActivity() : null;
+    } catch {
+      proof = null;
+    }
+    if (proof && proof.sessions.length) {
+      const receipt: MinimaxActiveReceipt = {
+        exhaustive: proof.unprovenLeaseCount === 0, observedAt: proof.observedAt, expiresAt: proof.expiresAt,
+        source: "native_runtime_turn_lease", metadataEnumerationExhaustive: false,
+        activityCoverage: proof.unprovenLeaseCount === 0 ? "native_runtime_turn_lease" : "partial",
+        candidateCount: proof.leaseCount, failedCandidateCount: proof.unprovenLeaseCount,
+        totalSessions: proof.leaseCount, pages: 1, stageTimingsMs: { runtime_lease: 0 },
+        ...(proof.unprovenLeaseCount ? { reason: "native_runtime_lease_owner_unproven" } : {}),
+      };
+      return { sessions: proof.sessions, receipt };
+    }
+  }
+  if (!proven) throw refusal;
+  return proven;
 }
