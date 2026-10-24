@@ -93,7 +93,8 @@ class RolloutNodeInstallTests(unittest.TestCase):
             config.write_text(__import__("json").dumps({"sourceSha": previous, "nodeBin": "/usr/bin/node"}))
             argv = ["rollout-node.py", "--fleet-dir", str(fleet), "--sha", target,
                     "--port", "19091", "--restart-cmd", "systemctl --user restart agent-herder.service",
-                    "--previous-sha", previous, "--unit", "agent-herder.service"]
+                    "--previous-sha", previous, "--unit", "agent-herder.service",
+                    "--kind", "owner"]
             order = []
 
             def daemon_reload():
@@ -129,6 +130,109 @@ class RolloutNodeInstallTests(unittest.TestCase):
             self.assertEqual(order[:2], ["reload", "restart"])
             self.assertEqual(__import__("json").loads(config.read_text())["sourceSha"], target)
             self.assertEqual((fleet / "current").resolve(), fleet / "releases" / target)
+
+    def test_fleet_node_install_writes_no_release_dropin_and_keeps_the_bootstrap(self):
+        """A fleet node runs through bootstrap.py: the release is the current symlink.
+
+        A release drop-in would replace the bootstrap with the release itself,
+        and the node would take the port of the unit instead of the port of its
+        own config. The drop-in must not be written for a fleet node.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            fleet = root / "fleet"
+            previous = "af06240abbe0a9567289b40e0e44328ee49e1942"
+            target = "6549b34255adb669782f8f07f5b7b852045fd708"
+            (fleet / "releases" / previous / "dist").mkdir(parents=True)
+            (fleet / "releases" / target / "dist").mkdir(parents=True)
+            (fleet / "current").symlink_to(fleet / "releases" / previous)
+            config = fleet / "node-config.json"
+            config.write_text(__import__("json").dumps({"sourceSha": previous, "nodeBin": "/usr/bin/node"}))
+            argv = ["rollout-node.py", "--fleet-dir", str(fleet), "--sha", target,
+                    "--port", "19091", "--restart-cmd", "systemctl --user restart agent-herder-fleet.service",
+                    "--previous-sha", previous, "--unit", "agent-herder-fleet.service",
+                    "--kind", "fleet"]
+            order = []
+
+            def daemon_reload():
+                order.append("reload")
+                return True
+
+            def restart(command):
+                order.append("restart")
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with (patch.object(sys, "argv", argv),
+                  patch.object(rollout.Path, "home", return_value=root),
+                  patch.object(rollout, "disarm_state", return_value="armed"),
+                  patch.object(rollout, "system_pause_state", return_value="inactive"),
+                  patch.object(rollout, "process_environment_value", return_value="/state"),
+                  patch.object(rollout, "unit_entrypoint", return_value=(
+                      "/usr/bin/python3 -I -S -B "
+                      "/home/roomhacker/.local/share/agent-herder/fleet/bootstrap.py")),
+                  patch.object(rollout, "prepare_packages", return_value="unchanged"),
+                  patch.object(rollout, "verify_payload", return_value={
+                      "source_sha_ok": True, "missing": [], "extra": [], "mismatched": []}),
+                  patch.object(rollout, "release_budget", return_value=(2, 0)),
+                  patch.object(rollout, "package_resolution", return_value="resolved"),
+                  patch.object(rollout, "wait_codex_socket", return_value=True),
+                  patch.object(rollout, "systemd_daemon_reload", side_effect=daemon_reload),
+                  patch.object(rollout, "restart", side_effect=restart),
+                  patch.object(rollout, "wait_port", return_value=True),
+                  patch.object(rollout, "running_release", return_value=target),
+                  patch.object(rollout, "http_status", return_value=200),
+                  patch.object(rollout, "mcp_status", return_value=200),
+                  patch.object(rollout.time, "sleep")):
+                self.assertEqual(rollout.main(), 0)
+
+            # The node was switched: the current symlink and the sourceSha.
+            self.assertEqual(__import__("json").loads(config.read_text())["sourceSha"], target)
+            self.assertEqual((fleet / "current").resolve(), fleet / "releases" / target)
+            # The bootstrap of the node was not touched: no release drop-in exists.
+            dropin = rollout.systemd_release_dropin_path("agent-herder-fleet.service", root)
+            self.assertFalse(dropin.exists())
+            unit_dir = root / ".config" / "systemd" / "user" / "agent-herder-fleet.service.d"
+            self.assertEqual(sorted(item.name for item in unit_dir.iterdir()), []) if unit_dir.is_dir() else None
+            # No daemon-reload: nothing of the unit changed.
+            self.assertEqual(order, ["restart"])
+
+    def test_fleet_node_install_refuses_a_unit_that_does_not_use_the_bootstrap(self):
+        """A fleet unit that does not run the bootstrap is refused, nothing is switched."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            fleet = root / "fleet"
+            previous = "af06240abbe0a9567289b40e0e44328ee49e1942"
+            target = "6549b34255adb669782f8f07f5b7b852045fd708"
+            (fleet / "releases" / previous / "dist").mkdir(parents=True)
+            (fleet / "releases" / target / "dist").mkdir(parents=True)
+            (fleet / "current").symlink_to(fleet / "releases" / previous)
+            config = fleet / "node-config.json"
+            config.write_text(__import__("json").dumps({"sourceSha": previous, "nodeBin": "/usr/bin/node"}))
+            argv = ["rollout-node.py", "--fleet-dir", str(fleet), "--sha", target,
+                    "--port", "19091", "--restart-cmd", "systemctl --user restart agent-herder-fleet.service",
+                    "--previous-sha", previous, "--unit", "agent-herder-fleet.service",
+                    "--kind", "fleet"]
+            switched = []
+
+            with (patch.object(sys, "argv", argv),
+                  patch.object(rollout.Path, "home", return_value=root),
+                  patch.object(rollout, "disarm_state", return_value="armed"),
+                  patch.object(rollout, "system_pause_state", return_value="inactive"),
+                  patch.object(rollout, "process_environment_value", return_value="/state"),
+                  patch.object(rollout, "unit_entrypoint", return_value=(
+                      "/usr/local/bin/node /home/roomhacker/releases/x/dist/index.js")),
+                  patch.object(rollout, "prepare_packages", return_value="unchanged"),
+                  patch.object(rollout, "verify_payload", return_value={
+                      "source_sha_ok": True, "missing": [], "extra": [], "mismatched": []}),
+                  patch.object(rollout, "release_budget", return_value=(2, 0)),
+                  patch.object(rollout, "package_resolution", return_value="resolved"),
+                  patch.object(rollout, "wait_codex_socket", return_value=True),
+                  patch.object(rollout, "switch_current", side_effect=lambda *a: switched.append(a)),
+                  patch.object(rollout, "restart", side_effect=lambda *a: switched.append(a))):
+                self.assertEqual(rollout.main(), 1)
+            self.assertEqual(switched, [])
+            self.assertEqual(__import__("json").loads(config.read_text())["sourceSha"], previous)
+            self.assertEqual((fleet / "current").resolve(), fleet / "releases" / previous)
 
 
 if __name__ == "__main__":

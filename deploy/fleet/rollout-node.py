@@ -230,6 +230,18 @@ def atomic_copy(source: Path, destination: Path) -> None:
     atomic_write(destination, source.read_bytes(), stat.S_IMODE(source.stat().st_mode))
 
 
+def unit_entrypoint(unit: str) -> str:
+    """The ExecStart of the live unit, as systemd reports it.
+
+    The entrypoint is the fact that says what kind of node this is: the owner
+    node runs the release itself, the fleet node runs the node through its
+    bootstrap. A fleet node that is started by its bootstrap must keep it.
+    """
+    result = subprocess.run(["systemctl", "--user", "show", unit, "-p", "ExecStart", "--value"],
+                            capture_output=True, text=True, check=False)
+    return result.stdout.strip()
+
+
 def systemd_release_dropin_path(unit: str, home: Path | None = None) -> Path:
     if not re.fullmatch(r"[A-Za-z0-9_.@:-]+\.service", unit) or "/" in unit or ".." in unit:
         raise ValueError("unit must be a plain systemd .service name")
@@ -618,6 +630,10 @@ def main() -> int:
                         help="copy the root package store into this release and bind agent-resume-mcp to this release's packages/agent-resume")
     parser.add_argument("--unit", default="agent-herder-fleet.service",
                         help="the user unit of the node, used to read its live environment")
+    parser.add_argument("--kind", required=True, choices=["owner", "fleet"],
+                        help="owner: the unit runs the release itself, a release drop-in names it; "
+                             "fleet: the unit starts the node through bootstrap.py, the release is "
+                             "selected by the current symlink and no release drop-in is written")
     parser.add_argument("--state-dir", default="",
                         help="the runtime state directory of the node; read from the live process when empty")
     parser.add_argument("--pause-unit", default="noticeplace-ai-pause.service",
@@ -687,7 +703,19 @@ def main() -> int:
 
     dropin_path: Path | None = None
     dropin_snapshot: Path | None = None
-    if sys.platform.startswith("linux"):
+    if arguments.kind == "fleet":
+        # A fleet node is started through its bootstrap: the release is chosen
+        # by the current symlink and the sourceSha of the node config. A
+        # release drop-in would replace the bootstrap with the release itself,
+        # and the node would lose the port of its own config: it would take
+        # the port of the unit, which another service may own.
+        entrypoint = unit_entrypoint(arguments.unit)
+        if "bootstrap.py" not in entrypoint:
+            print("the fleet unit does not start the node through bootstrap.py; nothing was switched:",
+                  entrypoint[:160])
+            return 1
+        print("fleet node: the release is selected by the current symlink; no release drop-in is written")
+    elif sys.platform.startswith("linux"):
         try:
             dropin_path = systemd_release_dropin_path(arguments.unit)
             dropin_snapshot = preserve_systemd_release_dropin(dropin_path, arguments.sha)

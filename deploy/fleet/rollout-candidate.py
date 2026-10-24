@@ -229,6 +229,7 @@ def node_side_fleet(arguments) -> int:
         print("partial release kept aside:", trash)
     unpack_release(Path(arguments.archive), release)
     command = ["python3", str(HERE / "rollout-node.py"),
+               "--kind", "fleet",
                "--fleet-dir", str(fleet),
                "--sha", sha,
                "--port", str(arguments.web_port),
