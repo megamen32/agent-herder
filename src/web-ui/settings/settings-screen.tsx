@@ -9,6 +9,7 @@ import {
   recordsOf,
   rollbackSetting,
   saveSettings,
+  touchesCommonSettings,
   type SettingsAuditRecord,
   type SettingsChanges,
   type SettingsRecord,
@@ -141,6 +142,10 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [difference, setDifference] = React.useState<string | null>(null);
+  // The round of the delivery of the common settings: it changes when the
+  // owner changes a common setting, and the section of the common settings
+  // asks the fleet to take the new document and shows who applied it.
+  const [delivery, setDelivery] = React.useState(0);
 
   const reload = React.useCallback(async () => {
     try {
@@ -185,7 +190,14 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
     // The value of a secret leaves the form with the answer: it is never
     // kept in the state of the screen.
     setSecretDrafts({});
-    setNotice("Записано.");
+    // A common setting changed: the fleet is asked to take the new document
+    // and the answer of the nodes is the confirmation of the delivery. The
+    // panel never says "применено" on its own.
+    const common = touchesCommonSettings(view, ids);
+    setNotice(common
+      ? "Записано. Доставка общих настроек на узлы — в блоке «Общие настройки флота»."
+      : "Записано.");
+    if (common) setDelivery((value) => value + 1);
     await reload();
   };
 
@@ -425,7 +437,7 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
       <ConnectionsSection />
       <StopControl />
 
-      <CommonSettingsSection />
+      <CommonSettingsSection delivery={delivery} />
 
       <FleetConfirmation />
 
