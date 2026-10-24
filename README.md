@@ -148,7 +148,7 @@ deletable by the author, auto-pruned on expiry.
 | Codex CLI | Native app-server with CLI fallback, plugin `Stop` judge | Enabled by default |
 | Qoder CLI | Native ACP | Set `ENABLE_QODER=true` |
 | ZCode | Local stdio ZCode Protocol app-server, native `Stop`/`SessionStart`/`UserPromptSubmit`/`PreToolUse`/`PostToolUse`/`SessionEnd` hooks | Enabled by default |
-| ChatGPT | BrowserClaw-owned ChatGPT page | Existing conversations are resumable sessions; no automatic chat creation |
+| ChatGPT | CDP-owned ChatGPT page in the owner's personal Chrome | Existing conversations are resumable sessions; no automatic chat creation |
 | Fast Agent | Persisted session home + CLI resume/send | Set `ENABLE_FAST_AGENT=true` and `FAST_AGENT_HOME` |
 
 ## Core MCP tools
@@ -182,13 +182,13 @@ without a native identity channel report that honestly instead of pretending.
 
 ### ChatGPT resume semantics
 
-Agent Herder treats an existing ChatGPT `/c/...` conversation on its one owned BrowserClaw page as a resumable session. ChatGPT does not have a filesystem working directory, so Herder uses the stable local identity directory `/home/roomhacker/.chatgpt` for named-session matching. Prefer the stable Herder `sessionId` when titles are duplicated.
+Agent Herder treats an existing ChatGPT `/c/...` conversation on its one owned Chrome page as a resumable session. ChatGPT does not have a filesystem working directory, so Herder uses the stable local identity directory `/home/roomhacker/.chatgpt` for named-session matching. Prefer the stable Herder `sessionId` when titles are duplicated.
 
 `resume_agent` with a message and `deliver(..., create=never)` reopen the existing conversation on the same owned page, write to its composer, and continue that conversation. The adapter does not create a new ChatGPT conversation when a named target is missing. `working=true` maps to Herder `running`; otherwise the conversation is `idle`.
 
-For ChatGPT data access there are two complementary transports: the token driver in `chatgpt-cdp-mcp` is the fast backend/session-token read path, while BrowserClaw/CDP is the mutation/UI path used for resume and delivery. Both can read; the distinction is transport capability, not a global ChatGPT read-only limitation.
+For ChatGPT data access there are two complementary transports: the token driver in `chatgpt-cdp-mcp` is the fast backend/session-token read path, while CDP against the owner's personal Chrome is the mutation/UI path used for resume and delivery. Both can read; the distinction is transport capability, not a global ChatGPT read-only limitation.
 
-Operationally, the current Mac app is named **BrowserOS neo** (bundle id `com.browseros.BrowserClaw`), not the older `BrowserClaw` display name. Agent Herder reaches it through the localhost-only SSH tunnel `127.0.0.1:39479` → Mac `127.0.0.1:9010`; internal Mac BrowserClaw ports may change. If the Mac is sitting at `loginwindow`, macOS cannot start the GUI browser from SSH. Herder retries ChatGPT adapter activation periodically, so once the user GUI session is available and BrowserOS neo starts, ChatGPT sessions appear without restarting Herder.
+Operationally, the ChatGPT browser leg is Chrome DevTools MCP attached to the owner's personal Chrome profile on the Mac mini. The gateway is `http://127.0.0.1:50260/mcp` on the Mac mini itself, and GPTAdmin reaches it through the shell relay target `mcp:shell:mac-mini-2012.lan:ChromeMacMiniCDP`, which runs `http_stdio.py --url http://127.0.0.1:50260/mcp` on the Mac mini. Chrome's remote debugging on loopback `9222` requires the owner to enable and approve it at `chrome://inspect/#remote-debugging`, so the leg is unavailable until the owner's GUI session approves it. Herder retries ChatGPT adapter activation periodically, so once consent is granted the ChatGPT sessions appear without restarting Herder.
 
 ## Architecture notes
 
@@ -422,5 +422,3 @@ card.
 ## License
 
 MIT
-
-BrowserOS neo 0.49.3.1 currently bundles BrowserClaw server 0.0.26 (migrations through `m0013`). On 2026-09-08 the local BrowserClaw DB had `m0014`–`m0016` applied by a newer server while those migration files were absent from 0.0.26, causing the embedded server to exit and proxy `9010` to return 503. After backing up the DB, the three empty/new schema changes were rolled back (`skills`, `skill_runs`, `skill_run_marks`, and empty `tasks.task_summary`), preserving historical sessions/dispatches; `PRAGMA integrity_check` returned `ok`. DB backup: `/Users/roomhacker/.gptadmin/file-backups/browserclaw-db-20260908-052917`.

@@ -1,7 +1,7 @@
 # CDP website chat MCP
 
 This capability exposes bounded ChatGPT/E-Frontier chat operations over one
-injected BrowserClaw/CDP page. It has two MCP entrypoints:
+injected Chrome CDP page. It has two MCP entrypoints:
 
 - The standalone stdio server (`dist/cdp-chat-mcp.js`) keeps the short tool
   names documented below for compatibility.
@@ -36,10 +36,11 @@ same page, scroll upward, and save each raw accessibility snapshot locally.
   route-stable archive's Markdown and HTML from raw snapshots already captured
   on disk. It never opens, scrolls, or changes the ChatGPT page.
 - `reconcile_known_routes()` is the offline recovery route for every captured
-  `/c/...` snapshot, including after BrowserClaw becomes unavailable. It also
-  refreshes `CHATGPT_HISTORY_ARCHIVE_ROOT/index.html`: a private local catalog
-  with search plus direct HTML and Markdown links for the reconciled articles.
-- Before a click, the BrowserClaw driver intersects fresh a11y sidebar rows
+  `/c/...` snapshot, including after the Chrome CDP endpoint becomes
+  unavailable. It also refreshes `CHATGPT_HISTORY_ARCHIVE_ROOT/index.html`: a
+  private local catalog with search plus direct HTML and Markdown links for the
+  reconciled articles.
+- Before a click, the CDP driver intersects fresh a11y sidebar rows
   with `read(format: "links")` links on that same owned page whose route begins
   `/c/`. It does not open or navigate a second tab to do this filtering.
 - A click must settle on a same-page ChatGPT conversation route (`/c/...`). A
@@ -49,7 +50,7 @@ same page, scroll upward, and save each raw accessibility snapshot locally.
   process. A restart reopens the selected chat and deduplicates already saved
   source views from the manifest.
 
-The concrete BrowserClaw route exposes these two read-only operations only.
+The concrete CDP route exposes these two read-only operations only.
 `E-Frontier` is visible but excluded as the archive canary; it is never sent,
 edited, or used as a test target. Attachment byte downloads remain the next
 vertical after the first real archive proves the actual accessible controls.
@@ -88,12 +89,12 @@ In Agent Herder these names are namespaced as:
 
 The manifest is the decision point for the next vertical slice. If the native
 ZIP includes the files, preserve it as the complete raw source. If it does not,
-add a focused `Library → select → download` batch runner using BrowserClaw's
-fresh `download(page, ref)` primitive. That follow-up must retain the same
-  long-lived BrowserClaw MCP process and single owned page; it must not open a
-  tab per file.
+add a focused `Library → select → download` batch runner using the CDP
+driver's fresh `download(page, ref)` primitive. That follow-up must retain the
+same long-lived Chrome CDP MCP process and single owned page; it must not open
+a tab per file.
 
-The concrete BrowserClaw driver exposes the above read-only history archive and
+The concrete Chrome CDP driver exposes the above read-only history archive and
 the native account-export/archive fallback. It does not expose `new_chat`,
 `search_chat`, `send_message`, `edit_message`, or `download_media`: those need
 separate observable browser receipts before they can be advertised.
@@ -145,11 +146,11 @@ bounded to 100 rows per call.
 Both entrypoints expect `CDP_CHAT_DRIVER_MODULE` to point to a local module
 exporting `createCdpChatDriver()` (or a default factory). The factory must
 return the small `CdpChatDriver` interface from `src/cdp-chat.ts`. The concrete
-BrowserClaw/CDP adapter is still injected separately; this wiring does not by
-itself prove a live BrowserClaw/CDP connection or a real ChatGPT canary.
+Chrome CDP adapter is still injected separately; this wiring does not by
+itself prove a live CDP connection or a real ChatGPT canary.
 
 ```sh
-CDP_CHAT_DRIVER_MODULE=/absolute/path/browserclaw-cdp-driver.mjs \
+CDP_CHAT_DRIVER_MODULE=/absolute/path/cdp-driver.mjs \
 CDP_CHAT_MEDIA_ROOT=/absolute/path/fixture-media \
 node dist/cdp-chat-mcp.js
 ```
@@ -159,28 +160,28 @@ The separately approved real canary should call `new_chat` (or
 and use only that `chatRef` for export/media or any explicitly approved write.
 No existing E-Frontier conversation is a canary target.
 
-## BrowserClaw tester and debug procedure
+## Chrome CDP tester and debug procedure
 
-The BrowserClaw driver owns one MCP session and one ChatGPT page for the life
-of the MCP process. Start `dist/cdp-chat-browserclaw-main.js` (or configure
-the same factory through `CDP_CHAT_DRIVER_MODULE`) once; do not run a fresh
-one-shot probe before each tool call, because BrowserClaw page ownership is
-session-scoped.
+The Chrome CDP driver owns one MCP session and one ChatGPT page for the life
+of the MCP process. Start the packaged CDP chat main entry point listed in
+`package.json` (or configure the same factory through
+`CDP_CHAT_DRIVER_MODULE`) once; do not run a fresh one-shot probe before each
+tool call, because Chrome page ownership is session-scoped.
 
 For the history-archive canary use `list_chats → export_chat` on one selected
 non-`E-Frontier` chat and stop on the first failure. The operation is read-only
 and returns only a local receipt. For the legacy fixture route, use
 `new_chat → list_chats → search_chat → export_chat`; the fixture is the only
-target that may be written. If a BrowserClaw action errors, times out, or leaves the page state
+target that may be written. If a CDP action errors, times out, or leaves the page state
 ambiguous, capture and inspect a secret-safe screenshot from that same MCP
 session and page before retrying, reloading, navigating, or opening any new
 tab. Record only the redacted timestamp, page URL without query data, operation
 and error class — never a ChatGPT transcript, cookies, headers, or prompt body.
 
-For the native account-export flow, the BrowserClaw driver additionally writes
+For the native account-export flow, the Chrome CDP driver additionally writes
 a private `trash/logs/chatgpt-account-export-*.a11y.json` diagnostic on a
-failure (and a same-page PNG when BrowserClaw returns one). It is a bounded,
-redacted slice of BrowserClaw's `snapshot(mode: "full")` — the supported
+failure (and a same-page PNG when the driver returns one). It is a bounded,
+redacted slice of the driver's `snapshot(mode: "full")` — the supported
 equivalent of a CDP accessibility tree — containing only the relevant
 name/role/disabled fields near Data Controls and Export. Use it to adjust a
 matcher after a UI change; do not open a second inspection tab or record a
@@ -188,5 +189,5 @@ full chat transcript.
 
 Every first successful `open_chat` and any failed history browser action also
 writes a private `trash/logs/chatgpt-history-archive-*.json` receipt and, when
-BrowserClaw returns it, a same-page PNG. The receipt intentionally contains no
+the driver returns it, a same-page PNG. The receipt intentionally contains no
 chat text; it records only the outcome, stage, page, and URL without query data.
