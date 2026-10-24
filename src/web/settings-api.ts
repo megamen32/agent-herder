@@ -360,6 +360,7 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
         confirmed: 0,
         total: 0,
         unconfirmed: [],
+        unreachable: [],
         checkedAt,
         error: "Общие настройки флота не настроены на этой ноде.",
       };
