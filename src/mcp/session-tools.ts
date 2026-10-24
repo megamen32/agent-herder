@@ -153,7 +153,13 @@ export function registerSessionTools(server: McpServer, deps: {
     const state = String(reply.state ?? "");
     const reason = typeof reply.reason === "string" && reply.reason ? `: ${reply.reason}` : "";
     const label = (reply.label ?? {}) as { project?: string; goal?: string; stage?: string };
-    if (state === "renamed") {
+    // The peer that owns the session stores the metadata and tells the two
+    // outcomes apart with renamed: the native name changed, or it did not
+    // change and the receipt says why.
+    if (reply.renamed === false) {
+      const renameError = typeof reply.renameError === "string" && reply.renameError
+        ? reply.renameError
+        : (typeof reply.reason === "string" && reply.reason ? reply.reason : "у среды нет нативного канала переименования.");
       publishSessionsChanged();
       const structured = {
         ok: true,
@@ -161,15 +167,40 @@ export function registerSessionTools(server: McpServer, deps: {
         sessionId: args.sessionId,
         harness: args.harness,
         hostId,
+        renamed: false,
         previousTitle: typeof reply.previousTitle === "string" ? reply.previousTitle : null,
         title: typeof reply.title === "string" ? reply.title : undefined,
+        renameError,
         label,
       };
       return {
-        content: [{ type: "text" as const, text: `Renamed [${args.harness}] ${args.sessionId} on host '${hostId}': "${structured.previousTitle ?? ""}" -> "${structured.title ?? ""}".` }],
+        content: [{ type: "text" as const, text: `Метка сохранена. Имя сессии не изменилось — ${renameError}` }],
         structuredContent: structured,
       };
     }
+    if (state === "renamed") {
+      publishSessionsChanged();
+      const nativeTitle = typeof reply.nativeTitle === "string"
+        ? reply.nativeTitle
+        : (typeof reply.title === "string" ? reply.title : undefined);
+      const structured = {
+        ok: true,
+        supported: true,
+        sessionId: args.sessionId,
+        harness: args.harness,
+        hostId,
+        renamed: true,
+        previousTitle: typeof reply.previousTitle === "string" ? reply.previousTitle : null,
+        title: typeof reply.title === "string" ? reply.title : undefined,
+        ...(nativeTitle !== undefined ? { nativeTitle } : {}),
+        label,
+      };
+      return {
+        content: [{ type: "text" as const, text: `Сохранено. Название сессии: «${nativeTitle ?? ""}».` }],
+        structuredContent: structured,
+      };
+    }
+    // An older peer does not report renamed: its honest refusals stay refusals.
     if (state === "unsupported") {
       return fail(`Host '${hostId}' cannot rename a [${args.harness}] session${reason}`);
     }
@@ -379,7 +410,8 @@ export function registerSessionTools(server: McpServer, deps: {
       "Rename one existing session in place: the native title of the same session changes. " +
       "No session is created, no model turn starts and no active turn is interrupted. " +
       "Without a title the name is composed as 'project | goal | stage' from the stored Herder metadata. " +
-      "A harness without a native rename channel reports unsupported instead of a false success.",
+      "The metadata of the session is stored first and on its own; the native name is an optional operation of the harness. " +
+      "The answer tells the two outcomes apart with renamed: the name changed, or it did not change and says why.",
     inputSchema: z.object({
       sessionId: z.string().trim().min(1).max(512),
       harness: harnessSchema.optional(),
@@ -397,8 +429,11 @@ export function registerSessionTools(server: McpServer, deps: {
       sessionId: z.string().optional(),
       harness: z.string().optional(),
       hostId: z.string().optional(),
+      renamed: z.boolean().optional(),
       previousTitle: z.string().nullable().optional(),
       title: z.string().optional(),
+      nativeTitle: z.string().optional(),
+      renameError: z.string().optional(),
       label: z.object({ project: z.string().optional(), goal: z.string().optional(), stage: z.string().optional() }).optional(),
       error: z.string().optional(),
     }),
@@ -415,10 +450,6 @@ export function registerSessionTools(server: McpServer, deps: {
       return { content: [{ type: "text" as const, text: error }], structuredContent: { ok: false, supported: false, error } };
     }
     const adapter = found.adapter;
-    if (typeof adapter.renameSession !== "function") {
-      const error = `${adapter.name} has no native rename channel, so the title of ${args.sessionId} cannot be changed.`;
-      return { content: [{ type: "text" as const, text: error }], structuredContent: { ok: false, supported: false, sessionId: args.sessionId, harness: found.session.harness, hostId: owner, error } };
-    }
     const patch = { project: args.project, goal: args.goal, stage: args.stage };
     const hasFields = args.project !== undefined || args.goal !== undefined || args.stage !== undefined;
     // The composed title uses the stored fields and the new ones together, so
@@ -431,20 +462,30 @@ export function registerSessionTools(server: McpServer, deps: {
       const error = "A session title is required: give a title, or the project, the goal and the stage.";
       return { content: [{ type: "text" as const, text: error }], structuredContent: { ok: false, supported: true, sessionId: args.sessionId, harness: found.session.harness, hostId: owner, error } };
     }
-    const result = await adapter.renameSession(found.session.id, { title });
-    if (!result.ok) {
-      const error = result.error || "The native rename did not succeed.";
-      return {
-        content: [{ type: "text" as const, text: error }],
-        structuredContent: {
-          ok: false, supported: true, sessionId: args.sessionId, harness: found.session.harness, hostId: owner,
-          previousTitle: result.previousTitle ?? null, error,
-        },
-      };
-    }
+    // The metadata is written first and on its own: it belongs to Herder and
+    // does not depend on what the harness can or cannot do with a name.
     const label = hasFields
       ? await writeSessionLabel(found.session.harness, found.session.id, patch)
       : merged;
+    // The native name is an optional operation of the harness. The answer tells
+    // the two outcomes apart: the name changed, or it did not change and says
+    // why. A failed rename never takes the stored metadata away.
+    let renamed = false;
+    let previousTitle: string | null = null;
+    let nativeTitle: string | undefined;
+    let renameError: string | undefined;
+    if (typeof adapter.renameSession !== "function") {
+      renameError = `У среды '${found.session.harness}' нет нативного канала переименования: имя сессии осталось прежним.`;
+    } else {
+      const result = await adapter.renameSession(found.session.id, { title });
+      previousTitle = result.previousTitle ?? null;
+      if (result.ok) {
+        renamed = true;
+        nativeTitle = result.title ?? title;
+      } else {
+        renameError = result.error || "Нативное переименование не удалось.";
+      }
+    }
     publishSessionsChanged();
     const structured = {
       ok: true,
@@ -452,12 +493,17 @@ export function registerSessionTools(server: McpServer, deps: {
       sessionId: args.sessionId,
       harness: found.session.harness,
       hostId: owner,
-      previousTitle: result.previousTitle ?? null,
-      title: result.title ?? title,
+      renamed,
+      previousTitle,
+      title,
+      ...(nativeTitle !== undefined ? { nativeTitle } : {}),
+      ...(renameError !== undefined ? { renameError } : {}),
       label,
     };
     return {
-      content: [{ type: "text" as const, text: `Renamed [${found.session.harness}] ${args.sessionId}: "${result.previousTitle ?? ""}" -> "${result.title ?? title}".` }],
+      content: [{ type: "text" as const, text: renamed
+        ? `Сохранено. Название сессии: «${nativeTitle ?? title}».`
+        : `Метка сохранена. Имя сессии не изменилось — ${renameError}` }],
       structuredContent: structured,
     };
   });

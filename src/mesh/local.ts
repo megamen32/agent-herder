@@ -17,6 +17,25 @@ import {getHumanStopStore} from "../human-stop-store.js";
 import {MINIMAX_CODE_HARNESS_CWD} from "../adapters/minimax-code-store.js";
 import {MINIMAX_CODE_HARNESS,observeMinimaxCode,runMinimaxCodeDelivery} from "./native-minimax-code.js";
 import {composeSessionTitle,mergeSessionLabel,writeSessionLabel} from "../session-labels.js";
+/**
+ * Receipt of one native rename.
+ *
+ * The metadata of the session belongs to Herder and is stored first and on its
+ * own; the native name of the session is an optional operation of the harness.
+ * The receipt tells the two outcomes apart with renamed: the native name
+ * changed, or it did not change and the receipt says why. A rename that did
+ * not happen never takes the stored metadata away.
+ */
+export type MeshRenameReceipt=NativeRenameReceipt&{
+ /** The native name changed. The stored metadata does not depend on it. */
+ renamed?:boolean;
+ /** The native title after the rename, as the native readback returned it. */
+ nativeTitle?:string;
+ /** Why the native name of the session did not change. */
+ renameError?:string;
+ /** What the owner reads: the same words the panel shows for a stored label. */
+ message?:string;
+};
 export interface HarnessMeshCapability {harness:string;discovery:"available"|"unavailable";delivery:"available"|"unsupported";reason?:string}
 /** Injects the active coordination notes of the target into a delivered message. */
 export type MeshNotesInjector=(session:{id:string;harness:string;cwd:string;hostId?:string},message:string)=>Promise<string>;
@@ -186,13 +205,12 @@ export class LocalHarnessMesh {
  * the native titles of the readback, so a caller sees what the harness
  * really shows.
  */
- async rename(request:{target:MeshAddress;title?:string;project?:string;goal?:string;stage?:string}):Promise<NativeRenameReceipt>{
+ async rename(request:{target:MeshAddress;title?:string;project?:string;goal?:string;stage?:string}):Promise<MeshRenameReceipt>{
   addressKey(request.target);
-  const rejected=(reason:string,state:"not_attempted"|"unsupported"|"not_found"="not_attempted"):NativeRenameReceipt=>({state,hostId:this.hostId,harness:request.target.harness,nativeSessionId:request.target.nativeSessionId,reason});
+  const rejected=(reason:string,state:"not_attempted"|"unsupported"|"not_found"="not_attempted"):MeshRenameReceipt=>({state,hostId:this.hostId,harness:request.target.harness,nativeSessionId:request.target.nativeSessionId,reason});
   if(request.target.hostId!==this.hostId)return rejected("native_host_identity_mismatch");
   const adapter=this.deps.adapters.get(request.target.harness);
   if(!adapter)return rejected("adapter_not_registered");
-  if(typeof adapter.renameSession!=="function")return rejected("native_rename_unsupported","unsupported");
   const sessionId=this.ids.get(addressKey(request.target))||request.target.nativeSessionId;
   const session=await adapter.getSession(sessionId).catch(()=>null);
   if(!session)return rejected("native_session_not_found","not_found");
@@ -202,9 +220,22 @@ export class LocalHarnessMesh {
   const merged=hasFields?await mergeSessionLabel(session.harness,session.id,patch):await mergeSessionLabel(session.harness,session.id,{});
   const title=request.title?.trim()||composeSessionTitle(merged);
   if(!title)return rejected("native_title_required");
-  const result=await adapter.renameSession(session.id,{title});
-  if(!result.ok)return {...rejected(result.error||"native_rename_failed"),previousTitle:result.previousTitle??null};
+  // The metadata of the session belongs to Herder and is stored first and on
+  // its own: it does not depend on what the harness can or cannot do with a name.
   const label:MeshSessionLabel=hasFields?await writeSessionLabel(session.harness,session.id,patch):merged;
-  return {state:"renamed",hostId:this.hostId,harness:session.harness,nativeSessionId:session.id,previousTitle:result.previousTitle??null,title:result.title??title,label};
+  // The native name is an optional operation of the harness. The receipt tells
+  // the two outcomes apart with renamed: the name changed, or it did not change
+  // and the receipt says why. A rename that did not happen never takes the
+  // stored metadata away.
+  if(typeof adapter.renameSession!=="function"){
+   const renameError=`У среды '${session.harness}' нет нативного канала переименования: имя сессии осталось прежним.`;
+   return {state:"unsupported",renamed:false,hostId:this.hostId,harness:session.harness,nativeSessionId:session.id,previousTitle:null,title,label,renameError,message:`Метка сохранена. Имя сессии не изменилось — ${renameError}`};
+  }
+  const result=await adapter.renameSession(session.id,{title});
+  if(!result.ok){
+   const renameError=result.error||"Нативное переименование не удалось.";
+   return {state:"not_attempted",renamed:false,hostId:this.hostId,harness:session.harness,nativeSessionId:session.id,previousTitle:result.previousTitle??null,title,label,renameError,message:`Метка сохранена. Имя сессии не изменилось — ${renameError}`};
+  }
+  return {state:"renamed",renamed:true,hostId:this.hostId,harness:session.harness,nativeSessionId:session.id,previousTitle:result.previousTitle??null,title:result.title??title,nativeTitle:result.title??title,label,message:`Сохранено. Название сессии: «${result.title??title}».`};
  }
 }
