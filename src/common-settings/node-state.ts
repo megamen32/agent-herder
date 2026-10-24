@@ -14,7 +14,9 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { settingsFingerprint } from "../web/settings-store.js";
 import type { CommonSettingsDocument } from "./document.js";
+import { holdsSecretSetting, purposeOfSettingId } from "./scope.js";
 
 /** The file of the state of the common settings of this node. */
 export const COMMON_SETTINGS_STATE_FILE = join(
@@ -77,6 +79,103 @@ export interface CommonSettingsConflict {
   restoredAt?: string;
 }
 
+/**
+ * A deviation of a node, as a reader of the fleet reads it.
+ *
+ * The value of a secret is never here: the deviation names the setting, says
+ * that the setting holds a secret and gives its fingerprint. A setting that is
+ * not a secret keeps both values, because there is nothing to hide.
+ */
+export interface CommonSettingsConflictView {
+  /** The setting the node holds differently: `herder.env/KEY`. */
+  id: string;
+  /** The value of the common document. `null` for a secret. */
+  commonValue: string | null;
+  /** The value the node held before the document was applied. `null` for a secret. */
+  localValue: string | null;
+  /** Whether the value of the common document is a secret. */
+  commonSecret?: boolean;
+  /** The fingerprint of the secret of the common document. */
+  commonFingerprint?: string;
+  /** Whether the value the node held is a secret. */
+  localSecret?: boolean;
+  /** The fingerprint of the secret the node held. */
+  localFingerprint?: string;
+  /** What the setting is for. */
+  purpose?: string;
+  /** How the deviation was found. */
+  kind: "adopted" | "local-change";
+  /** When the deviation was found. */
+  detectedAt: string;
+  /** Whether the deviation is in force on the node. */
+  open?: boolean;
+  /** The policy of the launch is not a string: it is named apart. */
+  policyChanged?: boolean;
+  /** The policy the node held before the document was applied. */
+  localPolicy?: unknown;
+  /** The policy of the common document. */
+  commonPolicy?: unknown;
+  /** The lever of the hooks is not a string either: it is named apart. */
+  hooksChanged?: boolean;
+  /** The position of the lever of the hooks on the node before the document was applied. */
+  localHooksState?: { prohibitionsEnabled: boolean; disabledHooks: string[] } | null;
+  /** The position of the lever of the hooks in the common document. */
+  commonHooksState?: { prohibitionsEnabled: boolean; disabledHooks: string[] };
+  /** A note about the deviation, in the words of the owner. */
+  note?: string;
+  /** When the local value was put back. */
+  restoredAt?: string;
+}
+
+/**
+ * One side of a deviation, as a reader of the fleet reads it.
+ *
+ * A secret is never shown: the side says that the setting holds a secret and
+ * gives its fingerprint. A setting that is not a secret keeps its value.
+ */
+function redactConflictSide(
+  id: string,
+  value: string | null,
+  fingerprint: string | undefined,
+): { value: string | null; secret: boolean; fingerprint?: string } {
+  if (!holdsSecretSetting(id)) return { value, secret: false };
+  if (value === null) {
+    return fingerprint ? { value: null, secret: true, fingerprint } : { value: null, secret: true };
+  }
+  return { value: null, secret: true, fingerprint: settingsFingerprint(value) };
+}
+
+/**
+ * The deviations of a node, as a reader of the fleet reads them.
+ *
+ * The redaction is by the classification of the setting and never by the name of
+ * the field: a field that carries the value of a secret is closed whatever it is
+ * called, and a setting that is not a secret keeps its value.
+ *
+ * The redaction can be applied twice: a deviation that is already closed keeps
+ * its fingerprint, because the value it hides is already gone.
+ */
+export function redactCommonSettingsConflicts(
+  conflicts: readonly (CommonSettingsConflict | CommonSettingsConflictView)[],
+): CommonSettingsConflictView[] {
+  return conflicts.map((conflict) => {
+    const view = conflict as CommonSettingsConflictView;
+    const common = redactConflictSide(conflict.id, conflict.commonValue, view.commonFingerprint);
+    const local = redactConflictSide(conflict.id, conflict.localValue, view.localFingerprint);
+    const purpose = purposeOfSettingId(conflict.id);
+    return {
+      ...conflict,
+      commonValue: common.value,
+      localValue: local.value,
+      ...(common.secret ? { commonSecret: true } : {}),
+      ...(common.fingerprint ? { commonFingerprint: common.fingerprint } : {}),
+      ...(local.secret ? { localSecret: true } : {}),
+      ...(local.fingerprint ? { localFingerprint: local.fingerprint } : {}),
+      ...(purpose ? { purpose } : {}),
+    };
+  });
+}
+
 /** The state of the common settings on one node. */
 export interface CommonSettingsNodeState {
   /** Whether the node takes the common settings of the owner. */
@@ -120,8 +219,8 @@ export interface CommonSettingsNodeStatus {
   appliedRevision: string | null;
   /** When the node applied that revision. */
   appliedAt: string | null;
-  /** The deviations the node replaced. */
-  conflicts: CommonSettingsConflict[];
+  /** The deviations the node replaced, with the values of the secrets closed. */
+  conflicts: CommonSettingsConflictView[];
 }
 
 /**

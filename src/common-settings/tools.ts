@@ -16,6 +16,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import type { CommonSettingsNodeService } from "./node-service.js";
+import { redactCommonSettingsConflicts } from "./node-state.js";
 
 /** The answer of a tool of the common settings. */
 function answer(payload: Record<string, unknown>): {
@@ -77,7 +78,7 @@ export function registerCommonSettingsTools(server: McpServer, deps: { service: 
       appliedRevision: result.appliedRevision,
       appliedAt: result.appliedAt,
       changed: result.changed,
-      conflicts: result.conflicts,
+      conflicts: redactCommonSettingsConflicts(result.conflicts),
       ...(result.reason ? { reason: result.reason } : {}),
     });
   });
@@ -101,7 +102,7 @@ export function registerCommonSettingsTools(server: McpServer, deps: { service: 
       appliedRevision: result.appliedRevision,
       appliedAt: result.appliedAt,
       changed: result.changed,
-      conflicts: result.conflicts,
+      conflicts: redactCommonSettingsConflicts(result.conflicts),
       ...(result.reason ? { reason: result.reason } : {}),
     });
   });

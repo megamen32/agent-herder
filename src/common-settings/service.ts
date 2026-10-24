@@ -20,7 +20,12 @@ import {
   type CommonSettingsTarget,
 } from "./apply.js";
 import type { CommonSettingsDocument, CommonSettingsHooksLever } from "./document.js";
-import type { CommonSettingsConflict, CommonSettingsNodeState, CommonSettingsRole } from "./node-state.js";
+import {
+  redactCommonSettingsConflicts,
+  type CommonSettingsConflictView,
+  type CommonSettingsNodeState,
+  type CommonSettingsRole,
+} from "./node-state.js";
 import type { CommonSettingsTransport } from "./transport.js";
 
 /** The environment variable that names the node that owns the document. */
@@ -63,8 +68,8 @@ export interface CommonSettingsNodeView {
   confirmedAt: string | null;
   /** Why the node did not confirm, in words. */
   reason: string | null;
-  /** The deviations the node holds. */
-  conflicts: CommonSettingsConflict[];
+  /** The deviations the node holds, with the values of the secrets closed. */
+  conflicts: CommonSettingsConflictView[];
 }
 
 /** The fleet of the common settings, as the owner reads it. */
@@ -168,7 +173,7 @@ export async function readCommonSettingsFleet(input: {
       reason: reason ?? (holds ? null : appliedRevision === null
         ? "Нода ответила и берёт общие настройки, но общий документ к ней ещё не доехал: ревизия не названа."
         : `Нода держит другую ревизию (${appliedRevision}).`),
-      conflicts: status?.conflicts ?? [],
+      conflicts: redactCommonSettingsConflicts(status?.conflicts ?? []),
     };
     nodes.push(view);
   }));

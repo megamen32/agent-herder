@@ -168,6 +168,32 @@ export function isSecretSettingId(id: string): boolean {
   return ALL_SCOPE_ENTRIES.find((entry) => entry.id === id)?.secret === true;
 }
 
+/**
+ * Whether the setting holds a secret, by the classification of the setting.
+ *
+ * The classification is a property of the setting and not of the name of the
+ * field that carries its value: a secret is closed wherever its value is shown,
+ * and a setting that is not a secret keeps its value everywhere.
+ *
+ * The list of the scope decides it, and the catalog of the product is the second
+ * voice: a setting that the catalog calls a secret is a secret even when the
+ * list of the scope has not named it yet.
+ */
+export function holdsSecretSetting(id: string): boolean {
+  if (isSecretSettingId(id)) return true;
+  return HERDER_ENV_CATALOG.find((entry) => entry.id === id)?.secret === true;
+}
+
+/**
+ * What the setting is for, in one line.
+ *
+ * The purpose of a setting is shown next to the fact that it holds a secret:
+ * the owner sees what the secret is for and never what it is.
+ */
+export function purposeOfSettingId(id: string): string | null {
+  return ALL_SCOPE_ENTRIES.find((entry) => entry.id === id)?.reason ?? null;
+}
+
 /** The common keys of the environment file of the product. */
 export function commonEnvironmentKeys(): string[] {
   return COMMON_SETTINGS_SCOPE
