@@ -718,7 +718,7 @@ async function freshModelCatalog(supervisor: SessionSupervisor, harness: string,
 
 let healthQuotaPreflight: ReturnType<typeof createMiniMaxQuotaPreflight> | undefined;
 
-/** The MiniMax subscription quota check of one health launch. */
+/** The MiniMax route quota check of one health launch. */
 function noticeplaceHealthQuotaPreflight(): ReturnType<typeof createMiniMaxQuotaPreflight> {
   healthQuotaPreflight ??= createMiniMaxQuotaPreflight({ token: process.env.MINIMAX_API_KEY });
   return healthQuotaPreflight;
@@ -2872,7 +2872,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       if (!catalog.models.includes(model)) {
         return sendJson(response, 409, { error: `OpenCode model unavailable: ${model}; no provider fallback` });
       }
-      // An exhausted MiniMax subscription quota is an explicit reason to
+      // An exhausted MiniMax route quota is an explicit reason to
       // refuse, not a random 429 in the middle of the repair.
       const quota = await noticeplaceHealthQuotaPreflight()(model);
       if (quota === "quota_exhausted") {

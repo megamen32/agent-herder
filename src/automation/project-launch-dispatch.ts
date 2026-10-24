@@ -652,7 +652,7 @@ export function namedSessionRunner(adapters: Map<string, HarnessAdapter>, name: 
       return {
         ok: false, created: false, harness: request.harness, name, cwd: request.cwd, model: request.model,
         inputId: request.inputId, delivery: "not_attempted", failureCode: "quota_exhausted", nonRetryable: true,
-        error: "Квота подписки MiniMax исчерпана (4292056). Бизнес-задача не отправлена; используется следующая среда маршрута.",
+        error: "Лимит маршрута MiniMax исчерпан (4292056). Бизнес-задача не отправлена; используется следующая среда маршрута.",
       };
     }
     return await newOrResumeNamedSession(adapters, {
