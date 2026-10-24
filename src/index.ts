@@ -65,6 +65,9 @@ import { registerControlPlaneTools } from "./mcp/control-plane-tools.js";
 import { registerResumeAfterTools } from "./mcp/resume-after-tools.js";
 import { createResumeAfterRuntime } from "./resume-after-runtime.js";
 import type { ResumeAfterService } from "./resume-after.js";
+import type { CadenceScheduler } from "./cadence-scheduler.js";
+import { createCadenceRuntime } from "./cadence-runtime.js";
+import { registerCadenceTools } from "./mcp/cadence-tools.js";
 import { registerHumanRequestTools } from "./mcp/human-request-tools.js";
 import { registerCdpTools } from "./mcp/cdp-tools.js";
 import { registerSessionTools } from "./mcp/session-tools.js";
@@ -627,10 +630,12 @@ function registerTools(
   humanResumeQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>,
   inventorySupervisor?: SessionSupervisor,
   resumeAfter?: ResumeAfterService,
+  cadence?: CadenceScheduler,
 ) {
   registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
   registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: autopilotSessionCommand } });
   registerResumeAfterTools(server, resumeAfter);
+  registerCadenceTools(server, cadence);
 
   // A human answer resumes its exact native session exactly once through the
   // same durable admission the internal completion endpoint uses.
@@ -704,6 +709,7 @@ export interface AgentHerderMcpServerOptions {
   inventorySupervisor?: SessionSupervisor;
   /** Shared durable joins, never scoped to an MCP transport. */
   resumeAfter?: ResumeAfterService;
+  cadence?: CadenceScheduler;
   /** Shared domain events; transport sessions are never used as durable state. */
   events?: HerderEventBus;
   /** Enable direct resource notifications for long-lived transports such as stdio. */
@@ -763,6 +769,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     options.humanResumeQuery,
     options.inventorySupervisor,
     options.resumeAfter,
+    options.cadence,
   );
   return server;
 }
@@ -926,6 +933,9 @@ async function main() {
     autoCompact: autoCompactService, admissionGate: recoveryAdmissionGate,
   });
   const resumeAfterRuntime = createResumeAfterRuntime(adapters, processSupervisor, (harness,id) => humanStopStore.isHeld(harness,id));
+  const cadence = createCadenceRuntime(adapters, processSupervisor, join(autopilotStateDir, "cadence.json"));
+  const stopCadence = cadence.start(error => console.error("[agent-herder] cadence:", error));
+  process.once("exit", stopCadence);
   const stopResumeAfter = await resumeAfterRuntime.start();
   process.once("exit", stopResumeAfter);
   const stopAutoCompact = autoCompactService.start();
@@ -1003,11 +1013,12 @@ async function main() {
   const humanResumeQuery = (request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters);
   // Both seams are process-owned: the fleet inventory view and the single
   // human-answer and project-launch consumer.
-  const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor, resumeAfter: resumeAfterRuntime.service });
-  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor, resumeAfter: resumeAfterRuntime.service });
+  const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor, resumeAfter: resumeAfterRuntime.service, cadence });
+  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor, resumeAfter: resumeAfterRuntime.service, cadence });
   let shuttingDown = false;
   const shutdown = () => {
     if (shuttingDown) return; shuttingDown = true;
+    stopCadence();
     stopUnfinishedSessionLauncher(); stopProcessObservation(); stopAutoCompact(); stopCompletionNoticeSweeper();
     for (const stop of stopNativeTurnObservers) stop();
     void (async () => {
