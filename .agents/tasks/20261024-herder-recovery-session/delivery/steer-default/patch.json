@@ -1,0 +1,36 @@
+{
+  "patchSourceSha": "b8f8470a69aa46bc0f848b813a17a2b91ee35c18",
+  "sourceGitBlobs": {
+    "src/mcp-tools/definitions.ts": "7353423e74bfd0612e537a7768cd8d7a93e9bbec",
+    "src/mcp/session-tools.ts": "e8785af7faf2825862e1e3ff0d14953d45f13133",
+    "src/mesh/register-tools.ts": "9d09bbf1dd5830dd833b0d4e62436590b2b683ac"
+  },
+  "files": [],
+  "replacements": [
+    {
+      "path": "mcp-tools/definitions.js",
+      "before": "    meshSender: MeshSenderSchema.optional().describe(\"Declared remote mesh sender for the full-address automatic budget and attribution; not authentication. Takes precedence over legacy sender fields without local sender lookup. Cannot claim humanRequested.\"),\n    mode: z.enum([\"queue\", \"steer\", \"sync\"]).optional().default(\"sync\").describe(\"queue = fire-and-forget, steer = redirect agent, sync = wait for response\"),\n});\n",
+      "after": "    meshSender: MeshSenderSchema.optional().describe(\"Declared remote mesh sender for the full-address automatic budget and attribution; not authentication. Takes precedence over legacy sender fields without local sender lookup. Cannot claim humanRequested.\"),\n    mode: z.enum([\"queue\", \"steer\", \"sync\"]).optional().default(\"steer\").describe(\"For ordinary inter-agent exchange use explicit mode:\\\"steer\\\" (default): redirect the current active turn. queue is only intentional deferred work after current work finishes; it may wait hours and is not immediate exchange. sync waits for a response.\"),\n});\n"
+    },
+    {
+      "path": "mcp-tools/definitions.js",
+      "before": "        description: \"Ordinary coordination sends only to an active native turn; it never wakes an inactive/completed target or stores deferred debt. humanRequested=true is for an explicit human new task/send/resume. Agent Herder automatically injects active coordination notes for the target workspace before delivery. Supports three modes: \" +\n            \"'sync' (wait for response), 'queue' (fire-and-forget), 'steer' (redirect agent's direction).\",\n        inputSchema: {\n",
+      "after": "        description: \"Ordinary coordination sends only to an active native turn; it never wakes an inactive/completed target or stores deferred debt. humanRequested=true is for an explicit human new task/send/resume. Agent Herder automatically injects active coordination notes for the target workspace before delivery. Supports three modes: \" +\n            \"Use explicit mode:\\\"steer\\\" for ordinary inter-agent exchange; steer is the default and redirects the current active turn. 'queue' is only intentional deferred work after current work finishes, may wait hours, and is not immediate exchange. 'sync' waits for response.\",\n        inputSchema: {\n"
+    },
+    {
+      "path": "mcp-tools/definitions.js",
+      "before": "                    }, required: [\"hostId\", \"harness\", \"nativeSessionId\"], description: \"Declared automatic mesh sender; full-address budget, no local lookup, not authentication or human origin. Overrides legacy sender attribution when supplied.\" },\n                mode: { type: \"string\", enum: [\"queue\", \"steer\", \"sync\"], default: \"sync\", description: \"Delivery mode\" },\n            },\n",
+      "after": "                    }, required: [\"hostId\", \"harness\", \"nativeSessionId\"], description: \"Declared automatic mesh sender; full-address budget, no local lookup, not authentication or human origin. Overrides legacy sender attribution when supplied.\" },\n                mode: { type: \"string\", enum: [\"queue\", \"steer\", \"sync\"], default: \"steer\", description: \"Use explicit steer for ordinary exchange (default). queue intentionally waits until current work finishes and may wait hours; sync waits for response.\" },\n            },\n"
+    },
+    {
+      "path": "mcp/session-tools.js",
+      "before": "    });\n    server.registerTool(\"send_message\", { description: \"Send a message to an agent. Ordinary coordination is active-turn-only, including queue mode: inactive/completed targets return skipped_inactive without new turns or deferred debt. Explicit humanRequested=true permits a human new task/send/resume. inputId deduplicates retries for 24 hours. Active coordination notes are injected automatically. fromSessionId/fromHarness add verified reply attribution, do not authenticate the caller. Modes: sync (wait), queue (fire-and-forget), steer (redirect).\", inputSchema: SendMessageSchema }, async (args) => {\n        const peer = selectedRemotePeer(args.hostId);\n",
+      "after": "    });\n    server.registerTool(\"send_message\", { description: \"Send a message to an agent. Ordinary coordination is active-turn-only, including queue mode: inactive/completed targets return skipped_inactive without new turns or deferred debt. Explicit humanRequested=true permits a human new task/send/resume. inputId deduplicates retries for 24 hours. Active coordination notes are injected automatically. fromSessionId/fromHarness add verified reply attribution, do not authenticate the caller. For ordinary inter-agent exchange use explicit mode:\\\"steer\\\" (default) to redirect the current active turn. queue is only intentional deferred work after current work finishes; it may wait hours and is not immediate exchange. sync waits for response.\", inputSchema: SendMessageSchema }, async (args) => {\n        const peer = selectedRemotePeer(args.hostId);\n"
+    },
+    {
+      "path": "mesh/register-tools.js",
+      "before": "        server.registerTool(\"mesh_discover\", { description: \"Discover registered native mesh peers through the existing authenticated fleet transport, with compact partial host receipts.\", inputSchema: z.object({ limit: z.number().int().min(1).max(12).default(12) }) }, async (args) => result(await mesh.discover(args.limit)));\n        server.registerTool(\"mesh_route\", { description: \"Address one discovered remote native peer via the existing fleet transport. Never retries uncertain admission.\", inputSchema: delivery }, async (args) => result(await mesh.deliver(args)));\n    }\n",
+      "after": "        server.registerTool(\"mesh_discover\", { description: \"Discover registered native mesh peers through the existing authenticated fleet transport, with compact partial host receipts.\", inputSchema: z.object({ limit: z.number().int().min(1).max(12).default(12) }) }, async (args) => result(await mesh.discover(args.limit)));\n        server.registerTool(\"mesh_route\", { description: \"Address one verified remote native peer via the existing fleet transport. No mode parameter: the MiniMax active native lane steers the current turn. Ordinary inter-agent send_message exchange should use explicit mode:steer (default); queue is intentional deferred work, may wait hours, and is not immediate exchange. Never retries uncertain admission.\", inputSchema: delivery }, async (args) => result(await mesh.deliver(args)));\n    }\n"
+    }
+  ]
+}

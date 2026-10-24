@@ -18,6 +18,6 @@ export function registerHarnessMeshTools(server:McpServer,deps:{adapters:Map<str
  if(deps.gptadmin){
   const mesh=new GptAdminMesh(deps.gptadmin,meshDiscoveryTimeoutMs()+10000,deps.deliveryPolicy);
   server.registerTool("mesh_discover",{description:"Discover registered native mesh peers through the existing authenticated fleet transport, with compact partial host receipts.",inputSchema:z.object({limit:z.number().int().min(1).max(12).default(12)})},async args=>result(await mesh.discover(args.limit)));
-  server.registerTool("mesh_route",{description:"Address one discovered remote native peer via the existing fleet transport. Never retries uncertain admission.",inputSchema:delivery},async args=>result(await mesh.deliver(args)));
+  server.registerTool("mesh_route",{description:"Address one verified remote native peer via the existing fleet transport. No mode parameter: the MiniMax active native lane steers the current turn. Ordinary inter-agent send_message exchange should use explicit mode:steer (default); queue is intentional deferred work, may wait hours, and is not immediate exchange. Never retries uncertain admission.",inputSchema:delivery},async args=>result(await mesh.deliver(args)));
  }
 }

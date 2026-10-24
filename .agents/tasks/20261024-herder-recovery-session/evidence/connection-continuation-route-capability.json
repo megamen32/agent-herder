@@ -1,0 +1,24 @@
+{
+  "at": "2026-10-23T23:52:14.608Z",
+  "target": "mcp:shell:MacBook-Pro-User.local:AgentHerder",
+  "exactNativeSessionId": "mvs_f70ce650bbf94d789e4e4a2669f6743a",
+  "installedResolveExactRoute": "PASS",
+  "durationMs": 16751,
+  "writerCalls": 0,
+  "connectedRemoteAgentInfo": {
+    "isError": false,
+    "exactId": true,
+    "running": true,
+    "nativeActiveTurn": true,
+    "steerCapability": true
+  },
+  "ownerMcpToolsPresent": [
+    "fleet_node_info",
+    "fleet_session_view",
+    "mesh_deliver"
+  ],
+  "actualSendTested": false,
+  "nativeContentWrites": 0,
+  "sourceChanged": false,
+  "runtimeChanged": false
+}
