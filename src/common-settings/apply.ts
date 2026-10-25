@@ -14,6 +14,8 @@
 
 import { canonicalJson, parseCommonSettingsDocument, type CommonSettingsDocument, type CommonSettingsHooksLever } from "./document.js";
 import type { CommonSettingsConflict, CommonSettingsNodeState } from "./node-state.js";
+import { holdsSecretSetting } from "./scope.js";
+import { settingsFingerprint } from "../web/settings-store.js";
 
 /** The settings of the product of this node, as the application needs them. */
 export interface CommonSettingsTarget {
@@ -23,6 +25,16 @@ export interface CommonSettingsTarget {
   readSecretValue(key: string): Promise<string | undefined>;
   /** The write of the values of the environment file of the product. */
   applyEnvironment(changes: Record<string, string | null>): Promise<unknown>;
+  /**
+   * Keep the local value of a secret that the common document replaced.
+   *
+   * The state of the node keeps the fingerprint of the value and never the
+   * value: the value is kept where the secrets of the node live, so the owner
+   * of the node can put the local value back.
+   */
+  keepLocalSecretValue?(key: string, value: string | undefined): Promise<void>;
+  /** The local value of a secret that the common document replaced. */
+  readLocalSecretValue?(key: string): Promise<string | undefined>;
 }
 
 /** The policy of the launch of this node, as the application needs it. */
@@ -129,9 +141,22 @@ export async function applyCommonSettingsDocument(input: {
       continue;
     }
     const expected = previous ? (previous.environment[key] ?? null) : undefined;
-    const kind = previous && expected !== undefined && local !== expected ? "local-change" : "adopted";
+    // The value the node held after the last application is the marker of the
+    // secret in the state of the node, so the comparison of a secret is a
+    // comparison of the fingerprints and never of the values.
+    const sameAsApplied = expected === undefined
+      ? false
+      : holdsSecretSetting(id)
+        ? expected === null
+          ? local === null
+          : local !== null && settingsFingerprint(local) === expected
+        : local === expected;
+    const kind = previous && expected !== undefined && !sameAsApplied ? "local-change" : "adopted";
     conflicts.push({ id, commonValue, localValue: local, kind, detectedAt, open: true });
     rollback[id] = local;
+    // The local value of a secret is kept where the secrets of the node live:
+    // the state of the node keeps its fingerprint and never its value.
+    if (holdsSecretSetting(id)) await input.target.keepLocalSecretValue?.(key, local ?? undefined);
     environmentChanges[key] = commonValue;
     changed.push(id);
   }
@@ -272,9 +297,24 @@ export async function restoreCommonSettingsLocalValues(input: {
 }): Promise<CommonSettingsApplyResult> {
   const now = input.now ?? (() => new Date());
   const changes: Record<string, string | null> = {};
+  const kept: string[] = [];
   for (const conflict of input.state.conflicts) {
     if (!conflict.open || !conflict.id.startsWith("herder.env/")) continue;
-    changes[conflict.id.slice("herder.env/".length)] = conflict.localValue;
+    const key = conflict.id.slice("herder.env/".length);
+    if (holdsSecretSetting(conflict.id)) {
+      // The value of the local secret is kept where the secrets of the node
+      // live: the state of the node keeps only its fingerprint. A secret whose
+      // value is not kept is never removed by the restore: a secret that was
+      // put back is put back, and a secret that cannot be put back stays.
+      const local = await input.target.readLocalSecretValue?.(key);
+      if (local === undefined) {
+        kept.push(conflict.id);
+        continue;
+      }
+      changes[key] = local;
+      continue;
+    }
+    changes[key] = conflict.localValue;
   }
   if (Object.keys(changes).length === 0) {
     return {
@@ -284,7 +324,9 @@ export async function restoreCommonSettingsLocalValues(input: {
       appliedAt: input.state.appliedAt,
       changed: [],
       conflicts: input.state.conflicts,
-      reason: "На ноде нет открытых отклонений: возвращать нечего.",
+      reason: kept.length > 0
+        ? `Значение секрета не сохранено для ${kept.join(", ")}: вернуть его нельзя.`
+        : "На ноде нет открытых отклонений: возвращать нечего.",
     };
   }
   await input.target.applyEnvironment(changes);
@@ -300,5 +342,6 @@ export async function restoreCommonSettingsLocalValues(input: {
     appliedAt: input.state.appliedAt,
     changed: Object.keys(changes).map((key) => `herder.env/${key}`),
     conflicts,
+    ...(kept.length > 0 ? { reason: `Значение секрета не сохранено для ${kept.join(", ")}: вернуть его нельзя.` } : {}),
   };
 }

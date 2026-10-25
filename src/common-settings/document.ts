@@ -18,10 +18,11 @@
 
 import { createHash } from "node:crypto";
 
-import { settingsFingerprint } from "../web/settings-store.js";
+import { settingsFingerprint, isSecretMarker } from "../web/settings-store.js";
 import {
   assertNoMachineSettings,
   commonEnvironmentKeys,
+  holdsSecretSetting,
   isSecretSettingId,
   scopeOfSettingId,
 } from "./scope.js";
@@ -338,7 +339,7 @@ export function redactCommonDocument(document: CommonSettingsDocument): CommonSe
     }
     environment[key] = value === null
       ? { value: null, secret: true }
-      : { value: null, secret: true, fingerprint: settingsFingerprint(value) };
+      : { value: null, secret: true, fingerprint: isSecretMarker(value) ? value : settingsFingerprint(value) };
   }
   return {
     format: document.format,
@@ -424,4 +425,41 @@ export function parseCommonSettingsDocument(value: unknown): CommonSettingsDocum
   if (hooks !== undefined) document.hooks = hooks;
   assertNoMachineSettings(document);
   return document;
+}
+
+/**
+ * The document of the node with the values of the secrets put back.
+ *
+ * The state of the node keeps the marker of every secret: the value itself
+ * lives where the secrets of the node live, and the state of the node is a
+ * file that everybody with an account on the machine can read.
+ *
+ * A node that hands the document on puts the values back and checks the
+ * result: the revision of the document is the hash of its content, so a
+ * document whose values are not the ones the owner sent is not the document of
+ * the owner, and a node that cannot rebuild it hands on nothing.
+ */
+export async function rehydrateCommonDocument(
+  document: CommonSettingsDocument | null,
+  target: { readSecretValue(key: string): Promise<string | undefined> },
+): Promise<CommonSettingsDocument | null> {
+  if (!document) return null;
+  const environment: Record<string, string | null> = {};
+  for (const [key, value] of Object.entries(document.environment)) {
+    const id = `herder.env/${key}`;
+    if (!holdsSecretSetting(id) || value === null || !isSecretMarker(value)) {
+      environment[key] = value;
+      continue;
+    }
+    const raw = await target.readSecretValue(key);
+    if (raw === undefined || settingsFingerprint(raw) !== value) return null;
+    environment[key] = raw;
+  }
+  const revision = commonSettingsRevision({
+    environment,
+    launchPolicy: document.launchPolicy ?? undefined,
+    hooks: document.hooks ?? undefined,
+  });
+  if (revision !== document.revision) return null;
+  return { ...document, environment, revision };
 }

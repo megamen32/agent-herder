@@ -112,6 +112,153 @@ export function settingsFingerprint(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex").slice(0, 16)}`;
 }
 
+/** The file of the secrets of this node: the one place where the raw values live. */
+export const HERDER_SECRETS_FILE = join(homedir(), ".config", "agent-herder", "secrets.json");
+
+/** The shape of a marker of a secret: a fingerprint of the value, never the value. */
+const SECRET_MARKER_PATTERN = /^sha256:[0-9a-f]{16}$/;
+
+/**
+ * Whether the value is the marker of a secret and not the value itself.
+ *
+ * The marker is the fingerprint of the value: it names the value and never
+ * reveals it, so a file that must not hold the value holds the marker instead.
+ */
+export function isSecretMarker(value: string): boolean {
+  return SECRET_MARKER_PATTERN.test(value);
+}
+
+/**
+ * The content of the file of the secrets of this node.
+ *
+ * The file holds the raw values of the secrets and nothing else: the file of
+ * the product holds their markers, the state of the node holds their
+ * fingerprints, and the raw value lives here and nowhere else.
+ */
+export interface SecretStoreContent {
+  /** The shape of the file. */
+  version: 1;
+  /** The current value of every secret. */
+  secrets: Record<string, string>;
+  /** The values the undo stack can put back, the newest last. */
+  previous: Record<string, string[]>;
+  /** The local value the common document of the fleet replaced. */
+  local: Record<string, string>;
+}
+
+/**
+ * The store of the raw values of the secrets of this node.
+ *
+ * One file, one owner, one mode: `0600` inside a directory of `0700`. The file
+ * is written whole and replaced by a rename, so a broken write never leaves a
+ * half-written file behind.
+ */
+export class SecretStore {
+  readonly path: string;
+
+  constructor(options: { path?: string } = {}) {
+    this.path = options.path ?? HERDER_SECRETS_FILE;
+  }
+
+  /** The content of the store, or an empty one when the file is not there yet. */
+  async read(): Promise<SecretStoreContent> {
+    try {
+      const parsed = JSON.parse(await readFile(this.path, "utf8")) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return emptySecretStore();
+      const raw = parsed as Record<string, unknown>;
+      return {
+        version: 1,
+        secrets: stringMap(raw.secrets),
+        previous: stringLists(raw.previous),
+        local: stringMap(raw.local),
+      };
+    } catch {
+      return emptySecretStore();
+    }
+  }
+
+  /** Write the content of the store, whole. */
+  async write(content: SecretStoreContent): Promise<void> {
+    await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
+    const temporary = `${this.path}.${randomUUID()}.tmp`;
+    await writeFile(temporary, `${JSON.stringify(content, null, 2)}\n`, { mode: 0o600 });
+    await rename(temporary, this.path);
+  }
+
+  /** The value of a secret. */
+  async readSecret(key: string): Promise<string | undefined> {
+    return (await this.read()).secrets[key];
+  }
+
+  /** The value of a secret is set, or removed when it is not there. */
+  async writeSecret(key: string, value: string | undefined): Promise<void> {
+    const content = await this.read();
+    if (value === undefined) delete content.secrets[key];
+    else content.secrets[key] = value;
+    await this.write(content);
+  }
+
+  /**
+   * Keep the value a secret had before a change.
+   *
+   * The value is kept in the store of the secrets and the undo stack names its
+   * place: the stack of the settings never holds the value of a secret.
+   */
+  async pushPrevious(key: string, value: string): Promise<number> {
+    const content = await this.read();
+    const stack = content.previous[key] ?? [];
+    stack.push(value);
+    // The stack is bounded: the old values of a secret do not pile up forever.
+    content.previous[key] = stack.slice(-32);
+    await this.write(content);
+    return content.previous[key].length - 1;
+  }
+
+  /** The value the undo stack keeps for a secret. */
+  async readPrevious(key: string, index: number): Promise<string | undefined> {
+    return (await this.read()).previous[key]?.[index];
+  }
+
+  /** The local value the common document of the fleet replaced. */
+  async writeLocal(key: string, value: string | undefined): Promise<void> {
+    const content = await this.read();
+    if (value === undefined) delete content.local[key];
+    else content.local[key] = value;
+    await this.write(content);
+  }
+
+  /** The local value the common document of the fleet replaced. */
+  async readLocal(key: string): Promise<string | undefined> {
+    return (await this.read()).local[key];
+  }
+}
+
+/** An empty store of secrets. */
+export function emptySecretStore(): SecretStoreContent {
+  return { version: 1, secrets: {}, previous: {}, local: {} };
+}
+
+/** The map of strings of a file of secrets. */
+function stringMap(value: unknown): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return result;
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof item === "string") result[key] = item;
+  }
+  return result;
+}
+
+/** The lists of strings of a file of secrets. */
+function stringLists(value: unknown): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return result;
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (!Array.isArray(item)) continue;
+    result[key] = item.filter((entry): entry is string => typeof entry === "string");
+  }
+  return result;
+}
+
 /**
  * The revision of a setting that is really in effect.
  *
@@ -202,6 +349,14 @@ interface SettingsHistoryEntry {
   previousPresent: boolean;
   /** The value the key had before the change. */
   previousValue?: unknown;
+  /**
+   * The place of the value of a secret in the store of the secrets.
+   *
+   * The undo stack of the settings never holds the value of a secret: it names
+   * the place where the value is kept, and the store of the secrets is the one
+   * place that holds it.
+   */
+  previousSecretRef?: { key: string; index: number };
   /** The record of the audit journal of this change. */
   auditId: string;
   /** Set when the change was rolled back. */
@@ -321,6 +476,14 @@ export interface SettingsDifference {
 export interface SettingsStoreOptions {
   /** The environment file of the herder. Only this file is ever touched. */
   envPath?: string;
+  /**
+   * The file of the secrets of this node.
+   *
+   * The raw values of the secrets live here and nowhere else: the environment
+   * file of the product keeps their markers. The default is the file next to
+   * the environment file of the product.
+   */
+  secretsPath?: string;
   /** The fleet node configuration of this node. */
   nodeConfigPath?: string;
   /** The durable state of the settings. */
@@ -429,6 +592,8 @@ export class SettingsStore {
   readonly envPath: string;
   readonly nodeConfigPath: string;
   readonly stateDir: string;
+  /** The one place where the raw values of the secrets live. */
+  readonly secretStore: SecretStore;
   private readonly actor: string;
   private readonly hostId: string;
   private readonly now: () => Date;
@@ -438,6 +603,9 @@ export class SettingsStore {
     this.envPath = options.envPath ?? HERDER_ENV_FILE;
     this.nodeConfigPath = options.nodeConfigPath ?? FLEET_NODE_CONFIG_FILE;
     this.stateDir = options.stateDir ?? SETTINGS_STATE_DIR;
+    this.secretStore = new SecretStore({
+      path: options.secretsPath ?? join(dirname(this.envPath), "secrets.json"),
+    });
     this.actor = options.actor ?? "owner";
     this.hostId = options.hostId ?? "unknown-host";
     this.now = options.now ?? (() => new Date());
@@ -475,41 +643,49 @@ export class SettingsStore {
     const { values } = parseEnvFile(text);
     const view: Record<string, SettingsValueView> = {};
     for (const spec of HERDER_ENV_KEYS) {
-      const value = values.get(spec.key);
-      view[spec.key] = spec.secret
-        ? {
+      if (spec.secret) {
+        // The value of a secret lives in the store of the secrets: the file of
+        // the product keeps its marker, and the fingerprint is of the value.
+        const value = await this.readSecretValue(spec.key);
+        view[spec.key] = {
           kind: "secret",
           present: value !== undefined,
           configured: value !== undefined && value.length > 0,
           ...(value !== undefined && value.length > 0 ? { fingerprint: settingsFingerprint(value) } : {}),
           description: spec.description,
-        }
-        : {
-          kind: "value",
-          present: value !== undefined,
-          ...(value !== undefined ? { value } : {}),
-          description: spec.description,
         };
+        continue;
+      }
+      const value = values.get(spec.key);
+      view[spec.key] = {
+        kind: "value",
+        present: value !== undefined,
+        ...(value !== undefined ? { value } : {}),
+        description: spec.description,
+      };
     }
     // A key the herder does not know is shown too: a setting the owner has
     // added by hand is still a setting of the product. A key whose name says
     // it holds a secret is shown as a secret and never as a value.
     for (const [key, value] of values) {
       if (view[key]) continue;
-      view[key] = isSecretKey(key)
-        ? {
+      if (isSecretKey(key)) {
+        const secret = await this.readSecretValue(key);
+        view[key] = {
           kind: "secret",
           present: true,
-          configured: value.length > 0,
-          ...(value.length > 0 ? { fingerprint: settingsFingerprint(value) } : {}),
-          description: "A key of the environment file that the herder does not know by name.",
-        }
-        : {
-          kind: "value",
-          present: true,
-          value,
+          configured: secret !== undefined && secret.length > 0,
+          ...(secret !== undefined && secret.length > 0 ? { fingerprint: settingsFingerprint(secret) } : {}),
           description: "A key of the environment file that the herder does not know by name.",
         };
+        continue;
+      }
+      view[key] = {
+        kind: "value",
+        present: true,
+        value,
+        description: "A key of the environment file that the herder does not know by name.",
+      };
     }
     return { path: this.envPath, present, ...(mode ? { mode } : {}), values: view };
   }
@@ -649,7 +825,18 @@ export class SettingsStore {
         && (target.historyId === undefined || entry.auditId === target.historyId || entry.id === target.historyId));
       const entry = candidates[candidates.length - 1];
       if (!entry) throw new Error("there is no change of this setting to roll back");
-      const restore = entry.previousPresent ? entry.previousValue : undefined;
+      let restore: unknown;
+      if (entry.kind === "secret" && entry.previousSecretRef) {
+        // The value of a secret is kept in the store of the secrets: the undo
+        // stack names its place and never holds it.
+        const kept = await this.secretStore.readPrevious(entry.previousSecretRef.key, entry.previousSecretRef.index);
+        if (kept === undefined) {
+          throw new Error("the value of the secret before this change is not kept anymore");
+        }
+        restore = kept;
+      } else {
+        restore = entry.previousPresent ? entry.previousValue : undefined;
+      }
       const change: SettingsChange = {
         key: entry.key,
         value: restore,
@@ -849,13 +1036,19 @@ export class SettingsStore {
     // is recorded as a refusal and never as a change.
     for (const [key, change] of Object.entries(changes)) {
       const refusal = this.environmentRefusal(key, change);
-      if (refusal) await this.refuseEnvironmentChange(key, refusal.error, refusal.reason, values.get(key));
+      if (refusal) {
+        const current = isSecretKey(key) ? await this.readSecretValue(key) : values.get(key);
+        await this.refuseEnvironmentChange(key, refusal.error, refusal.reason, current);
+      }
     }
     const records: SettingsAuditRecord[] = [];
     const pendingHistory: SettingsHistoryEntry[] = [];
+    const pendingSecrets: Array<{ key: string; value: string | undefined }> = [];
     for (const [key, change] of Object.entries(changes)) {
       const secret = isSecretKey(key);
-      const previous = values.get(key);
+      // The value the key holds now: a secret keeps its value in the store of
+      // the secrets, and the file of the product keeps only its marker.
+      const previous = secret ? await this.readSecretValue(key) : values.get(key);
       const before = secret
         ? { present: previous !== undefined, configured: previous !== undefined && previous.length > 0, ...(previous ? { fingerprint: settingsFingerprint(previous) } : {}) }
         : { present: previous !== undefined, ...(previous !== undefined ? { value: previous } : {}) };
@@ -880,7 +1073,7 @@ export class SettingsStore {
         ...(context?.rollbackOf ? { historyId: context.rollbackOf } : {}),
       };
       if (historyId) {
-        pendingHistory.push({
+        const entry: SettingsHistoryEntry = {
           id: historyId,
           at: record.at,
           actor: this.actor,
@@ -888,12 +1081,40 @@ export class SettingsStore {
           key,
           kind: secret ? "secret" : "value",
           previousPresent: previous !== undefined,
-          previousValue: previous,
           auditId: record.id,
-        });
+        };
+        if (secret) {
+          // The value of a secret never goes into the undo stack of the
+          // settings: the stack names the place of the value in the store of
+          // the secrets, and the store is the one place that holds it.
+          if (previous !== undefined) {
+            const index = await this.secretStore.pushPrevious(key, previous);
+            entry.previousSecretRef = { key, index };
+          }
+        } else {
+          entry.previousValue = previous;
+        }
+        pendingHistory.push(entry);
       }
       records.push(record);
       const index = entries.findIndex((entry) => entry.kind === "kv" && entry.key === key);
+      if (secret) {
+        // The value of the secret goes into the store of the secrets, and the
+        // file of the product keeps the marker of the value: the value itself
+        // is in no file that the panel, the journal or the state of the node
+        // can read.
+        pendingSecrets.push({ key, value: next });
+        if (next === undefined) {
+          if (index >= 0) entries.splice(index, 1);
+          values.delete(key);
+        } else {
+          const marker = settingsFingerprint(next);
+          if (index >= 0) entries[index] = { kind: "kv", key, value: marker };
+          else entries.push({ kind: "kv", key, value: marker });
+          values.set(key, marker);
+        }
+        continue;
+      }
       if (next === undefined) {
         if (index >= 0) entries.splice(index, 1);
         values.delete(key);
@@ -905,6 +1126,10 @@ export class SettingsStore {
         values.set(key, next);
       }
     }
+    // The store of the secrets is written before the file of the product: the
+    // marker of the file of the product must never name a value that the store
+    // does not hold.
+    for (const pending of pendingSecrets) await this.secretStore.writeSecret(pending.key, pending.value);
     // The file of the product is written before the journal claims the
     // change: a refused write leaves no record of a change that never
     // happened.
@@ -1371,7 +1596,69 @@ export class SettingsStore {
    * showing it.
    */
   async readSecretValue(key: string): Promise<string | undefined> {
-    return (await this.readEnvValues()).get(key);
+    const stored = await this.secretStore.readSecret(key);
+    if (stored !== undefined) return stored;
+    // The place before the store of the secrets existed: the value of the
+    // secret was in the file of the product. The marker is not a value.
+    const legacy = (await this.readEnvValues()).get(key);
+    return legacy !== undefined && !isSecretMarker(legacy) ? legacy : undefined;
+  }
+
+  /**
+   * Keep the local value of a secret that the common document of the fleet
+   * replaced.
+   *
+   * The value is kept in the store of the secrets: the state of the node keeps
+   * the fingerprint of it and never the value, and the value is what lets the
+   * owner put the local value of the node back.
+   */
+  async keepLocalSecretValue(key: string, value: string | undefined): Promise<void> {
+    await this.secretStore.writeLocal(key, value);
+  }
+
+  /** The local value of a secret that the common document of the fleet replaced. */
+  async readLocalSecretValue(key: string): Promise<string | undefined> {
+    return await this.secretStore.readLocal(key);
+  }
+
+  /**
+   * The raw values that the file of the product still holds are taken over.
+   *
+   * A node that was written before the store of the secrets existed keeps the
+   * value of its secrets in the file of the product. The value is taken over
+   * into the store of the secrets, and the file of the product keeps the
+   * marker of the value from then on.
+   *
+   * The names of the keys are returned; their values are never returned.
+   */
+  async adoptLegacySecrets(): Promise<string[]> {
+    let text = "";
+    try {
+      text = await readFile(this.envPath, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    const { entries, values } = parseEnvFile(text);
+    const adopted: string[] = [];
+    const pending: Array<{ key: string; value: string }> = [];
+    for (const [key, value] of values) {
+      if (!isSecretKey(key)) continue;
+      if (isSecretMarker(value)) continue;
+      if (await this.secretStore.readSecret(key) !== undefined) continue;
+      pending.push({ key, value });
+      adopted.push(key);
+    }
+    if (pending.length === 0) return adopted;
+    for (const item of pending) {
+      await this.secretStore.writeSecret(item.key, item.value);
+      const marker = settingsFingerprint(item.value);
+      const index = entries.findIndex((entry) => entry.kind === "kv" && entry.key === item.key);
+      if (index >= 0) entries[index] = { kind: "kv", key: item.key, value: marker };
+      else entries.push({ kind: "kv", key: item.key, value: marker });
+      values.set(item.key, marker);
+    }
+    await this.writeEnvFile(renderEnvFile(entries));
+    return adopted;
   }
 
   /**
@@ -1517,4 +1804,39 @@ function assertBoundedNodeValue(key: string, value: unknown): void {
   if (Buffer.byteLength(text, "utf8") > MAX_NODE_VALUE_BYTES) {
     throw new Error(`the value of the setting ${key} is too large`);
   }
+}
+
+/**
+ * The secrets of this node are put into the environment of the process.
+ *
+ * The file of the product keeps the marker of every secret, so the process
+ * takes the raw value of the secret from the store of the secrets: the service
+ * of the herder uses the token of the center exactly as it did before, and the
+ * file that everybody can read holds nothing but the marker.
+ *
+ * A value that the environment of the process already holds is never replaced:
+ * an operator that set the token in the unit of the service keeps it, and only
+ * a marker is replaced by the value it names.
+ *
+ * The names of the keys are returned; their values are never returned.
+ */
+export async function loadSecretEnvironment(options: {
+  store?: SettingsStore;
+  env?: NodeJS.ProcessEnv;
+} = {}): Promise<{ adopted: string[]; loaded: string[] }> {
+  const store = options.store ?? new SettingsStore();
+  const env = options.env ?? process.env;
+  const adopted = await store.adoptLegacySecrets();
+  const keys = new Set<string>(HERDER_ENV_KEYS.filter((spec) => spec.secret).map((spec) => spec.key));
+  for (const key of Object.keys((await store.secretStore.read()).secrets)) keys.add(key);
+  const loaded: string[] = [];
+  for (const key of keys) {
+    const value = await store.readSecretValue(key);
+    if (value === undefined) continue;
+    const current = env[key];
+    if (current !== undefined && !isSecretMarker(current)) continue;
+    env[key] = value;
+    loaded.push(key);
+  }
+  return { adopted, loaded };
 }

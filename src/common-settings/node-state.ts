@@ -14,7 +14,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { settingsFingerprint } from "../web/settings-store.js";
+import { settingsFingerprint, isSecretMarker } from "../web/settings-store.js";
 import type { CommonSettingsDocument } from "./document.js";
 import { holdsSecretSetting, purposeOfSettingId } from "./scope.js";
 
@@ -44,6 +44,10 @@ export interface CommonSettingsConflict {
   commonValue: string | null;
   /** The value the node held before the document was applied. */
   localValue: string | null;
+  /** The fingerprint of the value of the common document, when it is a secret. */
+  commonFingerprint?: string;
+  /** The fingerprint of the value the node held, when it is a secret. */
+  localFingerprint?: string;
   /**
    * How the deviation was found.
    *
@@ -224,6 +228,66 @@ export interface CommonSettingsNodeStatus {
 }
 
 /**
+ * The state of the node as it is written to the disk.
+ *
+ * The file of the state is a file of the machine: the value of a secret never
+ * goes into it. What goes into it is the marker of the secret — its
+ * fingerprint — and the node puts the values back when it hands the document
+ * on.
+ */
+function redactedState(state: CommonSettingsNodeState): CommonSettingsNodeState {
+  return {
+    ...state,
+    document: state.document ? redactedDocument(state.document) : null,
+    conflicts: state.conflicts.map(redactedConflict),
+    rollback: redactedRollback(state.rollback),
+  };
+}
+
+/** The document as it is written: the value of a secret is its marker. */
+function redactedDocument(document: CommonSettingsDocument): CommonSettingsDocument {
+  const environment: Record<string, string | null> = {};
+  for (const [key, value] of Object.entries(document.environment)) {
+    const id = `herder.env/${key}`;
+    if (!holdsSecretSetting(id) || value === null || isSecretMarker(value)) {
+      environment[key] = value;
+      continue;
+    }
+    environment[key] = settingsFingerprint(value);
+  }
+  return { ...document, environment };
+}
+
+/** The deviation as it is written: the value of a secret is its fingerprint. */
+function redactedConflict(conflict: CommonSettingsConflict): CommonSettingsConflict {
+  if (!holdsSecretSetting(conflict.id)) return conflict;
+  return {
+    ...conflict,
+    commonValue: null,
+    localValue: null,
+    ...(conflict.commonValue !== null && conflict.commonValue !== undefined
+      ? { commonFingerprint: settingsFingerprint(conflict.commonValue) }
+      : {}),
+    ...(conflict.localValue !== null && conflict.localValue !== undefined
+      ? { localFingerprint: settingsFingerprint(conflict.localValue) }
+      : {}),
+  };
+}
+
+/** The values that were there before, as they are written: a secret is its marker. */
+function redactedRollback(rollback: Record<string, string | null>): Record<string, string | null> {
+  const result: Record<string, string | null> = {};
+  for (const [id, value] of Object.entries(rollback)) {
+    if (value === null || !holdsSecretSetting(id)) {
+      result[id] = value;
+      continue;
+    }
+    result[id] = settingsFingerprint(value);
+  }
+  return result;
+}
+
+/**
  * The durable state of the common settings of this node.
  *
  * The file is written whole and replaced by a rename, so a broken write never
@@ -288,9 +352,12 @@ export class CommonSettingsStateStore {
 
   /** The state of this node, written whole. */
   async write(state: CommonSettingsNodeState): Promise<void> {
+    // The value of a secret never reaches the file of the state: the file
+    // keeps the marker of the secret and never the value.
+    const redacted = redactedState(state);
     await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
     const temporary = `${this.path}.${process.pid}.tmp`;
-    await writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+    await writeFile(temporary, `${JSON.stringify(redacted, null, 2)}\n`, { mode: 0o600 });
     await rename(temporary, this.path);
   }
 

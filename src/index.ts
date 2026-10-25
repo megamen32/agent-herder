@@ -45,6 +45,7 @@ import { AdapterRegistry, type AdapterFactory } from "./adapter-registry.js";
 import { boundResumeReceiptQuery, createWebServer, resumeSelectedTarget } from "./web/server.js";
 import { AgentResumeClient, type ResumeReceipt, type ResumeTransportRequest } from "./resume-transport.js";
 import { createConfiguredFleetApiHandler, createManagedFleetHttpGuard, isManagedFleetNode } from "./web/fleet-wiring.js";
+import { loadSecretEnvironment } from "./web/settings-store.js";
 import { registerFleetNodeTools } from "./mesh/fleet-node.js";
 import {
   commonSettingsService,
@@ -780,6 +781,16 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
 async function main() {
   const releaseSingleton = acquireAgentHerderSingleton();
   process.once("exit", releaseSingleton);
+
+  // The file of the product keeps the marker of every secret, so the raw value
+  // of a secret is taken from the store of the secrets and put into the
+  // environment of the process: the service uses the token of the center
+  // exactly as it did before, and the file that everybody can read holds
+  // nothing but the marker.
+  const secretEnvironment = await loadSecretEnvironment();
+  if (secretEnvironment.adopted.length > 0) {
+    console.error(`[agent-herder] the raw values of the secrets are kept in the store of the secrets: ${secretEnvironment.adopted.length} key(s)`);
+  }
 
   // Must run before the first outbound request: on a host without IPv6 egress,
   // Node's address racing turns every unreachable AAAA leg into a synthetic
