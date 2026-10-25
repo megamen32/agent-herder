@@ -51,6 +51,26 @@ function isPending(session: AgentSession, requestId: string): boolean {
   return Array.isArray(pending) && pending.some((id) => id === requestId);
 }
 
+async function observeNativeTarget(
+  adapter: HarnessAdapter,
+  harness: string,
+  sessionId: string,
+  requestId: string,
+  expectedHostId?: string,
+): Promise<{ hostId: string; pending: boolean } | undefined> {
+  if (adapter.getPermissionState) {
+    const state = await adapter.getPermissionState(sessionId);
+    if (!state || state.target.harness !== harness || state.target.sessionId !== sessionId
+      || !state.target.hostId || (expectedHostId !== undefined && state.target.hostId !== expectedHostId)) return undefined;
+    return { hostId: state.target.hostId, pending: state.pendingRequests.some((request) => request.id === requestId) };
+  }
+  if (!adapter.getSession) return undefined;
+  const session = await adapter.getSession(sessionId);
+  if (!session || session.id !== sessionId || session.harness !== harness || !session.hostId
+    || (expectedHostId !== undefined && session.hostId !== expectedHostId)) return undefined;
+  return { hostId: session.hostId, pending: isPending(session, requestId) };
+}
+
 /**
  * Answer only an exact request from a fresh native session read. The durable
  * claim is written before the native call, so a crash or thrown transport
@@ -63,38 +83,32 @@ export async function respondToNativePermission(
   requestId: string,
   response: PermissionResponse,
   remember = false,
+  expectedHostId?: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  if (!adapter.getSession) return { ok: false, error: "Native session state is unavailable." };
+  if (!adapter.getPermissionState && !adapter.getSession) return { ok: false, error: "Native session state is unavailable." };
   const path = ledgerPath();
   await import("node:fs/promises").then(({ mkdir }) => mkdir(dirname(path), { recursive: true }));
   const handle = await open(path, "a", 0o600);
   await handle.close();
   const release = await lockfile.lock(path, { realpath: false, retries: { retries: 20, minTimeout: 10, maxTimeout: 100 } });
   try {
-    let current: AgentSession | null;
-    try {
-      current = await adapter.getSession(sessionId);
-    } catch {
-      return { ok: false, error: "Could not verify the current native session." };
-    }
-    if (!current || current.id !== sessionId || current.harness !== harness || !current.hostId) {
-      return { ok: false, error: "The permission request does not belong to this native session." };
-    }
+    let observed: { hostId: string; pending: boolean } | undefined;
+    try { observed = await observeNativeTarget(adapter, harness, sessionId, requestId, expectedHostId); }
+    catch { return { ok: false, error: "Could not verify the current native permission state." }; }
+    if (!observed) return { ok: false, error: "The permission request does not belong to this native session." };
     const ledger = await readLedger(path);
-    const key = keyOf(current.hostId, harness, sessionId, requestId);
+    const key = keyOf(observed.hostId, harness, sessionId, requestId);
     const prior = ledger[key];
-    if (prior && prior.state !== "rejected") {
+    if (prior) {
       if (prior.state === "accepted" && prior.response === response) return { ok: true };
       return { ok: false, error: prior.response === response
         ? "This permission response was already attempted and will not be replayed."
         : "A different response was already admitted for this permission request." };
     }
-    if (!isPending(current, requestId)) {
-      return { ok: false, error: "The permission request is no longer pending for this native session." };
-    }
+    if (!observed.pending) return { ok: false, error: "The permission request is no longer pending for this native session." };
 
     const entry: ReplyEntry = {
-      hostId: current.hostId,
+      hostId: observed.hostId,
       harness,
       sessionId,
       requestId,
@@ -114,7 +128,7 @@ export async function respondToNativePermission(
       await writeLedger(path, ledger);
       return { ok: false, error: "The native response outcome is unknown; it will not be replayed." };
     }
-    entry.state = result.ok ? "accepted" : "rejected";
+    entry.state = result.ok ? "accepted" : "unknown";
     entry.updatedAt = new Date().toISOString();
     await writeLedger(path, ledger);
     return result;

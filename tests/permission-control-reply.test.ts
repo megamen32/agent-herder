@@ -42,3 +42,18 @@ it('sends concurrent clicks for the same request at most once',async()=>{
  const results=await Promise.all([f.supervisor.respondPermission('zcode','concurrent','perm-concurrent','allow'),f.create().respondPermission('zcode','concurrent','perm-concurrent','allow')]);
  expect(results.some(r=>r.ok)).toBe(true);expect(f.reply).toHaveBeenCalledTimes(1);
 });
+
+it('does not retry a native response that returned an ambiguous failure',async()=>{
+ const f=fixture('rejected');f.reply.mockImplementation(async()=>({ok:false,error:'native response failed'}));
+ expect((await f.supervisor.respondPermission('zcode','rejected','perm-rejected','allow')).ok).toBe(false);
+ expect((await f.create().respondPermission('zcode','rejected','perm-rejected','allow')).ok).toBe(false);
+ expect(f.reply).toHaveBeenCalledTimes(1);
+});
+
+it('refuses the response if the selected host changes before the locked native read',async()=>{
+ const f=fixture('host-drift');let reads=0;
+ const adapter:any={type:'zcode',name:'fixture',getSession:async()=>({...f.current,hostId:++reads===1?'selected-host':'different-host'}),respondPermission:f.reply};
+ const supervisor=new SessionSupervisor(new Map([['zcode',adapter]]),{convert:async()=>({success:true})} as any);
+ const result=await supervisor.respondPermission('zcode','host-drift','perm-host-drift','allow');
+ expect(result.ok).toBe(false);expect(f.reply).not.toHaveBeenCalled();
+});

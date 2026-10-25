@@ -748,7 +748,8 @@ export async function handleRespondPermission(
     parsed.sessionId,
     parsed.permissionId,
     parsed.response,
-    parsed.remember
+    parsed.remember,
+    found.session.hostId,
   );
 
   if (result.ok) {

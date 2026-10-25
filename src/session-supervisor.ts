@@ -806,7 +806,15 @@ export class SessionSupervisor {
     remember = false,
   ): Promise<{ ok: boolean; error?: string }> {
     const adapter = this.requireAdapter(harness);
-    const result = await respondToNativePermission(adapter, harness, id, permissionId, response, remember);
+    let expectedHostId: string | undefined;
+    try {
+      if (adapter.getPermissionState) {
+        const state = await adapter.getPermissionState(id);
+        if (state?.target.harness === harness && state.target.sessionId === id) expectedHostId = state.target.hostId;
+      } else expectedHostId = (await adapter.getSession(id))?.hostId;
+    } catch { /* the guard performs its own required fresh read */ }
+    if (!expectedHostId) return { ok: false, error: "Could not bind the permission response to its native host." };
+    const result = await respondToNativePermission(adapter, harness, id, permissionId, response, remember, expectedHostId);
     if (result.ok) this.publishSessionChanged(harness, id, "changed");
     return result;
   }
