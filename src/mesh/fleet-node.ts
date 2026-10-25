@@ -69,7 +69,7 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
  server.registerTool('fleet_session_view',{description:'Read the latest three messages of one exact native session, on demand. Unavailable history is explicit; no activation or mutation.',annotations:{readOnlyHint:true},inputSchema:z.object({harness:z.enum(['codex','zcode','opencode','minimax-code']),sessionId:z.string().min(1).max(512).refine(s=>!/[\x00-\x1f\x7f]/.test(s))}).strict()},async({harness,sessionId})=>{
   const routed=await deps.integratorRuntime?.adapterForSession({hostId:hostname(),harness,nativeSessionId:sessionId});
   if(routed?.kind==='deny')throw new Error('fleet_session_scope_unavailable');
-  const adapter=routed?.kind==='scoped'?routed.adapter:deps.adapters.get(harness);if(!adapter||adapter.lazyStart&&(!adapter.isReady||!adapter.isReady()))throw new Error('fleet_session_native_not_ready');
+  const adapter:HarnessAdapter|undefined=routed?.kind==='scoped'?routed.adapter:deps.adapters.get(harness);if(!adapter||adapter.lazyStart&&!adapter.nativeReadWithoutActivation&&(!adapter.isReady||!adapter.isReady()))throw new Error('fleet_session_native_not_ready');
   if((!deps.readSupervisor&&routed?.kind!=='scoped')||viewReads>=3)throw new Error('fleet_session_read_unavailable');viewReads++;let timer:ReturnType<typeof setTimeout>|undefined;
   try{
    const operation=(async()=>{
@@ -80,7 +80,7 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
     else if(adapter.getSessionMessages)try{scopedMessages=await adapter.getSessionMessages(sessionId,3);}catch{/* Exact scoped metadata is available, history is not. */}
     if(details&&(details.session.id!==sessionId||details.session.harness!==harness))throw new Error('fleet_session_identity_mismatch');
     const session=details?.session??native;
-    const result={hostId:hostname(),details:{session:{id:sessionId,harness,title:session.title,cwd:session.cwd,model:session.model},historyUnavailable:routed?.kind==='scoped'?scopedMessages==null:!details||details.history.source==='unavailable',messages:(routed?.kind==='scoped'?scopedMessages??[]:details?.messages??[]).slice(-3).map(m=>({role:m.role,text:m.text}))}};
+    const result={hostId:hostname(),details:{session:{id:sessionId,harness,title:session.title,cwd:session.cwd,model:session.model,status:session.status,needsPermission:session.needsPermission,permissionDetails:session.permissionDetails},historyUnavailable:routed?.kind==='scoped'?scopedMessages==null:!details||details.history.source==='unavailable',messages:(routed?.kind==='scoped'?scopedMessages??[]:details?.messages??[]).slice(-3).map(m=>({role:m.role,text:m.text}))}};
     if(Buffer.byteLength(JSON.stringify(result))>900000)throw new Error('fleet_session_response_limit');return result;
    })().finally(()=>{viewReads--;});
    const result=await Promise.race([operation,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('fleet_session_read_deadline')),9000);})]);
