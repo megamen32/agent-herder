@@ -407,10 +407,43 @@ def package_tree_digest(root: Path) -> tuple[str, int]:
 
 
 def archived_runtime_lines(package: Path) -> int:
+    """A diagnostic only: the lines of the client that hold the word "archived".
+
+    The word belongs to the archived sessions of the harness, so the number
+    says nothing about the origin of a package: it is an accident of the
+    content of the file. The published package of another version had none of
+    them, the package of the repo has nine, and the next publish of the
+    package moves the number. It is printed as a fact of the two packages and
+    it is not a condition of the acceptance.
+    """
     source = package / "dist" / "harness" / "opencode" / "client.js"
     if not source.is_file():
         return -1
     return sum("archived" in line for line in source.read_text(errors="replace").splitlines())
+
+
+def root_store_offers_release_copy(store_package: Path, expected_digest: str) -> dict:
+    """Does the root store of the area offer the package of the release as a copy?
+
+    The import of the workspace package must come from the release. The
+    resolver of Node looks for a directory named node_modules in every parent
+    of the file it resolves, so a copy of the package that lies in the root
+    store of the area is reachable, and the runtime can import that copy
+    instead of the package of the release.
+
+    The root store of the area is the shared store of the area since the
+    takeover of the root, and the shared store does not carry the workspace
+    package at all: it is a link into the release. The legacy layout of the
+    root store carried the published package of another version. Neither of
+    them is a copy of the package of the release, and neither of them is a
+    source the import can come from. A copy of the package of the release in
+    the root store is the archived copy the resolver could reach, and it is
+    refused.
+    """
+    if not store_package.exists():
+        return {"state": "absent", "copy": False, "sha256": ""}
+    digest, _ = package_tree_digest(store_package)
+    return {"state": "present", "copy": digest == expected_digest, "sha256": digest}
 
 
 def verify_agent_resume_layout(fleet: Path, sha: str) -> bool:
@@ -434,6 +467,7 @@ def verify_agent_resume_layout(fleet: Path, sha: str) -> bool:
         store_package = Path(os.path.realpath(fleet / "node_modules" / "agent-resume-mcp"))
         imported_archived = archived_runtime_lines(imported_package)
         store_archived = archived_runtime_lines(store_package)
+        root_store = root_store_offers_release_copy(store_package, expected_digest)
         print("agent-resume:", json.dumps({
             "imported_entry": str(imported_entry),
             "imported_package_sha256": imported_digest,
@@ -442,11 +476,16 @@ def verify_agent_resume_layout(fleet: Path, sha: str) -> bool:
             "release_files": expected_files,
             "imported_archived_lines": imported_archived,
             "root_store_archived_lines": store_archived,
+            "root_store": root_store,
         }))
         within_release = os.path.commonpath([str(imported_package), str(release.resolve())]) == str(release.resolve())
+        # The import must be the package of the release: the same path, the
+        # same bytes, the same number of files. The root store of the area
+        # must not offer that package as a copy - the resolver of Node can
+        # reach it, and the import could come from that copy instead.
         return (within_release and imported_package == expected_package.resolve(strict=True)
                 and imported_digest == expected_digest and imported_files == expected_files
-                and imported_archived == 9 and store_archived == 0)
+                and not root_store["copy"])
     except (KeyError, OSError, ValueError, subprocess.SubprocessError, json.JSONDecodeError):
         print("agent-resume: verification failed")
         return False
