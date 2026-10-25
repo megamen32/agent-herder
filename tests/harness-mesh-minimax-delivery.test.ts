@@ -125,6 +125,32 @@ describe("native MiniMax Code common delivery core",()=>{
    expect(guardSpy).toHaveBeenCalledOnce();
   }finally{releaseFinalGate();guardSpy.mockRestore();await cleanup(dir,f);}
 
+  const targetDir=await mkdtemp(join(tmpdir(),"herder-minimax-target-change-at-admission-"));
+  vi.stubEnv("AGENT_HERDER_HUMAN_STOP_STORE",join(targetDir,"stops.json"));
+  const targetFixture=setup(targetDir);
+  const targetStore=getHumanStopStore();
+  const targetOriginal=targetStore.withSourcesUnheld.bind(targetStore);
+  let targetGateReached!:()=>void;
+  let releaseTargetGate!:()=>void;
+  const targetWaiting=new Promise<void>(resolve=>{targetGateReached=resolve;});
+  const targetGate=new Promise<void>(resolve=>{releaseTargetGate=resolve;});
+  const targetGuard=vi.spyOn(targetStore,"withSourcesUnheld").mockImplementation(async(sources,operation)=>{
+   targetGateReached();
+   await targetGate;
+   return targetOriginal(sources,operation);
+  });
+  try{
+   const first=await targetFixture.deliver({...request,inputId:"target-change-at-admission"});
+   expect(["queued","admitted"]).toContain(first.state);
+   await targetWaiting;
+   targetFixture.session.hostId="changed-host";
+   releaseTargetGate();
+   await vi.waitFor(()=>expect(targetFixture.jobs.list(10).find(row=>row.ownerSessionId==="mvs_native")?.state).toBe("completed"));
+   expect(targetFixture.jobs.list(10).find(row=>row.ownerSessionId==="mvs_native")?.result).toMatchObject({ok:false,notSubmitted:true,nonRetryable:true,inputId:"target-change-at-admission"});
+   expect(targetFixture.sendMessage).not.toHaveBeenCalled();
+   expect(targetFixture.adapter.getSession.mock.calls.length).toBeGreaterThanOrEqual(2);
+  }finally{releaseTargetGate();targetGuard.mockRestore();await cleanup(targetDir,targetFixture);}
+
   const responseDir=await mkdtemp(join(tmpdir(),"herder-minimax-stop-after-admission-"));
   vi.stubEnv("AGENT_HERDER_HUMAN_STOP_STORE",join(responseDir,"stops.json"));
   const responseFixture=setup(responseDir);

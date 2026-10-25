@@ -330,6 +330,15 @@ export class UserMessageDelivery {
                   await humanStopStore.observe(dispatchSession);
                 }
                 const startNativeAdmission = async () => {
+                  if (actor.kind === "agent") {
+                    // The exact target must still match after waiting for the
+                    // HumanStop lock, immediately before the native write.
+                    const finalSession = await adapter.getSession(input.sessionId);
+                    if (!finalSession || finalSession.id !== input.sessionId || finalSession.harness !== input.harness
+                      || (exactTargetHostId && finalSession.hostId !== exactTargetHostId)) {
+                      return { notSubmitted: true as const, error: "Точная целевая сессия изменилась перед отправкой" };
+                    }
+                  }
                   nativeSend = supervisor.sendMessage(input.harness, input.sessionId, {
                     message: input.message, origin: actor.kind==="human"?"human":"automation", inputId: input.inputId, images: input.images,
                     ...(humanRequestedAt!==undefined?{humanRequestedAt}:{}),
@@ -350,9 +359,16 @@ export class UserMessageDelivery {
                   if (!guarded.allowed) {
                     return { ok: false, notSubmitted: true, nonRetryable: true, inputId: input.inputId, error: HUMAN_STOP_MESSAGE };
                   }
+                  if ("notSubmitted" in guarded.value) {
+                    return { ok: false, notSubmitted: true, nonRetryable: true, inputId: input.inputId, error: guarded.value.error };
+                  }
                   nativeSend = guarded.value.nativeSend;
                 } else {
-                  await startNativeAdmission();
+                  const started = await startNativeAdmission();
+                  if ("notSubmitted" in started) {
+                    return { ok: false, notSubmitted: true, nonRetryable: true, inputId: input.inputId, error: started.error };
+                  }
+                  nativeSend = started.nativeSend;
                 }
                 return await nativeSend!;
               }, sendObservationTimeoutMs);
