@@ -647,6 +647,17 @@ function mapSession(
     lastActivity: timestamp(session.updatedAt ?? session.createdAt),
     model: modelName(record(record(root.settings).model).current as ZcodeModelRef) ?? modelName(session.model),
     needsPermission: pendingRequestIds.length > 0,
+    permissionDetails: (() => {
+      const pending = record(root.projection).pendingPermissions;
+      const request = Array.isArray(pending) ? pending.map(record).find(p => pendingRequestIds.includes(String(p.requestId))) : undefined;
+      return request ? {
+        id: String(request.requestId), type: "permission",
+        toolName: nonEmptyString(request.toolName),
+        description: nonEmptyString(request.reason) || "ZCode ожидает разрешения на выполнение инструмента",
+        // Tool inputs may contain credentials. Expose classification only.
+        details: nonEmptyString(request.riskLevel),
+      } : undefined;
+    })(),
     messageCount: messages.length || undefined,
     costUsd: costUsd || undefined,
     durationSec,
@@ -1012,6 +1023,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly officialWebSocketSelected:boolean;
   private readonly readOfficialRunningTasks?:()=>Promise<ZcodeOfficialRunning>;
   private officialRunning?:ZcodeOfficialRunning;
+  get nativeReadWithoutActivation(): boolean { return this.officialWebSocketSelected; }
   private readonly cwd: string;
   private readonly modelIds: string[];
   private readonly client: ZcodeClientLike;
@@ -1907,7 +1919,16 @@ export class ZcodeAdapter implements HarnessAdapter {
   async getSession(id: string): Promise<AgentSession | null> {
     if(this.officialRunning?.tasks.some(t=>t.sessionId===id)){
       const stored=await this.listPersistedSessions({});
-      return this.officialOverlay(stored).find(s=>s.id===id)??null;
+      const observed=this.officialOverlay(stored).find(s=>s.id===id)??null;
+      // running-tasks proves owner activity, not absence of a permission prompt.
+      // Only the official existing-owner seam is safe for an on-demand read.
+      if (observed && this.nativeReadWithoutActivation) {
+        const snapshot = await this.readSnapshot(id, this.sessionWorkspaces.get(id)!);
+        if (sessionInfoFromPayload(snapshot)?.sessionId !== id) throw new Error("Native session identity mismatch");
+        const current = mapSession(snapshot, observed.cwd);
+        return {...observed, ...current, meta:{...observed.meta,...current.meta}};
+      }
+      return observed;
     }
     const lost=this.observedActiveTurns.get(id);
     if(lost?.workspaceCrash&&lost.workspaceRuntime&&workspaceCrashCurrent(this.localDbPath,id,lost.workspaceCrash,this.workspaceProcessProbe)){

@@ -312,6 +312,8 @@ export interface HarnessAdapter {
   readonly lazyStart?: boolean;
   /** If true, listSessions() is read-only and safe while the transport sleeps. */
   readonly lazyDiscovery?: boolean;
+  /** Exact reads can attach to an existing owner without starting/resuming a runtime. */
+  readonly nativeReadWithoutActivation?: boolean;
   /** Whether this adapter currently owns or is attached to a live transport. */
   isReady?(): boolean;
   /** Native current-turn admission with no idle/start fallback. */
