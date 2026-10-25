@@ -200,8 +200,7 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .composer textarea { min-height: 28px; max-height: 160px; flex: 1; resize: none; border: 0; background: transparent; color: var(--text); font-size: var(--text-md); line-height: 1.5; } .composer textarea::placeholder { color: var(--muted); }
 .composer-plus { width: 28px; height: 28px; border-radius: var(--radius-s); background: transparent; color: var(--muted); font-size: 20px; } .composer-plus:hover { background: var(--surface-hover); }
 .composer-readonly { min-width: 0; flex: 1; display: grid; gap: 2px; padding: 2px 3px; } .composer-readonly strong { font-size: var(--text-sm); font-weight: 600; } .composer-readonly span { overflow: hidden; color: var(--muted); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
-.composer-hint { position: static; order: 9; flex: 0 0 auto; width: calc(100% - 40px); margin: var(--space-1) 0 0 40px; color: var(--muted); font-size: var(--text-xs); }
-.remote-chat-pane .composer { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "text text text" "plus hint send"; }
+.remote-chat-pane .composer { grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "text text text text" "plus model voice send"; }
 .send-button { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; border: 1px solid var(--border-2); border-radius: var(--radius-m); background: var(--surface-2); color: var(--muted); font-weight: 700; }
 .send-button:not(:disabled) { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .send-button:not(:disabled):hover { background: color-mix(in srgb, var(--accent) 88%, var(--on-accent)); }

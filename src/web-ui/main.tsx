@@ -1,6 +1,7 @@
 import {AUTOCONTINUE_HARNESS_IDS,loadAutocontinueHarnesses,saveAutocontinueHarness,type AutocontinueHarness,type WebSessionAutostartHarness} from "./autocontinue-harnesses.js";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
+import {ComposerSendControl,VoiceComposerControl,isComposerSubmitShortcut} from "./composer-controls.js";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { SESSION_LIST_REFRESH_MS, sessionListRefreshDelay, sampleSessionActivity, filterAndArrangeSessions, matchesSessionQuery, pluralRu, projectFor, sessionKey, sessionTurnLinkFromHash, selectionAfterSessionRefresh, sessionListCounts, sessionListCounterRu, sessionListEmptyReason, summarizeSessionSample, type SessionListEntry, type SessionListSession, type SessionListSettings, type SessionListSort, type SessionSampleCounts } from "./session-list.js";
@@ -960,24 +961,10 @@ function App() {
     }
   },[activeKey]);
   const [deliveryMenuOpen, setDeliveryMenuOpen] = React.useState(false);
-  const [sendModeMenuOpen, setSendModeMenuOpen] = React.useState(false);
-  const sendHoldTimerRef = React.useRef<number | undefined>(undefined);
-  const sendHoldTriggeredRef = React.useRef(false);
-  const sendModeFirstChoiceRef = React.useRef<HTMLButtonElement>(null);
   const [imageUploading, setImageUploading] = React.useState(false);
   const [imageError, setImageError] = React.useState<string>();
   const imageInputRef = React.useRef<HTMLInputElement>(null);
   const composerTextareaRef = React.useRef<HTMLTextAreaElement>(null);
-  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
-  const mediaStreamRef = React.useRef<MediaStream | null>(null);
-  const voiceChunksRef = React.useRef<Blob[]>([]);
-  const voiceTargetKeyRef = React.useRef<string | null>(null);
-  const discardVoiceRef = React.useRef(false);
-  const voiceAbortRef = React.useRef<AbortController | null>(null);
-  const [voiceRecording, setVoiceRecording] = React.useState(false);
-  const [voiceTranscribing, setVoiceTranscribing] = React.useState(false);
-  const [voiceError, setVoiceError] = React.useState<string>();
-  const voiceRecordingTimerRef = React.useRef<number | undefined>(undefined);
   React.useEffect(() => { setComposerImages([]); setImageError(undefined); }, [activeKey]);
   const [loading, setLoading] = React.useState(true);
   const [sessionsRefreshing, setSessionsRefreshing] = React.useState(false);
@@ -2129,156 +2116,24 @@ function App() {
     if (sendingModel) recordSessionModel(sendingModel);
     await submitOutboxEntry(activeKey, text, mode, newInputId(), images);
   };
-  const stopVoiceTracks = () => {
-    if (voiceRecordingTimerRef.current !== undefined) window.clearTimeout(voiceRecordingTimerRef.current);
-    voiceRecordingTimerRef.current = undefined;
-    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
-    mediaStreamRef.current = null;
+  const appendVoiceTranscript = (transcript: string, targetKey: string) => {
+    if (activeKeyRef.current !== targetKey) return;
+    setComposer((current) => current ? `${current}${current.endsWith("\n") ? "" : "\n"}${transcript}` : transcript);
+    window.requestAnimationFrame(() => {
+      const input = composerTextareaRef.current;
+      if (input && activeKeyRef.current === targetKey) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+    });
   };
-  const transcribeVoiceBlob = async (blob: Blob, targetKey: string) => {
-    if (!blob.size) { setVoiceError("Запись не содержит аудио."); return; }
-    if (blob.size > 25 * 1024 * 1024) { setVoiceError("Запись больше 25 МБ. Сделайте более короткую запись."); return; }
-    setVoiceTranscribing(true);
-    setVoiceError(undefined);
-    const controller = new AbortController();
-    voiceAbortRef.current = controller;
-    const timeout = window.setTimeout(() => controller.abort(), 300_000);
-    try {
-      const extension = blob.type.startsWith("audio/mp4") ? "m4a" : blob.type.startsWith("audio/wav") ? "wav" : "webm";
-      const form = new FormData();
-      form.append("audio", blob, `voice-input.${extension}`);
-      const response = await fetch("/api/composer/transcription", { method: "POST", body: form, signal: controller.signal });
-      const payload = await response.json().catch(() => undefined) as { text?: unknown; error?: unknown } | undefined;
-      if (!response.ok) throw new Error(typeof payload?.error === "string" ? payload.error : `Не удалось распознать запись (${response.status}).`);
-      if (typeof payload?.text !== "string" || !payload.text.trim()) throw new Error("Сервис распознавания вернул пустой текст.");
-      if (activeKeyRef.current !== targetKey) throw new Error("Выбранная сессия изменилась во время распознавания. Текст не добавлен.");
-      const transcript = payload.text.trim();
-      setComposer((current) => current ? `${current}${current.endsWith("\n") ? "" : "\n"}${transcript}` : transcript);
-      window.requestAnimationFrame(() => {
-        const input = composerTextareaRef.current;
-        if (input && activeKeyRef.current === targetKey) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
-      });
-    } catch (error) {
-      if (activeKeyRef.current === targetKey) setVoiceError((error as Error).name === "AbortError" ? "Распознавание прервано или превысило лимит времени. Запишите и отправьте запрос вручную, если хотите повторить." : (error as Error).message || "Не удалось распознать запись.");
-    } finally {
-      window.clearTimeout(timeout);
-      if (voiceAbortRef.current === controller) voiceAbortRef.current = null;
-      setVoiceTranscribing(false);
-    }
-  };
-  const stopVoiceRecording = () => {
-    const recorder = mediaRecorderRef.current;
-    if (recorder && recorder.state !== "inactive") recorder.stop();
-  };
-  const cancelVoiceInput = () => {
-    if (voiceRecording) {
-      discardVoiceRef.current = true;
-      setVoiceError("Запись отменена. Аудио не отправлено.");
-      stopVoiceRecording();
-    } else if (voiceTranscribing) {
-      voiceAbortRef.current?.abort();
-    }
-  };
-  const startVoiceRecording = async () => {
-    if (!activeKey || voiceRecording || voiceTranscribing) return;
-    setVoiceError(undefined);
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setVoiceError("Запись голоса не поддерживается этим браузером.");
-      return;
-    }
-    const mimeType = ["audio/webm;codecs=opus", "audio/mp4", "audio/wav"].find((type) => MediaRecorder.isTypeSupported(type));
-    if (!mimeType) { setVoiceError("Браузер не предлагает поддерживаемый формат аудио."); return; }
-    let stream: MediaStream;
-    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-    catch (error) {
-      const name = (error as Error).name;
-      setVoiceError(name === "NotAllowedError" || name === "SecurityError" ? "Браузер не разрешил доступ к микрофону." : name === "NotFoundError" ? "Микрофон не найден." : name === "NotReadableError" ? "Микрофон занят или недоступен." : "Не удалось открыть микрофон.");
-      return;
-    }
-    if (!activeKeyRef.current || activeKeyRef.current !== activeKey) { stream.getTracks().forEach((track) => track.stop()); return; }
-    try {
-      const recorder = new MediaRecorder(stream, { mimeType });
-      mediaStreamRef.current = stream;
-      mediaRecorderRef.current = recorder;
-      voiceTargetKeyRef.current = activeKey;
-      discardVoiceRef.current = false;
-      voiceChunksRef.current = [];
-      recorder.ondataavailable = (event) => { if (event.data.size) voiceChunksRef.current.push(event.data); };
-      recorder.onerror = () => {
-        discardVoiceRef.current = true;
-        setVoiceError("Ошибка записи с микрофона. Запустите новую запись.");
-        if (recorder.state !== "inactive") recorder.stop();
-      };
-      recorder.onstop = () => {
-        const chunks = voiceChunksRef.current;
-        voiceChunksRef.current = [];
-        const targetKey = voiceTargetKeyRef.current;
-        voiceTargetKeyRef.current = null;
-        mediaRecorderRef.current = null;
-        stopVoiceTracks();
-        setVoiceRecording(false);
-        if (discardVoiceRef.current || !targetKey) { discardVoiceRef.current = false; return; }
-        const blob = new Blob(chunks, { type: recorder.mimeType || mimeType });
-        void transcribeVoiceBlob(blob, targetKey);
-      };
-      recorder.start(250);
-      setVoiceRecording(true);
-      voiceRecordingTimerRef.current = window.setTimeout(() => stopVoiceRecording(), 240_000);
-    } catch (error) {
-      stream.getTracks().forEach((track) => track.stop());
-      mediaStreamRef.current = null;
-      mediaRecorderRef.current = null;
-      setVoiceError((error as Error).message || "Не удалось начать запись.");
-    }
-  };
-  React.useEffect(() => {
-    if (voiceTargetKeyRef.current && activeKey !== voiceTargetKeyRef.current) {
-      discardVoiceRef.current = true;
-      stopVoiceRecording();
-    }
-    if (voiceAbortRef.current && activeKey !== voiceTargetKeyRef.current) voiceAbortRef.current.abort();
-  }, [activeKey]);
-  React.useEffect(() => () => {
-    discardVoiceRef.current = true;
-    voiceAbortRef.current?.abort();
-    stopVoiceTracks();
-    if (mediaRecorderRef.current?.state !== "inactive") mediaRecorderRef.current?.stop();
-  }, []);
   const canOfferSendMode = !queueEdit && !isResumeMode && Boolean(activeKey) && !readOnlySession && !imageUploading && Boolean(composer.trim() || composerImages.length);
-  const clearSendHoldTimer = () => {
-    if (sendHoldTimerRef.current !== undefined) window.clearTimeout(sendHoldTimerRef.current);
-    sendHoldTimerRef.current = undefined;
-  };
-  const beginSendHold = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0 || !event.isPrimary || !canOfferSendMode || sendModeMenuOpen) return;
-    clearSendHoldTimer();
-    sendHoldTriggeredRef.current = false;
-    sendHoldTimerRef.current = window.setTimeout(() => {
-      sendHoldTimerRef.current = undefined;
-      sendHoldTriggeredRef.current = true;
-      setSendModeMenuOpen(true);
-    }, 550);
-  };
-  const endSendHold = () => clearSendHoldTimer();
   const chooseSendMode = (mode: DeliveryMode) => {
-    setSendModeMenuOpen(false);
-    sendHoldTriggeredRef.current = false;
     selectDeliveryMode(mode);
     void sendMessage(mode);
   };
-  const clickSendButton = () => {
-    if (sendHoldTriggeredRef.current) {
-      sendHoldTriggeredRef.current = false;
-      return;
-    }
+  const clickSendButton = (mode?: DeliveryMode) => {
     if (isResumeMode && !queueEdit) void runAction("resume");
+    else if (mode) chooseSendMode(mode);
     else void sendMessage();
   };
-  React.useEffect(() => {
-    if (!sendModeMenuOpen) sendHoldTriggeredRef.current = false;
-    else sendModeFirstChoiceRef.current?.focus();
-  }, [sendModeMenuOpen]);
-  React.useEffect(() => () => clearSendHoldTimer(), []);
   const retryOutboxEntry = async (inputId: string) => {
     const entry = outbox.find((item) => item.inputId === inputId);
     if (!entry || messageDispatcherRef.current.hasPending(inputId) || (entry.status !== "ready" && (entry.status !== "failed" || entry.nonRetryable === true))) return;
@@ -2613,13 +2468,9 @@ function App() {
         {(composerImages.length > 0 || imageUploading || imageError) && <div className="composer-images">{composerImages.map(image => <div className="composer-image" key={image.id}><img src={image.url} alt={image.fileName} /><button type="button" disabled={Boolean(queueEdit)} aria-label={`Убрать ${image.fileName}`} onClick={() => setComposerImages(current => current.filter(item => item.id !== image.id))}>×</button></div>)}{imageUploading && <span>Загружаю изображение…</span>}{imageError && <span role="alert">{imageError}</span>}</div>}
         {readOnlySession ? <div className="composer-readonly"><strong>{archivedSession ? "Архивная сессия" : "Только просмотр"}</strong><span>{archivedSession ? "Сохранённая история сессии доступна для просмотра." : "Эта сессия пока не поддерживает отправку сообщений."}</span></div> : <>
           <textarea ref={composerTextareaRef} value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Продолжите работу…" : activeKey ? "Работайте с агентом" : "Сначала выберите сессию"} disabled={!activeKey || readOnlySession} onKeyDown={(event) => {
-            if (event.key !== "Enter" || event.shiftKey) return;
-            const platform = ((navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform || navigator.platform || "").toLowerCase();
-            const submitModifierPressed = /mac|iphone|ipad/.test(platform) ? event.metaKey : event.ctrlKey;
-            if (!submitModifierPressed) return;
+            if (!isComposerSubmitShortcut(event)) return;
             event.preventDefault();
-            if (isResumeMode && !queueEdit) void runAction("resume");
-            else void sendMessage();
+            if (isResumeMode && !queueEdit) void runAction("resume"); else void sendMessage();
           }} />
           {modelSwitchHarness && <button type="button" className={`composer-model ${modelMenuOpen ? "open" : ""}`} aria-label="Выбрать модель" aria-expanded={modelMenuOpen} aria-haspopup="listbox" disabled={modelSwitching} onClick={toggleModelMenu}>
             <span className="composer-model-name" title={composerModel ? modelOptionLabel(composerModel) : undefined}>{shortModelLabel(composerModel).replace(/\$(?:max|high|low|enabled)$/, "")}</span>
@@ -2633,17 +2484,8 @@ function App() {
             {!modelOptionsLoading && modelOptionsHarness === modelSwitchHarness && modelOptions.length === 0 && <div className="composer-model-note">Сервер не вернул моделей для {modelSwitchHarness}.</div>}
             {modelOptions.map((model) => <button type="button" role="option" aria-selected={model === currentModelOption(activeSession?.model, modelOptions)} className={model === currentModelOption(activeSession?.model, modelOptions) ? "current" : ""} key={model} onClick={() => void changeSessionModel(model)} title={model}>{modelOptionLabel(model)}{modelOptions.filter(option => shortModelLabel(option) === shortModelLabel(model)).length > 1 && <small className="model-provider">{modelSourceLabel(model)}</small>}</button>)}
           </div>}
-          <div className="composer-voice-actions"><button type="button" className={`composer-voice-button ${voiceRecording ? "recording" : ""}`} aria-label={voiceRecording ? "Остановить запись голоса" : voiceTranscribing ? "Распознаю голос" : "Записать голосовой ввод"} title={voiceRecording ? "Остановить запись голоса" : "Записать голосовой ввод (до 4 минут)"} disabled={!activeKey || readOnlySession || voiceTranscribing} onClick={() => voiceRecording ? stopVoiceRecording() : void startVoiceRecording()}>{voiceTranscribing ? <span className="voice-loading" aria-hidden="true">…</span> : <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="7" y="2.5" width="6" height="10" rx="3" /><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v3M7.5 18h5" /></svg>}</button>{(voiceRecording || voiceTranscribing) && <button type="button" className="composer-voice-cancel" aria-label={voiceRecording ? "Отменить запись голоса" : "Отменить распознавание"} title={voiceRecording ? "Отменить запись без отправки аудио" : "Отменить распознавание"} onClick={cancelVoiceInput}>×</button>}</div>
-          {voiceRecording && <span className="composer-voice-status" role="status" aria-live="polite">Записываю голос… остановите, чтобы получить текст</span>}
-          {voiceTranscribing && <span className="composer-voice-status" role="status" aria-live="polite">Распознаю голос. Текст появится в поле и не будет отправлен.</span>}
-          {voiceError && <span className="composer-voice-error" role="alert">{voiceError}</span>}
-          {sendModeMenuOpen && <div className="composer-send-mode-menu" role="dialog" aria-label="Выберите режим отправки" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setSendModeMenuOpen(false); } }}>
-            <strong>Отправить сообщение</strong>
-            <button ref={sendModeFirstChoiceRef} type="button" disabled={!supportsSteer} onClick={() => chooseSendMode("steer")}><span>Steer</span><small>В текущий ход агента</small></button>
-            <button type="button" onClick={() => chooseSendMode("queue")}><span>Queue</span><small>После текущего ответа</small></button>
-            <button type="button" className="composer-send-mode-cancel" onClick={() => setSendModeMenuOpen(false)}>Отмена</button>
-          </div>}
-          <button className={`send-button ${isResumeMode ? "resume-button" : ""}`} title={queueEdit ? "Сохранить изменения в том же сообщении очереди" : isResumeMode ? "Возобновить работу в той же сессии" : effectiveDeliveryMode === "queue" ? "Отправить после ответа агента" : "Передать в текущий ход агента"} type="button" onPointerDown={beginSendHold} onPointerUp={endSendHold} onPointerLeave={endSendHold} onPointerCancel={endSendHold} onContextMenu={(event) => { if (sendHoldTriggeredRef.current) event.preventDefault(); }} onClick={clickSendButton} aria-haspopup={canOfferSendMode ? "dialog" : undefined} aria-expanded={canOfferSendMode ? sendModeMenuOpen : undefined} disabled={queueEditSaving || Boolean(queueEdit?.unknown) || !activeKey || imageUploading || (!isResumeMode && !composer.trim() && !composerImages.length)} aria-label={queueEdit ? "Сохранить сообщение очереди" : isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}>{queueEdit ? "↑" : isResumeMode ? <svg className="send-open-icon" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H3v11h11V9M9 3h5v5M14 3 8 9" /></svg> : "↑"}</button>
+          <VoiceComposerControl key={activeKey??"no-session"} sessionKey={activeKey??""} disabled={!activeKey||readOnlySession} onTranscript={appendVoiceTranscript} />
+          <ComposerSendControl className={isResumeMode?"resume-button":""} disabled={queueEditSaving||Boolean(queueEdit?.unknown)||!activeKey||imageUploading||(!isResumeMode&&!composer.trim()&&!composerImages.length)} busy={false} supportsSteer={supportsSteer} allowModeChoice={canOfferSendMode} title={queueEdit?"Сохранить изменения в том же сообщении очереди":isResumeMode?"Возобновить работу в той же сессии":effectiveDeliveryMode==="queue"?"Отправить после ответа агента":"Передать в текущий ход агента"} label={queueEdit?"Сохранить сообщение очереди":isResumeMode?"Продолжить сессию":"Отправить сообщение"} icon={queueEdit?"↑":isResumeMode?<svg className="send-open-icon" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H3v11h11V9M9 3h5v5M14 3 8 9" /></svg>:"↑"} onSend={clickSendButton} />
         </>}
         </>}
       </form></div>}

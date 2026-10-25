@@ -5,6 +5,8 @@ import { DEFAULT_THEME, applyTheme, normalizeTheme, readTheme, writeTheme } from
 import { currentModelOption, modelSwitchSupported, requestModelChange, shortModelLabel } from "../src/web-ui/model-chip.js";
 
 const main = readFileSync(new URL("../src/web-ui/main.tsx", import.meta.url), "utf8");
+const composerControls = readFileSync(new URL("../src/web-ui/composer-controls.tsx", import.meta.url), "utf8");
+const remoteComposer = readFileSync(new URL("../src/web-ui/fleet/RemoteSessionView.tsx", import.meta.url), "utf8");
 const polish = readFileSync(new URL("../src/web-ui/interface-polish.css", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../src/web-ui/styles.css", import.meta.url), "utf8");
 const themeCss = readFileSync(new URL("../src/web-ui/codex-theme.css", import.meta.url), "utf8");
@@ -37,9 +39,10 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain("details.children.length");
     expect(main).toContain("setSessions(nextSessions);");
     expect(main).toContain('aria-label="Прокрутить к последним"');
-    expect(main).toContain('aria-label={queueEdit ? "Сохранить сообщение очереди" : isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}');
+    expect(main).toContain('label={queueEdit?"Сохранить сообщение очереди":isResumeMode?"Продолжить сессию":"Отправить сообщение"}');
+    expect(composerControls).toContain('aria-label={busy ? "Отправляю сообщение" : label}');
     expect(main).toContain('className="send-open-icon"');
-    expect(main).toContain('title={queueEdit ? "Сохранить изменения в том же сообщении очереди" : isResumeMode ? "Возобновить работу в той же сессии"');
+    expect(main).toContain('title={queueEdit?"Сохранить изменения в том же сообщении очереди":isResumeMode?"Возобновить работу в той же сессии"');
     expect(main).toContain("details?.children?.length");
     expect(main).toContain("SESSION_LIST_SHOW_COMPLETED_ARIA");
     expect(main).toContain("SESSION_LIST_SHOW_COMPLETED_LABEL");
@@ -83,22 +86,26 @@ describe("mobile chat and session controls", () => {
     expect(main).not.toContain("composer-hint");
     expect(main).not.toContain(">+ Фото</button>");
     expect(main).toContain('aria-label="Прикрепить изображение"');
-    expect(main).toContain("const submitModifierPressed = /mac|iphone|ipad/.test(platform) ? event.metaKey : event.ctrlKey;");
-    expect(main).toContain("if (event.key !== \"Enter\" || event.shiftKey) return;");
-    expect(main).toContain("}, 550);");
-    expect(main).toContain('role="dialog" aria-label="Выберите режим отправки"');
-    expect(main).toContain('chooseSendMode("steer")');
-    expect(main).toContain('chooseSendMode("queue")');
-    expect(main).toContain("if (sendHoldTriggeredRef.current) {");
+    expect(main).toContain("isComposerSubmitShortcut(event)");
+    expect(composerControls).toMatch(/\/mac\|iphone\|ipad\|ipod\/i\.test\(os\) \? event\.metaKey : event\.ctrlKey/);
+    expect(composerControls).toContain("}, 550);");
+    expect(composerControls).toContain('role="dialog"');
+    expect(composerControls).toContain('aria-label="Выберите режим отправки"');
+    expect(composerControls).toContain("onSend(mode)");
+    expect(main).toContain("<ComposerSendControl");
+    expect(main).toContain("<VoiceComposerControl");
+    expect(remoteComposer).toContain("isComposerSubmitShortcut(e)");
+    expect(remoteComposer).toContain("<ComposerSendControl");
+    expect(remoteComposer).toContain("<VoiceComposerControl");
+    expect(remoteComposer).not.toContain("composer-hint");
     expect(styles).toContain(".composer-send-mode-menu");
-    expect(main).toContain('form.append("audio", blob, `voice-input.${extension}`)');
-    expect(main).toContain('fetch("/api/composer/transcription"');
-    expect(main).toContain('setComposer((current) => current ? `${current}${current.endsWith("\\n") ? "" : "\\n"}${transcript}` : transcript)');
+    expect(composerControls).toContain('form.append("audio", blob, `voice-input.${extension}`)');
+    expect(composerControls).toContain('fetch("/api/composer/transcription"');
+    expect(composerControls).toContain("onTranscript(body.text.trim(), key)");
+    expect(composerControls).toContain("discard.current = true;");
+    expect(composerControls).toContain('className="composer-voice-error" role="alert"');
     expect(main).not.toContain('sendMessage(transcript)');
-    expect(main).toContain('aria-label={voiceRecording ? "Остановить запись голоса" : voiceTranscribing ? "Распознаю голос" : "Записать голосовой ввод"}');
-    expect(main).toContain('aria-label={voiceRecording ? "Отменить запись голоса" : "Отменить распознавание"}');
-    expect(main).toContain("discardVoiceRef.current = true;");
-    expect(main).toContain('role="alert">{voiceError}</span>');
+    expect(remoteComposer).toContain('setText(current=>current?');
   });
 
   it("shows every automation control supported by the active harness", () => {
