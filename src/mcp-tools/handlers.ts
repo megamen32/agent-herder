@@ -496,15 +496,22 @@ export async function handleExportTranscript(
   }
 }
 
-export async function handleSendMessage(adapters: Map<string, HarnessAdapter>, args: unknown, userMessageDelivery?: UserMessageDelivery): Promise<string> {
+export type McpSendResponseObserver = (input: {
+  target: import("../session-delivery-response.js").DeliveryResponseTarget;
+  inputId: string;
+  requestFingerprint: string;
+  send: () => Promise<import("../types/index.js").SendMessageResult>;
+}) => Promise<import("../types/index.js").SendMessageResult>;
+
+export async function handleSendMessage(adapters: Map<string, HarnessAdapter>, args: unknown, userMessageDelivery?: UserMessageDelivery, observeSyncSend?: McpSendResponseObserver): Promise<string> {
   const parsed = SendMessageSchema.parse(args);
   if (parsed.meshSender && parsed.humanRequested) throw new Error("Automatic mesh sender cannot claim humanRequested");
-  if (parsed.humanRequested) return sendMessageOnce(adapters, parsed, userMessageDelivery);
+  if (parsed.humanRequested) return sendMessageOnce(adapters, parsed, userMessageDelivery, observeSyncSend);
   return deliveryBudgetFor(adapters).run({
     target: `${parsed.harness || "auto"}:${parsed.sessionId}`,
     sender: parsed.meshSender ? `mesh:${JSON.stringify([parsed.meshSender.hostId,parsed.meshSender.harness,parsed.meshSender.nativeSessionId])}` : `${parsed.fromHarness || "auto"}:${parsed.fromSessionId || "unknown"}`,
     inputId: parsed.inputId, message: parsed.message,
-  }, () => sendMessageOnce(adapters, parsed, userMessageDelivery));
+  }, () => sendMessageOnce(adapters, parsed, userMessageDelivery, observeSyncSend));
 }
 
 export async function handleReadMessage(args: unknown): Promise<string> {
@@ -523,6 +530,7 @@ async function sendMessageOnce(
   adapters: Map<string, HarnessAdapter>,
   args: unknown,
   userMessageDelivery?: UserMessageDelivery,
+  observeSyncSend?: McpSendResponseObserver,
 ): Promise<string> {
   const parsed = SendMessageSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
@@ -591,9 +599,28 @@ async function sendMessageOnce(
     }
     result = receipt;
   } else {
-    result = parsed.humanRequested
-      ? await found.adapter.sendMessage(parsed.sessionId, options)
-      : await sendCurrentTurnOnly(found.adapter, parsed.sessionId, options);
+    const send = () => parsed.humanRequested
+      ? found.adapter.sendMessage(parsed.sessionId, options)
+      : sendCurrentTurnOnly(found.adapter, parsed.sessionId, options);
+    if (observeSyncSend) {
+      if (!found.session.hostId) return JSON.stringify({ ok: false, delivery: "not_attempted", error: "Exact target host is unavailable; message was not sent." });
+      const inputId = parsed.inputId ?? createHash("sha256").update(JSON.stringify({
+        hostId: found.session.hostId, harness: found.session.harness, sessionId: found.session.id,
+        mode: parsed.mode, message: parsed.message,
+      })).digest("hex");
+      options.inputId = inputId;
+      result = await observeSyncSend({
+        target: { hostId: found.session.hostId, harness: found.session.harness as import("../session-delivery-response.js").DeliveryResponseTarget["harness"], sessionId: found.session.id },
+        inputId,
+        requestFingerprint: createHash("sha256").update(JSON.stringify({
+          hostId: found.session.hostId, harness: found.session.harness, sessionId: found.session.id,
+          mode: parsed.mode, message: parsed.message, humanRequested: parsed.humanRequested === true,
+        })).digest("hex"),
+        send,
+      });
+    } else {
+      result = await send();
+    }
   }
   if (result.notSubmitted) return result.error?.startsWith('skipped_inactive') ? skippedCoordination(found.session)
     : JSON.stringify({ok:false,delivery:'not_attempted',activated:false,error:result.error});

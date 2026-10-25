@@ -56,6 +56,8 @@ export type DeliveryResponseResult = {
   text: string;
   totalTextLength: number;
   responseSha256: string;
+  /** Stable read-only resource for the latest response bound to this delivery. */
+  responseFetchUri?: string;
   responseResourceUri?: string;
   nextOffset?: number;
   baselineCoverage: DeliveryResponseBaseline["coverage"];
@@ -342,6 +344,7 @@ async function toResult(input: {
     jobId: input.jobId, inputId: input.inputId, jobRef: input.job.resultRef,
     target: input.target, status, correlation: delta.correlation, text: formatted.text,
     totalTextLength: delta.text.length, responseSha256: sha256(delta.text),
+    responseFetchUri: `herder://delivery-responses/${encodeURIComponent(input.target.hostId)}/${encodeURIComponent(input.target.harness)}/${encodeURIComponent(input.target.sessionId)}/${encodeURIComponent(input.jobId)}/${encodeURIComponent(input.inputId)}`,
     ...(formatted.responseResourceUri ? { responseResourceUri: formatted.responseResourceUri } : {}),
     ...(formatted.nextOffset !== undefined ? { nextOffset: formatted.nextOffset } : {}),
     baselineCoverage: input.baseline.coverage,
@@ -405,6 +408,8 @@ export async function waitForDeliveryResponse(input: {
   now?: () => number;
   delay?: (ms: number, signal?: AbortSignal) => Promise<unknown>;
   recordResponseReceipt?: (jobId: string, receipt: DeliveryResponseReceipt) => void | Promise<void>;
+  /** Return the first verified new visible text as a partial response. */
+  returnOnVisibleText?: boolean;
 }): Promise<DeliveryResponseResult> {
   if (!validateDeliveryResponseBaseline(input.baseline, input)) {
     return toResult({ ...input, job: null, history: { messages: null } });
@@ -440,7 +445,8 @@ export async function waitForDeliveryResponse(input: {
           jobId: input.jobId, inputId: input.inputId, ...(turnId ? { turnId } : {}),
         });
         const status = resultStatus(latestJob, latestHistory, delta);
-        if (status === "completed" || status === "failed" || (status === "unknown" && delta.integrity !== "baseline_gap" && delta.integrity !== "baseline_prefix_changed")) {
+        if (status === "completed" || status === "failed" || (status === "unknown" && delta.integrity !== "baseline_gap" && delta.integrity !== "baseline_prefix_changed")
+          || (input.returnOnVisibleText && delta.text.length > 0)) {
           return toResult({ ...input, job: latestJob, history: latestHistory, turnId });
         }
       }

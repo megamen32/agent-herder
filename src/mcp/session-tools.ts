@@ -1,11 +1,14 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { hostname } from "node:os";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { HarnessAdapter } from "../types/index.js";
 import { sessionIdentity } from "../session-identity.js";
 import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import { UserMessageDelivery } from "../user-message-delivery.js";
+import { captureDeliveryResponseBaseline, waitForDeliveryResponse, type DeliveryResponseBaseline, type DeliveryResponseResult, type DeliveryResponseTarget } from "../session-delivery-response.js";
+import type { SendMessageResult } from "../types/index.js";
 import {
   SendMessageSchema,
   CreateSessionSchema,
@@ -103,6 +106,106 @@ export function registerSessionTools(server: McpServer, deps: {
       return adapter ? adapter.sendMessage(sessionId, options) : { ok: false, notSubmitted: true, error: "Адаптер отправки недоступен" };
     },
   }, jobs);
+  let observedMcpResponse: DeliveryResponseResult | undefined;
+  const observeMcpSend = async (input: {
+    target: DeliveryResponseTarget;
+    inputId: string;
+    requestFingerprint: string;
+    send: () => Promise<SendMessageResult>;
+  }): Promise<SendMessageResult> => {
+    const adapter = adapters.get(input.target.harness);
+    const onceKey = `mcp-send-message\0${input.target.hostId}\0${input.target.harness}\0${input.target.sessionId}\0${input.inputId}`;
+    const jobId = `job_${createHash("sha256").update(onceKey).digest("hex")}`;
+    const existing = jobs.get<SendMessageResult>(jobId);
+    let baseline: DeliveryResponseBaseline;
+    if (existing) {
+      if (existing.requestFingerprint !== input.requestFingerprint) throw new Error("message_input_id_reused_with_different_request");
+      try { baseline = jobs.readDeliveryResponseBaseline(jobId, { inputId: input.inputId, target: input.target }); }
+      catch {
+        observedMcpResponse = {
+          jobId, inputId: input.inputId, jobRef: existing.resultRef, target: input.target,
+          status: "unknown", correlation: "unavailable", text: "", totalTextLength: 0,
+          responseSha256: createHash("sha256").update("").digest("hex"),
+          responseFetchUri: `herder://delivery-responses/${encodeURIComponent(input.target.hostId)}/${encodeURIComponent(input.target.harness)}/${encodeURIComponent(input.target.sessionId)}/${encodeURIComponent(jobId)}/${encodeURIComponent(input.inputId)}`,
+          baselineCoverage: "unavailable", reason: "baseline_unavailable",
+        };
+        if (existing.result && existing.state !== "interrupted") return existing.result;
+        return {
+          ok: false, inputId: input.inputId, nonRetryable: true,
+          admissionUnknown: true,
+          error: "Delivery result is uncertain; inspect the existing job before retrying.",
+        };
+      }
+    } else {
+      baseline = await captureDeliveryResponseBaseline({
+        jobId, inputId: input.inputId, target: input.target,
+        readMessages: async (target, limit) => {
+          if (!adapter?.getSessionMessages) return { messages: null };
+          const current = await adapter.getSession(target.sessionId);
+          if (!current || current.id !== target.sessionId || current.harness !== target.harness || current.hostId !== target.hostId) return { messages: null };
+          return { messages: await adapter.getSessionMessages(target.sessionId, limit), complete: false };
+        },
+      });
+      jobs.start<SendMessageResult>({
+        kind: "MCP message delivery",
+        ownerSessionId: input.target.sessionId,
+        idempotencyKey: onceKey,
+        requestFingerprint: input.requestFingerprint,
+        durableOnce: true,
+        run: async () => {
+          jobs.recordDeliveryResponseBaseline(jobId, baseline);
+          return input.send();
+        },
+      });
+    }
+
+    observedMcpResponse = await waitForDeliveryResponse({
+      jobId, inputId: input.inputId, target: input.target, baseline,
+      readJob: (id) => jobs.get<SendMessageResult>(id),
+      readHistory: async (target, limit) => {
+        if (!adapter?.getSessionMessages) return { messages: null };
+        const current = await adapter.getSession(target.sessionId);
+        if (!current || current.id !== target.sessionId || current.harness !== target.harness || current.hostId !== target.hostId) return { messages: null };
+        return { messages: await adapter.getSessionMessages(target.sessionId, limit), complete: false };
+      },
+      recordResponseReceipt: (id, receipt) => jobs.recordDeliveryResponseReceipt(id, receipt),
+      returnOnVisibleText: true,
+    });
+    const currentJob = jobs.get<SendMessageResult>(jobId);
+    return currentJob?.result ?? { ok: true, pending: true, inputId: input.inputId };
+  };
+  const observeExistingUserDelivery = async (harness: string, sessionId: string, inputId: string): Promise<void> => {
+    const receipt = userMessageDelivery.get(harness, sessionId, inputId);
+    const job = receipt?.job;
+    const adapter = adapters.get(harness);
+    if (!job || !adapter?.getSession) return;
+    const session = await adapter.getSession(sessionId).catch(() => null);
+    if (!session || session.id !== sessionId || session.harness !== harness || !session.hostId) return;
+    const target: DeliveryResponseTarget = { hostId: session.hostId, harness: session.harness as DeliveryResponseTarget["harness"], sessionId };
+    let baseline: DeliveryResponseBaseline;
+    try { baseline = await userMessageDelivery.readDeliveryResponseBaseline(job.id, inputId, target); }
+    catch {
+      observedMcpResponse = {
+        jobId: job.id, inputId, jobRef: job.resultRef, target, status: "unknown", correlation: "unavailable",
+        text: "", totalTextLength: 0, responseSha256: createHash("sha256").update("").digest("hex"),
+        responseFetchUri: `herder://delivery-responses/${encodeURIComponent(target.hostId)}/${encodeURIComponent(target.harness)}/${encodeURIComponent(target.sessionId)}/${encodeURIComponent(job.id)}/${encodeURIComponent(inputId)}`,
+        baselineCoverage: "unavailable", reason: "baseline_unavailable",
+      };
+      return;
+    }
+    observedMcpResponse = await waitForDeliveryResponse({
+      jobId: job.id, inputId, target, baseline,
+      readJob: (id) => jobs.get<SendMessageResult>(id),
+      readHistory: async (requested, limit) => {
+        if (!adapter.getSessionMessages) return { messages: null };
+        const current = await adapter.getSession(requested.sessionId);
+        if (!current || current.id !== requested.sessionId || current.harness !== requested.harness || current.hostId !== requested.hostId) return { messages: null };
+        return { messages: await adapter.getSessionMessages(requested.sessionId, limit), complete: false };
+      },
+      recordResponseReceipt: (id, value) => jobs.recordDeliveryResponseReceipt(id, value),
+      returnOnVisibleText: true,
+    });
+  };
   const coordination = deps.coordination ?? coordinationNotes;
   let peerTransport: GptAdminTransport | undefined = deps.transport;
   /**
@@ -561,7 +664,7 @@ export function registerSessionTools(server: McpServer, deps: {
     return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
   });
 
-  server.registerTool("send_message", { description: "Send a message to an agent. Ordinary coordination is active-turn-only, including queue mode: inactive/completed targets return skipped_inactive without new turns or deferred debt. Explicit humanRequested=true permits a human new task/send/resume. inputId deduplicates retries for 24 hours. Active coordination notes are injected automatically. fromSessionId/fromHarness add verified reply attribution, do not authenticate the caller. For ordinary inter-agent exchange use explicit mode:\"steer\" (default) to redirect the current active turn. queue is only intentional deferred work after current work finishes; it may wait hours and is not immediate exchange. sync waits for response.", inputSchema: SendMessageSchema }, async (args) => {
+  server.registerTool("send_message", { description: "Send a message to an agent and wait up to 30 seconds for new visible assistant text. The result includes the existing delivery job reference and a read-only response resource; reading it never resends the message. Ordinary coordination is active-turn-only, including queue mode: inactive/completed targets return skipped_inactive without new turns or deferred debt. Explicit humanRequested=true permits a human new task/send/resume. inputId deduplicates retries for 24 hours. Active coordination notes are injected automatically. fromSessionId/fromHarness add verified reply attribution, do not authenticate the caller. For ordinary inter-agent exchange use explicit mode:\"steer\" (default) to redirect the current active turn. queue is only intentional deferred work after current work finishes; it may wait hours and is not immediate exchange. sync is a delivery mode and does not change the bounded response wait.", inputSchema: SendMessageSchema }, async (args) => {
     const peer = selectedRemotePeer(args.hostId);
     if (peer) {
       if (!args.harness) throw new Error("remote_session_host_and_harness_required");
@@ -581,8 +684,17 @@ export function registerSessionTools(server: McpServer, deps: {
     if (route.denied) throw new Error("project_session_scope_unavailable");
     if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     await assertDeliveryModelAllowed(route.adapters, { sessionId: args.sessionId, harness: args.harness });
-    const result = await handleSendMessage(route.adapters, route.args, userMessageDelivery); publishSessionsChanged();
-    return { content: [{ type: "text" as const, text: result }] };
+    observedMcpResponse = undefined;
+    const result = await handleSendMessage(route.adapters, route.args, userMessageDelivery,
+      jobs.supportsDurableOnce() ? observeMcpSend : undefined);
+    if (!observedMcpResponse && args.humanRequested === true && args.harness === "minimax-code"
+      && args.mode === "queue" && args.inputId) {
+      await observeExistingUserDelivery(args.harness, args.sessionId, args.inputId);
+    }
+    publishSessionsChanged();
+    return { content: [{ type: "text" as const, text: observedMcpResponse
+      ? JSON.stringify({ delivery: result, response: observedMcpResponse })
+      : result }] };
   });
   server.registerTool("create_session", { description: "Create one named OpenCode, Codex, ZCode, or Fast Agent session in an absolute canonical working directory.", inputSchema: CreateSessionSchema }, async (args) => {
     await assertModelAllowedForDirectoryWithPolicy(deps.launchPolicy, args.cwd, args.model, args.harness);

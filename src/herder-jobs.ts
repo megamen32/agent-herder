@@ -99,6 +99,12 @@ export class HerderJobRegistry {
     this.restore();
   }
 
+  /** Whether this registry can safely hold a no-replay native delivery. */
+  supportsDurableOnce(): boolean {
+    if (this.persistenceRestoreError) throw new Error("native_delivery_history_unreadable_hold");
+    return Boolean(this.persistencePath);
+  }
+
   list(limit = 100): HerderJob[] {
     return [...this.jobs.values()]
       .map(({ record }) => publicJob(record))
