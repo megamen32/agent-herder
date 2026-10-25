@@ -1,21 +1,33 @@
 #!/usr/bin/env node
 import {McpServer} from "@modelcontextprotocol/server";
 import {serveStdio} from "@modelcontextprotocol/server/stdio";
+import {Client,StreamableHTTPClientTransport} from "@modelcontextprotocol/client";
 import {z} from "zod";
 import {homedir,hostname} from "node:os";
 import {join} from "node:path";
 import {observeCodex} from "./native-observer.js";
 import {NativeCodexClient} from "./native-codex.js";
 import {MeshDeliveryLedger} from "./delivery-ledger.js";
-import {addressKey,type MeshSession} from "./protocol.js";
+import {addressKey,type MeshAddress,type MeshSession} from "./protocol.js";
 import {inventoryHarnesses} from "./inventory.js";
 import {deliverSharedCodex} from "./shared-delivery.js";
-import {MinimaxCodeControl} from "../adapters/minimax-code-control.js";
-import {MINIMAX_CODE_HARNESS,deliverMinimaxCode,observeMinimaxCode} from "./native-minimax-code.js";
+import {MINIMAX_CODE_HARNESS,observeMinimaxCode} from "./native-minimax-code.js";
+import {relayNativePeerDeliveryToOwner} from "./native-peer-owner-relay.js";
 const hostId=hostname();
 const codex=new NativeCodexClient();
-const minimax=new MinimaxCodeControl();
 const ledger=new MeshDeliveryLedger(join(homedir(),".local/state/agent-herder/harness-mesh-receipts.json"));
+const ownerUrl=new URL(process.env.AGENT_HERDER_HTTP_URL||"http://127.0.0.1:18787/mcp");
+if(ownerUrl.protocol!=="http:"||ownerUrl.hostname!=="127.0.0.1")throw new Error("Native mesh relay requires the existing verified loopback Agent Herder owner");
+const ownerClient=new Client({name:"agent-herder-native-mesh-owner-relay",version:"1"},{versionNegotiation:{mode:"auto"}});
+let ownerTransport:StreamableHTTPClientTransport|undefined,ownerReady:Promise<void>|undefined;
+async function callOwnerMesh(request:{target:MeshAddress;sender:MeshAddress;inputId:string;message:string}):Promise<unknown>{
+ if(!ownerReady){
+  ownerTransport=new StreamableHTTPClientTransport(ownerUrl,process.env.AGENT_HERDER_HTTP_TOKEN?{authProvider:{token:async()=>process.env.AGENT_HERDER_HTTP_TOKEN!}}:{});
+  ownerReady=(async()=>{await ownerClient.connect(ownerTransport!);const tools=(await ownerClient.listTools()).tools;if(!tools.some(tool=>tool.name==="mesh_deliver"))throw new Error("shared_owner_mesh_tool_unavailable");})();
+ }
+ await ownerReady;
+ return ownerClient.callTool({name:"mesh_deliver",arguments:request},{timeout:60_000});
+}
 const server=new McpServer({name:"agent-herder-harness-mesh",version:"1"});
 const result=(v:unknown)=>({content:[{type:"text" as const,text:JSON.stringify(v)}]});
 const address=z.object({hostId:z.string().min(1).max(512),harness:z.string().min(1).max(64),nativeSessionId:z.string().min(1).max(512)});
@@ -47,18 +59,7 @@ server.registerTool("mesh_deliver",{description:"Native input through an existin
  const reject=(reason:string)=>result(rejected(reason));
  if(request.target.hostId!==hostId)return reject("native_host_identity_mismatch");
  if(request.target.harness===MINIMAX_CODE_HARNESS){
-  const receipt=await deliverMinimaxCode(request,{ledger,port:{
-   enqueue:async(id,message)=>{
-    const answer=await minimax.enqueue(id,message);
-    if(!answer.ok)return {ok:false,error:answer.error};
-    const item=(answer.body??{}) as {item_id?:string};
-    // The runtime took the item, but without its id the receipt stays unproven.
-    if(typeof item.item_id!=="string"||!item.item_id)return {ok:true,admissionUnknown:true};
-    return {ok:true,admitted:true,turnId:item.item_id};
-   },
-  },observe:async id=>{
-   try{const observed=await observeMinimaxCode(1,undefined,hostId,id);const session=observed.sessions[0];return session?{nativeSessionId:session.address.nativeSessionId,status:session.status,cwd:session.project.currentCwd??session.project.launchCwd}:null;}catch{return null;}
-  }});
+  const receipt=await relayNativePeerDeliveryToOwner(request,callOwnerMesh);
   return result(receipt);
  }
  const receipt=await deliverSharedCodex(request,{client:codex,ledger,observe:async id=>{
@@ -66,6 +67,6 @@ server.registerTool("mesh_deliver",{description:"Native input through an existin
  }});
  return result(receipt);
 });
-process.stdin.once("end",()=>codex.close());
-process.once("SIGTERM",()=>{codex.close();process.exit(0);});
+process.stdin.once("end",()=>{codex.close();void ownerClient.close();});
+process.once("SIGTERM",()=>{codex.close();void ownerClient.close().finally(()=>process.exit(0));});
 await serveStdio(()=>server);

@@ -2,7 +2,7 @@
 export interface MeshAddress { hostId: string; harness: string; nativeSessionId: string }
 export interface ProjectObservation { launchCwd: string | null; currentCwd: string | null; source: string; hostId?: string; expiresAt?: string }
 export interface MeshSession { address: MeshAddress; project: ProjectObservation; status: string; title: string; lastActivity: string; createdAt?: string; model?: string }
-export interface NativeReceipt { state: "admitted" | "not_attempted" | "unknown"; inputId: string; turnId?: string; retryable: boolean; reason?:string; retryAfterMs?:number }
+export interface NativeReceipt { state: "queued" | "admitted" | "not_attempted" | "unknown"; inputId: string; jobId?:string; turnId?: string; retryable: boolean; reason?:string; retryAfterMs?:number }
 /** Receipt of one native stop. An unproven stop is never replayed. */
 export interface NativeStopReceipt extends NativeReceipt { hostId: string; harness: string; nativeSessionId: string; /** The manual stop of the session was recorded on this host. */
   held?: boolean }
@@ -59,7 +59,10 @@ export function parseNativeReceipt(value:unknown,inputId:string): NativeReceipt 
     }
   }
   if(r.admitted===true && r.inputId===inputId && typeof r.turnId==="string" && r.turnId) return {state:"admitted",inputId,turnId:r.turnId,retryable:false};
-  if(r.admissionUnknown===true||r.nonRetryable===true||r.state==="unknown"||r.delivery==="admission_unknown")return {state:"unknown",inputId,retryable:false};
+  if(r.state==="queued"&&r.inputId===inputId&&typeof r.jobId==="string"&&r.jobId)return {state:"queued",inputId,jobId:r.jobId,retryable:false,...(typeof r.reason==="string"?{reason:r.reason}:{})};
+  if(r.admissionUnknown===true||r.state==="unknown"||r.delivery==="admission_unknown")return {state:"unknown",inputId,retryable:false};
+  if(r.notSubmitted===true && r.admitted!==true) return {state:"not_attempted",inputId,retryable:r.retryable===true||r.nonRetryable!==true,...(typeof r.error==="string"?{reason:r.error.slice(0,160)}:{})};
+  if(r.nonRetryable===true)return {state:"unknown",inputId,retryable:false};
   if(r.admitted===false&&r.inputId===inputId&&r.admissionUnknown!==true&&r.nonRetryable!==true&&r.delivery!=="admission_unknown"&&r.state!=="unknown")return {state:"not_attempted",inputId,retryable:true,reason:"native_admission_rejected"};
   if(r.ok===false&&r.delivery==="rate_limited"&&r.activated===false)return {state:"not_attempted",inputId,retryable:true,reason:"rate_limited",...(typeof r.retryAfterMs==="number"?{retryAfterMs:r.retryAfterMs}:{})};
   if(r.delivery==="not_attempted" || r.delivery==="not_found" || r.delivery==="skipped_inactive") return {state:"not_attempted",inputId,retryable:true};

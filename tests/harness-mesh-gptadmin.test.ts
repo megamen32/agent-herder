@@ -69,6 +69,13 @@ describe("GPTAdmin native mesh (focused integration; expected 5s, maximum 30s)",
   const m=new GptAdminMesh(h);expect((await m.discover()).sessions).toHaveLength(1);
   expect((await m.deliver({target:a,sender:{...a,nativeSessionId:"s"},inputId:"real-envelope",message:"delta"})).state).toBe("admitted");
  });
+ it("returns the owner durable-job receipt as queued instead of treating the MCP envelope as admission",async()=>{
+  const h=hub(),m=new GptAdminMesh(h);await m.discover();
+  h.call.mockImplementation(async(_target:string,name:string,args:Record<string,unknown>)=>name==="mesh_deliver"
+   ?{state:"queued",inputId:args.inputId,jobId:"job_owner",retryable:false,reason:"durable_job_pending"}
+   :{hostId:"100",sessions:[{address:a,project:{launchCwd:"/x",currentCwd:null,source:"unverified"},status:"idle",title:"t",lastActivity:"now"}],harnesses:[],complete:true});
+  await expect(m.deliver({target:a,sender:{...a,nativeSessionId:"s"},inputId:"queued-owner-job",message:"delta"})).resolves.toMatchObject({state:"queued",jobId:"job_owner",retryable:false});
+ });
  it("uses discovered exact targets and schema, reports missing remote child as partial",async()=>{
   const h=hub(); const m=new GptAdminMesh(h); const r=await m.discover();
   expect(r.sessions[0]?.project.currentCwd).toBe("/actual");expect(r.complete).toBe(false);

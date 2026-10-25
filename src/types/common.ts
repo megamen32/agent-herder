@@ -242,7 +242,7 @@ export interface SendMessageOptions {
    * A persisted UserMessageDelivery job, created before a native CLI dispatch.
    * The MiniMax idle-session CLI route is unavailable without this write-ahead claim.
    */
-  durableUserDelivery?: { jobId: string; inputId: string; requestFingerprint: string; harness: string; sessionId: string; mode: "queue" | "steer"; minimaxExecPolicy?: { mode: "unset" | "smart" | "full" | "off"; revision: number }; nonce: string; signature: string };
+  durableUserDelivery?: { jobId: string; inputId: string; requestFingerprint: string; harness: string; sessionId: string; targetHostId?: string; mode: "queue" | "steer"; actor: { kind: "human" } | { kind: "agent"; principal: "agent-herder-mesh"; senderAssertion?: { hostId: string; harness: string; nativeSessionId: string } }; minimaxExecPolicy?: { mode: "unset" | "smart" | "full" | "off"; revision: number }; nonce: string; signature: string };
 }
 
 export interface MessageImage { id: string; path: string; fileName: string; mimeType: string; bytes: number }
@@ -369,6 +369,9 @@ export interface HarnessAdapter {
 
   /** Get detailed info about a specific session */
   getSession(id: string, options?: { includeMetrics?: boolean }): Promise<AgentSession | null>;
+
+  /** Exact native workspace projection, when the harness owns a stronger read than its generic cwd. */
+  getNativeWorkspaceDirectory?(id: string): Promise<{ hostId: string; harness: string; sessionId: string; cwd: string } | null>;
 
   /** Read exact native permission state without starting or resuming a session. */
   getPermissionState?(sessionId: string): Promise<HarnessPermissionState | null>;

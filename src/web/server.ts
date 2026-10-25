@@ -161,6 +161,8 @@ export interface WebDependencies {
   sessionVisualizer?: (details: SessionDetails) => Promise<string>;
   sessionObservationIntervalMs?: number;
   jobs?: HerderJobRegistry;
+  /** Reuse the process-owned canonical delivery core across HTTP and MCP ingress. */
+  userMessageDelivery?: UserMessageDelivery;
   /** Reuse the process-owned supervisor when the daemon starts observation before HTTP. */
   supervisor?: SessionSupervisor;
   /** Resolve exact H34-bound native addresses before owner-HTTP session access. */
@@ -891,7 +893,8 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const mcpAuthToken = dependencies.mcpAuthToken?.trim() || undefined;
   const selectedResume = dependencies.choiceResume ?? ((request: ResumeTransportRequest) => resumeSelectedTarget(request, supervisor, "automation"));
   const manualChoiceResume = dependencies.choiceResume ?? ((request: ResumeTransportRequest) => resumeSelectedTarget(request, supervisor, "human"));
-  const userMessageDelivery = dependencies.jobs ? new UserMessageDelivery(dependencies.adapters, supervisor, dependencies.jobs) : undefined;
+  const ownsUserMessageDelivery=!dependencies.userMessageDelivery;
+  const userMessageDelivery = dependencies.userMessageDelivery ?? (dependencies.jobs ? new UserMessageDelivery(dependencies.adapters, supervisor, dependencies.jobs) : undefined);
   const sessionImages = dependencies.sessionImageStore ?? new SessionImageStore(join(homedir(), ".local/state/agent-herder/session-images"));
   const rag = agentHerderRag();
   const stopActiveFleetInventory = process.env.VITEST ? undefined : startActiveFleetInventoryOwner();
@@ -1095,7 +1098,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
     stopActiveInventory?.();
     stopActiveFleetInventory?.();
     void searchIndexer.then(owner=>owner?.close());
-    userMessageDelivery?.close();
+    if(ownsUserMessageDelivery)userMessageDelivery?.close();
     stopSessionObservation?.();
     // The detached observers publish into the incident cards: they must stop
     // with the server instead of running on into the next process.

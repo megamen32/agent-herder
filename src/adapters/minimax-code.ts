@@ -483,6 +483,29 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     return entry ? this.toSession(entry) : null;
   }
 
+  /** Exact native work directory from the same MiniMax v2 runtime database used by idle CLI admission. */
+  async getNativeWorkspaceDirectory(id: string): Promise<{hostId:string;harness:string;sessionId:string;cwd:string}|null> {
+    if(!id||id.length>512||/[\x00-\x1f\x7f]/.test(id))return null;
+    let db:DatabaseSync|undefined;
+    try{
+      const dataDir=await realpath(this.runtimeDataDir);
+      const expectedDb=join(dataDir,"v2","sqlite","runtime-state.sqlite");
+      const [actualDb,canonicalDb]=await Promise.all([realpath(this.runtimeDb).catch(()=>null),realpath(expectedDb).catch(()=>null)]);
+      if(!actualDb||actualDb!==canonicalDb)return null;
+      db=new DatabaseSync(actualDb,{readOnly:true});db.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=1000; BEGIN");
+      const row=db.prepare("SELECT session_id,runtime,workspace_dir,archived FROM local_runtime_sessions WHERE session_id=?").get(id) as
+        {session_id:string;runtime:string;workspace_dir:string|null;archived:number}|undefined;
+      db.exec("COMMIT");
+      if(!row||row.session_id!==id||row.runtime!=="pi-agent"||row.archived!==0||typeof row.workspace_dir!=="string"||!row.workspace_dir.startsWith("/")||/[\x00-\x1f\x7f]/.test(row.workspace_dir))return null;
+      const cwd=await realpath(row.workspace_dir);
+      if(!(await stat(cwd)).isDirectory())return null;
+      return {hostId:localSessionHostId(),harness:"minimax-code",sessionId:id,cwd};
+    }catch{
+      try{db?.exec("ROLLBACK")}catch{/* read-only snapshot cleanup */}
+      return null;
+    }finally{db?.close();}
+  }
+
   async getNativeIdleAdmissionProof(target: MinimaxExecPolicyTarget): Promise<{ hostId: string; harness: string; sessionId: string; idle: boolean; reason?: string }> {
     const base = { hostId: localSessionHostId(), harness: "minimax-code", sessionId: target.sessionId };
     if (target.harness !== "minimax-code" || target.hostId !== base.hostId || !target.sessionId) {
@@ -591,7 +614,7 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     }
     if (options.steer === true) {
       const result = await control.steer(id, options.message);
-      if (!result.ok) return { ok: false, error: result.error };
+      if (!result.ok) return { ok: false, ...(result.notSubmitted?{notSubmitted:true}:{}), ...(result.admissionUnknown?{admissionUnknown:true,nonRetryable:true}:{}), inputId: options.inputId, error: result.error };
       const body = (result.body ?? {}) as { success?: boolean; turn_id?: string; item_id?: string };
       const turnId = body.turn_id ?? body.item_id;
       if (!turnId) return { ok: false, admissionUnknown: true, nonRetryable: true, inputId: options.inputId, error: "MiniMax Code steer receipt lacked an exact native turn ID; do not retry" };
@@ -599,7 +622,7 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     }
     if (options.queue === true) {
       const result = await control.enqueue(id, options.message);
-      if (!result.ok) return { ok: false, error: result.error };
+      if (!result.ok) return { ok: false, ...(result.notSubmitted?{notSubmitted:true}:{}), ...(result.admissionUnknown?{admissionUnknown:true,nonRetryable:true}:{}), inputId: options.inputId, error: result.error };
       const body = (result.body ?? {}) as { item_id?: unknown; status?: unknown };
       if (typeof body.item_id !== "string" || !body.item_id.trim()
         || (body.status !== undefined && body.status !== "pending" && body.status !== "queued")) {
@@ -611,9 +634,9 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     if (!result.ok) {
       // A running turn owns the session: the desktop app queues such a message
       // instead of failing the delivery.
-      if (!/busy|active turn/i.test(result.error ?? "")) return { ok: false, error: result.error };
+      if (!/busy|active turn/i.test(result.error ?? "")) return { ok: false, ...(result.notSubmitted?{notSubmitted:true}:{}), ...(result.admissionUnknown?{admissionUnknown:true,nonRetryable:true}:{}), inputId: options.inputId, error: result.error };
       const queued = await control.enqueue(id, options.message);
-      if (!queued.ok) return { ok: false, error: queued.error };
+      if (!queued.ok) return { ok: false, ...(queued.notSubmitted?{notSubmitted:true}:{}), ...(queued.admissionUnknown?{admissionUnknown:true,nonRetryable:true}:{}), inputId: options.inputId, error: queued.error };
       const body = (queued.body ?? {}) as { item_id?: unknown; status?: unknown };
       if (typeof body.item_id !== "string" || !body.item_id.trim()
         || (body.status !== undefined && body.status !== "pending" && body.status !== "queued")) {
@@ -639,10 +662,14 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     const policy = claim?.minimaxExecPolicy;
     const validPolicy = policy === undefined || (Number.isSafeInteger(policy.revision) && policy.revision >= 0
       && ["unset", "smart", "full", "off"].includes(policy.mode));
+    const actor=claim?.actor;
+    const actorMatchesOrigin=actor?.kind==="human"?options.origin==="human"
+      :actor?.kind==="agent"&&actor.principal==="agent-herder-mesh"?options.origin==="automation":false;
     const expectedClaim = { jobId: expectedJob, inputId: options.inputId ?? "", requestFingerprint: claim?.requestFingerprint ?? "",
-      harness: "minimax-code", sessionId: id, mode: "queue" as const,
+      harness: "minimax-code", sessionId: id, targetHostId: localSessionHostId(), mode: "queue" as const,
+      actor,
       ...(policy ? { minimaxExecPolicy: policy } : {}) };
-    if (options.origin !== "human" || options.steer === true || options.activeTurnOnly === true || options.images?.length
+    if (!actorMatchesOrigin || options.steer === true || options.activeTurnOnly === true || options.images?.length
       || !options.inputId || !claim || claim.inputId !== options.inputId || claim.jobId !== expectedJob
       || !validPolicy || !/^[a-f0-9]{64}$/.test(claim.requestFingerprint) || !verifyDurableUserDeliveryClaim(claim, expectedClaim, options.message, options.images)
       || (options.model && options.model !== "minimax/MiniMax-M3.1-Flash")) {

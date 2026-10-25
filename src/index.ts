@@ -72,6 +72,7 @@ import { registerHumanRequestTools } from "./mcp/human-request-tools.js";
 import { createPermissionNoticeObserver } from "./permission-control/notice-bridge.js";
 import { registerCdpTools } from "./mcp/cdp-tools.js";
 import { registerSessionTools } from "./mcp/session-tools.js";
+import { UserMessageDelivery } from "./user-message-delivery.js";
 import { registerResourceOwnershipTools } from "./mcp/resource-ownership-tools.js";
 import { registerHarnessMeshTools } from "./mesh/register-tools.js";
 import { FleetDirectTransport, fleetPeers } from "./mesh/fleet-direct-transport.js";
@@ -633,6 +634,7 @@ function registerTools(
   inventorySupervisor?: SessionSupervisor,
   resumeAfter?: ResumeAfterService,
   cadence?: CadenceScheduler,
+  userMessageDelivery?: UserMessageDelivery,
 ) {
   registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
   registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: autopilotSessionCommand } });
@@ -647,14 +649,14 @@ function registerTools(
     adapters,
   });
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
-  registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate });
+  registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate, userMessageDelivery });
   registerRagTools(server, adapters);
   registerResourceOwnershipTools(server);
   const workspaceTransport = new FleetDirectTransport(fleetPeers().filter(peer => peer.hostId !== "MacBook-Pro-User.local"));
   registerActiveSessionTools(server);
   registerSessionWorkspaceTools(server);
   registerSessionSearchTools(server,{transport:new FleetDirectTransport(fleetPeers()),peers:fleetPeers().map(peer=>({hostId:peer.hostId,target:`mcp:shell:${peer.hostId}:AgentHerder`}))});
-  registerHarnessMeshTools(server, { adapters, gptadmin: new FleetDirectTransport(fleetPeers()), deliveryPolicy: readLaunchPolicyStateForGate });
+  registerHarnessMeshTools(server, { adapters, gptadmin: new FleetDirectTransport(fleetPeers()), deliveryPolicy: readLaunchPolicyStateForGate, userMessageDelivery, ...(inventorySupervisor?{supervisor:inventorySupervisor}:{}) });
   registerWorkspaceTools(server, { transport: workspaceTransport });
   registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, launchPolicyRevision: readLaunchPolicyRevision, fleetTransport: workspaceTransport, fleetPeers: fleetPeers().filter(peer => peer.hostId !== "MacBook-Pro-User.local").map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), policyRevisionLedgerPath: fleetPolicyRevisionLedgerPath(autopilotStateDir) });
   // The common settings of the fleet: a node that has no owner of the document
@@ -710,6 +712,8 @@ function createNoticeQuestionDelivery(env: NodeJS.ProcessEnv): (question: Pendin
 export interface AgentHerderMcpServerOptions {
   /** Reuse the process observer; an isolated MCP factory never starts another observer. */
   inventorySupervisor?: SessionSupervisor;
+  /** Shared process-owned message admission across MCP and HTTP delivery ingress. */
+  userMessageDelivery?: UserMessageDelivery;
   /** Shared durable joins, never scoped to an MCP transport. */
   resumeAfter?: ResumeAfterService;
   cadence?: CadenceScheduler;
@@ -773,6 +777,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     options.inventorySupervisor,
     options.resumeAfter,
     options.cadence,
+    options.userMessageDelivery,
   );
   return server;
 }
@@ -932,6 +937,7 @@ async function main() {
     admissionGate: recoveryAdmissionGate,
     permissionNoticeObserver,
   });
+  const userMessageDelivery = new UserMessageDelivery(adapters,processSupervisor,herderJobs);
   const scopedSupervisorFactory = (sessionAdapters: Map<string, HarnessAdapter>) => new SessionSupervisor(sessionAdapters, processSessionConverter, lineageStore, {
     humanStopStore, events: herderEvents, unfinishedSessions: unfinishedSessionLauncher,
     autoCompact: autoCompactService, admissionGate: recoveryAdmissionGate,
@@ -1018,14 +1024,15 @@ async function main() {
   const humanResumeQuery = (request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters);
   // Both seams are process-owned: the fleet inventory view and the single
   // human-answer and project-launch consumer.
-  const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor, resumeAfter: resumeAfterRuntime.service, cadence });
-  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor, resumeAfter: resumeAfterRuntime.service, cadence });
+  const createHttpMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor, userMessageDelivery, resumeAfter: resumeAfterRuntime.service, cadence });
+  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor, userMessageDelivery, resumeAfter: resumeAfterRuntime.service, cadence });
   let shuttingDown = false;
   const shutdown = () => {
     if (shuttingDown) return; shuttingDown = true;
     stopCadence();
     stopUnfinishedSessionLauncher(); stopProcessObservation(); stopAutoCompact(); stopCompletionNoticeSweeper();
     for (const stop of stopNativeTurnObservers) stop();
+    userMessageDelivery.close();
     void (async () => {
       const zcode = adapters.get('zcode') as ZcodeAdapter | undefined;
       try { await integratorFleetRuntime.dispose(); }
@@ -1057,6 +1064,7 @@ async function main() {
       mcpServerFactory: createHttpMcpServer,
       herderEvents,
       jobs: herderJobs,
+      userMessageDelivery,
       supervisor: processSupervisor,
       integratorRuntime: integratorFleetRuntime,
       scopedSupervisorFactory,

@@ -7,10 +7,19 @@ import { NativeCodexClient } from "./mesh/native-codex.js";
 import { herderEvents, type HerderEventBus } from "./herder-events.js";
 import { jobResourceUri } from "./herder-resource-uris.js";
 import { validateRetainedInput, type ZcodeRetainedInput } from "./adapters/zcode-undelivered.js";
+import { validateDeliveryResponseBaseline, type DeliveryResponseBaseline, type DeliveryResponseTarget } from "./session-delivery-response.js";
 
 export interface RetainedZcodeDelivery {
   capture: ZcodeRetainedInput;
   attempt?: { inputId: string; reservedAt: number; result?: import("./types/index.js").SendMessageResult };
+}
+
+export interface DeliveryResponseReceipt {
+  inputId:string;
+  target:DeliveryResponseTarget;
+  responseResourceUri:string;
+  responseSha256:string;
+  totalTextLength:number;
 }
 
 export type HerderJobState = "queued" | "running" | "waiting" | "cancelling" | "completed" | "failed" | "cancelled" | "interrupted";
@@ -33,6 +42,10 @@ export interface HerderJob<T = unknown> {
   onceKey?: string;
   /** Protected original envelope and attempt lineage; never exposed by jobs API. */
   zcodeInput?: RetainedZcodeDelivery;
+  /** Private visible-history cursor captured before a native delivery; never exposed by jobs APIs. */
+  deliveryResponseBaseline?: DeliveryResponseBaseline;
+  /** Private, exact continuation binding; never exposed by jobs APIs. */
+  deliveryResponseReceipt?:DeliveryResponseReceipt;
 }
 
 export interface HerderJobContext {
@@ -146,6 +159,73 @@ export class HerderJobRegistry {
     if (!record?.durableOnce || !record.zcodeInput) throw new Error("Сохранённый собственный ввод не найден");
     validateRetainedInput(record.zcodeInput.capture);
     return clone(record.zcodeInput);
+  }
+
+  /** Persist the exact visible-history baseline before a delivery's first native write. Immutable once set. */
+  recordDeliveryResponseBaseline(jobId: string, baseline: DeliveryResponseBaseline): void {
+    if (this.persistenceRestoreError) throw new Error("job_history_unreadable_hold; response baseline not persisted");
+    const internal = this.jobs.get(jobId);
+    const record = internal?.record;
+    if (!record?.durableOnce || record.state !== "running" || !record.ownerSessionId
+      || !validateDeliveryResponseBaseline(baseline, { jobId, target: { hostId: baseline.target.hostId, harness: baseline.target.harness, sessionId: record.ownerSessionId } })) {
+      throw new Error("delivery_response_baseline_invalid_or_unbound");
+    }
+    if (record.deliveryResponseBaseline) {
+      if (record.deliveryResponseBaseline.snapshotSha256 !== baseline.snapshotSha256
+        || record.deliveryResponseBaseline.inputId !== baseline.inputId) throw new Error("delivery_response_baseline_already_frozen");
+      return;
+    }
+    record.deliveryResponseBaseline = clone(baseline);
+    try { this.persist(true); }
+    catch (error) { delete record.deliveryResponseBaseline; throw error; }
+  }
+
+  /** Internal read for the response observer; public job views never expose the baseline. */
+  readDeliveryResponseBaseline(jobId: string, expected: { inputId: string; target: DeliveryResponseTarget }): DeliveryResponseBaseline {
+    if (this.persistenceRestoreError) throw new Error("job_history_unreadable_hold; response baseline unavailable");
+    const record = this.jobs.get(jobId)?.record;
+    const baseline = record?.deliveryResponseBaseline;
+    if (!record?.durableOnce || !baseline || !validateDeliveryResponseBaseline(baseline, { jobId, inputId: expected.inputId, target: expected.target })
+      || record.ownerSessionId !== expected.target.sessionId) throw new Error("delivery_response_baseline_unavailable_or_unbound");
+    return clone(baseline);
+  }
+
+  recordDeliveryResponseReceipt(jobId:string,receipt:DeliveryResponseReceipt):void{
+    if(this.persistenceRestoreError)throw new Error("job_history_unreadable_hold; response receipt not persisted");
+    const record=this.jobs.get(jobId)?.record;
+    const baseline=record?.deliveryResponseBaseline;
+    if(!record?.durableOnce||!baseline||record.ownerSessionId!==receipt.target.sessionId
+      ||!validateDeliveryResponseBaseline(baseline,{jobId,inputId:receipt.inputId,target:receipt.target})
+      ||!/^herder:\/\/m\/[a-f0-9]{8,64}$/.test(receipt.responseResourceUri)
+      ||!/^[a-f0-9]{64}$/.test(receipt.responseSha256)
+      ||!Number.isSafeInteger(receipt.totalTextLength)||receipt.totalTextLength<0){
+      throw new Error("delivery_response_receipt_invalid_or_unbound");
+    }
+    const previous=record.deliveryResponseReceipt;
+    if(previous){
+      if(previous.inputId!==receipt.inputId||previous.target.hostId!==receipt.target.hostId||previous.target.harness!==receipt.target.harness
+        ||previous.target.sessionId!==receipt.target.sessionId||receipt.totalTextLength<previous.totalTextLength
+        ||(receipt.totalTextLength===previous.totalTextLength&&(receipt.responseSha256!==previous.responseSha256||receipt.responseResourceUri!==previous.responseResourceUri))){
+        throw new Error("delivery_response_receipt_binding_changed");
+      }
+      if(previous.totalTextLength===receipt.totalTextLength)return;
+    }
+    record.deliveryResponseReceipt=clone(receipt);
+    try{this.persist(true);}catch(error){if(previous)record.deliveryResponseReceipt=previous;else delete record.deliveryResponseReceipt;throw error;}
+  }
+
+  readDeliveryResponseReceipt(jobId:string,expected:{inputId:string;target:DeliveryResponseTarget;responseResourceUri:string}):DeliveryResponseReceipt{
+    if(this.persistenceRestoreError)throw new Error("job_history_unreadable_hold; response receipt unavailable");
+    const record=this.jobs.get(jobId)?.record;
+    const receipt=record?.deliveryResponseReceipt;
+    const baseline=record?.deliveryResponseBaseline;
+    if(!record?.durableOnce||!baseline||!receipt||record.ownerSessionId!==expected.target.sessionId
+      ||receipt.inputId!==expected.inputId||receipt.responseResourceUri!==expected.responseResourceUri
+      ||!validateDeliveryResponseBaseline(baseline,{jobId,inputId:expected.inputId,target:expected.target})
+      ||receipt.target.hostId!==expected.target.hostId||receipt.target.harness!==expected.target.harness||receipt.target.sessionId!==expected.target.sessionId){
+      throw new Error("delivery_response_receipt_unavailable_or_unbound");
+    }
+    return clone(receipt);
   }
 
   reserveZcodeInputAttempt(jobId: string): string {
@@ -415,6 +495,8 @@ function clone<T>(value: T): T {
 function publicJob<T>(record: HerderJob<T>): HerderJob<T> {
   const copy = clone(record);
   delete copy.zcodeInput;
+  delete copy.deliveryResponseBaseline;
+  delete copy.deliveryResponseReceipt;
   return copy;
 }
 

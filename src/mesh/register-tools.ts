@@ -5,13 +5,15 @@ import {LocalHarnessMesh} from "./local.js";
 import type {ProjectModelPolicyStateProvider} from "../project-model-delivery-gate.js";
 import {GptAdminMesh,type GptAdminTransport} from "./gptadmin.js";
 import type {HarnessAdapter} from "../types/index.js";
+import type {SessionSupervisor} from "../session-supervisor.js";
+import type {UserMessageDelivery} from "../user-message-delivery.js";
 const address=z.object({hostId:z.string().min(1).max(512),harness:z.string().min(1).max(64),nativeSessionId:z.string().min(1).max(512)});
 const rename=z.object({target:address,title:z.string().min(1).max(4096).optional(),project:z.string().min(1).max(512).optional(),goal:z.string().min(1).max(2048).optional(),stage:z.string().min(1).max(2048).optional()});
 const delivery=z.object({target:address,sender:address,inputId:z.string().min(1).max(256),message:z.string().min(1).max(4000)});
 const stop=z.object({target:address,inputId:z.string().min(1).max(256)});
 const result=(value:unknown)=>({content:[{type:"text" as const,text:JSON.stringify(value)}]});
 /** Root integration seam: reuse singleton adapters; an authenticated Hub client is optional. */
-export function registerHarnessMeshTools(server:McpServer,deps:{adapters:Map<string,HarnessAdapter>;hostId?:string;gptadmin?:GptAdminTransport;ledgerPath?:string;deliveryPolicy?:ProjectModelPolicyStateProvider}):void{
+export function registerHarnessMeshTools(server:McpServer,deps:{adapters:Map<string,HarnessAdapter>;hostId?:string;gptadmin?:GptAdminTransport;ledgerPath?:string;deliveryPolicy?:ProjectModelPolicyStateProvider;userMessageDelivery?:UserMessageDelivery;supervisor?:Pick<SessionSupervisor,"sendMessage">}):void{
  const local=new LocalHarnessMesh(deps);
  server.registerTool("mesh_snapshot",{description:"Read-only native host/session/current-project snapshot. No LLM, transcript export or lazy native process launch. Partial and unsupported are explicit.",inputSchema:z.object({limit:z.number().int().min(1).max(12).default(12)})},async args=>result(await local.snapshot(args.limit)));
  server.registerTool("mesh_deliver",{description:"Deliver one bounded work delta to exact host+harness+nativeSessionID. Stable inputId, durable intent and 6/pair 12/target limits. UNKNOWN must never be replayed.",inputSchema:delivery},async args=>result(await local.deliver(args)));

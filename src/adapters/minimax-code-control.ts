@@ -59,7 +59,13 @@ export interface MinimaxControlResult {
   /** Parsed response body, or the first event frame of a streamed answer. */
   body: unknown;
   error?: string;
+  /** No native request was made because the owner manifest was absent. */
+  notSubmitted?: boolean;
+  /** A published transport failed after the request may have reached native code. */
+  admissionUnknown?: boolean;
 }
+
+type ControlRequestResult = Response | { kind: "not_published" | "transport_unknown" };
 
 export interface MinimaxControlOptions {
   manifestPath?: string;
@@ -311,10 +317,11 @@ export class MinimaxCodeControl {
 
   /** One metadata-only request against the published transport. */
   async call(method: string, path: string, body?: unknown): Promise<MinimaxControlResult> {
-    const response = await this.request(method, path, body);
-    if (!response) {
-      return { ok: false, status: 0, body: null, error: "MiniMax Code control transport is not published" };
-    }
+    const request = await this.request(method, path, body);
+    if ("kind" in request) return request.kind === "not_published"
+      ? { ok: false, status: 0, body: null, notSubmitted: true, error: "MiniMax Code control transport is not published" }
+      : { ok: false, status: 0, body: null, admissionUnknown: true, error: "MiniMax Code control outcome is unknown" };
+    const response = request;
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       const parsed = parseJsonSafe(text);
@@ -330,10 +337,11 @@ export class MinimaxCodeControl {
    * would abort the request signal the runtime hands to the admitted turn.
    */
   private async stream(method: string, path: string, body: unknown): Promise<MinimaxControlResult> {
-    const response = await this.request(method, path, body);
-    if (!response) {
-      return { ok: false, status: 0, body: null, error: "MiniMax Code control transport is not published" };
-    }
+    const request = await this.request(method, path, body);
+    if ("kind" in request) return request.kind === "not_published"
+      ? { ok: false, status: 0, body: null, notSubmitted: true, error: "MiniMax Code control transport is not published" }
+      : { ok: false, status: 0, body: null, admissionUnknown: true, error: "MiniMax Code control outcome is unknown" };
+    const response = request;
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       const parsed = parseJsonSafe(text);
@@ -385,9 +393,9 @@ export class MinimaxCodeControl {
     }
   }
 
-  private async request(method: string, path: string, body?: unknown): Promise<Response | null> {
+  private async request(method: string, path: string, body?: unknown): Promise<ControlRequestResult> {
     const manifest = await this.manifest();
-    if (!manifest) return null;
+    if (!manifest) return {kind:"not_published"};
     const url = `http://${manifest.host}:${manifest.port}${MINIMAX_CONTROL_API_PREFIX}${path}`;
     try {
       return await fetch(url, {
@@ -402,7 +410,7 @@ export class MinimaxCodeControl {
       // A published manifest can outlive the app; drop it so the next call
       // re-reads the file instead of retrying a dead port.
       this.cached = { manifest: null, at: Date.now() };
-      return null;
+      return {kind:"transport_unknown"};
     }
   }
 }

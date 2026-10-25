@@ -1,20 +1,27 @@
 import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { HerderEventBus } from "../src/herder-events.js";
 import { HerderJobRegistry } from "../src/herder-jobs.js";
-import { UserMessageDelivery, type UserMessageInput } from "../src/user-message-delivery.js";
+import { UserMessageDelivery, verifyDurableUserDeliveryClaim, type UserMessageInput } from "../src/user-message-delivery.js";
+import { MinimaxExecPolicyStore } from "../src/permission-control/minimax-exec-policy.js";
 import { MINIMAX_CLI_TIMEOUT_MS } from "../src/adapters/minimax-code-control.js";
 import type { HarnessAdapter, SendMessageResult } from "../src/types/index.js";
+
+const fixtureRoots:string[]=[];
+afterEach(()=>{for(const root of fixtureRoots.splice(0))rmSync(root,{recursive:true,force:true});});
 
 function fixture(options?: { jobs?: HerderJobRegistry; harness?: string; result?: SendMessageResult; maxWaitMs?: number }) {
   let status = "running";
   const harness = options?.harness || "codex";
+  const root=options?.jobs?undefined:mkdtempSync(join(tmpdir(),"herder-user-message-fixture-"));
+  if(root)fixtureRoots.push(root);
   const getSession = vi.fn(async () => ({ id: "thread", harness, status, cwd: "/workspace" }));
   const sendMessage = vi.fn(async () => { status = "running"; return options?.result || { ok: true, admitted: true, turnId: "native-turn" }; });
   const adapter = { getSession } as unknown as HarnessAdapter;
-  const jobs = options?.jobs || new HerderJobRegistry(new HerderEventBus());
+  const jobs = options?.jobs || new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(root!,"jobs.json")});
   const delivery = new UserMessageDelivery(new Map([[harness, adapter]]), { sendMessage }, jobs, { pollMs: 5, maxWaitMs: options?.maxWaitMs ?? 1_000, maxPending: 4 });
   const input = (id: string, mode: "queue" | "steer" = "queue"): UserMessageInput => ({ harness, sessionId: "thread", inputId: id, message: id, mode });
   return { delivery, jobs, getSession, sendMessage, input, idle: () => { status = "idle"; } };
@@ -25,6 +32,123 @@ const completed = async (f: ReturnType<typeof fixture>, id: string) => {
 };
 
 describe("actual human message queue admission", () => {
+  it("durably freezes visible response baseline in the same job before native submit",async()=>{
+    const root=await mkdtemp(join(tmpdir(),"herder-response-baseline-"));
+    const jobs=new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(root,"jobs.json")});
+    const previous={id:"assistant-before",role:"assistant" as const,text:"old visible answer",parts:[{type:"text" as const,text:"old visible answer"}]};
+    const session={id:"mvs-response-target",harness:"minimax-code",hostId:"target-host",status:"idle",cwd:"/workspace"};
+    const adapter={getSession:vi.fn(async()=>session),getSessionMessages:vi.fn(async()=>[previous])} as unknown as HarnessAdapter;
+    const order:string[]=[];
+    const sender=vi.fn(async(_harness:string,sessionId:string,options:any)=>{
+      const target={hostId:"target-host",harness:"minimax-code" as const,sessionId};
+      const baseline=jobs.readDeliveryResponseBaseline(options.durableUserDelivery.jobId,{inputId:options.inputId,target});
+      order.push("native");
+      expect(baseline.messages).toMatchObject([{id:"assistant-before",role:"assistant",textOffset:18}]);
+      expect(JSON.stringify(baseline)).not.toContain("old visible answer");
+      return {ok:true,admitted:true,turnId:"response-turn",inputId:options.inputId};
+    });
+    const delivery=new UserMessageDelivery(new Map([["minimax-code",adapter]]),{sendMessage:sender},jobs,{pollMs:1,maxWaitMs:2_000,maxPending:4},new MinimaxExecPolicyStore(join(root,"policy")),{
+      afterBaselinePersist:()=>{order.push("baseline");},afterNativeReceipt:()=>{order.push("receipt");},
+    });
+    try{
+      const receipt=await delivery.submitMinimaxAgent({harness:"minimax-code",sessionId:session.id,inputId:"response-input",message:"new request",mode:"queue"},{hostId:"source",harness:"opencode",nativeSessionId:"source-session"});
+      expect(receipt.job?.durableOnce).toBe(true);
+      await vi.waitFor(()=>expect(jobs.get(receipt.job!.id)?.state).toBe("completed"));
+      await vi.waitFor(()=>expect(order).toEqual(["baseline","native","receipt"]));
+      expect(jobs.get(receipt.job!.id)).not.toHaveProperty("deliveryResponseBaseline");
+      const responseTarget={hostId:"target-host",harness:"minimax-code" as const,sessionId:session.id};
+      const responseReceipt={inputId:"response-input",target:responseTarget,responseResourceUri:"herder://m/abcdef1234567890",responseSha256:"a".repeat(64),totalTextLength:9_001};
+      jobs.recordDeliveryResponseReceipt(receipt.job!.id,responseReceipt);
+      expect(jobs.readDeliveryResponseReceipt(receipt.job!.id,{inputId:"response-input",target:responseTarget,responseResourceUri:responseReceipt.responseResourceUri})).toEqual(responseReceipt);
+      expect(jobs.get(receipt.job!.id)).not.toHaveProperty("deliveryResponseReceipt");
+      expect(()=>jobs.readDeliveryResponseReceipt(receipt.job!.id,{inputId:"response-input",target:{...responseTarget,hostId:"other-host"},responseResourceUri:responseReceipt.responseResourceUri})).toThrow(/unavailable_or_unbound/);
+      await expect(delivery.readDeliveryResponseBaseline(receipt.job!.id,"response-input",{hostId:"other-host",harness:"minimax-code",sessionId:session.id})).rejects.toThrow(/target_mismatch|unavailable_or_unbound/);
+    }finally{delivery.close();await delivery.getMinimaxExecPolicy({hostId:"target-host",harness:"minimax-code",sessionId:session.id});await delivery.getMinimaxExecPolicy({hostId:"target-host",harness:"minimax-code",sessionId:session.id});await rm(root,{recursive:true,force:true});}
+  });
+
+  it("keeps queue edit CAS target and policy bindings in the same job before native admission",async()=>{
+    const root=await mkdtemp(join(tmpdir(),"herder-minimax-edit-cas-"));
+    const target={hostId:"target-host",harness:"minimax-code" as const,sessionId:"mvs-edit-target"};
+    const store=new MinimaxExecPolicyStore(join(root,"policy"));
+    const jobs=new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(root,"jobs.json")});
+    const session={id:target.sessionId,harness:target.harness,hostId:target.hostId,status:"running",cwd:"/workspace"};
+    const adapter={getSession:vi.fn(async()=>session),getSessionMessages:vi.fn(async()=>[])} as unknown as HarnessAdapter;
+    let sent:any,releaseSend!:(result:SendMessageResult)=>void;
+    const sender=vi.fn((_harness:string,_sessionId:string,options:any)=>{sent=options;return new Promise<SendMessageResult>(resolve=>{releaseSend=resolve;});});
+    const delivery=new UserMessageDelivery(new Map([["minimax-code",adapter]]),{sendMessage:sender},jobs,{pollMs:1,maxWaitMs:2_000,maxPending:4},store);
+    const input={harness:target.harness,sessionId:target.sessionId,inputId:"edit-cas-input",message:"old queued text",mode:"queue" as const};
+    try{
+      const created=await delivery.submitMinimaxExecPolicy(input);
+      const originalFingerprint=created.job!.requestFingerprint;
+      const edit=delivery.editQueuedMessage(input.harness,input.sessionId,input.inputId,input.message,"edited queued text");
+      const edited=delivery.get(input.harness,input.sessionId,input.inputId)!.job!;
+      expect(edit).toMatchObject({jobId:created.job!.id,inputId:input.inputId,message:"edited queued text",editable:true});
+      expect(edited.id).toBe(created.job!.id);
+      expect(edited.createdAt).toBe(created.job!.createdAt);
+      expect(edited.requestFingerprint).not.toBe(originalFingerprint);
+      expect(()=>delivery.editQueuedMessage(input.harness,input.sessionId,input.inputId,input.message,"stale second edit")).toThrow(/уже изменён/);
+      session.status="idle";
+      await vi.waitFor(()=>expect(sender).toHaveBeenCalledOnce());
+      expect(sent.message).toBe("edited queued text");
+      expect(sent.durableUserDelivery.requestFingerprint).toBe(edited.requestFingerprint);
+      expect(verifyDurableUserDeliveryClaim(sent.durableUserDelivery,{jobId:edited.id,inputId:input.inputId,requestFingerprint:edited.requestFingerprint,
+        harness:target.harness,sessionId:target.sessionId,targetHostId:target.hostId,mode:"queue",minimaxExecPolicy:sent.durableUserDelivery.minimaxExecPolicy},"edited queued text")).toBe(true);
+      expect(()=>delivery.editQueuedMessage(input.harness,input.sessionId,input.inputId,"edited queued text","too late")).toThrow(/уже передаётся/);
+      releaseSend({ok:true,admitted:true,turnId:"edit-turn",inputId:input.inputId});
+      await vi.waitFor(()=>expect(delivery.get(input.harness,input.sessionId,input.inputId)?.job?.state).toBe("completed"));
+      expect(sender).toHaveBeenCalledOnce();
+    }finally{releaseSend?.({ok:true,admitted:true,turnId:"edit-turn-cleanup",inputId:input.inputId});delivery.close();await delivery.getMinimaxExecPolicy(target);await delivery.getMinimaxExecPolicy(target);await rm(root,{recursive:true,force:true});}
+  });
+
+  it("does not replay a restored legacy job whose target-bound fingerprint cannot be proven",async()=>{
+    const root=await mkdtemp(join(tmpdir(),"herder-minimax-legacy-job-"));
+    const jobsPath=join(root,"jobs.json");
+    const session={id:"mvs-legacy-target",harness:"minimax-code",hostId:"target-host",status:"idle",cwd:"/workspace"};
+    const input={harness:"minimax-code",sessionId:session.id,inputId:"legacy-input",message:"old queued text",mode:"queue" as const};
+    const idempotencyKey=`user-message\0${input.harness}\0${input.sessionId}\0${input.inputId}`;
+    const first=new HerderJobRegistry(new HerderEventBus(),{persistencePath:jobsPath});
+    const oldJob=first.start({kind:"Доставка сообщения (minimax-code)",ownerSessionId:session.id,idempotencyKey,requestFingerprint:"b".repeat(64),durableOnce:true,run:async()=>({ok:true,admitted:true,turnId:"legacy-native-turn"})});
+    await vi.waitFor(()=>expect(first.get(oldJob.id)?.state).toBe("completed"));
+    const restored=new HerderJobRegistry(new HerderEventBus(),{persistencePath:jobsPath});
+    const send=vi.fn(async()=>({ok:true,admitted:true,turnId:"must-not-run"}));
+    const adapter={getSession:vi.fn(async()=>session)} as unknown as HarnessAdapter;
+    const delivery=new UserMessageDelivery(new Map([["minimax-code",adapter]]),{sendMessage:send},restored,{pollMs:1,maxWaitMs:2_000,maxPending:4},new MinimaxExecPolicyStore(join(root,"policy")));
+    try{
+      await expect(delivery.submitMinimaxExecPolicy(input)).rejects.toThrow(/уже использован/);
+      expect(send).not.toHaveBeenCalled();
+      expect(restored.get(oldJob.id)?.result).toMatchObject({ok:true,turnId:"legacy-native-turn"});
+    }finally{delivery.close();await delivery.getMinimaxExecPolicy({hostId:"target-host",harness:"minimax-code",sessionId:session.id});await rm(root,{recursive:true,force:true});}
+  });
+
+  it("uses the same durable job for an explicitly non-human MiniMax mesh delivery",async()=>{
+    const root=await mkdtemp(join(tmpdir(),"herder-agent-delivery-"));
+    const jobs=new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(root,"jobs.json")});
+    const session={id:"mvs-agent-target",harness:"minimax-code",hostId:"host-target",status:"idle",cwd:"/workspace"};
+    const adapter={getSession:vi.fn(async()=>session)} as unknown as HarnessAdapter;
+    let observedOptions:any;
+    const sendMessage=vi.fn(async(_harness:string,_sessionId:string,options:any)=>{observedOptions=options;return {ok:true,admitted:true,turnId:"native-agent-turn"} as SendMessageResult;});
+    const delivery=new UserMessageDelivery(new Map([["minimax-code",adapter]]),{sendMessage},jobs,{pollMs:1,maxWaitMs:2_000,maxPending:4});
+    const input={harness:"minimax-code",sessionId:session.id,inputId:"agent-input-1",message:"bounded agent delta",mode:"queue" as const};
+    const sender={hostId:"host-source",harness:"opencode",nativeSessionId:"session-source"};
+    try{
+      const first=await delivery.submitMinimaxAgent(input,sender);
+      expect(first.job).toBeDefined();
+      await vi.waitFor(()=>expect(delivery.get(input.harness,input.sessionId,input.inputId)).toMatchObject({ok:true,admitted:true,turnId:"native-agent-turn"}));
+      expect(sendMessage).toHaveBeenCalledOnce();
+      expect(observedOptions).toMatchObject({origin:"automation",inputId:input.inputId,message:input.message});
+      expect(observedOptions.humanRequestedAt).toBeUndefined();
+      const claim=observedOptions.durableUserDelivery;
+      const binding={jobId:first.job!.id,inputId:input.inputId,requestFingerprint:first.job!.requestFingerprint,harness:input.harness,sessionId:input.sessionId,targetHostId:"host-target",mode:"queue" as const,actor:{kind:"agent" as const,principal:"agent-herder-mesh" as const,senderAssertion:sender},minimaxExecPolicy:claim.minimaxExecPolicy};
+      expect(verifyDurableUserDeliveryClaim(claim,binding,input.message)).toBe(true);
+      expect(verifyDurableUserDeliveryClaim(claim,{...binding,actor:{kind:"human"}},input.message)).toBe(false);
+      expect(verifyDurableUserDeliveryClaim(claim,{...binding,targetHostId:"other-host"},input.message)).toBe(false);
+      const replay=await delivery.submitMinimaxAgent(input,sender);
+      expect(replay.job?.id).toBe(first.job?.id);
+      await expect(delivery.submitMinimaxAgent(input,{...sender,nativeSessionId:"forged-source"})).rejects.toThrow(/другого текста, режима или политики/);
+      expect(sendMessage).toHaveBeenCalledOnce();
+    }finally{delivery.close();await rm(root,{recursive:true,force:true});}
+  });
+
   it("waits for a native MiniMax CLI turn that completes after thirty seconds", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const f = fixture({ harness: "minimax-code", maxWaitMs: 10 * 60_000 });

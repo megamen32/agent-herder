@@ -2,10 +2,7 @@ import { open, readdir, stat } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { MINIMAX_CODE_SESSION_STORE } from "../adapters/minimax-code-store.js";
-import { getHumanStopStore, type HumanStopStore } from "../human-stop-store.js";
-import { addressKey, parseNativeReceipt, type MeshSession, type NativeReceipt } from "./protocol.js";
-import type { MeshDelivery } from "./gptadmin.js";
-import type { MeshDeliveryLedger } from "./delivery-ledger.js";
+import { addressKey, type MeshSession } from "./protocol.js";
 
 /** Harness name of a native MiniMax Code session. */
 export const MINIMAX_CODE_HARNESS = "minimax-code";
@@ -289,81 +286,4 @@ export async function observeMinimaxCode(
   const limited = sessions.slice(0, limit);
   // More sessions than the window or the limit means an incomplete answer.
   return { sessions: limited, complete: enumerated.length < MAX_ENUMERATED_DIRECTORIES && candidates.length <= MAX_SCAN_DIRECTORIES && found <= limit };
-}
-
-/** One bounded admission into the live MiniMax Code runtime. */
-export interface MinimaxCodeAdmission {
-  ok: boolean;
-  admitted?: boolean;
-  turnId?: string;
-  admissionUnknown?: boolean;
-  error?: string;
-}
-
-/** Writer of one native MiniMax Code message. */
-export interface MinimaxCodeDeliveryPort {
-  /** Queue one message; the receipt must name the admitted turn or queue item. */
-  enqueue(id: string, message: string, inputId: string): Promise<MinimaxCodeAdmission>;
-}
-
-/** Everything the native delivery lane needs beside the request itself. */
-export interface MinimaxCodeDeliveryDeps {
-  port: MinimaxCodeDeliveryPort;
-  /** Durable intent ledger; the wrapping delivery entry point owns it. */
-  ledger?: MeshDeliveryLedger;
-  /** Independent native observation; the writer alone never proves identity. */
-  observe: (id: string) => Promise<MinimaxCodeObservation | null>;
-  stopStore?: HumanStopStore;
-  /** Injects the active coordination notes of the target into the message. */
-  notes?: (session: { id: string; harness: string; cwd: string; hostId?: string }, message: string) => Promise<string>;
-}
-
-/**
- * Deliver one bounded delta into a native MiniMax Code session.
- *
- * The admission must be proven: a confirmed receipt is `admitted`, an
- * unproven one is `unknown` and is never replayed, and a refused one stays
- * `not_attempted`.
- */
-export async function deliverMinimaxCode(
-  request: MeshDelivery,
-  deps: MinimaxCodeDeliveryDeps & { ledger: MeshDeliveryLedger },
-): Promise<NativeReceipt & { reason?: string }> {
-  return deps.ledger.once(request, () => runMinimaxCodeDelivery(request, deps));
-}
-
-/**
- * The delivery itself, without the durable intent ledger around it.
- *
- * A caller that keeps its own ledger uses this one, so one intent is never
- * recorded twice.
- */
-export async function runMinimaxCodeDelivery(
-  request: MeshDelivery,
-  deps: MinimaxCodeDeliveryDeps,
-): Promise<NativeReceipt & { reason?: string }> {
-  addressKey(request.target);
-  addressKey(request.sender);
-  const rejected = (reason: string) => ({ state: "not_attempted" as const, inputId: request.inputId, retryable: true, reason });
-  if (request.target.harness !== MINIMAX_CODE_HARNESS) return rejected("native_transport_not_registered");
-  const stops = deps.stopStore ?? getHumanStopStore();
-  if (await stops.isHeld(MINIMAX_CODE_HARNESS, request.target.nativeSessionId)) return rejected("human_stopped_native_session");
-  const observation = await deps.observe(request.target.nativeSessionId).catch(() => null);
-  if (!observation || observation.nativeSessionId !== request.target.nativeSessionId) return rejected("independent_native_identity_unknown");
-  const source = `Источник: ${request.sender.hostId} / ${request.sender.harness} / ${request.sender.nativeSessionId}.\n${request.message}`;
-  const message = deps.notes
-    ? await deps.notes({ id: request.target.nativeSessionId, harness: MINIMAX_CODE_HARNESS, cwd: observation.cwd ?? "", hostId: request.target.hostId }, source)
-    : source;
-  let admission: MinimaxCodeAdmission;
-  try {
-    admission = await deps.port.enqueue(request.target.nativeSessionId, message, request.inputId);
-  } catch {
-    // A writer that failed without an answer leaves the admission unproven.
-    return { state: "unknown", inputId: request.inputId, retryable: false, reason: "native_admission_unknown" };
-  }
-  return parseNativeReceipt({
-    ...admission,
-    admitted: admission.ok === true && admission.admitted === true,
-    inputId: request.inputId,
-  }, request.inputId);
 }

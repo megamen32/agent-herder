@@ -166,6 +166,17 @@ describe("MinimaxCodeControl", () => {
     const result = await control.sendMessage("mvs_6", "привет");
     expect(result.ok).toBe(false);
     expect(result.error).toContain("not published");
+    expect(result.notSubmitted).toBe(true);
+  });
+
+  it("keeps a failed request to a stale published transport ambiguous",async()=>{
+    const dir=await mkdtemp(join(tmpdir(),"minimax-code-control-stale-"));created.push(dir);
+    const manifestPath=join(dir,"manifest.json");
+    await writeFile(manifestPath,JSON.stringify({host:"127.0.0.1",port:1,pid:1}));
+    const control=new MinimaxCodeControl({manifestPath,timeoutMs:200});
+    const result=await control.enqueue("mvs_stale","benign");
+    expect(result).toMatchObject({ok:false,admissionUnknown:true});
+    expect(result.notSubmitted).toBeUndefined();
   });
 
   it("runs only the exact existing session ID, sends content on stdin, and strips router credentials", async () => {

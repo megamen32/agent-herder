@@ -129,7 +129,7 @@ describe("MiniMax Herder CLI execution policy", () => {
       expect(observedOptions?.durableUserDelivery?.requestFingerprint).toBe(receipt.job?.requestFingerprint);
       const claim = observedOptions!.durableUserDelivery!;
       const binding = { jobId: claim.jobId, inputId: claim.inputId, requestFingerprint: claim.requestFingerprint,
-        harness: claim.harness, sessionId: claim.sessionId, mode: claim.mode, minimaxExecPolicy: claim.minimaxExecPolicy };
+        harness: claim.harness, sessionId: claim.sessionId, targetHostId: "local", mode: claim.mode, minimaxExecPolicy: claim.minimaxExecPolicy };
       expect(verifyDurableUserDeliveryClaim(claim, binding, "benign")).toBe(true);
       expect(verifyDurableUserDeliveryClaim({ ...claim, minimaxExecPolicy: { mode: "off", revision: 1 } },
         { ...binding, minimaxExecPolicy: { mode: "off", revision: 1 } }, "benign")).toBe(false);

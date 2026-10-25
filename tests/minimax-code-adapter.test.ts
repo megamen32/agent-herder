@@ -125,14 +125,15 @@ async function nativeSessionStore(root: string): Promise<string> {
 
 async function durableHumanSend(adapter: MinimaxCodeAdapter, root: string, sessionId: string, inputId: string, message: string, capture?: (options: SendMessageOptions) => void) {
   const jobs = new HerderJobRegistry(new HerderEventBus(), { persistencePath: join(root, "jobs.json") });
+  const policyStore=new MinimaxExecPolicyStore(join(root,"policy"));
   const delivery = new UserMessageDelivery(new Map([["minimax-code", adapter as unknown as HarnessAdapter]]), {
     sendMessage: (_harness: string, targetId: string, options: SendMessageOptions) => { capture?.(options); return adapter.sendMessage(targetId, options); },
-  }, jobs, { pollMs: 5, maxWaitMs: 2_000, maxPending: 2 });
+  }, jobs, { pollMs: 5, maxWaitMs: 2_000, maxPending: 2 },policyStore);
   try {
-    delivery.submit({ harness: "minimax-code", sessionId, inputId, message, mode: "queue" });
+    await delivery.submitMinimaxExecPolicy({ harness: "minimax-code", sessionId, inputId, message, mode: "queue" });
     await vi.waitFor(() => expect(delivery.get("minimax-code", sessionId, inputId)?.job?.state).toBe("completed"), { interval: 5, timeout: 1_500 });
     return delivery.get("minimax-code", sessionId, inputId);
-  } finally { delivery.close(); }
+  } finally { delivery.close();await delivery.getMinimaxExecPolicy({hostId:localSessionHostId(),harness:"minimax-code",sessionId});await delivery.getMinimaxExecPolicy({hostId:localSessionHostId(),harness:"minimax-code",sessionId}); }
 }
 
 afterEach(async () => {
@@ -231,6 +232,16 @@ describe("MinimaxCodeAdapter", () => {
     expect(runSession).not.toHaveBeenCalled();
   });
 
+  it("projects the exact workspace from the inspected native DB when Desktop control is absent",async()=>{
+    const root=await store(),sessionId="mvs_native_workspace_projection",sessionStore=join(root,"sessions"),workspace=join(root,"workspace");
+    await mkdir(workspace);await mkdir(sessionStore,{recursive:true});
+    const runtimeDb=await runtimeStateForSession(root,sessionId,workspace);
+    const control=new MinimaxCodeControl({manifestPath:join(root,"offline-manifest.json")});
+    const adapter=new MinimaxCodeAdapter({sessionStore,runtimeDb,runtimeDataDir:join(root,".minimax"),control});
+    await expect(adapter.getNativeWorkspaceDirectory(sessionId)).resolves.toEqual({hostId:localSessionHostId(),harness:"minimax-code",sessionId,cwd:workspace});
+    await expect(adapter.getNativeWorkspaceDirectory("mvs_other_session")).resolves.toBeNull();
+  });
+
   it("rejects a fabricated durable claim before native admission", async () => {
     const root = await store();
     const sessionId = "mvs_forged_claim";
@@ -311,6 +322,28 @@ describe("MinimaxCodeAdapter", () => {
       await client.close();
       await server.close();
     }
+  });
+
+  it("admits a mesh agent claim through the exact idle CLI without granting human origin",async()=>{
+    const root=await store(),sessionId="mvs_agent_cli_claim",sessionStore=join(root,".minimax","v2","sessions"),workspace=join(root,"workspace");
+    await mkdir(workspace,{recursive:true});await writeSession(sessionStore,sessionId,{model:"MiniMax-M3.1-Flash"});
+    const runtimeDb=await runtimeStateForSession(root,sessionId,workspace);
+    const control=new MinimaxCodeControl({manifestPath:join(root,"offline-manifest.json")});
+    const runSession=vi.fn(async()=>({ok:true,status:200,body:{sessionId,turnId:"agent-native-turn",status:"succeeded",model:{providerId:"minimax",modelId:"MiniMax-M3.1-Flash",providerKind:"minimax-managed"}}}));
+    (control as unknown as {runSession:typeof runSession}).runSession=runSession;
+    const adapter=new MinimaxCodeAdapter({sessionStore,runtimeDb,runtimeDataDir:join(root,".minimax"),control});
+    const jobs=new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(root,"jobs.json")});
+    const delivery=new UserMessageDelivery(new Map([["minimax-code",adapter as unknown as HarnessAdapter]]),{
+      sendMessage:async(_harness, id, options)=>adapter.sendMessage(id,options),
+    },jobs,{pollMs:1,maxWaitMs:3_000,maxPending:4},new MinimaxExecPolicyStore(join(root,"policy")));
+    const input={harness:"minimax-code",sessionId,inputId:"agent-cli-input",message:"benign agent delta",mode:"queue" as const};
+    try{
+      await delivery.submitMinimaxAgent(input,{hostId:"source-host",harness:"opencode",nativeSessionId:"source-session"});
+      await vi.waitFor(()=>expect(delivery.get(input.harness,sessionId,input.inputId)).toMatchObject({ok:true,admitted:true,turnId:"agent-native-turn"}));
+      expect(runSession).toHaveBeenCalledOnce();
+      expect(runSession).toHaveBeenCalledWith(sessionId,workspace,join(root,".minimax"),input.message,undefined);
+      expect(delivery.get(input.harness,sessionId,input.inputId)?.job?.requestFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    }finally{delivery.close();await delivery.getMinimaxExecPolicy({hostId:localSessionHostId(),harness:"minimax-code",sessionId});await delivery.getMinimaxExecPolicy({hostId:localSessionHostId(),harness:"minimax-code",sessionId});}
   });
 
   it("keeps a recently active old session visible before applying the store window", async () => {

@@ -6,10 +6,17 @@ import type { HarnessAdapter, SendMessageResult, MessageImage } from "./types/in
 import type { ZcodeRetainedInput } from "./adapters/zcode-undelivered.js";
 import { MINIMAX_CLI_TIMEOUT_MS } from "./adapters/minimax-code-control.js";
 import { MinimaxExecPolicyConflict, MinimaxExecPolicyStore, type MinimaxExecPolicy, type MinimaxExecPolicyMode, type MinimaxExecPolicyTarget } from "./permission-control/minimax-exec-policy.js";
+import { captureDeliveryResponseBaseline, type DeliveryResponseBaseline, type DeliveryResponseTarget } from "./session-delivery-response.js";
 
+export type UserMessageActor = { kind: "human" } | { kind: "agent"; principal: "agent-herder-mesh"; senderAssertion?: { hostId: string; harness: string; nativeSessionId: string } };
 export type UserMessageInput = { harness: string; sessionId: string; inputId: string; message: string; mode: "queue" | "steer"; images?: MessageImage[] };
 export type UserMessageReceipt = SendMessageResult & { delivery?: "deferred"; job?: HerderJob<SendMessageResult> };
 export type UserMessageRoute = { adapter: HarnessAdapter; supervisor: Pick<SessionSupervisor, "sendMessage"> };
+export type UserMessageDeliveryResponseHookInput={jobId:string;inputId:string;target:DeliveryResponseTarget;baseline:DeliveryResponseBaseline;actorKind:"human"|"agent";requestFingerprint:string};
+export type UserMessageDeliveryResponseHooks={
+  afterBaselinePersist?:(input:UserMessageDeliveryResponseHookInput)=>void|Promise<void>;
+  afterNativeReceipt?:(input:UserMessageDeliveryResponseHookInput&{receipt:SendMessageResult})=>void|Promise<void>;
+};
 const messageKey=(harness:string,sessionId:string,inputId:string)=>`${harness}\0${sessionId}\0${inputId}`;
 const userMessageJobId=(input:Pick<UserMessageInput,"harness"|"sessionId"|"inputId">)=>`job_${createHash("sha256").update(`user-message\0${messageKey(input.harness,input.sessionId,input.inputId)}`).digest("hex")}`;
 const activeMinimaxTargets = new Map<string, number>();
@@ -30,14 +37,15 @@ function removeActiveMinimaxSend(target: MinimaxExecPolicyTarget, jobId: string)
   decrement(activeMinimaxTargets, targetKey);
   decrement(activeMinimaxJobs, jobKey);
 }
-const messageFingerprint=(input:UserMessageInput, minimaxExecPolicy?: {mode:MinimaxExecPolicyMode;revision:number})=>{
+const messageFingerprint=(input:UserMessageInput, minimaxExecPolicy?: {mode:MinimaxExecPolicyMode;revision:number}, actor:UserMessageActor={kind:"human"},targetHostId?:string)=>{
   const base=createHash('sha256').update(`${input.mode}\0${input.message}\0${JSON.stringify(input.images??[])}`).digest('hex');
-  return minimaxExecPolicy ? createHash('sha256').update(JSON.stringify({base,minimaxExecPolicy})).digest('hex') : base;
+  if(actor.kind==="agent")return createHash('sha256').update(JSON.stringify({base,actor,...(minimaxExecPolicy?{minimaxExecPolicy}:{}),...(targetHostId?{targetHostId}:{})})).digest('hex');
+  return minimaxExecPolicy ? createHash('sha256').update(JSON.stringify({base,minimaxExecPolicy,...(targetHostId?{targetHostId}:{})})).digest('hex') : base;
 };
 let durableDeliveryClaimKey=randomBytes(32);
 let durableDeliveryClaimCount=0;
 type DurableDeliveryClaim=NonNullable<import("./types/index.js").SendMessageOptions["durableUserDelivery"]>;
-type DurableDeliveryBinding=Pick<DurableDeliveryClaim,"jobId"|"inputId"|"requestFingerprint"|"harness"|"sessionId"|"mode"|"nonce"|"minimaxExecPolicy">;
+type DurableDeliveryBinding=Pick<DurableDeliveryClaim,"jobId"|"inputId"|"requestFingerprint"|"harness"|"sessionId"|"targetHostId"|"mode"|"actor"|"nonce"|"minimaxExecPolicy">;
 const consumedDurableDeliveryNonces=new Set<string>();
 function signDurableDeliveryClaim(binding:DurableDeliveryBinding):DurableDeliveryClaim{
   if(++durableDeliveryClaimCount>4_096){durableDeliveryClaimKey=randomBytes(32);durableDeliveryClaimCount=1;consumedDurableDeliveryNonces.clear();}
@@ -45,16 +53,20 @@ function signDurableDeliveryClaim(binding:DurableDeliveryBinding):DurableDeliver
   return {...binding,signature};
 }
 /** The adapter can verify provenance without receiving the process-local signing key. */
-export function verifyDurableUserDeliveryClaim(value:unknown,expected:Omit<DurableDeliveryBinding,"nonce">,message:string,images?:MessageImage[]):value is DurableDeliveryClaim{
+export function verifyDurableUserDeliveryClaim(value:unknown,expected:Omit<DurableDeliveryBinding,"nonce"|"actor"> & {actor?:UserMessageActor},message:string,images?:MessageImage[]):value is DurableDeliveryClaim{
   if(!value||typeof value!=="object")return false;
   const claim=value as Partial<DurableDeliveryClaim>;
+  const actor=expected.actor??{kind:"human" as const};
   if(claim.jobId!==expected.jobId||claim.inputId!==expected.inputId||claim.requestFingerprint!==expected.requestFingerprint
     ||claim.harness!==expected.harness||claim.sessionId!==expected.sessionId||claim.mode!==expected.mode
+    ||JSON.stringify(claim.actor)!==JSON.stringify(actor)
     ||typeof claim.nonce!=="string"||!/^[a-f0-9]{32}$/.test(claim.nonce)||consumedDurableDeliveryNonces.has(claim.nonce)
     ||typeof claim.signature!=="string"||!/^[a-f0-9]{64}$/.test(claim.signature))return false;
-  const actualFingerprint=messageFingerprint({harness:expected.harness,sessionId:expected.sessionId,inputId:expected.inputId,message,mode:expected.mode,images},expected.minimaxExecPolicy);
+  const actualFingerprint=messageFingerprint({harness:expected.harness,sessionId:expected.sessionId,inputId:expected.inputId,message,mode:expected.mode,images},expected.minimaxExecPolicy,actor,expected.targetHostId);
   if(actualFingerprint!==expected.requestFingerprint)return false;
-  const binding={...expected,nonce:claim.nonce};
+  const binding={jobId:expected.jobId,inputId:expected.inputId,requestFingerprint:expected.requestFingerprint,harness:expected.harness,sessionId:expected.sessionId,
+    ...(expected.targetHostId?{targetHostId:expected.targetHostId}:{}),mode:expected.mode,actor,
+    ...(expected.minimaxExecPolicy?{minimaxExecPolicy:expected.minimaxExecPolicy}:{}),nonce:claim.nonce};
   const actual=Buffer.from(claim.signature,"hex"),want=Buffer.from(createHmac("sha256",durableDeliveryClaimKey).update(JSON.stringify(binding)).digest("hex"),"hex");
   if(actual.length!==want.length||!timingSafeEqual(actual,want))return false;
   consumedDurableDeliveryNonces.add(claim.nonce);
@@ -68,8 +80,9 @@ export class UserMessageDelivery {
   private active = 0;
   private slots = 4;
   private readonly slotWaiters: Array<() => void> = [];
-  private readonly editableMessages=new Map<string,{input:UserMessageInput;jobId:string;controller:AbortController;attempted:boolean}>();
+  private readonly editableMessages=new Map<string,{input:UserMessageInput;jobId:string;controller:AbortController;attempted:boolean;actor:UserMessageActor;targetHostId?:string;minimaxExecPolicy?:{mode:MinimaxExecPolicyMode;revision:number}}>();
   private readonly minimaxExecPolicies: MinimaxExecPolicyStore;
+  private responseHooks?:UserMessageDeliveryResponseHooks;
 
   constructor(
     private readonly adapters: Map<string, HarnessAdapter>,
@@ -77,7 +90,20 @@ export class UserMessageDelivery {
     private readonly jobs: HerderJobRegistry,
     private readonly options = { pollMs: 2_000, maxWaitMs: 24 * 60 * 60 * 1_000, maxPending: 64 },
     minimaxExecPolicies = new MinimaxExecPolicyStore(),
-  ) { this.minimaxExecPolicies = minimaxExecPolicies; }
+    responseHooks?:UserMessageDeliveryResponseHooks,
+  ) { this.minimaxExecPolicies = minimaxExecPolicies; this.responseHooks=responseHooks; }
+
+  setResponseObserverHooks(hooks:UserMessageDeliveryResponseHooks):void{this.responseHooks=hooks;}
+
+  async readDeliveryResponseBaseline(jobId:string,inputId:string,target:DeliveryResponseTarget):Promise<DeliveryResponseBaseline>{
+    if(jobId!==userMessageJobId({harness:target.harness,sessionId:target.sessionId,inputId}))throw new Error("delivery_response_job_target_mismatch");
+    const job=this.jobs.get<SendMessageResult>(jobId);
+    if(!job||job.ownerSessionId!==target.sessionId)throw new Error("delivery_response_job_unavailable");
+    const adapter=this.adapters.get(target.harness);
+    const session=await adapter?.getSession?.(target.sessionId).catch(()=>null);
+    if(!session||session.id!==target.sessionId||session.harness!==target.harness||session.hostId!==target.hostId)throw new Error("delivery_response_native_target_mismatch");
+    return this.jobs.readDeliveryResponseBaseline(jobId,{inputId,target});
+  }
 
   async getMinimaxExecPolicy(target: MinimaxExecPolicyTarget): Promise<MinimaxExecPolicy> {
     return this.minimaxExecPolicies.withSnapshot(target, policy => policy);
@@ -98,6 +124,17 @@ export class UserMessageDelivery {
   }
 
   async submitMinimaxExecPolicy(input: UserMessageInput, route?: UserMessageRoute): Promise<UserMessageReceipt> {
+    return this.submitMinimaxForActor(input,{kind:"human"},route);
+  }
+
+  /** Agent-to-agent MiniMax queueing uses the same durable job and native claim as the human queue.
+   * The asserted sender is bound for attribution/idempotency and never changes human-stop or consent rules. */
+  async submitMinimaxAgent(input: UserMessageInput, senderAssertion: { hostId: string; harness: string; nativeSessionId: string }, route?: UserMessageRoute): Promise<UserMessageReceipt> {
+    const actor:UserMessageActor={kind:"agent",principal:"agent-herder-mesh",senderAssertion};
+    return this.submitMinimaxForActor(input,actor,route);
+  }
+
+  private async submitMinimaxForActor(input: UserMessageInput, actor: UserMessageActor, route?: UserMessageRoute): Promise<UserMessageReceipt> {
     if (input.harness !== "minimax-code") throw new Error("MiniMax execution policy is available only for MiniMax Code sessions.");
     const adapter = route?.adapter ?? this.adapters.get(input.harness);
     if (!adapter?.getSession) throw new Error("The exact MiniMax native session is unavailable.");
@@ -113,10 +150,10 @@ export class UserMessageDelivery {
       }
       const jobId = userMessageJobId(input);
       const existing = this.jobs.get<SendMessageResult>(jobId);
-      if (existing) return this.submitPrepared(input, route, { mode: policy.mode, revision: policy.revision });
+      if (existing) return this.submitPrepared(input, route, { mode: policy.mode, revision: policy.revision }, undefined, actor, target.hostId);
       await reserve(jobId);
       addActiveMinimaxSend(target, jobId);
-      try { return this.submitPrepared(input, route, { mode: policy.mode, revision: policy.revision }, { target, jobId }); }
+      try { return this.submitPrepared(input, route, { mode: policy.mode, revision: policy.revision }, { target, jobId }, actor, target.hostId); }
       catch (error) {
         removeActiveMinimaxSend(target, jobId);
         await this.minimaxExecPolicies.releaseAdmission(target, jobId).catch(() => undefined);
@@ -175,10 +212,10 @@ export class UserMessageDelivery {
   }
 
   submit(input: UserMessageInput, route?: UserMessageRoute): UserMessageReceipt {
-    return this.submitPrepared(input, route);
+    return this.submitPrepared(input, route, undefined, undefined, {kind:"human"});
   }
 
-  private submitPrepared(input: UserMessageInput, route?: UserMessageRoute, minimaxExecPolicy?: { mode: MinimaxExecPolicyMode; revision: number }, admissionReservation?: { target: MinimaxExecPolicyTarget; jobId: string }): UserMessageReceipt {
+  private submitPrepared(input: UserMessageInput, route?: UserMessageRoute, minimaxExecPolicy?: { mode: MinimaxExecPolicyMode; revision: number }, admissionReservation?: { target: MinimaxExecPolicyTarget; jobId: string }, actor:UserMessageActor={kind:"human"},targetHostId?:string): UserMessageReceipt {
     input={...input,images:input.images?.map(image=>({...image}))};
     if (Buffer.byteLength(input.message, "utf8") > 256 * 1024) throw new Error("Сообщение слишком большое для очереди отправки");
     const targetAdapter = route?.adapter ?? this.adapters.get(input.harness);
@@ -188,8 +225,8 @@ export class UserMessageDelivery {
     if (!targetAdapter) throw new Error("Агент недоступен");
     const key = messageKey(input.harness,input.sessionId,input.inputId);
     const legacyFingerprint = messageFingerprint(input);
-    const fingerprint = messageFingerprint(input, minimaxExecPolicy);
-    const humanRequestedAt = Date.now();
+    const fingerprint = messageFingerprint(input, minimaxExecPolicy, actor,targetHostId);
+    const humanRequestedAt = actor.kind==="human"?Date.now():undefined;
     const jobId = userMessageJobId(input);
     const existing = this.jobs.get<SendMessageResult>(jobId);
     if (existing) {
@@ -200,7 +237,7 @@ export class UserMessageDelivery {
     const lane = `${input.harness}\0${input.sessionId}`;
     const previous = input.mode === "queue" ? this.tails.get(lane) : undefined;
     const controller = new AbortController();
-    const editable={input,jobId,controller,attempted:false};
+    const editable={input,jobId,controller,attempted:false,actor,targetHostId,minimaxExecPolicy};
     this.editableMessages.set(key,editable);
     let release!: () => void;
     const admitted = new Promise<void>(resolve => { release = resolve; });
@@ -227,12 +264,14 @@ export class UserMessageDelivery {
     let job: HerderJob<SendMessageResult>;
     try {
       job = this.jobs.start({
-        kind: input.harness === "minimax-code" ? "Доставка сообщения (minimax-code)" : "Доставка сообщения", ownerSessionId: input.sessionId,
+        kind: input.harness === "minimax-code" ? `Доставка сообщения (minimax-code${actor.kind==="agent"?"/agent":""})` : "Доставка сообщения", ownerSessionId: input.sessionId,
         idempotencyKey: `user-message\0${key}`, requestFingerprint: fingerprint,
+        durableOnce: true,
         run: async ({ signal, waiting, progress }) => {
           const combined = AbortSignal.any([signal, controller.signal, AbortSignal.timeout(this.options.maxWaitMs)]);
           let attempted = false;
           let nativeSend: Promise<SendMessageResult> | undefined;
+          let responseContext:UserMessageDeliveryResponseHookInput|undefined;
           try {
             waiting(input.mode === "queue" ? "Ожидает окончания ответа" : "Вставляется в текущий ход");
             if (previous) await Promise.race([previous, delay(this.options.maxWaitMs, undefined, { signal: combined })]);
@@ -246,6 +285,21 @@ export class UserMessageDelivery {
                 continue;
               }
               combined.throwIfAborted();
+              progress(0.45,"Проверяется история перед отправкой");
+              const exactTargetHostId=admissionReservation?.target.hostId??targetHostId??session.hostId;
+              const boundTargetHostId=admissionReservation?.target.hostId??targetHostId;
+              const currentFingerprint=messageFingerprint(input,minimaxExecPolicy,actor,boundTargetHostId);
+              if(exactTargetHostId){
+                const target:DeliveryResponseTarget={hostId:exactTargetHostId,harness:input.harness as DeliveryResponseTarget["harness"],sessionId:input.sessionId};
+                const baseline=await this.withSlot(combined,()=>captureDeliveryResponseBaseline({jobId,inputId:input.inputId,target,readMessages:async(requested,limit)=>{
+                  if(requested.hostId!==target.hostId||requested.harness!==target.harness||requested.sessionId!==target.sessionId||!adapter.getSessionMessages)return {messages:null};
+                  const messages=await adapter.getSessionMessages(requested.sessionId,limit);
+                  return {messages,complete:false};
+                }}));
+                this.jobs.recordDeliveryResponseBaseline(jobId,baseline);
+                responseContext={jobId,inputId:input.inputId,target,baseline,actorKind:actor.kind,requestFingerprint:currentFingerprint};
+                try{void Promise.resolve(this.responseHooks?.afterBaselinePersist?.(responseContext)).catch(()=>undefined);}catch{/* observer setup cannot change native admission */}
+              }
               progress(0.5, "Отправляется агенту");
               editable.attempted=true;
               attempted = true;
@@ -259,15 +313,17 @@ export class UserMessageDelivery {
                 : 30_000;
               const result = await this.withSlot(combined, () => {
                 nativeSend = supervisor.sendMessage(input.harness, input.sessionId, {
-                  message: input.message, origin: "human", inputId: input.inputId, images: input.images,
-                  humanRequestedAt,
+                  message: input.message, origin: actor.kind==="human"?"human":"automation", inputId: input.inputId, images: input.images,
+                  ...(humanRequestedAt!==undefined?{humanRequestedAt}:{}),
                   steer: input.mode === "steer", queue: ["codex", "opencode", "zcode"].includes(input.harness),
-                  durableUserDelivery: signDurableDeliveryClaim({ jobId, inputId: input.inputId, requestFingerprint: fingerprint,
-                    harness: input.harness, sessionId: input.sessionId, mode: input.mode,
+                  durableUserDelivery: signDurableDeliveryClaim({ jobId, inputId: input.inputId, requestFingerprint: currentFingerprint,
+                    harness: input.harness, sessionId: input.sessionId, ...(boundTargetHostId?{targetHostId:boundTargetHostId}:{}), mode: input.mode,
+                    actor,
                     ...(minimaxExecPolicy ? { minimaxExecPolicy } : {}), nonce: randomBytes(16).toString("hex") }),
                 });
                 return nativeSend;
               }, sendObservationTimeoutMs);
+              if(responseContext){try{void Promise.resolve(this.responseHooks?.afterNativeReceipt?.({...responseContext,receipt:result})).catch(()=>undefined);}catch{/* observer notification cannot change a native receipt */}}
               // A writer rejected admission before input submission. Recheck the
               // native turn; uncertain/accepted input is never replayed.
               if (input.mode === "queue" && !result.ok && !result.nonRetryable && !result.admitted && !result.admissionUnknown
@@ -286,8 +342,10 @@ export class UserMessageDelivery {
               return { ...result, inputId: input.inputId };
             }
           } catch (error) {
-            return { ok: false, inputId: input.inputId, nonRetryable: true, ...(attempted ? { admissionUnknown: true } : { notSubmitted: true }),
+            const failure:SendMessageResult={ ok: false, inputId: input.inputId, nonRetryable: true, ...(attempted ? { admissionUnknown: true } : { notSubmitted: true }),
               error: error instanceof Error && error.name === "TimeoutError" ? "Время ожидания доставки истекло" : error instanceof Error ? error.message : String(error) };
+            if(attempted&&typeof responseContext!=="undefined"){try{void Promise.resolve(this.responseHooks?.afterNativeReceipt?.({...responseContext,receipt:failure})).catch(()=>undefined);}catch{/* observer notification cannot change admission */}}
+            return failure;
           } finally {
             if (nativeSend) void nativeSend.then(finish, finish);
             else finish();
@@ -351,7 +409,7 @@ export class UserMessageDelivery {
     if(!queued||!current.editable)throw new Error('Сообщение уже передаётся агенту; изменить его нельзя');
     if(!message.trim()||Buffer.byteLength(message,'utf8')>256*1024)throw new Error('Нужен непустой текст не больше256КиБ');
     if(current.message!==expectedMessage)throw new Error('Текст сообщения уже изменён; обновите очередь');
-    this.jobs.replaceWaitingFingerprint(queued.jobId,messageFingerprint(queued.input),messageFingerprint({...queued.input,message}));
+    this.jobs.replaceWaitingFingerprint(queued.jobId,messageFingerprint(queued.input,queued.minimaxExecPolicy,queued.actor,queued.targetHostId),messageFingerprint({...queued.input,message},queued.minimaxExecPolicy,queued.actor,queued.targetHostId));
     queued.input.message=message;
     return this.queuedMessage(harness,sessionId,inputId);
   }
