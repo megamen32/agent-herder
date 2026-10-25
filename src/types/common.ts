@@ -280,6 +280,23 @@ export interface SetPermissionsOptions {
   mode?: string;
 }
 
+/** Fresh native permission state for one selected harness session. */
+export interface HarnessPermissionState {
+  target: { hostId: string; harness: HarnessType; sessionId: string };
+  currentMode?: string;
+  scope: "session" | "workspace" | "runtime";
+  supportedModes?: string[];
+  canSetMode: boolean;
+  pendingRequests: Array<{
+    id: string;
+    turnId?: string;
+    toolName?: string;
+    command?: string;
+    reason?: string;
+  }>;
+  observedAt: string;
+}
+
 /** Raw adapter-owned transcript material for archival, never a display summary. */
 export type RawTranscriptExport = {
   bytes: Uint8Array;
@@ -343,6 +360,9 @@ export interface HarnessAdapter {
 
   /** Get detailed info about a specific session */
   getSession(id: string, options?: { includeMetrics?: boolean }): Promise<AgentSession | null>;
+
+  /** Read exact native permission state without starting or resuming a session. */
+  getPermissionState?(sessionId: string): Promise<HarnessPermissionState | null>;
 
   /** Create a new named native session when supported by the harness. */
   createSession?(options: CreateSessionOptions): Promise<AgentSession>;

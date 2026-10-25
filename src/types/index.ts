@@ -9,6 +9,7 @@ export {
   type CreateSessionOptions,
   type ListSessionsOptions,
   type SetPermissionsOptions,
+  type HarnessPermissionState,
   type RawTranscriptExport,
   type SessionSnapshotReceipt,
   type HarnessAdapter,
