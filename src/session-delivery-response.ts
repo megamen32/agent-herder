@@ -73,12 +73,21 @@ export type DeliveryResponsePage = {
   text: string;
 };
 
+export type DeliveryResponseReceipt = {
+  inputId: string;
+  target: DeliveryResponseTarget;
+  responseResourceUri: string;
+  responseSha256: string;
+  totalTextLength: number;
+};
+
 export type DeliveryResponseSnapshotReader = (
   target: DeliveryResponseTarget,
   limit: number,
+  signal?: AbortSignal,
 ) => Promise<DeliveryResponseHistory>;
 
-export type DeliveryResponseJobReader = (jobId: string) => HerderJob<SendMessageResult> | null | Promise<HerderJob<SendMessageResult> | null>;
+export type DeliveryResponseJobReader = (jobId: string, signal?: AbortSignal) => HerderJob<SendMessageResult> | null | Promise<HerderJob<SendMessageResult> | null>;
 export type DeliveryResponseBaselineReader = (jobId: string) => DeliveryResponseBaseline | null | Promise<DeliveryResponseBaseline | null>;
 
 const sha256 = (value: string): string => createHash("sha256").update(value, "utf8").digest("hex");
@@ -218,22 +227,43 @@ export function diffDeliveryResponse(input: {
   const current = input.history.messages;
   if (!current) return { text: "", correlation: "unavailable", integrity: "history_unavailable" };
   const previous = new Map(input.baseline.messages.map((message) => [message.id, message]));
-  const currentIds = new Set(current.map((message) => message.id));
   const baselineTail = input.baseline.messages.at(-1)?.id;
-  if (baselineTail && !currentIds.has(baselineTail)) {
+  if (!baselineTail && (input.baseline.messageCount > 0 || input.baseline.coverage !== "complete")) {
     return { text: "", correlation: "unavailable", integrity: "baseline_gap" };
+  }
+  const tailIndex = baselineTail ? current.findIndex((message) => message.id === baselineTail) : -1;
+  if (baselineTail && tailIndex < 0) return { text: "", correlation: "unavailable", integrity: "baseline_gap" };
+
+  // New messages that appear before the ordered tail anchor cannot be
+  // distinguished from rows omitted by a bounded/partial baseline. Refuse the
+  // whole window instead of accidentally returning older assistant history.
+  if (tailIndex >= 0) {
+    const prefixIds = new Set(current.slice(0, tailIndex).map((message) => message.id));
+    if (current.slice(0, tailIndex).some((message) => !previous.has(message.id))) {
+      return { text: "", correlation: "unavailable", integrity: "baseline_gap" };
+    }
+    const baselinePrefix = input.baseline.messages.slice(0, -1).map((message) => message.id).filter((id) => prefixIds.has(id));
+    const currentBaselinePrefix = current.slice(0, tailIndex).map((message) => message.id).filter((id) => previous.has(id));
+    if (baselinePrefix.join("\0") !== currentBaselinePrefix.join("\0")) {
+      return { text: "", correlation: "unavailable", integrity: "baseline_gap" };
+    }
   }
 
   const visibleParts: string[] = [];
   let prefixChanged = false;
   let exactTurn = false;
-  for (const message of current) {
+  for (let index = 0; index < current.length; index++) {
+    const message = current[index]!;
+    // Existing assistant messages before the capture tail are old history;
+    // only the tail itself may have streamed an append after the baseline.
+    if (tailIndex >= 0 && index < tailIndex) continue;
     if (message.role !== "assistant") continue;
     const currentText = visibleHistoryText(message);
     if (!currentText) continue;
     const old = previous.get(message.id);
     let delta: string;
     if (!old) {
+      if (tailIndex >= 0 && index <= tailIndex) continue;
       delta = currentText;
     } else {
       if (old.role !== "assistant") { prefixChanged = true; continue; }
@@ -284,6 +314,7 @@ async function toResult(input: {
   history: DeliveryResponseHistory;
   turnId?: string;
   observationCancelled?: boolean;
+  recordResponseReceipt?: (jobId: string, receipt: DeliveryResponseReceipt) => void | Promise<void>;
 }): Promise<DeliveryResponseResult> {
   if (!input.job || input.job.id !== input.jobId || input.job.ownerSessionId !== input.target.sessionId) {
     return {
@@ -298,6 +329,15 @@ async function toResult(input: {
   });
   const status = resultStatus(input.job, input.history, delta);
   const formatted = await formatResponseText(delta.text);
+  if (formatted.responseResourceUri && input.recordResponseReceipt) {
+    await input.recordResponseReceipt(input.jobId, {
+      inputId: input.inputId,
+      target: { ...input.target },
+      responseResourceUri: formatted.responseResourceUri,
+      responseSha256: sha256(delta.text),
+      totalTextLength: delta.text.length,
+    });
+  }
   return {
     jobId: input.jobId, inputId: input.inputId, jobRef: input.job.resultRef,
     target: input.target, status, correlation: delta.correlation, text: formatted.text,
@@ -315,9 +355,10 @@ async function toResult(input: {
   };
 }
 
-function raceRead<T>(promise: Promise<T>, timeoutMs: number, signal?: AbortSignal): Promise<{ kind: "value"; value: T } | { kind: "timeout" } | { kind: "aborted" }> {
+function raceRead<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutMs: number, signal?: AbortSignal): Promise<{ kind: "value"; value: T } | { kind: "timeout" } | { kind: "aborted" }> {
   return new Promise((resolve, reject) => {
     let settled = false;
+    const readerController = new AbortController();
     const finish = (value: { kind: "value"; value: T } | { kind: "timeout" } | { kind: "aborted" }) => {
       if (settled) return;
       settled = true;
@@ -325,10 +366,28 @@ function raceRead<T>(promise: Promise<T>, timeoutMs: number, signal?: AbortSigna
       signal?.removeEventListener("abort", abort);
       resolve(value);
     };
-    const timer = setTimeout(() => finish({ kind: "timeout" }), timeoutMs);
-    const abort = () => finish({ kind: "aborted" });
+    const timer = setTimeout(() => {
+      readerController.abort(new Error("delivery response read deadline exceeded"));
+      finish({ kind: "timeout" });
+    }, timeoutMs);
+    const abort = () => {
+      readerController.abort(signal?.reason);
+      finish({ kind: "aborted" });
+    };
     signal?.addEventListener("abort", abort, { once: true });
-    promise.then((value) => finish({ kind: "value", value }), reject);
+    if (signal?.aborted) abort();
+    if (!settled) {
+      Promise.resolve().then(() => operation(readerController.signal)).then(
+        (value) => finish({ kind: "value", value }),
+        (error) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", abort);
+          reject(error);
+        },
+      );
+    }
   });
 }
 
@@ -345,6 +404,7 @@ export async function waitForDeliveryResponse(input: {
   signal?: AbortSignal;
   now?: () => number;
   delay?: (ms: number, signal?: AbortSignal) => Promise<unknown>;
+  recordResponseReceipt?: (jobId: string, receipt: DeliveryResponseReceipt) => void | Promise<void>;
 }): Promise<DeliveryResponseResult> {
   if (!validateDeliveryResponseBaseline(input.baseline, input)) {
     return toResult({ ...input, job: null, history: { messages: null } });
@@ -363,11 +423,13 @@ export async function waitForDeliveryResponse(input: {
       return toResult({ ...input, job: latestJob, history: latestHistory, turnId, observationCancelled: true });
     }
     const remaining = Math.max(0, deadline - now());
-    const reads = Promise.all([
-      Promise.resolve().then(() => input.readJob(input.jobId)).catch(() => null),
-      input.readHistory(input.target, DELIVERY_RESPONSE_MAX_MESSAGES).catch(() => ({ messages: null })),
-    ]).then(([job, history]) => ({ job, history }));
-    const outcome = await raceRead(reads, remaining, input.signal);
+    const outcome = await raceRead(async (readSignal) => {
+      const [job, history] = await Promise.all([
+        Promise.resolve().then(() => input.readJob(input.jobId, readSignal)).catch(() => null),
+        input.readHistory(input.target, DELIVERY_RESPONSE_MAX_MESSAGES, readSignal).catch(() => ({ messages: null })),
+      ]);
+      return { job, history };
+    }, remaining, input.signal);
     if (outcome.kind === "value") {
       latestJob = outcome.value.job;
       latestHistory = outcome.value.history;
@@ -402,16 +464,29 @@ export async function readDeliveryResponseContinuation(input: {
   target: DeliveryResponseTarget;
   readJob: DeliveryResponseJobReader;
   readBaseline: DeliveryResponseBaselineReader;
+  readReceipt: (jobId: string, expected: { inputId: string; target: DeliveryResponseTarget }) => DeliveryResponseReceipt | null | Promise<DeliveryResponseReceipt | null>;
   offset?: number;
   limit?: number;
 }): Promise<DeliveryResponsePage> {
-  const [job, baseline] = await Promise.all([input.readJob(input.jobId), input.readBaseline(input.jobId)]);
+  const [job, baseline, receipt] = await Promise.all([
+    input.readJob(input.jobId),
+    input.readBaseline(input.jobId),
+    input.readReceipt(input.jobId, { inputId: input.inputId, target: input.target }),
+  ]);
   if (!job || job.id !== input.jobId || job.ownerSessionId !== input.target.sessionId
     || !validateDeliveryResponseBaseline(baseline, { jobId: input.jobId, inputId: input.inputId, target: input.target })) {
     throw new Error("Delivery response continuation is not bound to this exact target and job");
   }
+  if (!receipt || receipt.inputId !== input.inputId || !sameTarget(receipt.target, input.target)
+    || receipt.responseResourceUri !== input.resourceUri || !/^[a-f0-9]{64}$/.test(receipt.responseSha256)
+    || !Number.isSafeInteger(receipt.totalTextLength) || receipt.totalTextLength <= DELIVERY_RESPONSE_MAX_TEXT_CHARS) {
+    throw new Error("Delivery response continuation is not bound to a previously returned response");
+  }
   const messageId = input.resourceUri.match(/^herder:\/\/m\/([a-f0-9]{8,64})$/)?.[1];
   if (!messageId) throw new Error("Invalid response continuation reference");
   const page = await readLongMessage({ messageId, offset: input.offset, limit: input.limit });
+  if (page.sha256 !== receipt.responseSha256 || page.total !== receipt.totalTextLength) {
+    throw new Error("Delivery response continuation content does not match its recorded receipt");
+  }
   return page;
 }

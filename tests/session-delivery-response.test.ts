@@ -133,6 +133,22 @@ describe("session delivery response observer", () => {
     expect(delta).toMatchObject({ text: "", correlation: "unavailable", integrity: "baseline_gap" });
   });
 
+  it("refuses unseen assistant rows before a partial baseline tail", async () => {
+    const baseline = await captureDeliveryResponseBaseline({
+      jobId: "job-a", inputId: "input-a", target: target(),
+      readMessages: async () => ({ messages: [message("assistant-tail", "assistant", "old answer")], complete: false }),
+    });
+    const delta = diffDeliveryResponse({
+      baseline, target: target(), jobId: "job-a", inputId: "input-a",
+      history: { messages: [
+        message("assistant-older-unseen", "assistant", "must not be returned"),
+        message("assistant-tail", "assistant", "old answer"),
+        message("assistant-new", "assistant", "new answer"),
+      ] },
+    });
+    expect(delta).toMatchObject({ text: "", correlation: "unavailable", integrity: "baseline_gap" });
+  });
+
   it("returns a pending job reference at the response window without cancelling the send", async () => {
     const baseline = await captureDeliveryResponseBaseline({
       jobId: "job-a", inputId: "input-a", target: target(),
@@ -173,6 +189,27 @@ describe("session delivery response observer", () => {
     expect(reads).toBe(1);
   });
 
+  it("aborts the in-flight history reader when the bounded observation deadline expires", async () => {
+    const baseline = await captureDeliveryResponseBaseline({
+      jobId: "job-a", inputId: "input-a", target: target(),
+      readMessages: async () => ({ messages: [message("user-old", "user", "old prompt")], complete: true }),
+    });
+    let readSignal: AbortSignal | undefined;
+    const observed = await waitForDeliveryResponse({
+      jobId: "job-a", inputId: "input-a", target: target(), baseline,
+      readJob: () => ({ ...completedJob("job-a"), state: "running", result: undefined }),
+      readHistory: async (_target, _limit, signal) => {
+        readSignal = signal;
+        return await new Promise<DeliveryResponseHistory>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      },
+      waitMs: 0,
+    });
+    expect(observed.status).toBe("unknown");
+    expect(readSignal?.aborted).toBe(true);
+  });
+
   it("returns a complete inline answer when the trusted history seam marks the turn complete", async () => {
     const baseline = await captureDeliveryResponseBaseline({
       jobId: "job-a", inputId: "input-a", target: target(),
@@ -193,11 +230,13 @@ describe("session delivery response observer", () => {
       readMessages: async () => ({ messages: [], complete: true }),
     });
     const longText = "x".repeat(DELIVERY_RESPONSE_MAX_TEXT_CHARS + 37);
+    const responseReceipts = new Map<string, import("../src/session-delivery-response.js").DeliveryResponseReceipt>();
     const result = await waitForDeliveryResponse({
       jobId: "job-a", inputId: "input-a", target: target(), baseline,
       readJob: () => completedJob("job-a", "turn-a"),
       readHistory: async () => ({ messages: [message("assistant-new", "assistant", longText, "turn-a")], turnComplete: true }),
       waitMs: 30_000,
+      recordResponseReceipt: (jobId, receipt) => { responseReceipts.set(jobId, receipt); },
     });
     expect(result.text.length).toBeGreaterThan(DELIVERY_RESPONSE_MAX_TEXT_CHARS);
     expect(result.totalTextLength).toBe(longText.length);
@@ -207,10 +246,16 @@ describe("session delivery response observer", () => {
     const readPage = (offset?: number) => readDeliveryResponseContinuation({
       resourceUri: result.responseResourceUri!, jobId: "job-a", inputId: "input-a", target: target(),
       readJob: () => baselineJob, readBaseline: () => baseline,
+      readReceipt: () => responseReceipts.get("job-a") ?? null,
       ...(offset !== undefined ? { offset } : {}), limit: DELIVERY_RESPONSE_MAX_TEXT_CHARS,
     });
     const firstPage = await readPage();
     const nextPage = await readPage(firstPage.nextOffset!);
     expect(firstPage.text + nextPage.text).toBe(longText);
+    await expect(readDeliveryResponseContinuation({
+      resourceUri: "herder://m/12345678", jobId: "job-a", inputId: "input-a", target: target(),
+      readJob: () => baselineJob, readBaseline: () => baseline,
+      readReceipt: () => responseReceipts.get("job-a") ?? null,
+    })).rejects.toThrow("not bound to a previously returned response");
   });
 });
