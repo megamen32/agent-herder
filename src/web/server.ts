@@ -116,6 +116,7 @@ import { deferredMessages, renderDeferredMessages } from "../deferred-messages.j
 import { agentHerderRag } from "../rag-search.js";
 import {startSessionSearchBackground} from '../session-search-worker.js';
 import { handleIntegratorSessionTranscript } from "../integrator-session-route.js";
+import { COMPOSER_TRANSCRIPTION_PATH, ComposerTranscriptionError, readComposerAudioUpload, transcribeComposerAudio, type ComposerTranscriber } from "./composer-transcription.js";
 
 /** How many skipped sessions of one recovery are named in the operator's log. */
 const MAX_LOGGED_SKIP_REASONS = 50;
@@ -175,6 +176,8 @@ export interface WebDependencies {
   /** Optional profile-scoped fleet API; its handler authenticates each request. */
   fleetHttpGuard?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
   fleetApiHandler?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
+  /** Isolated route seam for contract tests; production uses the fixed Whisper consumer. */
+  composerTranscriber?: ComposerTranscriber;
 }
 
 export type AutopilotSweepOutcome = {
@@ -1073,7 +1076,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
       // checks the owner of the request itself.
       if (await settingsApi(request, response)) return;
       if (await rag.handleHttp(request, response, async (harness, id) => (await dependencies.adapters.get(harness)?.getSession(id)) || undefined)) return;
-      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport, dependencies.noticeAnswerFetch);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport, dependencies.noticeAnswerFetch, dependencies.composerTranscriber);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -1519,9 +1522,28 @@ export async function computeModelLaunchVerdicts(input: {
   return Object.fromEntries(entries);
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch, composerTranscriber?: ComposerTranscriber): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   const resolveSessionRoute = async (harness: string, sessionId: string) => await resolveSessionRouteFor(integratorRuntime, adapters, scopedSupervisorFactory, harness, sessionId);
+  if (url.pathname === COMPOSER_TRANSCRIPTION_PATH && request.method === "POST") {
+    response.setHeader("cache-control", "no-store");
+    response.setHeader("x-content-type-options", "nosniff");
+    const controller = new AbortController();
+    const onClose = () => { if (!response.writableEnded) controller.abort(); };
+    response.once("close", onClose);
+    try {
+      const upload = await readComposerAudioUpload(request);
+      const result = await (composerTranscriber ?? transcribeComposerAudio)(upload, controller.signal);
+      if (!response.destroyed && !response.writableEnded) sendJson(response, 200, { text: result.text });
+    } catch (error) {
+      if (response.destroyed || response.writableEnded) return;
+      if (error instanceof ComposerTranscriptionError) return sendJson(response, error.status, { error: error.message });
+      return sendJson(response, 503, { error: "Распознавание сейчас недоступно. Попробуйте позже." });
+    } finally {
+      response.removeListener("close", onClose);
+    }
+    return;
+  }
   const minimaxExecPolicyMatch = url.pathname.match(/^\/api\/sessions\/minimax-code\/([^/]+)\/herder-exec-policy$/);
   if (minimaxExecPolicyMatch && (request.method === "GET" || request.method === "PUT")) {
     response.setHeader("cache-control", "no-store");
