@@ -32,8 +32,13 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
 
 WORKSPACE_PACKAGE = "agent-resume-mcp"
+
+# The name the resolver of Node looks for: a directory named node_modules in
+# every parent of the file it resolves.
+PACKAGE_ROOT_NAME = "node_modules"
 
 # The tool caches of a store are rewritten by every build. A hard link to one
 # of them would make the bytes of a release change under a running service,
@@ -62,6 +67,10 @@ def store_contents(root: Path) -> list[str]:
     names = []
     for entry in root.iterdir():
         if entry.name == WORKSPACE_PACKAGE:
+            continue
+        # The offer of the store itself (see ensure_store_package_root) is
+        # not a package of the store.
+        if entry.name == PACKAGE_ROOT_NAME:
             continue
         if entry.name.startswith("@") and entry.is_dir() and not entry.is_symlink():
             names.extend(f"{entry.name}/{child.name}" for child in entry.iterdir())
@@ -279,6 +288,63 @@ def area_package_root_state(fleet_root: Path, store_dir: Path) -> dict:
     return {"state": "absent", "path": str(root)}
 
 
+def store_package_root_state(store_dir: Path) -> dict:
+    """The state of the package root of the shared store, read only.
+
+    "link" - the store offers its own packages under the name the resolver of
+    Node looks for; "points_at_store" tells whether it offers the store
+    itself and not another directory.
+    "directory" - a real directory at that place: the store carries packages
+    of its own at the place the resolver looks for, which is not the store.
+    "absent" - nothing there: the resolver of Node walks out of the store and
+    reaches the area of the node.
+    """
+    store_dir = Path(store_dir)
+    root = store_dir / PACKAGE_ROOT_NAME
+    if root.is_symlink():
+        current = (root.parent / os.readlink(root)).resolve()
+        try:
+            points = current == store_dir.resolve()
+        except OSError:
+            points = False
+        return {"state": "link", "path": str(root), "target": str(current),
+                "points_at_store": points}
+    if root.exists():
+        return {"state": "directory", "path": str(root)}
+    return {"state": "absent", "path": str(root)}
+
+
+def ensure_store_package_root(store_dir: Path) -> dict:
+    """The store must offer its packages to the resolver of Node.
+
+    The store is named "shared-node-modules/<identity>": the resolver of Node
+    looks for a directory named "node_modules" in every parent of the file it
+    resolves, so it walks out of the store, and the import of a sibling of a
+    package of the store lands in the legacy root store of the area - or
+    nowhere at all.
+
+    The store therefore offers itself under that name: "<store>/node_modules"
+    is a link to the store. The link is relative, so the store travels with
+    the releases, and the resolver of every release stays inside the store it
+    was verified against - the release that is live now and the release that
+    is the point of rollback alike.
+    """
+    store_dir = Path(store_dir)
+    if not store_dir.is_dir():
+        raise RuntimeError(f"the shared store is absent: {store_dir}")
+    root = store_dir / PACKAGE_ROOT_NAME
+    state = store_package_root_state(store_dir)
+    if state["state"] == "link":
+        if state["points_at_store"]:
+            return {"state": "already", "path": str(root), "target": str(store_dir)}
+        os.unlink(root)
+    elif state["state"] == "directory":
+        raise RuntimeError(
+            f"the store carries a real directory at its package root: {root}")
+    os.symlink(".", root)
+    return {"state": "created", "path": str(root), "target": str(store_dir)}
+
+
 def ensure_area_package_root(fleet_root: Path, store_dir: Path) -> dict:
     """The area must offer the store of the packages to the resolver of Node.
 
@@ -318,6 +384,46 @@ def ensure_area_package_root(fleet_root: Path, store_dir: Path) -> dict:
     relative = os.path.relpath(store_dir, root.parent)
     os.symlink(relative, root)
     return {"state": "created", "path": str(root), "target": str(store_dir)}
+
+
+def take_over_area_package_root(fleet_root: Path, store_dir: Path) -> dict:
+    """The legacy root store of the area moves aside, the store takes its place.
+
+    Nothing happens when the root of the area already offers the store.
+
+    The area offers the packages of the release under the name the resolver
+    of Node looks for ("<area>/node_modules"). A real directory at that place
+    is the legacy root store of the node: it holds the resolution of the
+    runtime, and the shared store of the release is not its source.
+
+    The legacy store moves under a name the resolver does not look for. Its
+    bytes stay, nothing is deleted, and the place it moved to is named, so
+    the owner can decide about it. The link to the store is prepared before
+    the legacy store moves, and the legacy store goes back to its place if
+    the link cannot be put in.
+    """
+    fleet_root = Path(fleet_root)
+    root = fleet_root / PACKAGE_ROOT_NAME
+    state = area_package_root_state(fleet_root, store_dir)
+    if state["state"] != "legacy-directory":
+        return {"moved": "", "path": str(root), "target": str(store_dir)}
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    moved = fleet_root / f"node_modules.legacy-{stamp}"
+    index = 0
+    while moved.exists() or moved.is_symlink():
+        index += 1
+        moved = fleet_root / f"node_modules.legacy-{stamp}-{index}"
+    link = fleet_root / ".node_modules.link.new"
+    if link.is_symlink() or link.exists():
+        link.unlink()
+    os.symlink(os.path.relpath(Path(store_dir), root.parent), link)
+    os.rename(root, moved)
+    try:
+        os.rename(link, root)
+    except OSError:
+        os.rename(moved, root)
+        raise
+    return {"moved": str(moved), "path": str(root), "target": str(store_dir)}
 
 
 def lock_digest(release: Path) -> str | None:
@@ -425,6 +531,7 @@ def materialize_shared_store(source: Path, store_dir: Path, identity: str) -> di
     store_dir = Path(store_dir)
     if store_dir.is_dir():
         verify_shared_store(store_dir, identity)
+        ensure_store_package_root(store_dir)
         return {"created": False, "dir": str(store_dir)}
     packages = shared_store_packages(source)
     store_dir.mkdir(parents=True, exist_ok=True)
@@ -452,6 +559,7 @@ def materialize_shared_store(source: Path, store_dir: Path, identity: str) -> di
     temporary = manifest_path.with_name(manifest_path.name + ".tmp")
     temporary.write_text(json.dumps(document, indent=2) + "\n")
     os.replace(temporary, manifest_path)
+    ensure_store_package_root(store_dir)
     return {"created": True, "dir": str(store_dir), "packages": len(packages)}
 
 

@@ -288,9 +288,12 @@ def prepare_owner_area(catalog: Path, release: Path, working_directory: str) -> 
     linked = release_rules.link_release_packages(release, store_dir)
     if source is not None and not source.is_symlink() and source.is_dir():
         release_rules.own_tool_caches(source, release / "node_modules")
+    takeover = release_rules.take_over_area_package_root(catalog, store_dir)
     root = release_rules.ensure_area_package_root(catalog, store_dir)
     return (f"shared store {store_dir} (created={created}); {linked}; "
-            f"area package root {root['path']} state={root['state']}")
+            f"area package root {root['path']} state={root['state']}"
+            + (f"; the legacy root store moved aside: {takeover['moved']}"
+               if takeover.get("moved") else ""))
 
 
 def node_side_owner(arguments) -> int:

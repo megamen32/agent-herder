@@ -505,6 +505,23 @@ def prepare_packages(fleet: Path, sha: str, previous_sha: str,
     else:
         release_rules.materialize_shared_store(materialization_source, store_dir, identity)
         created = True
+    # The store must offer its packages to the resolver of Node under the
+    # name the resolver looks for. The store is named
+    # shared-node-modules/<identity>, so the resolver of a package of the
+    # store walks out of it and reaches the area of the node - and there the
+    # legacy root store of the node holds the resolution.
+    store_root = release_rules.ensure_store_package_root(store_dir)
+    # The release that is the point of rollback must stay resolvable: its
+    # store offers its own packages, so the resolver of that release stays
+    # inside the store it was verified against.
+    rollback_store_root = {"state": "absent"}
+    try:
+        previous_store = release_rules.shared_store_dir(
+            fleet, release_rules.dependency_identity(previous))
+    except RuntimeError:
+        previous_store = None
+    if previous_store is not None and previous_store.is_dir():
+        rollback_store_root = release_rules.ensure_store_package_root(previous_store)
     if target.is_symlink() or target.is_file():
         target.unlink()
     elif target.is_dir():
@@ -526,11 +543,20 @@ def prepare_packages(fleet: Path, sha: str, previous_sha: str,
     # The resolver of Node walks up the real path of a package of the store and
     # looks for a directory named "node_modules" in every parent. The area must
     # offer the store under that name, or the runtime does not start at all.
+    # The root of the area must offer the store to the resolver of Node. A
+    # legacy root store of the node holds the resolution there, so it moves
+    # aside before the root is taken: its bytes stay, and the owner decides
+    # about them.
+    takeover = release_rules.take_over_area_package_root(fleet, store_dir)
     area_root = release_rules.ensure_area_package_root(fleet, store_dir)
+    moved = takeover.get("moved")
     return (f"shared store {store_dir} (created={created}); {linked}; "
             f"{len(caches)} tool caches owned by the release; "
             f"agent-resume-mcp -> {candidate_resolution}; "
-            f"area package root {area_root['path']} state={area_root['state']}")
+            f"store package root {store_root['path']} state={store_root['state']}; "
+            f"rollback store package root state={rollback_store_root['state']}; "
+            f"area package root {area_root['path']} state={area_root['state']}"
+            + (f"; the legacy root store moved aside: {moved}" if moved else ""))
 
 def linux_release_bytes(release: Path) -> int:
     """Count allocated blocks introduced by this release, once per inode.

@@ -108,9 +108,35 @@ class ImportResolutionTests(unittest.TestCase):
         self.assertGreater(result["from_store"], 0)
 
     def test_the_legacy_root_store_of_the_area_is_refused(self):
-        """R7 section 4.9: the resolution leaves the store for the legacy farm."""
+        """R7 section 4.9: the legacy farm must not hold the resolution.
+
+        The store of the release offers its packages under the name the
+        resolver of Node looks for, so the legacy root store of the area
+        holds nothing: the resolution stays inside the store.
+        """
         root = self.area / "node_modules"
-        target = root.resolve()
+        root.unlink()
+        legacy = make_legacy_farm(self.area)
+        result = accept.import_check(self.release, "node")
+        self.assertEqual(result["outside"], [])
+        self.assertGreater(result["from_store"], 0)
+        # the root of the area is a legacy directory: the area does not offer
+        # the store of the release to the resolver, and the acceptance says so
+        self.assertEqual(result["area_package_root"]["state"], "legacy-directory")
+        self.assertFalse(result["area_package_root_ok"])
+
+    def test_a_store_without_its_own_offer_lets_the_legacy_farm_hold_the_resolution(self):
+        """The probe of the acceptance sees the escape of a store that is old.
+
+        A store that does not offer its packages under the name the resolver
+        looks for - a store of an earlier release - leaves the resolution to
+        the legacy root store of the area. The acceptance must see that: the
+        store of the release is not the source of the resolution.
+        """
+        offer = self.store / "node_modules"
+        self.assertTrue(offer.is_symlink())
+        offer.unlink()
+        root = self.area / "node_modules"
         root.unlink()
         legacy = make_legacy_farm(self.area)
         result = accept.import_check(self.release, "node")
@@ -122,10 +148,6 @@ class ImportResolutionTests(unittest.TestCase):
             self.assertTrue(str(item["target"]).startswith(str(legacy)),
                             f"the import did not leave for the legacy farm: {item}")
             self.assertEqual(item["scope"], "store")
-        # the root of the area is a legacy directory: the store of the release
-        # is not the source of the resolution
-        self.assertEqual(result["area_package_root"]["state"], "legacy-directory")
-        self.assertFalse(result["area_package_root_ok"])
 
     def test_an_area_without_the_package_root_is_refused(self):
         """The root of the area is gone: the runtime cannot resolve."""

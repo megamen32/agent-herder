@@ -457,9 +457,14 @@ def import_check(release: Path, node_bin: str) -> dict:
         return {"ok": False, "error": str(data["error"])[:200]}
     area = {}
     area_ok = True
+    store_root = {}
     if shared:
         area = release_rules.area_package_root_state(
             release_rules.fleet_root_of(release), Path(shared))
+        # The store offers its own packages under the name the resolver of
+        # Node looks for: the resolver of a package of the store stays inside
+        # the store it was verified against.
+        store_root = release_rules.store_package_root_state(Path(shared))
         # The area must offer the store of the packages under the name the
         # resolver of Node looks for. A legacy root store of the area offers
         # its own packages there instead, and the store of the release would
@@ -492,6 +497,7 @@ def import_check(release: Path, node_bin: str) -> dict:
         "shared_store": shared,
         "area_package_root": area,
         "area_package_root_ok": area_ok,
+        "store_package_root": store_root,
     }
 
 def import_check_workspace(release: Path, store_modules: Path, node_bin: str) -> dict:
@@ -1131,7 +1137,9 @@ def main() -> int:
         ("the area offers the packages of the store to the resolver of Node",
          imports.get("area_package_root_ok", True),
          (f"state={(imports.get('area_package_root') or {}).get('state')} "
-          f"points_at_store={(imports.get('area_package_root') or {}).get('points_at_store')}")
+          f"points_at_store={(imports.get('area_package_root') or {}).get('points_at_store')}; "
+          f"the store offers its packages: "
+          f"state={(imports.get('store_package_root') or {}).get('state')}")
          if imports.get("area_package_root")
          else "the release carries no shared store: the root of the area is not its source"),
         ("the workspace package is imported from the release", workspace.get("ok", False),

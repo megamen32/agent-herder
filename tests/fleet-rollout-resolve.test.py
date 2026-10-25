@@ -144,8 +144,15 @@ class ResolutionWithoutLegacyRoot(unittest.TestCase):
             self.assertTrue(str(resolved).startswith(str(store_dir.resolve())),
                             f"the import left the store: {resolved}")
 
-    def test_the_same_import_fails_without_the_package_root_of_the_area(self):
-        """The failure of the release of R7, reproduced on purpose."""
+    def test_the_same_import_resolves_without_the_package_root_of_the_area(self):
+        """The failure of the release of R7, closed by the store itself.
+
+        The store offers its packages under the name the resolver of Node
+        looks for, so the import of a sibling of a package of the store
+        resolves inside the store even when the root of the area is absent.
+        The root of the area stays the way the area offers the store to the
+        resolver, and the acceptance keeps naming its state.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             area = pathlib.Path(temporary)
             sha = "e" * 40
@@ -156,10 +163,16 @@ class ResolutionWithoutLegacyRoot(unittest.TestCase):
             store_dir = rules.shared_store_dir(area, identity)
             rules.materialize_shared_store(source, store_dir, identity)
             rules.link_release_packages(release, store_dir)
-            # The package root of the area is missing: the import cannot resolve.
+            # The package root of the area is missing: the store itself is
+            # the source of the resolution.
             importer = store_dir / "pkg-a" / "index.js"
-            with self.assertRaises(AssertionError):
-                resolve_from(importer, "pkg-b")
+            resolved = pathlib.Path(resolve_from(importer, "pkg-b")).resolve()
+            self.assertTrue(str(resolved).startswith(str(store_dir.resolve())),
+                            f"the import left the store: {resolved}")
+            # the store offers its packages under the name the resolver looks for
+            state = rules.store_package_root_state(store_dir)
+            self.assertEqual(state["state"], "link")
+            self.assertTrue(state["points_at_store"])
 
 
 class RolloutPreparesTheArea(unittest.TestCase):
