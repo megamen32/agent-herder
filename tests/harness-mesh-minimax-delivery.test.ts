@@ -11,6 +11,7 @@ import {UserMessageDelivery} from "../src/user-message-delivery.js";
 import {MinimaxExecPolicyStore} from "../src/permission-control/minimax-exec-policy.js";
 import {checkDeliveryModel} from "../src/project-model-delivery-gate.js";
 import {holdManualStop} from "../src/human-stop-actions.js";
+import {getHumanStopStore} from "../src/human-stop-store.js";
 import {TRUSTED_MESH_MCP_CLIENT_ID,TRUSTED_MESH_MCP_SCOPE,trustedMeshIngressFromMcpAuthInfo} from "../src/mesh/authenticated-ingress.js";
 import type {HarnessAdapter,SendMessageResult} from "../src/types/index.js";
 
@@ -95,6 +96,57 @@ describe("native MiniMax Code common delivery core",()=>{
    expect(await f.deliver({...request,inputId:"stop-while-queued"})).toMatchObject({state:"not_attempted",retryable:false});
    expect(f.sendMessage).not.toHaveBeenCalled();
   }finally{await cleanup(dir,f);}
+ });
+
+ it("serializes a stop racing the final native admission and does not hold the stop lock through the reply",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-stop-admission-race-"));
+  vi.stubEnv("AGENT_HERDER_HUMAN_STOP_STORE",join(dir,"stops.json"));
+  const f=setup(dir);
+  const store=getHumanStopStore();
+  const original=store.withSourcesUnheld.bind(store);
+  let reachedFinalGate!:()=>void;
+  let releaseFinalGate!:()=>void;
+  const finalGateReached=new Promise<void>(resolve=>{reachedFinalGate=resolve;});
+  const finalGate=new Promise<void>(resolve=>{releaseFinalGate=resolve;});
+  const guardSpy=vi.spyOn(store,"withSourcesUnheld").mockImplementation(async(sources,operation)=>{
+   reachedFinalGate();
+   await finalGate;
+   return original(sources,operation);
+  });
+  try{
+   const first=await f.deliver({...request,inputId:"stop-at-final-gate"});
+   expect(["queued","admitted"]).toContain(first.state);
+   await finalGateReached;
+   await holdManualStop(f.session as any);
+   releaseFinalGate();
+   await vi.waitFor(()=>expect(f.jobs.list(10).find(row=>row.ownerSessionId==="mvs_native")?.state).toBe("completed"));
+   expect(f.jobs.list(10).find(row=>row.ownerSessionId==="mvs_native")?.result).toMatchObject({ok:false,notSubmitted:true,nonRetryable:true,inputId:"stop-at-final-gate"});
+   expect(f.sendMessage).not.toHaveBeenCalled();
+   expect(guardSpy).toHaveBeenCalledOnce();
+  }finally{releaseFinalGate();guardSpy.mockRestore();await cleanup(dir,f);}
+
+  const responseDir=await mkdtemp(join(tmpdir(),"herder-minimax-stop-after-admission-"));
+  vi.stubEnv("AGENT_HERDER_HUMAN_STOP_STORE",join(responseDir,"stops.json"));
+  const responseFixture=setup(responseDir);
+  let nativeStarted!:()=>void;
+  let finishNative!: (value:SendMessageResult)=>void;
+  const started=new Promise<void>(resolve=>{nativeStarted=resolve;});
+  const nativeResult=new Promise<SendMessageResult>(resolve=>{finishNative=resolve;});
+  responseFixture.sendMessage.mockImplementation(async(_id,options)=>{
+   nativeStarted();
+   return nativeResult;
+  });
+  try{
+   const first=await responseFixture.deliver({...request,inputId:"stop-after-admission"});
+   expect(["queued","admitted"]).toContain(first.state);
+   await started;
+   let stopCompleted=false;
+   await holdManualStop(responseFixture.session as any).then(()=>{stopCompleted=true;});
+   expect(stopCompleted).toBe(true);
+   finishNative({ok:true,admitted:true,turnId:"native-turn",inputId:"stop-after-admission"});
+   await vi.waitFor(()=>expect(responseFixture.jobs.list(10).find(row=>row.ownerSessionId==="mvs_native")?.state).toBe("completed"));
+   expect(responseFixture.sendMessage).toHaveBeenCalledOnce();
+  }finally{await cleanup(responseDir,responseFixture);}
  });
 
  it("routes idle agent work through one durable job/claim and never records a separate mesh outcome",async()=>{

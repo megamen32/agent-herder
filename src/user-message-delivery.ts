@@ -319,28 +319,42 @@ export class UserMessageDelivery {
                 // Queue/slot/baseline waits can outlive a manual stop. Re-read
                 // the exact target and durable stop fence immediately before
                 // the one native dispatch; an agent claim never clears it.
+                let humanStopStore: ReturnType<typeof getHumanStopStore> | undefined;
                 if (actor.kind === "agent") {
                   const dispatchSession = await adapter.getSession(input.sessionId);
                   if (!dispatchSession || dispatchSession.id !== input.sessionId || dispatchSession.harness !== input.harness
                     || (boundTargetHostId && dispatchSession.hostId !== boundTargetHostId)) {
                     return { ok: false, notSubmitted: true, nonRetryable: true, inputId: input.inputId, error: "Точная целевая сессия изменилась перед отправкой" };
                   }
-                  const humanStopStore = getHumanStopStore();
+                  humanStopStore = getHumanStopStore();
                   await humanStopStore.observe(dispatchSession);
-                  if (await humanStopStore.isHeld(input.harness, input.sessionId)) {
+                }
+                const startNativeAdmission = async () => {
+                  nativeSend = supervisor.sendMessage(input.harness, input.sessionId, {
+                    message: input.message, origin: actor.kind==="human"?"human":"automation", inputId: input.inputId, images: input.images,
+                    ...(humanRequestedAt!==undefined?{humanRequestedAt}:{}),
+                    steer: input.mode === "steer", queue: ["codex", "opencode", "zcode"].includes(input.harness),
+                    durableUserDelivery: signDurableDeliveryClaim({ jobId, inputId: input.inputId, requestFingerprint: currentFingerprint,
+                      harness: input.harness, sessionId: input.sessionId, ...(boundTargetHostId?{targetHostId:boundTargetHostId}:{}), mode: input.mode,
+                      actor,
+                      ...(minimaxExecPolicy ? { minimaxExecPolicy } : {}), nonce: randomBytes(16).toString("hex") }),
+                  });
+                  // Return an object so withSourcesUnheld releases its file lock
+                  // after native admission starts, without awaiting model work.
+                  return { nativeSend };
+                };
+                if (humanStopStore) {
+                  const guarded = await humanStopStore.withSourcesUnheld(
+                    [{ harness: input.harness, sessionId: input.sessionId }], startNativeAdmission,
+                  );
+                  if (!guarded.allowed) {
                     return { ok: false, notSubmitted: true, nonRetryable: true, inputId: input.inputId, error: HUMAN_STOP_MESSAGE };
                   }
+                  nativeSend = guarded.value.nativeSend;
+                } else {
+                  await startNativeAdmission();
                 }
-                nativeSend = supervisor.sendMessage(input.harness, input.sessionId, {
-                  message: input.message, origin: actor.kind==="human"?"human":"automation", inputId: input.inputId, images: input.images,
-                  ...(humanRequestedAt!==undefined?{humanRequestedAt}:{}),
-                  steer: input.mode === "steer", queue: ["codex", "opencode", "zcode"].includes(input.harness),
-                  durableUserDelivery: signDurableDeliveryClaim({ jobId, inputId: input.inputId, requestFingerprint: currentFingerprint,
-                    harness: input.harness, sessionId: input.sessionId, ...(boundTargetHostId?{targetHostId:boundTargetHostId}:{}), mode: input.mode,
-                    actor,
-                    ...(minimaxExecPolicy ? { minimaxExecPolicy } : {}), nonce: randomBytes(16).toString("hex") }),
-                });
-                return nativeSend;
+                return await nativeSend!;
               }, sendObservationTimeoutMs);
               if(responseContext){try{void Promise.resolve(this.responseHooks?.afterNativeReceipt?.({...responseContext,receipt:result})).catch(()=>undefined);}catch{/* observer notification cannot change a native receipt */}}
               // A writer rejected admission before input submission. Recheck the
