@@ -7,8 +7,11 @@ import type { ZcodeRetainedInput } from "./adapters/zcode-undelivered.js";
 import { MINIMAX_CLI_TIMEOUT_MS } from "./adapters/minimax-code-control.js";
 import { MinimaxExecPolicyConflict, MinimaxExecPolicyStore, type MinimaxExecPolicy, type MinimaxExecPolicyMode, type MinimaxExecPolicyTarget } from "./permission-control/minimax-exec-policy.js";
 import { captureDeliveryResponseBaseline, type DeliveryResponseBaseline, type DeliveryResponseTarget } from "./session-delivery-response.js";
+import { HUMAN_STOP_MESSAGE } from "./human-stop-actions.js";
+import { getHumanStopStore } from "./human-stop-store.js";
+import { isTrustedMeshIngress, type TrustedMeshIngress } from "./mesh/authenticated-ingress.js";
 
-export type UserMessageActor = { kind: "human" } | { kind: "agent"; principal: "agent-herder-mesh"; senderAssertion?: { hostId: string; harness: string; nativeSessionId: string } };
+export type UserMessageActor = { kind: "human" } | { kind: "agent"; principal: "agent-herder-owner-mcp"; senderAssertion: { hostId: string; harness: string; nativeSessionId: string }; senderVerified: false };
 export type UserMessageInput = { harness: string; sessionId: string; inputId: string; message: string; mode: "queue" | "steer"; images?: MessageImage[] };
 export type UserMessageReceipt = SendMessageResult & { delivery?: "deferred"; job?: HerderJob<SendMessageResult> };
 export type UserMessageRoute = { adapter: HarnessAdapter; supervisor: Pick<SessionSupervisor, "sendMessage"> };
@@ -129,8 +132,9 @@ export class UserMessageDelivery {
 
   /** Agent-to-agent MiniMax queueing uses the same durable job and native claim as the human queue.
    * The asserted sender is bound for attribution/idempotency and never changes human-stop or consent rules. */
-  async submitMinimaxAgent(input: UserMessageInput, senderAssertion: { hostId: string; harness: string; nativeSessionId: string }, route?: UserMessageRoute): Promise<UserMessageReceipt> {
-    const actor:UserMessageActor={kind:"agent",principal:"agent-herder-mesh",senderAssertion};
+  async submitMinimaxAgent(input: UserMessageInput, senderAssertion: { hostId: string; harness: string; nativeSessionId: string }, ingress: TrustedMeshIngress | undefined, route?: UserMessageRoute): Promise<UserMessageReceipt> {
+    if (!isTrustedMeshIngress(ingress)) throw new Error("Authenticated Agent Herder MCP ingress is required for MiniMax agent delivery.");
+    const actor:UserMessageActor={kind:"agent",principal:ingress.principal,senderAssertion,senderVerified:ingress.senderVerified};
     return this.submitMinimaxForActor(input,actor,route);
   }
 
@@ -311,7 +315,22 @@ export class UserMessageDelivery {
               const sendObservationTimeoutMs = input.harness === "minimax-code"
                 ? MINIMAX_CLI_TIMEOUT_MS + 5_000
                 : 30_000;
-              const result = await this.withSlot(combined, () => {
+              const result = await this.withSlot(combined, async () => {
+                // Queue/slot/baseline waits can outlive a manual stop. Re-read
+                // the exact target and durable stop fence immediately before
+                // the one native dispatch; an agent claim never clears it.
+                if (actor.kind === "agent") {
+                  const dispatchSession = await adapter.getSession(input.sessionId);
+                  if (!dispatchSession || dispatchSession.id !== input.sessionId || dispatchSession.harness !== input.harness
+                    || (boundTargetHostId && dispatchSession.hostId !== boundTargetHostId)) {
+                    return { ok: false, notSubmitted: true, nonRetryable: true, inputId: input.inputId, error: "Точная целевая сессия изменилась перед отправкой" };
+                  }
+                  const humanStopStore = getHumanStopStore();
+                  await humanStopStore.observe(dispatchSession);
+                  if (await humanStopStore.isHeld(input.harness, input.sessionId)) {
+                    return { ok: false, notSubmitted: true, nonRetryable: true, inputId: input.inputId, error: HUMAN_STOP_MESSAGE };
+                  }
+                }
                 nativeSend = supervisor.sendMessage(input.harness, input.sessionId, {
                   message: input.message, origin: actor.kind==="human"?"human":"automation", inputId: input.inputId, images: input.images,
                   ...(humanRequestedAt!==undefined?{humanRequestedAt}:{}),

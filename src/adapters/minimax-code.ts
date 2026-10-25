@@ -664,7 +664,7 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
       && ["unset", "smart", "full", "off"].includes(policy.mode));
     const actor=claim?.actor;
     const actorMatchesOrigin=actor?.kind==="human"?options.origin==="human"
-      :actor?.kind==="agent"&&actor.principal==="agent-herder-mesh"?options.origin==="automation":false;
+      :actor?.kind==="agent"&&actor.principal==="agent-herder-owner-mcp"&&actor.senderVerified===false?options.origin==="automation":false;
     const expectedClaim = { jobId: expectedJob, inputId: options.inputId ?? "", requestFingerprint: claim?.requestFingerprint ?? "",
       harness: "minimax-code", sessionId: id, targetHostId: localSessionHostId(), mode: "queue" as const,
       actor,
@@ -673,7 +673,7 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
       || !options.inputId || !claim || claim.inputId !== options.inputId || claim.jobId !== expectedJob
       || !validPolicy || !/^[a-f0-9]{64}$/.test(claim.requestFingerprint) || !verifyDurableUserDeliveryClaim(claim, expectedClaim, options.message, options.images)
       || (options.model && options.model !== "minimax/MiniMax-M3.1-Flash")) {
-      return { ok: false, notSubmitted: true, error: "MiniMax Code idle delivery requires an exact durable human queue claim" };
+      return { ok: false, notSubmitted: true, error: "MiniMax Code idle delivery requires an exact durable queue claim" };
     }
 
     let db: DatabaseSync | undefined;

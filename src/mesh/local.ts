@@ -18,6 +18,7 @@ import {automaticDeliveryHeld,holdManualStop} from "../human-stop-actions.js";
 import {getHumanStopStore} from "../human-stop-store.js";
 import {MINIMAX_CODE_HARNESS_CWD} from "../adapters/minimax-code-store.js";
 import {MINIMAX_CODE_HARNESS,observeMinimaxCode} from "./native-minimax-code.js";
+import {isTrustedMeshIngress,type TrustedMeshIngress} from "./authenticated-ingress.js";
 import {composeSessionTitle,mergeSessionLabel,writeSessionLabel} from "../session-labels.js";
 /**
  * Receipt of one native rename.
@@ -91,12 +92,15 @@ export class LocalHarnessMesh {
   if(sessions.length>limit){complete=false;limited=true;}
   return {hostId:this.hostId,sessions:sorted,harnesses,complete,limited};
  }
- async deliver(request:MeshDelivery):Promise<NativeReceipt&{reason?:string}>{
+ async deliver(request:MeshDelivery,ingress?:TrustedMeshIngress):Promise<NativeReceipt&{reason?:string}>{
   addressKey(request.target);addressKey(request.sender);
   const reject=(reason:string)=>({state:"not_attempted" as const,inputId:request.inputId,retryable:true,reason});
   if(request.target.hostId!==this.hostId)return reject("native_host_identity_mismatch");
   if(!request.inputId||request.inputId.length>256||!request.message.trim()||request.message.length>4000)throw new Error("A stable inputId and bounded delta are required");
-  if(request.target.harness===MINIMAX_CODE_HARNESS)return this.deliverMinimaxThroughCommonCore(request);
+  if(request.target.harness===MINIMAX_CODE_HARNESS){
+   if(!isTrustedMeshIngress(ingress))return {...reject("authenticated_mesh_ingress_required"),retryable:false};
+   return this.deliverMinimaxThroughCommonCore(request,ingress);
+  }
   return this.ledger.once(request,async()=>{
    const adapter=this.deps.adapters.get(request.target.harness);
    if(!adapter)return reject("adapter_not_registered");
@@ -115,7 +119,7 @@ export class LocalHarnessMesh {
    return parseNativeReceipt(typeof raw==="string"?{content:[{type:"text",text:raw}]}:raw,request.inputId);
   });
  }
- private async deliverMinimaxThroughCommonCore(request:MeshDelivery):Promise<NativeReceipt&{reason?:string}>{
+ private async deliverMinimaxThroughCommonCore(request:MeshDelivery,ingress:TrustedMeshIngress):Promise<NativeReceipt&{reason?:string}>{
   const reject=(reason:string,retryable=true):NativeReceipt=>({state:"not_attempted",inputId:request.inputId,retryable,reason});
   const delivery=this.deps.userMessageDelivery;
   if(!delivery)return reject("shared_durable_delivery_core_unavailable");
@@ -134,7 +138,7 @@ export class LocalHarnessMesh {
   const route={adapter,supervisor:this.deps.supervisor??{sendMessage:async(_harness:string,id:string,options:any)=>adapter.sendMessage(id,options)}};
   let receipt;
   const mode=observation.status==="running"&&adapter.controlCapabilities?.steer===true?"steer":"queue";
-  try{receipt=await delivery.submitMinimaxAgent({harness:MINIMAX_CODE_HARNESS,sessionId,inputId:request.inputId,message,mode},request.sender,route);}
+  try{receipt=await delivery.submitMinimaxAgent({harness:MINIMAX_CODE_HARNESS,sessionId,inputId:request.inputId,message,mode},request.sender,ingress,route);}
   catch(error){return reject(error instanceof Error?error.message:"durable_admission_refused",false);}
   if(receipt.delivery==="deferred"&&receipt.job)return {state:"queued",inputId:request.inputId,jobId:receipt.job.id,retryable:false,reason:"durable_job_pending"};
   if(receipt.ok&&receipt.admitted===true&&receipt.turnId)return {state:"admitted",inputId:request.inputId,turnId:receipt.turnId,retryable:false};

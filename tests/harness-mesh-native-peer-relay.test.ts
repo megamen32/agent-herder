@@ -5,6 +5,7 @@ import {HerderEventBus} from "../src/herder-events.js";
 import {HerderJobRegistry} from "../src/herder-jobs.js";
 import {UserMessageDelivery} from "../src/user-message-delivery.js";
 import {MinimaxExecPolicyStore} from "../src/permission-control/minimax-exec-policy.js";
+import {TRUSTED_MESH_MCP_CLIENT_ID,TRUSTED_MESH_MCP_SCOPE,trustedMeshIngressFromMcpAuthInfo} from "../src/mesh/authenticated-ingress.js";
 import type {HarnessAdapter} from "../src/types/index.js";
 import {mkdtemp,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
@@ -32,7 +33,8 @@ describe("native peer owner relay",()=>{
   const jobs=new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(dir,"jobs.json")});
   const delivery=new UserMessageDelivery(new Map([["minimax-code",adapter]]),{sendMessage:async(_h,id,options)=>nativeSend(id,options)},jobs,{pollMs:1,maxWaitMs:2_000,maxPending:4},new MinimaxExecPolicyStore(join(dir,"policies")));
   const owner=new LocalHarnessMesh({hostId:"target",adapters:new Map([["minimax-code",adapter]]),userMessageDelivery:delivery,supervisor:{sendMessage:async(_h,id,options)=>nativeSend(id,options)},nativeObserve:async(_harness,id)=>({nativeSessionId:id,status:"idle"})});
-  const ownerCall=vi.fn(async(args:typeof request)=>owner.deliver(args));
+  const ingress=trustedMeshIngressFromMcpAuthInfo({token:"owner-mcp-test",clientId:TRUSTED_MESH_MCP_CLIENT_ID,scopes:[TRUSTED_MESH_MCP_SCOPE]})!;
+  const ownerCall=vi.fn(async(args:typeof request)=>owner.deliver(args,ingress));
   try{
    const receipt=await relayNativePeerDeliveryToOwner(request,ownerCall);
    expect(receipt).toMatchObject({state:"queued",inputId:request.inputId,retryable:false});

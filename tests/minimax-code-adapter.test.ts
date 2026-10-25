@@ -14,6 +14,7 @@ import { localSessionHostId, type HarnessAdapter, type SendMessageOptions } from
 import { McpServer } from "@modelcontextprotocol/server";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { registerSessionTools } from "../src/mcp/session-tools.js";
+import {TRUSTED_MESH_MCP_CLIENT_ID,TRUSTED_MESH_MCP_SCOPE,trustedMeshIngressFromMcpAuthInfo} from "../src/mesh/authenticated-ingress.js";
 
 const created: string[] = [];
 const servers: Server[] = [];
@@ -338,7 +339,8 @@ describe("MinimaxCodeAdapter", () => {
     },jobs,{pollMs:1,maxWaitMs:3_000,maxPending:4},new MinimaxExecPolicyStore(join(root,"policy")));
     const input={harness:"minimax-code",sessionId,inputId:"agent-cli-input",message:"benign agent delta",mode:"queue" as const};
     try{
-      await delivery.submitMinimaxAgent(input,{hostId:"source-host",harness:"opencode",nativeSessionId:"source-session"});
+      const ingress=trustedMeshIngressFromMcpAuthInfo({token:"test-transport-token",clientId:TRUSTED_MESH_MCP_CLIENT_ID,scopes:[TRUSTED_MESH_MCP_SCOPE]})!;
+      await delivery.submitMinimaxAgent(input,{hostId:"source-host",harness:"opencode",nativeSessionId:"source-session"},ingress);
       await vi.waitFor(()=>expect(delivery.get(input.harness,sessionId,input.inputId)).toMatchObject({ok:true,admitted:true,turnId:"agent-native-turn"}));
       expect(runSession).toHaveBeenCalledOnce();
       expect(runSession).toHaveBeenCalledWith(sessionId,workspace,join(root,".minimax"),input.message,undefined);

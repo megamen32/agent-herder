@@ -8,9 +8,11 @@ import { HerderJobRegistry } from "../src/herder-jobs.js";
 import { UserMessageDelivery, verifyDurableUserDeliveryClaim, type UserMessageInput } from "../src/user-message-delivery.js";
 import { MinimaxExecPolicyStore } from "../src/permission-control/minimax-exec-policy.js";
 import { MINIMAX_CLI_TIMEOUT_MS } from "../src/adapters/minimax-code-control.js";
+import {TRUSTED_MESH_MCP_CLIENT_ID,TRUSTED_MESH_MCP_SCOPE,trustedMeshIngressFromMcpAuthInfo} from "../src/mesh/authenticated-ingress.js";
 import type { HarnessAdapter, SendMessageResult } from "../src/types/index.js";
 
 const fixtureRoots:string[]=[];
+const trustedMeshIngress=()=>trustedMeshIngressFromMcpAuthInfo({token:"test-transport-token",clientId:TRUSTED_MESH_MCP_CLIENT_ID,scopes:[TRUSTED_MESH_MCP_SCOPE]})!;
 afterEach(()=>{for(const root of fixtureRoots.splice(0))rmSync(root,{recursive:true,force:true});});
 
 function fixture(options?: { jobs?: HerderJobRegistry; harness?: string; result?: SendMessageResult; maxWaitMs?: number }) {
@@ -51,7 +53,7 @@ describe("actual human message queue admission", () => {
       afterBaselinePersist:()=>{order.push("baseline");},afterNativeReceipt:()=>{order.push("receipt");},
     });
     try{
-      const receipt=await delivery.submitMinimaxAgent({harness:"minimax-code",sessionId:session.id,inputId:"response-input",message:"new request",mode:"queue"},{hostId:"source",harness:"opencode",nativeSessionId:"source-session"});
+      const receipt=await delivery.submitMinimaxAgent({harness:"minimax-code",sessionId:session.id,inputId:"response-input",message:"new request",mode:"queue"},{hostId:"source",harness:"opencode",nativeSessionId:"source-session"},trustedMeshIngress());
       expect(receipt.job?.durableOnce).toBe(true);
       await vi.waitFor(()=>expect(jobs.get(receipt.job!.id)?.state).toBe("completed"));
       await vi.waitFor(()=>expect(order).toEqual(["baseline","native","receipt"]));
@@ -131,20 +133,23 @@ describe("actual human message queue admission", () => {
     const input={harness:"minimax-code",sessionId:session.id,inputId:"agent-input-1",message:"bounded agent delta",mode:"queue" as const};
     const sender={hostId:"host-source",harness:"opencode",nativeSessionId:"session-source"};
     try{
-      const first=await delivery.submitMinimaxAgent(input,sender);
+      await expect(delivery.submitMinimaxAgent(input,sender,undefined)).rejects.toThrow(/Authenticated Agent Herder MCP ingress/);
+      expect(sendMessage).not.toHaveBeenCalled();
+      const ingress=trustedMeshIngress();
+      const first=await delivery.submitMinimaxAgent(input,sender,ingress);
       expect(first.job).toBeDefined();
       await vi.waitFor(()=>expect(delivery.get(input.harness,input.sessionId,input.inputId)).toMatchObject({ok:true,admitted:true,turnId:"native-agent-turn"}));
       expect(sendMessage).toHaveBeenCalledOnce();
       expect(observedOptions).toMatchObject({origin:"automation",inputId:input.inputId,message:input.message});
       expect(observedOptions.humanRequestedAt).toBeUndefined();
       const claim=observedOptions.durableUserDelivery;
-      const binding={jobId:first.job!.id,inputId:input.inputId,requestFingerprint:first.job!.requestFingerprint,harness:input.harness,sessionId:input.sessionId,targetHostId:"host-target",mode:"queue" as const,actor:{kind:"agent" as const,principal:"agent-herder-mesh" as const,senderAssertion:sender},minimaxExecPolicy:claim.minimaxExecPolicy};
+      const binding={jobId:first.job!.id,inputId:input.inputId,requestFingerprint:first.job!.requestFingerprint,harness:input.harness,sessionId:input.sessionId,targetHostId:"host-target",mode:"queue" as const,actor:{kind:"agent" as const,principal:"agent-herder-owner-mcp" as const,senderAssertion:sender,senderVerified:false as const},minimaxExecPolicy:claim.minimaxExecPolicy};
       expect(verifyDurableUserDeliveryClaim(claim,binding,input.message)).toBe(true);
       expect(verifyDurableUserDeliveryClaim(claim,{...binding,actor:{kind:"human"}},input.message)).toBe(false);
       expect(verifyDurableUserDeliveryClaim(claim,{...binding,targetHostId:"other-host"},input.message)).toBe(false);
-      const replay=await delivery.submitMinimaxAgent(input,sender);
+      const replay=await delivery.submitMinimaxAgent(input,sender,ingress);
       expect(replay.job?.id).toBe(first.job?.id);
-      await expect(delivery.submitMinimaxAgent(input,{...sender,nativeSessionId:"forged-source"})).rejects.toThrow(/другого текста, режима или политики/);
+      await expect(delivery.submitMinimaxAgent(input,{...sender,nativeSessionId:"forged-source"},ingress)).rejects.toThrow(/другого текста, режима или политики/);
       expect(sendMessage).toHaveBeenCalledOnce();
     }finally{delivery.close();await rm(root,{recursive:true,force:true});}
   });

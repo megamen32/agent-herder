@@ -12,6 +12,7 @@ import {HerderJobRegistry} from '../src/herder-jobs.js';
 import {UserMessageDelivery} from '../src/user-message-delivery.js';
 import {MinimaxExecPolicyStore} from '../src/permission-control/minimax-exec-policy.js';
 import {unwrapResult} from '../src/mesh/protocol.js';
+import {TRUSTED_MESH_MCP_CLIENT_ID,TRUSTED_MESH_MCP_SCOPE,trustedMeshIngressFromMcpAuthInfo} from '../src/mesh/authenticated-ingress.js';
 
 let root:string;const clients:Client[]=[];
 afterEach(async()=>{await Promise.all(clients.splice(0).map(c=>c.close()));if(root)await rm(root,{recursive:true,force:true});});
@@ -34,8 +35,9 @@ describe('remote ownership of a native MiniMax Code session',()=>{
   const nativeJobs=new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(root,'host88-jobs.json')});
   const nativeDelivery=new UserMessageDelivery(new Map([['minimax-code',nativeAdapter as any]]),{sendMessage:async(_harness,id,options)=>nativeAdapter.sendMessage(id,options)},nativeJobs,{pollMs:1,maxWaitMs:2_000,maxPending:4},new MinimaxExecPolicyStore(join(root,'host88-policies.json')));
   const macMesh=new LocalHarnessMesh({hostId:'host88',adapters:new Map([['minimax-code',nativeAdapter as any]]),userMessageDelivery:nativeDelivery,supervisor:{sendMessage:async(_harness,id,options)=>nativeAdapter.sendMessage(id,options)},ledgerPath:join(root,'mac-ledger.json'),nativeObserve:async(_harness,id)=>({nativeSessionId:id,status:'idle',cwd:work})});
+  const ingress=trustedMeshIngressFromMcpAuthInfo({token:'owner-mcp-test',clientId:TRUSTED_MESH_MCP_CLIENT_ID,scopes:[TRUSTED_MESH_MCP_SCOPE]})!;
   const requests:any[]=[];
-  const local=await node('host100',{call:async(target:string,name:string,args:any)=>{requests.push({target,name});if(name==='mesh_deliver')return macMesh.deliver(args);return remote.call(name,args);}});
+  const local=await node('host100',{call:async(target:string,name:string,args:any)=>{requests.push({target,name});if(name==='mesh_deliver')return macMesh.deliver(args,ingress);return remote.call(name,args);}});
   // The remote machine already owns the path of another session.
   await remote.store.create({authorSessionId:'native88',kind:'working',cwd:work,hostId:'host88',message:'editing file',paths:['src/a.ts']});
   const identity={sessionId:'mvs_native',harness:'minimax-code'};
@@ -46,10 +48,10 @@ describe('remote ownership of a native MiniMax Code session',()=>{
   expect((activity.conflicts as any[]).map(c=>c.note.authorSessionId)).toEqual(['native88']);
   expect(requests.filter(r=>r.name==='workspace_reserve').every(r=>r.target==='mcp:shell:host88:AgentHerder')).toBe(true);
   // The conflict reaches the native session through the mesh delivery.
-  const receipt=await macMesh.deliver({target:{hostId:'host88',harness:'minimax-code',nativeSessionId:'mvs_native'},sender:{hostId:'host100',harness:'codex',nativeSessionId:'s'},inputId:'conflict-1',message:'Conflict on src/a.ts: native88 owns it.'});
+  const receipt=await macMesh.deliver({target:{hostId:'host88',harness:'minimax-code',nativeSessionId:'mvs_native'},sender:{hostId:'host100',harness:'codex',nativeSessionId:'s'},inputId:'conflict-1',message:'Conflict on src/a.ts: native88 owns it.'},ingress);
   expect(['queued','admitted']).toContain(receipt.state);
   await vi.waitFor(()=>expect(nativeJobs.list(10).some(job=>job.ownerSessionId==='mvs_native'&&job.state==='completed')).toBe(true));
-  expect((await macMesh.deliver({target:{hostId:'host88',harness:'minimax-code',nativeSessionId:'mvs_native'},sender:{hostId:'host100',harness:'codex',nativeSessionId:'s'},inputId:'conflict-1',message:'Conflict on src/a.ts: native88 owns it.'})).state).toBe('admitted');
+  expect((await macMesh.deliver({target:{hostId:'host88',harness:'minimax-code',nativeSessionId:'mvs_native'},sender:{hostId:'host100',harness:'codex',nativeSessionId:'s'},inputId:'conflict-1',message:'Conflict on src/a.ts: native88 owns it.'},ingress)).state).toBe('admitted');
   expect(String(delivered[0]?.options?.message??'')).toContain('src/a.ts');
   expect(delivered[0]?.options).toMatchObject({origin:'automation',steer:false,inputId:'conflict-1'});
   expect(delivered[0]?.options?.humanRequestedAt).toBeUndefined();

@@ -11,6 +11,7 @@ import { SessionImageStore } from "../session-images.js";
 import { homedir, hostname, userInfo } from "node:os";
 import { UserMessageDelivery, type UserMessageRoute } from "../user-message-delivery.js";
 import { MinimaxExecPolicyConflict, isMinimaxExecPolicyMode } from "../permission-control/minimax-exec-policy.js";
+import { TRUSTED_MESH_MCP_CLIENT_ID, TRUSTED_MESH_MCP_SCOPE } from "../mesh/authenticated-ingress.js";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { execFile } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
@@ -128,7 +129,7 @@ export interface WebDependencies {
   lineageStore?: LineageStore;
   humanRequests?: HumanRequestRegistry;
   adapterRegistry?: AdapterRegistry;
-  mcpServerFactory?: () => McpServer;
+  mcpServerFactory?: (context?: { authInfo?: unknown }) => McpServer;
   mcpAuthToken?: string;
   herderEvents?: HerderEventBus;
   choiceRegistry?: ChoiceRegistry;
@@ -2753,6 +2754,16 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 401, { error: "unauthorized" });
     }
     if (!mcpNodeHandler) return sendJson(response, 503, { error: "MCP HTTP transport is disabled" });
+    // Propagate the already-validated bearer as transport context. Tool JSON
+    // cannot create this principal; an unconfigured/unauthenticated stdio
+    // request has no mesh-delivery capability and fails closed.
+    if (mcpAuthToken) {
+      (request as IncomingMessage & { auth?: { token: string; clientId: string; scopes: string[] } }).auth = {
+        token: mcpAuthToken,
+        clientId: TRUSTED_MESH_MCP_CLIENT_ID,
+        scopes: [TRUSTED_MESH_MCP_SCOPE],
+      };
+    }
     await mcpNodeHandler(request, response);
     return;
   }
