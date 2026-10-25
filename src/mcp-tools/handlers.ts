@@ -541,6 +541,21 @@ async function sendMessageOnce(
     if (prior) return prior;
   }
   if (await automaticDeliveryHeld(found.session, parsed.humanRequested, found.adapter)) return HUMAN_STOP_MESSAGE;
+  if (parsed.humanRequested && found.session.harness === "minimax-code" && parsed.mode !== "queue") {
+    if (!userMessageDelivery || !found.session.hostId) {
+      return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: "MiniMax Herder execution policy could not be checked; message was not sent." });
+    }
+    let policy;
+    try {
+      policy = await userMessageDelivery.getMinimaxExecPolicy({ hostId: found.session.hostId, harness: "minimax-code", sessionId: parsed.sessionId });
+    } catch {
+      return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: "MiniMax Herder execution policy is unavailable; message was not sent." });
+    }
+    if (policy.mode !== "unset") {
+      return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false,
+        error: "The configured MiniMax policy applies only to queued exact-session CLI fallback; steer/sync was not sent." });
+    }
+  }
   if (!parsed.humanRequested && !isCoordinationActive(found.session)) return skippedCoordination(found.session);
 
   const provenanceHeader = parsed.humanRequested
@@ -570,7 +585,7 @@ async function sendMessageOnce(
       adapter: found.adapter,
       supervisor: { sendMessage: (_harness, sessionId, sendOptions) => found.adapter.sendMessage(sessionId, sendOptions) },
     };
-    const receipt = userMessageDelivery.submit({ harness: found.session.harness, sessionId: parsed.sessionId, inputId: parsed.inputId, message: injectedMessage, mode: "queue" }, route);
+    const receipt = await userMessageDelivery.submitMinimaxExecPolicy({ harness: found.session.harness, sessionId: parsed.sessionId, inputId: parsed.inputId, message: injectedMessage, mode: "queue" }, route);
     if (receipt.delivery === "deferred" && receipt.job) {
       return JSON.stringify({ ok: true, delivery: "durable_pending", nativeAdmission: "pending", inputId: parsed.inputId, jobId: receipt.job.id, jobState: receipt.job.state });
     }

@@ -10,6 +10,7 @@ import { minimaxRuntimeStatePath, readMinimaxRuntimeActiveSessions } from "./min
 import { MinimaxCodeControl } from "./minimax-code-control.js";
 import { MINIMAX_CODE_HARNESS_CWD, MINIMAX_CODE_SESSION_STORE } from "./minimax-code-store.js";
 import { verifyDurableUserDeliveryClaim } from "../user-message-delivery.js";
+import type { MinimaxExecPolicyTarget } from "../permission-control/minimax-exec-policy.js";
 import type {
   AgentSession,
   ControlResult,
@@ -482,6 +483,34 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     return entry ? this.toSession(entry) : null;
   }
 
+  async getNativeIdleAdmissionProof(target: MinimaxExecPolicyTarget): Promise<{ hostId: string; harness: string; sessionId: string; idle: boolean; reason?: string }> {
+    const base = { hostId: localSessionHostId(), harness: "minimax-code", sessionId: target.sessionId };
+    if (target.harness !== "minimax-code" || target.hostId !== base.hostId || !target.sessionId) {
+      return { ...base, idle: false, reason: "MiniMax policy target does not match this native host." };
+    }
+    let db: DatabaseSync | undefined;
+    try {
+      const dataDir = await realpath(this.runtimeDataDir);
+      const expectedDb = join(dataDir, "v2", "sqlite", "runtime-state.sqlite");
+      const [actualDb, canonicalDb] = await Promise.all([realpath(this.runtimeDb), realpath(expectedDb)]);
+      if (actualDb !== canonicalDb) return { ...base, idle: false, reason: "MiniMax runtime database does not match the inspected data directory." };
+      db = new DatabaseSync(actualDb, { readOnly: true });
+      db.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=1000; BEGIN");
+      const session = db.prepare("SELECT session_id,runtime,status,archived FROM local_runtime_sessions WHERE session_id=?").get(target.sessionId) as
+        { session_id: string; runtime: string; status: string; archived: number } | undefined;
+      const lease = db.prepare("SELECT 1 AS active FROM local_runtime_session_locks WHERE session_id=? AND owner_kind='turn' AND expires_at_ms>? LIMIT 1").get(target.sessionId, Date.now());
+      db.exec("COMMIT");
+      if (!session || session.session_id !== target.sessionId || session.runtime !== "pi-agent" || session.archived !== 0) {
+        return { ...base, idle: false, reason: "Exact MiniMax native session identity could not be confirmed." };
+      }
+      if (session.status !== "idle" || lease) return { ...base, idle: false, reason: "MiniMax session has a live turn or native lease." };
+      return { ...base, idle: true };
+    } catch {
+      try { db?.exec("ROLLBACK"); } catch { /* read-only snapshot cleanup */ }
+      return { ...base, idle: false, reason: "Exact MiniMax native idle/lease state is unavailable." };
+    } finally { db?.close(); }
+  }
+
   async getTranscript(id: string): Promise<string | null> {
     const stored = await this.readStoredSessions();
     const entry = stored.find((candidate) => candidate.id === id);
@@ -557,6 +586,9 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     if (!control) {
       return this.sendIdleSessionViaCli(id, options);
     }
+    if (options.durableUserDelivery?.minimaxExecPolicy && options.durableUserDelivery.minimaxExecPolicy.mode !== "unset") {
+      return { ok: false, notSubmitted: true, inputId: options.inputId, error: "The configured Herder execution policy applies only to the MiniMax CLI fallback; the Desktop route was not used." };
+    }
     if (options.steer === true) {
       const result = await control.steer(id, options.message);
       if (!result.ok) return { ok: false, error: result.error };
@@ -604,11 +636,15 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     const expectedJob = options.inputId
       ? `job_${createHash("sha256").update(`user-message\0minimax-code\0${id}\0${options.inputId}`).digest("hex")}`
       : "";
+    const policy = claim?.minimaxExecPolicy;
+    const validPolicy = policy === undefined || (Number.isSafeInteger(policy.revision) && policy.revision >= 0
+      && ["unset", "smart", "full", "off"].includes(policy.mode));
     const expectedClaim = { jobId: expectedJob, inputId: options.inputId ?? "", requestFingerprint: claim?.requestFingerprint ?? "",
-      harness: "minimax-code", sessionId: id, mode: "queue" as const };
+      harness: "minimax-code", sessionId: id, mode: "queue" as const,
+      ...(policy ? { minimaxExecPolicy: policy } : {}) };
     if (options.origin !== "human" || options.steer === true || options.activeTurnOnly === true || options.images?.length
       || !options.inputId || !claim || claim.inputId !== options.inputId || claim.jobId !== expectedJob
-      || !/^[a-f0-9]{64}$/.test(claim.requestFingerprint) || !verifyDurableUserDeliveryClaim(claim, expectedClaim, options.message, options.images)
+      || !validPolicy || !/^[a-f0-9]{64}$/.test(claim.requestFingerprint) || !verifyDurableUserDeliveryClaim(claim, expectedClaim, options.message, options.images)
       || (options.model && options.model !== "minimax/MiniMax-M3.1-Flash")) {
       return { ok: false, notSubmitted: true, error: "MiniMax Code idle delivery requires an exact durable human queue claim" };
     }
@@ -665,7 +701,8 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     } catch {
       return { ok: false, notSubmitted: true, error: "MiniMax Code native idle state is unavailable" };
     } finally { db?.close(); db = undefined; }
-    const result = await this.control.runSession(id, workspace, dataDir!, options.message);
+    const permissionPolicy = policy && policy.mode !== "unset" ? policy.mode : undefined;
+    const result = await this.control.runSession(id, workspace, dataDir!, options.message, permissionPolicy);
     if (!result.ok) {
       if (result.error === "session_busy") return { ok: false, notSubmitted: true, error: "MiniMax Code session is busy" };
       if ((result.body as { started?: boolean } | null)?.started === false) return { ok: false, notSubmitted: true, inputId: options.inputId, error: "MiniMax Code CLI was unavailable before delivery" };

@@ -9,7 +9,8 @@ import { MinimaxCodeControl } from "../src/adapters/minimax-code-control.js";
 import { HerderEventBus } from "../src/herder-events.js";
 import { HerderJobRegistry } from "../src/herder-jobs.js";
 import { UserMessageDelivery } from "../src/user-message-delivery.js";
-import type { HarnessAdapter, SendMessageOptions } from "../src/types/index.js";
+import { MinimaxExecPolicyStore } from "../src/permission-control/minimax-exec-policy.js";
+import { localSessionHostId, type HarnessAdapter, type SendMessageOptions } from "../src/types/index.js";
 import { McpServer } from "@modelcontextprotocol/server";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { registerSessionTools } from "../src/mcp/session-tools.js";
@@ -149,6 +150,25 @@ afterEach(async () => {
 });
 
 describe("MinimaxCodeAdapter", () => {
+  it("proves exact native idle state only from the owned runtime DB without a turn lease", async () => {
+    const root = await store();
+    const workspace = join(root, "workspace");
+    await mkdir(workspace);
+    const idleId = "mvs_idle_proof";
+    const busyId = "mvs_busy_proof";
+    const idleDb = await runtimeStateForSession(root, idleId, workspace);
+    const busyRoot = await store();
+    const busyWorkspace = join(busyRoot, "workspace");
+    await mkdir(busyWorkspace);
+    const busyDb = await runtimeStateForSession(busyRoot, busyId, busyWorkspace, "idle", true);
+    const idle = new MinimaxCodeAdapter({ sessionStore: root, runtimeDb: idleDb, runtimeDataDir: join(root, ".minimax") });
+    const busy = new MinimaxCodeAdapter({ sessionStore: busyRoot, runtimeDb: busyDb, runtimeDataDir: join(busyRoot, ".minimax") });
+    await expect(idle.getNativeIdleAdmissionProof({ hostId: localSessionHostId(), harness: "minimax-code", sessionId: idleId }))
+      .resolves.toMatchObject({ hostId: localSessionHostId(), harness: "minimax-code", sessionId: idleId, idle: true });
+    await expect(busy.getNativeIdleAdmissionProof({ hostId: localSessionHostId(), harness: "minimax-code", sessionId: busyId }))
+      .resolves.toMatchObject({ idle: false, reason: expect.stringContaining("live turn") });
+  });
+
   it("delivers an idle native session through its exact MCode CLI ID with a durable human claim", async () => {
     const root = await store();
     const sessionId = "mvs_idle_exact";
@@ -170,10 +190,27 @@ describe("MinimaxCodeAdapter", () => {
     const result = await durableHumanSend(adapter, root, sessionId, inputId, message, (options) => { captured = options; });
 
     expect(result).toMatchObject({ ok: true, admitted: true, admission: "accepted", turnId: "turn-exact", inputId });
-    expect(runSession).toHaveBeenCalledWith(sessionId, workspace, join(root, ".minimax"), message);
+    expect(runSession).toHaveBeenCalledWith(sessionId, workspace, join(root, ".minimax"), message, undefined);
     expect(await adapter.sendMessage(sessionId, { ...captured!, message: "tampered after signing" })).toMatchObject({ ok: false, notSubmitted: true });
     expect(await adapter.sendMessage(sessionId, captured!)).toMatchObject({ ok: false, notSubmitted: true });
     expect(runSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses the live Desktop route when a non-default Herder CLI policy is configured", async () => {
+    const root = await store();
+    const enqueue = vi.fn();
+    const control = { available: vi.fn(async () => true), enqueue } as unknown as MinimaxCodeControl;
+    const adapter = new MinimaxCodeAdapter({ sessionStore: root, control });
+    const result = await adapter.sendMessage("mvs_policy_desktop", {
+      message: "benign", origin: "human", inputId: "policy-desktop-input", queue: true,
+      durableUserDelivery: {
+        jobId: "job-policy", inputId: "policy-desktop-input", requestFingerprint: "a".repeat(64),
+        harness: "minimax-code", sessionId: "mvs_policy_desktop", mode: "queue",
+        minimaxExecPolicy: { mode: "full", revision: 1 }, nonce: "b".repeat(32), signature: "c".repeat(64),
+      },
+    });
+    expect(result).toMatchObject({ ok: false, notSubmitted: true, error: expect.stringContaining("only to the MiniMax CLI fallback") });
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   it("never invokes the MCode CLI when the exact native session has a live turn lease", async () => {
@@ -237,10 +274,14 @@ describe("MinimaxCodeAdapter", () => {
     const adapters = new Map([["minimax-code", adapter as unknown as HarnessAdapter]]);
     const events = new HerderEventBus();
     const jobs = new HerderJobRegistry(events, { persistencePath: join(root, "jobs.json") });
+    const delivery = new UserMessageDelivery(adapters, { sendMessage: (_harness, id, options) => adapter.sendMessage(id, options) }, jobs,
+      { pollMs: 5, maxWaitMs: 2_000, maxPending: 4 }, new MinimaxExecPolicyStore(join(root, "policy")));
+    await delivery.setMinimaxExecPolicy({ hostId: localSessionHostId(), harness: "minimax-code", sessionId }, 0, "full");
+    const adapterSend = vi.spyOn(adapter, "sendMessage");
     const server = new McpServer({ name: "minimax-durable-send-test", version: "1" });
     const client = new Client({ name: "minimax-durable-send-test-client", version: "1" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    registerSessionTools(server, { adapters, jobs, events, routingPeers: [] });
+    registerSessionTools(server, { adapters, jobs, events, userMessageDelivery: delivery, routingPeers: [] });
 
     try {
       await server.connect(serverTransport);
@@ -254,9 +295,17 @@ describe("MinimaxCodeAdapter", () => {
       await vi.waitFor(() => expect(jobs.get(pending.jobId)?.state).toBe("completed"), { interval: 5, timeout: 1_500 });
       expect(jobs.get(pending.jobId)?.result).toMatchObject({ ok: true, admitted: true, admission: "accepted", turnId: "turn-mcp-exact", inputId: args.inputId });
       expect(runSession).toHaveBeenCalledTimes(1);
+      expect(runSession).toHaveBeenCalledWith(sessionId, workspace, join(root, ".minimax"), expect.any(String), "full");
 
       const replay = await client.callTool({ name: "send_message", arguments: args });
       expect(replay.content[0]).toMatchObject({ text: expect.stringContaining("Native admission receipt") });
+      expect(runSession).toHaveBeenCalledTimes(1);
+      for (const mode of ["steer", "sync"]) {
+        const refused = await client.callTool({ name: "send_message", arguments: { ...args, inputId: `nonqueue-${mode}`, mode } });
+        const result = JSON.parse(refused.content[0]?.type === "text" ? refused.content[0].text : "{}");
+        expect(result).toMatchObject({ ok: false, delivery: "not_attempted", activated: false, error: expect.stringContaining("was not sent") });
+      }
+      expect(adapterSend).toHaveBeenCalledOnce();
       expect(runSession).toHaveBeenCalledTimes(1);
     } finally {
       await client.close();

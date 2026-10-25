@@ -242,7 +242,7 @@ export interface SendMessageOptions {
    * A persisted UserMessageDelivery job, created before a native CLI dispatch.
    * The MiniMax idle-session CLI route is unavailable without this write-ahead claim.
    */
-  durableUserDelivery?: { jobId: string; inputId: string; requestFingerprint: string; harness: string; sessionId: string; mode: "queue" | "steer"; nonce: string; signature: string };
+  durableUserDelivery?: { jobId: string; inputId: string; requestFingerprint: string; harness: string; sessionId: string; mode: "queue" | "steer"; minimaxExecPolicy?: { mode: "unset" | "smart" | "full" | "off"; revision: number }; nonce: string; signature: string };
 }
 
 export interface MessageImage { id: string; path: string; fileName: string; mimeType: string; bytes: number }

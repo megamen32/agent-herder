@@ -10,6 +10,7 @@ import { isRestrictedProjectPath } from "../web-ui/model-status.js";
 import { SessionImageStore } from "../session-images.js";
 import { homedir, hostname, userInfo } from "node:os";
 import { UserMessageDelivery, type UserMessageRoute } from "../user-message-delivery.js";
+import { MinimaxExecPolicyConflict, isMinimaxExecPolicyMode } from "../permission-control/minimax-exec-policy.js";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { execFile } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
@@ -1521,6 +1522,40 @@ export async function computeModelLaunchVerdicts(input: {
 async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   const resolveSessionRoute = async (harness: string, sessionId: string) => await resolveSessionRouteFor(integratorRuntime, adapters, scopedSupervisorFactory, harness, sessionId);
+  const minimaxExecPolicyMatch = url.pathname.match(/^\/api\/sessions\/minimax-code\/([^/]+)\/herder-exec-policy$/);
+  if (minimaxExecPolicyMatch && (request.method === "GET" || request.method === "PUT")) {
+    response.setHeader("cache-control", "no-store");
+    if (!userMessageDelivery) return sendJson(response, 503, { available: false, error: "Herder delivery policy storage is unavailable." });
+    const sessionId = decodeURIComponent(minimaxExecPolicyMatch[1]);
+    const route = await resolveSessionRoute("minimax-code", sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { available: false, error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { available: false, error: "Scoped MiniMax session is unavailable." });
+    const adapter = route.kind === "scoped" ? route.adapter : adapters.get("minimax-code");
+    let session: AgentSession | null;
+    try { session = adapter?.getSession ? await adapter.getSession(sessionId) : null; }
+    catch { session = null; }
+    if (!session || session.id !== sessionId || session.harness !== "minimax-code" || !session.hostId) {
+      return sendJson(response, 503, { available: false, error: "Exact MiniMax host and session could not be confirmed." });
+    }
+    const target = { hostId: session.hostId, harness: "minimax-code" as const, sessionId };
+    if (request.method === "GET") {
+      try {
+        const policy = await userMessageDelivery.getMinimaxExecPolicy(target);
+        return sendJson(response, 200, { available: true, policy, nativeMode: { state: "unknown", reason: "MCode exec does not report a persistent native session mode." } });
+      } catch { return sendJson(response, 503, { available: false, error: "Could not read the Herder execution policy." }); }
+    }
+    const body = await readJson(request);
+    if (body.hostId !== target.hostId || !Number.isSafeInteger(body.expectedRevision) || !isMinimaxExecPolicyMode(body.mode)) {
+      return sendJson(response, 400, { state: "not_attempted", error: "Exact host, expectedRevision and a supported policy are required." });
+    }
+    try {
+      const policy = await userMessageDelivery.setMinimaxExecPolicy(target, body.expectedRevision as number, body.mode);
+      return sendJson(response, 200, { state: "configured", policy, nativeMode: { state: "unknown", reason: "This stores a Herder CLI invocation policy; it does not change native mode." } });
+    } catch (error) {
+      if (error instanceof MinimaxExecPolicyConflict) return sendJson(response, 409, { state: "not_attempted", error: error.message });
+      return sendJson(response, 503, { state: "not_attempted", error: "Could not save the Herder execution policy." });
+    }
+  }
   const permissionStateMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/permissions$/);
   if (permissionStateMatch && request.method === "GET") {
     response.setHeader("cache-control", "no-store");
@@ -3459,7 +3494,10 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       if (!userMessageDelivery) return sendJson(response, 503, { error: "Надёжная очередь сообщений недоступна" });
       const deliveryRoute: UserMessageRoute | undefined = route.kind === "scoped" ? { adapter: route.adapter, supervisor: sessionSupervisor } : undefined;
       try {
-        const receipt = userMessageDelivery.submit({ harness, sessionId: id, inputId: body.inputId as string, message: body.message, mode: body.mode as "queue" | "steer", images }, deliveryRoute);
+        const input = { harness, sessionId: id, inputId: body.inputId as string, message: body.message, mode: body.mode as "queue" | "steer", images };
+        const receipt = harness === "minimax-code"
+          ? await userMessageDelivery.submitMinimaxExecPolicy(input, deliveryRoute)
+          : userMessageDelivery.submit(input, deliveryRoute);
         return sendJson(response, receipt.pending ? 202 : receipt.ok ? 200 : 502, receipt);
       } catch (error) {
         return sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) });

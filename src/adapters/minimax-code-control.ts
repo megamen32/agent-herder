@@ -46,6 +46,13 @@ export const MINIMAX_CLI_TIMEOUT_MS = 5 * 60_000;
 /** Prefix of the generated DesktopService routes. */
 export const MINIMAX_CONTROL_API_PREFIX = "/minimax-desktop/api/v1";
 
+export function minimaxExecArgs(id: string, workspace: string, permissionPolicy?: "smart" | "full" | "off"): string[] {
+  if (permissionPolicy !== undefined && !["smart", "full", "off"].includes(permissionPolicy)) throw new Error("Unsupported MiniMax CLI permission policy.");
+  return ["exec", "--cwd", workspace, "--session", id,
+    ...(permissionPolicy ? ["--permission", permissionPolicy] : []),
+    "--input", "-", "--input-format", "text", "--output-format", "json"];
+}
+
 export interface MinimaxControlResult {
   ok: boolean;
   status: number;
@@ -148,11 +155,12 @@ export class MinimaxCodeControl {
    * owner manifest; callers must preflight exact native identity, workspace,
    * idle status, no turn lease and a durable UserMessageDelivery claim.
    *
-   * No model, permission or resume override is supplied: MCode restores the
-   * selected session's persisted configuration. Prompt text is sent on stdin,
-   * never interpolated into argv or shell text.
+   * No model or resume override is supplied. Permission is explicit only when
+   * a signed Herder per-invocation policy accompanies this exact CLI call.
+   * Prompt text is sent on stdin, never
+   * interpolated into argv or shell text.
    */
-  async runSession(id: string, workspace: string, dataDir: string, content: string): Promise<MinimaxControlResult> {
+  async runSession(id: string, workspace: string, dataDir: string, content: string, permissionPolicy?: "smart" | "full" | "off"): Promise<MinimaxControlResult> {
     return new Promise((resolve) => {
       const env = { ...process.env };
       for (const key of ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL", "OMNIROUTE_API_KEY", "OMNIROUTE_BASE_URL"]) delete env[key];
@@ -162,10 +170,7 @@ export class MinimaxCodeControl {
       delete env.MAVIS_DATA_DIR;
       let child;
       try {
-        child = spawn(this.cliPath, [
-          "exec", "--cwd", workspace, "--session", id,
-          "--input", "-", "--input-format", "text", "--output-format", "json",
-        ], { cwd: workspace, env, stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
+        child = spawn(this.cliPath, minimaxExecArgs(id, workspace, permissionPolicy), { cwd: workspace, env, stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
       } catch {
         resolve({ ok: false, status: 0, body: { started: false, errorKind: "cli_unavailable" }, error: "mcode_cli_unavailable" });
         return;

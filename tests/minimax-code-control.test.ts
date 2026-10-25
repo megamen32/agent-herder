@@ -3,7 +3,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { MinimaxCodeControl } from "../src/adapters/minimax-code-control.js";
+import { MinimaxCodeControl, minimaxExecArgs } from "../src/adapters/minimax-code-control.js";
 
 interface Recorded {
   method: string;
@@ -55,6 +55,16 @@ async function publishControl(
 }
 
 describe("MinimaxCodeControl", () => {
+  it("binds only an allowlisted invocation policy to the exact exec argv", () => {
+    expect(minimaxExecArgs("mvs_exact", "/work", "full")).toEqual([
+      "exec", "--cwd", "/work", "--session", "mvs_exact", "--permission", "full",
+      "--input", "-", "--input-format", "text", "--output-format", "json",
+    ]);
+    expect(minimaxExecArgs("mvs_exact", "/work")).toEqual([
+      "exec", "--cwd", "/work", "--session", "mvs_exact", "--input", "-", "--input-format", "text", "--output-format", "json",
+    ]);
+  });
+
   it("steers the running turn of a session through its queued item", async () => {
     const { control, recorded } = await publishControl((request, response) => {
       response.writeHead(200, { "content-type": "application/json" });
