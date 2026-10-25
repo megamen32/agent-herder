@@ -214,6 +214,23 @@ export class SecretStore {
     return content.previous[key].length - 1;
   }
 
+  /**
+   * Place one value from the old history file in the protected store.
+   *
+   * Legacy history was not bounded. Keep its undo references stable while it
+   * is migrated, and make a retry after a partial write reuse the same index.
+   */
+  async ensurePrevious(key: string, value: string): Promise<number> {
+    const content = await this.read();
+    const stack = content.previous[key] ?? [];
+    const existing = stack.indexOf(value);
+    if (existing >= 0) return existing;
+    stack.push(value);
+    content.previous[key] = stack;
+    await this.write(content);
+    return stack.length - 1;
+  }
+
   /** The value the undo stack keeps for a secret. */
   async readPrevious(key: string, index: number): Promise<string | undefined> {
     return (await this.read()).previous[key]?.[index];
@@ -817,6 +834,7 @@ export class SettingsStore {
    */
   async rollback(target: { entity: SettingsEntity; key: string; historyId?: string }): Promise<SettingsAuditRecord> {
     return await this.serial(async () => {
+      await this.adoptLegacyHistorySecretsUnsafe();
       const history = await this.readHistory();
       const candidates = history.filter((entry) =>
         entry.entity === target.entity
@@ -1222,6 +1240,7 @@ export class SettingsStore {
 
   /** Add one entry to the undo stack. */
   private async pushHistory(entry: SettingsHistoryEntry): Promise<void> {
+    await this.adoptLegacyHistorySecretsUnsafe();
     const history = await this.readHistory();
     history.push(entry);
     await this.writeHistory(history);
@@ -1632,6 +1651,10 @@ export class SettingsStore {
    * The names of the keys are returned; their values are never returned.
    */
   async adoptLegacySecrets(): Promise<string[]> {
+    return await this.serial(async () => await this.adoptLegacySecretsUnsafe());
+  }
+
+  private async adoptLegacySecretsUnsafe(): Promise<string[]> {
     let text = "";
     try {
       text = await readFile(this.envPath, "utf8");
@@ -1640,25 +1663,74 @@ export class SettingsStore {
     }
     const { entries, values } = parseEnvFile(text);
     const adopted: string[] = [];
-    const pending: Array<{ key: string; value: string }> = [];
-    for (const [key, value] of values) {
-      if (!isSecretKey(key)) continue;
-      if (isSecretMarker(value)) continue;
-      if (await this.secretStore.readSecret(key) !== undefined) continue;
-      pending.push({ key, value });
+    const pending: Array<{ key: string; value: string; stored?: string }> = [];
+    const rawByKey = new Map<string, Set<string>>();
+    for (const entry of entries) {
+      if (entry.kind !== "kv" || typeof entry.key !== "string" || typeof entry.value !== "string"
+        || !isSecretKey(entry.key) || isSecretMarker(entry.value)) continue;
+      const candidates = rawByKey.get(entry.key) ?? new Set<string>();
+      candidates.add(entry.value);
+      rawByKey.set(entry.key, candidates);
+    }
+    for (const [key, candidates] of rawByKey) {
+      if (candidates.size > 1) {
+        throw new Error(`legacy secret conflict for ${key}; duplicate environment values differ`);
+      }
+      const value = candidates.values().next().value;
+      if (value === undefined) continue;
+      const stored = await this.secretStore.readSecret(key);
+      if (stored !== undefined && stored !== value) {
+        throw new Error(`legacy secret conflict for ${key}; environment and secure store differ`);
+      }
+      pending.push({ key, value, ...(stored !== undefined ? { stored } : {}) });
       adopted.push(key);
     }
     if (pending.length === 0) return adopted;
     for (const item of pending) {
-      await this.secretStore.writeSecret(item.key, item.value);
-      const marker = settingsFingerprint(item.value);
-      const index = entries.findIndex((entry) => entry.kind === "kv" && entry.key === item.key);
-      if (index >= 0) entries[index] = { kind: "kv", key: item.key, value: marker };
-      else entries.push({ kind: "kv", key: item.key, value: marker });
+      if (item.stored === undefined) await this.secretStore.writeSecret(item.key, item.value);
+      const marker = settingsFingerprint(item.stored ?? item.value);
+      let found = false;
+      for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        if (entry.kind !== "kv" || entry.key !== item.key) continue;
+        entries[index] = { kind: "kv", key: item.key, value: marker };
+        found = true;
+      }
+      if (!found) entries.push({ kind: "kv", key: item.key, value: marker });
       values.set(item.key, marker);
     }
     await this.writeEnvFile(renderEnvFile(entries));
     return adopted;
+  }
+
+  /** Move old raw secret rollback values into the protected secret store. */
+  async adoptLegacyHistorySecrets(): Promise<void> {
+    await this.serial(async () => await this.adoptLegacyHistorySecretsUnsafe());
+  }
+
+  private async adoptLegacyHistorySecretsUnsafe(): Promise<void> {
+    const history = await this.readHistory();
+    let changed = false;
+    for (const entry of history) {
+      if (entry.entity !== "herder.env" || entry.kind !== "secret" || !isSecretKey(entry.key)) continue;
+      if (entry.previousValue === undefined) continue;
+      if (!entry.previousPresent || typeof entry.previousValue !== "string") {
+        throw new Error(`legacy secret history conflict for ${entry.key}; previous value has an invalid shape`);
+      }
+      const previous = entry.previousValue;
+      if (entry.previousSecretRef) {
+        const kept = await this.secretStore.readPrevious(entry.previousSecretRef.key, entry.previousSecretRef.index);
+        if (entry.previousSecretRef.key !== entry.key || kept !== previous) {
+          throw new Error(`legacy secret history conflict for ${entry.key}; stored rollback value differs`);
+        }
+      } else {
+        const index = await this.secretStore.ensurePrevious(entry.key, previous);
+        entry.previousSecretRef = { key: entry.key, index };
+      }
+      delete entry.previousValue;
+      changed = true;
+    }
+    if (changed) await this.writeHistory(history);
   }
 
   /**
@@ -1827,6 +1899,7 @@ export async function loadSecretEnvironment(options: {
   const store = options.store ?? new SettingsStore();
   const env = options.env ?? process.env;
   const adopted = await store.adoptLegacySecrets();
+  await store.adoptLegacyHistorySecrets();
   const keys = new Set<string>(HERDER_ENV_KEYS.filter((spec) => spec.secret).map((spec) => spec.key));
   for (const key of Object.keys((await store.secretStore.read()).secrets)) keys.add(key);
   const loaded: string[] = [];

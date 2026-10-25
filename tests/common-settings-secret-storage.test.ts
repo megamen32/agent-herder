@@ -15,7 +15,7 @@
  * `stand-local-secret`. No value of a living node is written here.
  */
 
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -143,6 +143,111 @@ describe("the file of the product keeps the marker of a secret", () => {
     expect(text).not.toContain(LOCAL_SECRET);
     expect(text).toContain(`NOTIFY_CENTER_TOKEN=${settingsFingerprint(LOCAL_SECRET)}`);
     expect(await store.readSecretValue("NOTIFY_CENTER_TOKEN")).toBe(LOCAL_SECRET);
+  });
+
+  it("redacts a raw environment value on retry after its secret was already stored", async () => {
+    const envPath = join(configDir, "herder.env");
+    await writeFile(envPath, `NOTIFY_CENTER_TOKEN=${LOCAL_SECRET}\n`, { mode: 0o600 });
+    const store = storeOf();
+    const writeEnvFile = (store as any).writeEnvFile.bind(store);
+    let failOnce = true;
+    (store as any).writeEnvFile = async (text: string) => {
+      if (failOnce) {
+        failOnce = false;
+        throw new Error("simulated environment replacement failure");
+      }
+      await writeEnvFile(text);
+    };
+
+    await expect(store.adoptLegacySecrets()).rejects.toThrow("simulated environment replacement failure");
+    expect(await store.secretStore.readSecret("NOTIFY_CENTER_TOKEN")).toBe(LOCAL_SECRET);
+    await expect(store.adoptLegacySecrets()).resolves.toEqual(["NOTIFY_CENTER_TOKEN"]);
+
+    const env = await readFile(envPath, "utf8");
+    expect(env).not.toContain(LOCAL_SECRET);
+    expect(env).toContain(`NOTIFY_CENTER_TOKEN=${settingsFingerprint(LOCAL_SECRET)}`);
+  });
+
+  it("fails closed when a raw environment secret conflicts with its stored value", async () => {
+    const envPath = join(configDir, "herder.env");
+    await writeFile(envPath, `NOTIFY_CENTER_TOKEN=${LOCAL_SECRET}\n`, { mode: 0o600 });
+    const store = storeOf();
+    await store.secretStore.writeSecret("NOTIFY_CENTER_TOKEN", COMMON_SECRET);
+
+    await expect(store.adoptLegacySecrets()).rejects.toThrow(/legacy secret conflict.*NOTIFY_CENTER_TOKEN/i);
+    expect(await store.secretStore.readSecret("NOTIFY_CENTER_TOKEN")).toBe(COMMON_SECRET);
+    expect(await readFile(envPath, "utf8")).toContain(LOCAL_SECRET);
+  });
+
+  it("moves legacy secret rollback values into the secret store before startup returns", async () => {
+    const envPath = join(configDir, "herder.env");
+    await writeFile(envPath, `NOTIFY_CENTER_TOKEN=${settingsFingerprint(COMMON_SECRET)}\n`, { mode: 0o600 });
+    const store = storeOf();
+    await store.secretStore.writeSecret("NOTIFY_CENTER_TOKEN", COMMON_SECRET);
+    const historyEntry = {
+      id: "legacy-secret-history-1",
+      at: "2026-10-25T00:00:00.000Z",
+      actor: "owner",
+      entity: "herder.env",
+      key: "NOTIFY_CENTER_TOKEN",
+      kind: "secret",
+      previousPresent: true,
+      previousValue: LOCAL_SECRET,
+      auditId: "legacy-secret-audit-1",
+    };
+    await mkdir(join(stateDir, "settings"), { recursive: true });
+    await writeFile(store.historyPath, `${JSON.stringify([historyEntry])}\n`, { mode: 0o600 });
+
+    await loadSecretEnvironment({ store, env: {} });
+
+    const history = await readFile(store.historyPath, "utf8");
+    expect(history).not.toContain(LOCAL_SECRET);
+    const [migrated] = JSON.parse(history);
+    expect(migrated.previousValue).toBeUndefined();
+    expect(migrated.previousSecretRef).toEqual({ key: "NOTIFY_CENTER_TOKEN", index: 0 });
+    expect(await store.secretStore.readPrevious("NOTIFY_CENTER_TOKEN", 0)).toBe(LOCAL_SECRET);
+
+    await store.rollback({ entity: "herder.env", key: "NOTIFY_CENTER_TOKEN" });
+    expect(await store.readSecretValue("NOTIFY_CENTER_TOKEN")).toBe(LOCAL_SECRET);
+    expect(await readFile(envPath, "utf8")).not.toContain(LOCAL_SECRET);
+  });
+
+  it("reuses the migrated rollback value when rewriting legacy history is retried", async () => {
+    const envPath = join(configDir, "herder.env");
+    await writeFile(envPath, `NOTIFY_CENTER_TOKEN=${settingsFingerprint(COMMON_SECRET)}\n`, { mode: 0o600 });
+    const store = storeOf();
+    await store.secretStore.writeSecret("NOTIFY_CENTER_TOKEN", COMMON_SECRET);
+    await mkdir(join(stateDir, "settings"), { recursive: true });
+    await writeFile(store.historyPath, `${JSON.stringify([{
+      id: "legacy-secret-history-retry",
+      at: "2026-10-25T00:00:00.000Z",
+      actor: "owner",
+      entity: "herder.env",
+      key: "NOTIFY_CENTER_TOKEN",
+      kind: "secret",
+      previousPresent: true,
+      previousValue: LOCAL_SECRET,
+      auditId: "legacy-secret-audit-retry",
+    }])}\n`, { mode: 0o600 });
+    const writeHistory = (store as any).writeHistory.bind(store);
+    let failOnce = true;
+    (store as any).writeHistory = async (history: unknown) => {
+      if (failOnce) {
+        failOnce = false;
+        throw new Error("simulated history replacement failure");
+      }
+      await writeHistory(history);
+    };
+
+    await expect(loadSecretEnvironment({ store, env: {} })).rejects.toThrow("simulated history replacement failure");
+    expect(await store.secretStore.readPrevious("NOTIFY_CENTER_TOKEN", 0)).toBe(LOCAL_SECRET);
+    await loadSecretEnvironment({ store, env: {} });
+
+    const secrets = JSON.parse(await readFile(join(configDir, "secrets.json"), "utf8"));
+    expect(secrets.previous.NOTIFY_CENTER_TOKEN).toEqual([LOCAL_SECRET]);
+    const history = await readFile(store.historyPath, "utf8");
+    expect(history).not.toContain(LOCAL_SECRET);
+    expect(JSON.parse(history)[0].previousSecretRef).toEqual({ key: "NOTIFY_CENTER_TOKEN", index: 0 });
   });
 
   it("puts the value of the secret into the environment of the process", async () => {
