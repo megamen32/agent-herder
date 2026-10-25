@@ -40,6 +40,7 @@ import type { GptAdminTransport } from "../mesh/gptadmin.js";
 import { fleetDirectTransport } from "../mesh/fleet-direct-transport.js";
 import { isCoordinationActive, sendCurrentTurnOnly, skippedCoordination, previousCoordinationReceipt } from "../coordination-active-delivery.js";
 import { deferredMessages, isBusyCodexWriter, withDeferred } from "../deferred-messages.js";
+import { respondToNativePermission } from "../permission-control/reply.js";
 import {
   buildTranscriptArchiveCard,
   transcriptArchiveFromEnvironment,
@@ -741,7 +742,9 @@ export async function handleRespondPermission(
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return `Session '${parsed.sessionId}' not found.`;
 
-  const result = await found.adapter.respondPermission(
+  const result = await respondToNativePermission(
+    found.adapter,
+    found.session.harness,
     parsed.sessionId,
     parsed.permissionId,
     parsed.response,

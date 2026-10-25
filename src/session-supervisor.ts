@@ -34,6 +34,7 @@ import { harnessEventHealth, type HarnessEventHealthRegistry } from "./harness-e
 import type { UnfinishedSessionLauncher } from "./autopilot/unfinished-session-launcher.js";
 import type { AutoCompactService } from "./autocontinue/auto-compact.js";
 import { deferredMessages, isBusyCodexWriter } from "./deferred-messages.js";
+import { respondToNativePermission } from "./permission-control/reply.js";
 
 export interface SessionFilters {
   harness?: string;
@@ -804,7 +805,8 @@ export class SessionSupervisor {
     response: "allow" | "deny",
     remember = false,
   ): Promise<{ ok: boolean; error?: string }> {
-    const result = await this.requireAdapter(harness).respondPermission(id, permissionId, response, remember);
+    const adapter = this.requireAdapter(harness);
+    const result = await respondToNativePermission(adapter, harness, id, permissionId, response, remember);
     if (result.ok) this.publishSessionChanged(harness, id, "changed");
     return result;
   }
