@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -156,5 +156,32 @@ describe("MinimaxCodeControl", () => {
     const result = await control.sendMessage("mvs_6", "привет");
     expect(result.ok).toBe(false);
     expect(result.error).toContain("not published");
+  });
+
+  it("runs only the exact existing session ID, sends content on stdin, and strips router credentials", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "minimax-code-cli-test-"));
+    created.push(dir);
+    const cli = join(dir, "mcode-fake");
+    await writeFile(cli, `#!/usr/bin/env node
+let input = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => input += chunk);
+process.stdin.on("end", () => {
+  const expected = ["exec", "--cwd", ${JSON.stringify(dir)}, "--session", "mvs_exact", "--input", "-", "--input-format", "text", "--output-format", "json"];
+  const valid = JSON.stringify(process.argv.slice(2)) === JSON.stringify(expected)
+    && input === "private-marker-stdin"
+    && !process.env.OPENAI_API_KEY && !process.env.OPENAI_BASE_URL && !process.env.OMNIROUTE_API_KEY && !process.env.OMNIROUTE_BASE_URL;
+  process.stdout.write(JSON.stringify(valid
+    ? { sessionId: "mvs_exact", turnId: "turn_1", status: "succeeded", model: { providerId: "minimax", modelId: "MiniMax-M3.1-Flash", providerKind: "minimax-managed" } }
+    : { error: "fake_cli_contract_failed" }));
+});
+`);
+    await chmod(cli, 0o700);
+    const control = new MinimaxCodeControl({ cliPath: cli, manifestPath: join(dir, "missing.json") });
+
+    const result = await control.runSession("mvs_exact", dir, "private-marker-stdin");
+
+    expect(result).toMatchObject({ ok: true, body: { sessionId: "mvs_exact", turnId: "turn_1", status: "succeeded" } });
+    expect(JSON.stringify(result)).not.toContain("private-marker-stdin");
   });
 });

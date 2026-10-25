@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { HerderJobRegistry, type HerderJob } from "./herder-jobs.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
@@ -10,6 +10,32 @@ export type UserMessageReceipt = SendMessageResult & { delivery?: "deferred"; jo
 export type UserMessageRoute = { adapter: HarnessAdapter; supervisor: Pick<SessionSupervisor, "sendMessage"> };
 const messageKey=(harness:string,sessionId:string,inputId:string)=>`${harness}\0${sessionId}\0${inputId}`;
 const messageFingerprint=(input:UserMessageInput)=>createHash('sha256').update(`${input.mode}\0${input.message}\0${JSON.stringify(input.images??[])}`).digest('hex');
+let durableDeliveryClaimKey=randomBytes(32);
+let durableDeliveryClaimCount=0;
+type DurableDeliveryClaim=NonNullable<import("./types/index.js").SendMessageOptions["durableUserDelivery"]>;
+type DurableDeliveryBinding=Pick<DurableDeliveryClaim,"jobId"|"inputId"|"requestFingerprint"|"harness"|"sessionId"|"mode"|"nonce">;
+const consumedDurableDeliveryNonces=new Set<string>();
+function signDurableDeliveryClaim(binding:DurableDeliveryBinding):DurableDeliveryClaim{
+  if(++durableDeliveryClaimCount>4_096){durableDeliveryClaimKey=randomBytes(32);durableDeliveryClaimCount=1;consumedDurableDeliveryNonces.clear();}
+  const signature=createHmac("sha256",durableDeliveryClaimKey).update(JSON.stringify(binding)).digest("hex");
+  return {...binding,signature};
+}
+/** The adapter can verify provenance without receiving the process-local signing key. */
+export function verifyDurableUserDeliveryClaim(value:unknown,expected:Omit<DurableDeliveryBinding,"nonce">,message:string,images?:MessageImage[]):value is DurableDeliveryClaim{
+  if(!value||typeof value!=="object")return false;
+  const claim=value as Partial<DurableDeliveryClaim>;
+  if(claim.jobId!==expected.jobId||claim.inputId!==expected.inputId||claim.requestFingerprint!==expected.requestFingerprint
+    ||claim.harness!==expected.harness||claim.sessionId!==expected.sessionId||claim.mode!==expected.mode
+    ||typeof claim.nonce!=="string"||!/^[a-f0-9]{32}$/.test(claim.nonce)||consumedDurableDeliveryNonces.has(claim.nonce)
+    ||typeof claim.signature!=="string"||!/^[a-f0-9]{64}$/.test(claim.signature))return false;
+  const actualFingerprint=messageFingerprint({harness:expected.harness,sessionId:expected.sessionId,inputId:expected.inputId,message,mode:expected.mode,images});
+  if(actualFingerprint!==expected.requestFingerprint)return false;
+  const binding={...expected,nonce:claim.nonce};
+  const actual=Buffer.from(claim.signature,"hex"),want=Buffer.from(createHmac("sha256",durableDeliveryClaimKey).update(JSON.stringify(binding)).digest("hex"),"hex");
+  if(actual.length!==want.length||!timingSafeEqual(actual,want))return false;
+  consumedDurableDeliveryNonces.add(claim.nonce);
+  return true;
+}
 
 /** Process-owned human queue. Coordination continues through its native steer path. */
 export class UserMessageDelivery {
@@ -143,6 +169,8 @@ export class UserMessageDelivery {
                 message: input.message, origin: "human", inputId: input.inputId, images: input.images,
                 humanRequestedAt,
                 steer: input.mode === "steer", queue: ["codex", "opencode", "zcode"].includes(input.harness),
+                durableUserDelivery: signDurableDeliveryClaim({ jobId, inputId: input.inputId, requestFingerprint: fingerprint,
+                  harness: input.harness, sessionId: input.sessionId, mode: input.mode, nonce: randomBytes(16).toString("hex") }),
               }));
               // A writer rejected admission before input submission. Recheck the
               // native turn; uncertain/accepted input is never replayed.

@@ -238,6 +238,11 @@ export interface SendMessageOptions {
   steer?: boolean;
   /** Stable native operation identity for crash-safe delivery reconciliation. */
   inputId?: string;
+  /**
+   * A persisted UserMessageDelivery job, created before a native CLI dispatch.
+   * The MiniMax idle-session CLI route is unavailable without this write-ahead claim.
+   */
+  durableUserDelivery?: { jobId: string; inputId: string; requestFingerprint: string; harness: string; sessionId: string; mode: "queue" | "steer"; nonce: string; signature: string };
 }
 
 export interface MessageImage { id: string; path: string; fileName: string; mimeType: string; bytes: number }

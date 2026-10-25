@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -56,6 +57,10 @@ export interface MinimaxControlOptions {
   manifestTtlMs?: number;
   /** Deadline of one control request. */
   timeoutMs?: number;
+  /** Installed official MiniMax Code CLI, used only for exact-ID idle delivery. */
+  cliPath?: string;
+  /** A timeout after process start is an unknown native outcome and is never replayable. */
+  cliTimeoutMs?: number;
 }
 
 function errorMessageFrom(body: unknown, status: number): string {
@@ -84,12 +89,16 @@ export class MinimaxCodeControl {
   private readonly manifestPath: string;
   private readonly manifestTtlMs: number;
   private readonly timeoutMs: number;
+  private readonly cliPath: string;
+  private readonly cliTimeoutMs: number;
   private cached: { manifest: MinimaxControlManifest | null; at: number } | null = null;
 
   constructor(options: MinimaxControlOptions = {}) {
     this.manifestPath = options.manifestPath || MINIMAX_CONTROL_MANIFEST_PATH;
     this.manifestTtlMs = options.manifestTtlMs ?? 2_000;
     this.timeoutMs = options.timeoutMs ?? 30_000;
+    this.cliPath = options.cliPath || join(homedir(), ".npm-global", "bin", "mcode");
+    this.cliTimeoutMs = options.cliTimeoutMs ?? 5 * 60_000;
   }
 
   /** Read the published transport manifest, if the app published one. */
@@ -128,6 +137,103 @@ export class MinimaxCodeControl {
     const body: Record<string, unknown> = { content };
     if (options.model) body.model = { model: options.model };
     return this.stream("POST", `/session/${encodeURIComponent(id)}/message`, body);
+  }
+
+  /**
+   * Run one message in the existing native session through the installed MCode
+   * CLI. This is only a transport fallback when Desktop did not publish its
+   * owner manifest; callers must preflight exact native identity, workspace,
+   * idle status, no turn lease and a durable UserMessageDelivery claim.
+   *
+   * No model, permission or resume override is supplied: MCode restores the
+   * selected session's persisted configuration. Prompt text is sent on stdin,
+   * never interpolated into argv or shell text.
+   */
+  async runSession(id: string, workspace: string, content: string): Promise<MinimaxControlResult> {
+    return new Promise((resolve) => {
+      const env = { ...process.env };
+      for (const key of ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL", "OMNIROUTE_API_KEY", "OMNIROUTE_BASE_URL"]) delete env[key];
+      let child;
+      try {
+        child = spawn(this.cliPath, [
+          "exec", "--cwd", workspace, "--session", id,
+          "--input", "-", "--input-format", "text", "--output-format", "json",
+        ], { cwd: workspace, env, stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
+      } catch {
+        resolve({ ok: false, status: 0, body: { started: false, errorKind: "cli_unavailable" }, error: "mcode_cli_unavailable" });
+        return;
+      }
+      let started = false;
+      let timedOut = false;
+      let outputOverflow = false;
+      let stdout = "";
+      let stdoutBytes = 0;
+      const maxOutputBytes = 2 * 1024 * 1024;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        child.kill("SIGTERM");
+      }, this.cliTimeoutMs);
+      child.once("spawn", () => { started = true; });
+      child.stdout.on("data", (chunk: Buffer | string) => {
+        const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        stdoutBytes += data.length;
+        if (stdoutBytes > maxOutputBytes) {
+          outputOverflow = true;
+          child.kill("SIGTERM");
+          return;
+        }
+        stdout += data.toString("utf8");
+      });
+      child.once("error", () => {
+        clearTimeout(timer);
+        resolve({ ok: false, status: 0, body: { started, errorKind: "cli_unavailable" }, error: started ? "mcode_cli_outcome_unknown" : "mcode_cli_unavailable" });
+      });
+      child.once("close", (code: number | null) => {
+        clearTimeout(timer);
+        if (!started) {
+          resolve({ ok: false, status: 0, body: { started: false, errorKind: "cli_unavailable" }, error: "mcode_cli_unavailable" });
+          return;
+        }
+        let parsed: Record<string, unknown> | null = null;
+        try {
+          const value = JSON.parse(stdout.trim()) as unknown;
+          if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
+        } catch { /* A process that ran without a parseable receipt is unknown. */ }
+        const modelValue = parsed?.model;
+        const model = modelValue && typeof modelValue === "object" && !Array.isArray(modelValue)
+          ? modelValue as Record<string, unknown>
+          : undefined;
+        const safeModel = model ? {
+          ...(typeof model.providerId === "string" ? { providerId: model.providerId } : {}),
+          ...(typeof model.modelId === "string" ? { modelId: model.modelId } : {}),
+          ...(typeof model.providerKind === "string" ? { providerKind: model.providerKind } : {}),
+        } : undefined;
+        const nativeSessionId = typeof parsed?.sessionId === "string" ? parsed.sessionId : undefined;
+        const turnId = typeof parsed?.turnId === "string" ? parsed.turnId : undefined;
+        const status = typeof parsed?.status === "string" ? parsed.status : undefined;
+        const usageSource = typeof parsed?.usageSource === "string" ? parsed.usageSource : undefined;
+        const rawError = typeof parsed?.error === "string" ? parsed.error : "";
+        const busy = /already has an active writer|prompt is already running/i.test(rawError);
+        const body = {
+          started,
+          ...(nativeSessionId ? { sessionId: nativeSessionId } : {}),
+          ...(turnId ? { turnId } : {}),
+          ...(status ? { status } : {}),
+          ...(safeModel ? { model: safeModel } : {}),
+          ...(usageSource ? { usageSource } : {}),
+          ...(busy ? { errorKind: "session_busy" } : {}),
+          ...(timedOut ? { timedOut: true } : {}),
+          ...(outputOverflow ? { outputOverflow: true } : {}),
+        };
+        if (code === 0 && !timedOut && !outputOverflow && nativeSessionId && turnId && status === "succeeded" && safeModel?.providerId && safeModel.modelId && safeModel.providerKind) {
+          resolve({ ok: true, status: 200, body });
+          return;
+        }
+        resolve({ ok: false, status: typeof code === "number" ? code : 0, body, error: busy ? "session_busy" : "mcode_cli_outcome_unknown" });
+      });
+      child.stdin.once("error", () => { /* close reports the native outcome as unknown */ });
+      child.stdin.end(content);
+    });
   }
 
   /**
