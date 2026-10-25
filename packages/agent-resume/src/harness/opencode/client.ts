@@ -36,6 +36,7 @@ interface OpenCodeSessionPayload {
   location?: { directory?: string };
   time?: { created?: number; updated?: number; archived?: number | boolean };
   model?: string | { providerID?: string; id?: string };
+  permissions?: Array<{ action?: string; resource?: string; effect?: string }>;
   cost?: number;
   parentID?: string;
   metadata?: Record<string, unknown>;
@@ -602,6 +603,43 @@ export class OpenCodeClient implements HarnessClient {
     }
     const statuses = await this.readStatuses(this.directoryOf(session));
     return this.toSummary(session, statuses[id]);
+  }
+
+  async getPermissionState(id: string): Promise<{
+    currentMode?: string;
+    scope: "session" | "workspace";
+    supportedModes: string[];
+    canSetMode: boolean;
+    pendingRequests: Array<{ id: string; toolName?: string; command?: string; reason?: string; canRespond: boolean; nativeMethod: string }>;
+    observedAt: string;
+  } | null> {
+    await this.probeProtocol();
+    try {
+      if (!this.isV2) return { scope: "workspace", supportedModes: [], canSetMode: false, pendingRequests: [], observedAt: new Date().toISOString() };
+      const [session, requests] = await Promise.all([
+        this.fetchJson<OpenCodeSessionPayload>(this.api(`/session/${encodeURIComponent(id)}`)),
+        this.fetchJson<OpenCodePermissionRequest[]>(this.api("/permission/request")),
+      ]);
+      if (session?.id !== id || !Array.isArray(requests)) return null;
+      const wildcard = session.permissions?.find((rule) => rule.action === "*" && rule.resource === "*");
+      return {
+        ...(wildcard?.effect ? { currentMode: wildcard.effect } : {}),
+        scope: "session",
+        supportedModes: ["default", "plan", "fullAuto"],
+        canSetMode: true,
+        pendingRequests: requests.filter((request) => request?.sessionID === id).map((request) => ({
+          id: request.id,
+          ...(request.action ? { toolName: request.action } : {}),
+          ...(request.resources?.length ? { command: request.resources.join(", ") } : {}),
+          ...(request.message ? { reason: request.message } : {}),
+          canRespond: true,
+          nativeMethod: this.isV2 ? "POST /api/session/:id/permission/:requestId/reply" : "POST /session/:id/permissions/:requestId",
+        })),
+        observedAt: new Date().toISOString(),
+      };
+    } catch {
+      return null;
+    }
   }
 
   async createSession(request: OpenCodeCreateRequest): Promise<HarnessSessionSummary> {
@@ -1267,6 +1305,13 @@ export class OpenCodeClient implements HarnessClient {
   }
 
   async setPermissions(sessionId: string, options: { allowedTools?: string; mode?: string }): Promise<{ ok: boolean; error?: string }> {
+    const modeEffect = options.mode === undefined ? undefined
+      : options.mode === "default" || options.mode === "plan" ? "ask"
+      : options.mode === "fullAuto" ? "allow"
+      : undefined;
+    if (options.mode !== undefined && modeEffect === undefined) {
+      return { ok: false, error: `Unsupported OpenCode permission mode: ${options.mode}` };
+    }
     await this.probeProtocol();
     if (this.isV2) {
       const rules: Array<{ action: string; resource: string; effect: "allow" | "deny" | "ask" }> = [];
@@ -1275,17 +1320,26 @@ export class OpenCodeClient implements HarnessClient {
           rules.push({ action: tool, resource: "*", effect: "allow" });
         }
       }
-      if (options.mode) rules.push({ action: "*", resource: "*", effect: options.mode === "plan" || options.mode === "default" ? "ask" : "allow" });
+      if (modeEffect) rules.push({ action: "*", resource: "*", effect: modeEffect });
       if (rules.length === 0) return { ok: true };
       const res = await this.fetch(this.api(`/session/${encodeURIComponent(sessionId)}`), {
         method: "PATCH",
         body: JSON.stringify({ permissions: rules }),
       });
-      return { ok: res.ok, error: res.ok ? undefined : `HTTP ${res.status}${await this.errorHint(res)}` };
+      if (!res.ok) return { ok: false, error: `HTTP ${res.status}${await this.errorHint(res)}` };
+      if (modeEffect) {
+        const readback = await this.fetchJson<OpenCodeSessionPayload>(this.api(`/session/${encodeURIComponent(sessionId)}`));
+        if (readback?.id !== sessionId) return { ok: false, error: "OpenCode permission readback returned a different or missing session id" };
+        const permissions = readback?.permissions;
+        const confirmed = Array.isArray(permissions) && permissions.some((rule) => rule?.action === "*"
+          && rule?.resource === "*" && rule?.effect === modeEffect);
+        if (!confirmed) return { ok: false, error: "OpenCode did not confirm the requested session permission mode" };
+      }
+      return { ok: true };
     }
+    if (options.mode !== undefined) return { ok: false, error: "Legacy OpenCode permission mode is directory-scoped and cannot be changed for one session" };
     const updates: Record<string, unknown> = {};
     if (options.allowedTools) updates.allowedTools = options.allowedTools.split(",").map((value) => value.trim());
-    if (options.mode) updates.permissionMode = options.mode;
     const directory = await this.resolveDirectory(sessionId);
     const query = directory ? `?${new URLSearchParams({ directory })}` : "";
     const res = await this.fetch(`/config${query}`, { method: "PATCH", body: JSON.stringify(updates) });

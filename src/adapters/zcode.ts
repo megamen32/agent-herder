@@ -21,6 +21,7 @@ import {
   type SessionMessagePart,
   type SessionMessageView,
   type SetPermissionsOptions,
+  type HarnessPermissionState,
   localSessionHostId,
 } from "../types/index.js";
 import { ZcodeAppServerClient, type ZcodeClientLike } from "./zcode-protocol.js";
@@ -2120,7 +2121,13 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
+    const requestsYolo = options.mode === "yolo" || options.mode === "fullAuto";
+    if (options.fullAccess !== undefined && options.mode !== undefined
+      && options.fullAccess !== requestsYolo) {
+      throw new Error("Contradictory ZCode session permission options");
+    }
     const workspace = this.workspace(options.cwd);
+    const fullAccess = options.fullAccess ?? (options.mode === undefined || requestsYolo);
     // The installed native bridge does not implicitly import user MCP config.
     // Read through its supported resolver before creating the runtime draft.
     const mcpServers = this.useLocalConfig
@@ -2140,7 +2147,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       // passing non-session values crashes this zcode-server build with an
       // NPE while resolving workspace defaults. Full-access creation is
       // confirmed separately through the native setMode response below.
-      mode: options.fullAccess ? "yolo" : options.mode || "build",
+      mode: fullAccess ? "yolo" : options.mode || "build",
       // Installed V4 persists a deferred draft before admitting its first input.
       // "immediate" skips that initialization and violates session_input's FK.
       persistence: "deferred",
@@ -2151,7 +2158,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     });
     const info = sessionInfoFromPayload(snapshot);
     if (!info) throw new Error("ZCode createSession returned no sessionId");
-    if (options.fullAccess && nativePermissionMode(snapshot) !== "yolo") {
+    if (fullAccess && nativePermissionMode(snapshot) !== "yolo") {
       snapshot = await this.callAgent("setMode", { ...workspace, sessionId: info.sessionId, mode: "yolo" });
       const updatedInfo = sessionInfoFromPayload(snapshot);
       if (updatedInfo?.sessionId !== info.sessionId || nativePermissionMode(snapshot) !== "yolo") {
@@ -2586,8 +2593,62 @@ export class ZcodeAdapter implements HarnessAdapter {
     }
   }
 
-  async setPermissions(_sessionId: string, _options: SetPermissionsOptions): Promise<{ ok: boolean; error?: string }> {
-    return unsupported("permissions");
+  async getPermissionState(sessionId: string): Promise<HarnessPermissionState | null> {
+    try {
+      const workspace = this.sessionWorkspaces.get(sessionId) || this.workspace();
+      const snapshot = await this.readSnapshot(sessionId, workspace, 1);
+      if (sessionInfoFromPayload(snapshot)?.sessionId !== sessionId) return null;
+      const projection = record(record(snapshot).projection);
+      const pending = Array.isArray(projection.pendingPermissions) ? projection.pendingPermissions.map(record) : [];
+      const ids = Array.isArray(snapshot.runtime?.pendingRequestIds) ? snapshot.runtime.pendingRequestIds.map(String) : [];
+      return {
+        target: { hostId: localSessionHostId(), harness: "zcode", sessionId },
+        ...(nativePermissionMode(snapshot) ? { currentMode: nativePermissionMode(snapshot) } : {}),
+        scope: "session",
+        supportedModes: ["yolo"],
+        canSetMode: true,
+        pendingRequests: ids.map((id) => {
+          const request = pending.find((candidate) => String(candidate.requestId) === id);
+          return {
+            id,
+            ...(request && nonEmptyString(request.turnId) ? { turnId: nonEmptyString(request.turnId) } : {}),
+            ...(request && nonEmptyString(request.toolName) ? { toolName: nonEmptyString(request.toolName) } : {}),
+            ...(request && nonEmptyString(request.command) ? { command: nonEmptyString(request.command) } : {}),
+            ...(request && nonEmptyString(request.reason) ? { reason: nonEmptyString(request.reason) } : {}),
+            canRespond: true,
+            nativeMethod: "zcode-agent.respondPermission",
+          };
+        }),
+        observedAt: new Date().toISOString(),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async setPermissions(sessionId: string, options: SetPermissionsOptions): Promise<{ ok: boolean; error?: string }> {
+    if (options.allowedTools) return { ok: false, error: "ZCode exposes native mode switching, not per-tool permission rules" };
+    const requested = options.mode;
+    if (!requested) return { ok: false, error: "A native permission mode is required" };
+    const mode = requested === "fullAuto" || requested === "yolo" ? "yolo" : undefined;
+    if (!mode) return { ok: false, error: `Unsupported ZCode permission mode: ${requested}` };
+    try {
+      const workspace = this.sessionWorkspaces.get(sessionId) || this.workspace();
+      const before = await this.readSnapshot(sessionId, workspace, 1);
+      if (sessionInfoFromPayload(before)?.sessionId !== sessionId) return { ok: false, error: "Native session identity mismatch" };
+      if (before.runtime?.pendingRequestIds?.length) return { ok: false, error: "A native permission request is pending; resolve that exact request separately before changing mode" };
+      const result = await this.callAgent("setMode", { ...workspace, sessionId, mode });
+      if (sessionInfoFromPayload(result)?.sessionId !== sessionId || nativePermissionMode(result) !== mode) {
+        return { ok: false, error: "ZCode did not confirm the requested permission mode for this session" };
+      }
+      const readback = await this.readSnapshot(sessionId, workspace, 1);
+      if (sessionInfoFromPayload(readback)?.sessionId !== sessionId || nativePermissionMode(readback) !== mode) {
+        return { ok: false, error: "ZCode permission mode readback did not match the request" };
+      }
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   private readonly compactingSessions = new Map<string, { inputId: string; turnId?: string; expiresAt: number }>();

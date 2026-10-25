@@ -73,6 +73,19 @@ interface RpcResponse {
   error?: { message?: string; code?: number };
 }
 
+interface CodexPendingPermissionRequest {
+  rpcId: number;
+  threadId: string;
+  method: string;
+  turnId?: string;
+  itemId?: string;
+  command?: string;
+  reason?: string;
+  responded: boolean;
+  resolveResponse?: (confirmed: boolean) => void;
+  responseTimer?: NodeJS.Timeout;
+}
+
 class CodexRpcError extends Error {
   constructor(message: string, readonly code?: number) { super(message); }
 }
@@ -262,6 +275,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private initialization?: Promise<void>;
   private nextRequestId = 1;
   private readonly pending = new Map<number, PendingRequest>();
+  /** Server requests are answered only on the exact RPC connection that received them. */
+  private readonly pendingPermissionRequests = new Map<string, CodexPendingPermissionRequest>();
   private readonly threads = new Map<string, CodexThread>();
   private readonly projectLiveMessages = new Map<string, SessionMessageView[]>();
   private readonly projectCommandReceipts = new Map<string, CodexProjectCommandReceipt[]>();
@@ -1811,16 +1826,68 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async respondPermission(
-    _sessionId: string,
-    _permissionId: string,
-    _response: "allow" | "deny",
+    sessionId: string,
+    permissionId: string,
+    response: "allow" | "deny",
     _remember?: boolean,
   ): Promise<ControlResult> {
-    return { ok: false, error: "Codex app-server permission response is not implemented in this adapter yet" };
+    const request = this.pendingPermissionRequests.get(permissionId);
+    if (!request || request.threadId !== sessionId) return { ok: false, error: "Codex approval is not pending on this exact native RPC connection and thread" };
+    if (request.responded) return { ok: false, error: "Codex approval response was already written on this connection" };
+    if (request.method !== "item/commandExecution/requestApproval" && request.method !== "item/fileChange/requestApproval") {
+      return { ok: false, error: "This Codex approval requires a permission subset unsupported by the allow/deny control" };
+    }
+    if (!this.isTransportWritable()) return { ok: false, error: "The Codex RPC connection that owns this approval is no longer writable" };
+    try {
+      request.responded = true;
+      const confirmation = new Promise<boolean>((resolve) => {
+        request.resolveResponse = resolve;
+        request.responseTimer = setTimeout(() => resolve(false), 5_000);
+        request.responseTimer.unref?.();
+      });
+      this.writeMessage({ id: request.rpcId, result: { decision: response === "allow" ? "accept" : "decline" } });
+      if (!await confirmation) return { ok: false, error: "Codex response was written, but native serverRequest/resolved was not observed; the outcome is unknown and must not be replayed" };
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      if (request.responseTimer) clearTimeout(request.responseTimer);
+      request.responseTimer = undefined;
+      request.resolveResponse = undefined;
+    }
   }
 
-  async setPermissions(_sessionId: string, _options: SetPermissionsOptions): Promise<ControlResult> {
-    return { ok: false, error: "Codex app-server permissions must be configured at thread start" };
+  async getPermissionState(sessionId: string): Promise<import("../types/index.js").HarnessPermissionState | null> {
+    try {
+      await this.ensureReady();
+      const observed = await this.request("thread/read", { threadId: sessionId, includeTurns: false }) as { thread?: CodexThread } & CodexThreadPermissionState;
+      if (observed.thread?.id !== sessionId) return null;
+      this.threads.set(sessionId, observed.thread);
+      const pendingRequests = [...this.pendingPermissionRequests.entries()]
+        .filter(([, request]) => request.threadId === sessionId && !request.responded)
+        .map(([id, request]) => ({ id, ...(request.turnId ? { turnId: request.turnId } : {}),
+          ...(request.itemId ? { itemId: request.itemId } : {}), ...(request.command ? { command: request.command } : {}),
+          ...(request.reason ? { reason: request.reason } : {}), nativeMethod: request.method,
+          canRespond: request.method === "item/commandExecution/requestApproval" || request.method === "item/fileChange/requestApproval",
+          ...(request.method === "item/permissions/requestApproval" ? { unsupportedReason: "Codex requires returning a native permission subset for this request; allow/deny is insufficient" } : {}) }));
+      return {
+        target: { hostId: localSessionHostId(), harness: "codex", sessionId },
+        scope: "session",
+        // Codex 0.162.1 ThreadReadResponse contains only `thread`; permission
+        // profile is not a readable field there. Keep currentMode unknown.
+        supportedModes: [],
+        canSetMode: false,
+        pendingRequests,
+        observedAt: new Date().toISOString(),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async setPermissions(sessionId: string, options: SetPermissionsOptions): Promise<ControlResult> {
+    if (options.allowedTools) return { ok: false, error: "Codex app-server exposes native permission profiles, not per-tool permission rules" };
+    return { ok: false, error: `Codex app-server thread/resume did not confirm Full Access for the exact existing thread in the isolated ${options.mode || "unknown-mode"} canary; permission scope is session and remains unproven` };
   }
 
   private async ensureReady(): Promise<void> {
@@ -2338,6 +2405,17 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     if (!message.method || !message.params) return;
     const params = message.params;
+    if (message.method === "serverRequest/resolved") {
+      const requestId = typeof params.requestId === "number" || typeof params.requestId === "string" ? String(params.requestId) : undefined;
+      const threadId = typeof params.threadId === "string" ? params.threadId : undefined;
+      const request = requestId ? this.pendingPermissionRequests.get(requestId) : undefined;
+      if (request && request.threadId === threadId) {
+        this.pendingPermissionRequests.delete(requestId!);
+        request.resolveResponse?.(true);
+        this.emitEvent({ kind: "permission.resolved", harness: "codex", sessionId: threadId!, permissionId: requestId!, status: "running" });
+      }
+      return;
+    }
     const threadId = typeof params.threadId === "string" ? params.threadId : undefined;
     if (threadId && typeof params.thread === "object" && params.thread) {
       this.threads.set(threadId, params.thread as CodexThread);
@@ -2442,6 +2520,23 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     const threadId = typeof message.params.threadId === "string" ? message.params.threadId : undefined;
     if (threadId && typeof message.params.thread === "object" && message.params.thread) {
       this.threads.set(threadId, message.params.thread as CodexThread);
+    }
+    const approvalMethods = new Set([
+      "item/commandExecution/requestApproval",
+      "item/fileChange/requestApproval",
+      "item/permissions/requestApproval",
+    ]);
+    if (threadId && typeof message.id === "number" && approvalMethods.has(message.method)) {
+      const requestId = String(message.id);
+      const turnId = typeof message.params.turnId === "string" ? message.params.turnId : undefined;
+      const itemId = typeof message.params.itemId === "string" ? message.params.itemId : undefined;
+      const command = typeof message.params.command === "string" ? message.params.command : undefined;
+      const reason = typeof message.params.reason === "string" ? message.params.reason : undefined;
+      this.pendingPermissionRequests.set(requestId, { rpcId: message.id, threadId, method: message.method, turnId, itemId, command, reason, responded: false });
+      this.emitEvent({ kind: "permission.requested", harness: "codex", sessionId: threadId, permissionId: requestId,
+        status: "needs_input", data: { method: message.method, turnId, itemId, command, reason,
+          canRespond: message.method === "item/commandExecution/requestApproval" || message.method === "item/fileChange/requestApproval",
+          ...(message.method === "item/permissions/requestApproval" ? { unsupportedReason: "Codex requires returning a native permission subset for this request; allow/deny is insufficient" } : {}) } });
     }
   }
 

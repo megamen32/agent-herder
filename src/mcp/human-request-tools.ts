@@ -6,6 +6,10 @@ import { resumeHumanRequestOnce, humanRequestResumeTarget } from "../human-reque
 import { resolveMcpClientFeatures } from "../mcp-client-features.js";
 import type { ResumeReceipt, ResumeTransportRequest } from "../resume-transport.js";
 import { structuredResult } from "./results.js";
+import type { HarnessAdapter } from "../types/index.js";
+import { nativeTarget } from "../human-request/question-binding.js";
+import { loadAskHumanProducer } from "../human-request/ask-human-producer.js";
+import { hasPermissionReplyContextRef, permissionReplyContextRef, preparePermissionNoticeQuestion, withPermissionQuestionCreationLock } from "../permission-control/notice-bridge.js";
 
 const humanRequestSchema = z.object({
   requestId: z.string(), kind: z.enum(["user", "secret"]),
@@ -37,6 +41,8 @@ export interface HumanRequestToolOptions {
   humanResume: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   /** Reads the durable provider receipt for the same idempotency key without launching the session. */
   queryReceipt?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
+  /** Native adapters for exact permission question creation. */
+  adapters?: Map<string, HarnessAdapter>;
 }
 
 export function registerHumanRequestTools(
@@ -54,6 +60,9 @@ export function registerHumanRequestTools(
   }> => {
     const record = await humanRequests.get(requestId);
     if (!record) throw new Error(`Human request '${requestId}' not found`);
+    if (hasPermissionReplyContextRef(record.contextRef)) {
+      throw new Error("native permission answers must be dispatched by the canonical Notice completion path; generic session resume is forbidden");
+    }
     const retryableFailure = record.status === "resume_failed"
       && record.receipt === "agent-resume:native-unavailable" && record.resumeRetryable !== false;
     if (record.status === "resumed" || (record.status === "resume_failed" && !retryableFailure)) {
@@ -86,6 +95,7 @@ export function registerHumanRequestTools(
     inputSchema: z.object({
       kind: z.enum(["user", "secret"]), harness: z.string().min(1), sessionId: z.string().min(1), cwd: z.string().min(1).optional(), marker: z.string().min(1).optional(),
       locator: z.record(z.string(), z.unknown()).optional(), contextRef: z.string().optional(),
+      permissionRequestId: z.string().min(1).max(512).optional().describe("Exact currently pending native permission request. Creates fixed Allow/Deny choices bound to this request; never used for general questions."),
       message: z.string().min(1).max(4096).optional().describe("The human-readable question. Omit it for a metadata-only request that shows no Notice card; never paste a secret value into it"),
       choices: z.array(z.object({ choiceId: z.string().min(1).max(64), label: z.string().min(1).max(512) })).min(2).max(4).optional(),
       notify: z.object({ project: z.string().min(1), recipient: z.string().min(1), kind: z.string().min(1), severity: z.string().min(1), title: z.string().min(1) }).optional(),
@@ -101,6 +111,54 @@ export function registerHumanRequestTools(
     }) }),
   }, async (args) => {
     if (args.harness === "hermes" && !args.locator) throw new Error("Hermes human request requires an immutable hermes.locator.v2 locator");
+    if (args.permissionRequestId !== undefined) {
+      if (args.kind !== "user" || !options.adapters) throw new Error("native permission questions require an available native adapter and a user request");
+      const adapter = options.adapters.get(args.harness);
+      if (!adapter) throw new Error("native permission harness is unavailable");
+      const prepared = await preparePermissionNoticeQuestion(adapter, args.harness, args.sessionId, args.permissionRequestId, "Разрешить или запретить выполнение нативного запроса?");
+      const session = await adapter.getSession?.(args.sessionId);
+      if (!session || session.id !== args.sessionId || session.harness !== args.harness || session.hostId !== prepared.target.hostId
+        || (args.cwd !== undefined && args.cwd !== session.cwd)) throw new Error("native permission session identity changed");
+      const producer = await loadAskHumanProducer();
+      if (!producer) throw new Error("Notice project credentials and recipient policy are unavailable");
+      if (args.notify && (args.notify.project !== producer.project || args.notify.recipient !== producer.recipient)) {
+        throw new Error("Notice routing must match the configured project and recipient policy");
+      }
+      const contextRef = permissionReplyContextRef(prepared.target);
+      const record = await withPermissionQuestionCreationLock(async () => {
+        // The first read builds the visible card; re-read inside the creation
+        // lock so a stale approval cannot race a second request/card admission.
+        const current = await preparePermissionNoticeQuestion(adapter, args.harness, args.sessionId, args.permissionRequestId!, "Разрешить или запретить выполнение нативного запроса?");
+        if (current.target.hostId !== prepared.target.hostId || current.target.harness !== prepared.target.harness
+          || current.target.sessionId !== prepared.target.sessionId || current.target.permissionRequestId !== prepared.target.permissionRequestId) {
+          throw new Error("native permission target changed before Notice request creation");
+        }
+        const prior = (await humanRequests.list()).find((entry) => entry.contextRef === contextRef);
+        if (prior) {
+          if (prior.status !== "pending") throw new Error("this native permission request already has a terminal Notice answer");
+          return prior;
+        }
+        return humanRequests.create({
+          kind: "user",
+          answerSource: "notice_question",
+          target: { harness: args.harness, sessionId: args.sessionId, cwd: session.cwd, ...(args.marker ? { marker: args.marker } : {}) },
+          contextRef,
+          notify: { project: producer.project, recipient: producer.recipient, kind: "human_request", severity: "important", title: "Требуется решение по разрешению агента" },
+        });
+      });
+      return structuredResult({ request: record, binding: {
+        request_id: record.requestId,
+        native_target: nativeTarget(record),
+        dedup_key: record.notify!.dedupKey,
+        context_ref: record.contextRef,
+        kind: "user" as const,
+        question: { message: prepared.message, choices: [
+          { choice_id: "allow", label: "Разрешить" },
+          { choice_id: "deny", label: "Запретить" },
+        ] },
+        answer: { mcp_tool: "human_request_resolve", completion_path: "/internal/human-requests/ask-user-completion" },
+      } });
+    }
     const binding = await askHuman(humanRequests, {
       kind: args.kind,
       target: { harness: args.harness, sessionId: args.sessionId, ...(args.cwd ? { cwd: args.cwd } : {}), ...(args.marker ? { marker: args.marker } : {}), ...(args.locator ? { locator: args.locator } : {}) },

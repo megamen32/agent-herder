@@ -55,6 +55,7 @@ const snapshot = {
 };
 
 class FakeClient implements ZcodeClientLike {
+  currentSnapshot: any = snapshot;
   readonly calls: Array<{ channel: string; method: string; args: unknown[] }> = [];
   nativeEvents: Array<Record<string, unknown>> = [];
   started = false;
@@ -75,7 +76,11 @@ class FakeClient implements ZcodeClientLike {
       return { available: true, protocolName: "ZCode Protocol", protocolVersion: 1, transportKind: "stdio" };
     }
     if (channel === "zcode-agent" && method === "listSessions") return [session];
-    if (channel === "zcode-agent" && method === "readSession") return snapshot;
+    if (channel === "zcode-agent" && method === "readSession") return this.currentSnapshot;
+    if (channel === "zcode-agent" && method === "setMode" && (args[0] as { sessionId?: string }).sessionId === "session-1") {
+      this.currentSnapshot = { ...this.currentSnapshot, settings: { ...this.currentSnapshot.settings, permission: { mode: (args[0] as { mode?: string }).mode } } };
+      return this.currentSnapshot;
+    }
     if (channel === "zcode-agent" && method === "readSessionMessages") return snapshot.messages;
     if (channel === "zcode-agent" && method === "readSessionEvents") {
       const accepted = [...this.calls].reverse().find((call) => call.channel === "zcode-agent" && call.method === "sendPrompt");
@@ -1203,6 +1208,62 @@ describe("ZCode adapter", () => {
     expect(create?.args[0]).toMatchObject({ mode: "yolo" });
   });
 
+  it("defaults new Herder-created ZCode sessions to native yolo unless explicitly restricted", async () => {
+    const defaultClient = new FakeClient();
+    const defaultAdapter = new ZcodeAdapter({ cwd: "/workspace", client: defaultClient });
+    await defaultAdapter.init();
+
+    await defaultAdapter.createSession({ name: "default-full-access", cwd: "/workspace" });
+    const defaultCreate = defaultClient.calls.find((call) => call.method === "createSession");
+    const defaultSetMode = defaultClient.calls.find((call) => call.method === "setMode");
+    expect(defaultCreate?.args[0]).toMatchObject({ mode: "yolo" });
+    expect(defaultSetMode?.args[0]).toMatchObject({ sessionId: "created-1", mode: "yolo" });
+    await defaultAdapter.dispose();
+
+    const restrictedClient = new FakeClient();
+    const restrictedAdapter = new ZcodeAdapter({ cwd: "/workspace", client: restrictedClient });
+    await restrictedAdapter.init();
+    await restrictedAdapter.createSession({ name: "explicitly-restricted", cwd: "/workspace", fullAccess: false });
+    const restrictedCreate = restrictedClient.calls.find((call) => call.method === "createSession");
+    expect(restrictedCreate?.args[0]).toMatchObject({ mode: "build" });
+    expect(restrictedClient.calls.some((call) => call.method === "setMode")).toBe(false);
+    await restrictedAdapter.dispose();
+
+    const explicitModeClient = new FakeClient();
+    const explicitModeAdapter = new ZcodeAdapter({ cwd: "/workspace", client: explicitModeClient });
+    await explicitModeAdapter.init();
+    await explicitModeAdapter.createSession({ name: "explicit-build-mode", cwd: "/workspace", mode: "build" });
+    const explicitModeCreate = explicitModeClient.calls.find((call) => call.method === "createSession");
+    expect(explicitModeCreate?.args[0]).toMatchObject({ mode: "build" });
+    expect(explicitModeClient.calls.some((call) => call.method === "setMode")).toBe(false);
+    await explicitModeAdapter.dispose();
+  });
+
+  it.each([
+    { fullAccess: false, mode: "yolo", name: "restrictive flag with YOLO mode" },
+    { fullAccess: true, mode: "build", name: "full access flag with restrictive mode" },
+  ])("rejects contradictory create-session permission options before native creation ($name)", async ({ fullAccess, mode }) => {
+    const client = new FakeClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+
+    await expect(adapter.createSession({ name: "contradictory", cwd: "/workspace", fullAccess, mode }))
+      .rejects.toThrow("Contradictory ZCode session permission options");
+    expect(client.calls.some((call) => call.method === "createSession")).toBe(false);
+    await adapter.dispose();
+  });
+
+  it("preserves the fullAuto alias when it agrees with full-access creation", async () => {
+    const client = new FakeClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+
+    await adapter.createSession({ name: "full-auto-alias", cwd: "/workspace", fullAccess: true, mode: "fullAuto" });
+    expect(client.calls.find((call) => call.method === "createSession")?.args[0]).toMatchObject({ mode: "yolo" });
+    expect(client.calls.find((call) => call.method === "setMode")?.args[0]).toMatchObject({ sessionId: "created-1", mode: "yolo" });
+    await adapter.dispose();
+  });
+
   it("confirms the native permission mode for full-access creation", async () => {
     const client = new FakeClient();
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
@@ -1389,11 +1450,16 @@ describe("ZCode adapter", () => {
     expect(client.closed).toBe(true);
   });
 
-  it("keeps unsupported operations explicit and uses native permission response", async () => {
+  it("switches the existing native mode with exact session readback and keeps native permission response", async () => {
     const client = new FakeClient();
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
     await adapter.init();
-    expect(await adapter.setPermissions("session-1", { mode: "fullAuto" })).toEqual({ ok: false, error: expect.stringContaining("not supported") });
+    expect(await adapter.setPermissions("session-1", { mode: "fullAuto" })).toEqual({ ok: true });
+    expect(client.calls.filter((call) => call.method === "setMode")).toHaveLength(1);
+    expect(client.calls.find((call) => call.method === "setMode")?.args[0]).toMatchObject({ sessionId: "session-1", mode: "yolo" });
+    expect(await adapter.getPermissionState("session-1")).toMatchObject({
+      target: { harness: "zcode", sessionId: "session-1" }, currentMode: "yolo", scope: "session", pendingRequests: [],
+    });
     expect(await adapter.respondPermission("session-1", "request-1", "allow")).toEqual({ ok: true });
     expect(await adapter.respondPermission("session-1", "request-2", "allow", true)).toEqual({ ok: true });
     expect(client.calls.filter((call) => call.method === "respondPermission").at(-1)?.args[0]).toMatchObject({ optionId: "allowAlways" });

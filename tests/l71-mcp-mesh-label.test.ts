@@ -134,7 +134,7 @@ describe("the MCP rename of a harness without a native rename channel", () => {
     expect(answer.nativeTitle).toBeUndefined();
     expect(answer.error).toBeUndefined();
     // The name that was composed is still the name that was asked for.
-    expect(answer.title).toBe("Herder | починить панель | приёмка");
+    expect(answer.title).toBe("починить панель | Herder");
     // The words are the words of the panel.
     expect(text).toContain("Метка сохранена. Имя сессии не изменилось");
     // The metadata is really stored, not only reported.
@@ -175,12 +175,12 @@ describe("the MCP rename of a harness with a native rename channel", () => {
     expect(answer.ok).toBe(true);
     expect(answer.renamed).toBe(true);
     expect(answer.renameError).toBeUndefined();
-    expect(answer.nativeTitle).toBe("Herder | починить панель | приёмка");
-    expect(answer.title).toBe("Herder | починить панель | приёмка");
+    expect(answer.nativeTitle).toBe("починить панель | Herder");
+    expect(answer.title).toBe("починить панель | Herder");
     expect(answer.previousTitle).toBe("было");
     expect(text).toContain("Сохранено. Название сессии");
     // The native path of the harness wrote the name.
-    expect(renames).toEqual(["s-10 -> Herder | починить панель | приёмка"]);
+    expect(renames).toEqual(["s-10 -> починить панель | Herder"]);
     expect(await readSessionLabel("codex", "s-10")).toMatchObject({
       project: "Herder", goal: "починить панель", stage: "приёмка",
     });
@@ -257,7 +257,7 @@ describe("the mesh rename of a harness without a native rename channel", () => {
     expect(receipt.renamed).toBe(false);
     expect(receipt.renameError).toContain("нет нативного канала переименования");
     expect(receipt.label).toMatchObject({ project: "Herder", goal: "починить метку", stage: "приёмка" });
-    expect(receipt.title).toBe("Herder | починить метку | приёмка");
+    expect(receipt.title).toBe("починить метку | Herder");
     // The words are the words of the panel.
     expect(receipt.message).toContain("Метка сохранена. Имя сессии не изменилось");
     expect(await readSessionLabel("minimax-code", "mvs-mesh-1")).toMatchObject({ project: "Herder" });
@@ -290,10 +290,10 @@ describe("the mesh rename of a harness without a native rename channel", () => {
     expect(receipt.renamed).toBe(true);
     expect(receipt.state).toBe("renamed");
     expect(receipt.renameError).toBeUndefined();
-    expect(receipt.nativeTitle).toBe("Herder | починить метку | приёмка");
+    expect(receipt.nativeTitle).toBe("починить метку | Herder");
     expect(receipt.previousTitle).toBe("было");
     expect(receipt.message).toContain("Сохранено. Название сессии");
-    expect(renames).toEqual(["mvs-mesh-3 -> Herder | починить метку | приёмка"]);
+    expect(renames).toEqual(["mvs-mesh-3 -> починить метку | Herder"]);
     expect(await readSessionLabel("codex", "mvs-mesh-3")).toMatchObject({ project: "Herder" });
   });
 });

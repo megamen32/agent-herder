@@ -9,7 +9,7 @@ export interface NativeWorkspaceEvidence extends SessionWorkspaceIdentity {
   absolutePath: string;
   observedAt: string;
   evidenceRef: string;
-  kind: "startup_declaration" | "native_tool_execution" | "project_binding" | "coordination_declaration";
+  kind: "startup_declaration" | "native_tool_execution" | "native_session_cwd" | "project_binding" | "coordination_declaration";
 }
 export async function backfillSessionWorkspaces(store:SessionWorkspaceStore,evidence:NativeWorkspaceEvidence[]):Promise<{updated:number;unchanged:number}> {
   let updated=0,unchanged=0;
@@ -19,10 +19,23 @@ export async function backfillSessionWorkspaces(store:SessionWorkspaceStore,evid
     const item=group[0],previous=await store.read(item);
     // A historical import must never resurrect a location after a newer replace/clear.
     if(previous && Date.parse(previous.updatedAt)>=Date.parse(item.observedAt)){unchanged+=group.length;continue;}
-    const workspaces:SessionWorkspace[]=group.map(entry=>({hostId:entry.hostId,absolutePath:entry.absolutePath,observedAt:entry.observedAt,source:entry.kind==="native_tool_execution"?"observed":"declared",evidence:`${entry.kind}:${entry.evidenceRef}`}));
+    const workspaces:SessionWorkspace[]=group.map(entry=>({hostId:entry.hostId,absolutePath:entry.absolutePath,observedAt:entry.observedAt,source:entry.kind==="native_tool_execution"||entry.kind==="native_session_cwd"?"observed":"declared",evidence:`${entry.kind}:${entry.evidenceRef}`}));
     await store.declare({...item,workspaces,mode:"union",expectedVersion:previous?.version??0});updated+=group.length;
   }
   return {updated,unchanged};
+}
+
+/** A cwd returned by the exact native active-session/runtime record is
+ * workspace evidence. GUI launch cwd, titles and inferred parent paths are not.
+ */
+export function workspaceEvidenceFromNativeSession(input:SessionWorkspaceIdentity & {
+  hostId:string; cwd:string; observedAt:string; activityEvidence:string;
+}):NativeWorkspaceEvidence[] {
+  if(input.harness!=="minimax-code" || !["native_active_turn","native_runtime_turn_lease"].includes(input.activityEvidence)
+    || typeof input.cwd!=="string" || !input.cwd.startsWith("/") || !Number.isFinite(Date.parse(input.observedAt))) return [];
+  return [{runtimeHostId:input.runtimeHostId,harness:input.harness,nativeSessionId:input.nativeSessionId,
+    hostId:input.hostId,absolutePath:input.cwd,observedAt:input.observedAt,evidenceRef:input.activityEvidence,
+    kind:"native_session_cwd"}];
 }
 
 /** Extract only execution context explicitly carried by native tools. No title,

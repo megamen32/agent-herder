@@ -2,9 +2,12 @@ import { expect, it } from "vitest";
 import { readMinimaxActiveSessions,readMinimaxRuntimeCandidateIds } from "../src/adapters/minimax-code-active.js";
 import { readMinimaxRuntimeActiveSessions } from "../src/adapters/minimax-code-runtime-activity.js";
 it("reuses display metadata while validating current activity and hydrates NEW accepted IDs exactly",async()=>{
+ const {mkdtemp,rm}=await import("node:fs/promises"),{tmpdir}=await import("node:os"),{join}=await import("node:path");
+ const {SessionWorkspaceStore}=await import("../src/session-workspaces.js");
+ const root=await mkdtemp(join(tmpdir(),"minimax-controller-workspace-")),workspaceStore=new SessionWorkspaceStore(join(root,"workspaces.json"));
  const methods:string[]=[];let ids=["root"],running=new Set(["root"]);
- const control={call:async(_method:string,path:string)=>{methods.push(path);if(path.includes("/agent"))throw Error("historical enumeration forbidden");const id=path.split("/")[2];return{ok:true,status:200,body:path.endsWith("turn-continuation")?{state:running.has(id)?2:0}:{session_id:id,agent_name:id==="child"?"worker":"mavis",parent_session_id:id==="child"?"root":undefined,status:{status_type:0,error_code:50113},title:id}}}};
- const options={readRuntimeCandidateIds:async()=>ids};
+ const control={call:async(_method:string,path:string)=>{methods.push(path);if(path.includes("/agent"))throw Error("historical enumeration forbidden");const id=path.split("/")[2];return{ok:true,status:200,body:path.endsWith("turn-continuation")?{state:running.has(id)?2:0}:{session_id:id,agent_name:id==="child"?"worker":"mavis",parent_session_id:id==="child"?"root":undefined,status:{status_type:0,error_code:50113},title:id,workspace_dir:"/controller/native-project"}}}};
+ const options={readRuntimeCandidateIds:async()=>ids,workspaceStore};
  const first=await readMinimaxActiveSessions(control,options);expect(first.sessions.map(s=>s.id)).toEqual(["root"]);
  ids=["root","child"];running.add("child");const second=await readMinimaxActiveSessions(control,options);
  expect(second.sessions.map(s=>s.id).sort()).toEqual(["child","root"]);
@@ -12,6 +15,9 @@ it("reuses display metadata while validating current activity and hydrates NEW a
  expect(methods.filter(p=>p==="/session/root")).toHaveLength(1);expect(methods.filter(p=>p==="/session/child")).toHaveLength(1);
  running.delete("root");expect((await readMinimaxActiveSessions(control,options)).sessions.map(s=>s.id)).toEqual(["child"]);
  expect(second.receipt).toMatchObject({exhaustive:true,source:"native_active_turn",metadataEnumerationExhaustive:false});
+ const rootSession=(await workspaceStore.read({runtimeHostId:(await import("../src/types/index.js")).localSessionHostId(),harness:"minimax-code",nativeSessionId:"root"}));
+ expect(rootSession?.workspaces).toMatchObject([{absolutePath:"/controller/native-project",source:"observed",evidence:"native_session_cwd:native_active_turn"}]);
+ await rm(root,{recursive:true,force:true});
 });
 it("missing or slow metadata never excludes a positive runtime identity",async()=>{
  const control={call:async(_m:string,path:string)=>path.endsWith("turn-continuation")?{ok:true,status:200,body:{state:2}}:new Promise<any>(()=>{})};
@@ -42,13 +48,22 @@ it("does not turn an empty seed with an unavailable controller into complete zer
 });
 
 it("proves activity from the runtime turn lease when the desktop transport is not published",async()=>{
+ const {mkdtemp,rm}=await import("node:fs/promises"),{tmpdir}=await import("node:os"),{join}=await import("node:path");
+ const {SessionWorkspaceStore}=await import("../src/session-workspaces.js");
+ const root=await mkdtemp(join(tmpdir(),"minimax-active-workspace-")),workspaceStore=new SessionWorkspaceStore(join(root,"workspaces.json"));
  const control={call:async(_m:string,path:string)=>({ok:false,status:0,body:null,error:"MiniMax Code control transport is not published"})};
  const proof={sessions:[{id:"mvs_live",harness:"minimax-code",title:"Цель листа L31",status:"running",cwd:"/work",hostId:"host",lastActivity:new Date(0).toISOString(),needsPermission:false,lineage:{kind:"root"},meta:{activityEvidence:"native_runtime_turn_lease",activityObservedAt:new Date().toISOString(),activityExpiresAt:new Date().toISOString(),liveStatus:"running",goalSource:"runtime_state"}}],leaseCount:1,unprovenLeaseCount:0,observedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+15000).toISOString()};
- const r=await readMinimaxActiveSessions(control,{readRuntimeCandidateIds:async()=>[],readRuntimeActivity:async()=>proof});
+ const r=await readMinimaxActiveSessions(control,{readRuntimeCandidateIds:async()=>[],readRuntimeActivity:async()=>proof,workspaceStore});
  expect(r.sessions.map(s=>s.id)).toEqual(["mvs_live"]);
  expect(r.sessions[0]?.title).toBe("Цель листа L31");
  expect(r.sessions[0]?.meta?.activityEvidence).toBe("native_runtime_turn_lease");
  expect(r.receipt).toMatchObject({exhaustive:true,source:"native_runtime_turn_lease",activityCoverage:"native_runtime_turn_lease",failedCandidateCount:0});
+ const record=await workspaceStore.read({runtimeHostId:"host",harness:"minimax-code",nativeSessionId:"mvs_live"});
+ expect(record?.workspaces).toMatchObject([{hostId:"host",absolutePath:"/work",source:"observed",evidence:"native_session_cwd:native_runtime_turn_lease"}]);
+ const {filterActiveInventory}=await import("../src/active-session-inventory.js");
+ const filtered=filterActiveInventory({sessions:[{id:"mvs_live",harness:"minimax-code",title:"fixture",runtimeHostId:"host",status:"running",activity:{state:"active",observedAt:proof.observedAt,evidence:"native_runtime_turn_lease"},workspaces:record!.workspaces}],hosts:[{hostId:"host",state:"available",observedAt:proof.observedAt}],partial:false},{harness:"minimax-code",hostId:"host"});
+ expect(filtered.sessions.map(s=>s.id)).toEqual(["mvs_live"]);
+ await rm(root,{recursive:true,force:true});
 });
 
 it("never invents an empty activity list from an unproven runtime lease",async()=>{

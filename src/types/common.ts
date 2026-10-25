@@ -260,7 +260,7 @@ export interface CreateSessionOptions {
   cwd: string;
   /** Optional model selected when creating the session. */
   model?: string;
-  /** Enable full native tool access for explicitly unattended, Agent Herder-created sessions. */
+  /** Enable full native tool access; defaults to true without a mode selection. Use false or a conservative mode for an explicit restriction. */
   fullAccess?: boolean;
   /** Optional native session mode for harnesses that distinguish modes from permissions. */
   mode?: string;
@@ -290,9 +290,13 @@ export interface HarnessPermissionState {
   pendingRequests: Array<{
     id: string;
     turnId?: string;
+    itemId?: string;
     toolName?: string;
     command?: string;
     reason?: string;
+    canRespond?: boolean;
+    unsupportedReason?: string;
+    nativeMethod?: string;
   }>;
   observedAt: string;
 }

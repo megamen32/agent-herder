@@ -90,8 +90,8 @@ describe("the metadata of a session in the panel", () => {
     const answer = await response.json() as { ok?: boolean; title?: string; label?: { project?: string; goal?: string; stage?: string } };
     expect(answer.ok).toBe(true);
     // The title is the composed one, and the native path of the harness wrote it.
-    expect(answer.title).toBe("Herder | починить панель | приёмка");
-    expect(renames).toEqual(["s-2 -> Herder | починить панель | приёмка"]);
+    expect(answer.title).toBe("починить панель | Herder");
+    expect(renames).toEqual(["s-2 -> починить панель | Herder"]);
     expect(answer.label?.project).toBe("Herder");
     expect(answer.label?.goal).toBe("починить панель");
     expect(answer.label?.stage).toBe("приёмка");

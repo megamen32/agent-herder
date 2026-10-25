@@ -409,7 +409,7 @@ export function registerSessionTools(server: McpServer, deps: {
     description:
       "Rename one existing session in place: the native title of the same session changes. " +
       "No session is created, no model turn starts and no active turn is interrupted. " +
-      "Without a title the name is composed as 'project | goal | stage' from the stored Herder metadata. " +
+      "Without a title the name is composed as 'goal | short project name' from stored Herder metadata; stage is omitted. " +
       "The metadata of the session is stored first and on its own; the native name is an optional operation of the harness. " +
       "The answer tells the two outcomes apart with renamed: the name changed, or it did not change and says why.",
     inputSchema: z.object({
@@ -418,7 +418,7 @@ export function registerSessionTools(server: McpServer, deps: {
       hostId: z.string().trim().min(1).max(512).optional()
         .describe("Machine that owns the session. Omitted renames a session of this machine."),
       title: z.string().trim().min(1).max(4096).optional()
-        .describe("Exact new title. Omitted composes 'project | goal | stage' from the stored metadata."),
+        .describe("Exact new title. If omitted, Herder composes 'goal | short project name' and omits stage."),
       project: z.string().trim().min(1).max(512).optional().describe("The constant project of the session."),
       goal: z.string().trim().min(1).max(2048).optional().describe("The current business goal of the session."),
       stage: z.string().trim().min(1).max(2048).optional().describe("The current stage of the plan."),
@@ -459,7 +459,7 @@ export function registerSessionTools(server: McpServer, deps: {
       : await mergeSessionLabel(found.session.harness, found.session.id, {});
     const title = args.title?.trim() || composeSessionTitle(merged);
     if (!title) {
-      const error = "A session title is required: give a title, or the project, the goal and the stage.";
+      const error = "A session title is required: give a title, a project name, or a task goal.";
       return { content: [{ type: "text" as const, text: error }], structuredContent: { ok: false, supported: true, sessionId: args.sessionId, harness: found.session.harness, hostId: owner, error } };
     }
     // The metadata is written first and on its own: it belongs to Herder and

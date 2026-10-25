@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { Server } from "node:http";
 
 import { createWebServer } from "../src/web/server.js";
-import { resetSessionLabelCache } from "../src/session-labels.js";
+import { composeSessionTitle, resetSessionLabelCache } from "../src/session-labels.js";
 import type { HarnessAdapter } from "../src/types/index.js";
 
 /**
@@ -76,6 +76,29 @@ interface LabelAnswer {
   label?: { project?: string; goal?: string; stage?: string };
 }
 
+describe("composed session titles", () => {
+  it("puts the complete task first and uses the canonical repository name for a worktree", () => {
+    expect(composeSessionTitle({
+      project: "/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/plan-dashboard-ui-20261025",
+      goal: "Read-only юзабилити-ревью дашборда плана LHC с телефона (персона: тестировщик)",
+      stage: "сессия в работе",
+    })).toBe("Read-only юзабилити-ревью дашборда плана LHC с телефона (персона: тестировщик) | LastHumanCommit");
+  });
+
+  it("extracts canonical project names from POSIX, Mac, and Windows worktree paths", () => {
+    expect(composeSessionTitle({ project: "/home/user/agent-herder" })).toBe("agent-herder");
+    expect(composeSessionTitle({ project: "/Users/user/Documents/LastHumanCommit/.worktrees/review-123" })).toBe("LastHumanCommit");
+    expect(composeSessionTitle({ project: "C:\\Users\\user\\AutoFindClient\\.worktrees\\worker-456" })).toBe("AutoFindClient");
+    expect(composeSessionTitle({ project: "LastHumanCommit/.worktrees/review-123" })).toBe("LastHumanCommit");
+  });
+
+  it("does not truncate a long task goal or append a status", () => {
+    const goal = "A distinct verified task: " + "detail ".repeat(120);
+    expect(composeSessionTitle({ project: "/repo/.worktrees/task-123", goal, stage: "в работе" }))
+      .toBe(goal.trim() + " | repo");
+  });
+});
+
 describe("the metadata of a session of a harness without a native rename channel", () => {
   it("is stored and the answer says plainly that the name did not change", async () => {
     const base = await startServer(new Map([["minimax-code", harnessWithoutRename()]]));
@@ -96,7 +119,7 @@ describe("the metadata of a session of a harness without a native rename channel
     expect(answer.renameError).toContain("нет нативного канала переименования");
     expect(answer.nativeTitle).toBeUndefined();
     // The name that was composed is still the name that was asked for.
-    expect(answer.title).toBe("Herder | починить панель | приёмка");
+    expect(answer.title).toBe("починить панель | Herder");
 
     const read = await fetch(`${base}/api/sessions/label?sessionId=mvs-1&harness=minimax-code`);
     expect(read.status).toBe(200);
@@ -145,11 +168,11 @@ describe("the metadata of a session of a harness with a native rename channel", 
     expect(answer.ok).toBe(true);
     expect(answer.renamed).toBe(true);
     expect(answer.renameError).toBeUndefined();
-    expect(answer.nativeTitle).toBe("Herder | починить панель | приёмка");
-    expect(answer.title).toBe("Herder | починить панель | приёмка");
+    expect(answer.nativeTitle).toBe("починить панель | Herder");
+    expect(answer.title).toBe("починить панель | Herder");
     expect(answer.previousTitle).toBe("было");
     // The native path of the harness wrote the name.
-    expect(renames).toEqual(["s-10 -> Herder | починить панель | приёмка"]);
+    expect(renames).toEqual(["s-10 -> починить панель | Herder"]);
     expect(answer.label?.project).toBe("Herder");
     expect(answer.label?.goal).toBe("починить панель");
     expect(answer.label?.stage).toBe("приёмка");

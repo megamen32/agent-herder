@@ -10,7 +10,7 @@ import {
   type OpenCodeEvent,
   type OpenCodeModelCatalogEntry,
 } from "agent-resume-mcp";
-import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, HarnessEvent, ListSessionsOptions, RawTranscriptExport, SendMessageOptions, SendMessageResult, SetPermissionsOptions, SessionMessagePart, SessionMessageView, localSessionHostId } from "../types/index.js";
+import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, HarnessEvent, HarnessPermissionState, ListSessionsOptions, RawTranscriptExport, SendMessageOptions, SendMessageResult, SetPermissionsOptions, SessionMessagePart, SessionMessageView, localSessionHostId } from "../types/index.js";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { throwIfAborted } from "../abort-utils.js";
@@ -515,6 +515,20 @@ export class OpenCodeAdapter implements HarnessAdapter {
     }
     result.meta = Object.keys(meta).length ? meta : undefined;
     return result;
+  }
+
+  async getPermissionState(sessionId: string): Promise<HarnessPermissionState | null> {
+    const state = await this.client.getPermissionState(sessionId);
+    if (!state) return null;
+    return {
+      target: { hostId: localSessionHostId(), harness: "opencode", sessionId },
+      ...(state.currentMode ? { currentMode: state.currentMode } : {}),
+      scope: state.scope,
+      supportedModes: state.supportedModes,
+      canSetMode: state.canSetMode,
+      pendingRequests: state.pendingRequests,
+      observedAt: state.observedAt,
+    };
   }
 
   /**

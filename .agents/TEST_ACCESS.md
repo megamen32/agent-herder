@@ -8,6 +8,26 @@ Fixture owner: `/root/herder_core`, отдельные session/input IDs и со
 
 Тесты Vitest используют `tests/vitest-isolation.setup.ts`, который до import изолирует durable state-dir и singleton ledgers. Проверка источника не означает публикацию/installed/consumer acceptance. Реальное восстановление GLM pending до внешнего quota reset; fake PASS запрещён.
 
+## Permission control fixtures — 25.10.2026
+
+For this cycle, Lead authorized at most one isolated native fixture per
+harness. Fixtures use only a benign local marker read, no production project,
+credential, external network, provider turn, or external action. OpenCode was
+checked through its supported local session API, with exact-session mode and
+scope readback; cleanup removed only the task-owned fixture session, process,
+and temporary state. Codex mode readback showed the requested mode was not
+supported; no provider turn ran. Fixture identities and timestamps are kept in
+private task receipts, not this repository.
+
+## Existing ZCode sessions — 25.10.2026
+
+Lead separately read five existing ZCode sessions on host 100. All five
+reported native YOLO mode and no pending permission requests. Four previously
+authorized requests were answered once and read back; the fifth already had no
+pending request and was not modified. No prompts, commands, calls, session
+creation, model changes, or repeated approvals are authorized by this record.
+The private receipt retains exact identities and timestamps.
+
 
 <!-- owner-rule:no-personal-phone-tests:2026-10-23:begin -->
 ## СТРОГОЕ ПРАВИЛО ВЛАДЕЛЬЦА: тестовые звонки только Matrix

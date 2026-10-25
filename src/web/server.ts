@@ -29,6 +29,8 @@ import { buildSessionProgress } from "../health-progress.js";
 import { buildIntegratorProgress } from "../integrator-progress.js";
 import { deliverStaleRunningQuestion } from "../human-request/notice-question.js";
 import { loadAskHumanProducer, type AskHumanProducer } from "../human-request/ask-human-producer.js";
+import { hasPermissionReplyContextRef, parsePermissionReplyContextRef, readCanonicalNoticePermissionAnswer } from "../permission-control/notice-bridge.js";
+import { respondToNativePermission } from "../permission-control/reply.js";
 import { sessionInspectFacts, type SessionInspectFacts } from "../session-visualization.js";
 // РЕШЕНО 24.10.2026 слиянием (лист L19): его WIP добавил `reportStaleRunningSession` (устаревшая сессия -> ровно один вопрос оператору) и импорты `buildIntegratorProgress` / `deliverStaleRunningQuestion` / `loadAskHumanProducer` / `lifecycleEntryFor` — всё это сохранено автослиянием без конфликта; спорный хунк — только импорт нашего инспектора сессии `sessionInspectFacts` (L68), он нужен инспектору.
   // ORCHESTRATOR-CONFLICT: src/web/server.ts:27 — его три импорта (buildIntegratorProgress/deliverStaleRunningQuestion/loadAskHumanProducer) сохранены; добавлен наш sessionInspectFacts (инспектор сессии).
@@ -131,6 +133,8 @@ export interface WebDependencies {
   choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   /** Canonical human-answer resume shared with the native MCP resolve surface. */
   humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
+  /** Canonical Notice answer reader transport; injectable only for isolated tests. */
+  noticeAnswerFetch?: typeof fetch;
   /** Ordered per-project harness routes with their durable attempt log. */
   projectLaunchDispatch?: ProjectLaunchDispatcher;
   choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
@@ -1068,7 +1072,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
       // checks the owner of the request itself.
       if (await settingsApi(request, response)) return;
       if (await rag.handleHttp(request, response, async (harness, id) => (await dependencies.adapters.get(harness)?.getSession(id)) || undefined)) return;
-      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport, dependencies.noticeAnswerFetch);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -1514,7 +1518,7 @@ export async function computeModelLaunchVerdicts(input: {
   return Object.fromEntries(entries);
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   const resolveSessionRoute = async (harness: string, sessionId: string) => await resolveSessionRouteFor(integratorRuntime, adapters, scopedSupervisorFactory, harness, sessionId);
   if (url.pathname === "/api/resources/s21-lease" && request.method === "GET") {
@@ -2707,6 +2711,43 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const pending = await humanRequests.get(body.request_id);
     if (!pending || pending.kind !== expectedKind) {
       return sendJson(response, 409, { error: "completion does not match the pending human request kind" });
+    }
+    if (hasPermissionReplyContextRef(pending.contextRef)) {
+      const target = parsePermissionReplyContextRef(pending.contextRef);
+      if (!target || expectedKind !== "user") return sendJson(response, 409, { error: "typed permission request binding is invalid" });
+      let answer: Awaited<ReturnType<typeof readCanonicalNoticePermissionAnswer>>;
+      try { answer = await readCanonicalNoticePermissionAnswer(pending, noticeAnswerFetch ?? fetch); }
+      catch { return sendJson(response, 503, { request_id: pending.requestId, status: "pending", retry: true, error: "canonical human answer is not available" }); }
+      let admission: Awaited<ReturnType<HumanRequestRegistry["admitResume"]>>;
+      try {
+        admission = await humanRequests.admitResume(pending.requestId, { resultRef: answer.resultRef, resolutionRef: answer.resultRef });
+      } catch (error) {
+        if (error instanceof HumanRequestLockUnavailableError) {
+          return sendJson(response, 409, { request_id: pending.requestId, status: "pending", retry: true, error: error.message });
+        }
+        throw error;
+      }
+      if (!admission.admitted) {
+        if (admission.record.status === "resumed") {
+          return sendJson(response, 202, { request_id: pending.requestId, status: "resumed", continuation: "permission_reply", duplicate: true });
+        }
+        if (admission.record.status === "resume_failed") {
+          return sendJson(response, 502, { request_id: pending.requestId, status: "resume_failed", continuation: "permission_reply", retry: false });
+        }
+        return sendJson(response, 202, { request_id: pending.requestId, status: admission.record.status, continuation: "permission_reply", in_flight: true });
+      }
+      const adapter = adapters.get(target.harness);
+      const result = adapter
+        ? await respondToNativePermission(adapter, target.harness, target.sessionId, target.permissionRequestId, answer.answer, false, target.hostId)
+        : { ok: false, error: "native harness is unavailable" };
+      const attemptId = admission.record.attemptId;
+      if (!attemptId) return sendJson(response, 502, { request_id: pending.requestId, status: "resume_failed", continuation: "permission_reply", retry: false });
+      if (result.ok) {
+        const completed = await humanRequests.completeResume(pending.requestId, { attemptId, receipt: `agent-herder:permission-reply:${answer.answer}` });
+        return sendJson(response, 202, { request_id: pending.requestId, status: completed.status, continuation: "permission_reply" });
+      }
+      const failed = await humanRequests.failResume(pending.requestId, { attemptId, receipt: "agent-herder:permission-reply:unproven", retryable: false });
+      return sendJson(response, 502, { request_id: pending.requestId, status: failed.status, continuation: "permission_reply", retry: false });
     }
     // One durable admission owns the only native resume of this answer. A repeated
     // provider callback, a concurrent duplicate and a service restart all read the

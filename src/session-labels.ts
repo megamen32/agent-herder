@@ -1,6 +1,6 @@
 import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { dirname, join } from "node:path";
+import { dirname, join, posix, win32 } from "node:path";
 import { homedir } from "node:os";
 import lockfile from "proper-lockfile";
 import type { AgentSession } from "./types/index.js";
@@ -58,15 +58,34 @@ function labelKey(harness: string, sessionId: string): string {
 /**
  * The composed title of one session.
  *
- * The readable form is «Проект | цель | этап». A field that is not known is
- * skipped instead of leaving an empty gap, so a session with only a project
- * still carries one readable name.
+ * The sidebar form is «цель | проект». The project is reduced to the
+ * repository name (including for worktrees), and stage is intentionally
+ * omitted because it changes frequently and is not a task identity. Goals
+ * are preserved in full: no semantic or character truncation is applied.
  */
 export function composeSessionTitle(label: SessionLabel): string {
-  return [label.project, label.goal, label.stage]
-    .map((part) => (typeof part === "string" ? part.trim() : ""))
+  const goal = typeof label.goal === "string" ? label.goal.trim() : "";
+  const project = canonicalProjectName(label.project);
+  return [goal, project]
     .filter((part) => part.length > 0)
     .join(SESSION_TITLE_SEPARATOR);
+}
+
+/** Keep sidebar labels useful across Linux, macOS, Windows, and git worktrees. */
+function canonicalProjectName(value: string | undefined): string {
+  const project = typeof value === "string" ? value.trim() : "";
+  if (!project) return "";
+
+  const pathApi = project.includes("\\") || win32.isAbsolute(project) ? win32 : posix;
+  if (!pathApi.isAbsolute(project) && !/[\\/]/.test(project)) return project;
+
+  const normalized = pathApi.normalize(project);
+  const parts = normalized.split(/[\\/]+/).filter(Boolean);
+  const worktreesIndex = parts.lastIndexOf(".worktrees");
+  if (worktreesIndex > 0 && worktreesIndex < parts.length - 1) {
+    return parts[worktreesIndex - 1] ?? pathApi.basename(normalized);
+  }
+  return pathApi.basename(normalized);
 }
 
 /** The label of one session, or an empty label when nothing was stored yet. */

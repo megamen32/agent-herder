@@ -2,7 +2,7 @@ import { open, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import lockfile from "proper-lockfile";
-import type { AgentSession, HarnessAdapter } from "../types/index.js";
+import type { HarnessAdapter } from "../types/index.js";
 
 type PermissionResponse = "allow" | "deny";
 type ReplyState = "claimed" | "accepted" | "rejected" | "unknown";
@@ -44,13 +44,6 @@ async function writeLedger(path: string, ledger: ReplyLedger): Promise<void> {
   await rename(temp, path);
 }
 
-function isPending(session: AgentSession, requestId: string): boolean {
-  if (!session.needsPermission) return false;
-  if (session.permissionDetails?.id === requestId) return true;
-  const pending = session.meta?.pendingRequestIds;
-  return Array.isArray(pending) && pending.some((id) => id === requestId);
-}
-
 async function observeNativeTarget(
   adapter: HarnessAdapter,
   harness: string,
@@ -58,17 +51,12 @@ async function observeNativeTarget(
   requestId: string,
   expectedHostId?: string,
 ): Promise<{ hostId: string; pending: boolean } | undefined> {
-  if (adapter.getPermissionState) {
-    const state = await adapter.getPermissionState(sessionId);
-    if (!state || state.target.harness !== harness || state.target.sessionId !== sessionId
-      || !state.target.hostId || (expectedHostId !== undefined && state.target.hostId !== expectedHostId)) return undefined;
-    return { hostId: state.target.hostId, pending: state.pendingRequests.some((request) => request.id === requestId) };
-  }
-  if (!adapter.getSession) return undefined;
-  const session = await adapter.getSession(sessionId);
-  if (!session || session.id !== sessionId || session.harness !== harness || !session.hostId
-    || (expectedHostId !== undefined && session.hostId !== expectedHostId)) return undefined;
-  return { hostId: session.hostId, pending: isPending(session, requestId) };
+  if (!adapter.getPermissionState) return undefined;
+  const state = await adapter.getPermissionState(sessionId);
+  if (!state || state.target.harness !== harness || state.target.sessionId !== sessionId
+    || !state.target.hostId || (expectedHostId !== undefined && state.target.hostId !== expectedHostId)) return undefined;
+  const pendingRequest = state.pendingRequests.find((request) => request.id === requestId);
+  return { hostId: state.target.hostId, pending: Boolean(pendingRequest) && pendingRequest?.canRespond === true };
 }
 
 /**
@@ -85,7 +73,7 @@ export async function respondToNativePermission(
   remember = false,
   expectedHostId?: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  if (!adapter.getPermissionState && !adapter.getSession) return { ok: false, error: "Native session state is unavailable." };
+  if (!adapter.getPermissionState) return { ok: false, error: "Typed native permission state is unavailable." };
   const path = ledgerPath();
   await import("node:fs/promises").then(({ mkdir }) => mkdir(dirname(path), { recursive: true }));
   const handle = await open(path, "a", 0o600);

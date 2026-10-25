@@ -4,6 +4,8 @@ import type { AgentSession } from "../types/index.js";
 import { localSessionHostId } from "../types/index.js";
 import type { MinimaxCodeControl } from "./minimax-code-control.js";
 import type { MinimaxRuntimeActiveProof } from "./minimax-code-runtime-activity.js";
+import { sessionWorkspaces, type SessionWorkspaceStore } from "../session-workspaces.js";
+import { backfillSessionWorkspaces, workspaceEvidenceFromNativeSession } from "../session-workspaces-backfill.js";
 
 export interface MinimaxActiveReceipt {
   exhaustive: boolean;
@@ -39,6 +41,8 @@ export interface MinimaxActiveOptions {
   /** Runtime-state proof of activity, used when the desktop transport cannot prove it.
    * The caller wires the real source; without it the answer stays controller-only. */
   readRuntimeActivity?: () => Promise<MinimaxRuntimeActiveProof>;
+  /** Injectable durable metadata store for isolated tests. */
+  workspaceStore?: SessionWorkspaceStore;
 }
 
 /** Both normal turns and manual compaction call repository.admit before controller.register.
@@ -152,6 +156,14 @@ async function proveMinimaxActiveTurns(control: Pick<MinimaxCodeControl, "call">
  * answer stays a refusal: an empty activity list is never invented.
  */
 export async function readMinimaxActiveSessions(control: Pick<MinimaxCodeControl, "call">, options: MinimaxActiveOptions = {}): Promise<{ sessions: AgentSession[]; receipt: MinimaxActiveReceipt }> {
+  const persistNativeWorkspaces = async (sessions:AgentSession[]) => {
+    const evidence=sessions.flatMap(session=>workspaceEvidenceFromNativeSession({
+      runtimeHostId:session.hostId,harness:session.harness,nativeSessionId:session.id,
+      hostId:session.hostId,cwd:session.cwd,observedAt:String(session.meta?.activityObservedAt??""),
+      activityEvidence:String(session.meta?.activityEvidence??""),
+    }));
+    if(evidence.length) await backfillSessionWorkspaces(options.workspaceStore??sessionWorkspaces,evidence);
+  };
   let proven: { sessions: AgentSession[]; receipt: MinimaxActiveReceipt } | null = null;
   let refusal: unknown = null;
   try {
@@ -167,6 +179,7 @@ export async function readMinimaxActiveSessions(control: Pick<MinimaxCodeControl
       proof = null;
     }
     if (proof && proof.sessions.length) {
+      await persistNativeWorkspaces(proof.sessions);
       const receipt: MinimaxActiveReceipt = {
         exhaustive: proof.unprovenLeaseCount === 0, observedAt: proof.observedAt, expiresAt: proof.expiresAt,
         source: "native_runtime_turn_lease", metadataEnumerationExhaustive: false,
@@ -179,5 +192,6 @@ export async function readMinimaxActiveSessions(control: Pick<MinimaxCodeControl
     }
   }
   if (!proven) throw refusal;
+  await persistNativeWorkspaces(proven.sessions);
   return proven;
 }
