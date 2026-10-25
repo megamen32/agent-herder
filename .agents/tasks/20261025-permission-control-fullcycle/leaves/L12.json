@@ -1,0 +1,49 @@
+{
+  "id": "L12",
+  "label": "Закрыть полный цикл по пользовательскому результату",
+  "status": "queued",
+  "description": "Проверить согласованность четырёх сценариев, UI, ошибок, секретов, повторов и итогов выпуска; исправить найденные дефекты и повторить только затронутую приёмку. Независимая проверка существующим исполнителем без создания нового агента, если его участие разрешено.",
+  "acceptance": "Все четыре среды имеют реальную consumer evidence и понятную инструкцию; нет pending обязательных ветвей, чужих изменений, повторных UNKNOWN действий и тестовых звонков человеку; план и отчёт согласованы.",
+  "affected_files": [
+    ".agents/tasks/20261025-permission-control-fullcycle/result.md"
+  ],
+  "owner": "исполнитель текущего чата",
+  "depends_on": [
+    "L11",
+    "L14",
+    "L16",
+    "L17"
+  ],
+  "estimate_minutes": {
+    "minimum": 15,
+    "maximum": 25
+  },
+  "updated_at": "2026-10-25T15:40:00+03:00",
+  "estimate_over_limit_reason": "Проверка сквозных инвариантов четырёх сред и итогового consumer доказательства, без нового аудита или полной suite.",
+  "wait_reason": "Финальная проверка включает обязательное доказательство activity ветки MiniMax.",
+  "progress_events": [
+    {
+      "at": "2026-10-25T14:37:49+03:00",
+      "note": "",
+      "changes": {
+        "estimate_over_limit_reason": "Проверка сквозных инвариантов четырёх сред и итогового consumer доказательства, без нового аудита или полной suite.",
+        "wait_reason": "После L11: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+      },
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-10-25T15:02:00+03:00",
+      "note": "Lead подтвердил новую декомпозицию и владельца/зависимости.",
+      "changes": {
+        "owner": "исполнитель текущего чата",
+        "status": "queued",
+        "depends_on": [
+          "L11",
+          "L14"
+        ]
+      },
+      "harness": "codex"
+    }
+  ],
+  "note": "Full four-harness/user cycle не закрыт до consumer acceptance ZCode/OpenCode/Codex/MiniMax, подтверждённой Notice Place delivery и idle MiniMax delivery. Codex/MiniMax ещё blocked/unproved; Notice Place delivery не поставлена. Title composer source tests and existing 8/8 app rename proof are complete, but the new composer is not installed until L07."
+}

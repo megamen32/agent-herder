@@ -1,0 +1,49 @@
+{
+  "id": "L05",
+  "label": "Доставлять карточку с контекстом через Notice Place",
+  "status": "queued",
+  "description": "Использовать существующий API Notice Place и его маршрут UserIO: точная ссылка на сессию, текущая команда, предыдущее сообщение агента и последнее сообщение человека; удалять секреты. Ответ связан с host/session/request и сохраняет однократность.",
+  "acceptance": "Одна карточка на native request, подтверждённая доставка и возврат ответа; однократное разрешение и отказ; секреты не уходят в карточку; недоступный контекст помечается явно, а не выдумывается.",
+  "affected_files": [
+    "src/permission-control/noticeplace-bridge.ts",
+    "src/permission-control/context.ts",
+    "tests/permission-control-noticeplace.test.ts"
+  ],
+  "owner": "permission_reply_bridge",
+  "depends_on": [
+    "L02",
+    "L04"
+  ],
+  "estimate_minutes": {
+    "minimum": 25,
+    "maximum": 40
+  },
+  "updated_at": "2026-10-25T15:34:00+03:00",
+  "estimate_over_limit_reason": "Один полный путь карточка/контекст/ответ/дедупликация; отдельные неполные части не проверяют возврат ответа.",
+  "wait_reason": "Нужны готовые reply contract L02 и native adapters L04.",
+  "progress_events": [
+    {
+      "at": "2026-10-25T14:37:48+03:00",
+      "note": "",
+      "changes": {
+        "estimate_over_limit_reason": "Один полный путь карточка/контекст/ответ/дедупликация; отдельные неполные части не проверяют возврат ответа.",
+        "wait_reason": "После L04: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+      },
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-10-25T15:02:00+03:00",
+      "note": "Lead подтвердил новую декомпозицию и владельца/зависимости.",
+      "changes": {
+        "owner": "permission_reply_bridge",
+        "status": "queued",
+        "depends_on": [
+          "L02",
+          "L04"
+        ]
+      },
+      "harness": "codex"
+    }
+  ],
+  "note": "Bridge commit b9aea61 исправляет generic native permission resume и focused проверки по сообщению Lead; native delta-review ещё ожидается. Observer и автоматическая доставка permission.requested через Notice Place в source/runtime не подключены: Leaf остаётся queued, delivery/feature-complete не заявляются."
+}

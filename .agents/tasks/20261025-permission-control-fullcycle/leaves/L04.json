@@ -1,0 +1,56 @@
+{
+  "id": "L04",
+  "label": "Собирать запросы и возвращать точный ответ в нативную среду",
+  "status": "queued",
+  "description": "Подключить native permission events/readback и response для четырёх сред. Сохранять pending при неизвестном результате; ответ не становится новой командой агенту.",
+  "acceptance": "Разрешение/отказ применяются только к актуальному native request, повтор callback не исполняет команду вновь, чужой и закрытый запрос не принимаются.",
+  "affected_files": [
+    "src/permission-control/native-requests.ts",
+    "src/adapters/zcode.ts",
+    "src/adapters/opencode.ts",
+    "src/adapters/codex-app-server.ts",
+    "src/adapters/minimax-code-control.ts",
+    "tests/permission-control-native-requests.test.ts"
+  ],
+  "owner": "permission_native",
+  "depends_on": [
+    "L03"
+  ],
+  "estimate_minutes": {
+    "minimum": 25,
+    "maximum": 45
+  },
+  "updated_at": "2026-10-25T15:42:00+03:00",
+  "estimate_over_limit_reason": "Одна связная цепочка native request/response и защита от повторов для четырёх адаптеров; checkpoint через20мин.",
+  "wait_reason": "Запускается после завершения L03.",
+  "progress_events": [
+    {
+      "at": "2026-10-25T14:37:48+03:00",
+      "note": "",
+      "changes": {
+        "estimate_over_limit_reason": "Одна связная цепочка native request/response и защита от повторов для четырёх адаптеров; checkpoint через20мин.",
+        "wait_reason": "После L03: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+      },
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-10-25T15:02:00+03:00",
+      "note": "Lead подтвердил новую декомпозицию и владельца/зависимости.",
+      "changes": {
+        "owner": "permission_native",
+        "status": "queued",
+        "depends_on": [
+          "L03"
+        ]
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T15:15:00+03:00",
+      "note": "Independent review выявил Codex permission-subset request, который виден как обычный pending request, но respondPermission безопасно отказывает; общий DTO пока не кодирует допустимость ответа. Finding передан permission_native. Leaf остаётся queued до завершения L03; source/live PASS не заявляется.",
+      "changes": {},
+      "harness": "codex"
+    }
+  ],
+  "note": "Lead подтвердил native readback по четырём exact ZCode sessions на host100: mode=yolo, pendingRequests=[]; исходные четыре durable pending approvals исполнены единственный раз native executor. Отдельный Airlock list_pages request также отвечен один раз по отдельному подтверждению Lead. Это current native business evidence, но не source/runtime causality и не приёмка четырёх harness; не re-approve и не менять mode повторно."
+}

@@ -1,0 +1,51 @@
+{
+  "id": "L06",
+  "label": "Показать управление режимами и разрешениями в Herder",
+  "status": "queued",
+  "description": "В выбранной сессии показать реальный режим, допустимые переходы, текущий запрос и результат решения. Использовать существующий UI/MCP; избегать неподтверждённых универсальных кнопок.",
+  "acceptance": "UI и MCP показывают одинаковый readback; поддержка каждой среды видна пользователю; ссылка карточки открывает ту же сессию; ошибки не маскируются под успех.",
+  "affected_files": [
+    "src/web-ui/main.tsx",
+    "src/web/server.ts",
+    "src/mcp-tools/definitions.ts",
+    "src/mcp-tools/handlers.ts",
+    "tests/permission-control-ui.test.ts"
+  ],
+  "owner": "интегратор 01a172c2",
+  "depends_on": [
+    "L03",
+    "L05"
+  ],
+  "estimate_minutes": {
+    "minimum": 20,
+    "maximum": 30
+  },
+  "updated_at": "2026-10-25T15:34:00+03:00",
+  "estimate_over_limit_reason": "Согласованное отображение одного состояния в UI и MCP; оценка включает браузерное действие/readback.",
+  "wait_reason": "Нужны режимы и карточка ответа. Интегратор отдельно владеет compact Allow UI и queue edit; его исходники не подменяются.",
+  "progress_events": [
+    {
+      "at": "2026-10-25T14:37:48+03:00",
+      "note": "",
+      "changes": {
+        "estimate_over_limit_reason": "Согласованное отображение одного состояния в UI и MCP; оценка включает браузерное действие/readback.",
+        "wait_reason": "После L05: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+      },
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-10-25T15:02:00+03:00",
+      "note": "Lead подтвердил новую декомпозицию и владельца/зависимости.",
+      "changes": {
+        "owner": "интегратор 01a172c2",
+        "status": "queued",
+        "depends_on": [
+          "L03",
+          "L05"
+        ]
+      },
+      "harness": "codex"
+    }
+  ],
+  "note": "Существующий установленный compact one-time Allow и queue edit подтверждены Lead, но mode controller отсутствует в принятом UI release. Mode UI отложен до source join/ownership check. Нужны capability-driven state/readback, видимый scope, unknown как unknown и disabled unsupported; не часть настоящей source ветки."
+}

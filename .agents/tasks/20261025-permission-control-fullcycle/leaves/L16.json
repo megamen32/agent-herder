@@ -1,0 +1,20 @@
+{
+  "id": "L16",
+  "label": "Доставлять сообщение в idle MiniMax desktop без повтора",
+  "status": "queued",
+  "description": "Проследить и исправить bounded route, по которому OpenCode передаёт сообщение в idle MiniMax desktop session. Сохранить exact native host/session identity и штатную очередь; accepted/UNKNOWN input не replay-ить и не превращать в новую сессию.",
+  "acceptance": "Focused regression доказывает доставку одного нового сообщения в точную idle MiniMax session штатным механизмом; отсутствие capability/неизвестный результат видны явно. Ранее accepted/queued сообщения не переотправляются, никакая новая native session не создаётся.",
+  "affected_files": [],
+  "owner": "permission_reply_bridge",
+  "depends_on": [
+    "L01"
+  ],
+  "estimate_minutes": {
+    "minimum": 20,
+    "maximum": 35
+  },
+  "estimate_over_limit_reason": "Одна bounded cross-harness delivery route; exact root cause сейчас read-only трассируется, путь/consumer proof будут уточнены до исходного патча.",
+  "note": "Earlier read-only trace and exact constraints remain: source fix not started, no accepted/queued input replayed. Deferred behind the new user search defect by Lead priority; existing estimate retained.",
+  "updated_at": "2026-10-25T16:13:00+03:00",
+  "wait_reason": "Lead reprioritized the newly reported catalog text-search zero-result defect (L18) after immutable 49b release capture. Resume this bounded idle MiniMax delivery investigation after L18; never replay accepted/UNKNOWN queued messages."
+}

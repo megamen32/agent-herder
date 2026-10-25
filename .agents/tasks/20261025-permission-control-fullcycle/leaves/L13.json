@@ -1,0 +1,60 @@
+{
+  "id": "L13",
+  "label": "Восстановить рабочие папки MiniMax в Herder",
+  "status": "done",
+  "description": "Проследить native session identity до workspace metadata и фильтрации Herder; исправить потерю рабочего каталога без угадывания по title или launchCwd. Разделять runtime/GUI host и work-computer path.",
+  "acceptance": "Exact native runtime/session cwd либо явная декларация проходит reliable roundtrip до Herder; фильтр TelegramAuto видит workspace только по проверенным данным. Нет title guess. Focused regression и readback на той же native identity.",
+  "affected_files": [
+    "src/session-workspaces.ts",
+    "src/session-workspaces-tools.ts",
+    "src/session-workspaces-backfill.ts",
+    "src/adapters/minimax-code-active.ts",
+    "src/adapters/minimax-code-runtime-activity.ts",
+    "src/adapters/minimax-code-native-session.ts",
+    "src/mesh/native-minimax-code.ts",
+    "tests/minimax-active-runtime.test.ts",
+    "tests/session-workspaces-backfill.test.ts"
+  ],
+  "owner": "workspace_activity",
+  "depends_on": [
+    "L01"
+  ],
+  "estimate_minutes": {
+    "minimum": 15,
+    "maximum": 25
+  },
+  "estimate_over_limit_reason": "Одна цепочка metadata: native identity/cwd или declaration → workspace persistence/filter → focused regression и exact readback. Для L14 требуется отдельная consumer проверка после L13.",
+  "updated_at": "2026-10-25T16:23:50+03:00",
+  "note": "Source commit 57e18c8 is installed inside release 49b2c13; RED→GREEN focused regression 17 tests. Post-install Herder MCP list_active_sessions filter (harness=minimax-code, hostId=100, runtimeHostId=100) returned six active rows with partial metadata enumeration, including the exact active root whose observed native cwd is TelegramAuto. Exact session_workspaces_get for that same identity returned host100 and /home/roomhacker/PycharmProjects/TelegramAuto with source=observed, evidence=native_session_cwd:native_runtime_turn_lease. No title guess, Telegram API or native write.",
+  "started_at": "2026-10-25T15:03:00+03:00",
+  "session": "",
+  "harness": "codex",
+  "progress_events": [
+    {
+      "at": "2026-10-25T15:03:00+03:00",
+      "note": "Старт по прямому назначению Lead.",
+      "changes": {
+        "status": "running"
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T15:10:00+03:00",
+      "note": "Focused RED→GREEN и isolated exact-identity source canary завершены; installed readback не заявлен.",
+      "changes": {
+        "status": "running"
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T15:12:00+03:00",
+      "note": "Verified native workspace_dir из active MiniMax session/turn теперь записывается в ledger как observed native_session_cwd только для точной native activity identity. Focused regression и isolated exact-identity host-filter canary зелёные. Runtime install/deployment остаются в L07.",
+      "changes": {
+        "status": "done"
+      },
+      "harness": "codex"
+    }
+  ],
+  "result": "Verified native workspace_dir из active MiniMax session/turn теперь записывается в ledger как observed native_session_cwd только для точной native activity identity. Focused regression и isolated exact-identity host-filter canary зелёные. Runtime install/deployment остаются в L07.",
+  "finished_at": "2026-10-25T15:12:00+03:00"
+}

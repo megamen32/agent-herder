@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZCode Full Access по умолчанию, режимы и разрешения в четырёх средах · LHC</title>
+<style>
+  :root, :root[data-theme="dark"] { --bg: #0d1117; --panel: #151b26; --panel-2: #1b2331; --line: #26303f; --text: #e6edf6; --muted: #9fb0c6; --accent: #6ea8fe; --ok: #2ecc71; --warn: #f0a742; --bad: #f25f74; --st-done: #2ecc71; --st-running: #4f9cf9; --st-blocked: #f25f74; --st-waiting: #f0a742; --st-deferred: #b08ce8; --st-queued: #8fa0b8; }
+  :root[data-theme="light"] { --bg: #f4f6f9; --panel: #ffffff; --panel-2: #eaeef4; --line: #d3dae3; --text: #15202c; --muted: #58677a; --accent: #1a62cc; --ok: #1a7f37; --warn: #8a6100; --bad: #c02b38; --st-done: #1a7f37; --st-running: #1a62cc; --st-blocked: #c02b38; --st-waiting: #8a6100; --st-deferred: #6b4fa8; --st-queued: #5a6b7f; }
+  * { box-sizing: border-box; }
+  /* The page background lives on the canvas itself. No overlay element is
+     painted over the content, so nothing can ever hide a block of the
+     dashboard behind an opaque layer. */
+  html { background: var(--bg); }
+  body {
+    margin: 0; background: var(--bg);
+    background-image: radial-gradient(1500px 760px at 12% -12%, #1b2b45 0%, rgba(13,17,23,0) 62%);
+    background-repeat: no-repeat;
+    color: var(--text);
+    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, "Helvetica Neue", Arial, sans-serif;
+    padding: 22px clamp(12px, 3vw, 40px) 56px;
+    min-height: 100%;
+    overflow-x: hidden;
+  }
+  a { color: var(--accent); }
+  .page { max-width: 2200px; margin: 0 auto; }
+
+  /* ---- header ---- */
+  header { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between;
+    margin-bottom: 16px; }
+  h1 { font-size: 23px; margin: 0; letter-spacing: -0.3px; overflow-wrap: anywhere; }
+  header > div { min-width: 0; max-width: 100%; }
+  .sub { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+  .head-count { display: flex; align-items: baseline; gap: 8px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 12px; padding: 8px 14px; }
+  .head-count b { font-size: 22px; font-weight: 650; letter-spacing: -0.4px; }
+  .head-count span { color: var(--muted); font-size: 12px; }
+  .theme-toggle { background: var(--panel); border: 1px solid var(--line); color: var(--muted);
+    border-radius: 10px; padding: 8px 12px; cursor: pointer; font: inherit; font-size: 12.5px;
+    min-height: 44px; min-width: 44px; }
+  .theme-toggle:hover { color: var(--text); }
+  .head-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  /* The progress stays in sight while the page scrolls. */
+  /* A number you can click: the tasks behind it. */
+  .kpi-tile { cursor: pointer; }
+  .kpi-tile:hover { border-color: var(--accent); }
+  .kpi-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .progress-strip { cursor: pointer; }
+  .tile-card { margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 10px; background: var(--panel-2); }
+  .tile-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin-bottom: 8px; }
+  .tile-card-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .tile-card-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+    padding: 6px 0; border-top: 1px solid var(--line); cursor: pointer; }
+  .tile-card-item:hover .row-name { color: var(--accent); }
+  .tile-card-close, .tile-card-back { min-height: 44px; padding: 4px 10px; border-radius: 8px;
+    border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
+  .journal-fold summary { cursor: pointer; list-style: none; }
+  .journal-fold summary::-webkit-details-marker { display: none; }
+  .journal-fold summary h2 { margin: 0; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--muted); }
+  .journal-fold[open] summary h2 { color: var(--text); }
+  .evidence-fold { margin: 0 0 14px; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--panel); }
+  .evidence-fold > summary { cursor: pointer; padding: 10px 12px; color: var(--muted);
+    font-size: 12.5px; }
+  .evidence-fold[open] > summary { color: var(--text); border-bottom: 1px solid var(--line); }
+  .evidence-fold > *:not(summary) { margin-left: 12px; margin-right: 12px; }
+  .blocking-group { display: grid; gap: 8px; }
+  .blocking-group h3 { margin: 0 0 2px; font-size: 11px; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--muted); }
+  .blocker-owner { border-left-color: var(--warn); }
+  /* The progress strip sticks to the top, so an anchor jump must not land
+     a section under it. */
+  section, .panel, .kpis, [id^="lhc-"] { scroll-margin-top: 76px; }
+  .progress-strip { position: sticky; top: 0; z-index: 40; margin: 0 0 12px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+  .progress-strip-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+  .progress-strip-title { font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); }
+  .progress-strip-value { font-size: 15px; font-weight: 700; color: var(--text); }
+  .progress-strip-percent { font-size: 13px; font-weight: 600; color: var(--accent); }
+  .progress-strip-hint { font-size: 12px; color: var(--muted); }
+  .progress-strip-bar { display: flex; height: 6px; margin-top: 7px; border-radius: 999px;
+    overflow: hidden; background: var(--panel-2); }
+  .progress-strip-bar .seg { height: 100%; }
+  .snapshot-note { color: var(--muted); font-size: 12.5px; margin: 0 0 14px; padding: 8px 12px;
+    border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px;
+    background: var(--panel); overflow-wrap: anywhere; }
+
+  /* ---- panels ---- */
+  .panel { background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+    border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 16px; min-width: 0; }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted);
+    margin: 0 0 12px; font-weight: 600; }
+  .panel-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+  .panel-head h2 { margin: 0; }
+
+  /* ---- brief: goal and business result ---- */
+  .brief { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 16px; }
+  /* The technical wording is a confirmation, not the first thing to read. */
+  .brief-details { margin-bottom: 16px; }
+  .brief-details > summary { cursor: pointer; color: var(--muted); font-size: 12.5px;
+    min-height: 44px; display: flex; align-items: center; }
+  .brief-details[open] > summary { margin-bottom: 12px; color: var(--text); }
+  .brief-card { background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+    border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 12px; padding: 14px 16px;
+    min-width: 0; }
+  .brief-card h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+    margin: 0 0 6px; font-weight: 600; }
+  .brief-card p { margin: 0; overflow-wrap: anywhere; }
+  .brief-goal { border-left-color: var(--accent); }
+  .brief-result { border-left-color: var(--ok); }
+  .brief-wait { border-left-color: var(--warn); }
+  /* The why-panel is open on the first screen; it may be folded by the owner. */
+  .brief-why-details { margin-bottom: 16px; }
+  .brief-why-details > summary { color: var(--text); }
+  .brief-why { margin-bottom: 0; }
+
+  /* ---- KPI strip ---- */
+  .kpis { display: grid; gap: 10px; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 14px; }
+  .kpi { background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+    border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 12px; padding: 11px 13px;
+    min-width: 0; }
+  .kpi-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kpi-value { font-size: 25px; font-weight: 650; margin: 3px 0 2px; letter-spacing: -0.6px; line-height: 1.15;
+    overflow-wrap: anywhere; }
+  .kpi-hint { color: var(--muted); font-size: 11.5px; overflow-wrap: anywhere; }
+
+  /* ---- progress and legend ---- */
+  .progress { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: #0b1018;
+    border: 1px solid var(--line); }
+  .seg { height: 100%; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 10px; color: var(--muted); font-size: 12px; }
+  .legend-item i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; }
+
+  /* ---- what to do now ---- */
+  .slots-badge { font-size: 12.5px; color: var(--muted); background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; }
+  .slots-badge b { color: var(--text); font-size: 14px; }
+  .now-grid { display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 14px;
+    align-items: start; }
+  .now-col { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+    min-width: 0; }
+  .now-col h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
+    margin: 0 0 10px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .now-count { margin-left: auto; background: #0e141d; border: 1px solid var(--line); border-radius: 999px;
+    padding: 0 8px; color: var(--text); font-size: 11.5px; }
+  .now-subtitle { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em;
+    margin: 12px 0 6px; }
+  .now-list { list-style: none; margin: 0; padding: 0; }
+  .now-item { padding: 8px 0; border-bottom: 1px solid #232c3a; }
+  .now-item:last-child { border-bottom: 0; }
+  .now-head { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+  .now-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px;
+    color: var(--accent); flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .now-name { min-width: 0; overflow-wrap: anywhere; }
+  .now-meta { color: var(--muted); font-size: 11.5px; margin-top: 2px; overflow-wrap: anywhere; }
+  .now-item.deferred { opacity: .75; }
+  .now-item.blocked .now-id { color: var(--bad); }
+  .now-empty { color: var(--muted); font-style: italic; font-size: 12.5px; }
+  .wait-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .wait-chip { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px;
+    color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+    padding: 2px 7px; white-space: nowrap; }
+  .wait-more { color: var(--muted); font-size: 11.5px; align-self: center; }
+
+  /* ---- gantt ---- */
+  .gantt { overflow-x: auto; max-width: 100%; }
+  .gantt-inner { min-width: 760px; }
+  .gantt-axis-row, .gantt-row { display: grid; grid-template-columns: minmax(240px, 320px) minmax(360px, 1fr);
+    gap: 10px; min-width: 680px; }
+  .gantt-axis-spacer { min-width: 0; }
+  .gantt-axis { position: relative; height: 22px; min-width: 0; border-bottom: 1px solid var(--line); }
+  .gantt-axis-note { font-size: 11px; color: var(--muted); line-height: 22px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .gantt-noduration { color: var(--muted); font-size: 13px; line-height: 26px; opacity: .8; }
+  .tick { position: absolute; top: 2px; transform: translateX(-50%); font-size: 11px; color: var(--muted);
+    white-space: nowrap; }
+  .tick-0 { transform: none; }
+  .tick-6 { transform: translateX(-100%); }
+  .gantt-row { align-items: center; border-bottom: 1px solid #1e2632; }
+  .gantt-row:hover { background: #18202d; }
+  .gantt-label { display: flex; flex-direction: column; gap: 1px; padding: 5px 0; min-width: 0; overflow: hidden; }
+  .gantt-line { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .gantt-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px;
+    color: var(--muted); flex: none; max-width: 34%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gantt-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gantt-meta { gap: 8px; }
+  .gantt-status { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+  .crit { color: #f0a742; font-size: 10.5px; white-space: nowrap; }
+  .gantt-track { position: relative; height: 26px; min-width: 0; }
+  .bar { position: absolute; top: 6px; height: 15px; border-radius: 5px; min-width: 3px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.25) inset; }
+  .wave-row { display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    margin-top: 14px; padding: 8px 12px; background: var(--panel-2); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent); border-radius: 10px; color: var(--muted);
+    font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  .wave-count { text-transform: none; letter-spacing: 0; }
+
+  /* ---- two column work area ---- */
+  .grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1.35fr) minmax(0, .65fr);
+    align-items: start; }
+  .grid > * { min-width: 0; }
+  @media (max-width: 1000px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+  @media (min-width: 1700px) {
+    .gantt-axis-row, .gantt-row { grid-template-columns: minmax(340px, 460px) minmax(360px, 1fr); }
+  }
+  @media (max-width: 1800px) { .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  @media (max-width: 1200px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 1100px) {
+    .now-grid { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 900px) {
+    .brief { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 700px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .blocker { background: var(--panel-2); border: 1px solid #3a2530; border-left: 3px solid var(--bad);
+    border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+  .blocker-head { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+  .blocker-reason { color: #d7e0ec; }
+  .blocker-meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .badge { font-size: 11px; font-weight: 700; color: #0d1117; border-radius: 5px; padding: 1px 6px; }
+  .facts { margin: 0; padding-left: 18px; color: var(--muted); }
+  .facts li { margin-bottom: 6px; }
+  .facts b { color: var(--text); }
+  .live { list-style: none; margin: 0; padding: 0; }
+  .live li { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid #1e2632; align-items: baseline; }
+  .live-text { flex: 1; }
+  .live-at { color: #8aa0b8; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .live-result { color: var(--text); font-size: 12.5px; }
+  .live-evidence { color: #8aa0b8; font-size: 12px; white-space: nowrap; }
+  .leaf-tag { color: var(--muted); font-size: 11px; border: 1px solid var(--line); border-radius: 5px;
+    padding: 0 5px; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+  .cell-sub { display: block; color: var(--muted); font-size: 11px; }
+  .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .table th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: .05em; padding: 6px 8px; border-bottom: 1px solid var(--line);
+    background: var(--panel); }
+  .table td { padding: 6px 8px; border-bottom: 1px solid #1c2431; vertical-align: top; }
+  /* The leaves are read as a table, so the panel takes the whole width
+     of the page instead of one column of a two-column grid. */
+  .panel-leaves { grid-column: 1 / -1; }
+  .table-leaves { min-width: 920px; width: 100%; table-layout: fixed; }
+  .table-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
+  .table-leaves th:nth-child(1) { width: 42%; }
+  .table-leaves th:nth-child(2) { width: 120px; }
+  .table-leaves th:nth-child(3), .table-leaves th:nth-child(4) { width: 110px; }
+  .table-leaves th:nth-child(5) { width: 120px; }
+  .task-title { font-weight: 550; overflow-wrap: anywhere; }
+  .row-id { display: inline-block; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px; color: var(--muted); margin-right: 7px; vertical-align: 1px; }
+  .table-leaves .status { white-space: nowrap; }
+  .task-details-trigger, .task-details-close { color: var(--accent); background: transparent; border: 1px solid var(--line);
+    border-radius: 6px; cursor: pointer; font: inherit; padding: 3px 7px; }
+  .task-details-host { position: static; width: 100%; margin-top: 12px; }
+  /* The leaf row is the control: the owner taps the task, and the task opens
+     right under itself, where the finger already is. */
+  .leaf-row { cursor: pointer; }
+  .leaf-row:hover .row-name { color: var(--accent); }
+  .leaf-row:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .task-details-row > td { padding: 0; border: none; background: transparent; }
+  .task-details-row .task-details-card { margin: 0 0 10px; }
+  .row-meta { display: block; margin-top: 2px; color: var(--muted); font-size: 12px;
+    overflow-wrap: anywhere; }
+  .details-cell { text-align: right; }
+  .task-details-card { width: 100%; min-width: 0; background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 10px; padding: 12px; }
+  .task-details-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+  .task-details-head h3 { min-width: 0; margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+  .task-details { display: grid; grid-template-columns: minmax(110px, auto) minmax(0, 1fr); gap: 3px 12px; margin: 8px 0 2px; }
+  .task-details dt { color: var(--muted); }
+  .task-details dd { margin: 0; min-width: 0; width: 100%; overflow-wrap: anywhere; word-break: break-word; }
+  details > summary { color: var(--accent); cursor: pointer; }
+  .technical { font-size: 12px; }
+  .status { color: var(--c); font-weight: 600; white-space: nowrap; }
+  /* The overrun of the plan and the plan itself are two facts with two
+     colors, and both colors come from the palette of the theme: the planned
+     time is green, everything above it is yellow. */
+  .over { color: var(--warn); }
+  .plan-time { display: block; color: var(--ok); font-weight: 600; }
+  .plan-over { color: var(--warn); font-weight: 600; }
+  .plan-none { color: var(--muted); }
+  .plan-value { color: var(--ok); font-weight: 600; }
+  .plan-over-value { color: var(--warn); font-weight: 600; }
+  .cell-plan { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+  .row-times { display: block; margin-top: 2px; color: var(--muted); font-size: 12px;
+    font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .empty { color: var(--muted); font-style: italic; }
+  .notes { color: var(--muted); margin: 0; padding-left: 18px; }
+  .hint { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .toolbar input { background: #0e141d; border: 1px solid var(--line); color: var(--text); border-radius: 8px;
+    padding: 6px 10px; min-width: 200px; font: inherit; }
+  .chip { background: #0e141d; border: 1px solid var(--line); color: var(--muted); border-radius: 999px;
+    padding: 4px 11px; cursor: pointer; font: inherit; font-size: 12px; }
+  .chip.active { background: var(--accent); color: #0d1117; border-color: var(--accent); font-weight: 600; }
+  footer { color: var(--muted); font-size: 11.5px; margin-top: 22px; border-top: 1px solid var(--line);
+    padding-top: 12px; }
+  /* The phone layout comes last, so it wins over every base rule above. */
+  @media (max-width: 640px) {
+    /* The state and the action come first; the Gantt opens on its own,
+       below the table that carries the same leaves. */
+    .page { display: flex; flex-direction: column; }
+    /* A flex item keeps its content width by default, so the wide Gantt
+       would push the whole page sideways. The panels have to be allowed to
+       shrink and scroll inside. */
+    .page > * { min-width: 0; max-width: 100%; }
+    .panel, .grid > *, .kpis { min-width: 0; }
+    .panel-gantt { order: 8; }
+    footer { order: 9; }
+    body { padding: 14px 10px 36px; }
+    .panel { padding: 12px; border-radius: 11px; }
+    h1 { font-size: 19px; }
+    /* The cards become compact rows: on a phone the state and the action
+       have to be visible without a grid of boxes. */
+    .kpis { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .kpi { padding: 8px 10px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+    .kpi-label { order: 1; flex: 0 0 auto; }
+    .kpi-value { order: 2; font-size: 19px; margin: 0; }
+    .kpi-hint { order: 3; flex: 1 1 100%; font-size: 11px; }
+    .toolbar input { min-width: 0; width: 100%; }
+    /* Every touch target is at least 44 CSS px. */
+    .chip, .task-details-trigger, .task-details-close, .toolbar input, .toolbar select { min-height: 44px; min-width: 44px; }
+    .task-details { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    .task-details dd { margin-bottom: 8px; }
+    /* The leaf table becomes one compact row per leaf instead of a wide
+       table that has to be scrolled sideways. */
+    .table-leaves { min-width: 0; display: block; }
+    .table-leaves thead { display: none; }
+    .table-leaves tbody { display: block; }
+    .table-leaves tr { display: block; padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .table-leaves td { display: flex; gap: 10px; justify-content: space-between; align-items: baseline;
+      border: none; padding: 2px 0; text-align: right; }
+    .table-leaves td::before { content: attr(data-label); color: var(--muted); font-size: 11px;
+      text-transform: uppercase; letter-spacing: .05em; text-align: left; flex: 0 0 auto; }
+    .table-leaves td.task-title { display: block; text-align: left; }
+    .table-leaves td.task-title::before { content: none; }
+    /* The plan cell keeps its lines stacked and flush right on a phone. */
+    .table-leaves td .cell-plan { align-items: flex-end; }
+    .table-leaves td:last-child { justify-content: flex-start; }
+    .table-leaves td:last-child::before { content: none; }
+    .table-scroll { overflow-x: visible; }
+    /* The opened task is a card under its own row, not another table cell. */
+    .table-leaves tr.task-details-row { display: block; padding: 0; border: none; }
+    .table-leaves tr.task-details-row > td { display: block; padding: 0; text-align: left; }
+    .table-leaves tr.task-details-row > td::before { content: none; }
+  }
+
+</style>
+</head>
+<body>
+<div class="page">
+<div class="progress-strip" id="lhc-progress-strip" role="button" tabindex="0" data-tile="all" aria-label="Степень прогресса — показать все задачи"><div class="progress-strip-line"><span class="progress-strip-title">Степень прогресса</span><span class="progress-strip-value">8 / 18</span><span class="progress-strip-percent">44.4%</span><span class="progress-strip-hint">от 2 ч 20 мин до 4 ч 05 мин · неточно: срок внешнего ожидания не подтверждён</span></div><div class="progress-strip-bar"><div class="seg" style="width:44.4444%;background:var(--st-done)" title="Готово: 8"></div><div class="seg" style="width:11.1111%;background:var(--st-running)" title="В работе: 2"></div><div class="seg" style="width:44.4444%;background:var(--st-queued)" title="В очереди: 8"></div></div></div>
+
+<header><div><h1>ZCode Full Access по умолчанию, режимы и разрешения в четырёх средах</h1><div class="sub">LHC · graph-json · план обновлён 2026-10-25 16:37:05+03:00 · ревизия da4182069cce · собран 25.10.2026 16:41</div></div><div class="head-actions"><button type="button" class="theme-toggle" id="theme-toggle" aria-label="Переключить тему">Тема: как в системе</button><div class="head-count"><b>18</b><span>задач в графе</span></div></div></header>
+
+
+
+<p class="snapshot-note">Это снимок плана, а не панель управления: фактическое состояние работы приходит из API владельцев, а не из пересказа агента в графе.</p>
+
+<div class="kpis" id="lhc-state"><div class="kpi kpi-tile" data-tile="done" role="button" tabindex="0" aria-label="Готово: 8 / 18 — показать задачи" style="--accent:var(--st-done)"><div class="kpi-label" title="Готово">✅ Готово</div><div class="kpi-value">8 / 18</div><div class="kpi-hint">44.4% листьев</div></div><div class="kpi kpi-tile" data-tile="running" role="button" tabindex="0" aria-label="В работе: 2 — показать задачи" style="--accent:var(--st-running)"><div class="kpi-label" title="В работе">🔄 В работе</div><div class="kpi-value">2</div><div class="kpi-hint">сейчас выполняется</div></div><div class="kpi kpi-tile" data-tile="blocked" role="button" tabindex="0" aria-label="Заблокировано: 0 — показать задачи" style="--accent:var(--st-blocked)"><div class="kpi-label" title="Заблокировано">⛔ Заблокировано</div><div class="kpi-value">0</div><div class="kpi-hint">нужен внешний ход</div></div><div class="kpi kpi-tile" data-tile="queued" role="button" tabindex="0" aria-label="В очереди: 8 — показать задачи" style="--accent:var(--st-queued)"><div class="kpi-label" title="В очереди">⋯ В очереди</div><div class="kpi-value">8</div><div class="kpi-hint">ждут своего слота</div></div><div class="kpi kpi-tile" data-tile="deferred" role="button" tabindex="0" aria-label="Отложено владельцем: 0 — показать задачи" style="--accent:var(--st-deferred)"><div class="kpi-label" title="Отложено владельцем">⏸ Отложено владельцем</div><div class="kpi-value">0</div><div class="kpi-hint">ответа не ждём, вне остатка</div></div><div class="kpi kpi-tile" data-tile="unfinished" role="button" tabindex="0" aria-label="Осталось: 10 — показать задачи" style="--accent:var(--st-queued)"><div class="kpi-label" title="Осталось">⋯ Осталось</div><div class="kpi-value">10</div><div class="kpi-hint">не завершено · отложено владельцем: 0 (в остаток не входит)</div></div><div class="kpi kpi-tile" data-tile="parallel" role="button" tabindex="0" aria-label="Параллельность: 2 / 3 — показать задачи" style="--accent:var(--st-running)"><div class="kpi-label" title="Параллельность">Параллельность</div><div class="kpi-value">2 / 3</div><div class="kpi-hint">пик по плану неизвестен · занятых исполнителей 2</div></div><div class="kpi kpi-tile" data-tile="remaining" role="button" tabindex="0" aria-label="Осталось по плану: от 2 ч 20 мин до 4 ч 05 мин — показать задачи" style="--accent:var(--st-waiting)"><div class="kpi-label" title="Осталось по плану">Осталось по плану</div><div class="kpi-value">от 2 ч 20 мин до 4 ч 05 мин</div><div class="kpi-hint">от 2 ч 20 мин до 4 ч 05 мин · неточно: срок внешнего ожидания не подтверждён</div></div><div class="kpi kpi-tile" data-tile="forecast" role="button" tabindex="0" aria-label="Прогноз финиша: 18:57–20:42 — показать задачи" style="--accent:var(--st-done)"><div class="kpi-label" title="Прогноз финиша">Прогноз финиша</div><div class="kpi-value">18:57–20:42</div><div class="kpi-hint">отсчёт от последнего события 16:37 · простой 4 мин</div></div><div class="kpi kpi-tile" data-tile="effort" role="button" tabindex="0" aria-label="Усилие: неизвестно — показать задачи" style="--accent:var(--st-queued)"><div class="kpi-label" title="Усилие">Усилие</div><div class="kpi-value">неизвестно</div><div class="kpi-hint">известная часть 7 ч 50 мин · критический путь неизвестен · 1 оценок неизвестны</div></div></div>
+
+<div class="tile-card" id="lhc-tile-card" hidden></div>
+<template id="lhc-tile-index">{"tiles": {"all": ["L01", "L18", "L02", "L03", "L13", "L16", "L17", "L04", "L14", "L15", "L05", "L06", "L07", "L08", "L09", "L10", "L11", "L12"], "done": ["L01", "L02", "L13", "L17", "L14", "L15", "L07", "L08"], "running": ["L18", "L03"], "blocked": [], "queued": ["L16", "L04", "L05", "L06", "L09", "L10", "L11", "L12"], "deferred": [], "unfinished": ["L18", "L03", "L16", "L04", "L05", "L06", "L09", "L10", "L11", "L12"], "parallel": ["L01", "L18"], "remaining": ["L18", "L03", "L16", "L04", "L05", "L06", "L09", "L10", "L11", "L12"], "forecast": ["L12"], "effort": ["L17"]}, "titles": {"done": "Готово", "running": "В работе", "blocked": "Заблокировано", "queued": "В очереди", "deferred": "Отложено владельцем", "unfinished": "Осталось", "parallel": "Параллельность", "remaining": "Осталось по плану", "forecast": "Прогноз финиша", "effort": "Усилие", "all": "Все задачи плана"}, "leaves": {"L01": {"id": "L01", "template": 0, "label": "Проверить нативные возможности и безопасные тестовые сессии", "status": "done", "status_label": "Готово", "owner": "Исполнитель текущего чата", "estimate": "15 мин–25 мин"}, "L18": {"id": "L18", "template": 1, "label": "Исправить нулевые текстовые результаты поиска по каталогу", "status": "running", "status_label": "В работе", "owner": "permission_reply_bridge", "estimate": "15 мин–25 мин"}, "L02": {"id": "L02", "template": 2, "label": "Определить единый контракт режима и точного разрешения", "status": "done", "status_label": "Готово", "owner": "permission_reply_bridge", "estimate": "20 мин–30 мин"}, "L03": {"id": "L03", "template": 3, "label": "Подключить смену режима в четырёх адаптерах", "status": "running", "status_label": "В работе", "owner": "permission_native", "estimate": "25 мин–45 мин"}, "L13": {"id": "L13", "template": 4, "label": "Восстановить рабочие папки MiniMax в Herder", "status": "done", "status_label": "Готово", "owner": "workspace_activity", "estimate": "15 мин–25 мин"}, "L16": {"id": "L16", "template": 5, "label": "Доставлять сообщение в idle MiniMax desktop без повтора", "status": "queued", "status_label": "В очереди", "owner": "permission_reply_bridge", "estimate": "20 мин–35 мин"}, "L17": {"id": "L17", "template": 6, "label": "Исправить заголовки задач в Herder и проверить восемь сессий", "status": "done", "status_label": "Готово", "owner": "workspace_activity", "estimate": "—"}, "L04": {"id": "L04", "template": 7, "label": "Собирать запросы и возвращать точный ответ в нативную среду", "status": "queued", "status_label": "В очереди", "owner": "permission_native", "estimate": "25 мин–45 мин"}, "L14": {"id": "L14", "template": 8, "label": "Проверить активность агента в TelegramAuto", "status": "done", "status_label": "Готово", "owner": "workspace_activity", "estimate": "10 мин–20 мин"}, "L15": {"id": "L15", "template": 9, "label": "Установить Full Access по умолчанию для новых ZCode-сессий", "status": "done", "status_label": "Готово", "owner": "permission_native", "estimate": "10 мин–20 мин"}, "L05": {"id": "L05", "template": 10, "label": "Доставлять карточку с контекстом через Notice Place", "status": "queued", "status_label": "В очереди", "owner": "permission_reply_bridge", "estimate": "25 мин–40 мин"}, "L06": {"id": "L06", "template": 11, "label": "Показать управление режимами и разрешениями в Herder", "status": "queued", "status_label": "В очереди", "owner": "интегратор 01a172c2", "estimate": "20 мин–30 мин"}, "L07": {"id": "L07", "template": 12, "label": "Опубликовать и установить согласованный выпуск", "status": "done", "status_label": "Готово", "owner": "исполнитель текущего чата", "estimate": "15 мин–25 мин"}, "L08": {"id": "L08", "template": 13, "label": "Проверить живой путь ZCode", "status": "done", "status_label": "Готово", "owner": "Исполнитель текущего чата", "estimate": "10 мин–20 мин"}, "L09": {"id": "L09", "template": 14, "label": "Проверить живой путь OpenCode", "status": "queued", "status_label": "В очереди", "owner": "Исполнитель текущего чата", "estimate": "10 мин–20 мин"}, "L10": {"id": "L10", "template": 15, "label": "Проверить живой путь Codex", "status": "queued", "status_label": "В очереди", "owner": "Исполнитель текущего чата", "estimate": "10 мин–20 мин"}, "L11": {"id": "L11", "template": 16, "label": "Проверить живой путь MiniMax Code", "status": "queued", "status_label": "В очереди", "owner": "Исполнитель текущего чата", "estimate": "10 мин–20 мин"}, "L12": {"id": "L12", "template": 17, "label": "Закрыть полный цикл по пользовательскому результату", "status": "queued", "status_label": "В очереди", "owner": "исполнитель текущего чата", "estimate": "15 мин–25 мин"}}}</template>
+
+<div class="panel panel-now">
+  <div class="panel-head"><h2>Что делать сейчас</h2><div class="slots-badge">Свободных слотов: <b>1 из 3</b></div></div><div class="now-grid"><section class="now-col"><h3><span class="now-glyph">🔄</span> В работе <span class="now-count">2</span></h3><ul class="now-list"><li class="now-item"><div class="now-head"><span class="now-id">L18</span><span class="now-name">Исправить нулевые текстовые результаты поиска по каталогу</span></div><div class="now-meta">длительность не измерена</div></li><li class="now-item"><div class="now-head"><span class="now-id">L03</span><span class="now-name">Подключить смену режима в четырёх адаптерах</span></div><div class="now-meta">длительность не измерена</div></li></ul></section><section class="now-col"><h3><span class="now-glyph">🚀</span> Готовы к запуску <span class="now-count">1</span></h3><ul class="now-list"><li class="now-item"><div class="now-head"><span class="now-id">L16</span><span class="now-name">Доставлять сообщение в idle MiniMax desktop без повтора</span></div><div class="now-meta">оценка 20–35 мин · разблокирует: Проверить живой путь MiniMax Code, Закрыть полный цикл по пользовате…</div></li></ul><div class="now-subtitle">Ждут свободного слота (1)</div><ul class="now-list"><li class="now-item deferred"><div class="now-head"><span class="now-id">L09</span><span class="now-name">Проверить живой путь OpenCode</span></div><div class="now-meta">оценка 10–20 мин · ждёт свободного слота</div></li></ul></section><section class="now-col"><h3><span class="now-glyph">⛔</span> Заблокированы <span class="now-count">0</span></h3><div class="now-empty">Активных блокеров нет.</div></section></div><div class="now-subtitle">Ждут зависимостей (6)</div><div class="wait-list"><span class="wait-chip" title="Собирать запросы и возвращать точный ответ в нативную среду">L04 ← L03</span><span class="wait-chip" title="Доставлять карточку с контекстом через Notice Place">L05 ← L04</span><span class="wait-chip" title="Показать управление режимами и разрешениями в Herder">L06 ← L03, L05</span><span class="wait-chip" title="Проверить живой путь Codex">L10 ← L09</span><span class="wait-chip" title="Проверить живой путь MiniMax Code">L11 ← L10, L16</span><span class="wait-chip" title="Закрыть полный цикл по пользовательскому результату">L12 ← L11, L16</span></div><div class="hint">Источник расчёта: lhc_parallel.</div>
+</div>
+
+<div class="panel panel-blocking" id="lhc-blocking">
+  <h2>Что блокирует</h2>
+  <div class="empty">Ничего не блокировано и от меня ничего не нужно.</div>
+</div>
+
+<details class="panel brief-details brief-why-details" open>
+  <summary>Цель и ожидаемый бизнес-результат</summary>
+  <div class="brief brief-why"><article class="brief-card brief-goal"><h2>Цель</h2><p>Новые ZCode-сессии стартуют в native YOLO/Full Access; пользователь меняет подтверждённые режимы выбранных существующих сессий и отвечает на конкретный native permission request. OpenCode также доставляет новое сообщение в точную idle MiniMax desktop session штатным путем; проверяются четыре среды.</p></article><article class="brief-card brief-result"><h2>Ожидаемый бизнес-результат</h2><p>Установленный combined backend host100 — immutable release a34a4fee0ddd8e1e31f2911699e170c142226ab7; owner acceptance 21/21. Новая публичная ZCode canary без явных mode/fullAccess/model/initialMessage создана в native YOLO, same-session readback показал pending пусто/no active turn; fixture закрыта официальным способом, пять существующих сессий не тронуты. Frontend pin 57d2adee применён timer, managed nginx drift=0. Полный четырёх-harness цикл остаётся открытым.</p></article></div>
+</details>
+
+<div class="panel panel-cost" id="lhc-cost"><h2>Смета плана</h2><ul class="facts"><li><b>Весь план</b>: нет посчитанных денег · цена посчитана для 0 из 18 листьев</li><li><b>Остатку к запуску</b>: нет посчитанных денег</li><li><b>Класс frontier</b>: $0.0000 · 0 листьев · fast $0.0000 · 0 листьев</li><li><b>Бюджет плана</b>: не задан</li><li><b>Без цены</b>: L01 — модель не выбрана · лист не назвал ни модель, ни класс; L18 — модель не выбрана · лист не назвал ни модель, ни класс; L02 — модель не выбрана · лист не назвал ни модель, ни класс; L03 — модель не выбрана · лист не назвал ни модель, ни класс; L13 — модель не выбрана · лист не назвал ни модель, ни класс; L16 — модель не выбрана · лист не назвал ни модель, ни класс; L17 — модель не выбрана · лист не назвал ни модель, ни класс; L04 — модель не выбрана · лист не назвал ни модель, ни класс; L14 — модель не выбрана · лист не назвал ни модель, ни класс; L15 — модель не выбрана · лист не назвал ни модель, ни класс; L05 — модель не выбрана · лист не назвал ни модель, ни класс; L06 — модель не выбрана · лист не назвал ни модель, ни класс; L07 — модель не выбрана · лист не назвал ни модель, ни класс; L08 — модель не выбрана · лист не назвал ни модель, ни класс; L09 — модель не выбрана · лист не назвал ни модель, ни класс; L10 — модель не выбрана · лист не назвал ни модель, ни класс; L11 — модель не выбрана · лист не назвал ни модель, ни класс; L12 — модель не выбрана · лист не назвал ни модель, ни класс</li></ul></div>
+
+
+
+<div class="panel panel-progress">
+  <div class="progress"><div class="seg" style="width:44.4444%;background:var(--st-done)" title="Готово: 8"></div><div class="seg" style="width:11.1111%;background:var(--st-running)" title="В работе: 2"></div><div class="seg" style="width:44.4444%;background:var(--st-queued)" title="В очереди: 8"></div></div>
+  <div class="legend"><span class="legend-item"><i style="background:var(--st-done)"></i>Готово · 8</span><span class="legend-item"><i style="background:var(--st-running)"></i>В работе · 2</span><span class="legend-item"><i style="background:var(--st-queued)"></i>В очереди · 8</span></div>
+</div>
+
+<details class="panel brief-details" open>
+  <summary>Подтверждённый прогресс и внешние ожидания</summary>
+  <div class="brief"><article class="brief-card"><h2>Подтверждённый прогресс</h2><p>Source a34a4fee0ddd8e1e31f2911699e170c142226ab7 опубликован fast-forward; ZCode native project mapping independently SHIP, focused tests 98/98 GREEN, official artifact checks 14/14. Host100 install accepted 21/21. Однократный public ZCode default create без explicit mode/fullAccess/model/initialMessage дал same-session native YOLO readback, pending=[], humanMessageCount=0, нет active turn; собственная fixture закрыта через closeSession/archiveTask, final idle/nativeLoaded=false, root нетронут. Пять существующих sessions без writes. Frontend static copy matched live release tree digest, pin commit 57d2adee deployed existing timer, managed nginx drift 0; unauth public request redirects to auth, browser-content proof ещё ожидается. Search metrics installed but not query proof; exact user query needs fresh source receipt + same-snapshot readonly COUNT and matching message/snippet. Broad Codex/MiniMax/NoticePlace/UI acceptance remains open.</p></article><article class="brief-card brief-wait"><h2>Внешние ожидания</h2><p>UI/browser owner: read back authenticated local Agent Herder UI after pin a34 and verify host100 plus TelegramAuto workspace filter. Search owner: reproduce exact user query and compare fresh same-version/source receipt with read-only COUNT in identical host+harness scope; report partial/stale explicitly and capture exact matching message/snippet. Remaining four-harness consumer acceptance: Codex mode support is disabled, MiniMax mode/delivery, Notice Place permission observer/response, and idle MiniMax delivery remain open.</p></article></div>
+</details>
+
+
+
+<div class="panel panel-gantt" id="lhc-plan-gantt">
+  <h2>Гант · листья и параллельные волны</h2>
+  <div class="hint">Листьев без оценки длительности: 1 — они показаны знаком «—», без полосы длительности.</div>
+  <div class="gantt"><div class="gantt-inner">
+    <div class="gantt-axis-row"><div class="gantt-axis-spacer"></div><div class="gantt-axis"><div class="tick tick-0" style="left:0.0000%">0 мин</div><div class="tick tick-1" style="left:16.6667%">52 мин</div><div class="tick tick-2" style="left:33.3333%">1 ч 45 мин</div><div class="tick tick-3" style="left:50.0000%">2 ч 38 мин</div><div class="tick tick-4" style="left:66.6667%">3 ч 30 мин</div><div class="tick tick-5" style="left:83.3333%">4 ч 22 мин</div><div class="tick tick-6" style="left:100.0000%">5 ч 15 мин</div></div></div>
+    <div class="wave-row"><span>Волна 1</span><span class="wave-count">2 листьев</span></div><div class="gantt-row" data-status="done" data-leaf="L01"><div class="gantt-label" title="Проверить нативные возможности и безопасные тестовые сессии"><span class="gantt-line"><span class="dot" style="background:var(--st-done)"></span><span class="gantt-id" title="L01">L01</span><span class="gantt-text">Проверить нативные возможности и безопасные тестовые сессии</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">✅ Готово</span></span></div><div class="gantt-track"><div class="bar" style="left:0.0000%;width:7.9365%;background:var(--st-done)" title="L01 · Проверить нативные возможности и безопасные тестовые сессии
+статус: Готово
+оценка: 15 мин–25 мин
+по часам: 17 мин
+план: 25 мин
+начало: 2026-10-25T14:33:23+03:00
+конец: 2026-10-25T14:51:11+03:00"></div></div></div><div class="gantt-row" data-status="running" data-leaf="L18"><div class="gantt-label" title="Исправить нулевые текстовые результаты поиска по каталогу"><span class="gantt-line"><span class="dot" style="background:var(--st-running)"></span><span class="gantt-id" title="L18">L18</span><span class="gantt-text">Исправить нулевые текстовые результаты поиска по каталогу</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">🔄 В работе</span></span></div><div class="gantt-track"><div class="bar" style="left:0.0000%;width:7.9365%;background:var(--st-running)" title="L18 · Исправить нулевые текстовые результаты поиска по каталогу
+статус: В работе
+оценка: 15 мин–25 мин
+план: 25 мин"></div></div></div><div class="wave-row"><span>Волна 2</span><span class="wave-count">5 листьев</span></div><div class="gantt-row" data-status="done" data-leaf="L02"><div class="gantt-label" title="Определить единый контракт режима и точного разрешения"><span class="gantt-line"><span class="dot" style="background:var(--st-done)"></span><span class="gantt-id" title="L02">L02</span><span class="gantt-text">Определить единый контракт режима и точного разрешения</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">✅ Готово</span></span></div><div class="gantt-track"><div class="bar" style="left:7.9365%;width:9.5238%;background:var(--st-done)" title="L02 · Определить единый контракт режима и точного разрешения
+статус: Готово
+оценка: 20 мин–30 мин
+по часам: 18 мин
+план: 30 мин
+начало: 2026-10-25T14:51:11+03:00
+конец: 2026-10-25T15:10:00+03:00
+зависит: Проверить нативные возможности и безопасные тестовые сессии"></div></div></div><div class="gantt-row" data-status="running" data-leaf="L03"><div class="gantt-label" title="Подключить смену режима в четырёх адаптерах"><span class="gantt-line"><span class="dot" style="background:var(--st-running)"></span><span class="gantt-id" title="L03">L03</span><span class="gantt-text">Подключить смену режима в четырёх адаптерах</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">🔄 В работе</span></span></div><div class="gantt-track"><div class="bar" style="left:7.9365%;width:14.2857%;background:var(--st-running)" title="L03 · Подключить смену режима в четырёх адаптерах
+статус: В работе
+оценка: 25 мин–45 мин
+план: 45 мин
+зависит: Проверить нативные возможности и безопасные тестовые сессии"></div></div></div><div class="gantt-row" data-status="done" data-leaf="L13"><div class="gantt-label" title="Восстановить рабочие папки MiniMax в Herder"><span class="gantt-line"><span class="dot" style="background:var(--st-done)"></span><span class="gantt-id" title="L13">L13</span><span class="gantt-text">Восстановить рабочие папки MiniMax в Herder</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">✅ Готово</span></span></div><div class="gantt-track"><div class="bar" style="left:7.9365%;width:7.9365%;background:var(--st-done)" title="L13 · Восстановить рабочие папки MiniMax в Herder
+статус: Готово
+оценка: 15 мин–25 мин
+по часам: 9 мин
+план: 25 мин
+начало: 2026-10-25T15:03:00+03:00
+конец: 2026-10-25T15:12:00+03:00
+зависит: Проверить нативные возможности и безопасные тестовые сессии"></div></div></div><div class="gantt-row" data-status="queued" data-leaf="L16"><div class="gantt-label" title="Доставлять сообщение в idle MiniMax desktop без повтора"><span class="gantt-line"><span class="dot" style="background:var(--st-queued)"></span><span class="gantt-id" title="L16">L16</span><span class="gantt-text">Доставлять сообщение в idle MiniMax desktop без повтора</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">⋯ В очереди</span></span></div><div class="gantt-track"><div class="bar" style="left:15.8730%;width:11.1111%;background:var(--st-queued)" title="L16 · Доставлять сообщение в idle MiniMax desktop без повтора
+статус: В очереди
+оценка: 20 мин–35 мин
+план: 35 мин
+зависит: Проверить нативные возможности и безопасные тестовые сессии"></div></div></div><div class="gantt-row" data-status="done" data-leaf="L17"><div class="gantt-label" title="Исправить заголовки задач в Herder и проверить восемь сессий"><span class="gantt-line"><span class="dot" style="background:var(--st-done)"></span><span class="gantt-id" title="L17">L17</span><span class="gantt-text">Исправить заголовки задач в Herder и проверить восемь сессий</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">✅ Готово</span></span></div><div class="gantt-track"><span class="gantt-noduration" title="L17 · Исправить заголовки задач в Herder и проверить восемь сессий
+статус: Готово
+оценка: —
+зависит: Проверить нативные возможности и безопасные тестовые сессии">—</span></div></div><div class="wave-row"><span>Волна 3</span><span class="wave-count">3 листьев</span></div><div class="gantt-row" data-status="queued" data-leaf="L04"><div class="gantt-label" title="Собирать запросы и возвращать точный ответ в нативную среду"><span class="gantt-line"><span class="dot" style="background:var(--st-queued)"></span><span class="gantt-id" title="L04">L04</span><span class="gantt-text">Собирать запросы и возвращать точный ответ в нативную среду</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">⋯ В очереди</span></span></div><div class="gantt-track"><div class="bar" style="left:22.2222%;width:14.2857%;background:var(--st-queued)" title="L04 · Собирать запросы и возвращать точный ответ в нативную среду
+статус: В очереди
+оценка: 25 мин–45 мин
+план: 45 мин
+зависит: Подключить смену режима в четырёх адаптерах"></div></div></div><div class="gantt-row" data-status="done" data-leaf="L14"><div class="gantt-label" title="Проверить активность агента в TelegramAuto"><span class="gantt-line"><span class="dot" style="background:var(--st-done)"></span><span class="gantt-id" title="L14">L14</span><span class="gantt-text">Проверить активность агента в TelegramAuto</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">✅ Готово</span></span></div><div class="gantt-track"><div class="bar" style="left:17.4603%;width:6.3492%;background:var(--st-done)" title="L14 · Проверить активность агента в TelegramAuto
+статус: Готово
+оценка: 10 мин–20 мин
+план: 20 мин
+конец: 2026-10-25T15:12:00+03:00
+зависит: Восстановить рабочие папки MiniMax в Herder"></div></div></div><div class="gantt-row" data-status="done" data-leaf="L15"><div class="gantt-label" title="Установить Full Access по умолчанию для новых ZCode-сессий"><span class="gantt-line"><span class="dot" style="background:var(--st-done)"></span><span class="gantt-id" title="L15">L15</span><span class="gantt-text">Установить Full Access по умолчанию для новых ZCode-сессий</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">✅ Готово</span></span></div><div class="gantt-track"><div class="bar" style="left:23.8095%;width:6.3492%;background:var(--st-done)" title="L15 · Установить Full Access по умолчанию для новых ZCode-сессий
+статус: Готово
+оценка: 10 мин–20 мин
+план: 20 мин
+конец: 16:37
+зависит: Подключить смену режима в четырёх адаптерах"></div></div></div><div class="wave-row"><span>Волна 4</span><span class="wave-count">1 листьев</span></div><div class="gantt-row" data-status="queued" data-leaf="L05"><div class="gantt-label" title="Доставлять карточку с контекстом через Notice Place"><span class="gantt-line"><span class="dot" style="background:var(--st-queued)"></span><span class="gantt-id" title="L05">L05</span><span class="gantt-text">Доставлять карточку с контекстом через Notice Place</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">⋯ В очереди</span></span></div><div class="gantt-track"><div class="bar" style="left:36.5079%;width:12.6984%;background:var(--st-queued)" title="L05 · Доставлять карточку с контекстом через Notice Place
+статус: В очереди
+оценка: 25 мин–40 мин
+план: 40 мин
+зависит: Определить единый контракт режима и точного разрешения, Собирать запросы и возвращать точный ответ в нативную среду"></div></div></div><div class="wave-row"><span>Волна 5</span><span class="wave-count">1 листьев</span></div><div class="gantt-row" data-status="queued" data-leaf="L06"><div class="gantt-label" title="Показать управление режимами и разрешениями в Herder"><span class="gantt-line"><span class="dot" style="background:var(--st-queued)"></span><span class="gantt-id" title="L06">L06</span><span class="gantt-text">Показать управление режимами и разрешениями в Herder</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">⋯ В очереди</span></span></div><div class="gantt-track"><div class="bar" style="left:49.2063%;width:9.5238%;background:var(--st-queued)" title="L06 · Показать управление режимами и разрешениями в Herder
+статус: В очереди
+оценка: 20 мин–30 мин
+план: 30 мин
+зависит: Подключить смену режима в четырёх адаптерах, Доставлять карточку с контекстом через Notice Place"></div></div></div><div class="wave-row"><span>Волна 6</span><span class="wave-count">1 листьев</span></div><div class="gantt-row" data-status="done" data-leaf="L07"><div class="gantt-label" title="Опубликовать и установить согласованный выпуск"><span class="gantt-line"><span class="dot" style="background:var(--st-done)"></span><span class="gantt-id" title="L07">L07</span><span class="gantt-text">Опубликовать и установить согласованный выпуск</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">✅ Готово</span></span></div><div class="gantt-track"><div class="bar" style="left:58.7302%;width:7.9365%;background:var(--st-done)" title="L07 · Опубликовать и установить согласованный выпуск
+статус: Готово
+оценка: 15 мин–25 мин
+план: 25 мин
+конец: 16:23
+зависит: Показать управление режимами и разрешениями в Herder, Проверить активность агента в TelegramAuto, Установить Full Access по умолчанию для новых ZCode-сессий, Исправить заголовки задач в Herder и проверить восемь сессий"></div></div></div><div class="wave-row"><span>Волна 7</span><span class="wave-count">1 листьев</span></div><div class="gantt-row" data-status="done" data-leaf="L08"><div class="gantt-label" title="Проверить живой путь ZCode"><span class="gantt-line"><span class="dot" style="background:var(--st-done)"></span><span class="gantt-id" title="L08">L08</span><span class="gantt-text">Проверить живой путь ZCode</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">✅ Готово</span></span></div><div class="gantt-track"><div class="bar" style="left:66.6667%;width:6.3492%;background:var(--st-done)" title="L08 · Проверить живой путь ZCode
+статус: Готово
+оценка: 10 мин–20 мин
+план: 20 мин
+конец: 16:37
+зависит: Опубликовать и установить согласованный выпуск"></div></div></div><div class="wave-row"><span>Волна 8</span><span class="wave-count">1 листьев</span></div><div class="gantt-row" data-status="queued" data-leaf="L09"><div class="gantt-label" title="Проверить живой путь OpenCode"><span class="gantt-line"><span class="dot" style="background:var(--st-queued)"></span><span class="gantt-id" title="L09">L09</span><span class="gantt-text">Проверить живой путь OpenCode</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">⋯ В очереди</span></span></div><div class="gantt-track"><div class="bar" style="left:73.0159%;width:6.3492%;background:var(--st-queued)" title="L09 · Проверить живой путь OpenCode
+статус: В очереди
+оценка: 10 мин–20 мин
+план: 20 мин
+зависит: Проверить живой путь ZCode"></div></div></div><div class="wave-row"><span>Волна 9</span><span class="wave-count">1 листьев</span></div><div class="gantt-row" data-status="queued" data-leaf="L10"><div class="gantt-label" title="Проверить живой путь Codex"><span class="gantt-line"><span class="dot" style="background:var(--st-queued)"></span><span class="gantt-id" title="L10">L10</span><span class="gantt-text">Проверить живой путь Codex</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">⋯ В очереди</span></span></div><div class="gantt-track"><div class="bar" style="left:79.3651%;width:6.3492%;background:var(--st-queued)" title="L10 · Проверить живой путь Codex
+статус: В очереди
+оценка: 10 мин–20 мин
+план: 20 мин
+зависит: Проверить живой путь OpenCode"></div></div></div><div class="wave-row"><span>Волна 10</span><span class="wave-count">1 листьев</span></div><div class="gantt-row" data-status="queued" data-leaf="L11"><div class="gantt-label" title="Проверить живой путь MiniMax Code"><span class="gantt-line"><span class="dot" style="background:var(--st-queued)"></span><span class="gantt-id" title="L11">L11</span><span class="gantt-text">Проверить живой путь MiniMax Code</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">⋯ В очереди</span></span></div><div class="gantt-track"><div class="bar" style="left:85.7143%;width:6.3492%;background:var(--st-queued)" title="L11 · Проверить живой путь MiniMax Code
+статус: В очереди
+оценка: 10 мин–20 мин
+план: 20 мин
+зависит: Проверить живой путь Codex, Доставлять сообщение в idle MiniMax desktop без повтора"></div></div></div><div class="wave-row"><span>Волна 11</span><span class="wave-count">1 листьев</span></div><div class="gantt-row" data-status="queued" data-leaf="L12"><div class="gantt-label" title="Закрыть полный цикл по пользовательскому результату"><span class="gantt-line"><span class="dot" style="background:var(--st-queued)"></span><span class="gantt-id" title="L12">L12</span><span class="gantt-text">Закрыть полный цикл по пользовательскому результату</span></span><span class="gantt-line gantt-meta"><span class="gantt-status">⋯ В очереди</span></span></div><div class="gantt-track"><div class="bar" style="left:92.0635%;width:7.9365%;background:var(--st-queued)" title="L12 · Закрыть полный цикл по пользовательскому результату
+статус: В очереди
+оценка: 15 мин–25 мин
+план: 25 мин
+зависит: Проверить живой путь MiniMax Code, Проверить активность агента в TelegramAuto, Доставлять сообщение в idle MiniMax desktop без повтора, Исправить заголовки задач в Herder и проверить восемь сессий"></div></div></div>
+  </div></div>
+</div>
+
+<div class="grid">
+  <div class="panel panel-leaves" id="lhc-leaves">
+    <h2>Листья</h2>
+    <div class="hint">граф: 18 листьев · слотов: 3 · пик параллельности неизвестен</div>
+    <div class="toolbar">
+      <input id="search" type="search" placeholder="Поиск по листу, id, владельцу, сессии или модели…">
+      <button class="chip active" data-filter="all">все</button>
+      <button class="chip" data-filter="done">готово</button>
+      <button class="chip" data-filter="running">в работе</button>
+      <button class="chip" data-filter="blocked">блокеры</button>
+      <button class="chip" data-filter="queued">в очереди</button>
+    </div>
+    <div class='table-scroll'><table class='table table-leaves'><thead><tr><th>Задача</th><th>Статус</th><th>Оценка</th><th>Усилие</th><th>Детали</th></tr></thead><tbody><tr data-status="done" data-text="l01 проверить нативные возможности и безопасные тестовые сессии исполнитель текущего чата codex исследование зафиксировано в capabilities.md: codex local schema сгенерирована; minimax native request routes найдены, default desktop manifest отсутствует; source worktree явно разрешён и создан, initial интегратор освободил пути. live приёмка нового цикла не выполнена. матрица четырёх сред с проверенными методами, scope и ограничениями; определены доступные контроллеры, source ownership и правила безопасной приёмки. конкретные тестовые identity закрепляются перед соответствующими l08–l11 и не заменяются product-сессиями. проследить текущие native apis четырёх адаптеров, смену режима существующей сессии, получение запроса и ответ; установить исходные состояния и разрешённые тестовые identity без запуска новых агентов. .agents/tasks/20261025-permission-control-fullcycle/capabilities.md" data-details-id='0' class='leaf-row'><td class='task-title'><span class='row-id'>L01</span><span class='row-name'>Проверить нативные возможности и безопасные тестовые сессии</span><span class='row-times'>старт 2026-10-25T14:33:23+03:00 · финиш 2026-10-25T14:51:11+03:00</span><span class='row-meta'>владелец: Исполнитель текущего чата · стоимость: модель не выбрана · лист не назвал ни модель, ни класс</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-done)">✅ Готово</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-time'>план 25 мин</span><span class='cell-sub'>в пределах плана</span><span class='cell-sub'>оценка 15 мин–25 мин</span></div></td><td data-label="Усилие" class="">не измерено<span class="cell-sub">по часам 17 мин</span></td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='0' aria-expanded='false' aria-label='Подробнее: Проверить нативные возможности и безопасные тестовые сессии'>Подробнее</button></td></tr><tr data-status="running" data-text="l18 исправить нулевые текстовые результаты поиска по каталогу permission_reply_bridge metrics delta 6099a19 is installed in combined a34; independent review ship for durable-vs-processed accounting; focused 7/7 and tsc green. mcp receipt directly separates processed* (current scan) and indexed* (durable host+harness data). required next proof: capture a fresh source-versioned receipt and read-only count on the same snapshot/scope; compare dynamic counts without hardcoding; run the exact real query and preserve matching message/snippet, with partial/stale explicit. no root-cause claim for the user's query yet; bridgeworker owns reproduction. red воспроизводит нулевой результат на запросе с известным совпадением в контролируемом каталоге. green возвращает точное совпадение с корректным host/harness scope; неполный или недоступный индекс явно отличается от полного нуля. нет transcript export, telegram api, native writes или повторной доставки. проверить сообщение пользователя: при большом каталоге около 3200 записей текстовый поиск herder возвращает ноль результатов. найти точную причину в поиске/индексе и исправить только подтверждённый слой. src/session-search.ts tests/l72-session-search-incremental.test.ts" data-details-id='1' class='leaf-row'><td class='task-title'><span class='row-id'>L18</span><span class='row-name'>Исправить нулевые текстовые результаты поиска по каталогу</span><span class='row-times'>время не зафиксировано</span><span class='row-meta'>владелец: permission_reply_bridge · стоимость: модель не выбрана · лист не назвал ни модель, ни класс</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-running)">🔄 В работе</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-time'>план 25 мин</span><span class='cell-sub'>оценка 15 мин–25 мин</span></div></td><td data-label="Усилие" class="">не измерено</td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='1' aria-expanded='false' aria-label='Подробнее: Исправить нулевые текстовые результаты поиска по каталогу'>Подробнее</button></td></tr><tr data-status="done" data-text="l02 определить единый контракт режима и точного разрешения permission_reply_bridge codex безопасный exact identity/reply guard независимым review оценён ship; focused regression red 5 → green 7, typescript compile green. production reply и live browser/native acceptance остаются невыполненными в будущих leaves. контракт сохраняет native security boundary, unknown/accepted не повторяются, подмена host/session/request и устаревший ответ отвергаются focused тестами. нормализовать возможности каждой среды, readback режима, host/session/request identity, устаревание и ровно одно применение ответа. отсутствующая native функция показывается явно. src/permission-control/contract.ts tests/permission-control-contract.test.ts" data-details-id='2' class='leaf-row'><td class='task-title'><span class='row-id'>L02</span><span class='row-name'>Определить единый контракт режима и точного разрешения</span><span class='row-times'>старт 2026-10-25T14:51:11+03:00 · финиш 2026-10-25T15:10:00+03:00</span><span class='row-meta'>владелец: permission_reply_bridge · стоимость: модель не выбрана · лист не назвал ни модель, ни класс</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-done)">✅ Готово</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-time'>план 30 мин</span><span class='cell-sub'>в пределах плана</span><span class='cell-sub'>оценка 20 мин–30 мин</span></div></td><td data-label="Усилие" class="">не измерено<span class="cell-sub">по часам 18 мин</span></td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='2' aria-expanded='false' aria-label='Подробнее: Определить единый контракт режима и точного разрешения'>Подробнее</button></td></tr><tr data-status="running" data-text="l03 подключить смену режима в четырёх адаптерах permission_native source commits 5354887/4214d47/2a137f3/6dadd73 integrated in public commit 49b2c13; the contradictory fullaccess/mode inputs now fail closed before native create. independent review ship; merged focused suite 170/170 and production build green. native default create canary is separate l15/l08. four-harness mode consumer acceptance remains open. у каждого адаптера проверены mapping, native ответ и независимый readback; ошибки и неподдерживаемые переходы не возвращают успех. все четыре среды остаются обязательной приёмкой. подключить поддерживаемые native операции для выбранной существующей сессии, включая full access; возвращать подтверждённый режим. не перезапускать сессию, не менять модель и не разрешать накопленные запросы автоматически. src/adapters/zcode.ts src/adapters/opencode.ts src/adapters/codex-app-server.ts src/adapters/minimax-code.ts src/adapters/minimax-code-control.ts tests/permission-control-modes.test.ts" data-details-id='3' class='leaf-row'><td class='task-title'><span class='row-id'>L03</span><span class='row-name'>Подключить смену режима в четырёх адаптерах</span><span class='row-times'>время не зафиксировано</span><span class='row-meta'>владелец: permission_native · стоимость: модель не выбрана · лист не назвал ни модель, ни класс</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-running)">🔄 В работе</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-time'>план 45 мин</span><span class='cell-sub'>оценка 25 мин–45 мин</span></div></td><td data-label="Усилие" class="">не измерено</td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='3' aria-expanded='false' aria-label='Подробнее: Подключить смену режима в четырёх адаптерах'>Подробнее</button></td></tr><tr data-status="done" data-text="l13 восстановить рабочие папки minimax в herder workspace_activity codex source commit 57e18c8 is installed inside release 49b2c13; red→green focused regression 17 tests. post-install herder mcp list_active_sessions filter (harness=minimax-code, hostid=100, runtimehostid=100) returned six active rows with partial metadata enumeration, including the exact active root whose observed native cwd is telegramauto. exact session_workspaces_get for that same identity returned host100 and /home/roomhacker/pycharmprojects/telegramauto with source=observed, evidence=native_session_cwd:native_runtime_turn_lease. no title guess, telegram api or native write. exact native runtime/session cwd либо явная декларация проходит reliable roundtrip до herder; фильтр telegramauto видит workspace только по проверенным данным. нет title guess. focused regression и readback на той же native identity. проследить native session identity до workspace metadata и фильтрации herder; исправить потерю рабочего каталога без угадывания по title или launchcwd. разделять runtime/gui host и work-computer path. src/session-workspaces.ts src/session-workspaces-tools.ts src/session-workspaces-backfill.ts src/adapters/minimax-code-active.ts src/adapters/minimax-code-runtime-activity.ts src/adapters/minimax-code-native-session.ts src/mesh/native-minimax-code.ts tests/minimax-active-runtime.test.ts tests/session-workspaces-backfill.test.ts" data-details-id='4' class='leaf-row'><td class='task-title'><span class='row-id'>L13</span><span class='row-name'>Восстановить рабочие папки MiniMax в Herder</span><span class='row-times'>старт 2026-10-25T15:03:00+03:00 · финиш 2026-10-25T15:12:00+03:00</span><span class='row-meta'>владелец: workspace_activity · стоимость: модель не выбрана · лист не назвал ни модель, ни класс</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-done)">✅ Готово</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-time'>план 25 мин</span><span class='cell-sub'>в пределах плана</span><span class='cell-sub'>оценка 15 мин–25 мин</span></div></td><td data-label="Усилие" class="">не измерено<span class="cell-sub">по часам 9 мин</span></td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='4' aria-expanded='false' aria-label='Подробнее: Восстановить рабочие папки MiniMax в Herder'>Подробнее</button></td></tr><tr data-status="queued" data-text="l16 доставлять сообщение в idle minimax desktop без повтора permission_reply_bridge earlier read-only trace and exact constraints remain: source fix not started, no accepted/queued input replayed. deferred behind the new user search defect by lead priority; existing estimate retained. focused regression доказывает доставку одного нового сообщения в точную idle minimax session штатным механизмом; отсутствие capability/неизвестный результат видны явно. ранее accepted/queued сообщения не переотправляются, никакая новая native session не создаётся. проследить и исправить bounded route, по которому opencode передаёт сообщение в idle minimax desktop session. сохранить exact native host/session identity и штатную очередь; accepted/unknown input не replay-ить и не превращать в новую сессию." data-details-id='5' class='leaf-row'><td class='task-title'><span class='row-id'>L16</span><span class='row-name'>Доставлять сообщение в idle MiniMax desktop без повтора</span><span class='row-times'>время не зафиксировано</span><span class='row-meta'>владелец: permission_reply_bridge · стоимость: модель не выбрана · лист не назвал ни модель, ни класс · ждёт: Lead reprioritized the newly reported catalog text-search zero-result defect (L18) after immutable 49b release capture. Resume this bounded idle MiniMax delivery investigation after L18; never replay accepted/UNKNOWN queued messages.</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-queued)">⋯ В очереди</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-time'>план 35 мин</span><span class='cell-sub'>оценка 20 мин–35 мин</span></div></td><td data-label="Усилие" class="">не измерено</td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='5' aria-expanded='false' aria-label='Подробнее: Доставлять сообщение в idle MiniMax desktop без повтора'>Подробнее</button></td></tr><tr data-status="done" data-text="l17 исправить заголовки задач в herder и проверить восемь сессий workspace_activity source composer commit 9238bf9 is installed in public backend release 49b2c13. focused source 28/28 + tsc green; native app readback of the eight renamed sessions was 8/8 before install. installed generator and app rename proof are separate evidence layers. scoped source commit 9238bf9: focused 28/28 и typescript green; формат поддерживает posix/mac/windows/worktree пути, не угадывает/не режет задачу. независимый native app readback подтверждает 8/8 точных названий после rename; это пользовательский app proof, отдельно от установленного генератора. переставить генерируемый заголовок в формат задача | короткое canonical имя проекта; исключить статус и full path, сохранять цель целиком. перенести только существующие автосгенерированные названия по подтверждённому списку. src/session-labels.ts src/mcp/session-tools.ts src/mesh/register-tools.ts tests/l69-session-label-write.test.ts tests/l71-mcp-mesh-label.test.ts tests/l54-panel-routes.test.ts" data-details-id='6' class='leaf-row'><td class='task-title'><span class='row-id'>L17</span><span class='row-name'>Исправить заголовки задач в Herder и проверить восемь сессий</span><span class='row-times'>время не зафиксировано</span><span class='row-meta'>владелец: workspace_activity · стоимость: модель не выбрана · лист не назвал ни модель, ни класс</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-done)">✅ Готово</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-none'>плана нет</span></div></td><td data-label="Усилие" class="">не измерено</td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='6' aria-expanded='false' aria-label='Подробнее: Исправить заголовки задач в Herder и проверить восемь сессий'>Подробнее</button></td></tr><tr data-status="queued" data-text="l04 собирать запросы и возвращать точный ответ в нативную среду permission_native lead подтвердил native readback по четырём exact zcode sessions на host100: mode=yolo, pendingrequests=[]; исходные четыре durable pending approvals исполнены единственный раз native executor. отдельный airlock list_pages request также отвечен один раз по отдельному подтверждению lead. это current native business evidence, но не source/runtime causality и не приёмка четырёх harness; не re-approve и не менять mode повторно. разрешение/отказ применяются только к актуальному native request, повтор callback не исполняет команду вновь, чужой и закрытый запрос не принимаются. подключить native permission events/readback и response для четырёх сред. сохранять pending при неизвестном результате; ответ не становится новой командой агенту. src/permission-control/native-requests.ts src/adapters/zcode.ts src/adapters/opencode.ts src/adapters/codex-app-server.ts src/adapters/minimax-code-control.ts tests/permission-control-native-requests.test.ts" data-details-id='7' class='leaf-row'><td class='task-title'><span class='row-id'>L04</span><span class='row-name'>Собирать запросы и возвращать точный ответ в нативную среду</span><span class='row-times'>время не зафиксировано</span><span class='row-meta'>владелец: permission_native · стоимость: модель не выбрана · лист не назвал ни модель, ни класс · ждёт: Запускается после завершения L03.</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-queued)">⋯ В очереди</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-time'>план 45 мин</span><span class='cell-sub'>оценка 25 мин–45 мин</span></div></td><td data-label="Усилие" class="">не измерено</td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='7' aria-expanded='false' aria-label='Подробнее: Собирать запросы и возвращать точный ответ в нативную среду'>Подробнее</button></td></tr><tr data-status="done" data-text="l14 проверить активность агента в telegramauto workspace_activity текущий live herder mcp host filter показывает активного minimax агента и child в telegramauto на server100; декларации совпадают с точными workspace_dir из native runtime. в live data у других сессий остаются неизвестные workspace; source фиксация и причинность этого readback не заявляются. herder ui/mcp фильтр для exact host и native identity показывает актуальную activity/workspace; собственный browser fixture допускается только для отдельной собственной сессии, screenshot обязателен при ошибке до retry. без telegram api. проверить на реальной поверхности herder, что фильтр telegramauto и activity indicator показывают реально работающего minimax агента с точной workspace и host identity. workspace/activity acceptance evidence" data-details-id='8' class='leaf-row'><td class='task-title'><span class='row-id'>L14</span><span class='row-name'>Проверить активность агента в TelegramAuto</span><span class='row-times'>финиш 2026-10-25T15:12:00+03:00</span><span class='row-meta'>владелец: workspace_activity · стоимость: модель не выбрана · лист не назвал ни модель, ни класс</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-done)">✅ Готово</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-time'>план 20 мин</span><span class='cell-sub'>оценка 10 мин–20 мин</span></div></td><td data-label="Усилие" class="">не измерено</td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='8' aria-expanded='false' aria-label='Подробнее: Проверить активность агента в TelegramAuto'>Подробнее</button></td></tr><tr data-status="done" data-text="l15 установить full access по умолчанию для новых zcode-сессий permission_native native projectid mapping fix a34a4fee0ddd8e1e31f2911699e170c142226ab7 independently reviewed ship; focused zcode tests 98/98 green. source pushed to main, official existing-tree candidate passed 14/14, installed host100 and accepted 21/21. native executor has been signalled for exactly one public new-zcode default-create canary plus same-session readback. no canary result yet. five existing sessions remain read-only; no mode writes or approvals. focused source test доказывает default yolo при создании новой zcode-сессии и точный native readback того же sessionid; отсутствующий/другой mode не считается успехом. живой readback выполняется после установки на разрешённой fixture; чужие sessions и запросы не трогаются. добавить требуемый владельцем безопасный default: новая zcode-сессия создаётся в native yolo/full access. существующие сессии меняются отдельной явной операцией; ожидающие permission requests отвечаются только native approval executor. src/adapters/zcode.ts tests/zcode-adapter.test.ts" data-details-id='9' class='leaf-row'><td class='task-title'><span class='row-id'>L15</span><span class='row-name'>Установить Full Access по умолчанию для новых ZCode-сессий</span><span class='row-times'>финиш 16:37</span><span class='row-meta'>владелец: permission_native · стоимость: модель не выбрана · лист не назвал ни модель, ни класс</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-done)">✅ Готово</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-time'>план 20 мин</span><span class='cell-sub'>оценка 10 мин–20 мин</span></div></td><td data-label="Усилие" class="">не измерено</td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='9' aria-expanded='false' aria-label='Подробнее: Установить Full Access по умолчанию для новых ZCode-сессий'>Подробнее</button></td></tr><tr data-status="queued" data-text="l05 доставлять карточку с контекстом через notice place permission_reply_bridge bridge commit b9aea61 исправляет generic native permission resume и focused проверки по сообщению lead; native delta-review ещё ожидается. observer и автоматическая доставка permission.requested через notice place в source/runtime не подключены: leaf остаётся queued, delivery/feature-complete не заявляются. одна карточка на native request, подтверждённая доставка и возврат ответа; однократное разрешение и отказ; секреты не уходят в карточку; недоступный контекст помечается явно, а не выдумывается. использовать существующий api notice place и его маршрут userio: точная ссылка на сессию, текущая команда, предыдущее сообщение агента и последнее сообщение человека; удалять секреты. ответ связан с host/session/request и сохраняет однократность. src/permission-control/noticeplace-bridge.ts src/permission-control/context.ts tests/permission-control-noticeplace.test.ts" data-details-id='10' class='leaf-row'><td class='task-title'><span class='row-id'>L05</span><span class='row-name'>Доставлять карточку с контекстом через Notice Place</span><span class='row-times'>время не зафиксировано</span><span class='row-meta'>владелец: permission_reply_bridge · стоимость: модель не выбрана · лист не назвал ни модель, ни класс · ждёт: Нужны готовые reply contract L02 и native adapters L04.</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-queued)">⋯ В очереди</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-time'>план 40 мин</span><span class='cell-sub'>оценка 25 мин–40 мин</span></div></td><td data-label="Усилие" class="">не измерено</td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='10' aria-expanded='false' aria-label='Подробнее: Доставлять карточку с контекстом через Notice Place'>Подробнее</button></td></tr><tr data-status="queued" data-text="l06 показать управление режимами и разрешениями в herder интегратор 01a172c2 существующий установленный compact one-time allow и queue edit подтверждены lead, но mode controller отсутствует в принятом ui release. mode ui отложен до source join/ownership check. нужны capability-driven state/readback, видимый scope, unknown как unknown и disabled unsupported; не часть настоящей source ветки. ui и mcp показывают одинаковый readback; поддержка каждой среды видна пользователю; ссылка карточки открывает ту же сессию; ошибки не маскируются под успех. в выбранной сессии показать реальный режим, допустимые переходы, текущий запрос и результат решения. использовать существующий ui/mcp; избегать неподтверждённых универсальных кнопок. src/web-ui/main.tsx src/web/server.ts src/mcp-tools/definitions.ts src/mcp-tools/handlers.ts tests/permission-control-ui.test.ts" data-details-id='11' class='leaf-row'><td class='task-title'><span class='row-id'>L06</span><span class='row-name'>Показать управление режимами и разрешениями в Herder</span><span class='row-times'>время не зафиксировано</span><span class='row-meta'>владелец: интегратор 01a172c2 · стоимость: модель не выбрана · лист не назвал ни модель, ни класс · ждёт: Нужны режимы и карточка ответа. Интегратор отдельно владеет compact Allow UI и queue edit; его исходники не подменяются.</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-queued)">⋯ В очереди</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-time'>план 30 мин</span><span class='cell-sub'>оценка 20 мин–30 мин</span></div></td><td data-label="Усилие" class="">не измерено</td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='11' aria-expanded='false' aria-label='Подробнее: Показать управление режимами и разрешениями в Herder'>Подробнее</button></td></tr><tr data-status="done" data-text="l07 опубликовать и установить согласованный выпуск исполнитель текущего чата current immutable backend release a34a4fee0ddd8e1e31f2911699e170c142226ab7 is installed on host100; node acceptance 21/21 via exact reachable peer 88. previous rollback release preserved. ui frontend copied from the verified live release dist/web-static; exact static tree digest matched source, modes 755/644. scoped serversadministartion commit 57d2adee updates exactly the 3 existing pin/header occurrences; nginx-dev timer applied it, deployed-git-sha=57d2adee, and sudo nginxctl diff reports no managed drift. public page remains behind auth (unauthenticated get redirects to auth). this does not claim successful new zcode session creation or full four-harness acceptance. remote main содержит owned delta; установленный source/artifact и живой pid совпадают; существующие sessions/history сохранены. нет новой копии, ветки или worktree без отдельного разрешения. после focused проверок и source review опубликовать только owned изменения в main и установить штатным маршрутом единственного владельца; сохранить чужой wip и rollback. .agents/tasks/20261025-permission-control-fullcycle/release.md" data-details-id='12' class='leaf-row'><td class='task-title'><span class='row-id'>L07</span><span class='row-name'>Опубликовать и установить согласованный выпуск</span><span class='row-times'>финиш 16:23</span><span class='row-meta'>владелец: исполнитель текущего чата · стоимость: модель не выбрана · лист не назвал ни модель, ни класс</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-done)">✅ Готово</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-time'>план 25 мин</span><span class='cell-sub'>оценка 15 мин–25 мин</span></div></td><td data-label="Усилие" class="">не измерено</td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='12' aria-expanded='false' aria-label='Подробнее: Опубликовать и установить согласованный выпуск'>Подробнее</button></td></tr><tr data-status="done" data-text="l08 проверить живой путь zcode исполнитель текущего чата current combined sha a34a4fee0ddd8e1e31f2911699e170c142226ab7 is installed and accepted 21/21. the bounded new public default-create canary was signalled to the sole native executor after install; waiting for exact created session and same-session mode/pending readback. prior 49b canary failed closed three times with created=false, no session; cause was missing native projectid. do not repeat it or act on the five existing zcode sessions. после установки на разрешённой zcode fixture доказаны: native режим существующей сессии и exact readback; новый zcode session по умолчанию создаётся в yolo/full access с readback того же sessionid; текущий exact pending request отвечает единственный native approval executor с независимым receipt. записаны installed sha и свежие identity; без product writes и без повтора unknown. в согласованной тестовой сессии проверить смену режима/readback и контролируемый permission→карточка→ответ→единственное завершение без новых product writes. .agents/tasks/20261025-permission-control-fullcycle/acceptance/zcode.json" data-details-id='13' class='leaf-row'><td class='task-title'><span class='row-id'>L08</span><span class='row-name'>Проверить живой путь ZCode</span><span class='row-times'>финиш 16:37</span><span class='row-meta'>владелец: Исполнитель текущего чата · стоимость: модель не выбрана · лист не назвал ни модель, ни класс</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-done)">✅ Готово</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-time'>план 20 мин</span><span class='cell-sub'>оценка 10 мин–20 мин</span></div></td><td data-label="Усилие" class="">не измерено</td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='13' aria-expanded='false' aria-label='Подробнее: Проверить живой путь ZCode'>Подробнее</button></td></tr><tr data-status="queued" data-text="l09 проверить живой путь opencode исполнитель текущего чата подтверждены режим, карточка, точная привязка ответа и отсутствие повторного выполнения; отдельно проверен отказ. повторить полный потребительский сценарий на существующей разрешённой opencode fixture без подмены провайдера или модели. .agents/tasks/20261025-permission-control-fullcycle/acceptance/opencode.json" data-details-id='14' class='leaf-row'><td class='task-title'><span class='row-id'>L09</span><span class='row-name'>Проверить живой путь OpenCode</span><span class='row-times'>время не зафиксировано</span><span class='row-meta'>владелец: Исполнитель текущего чата · стоимость: модель не выбрана · лист не назвал ни модель, ни класс · ждёт: После L08: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-queued)">⋯ В очереди</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-time'>план 20 мин</span><span class='cell-sub'>оценка 10 мин–20 мин</span></div></td><td data-label="Усилие" class="">не измерено</td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='14' aria-expanded='false' aria-label='Подробнее: Проверить живой путь OpenCode'>Подробнее</button></td></tr><tr data-status="queued" data-text="l10 проверить живой путь codex исполнитель текущего чата native ответы и readback доказывают смену режима и permission roundtrip; одна source регрессия не заменяет установленную приёмку. проверить native app-server approval и режим существующего thread через штатную capability, сохраняя humanstop и текущий turn. .agents/tasks/20261025-permission-control-fullcycle/acceptance/codex.json" data-details-id='15' class='leaf-row'><td class='task-title'><span class='row-id'>L10</span><span class='row-name'>Проверить живой путь Codex</span><span class='row-times'>время не зафиксировано</span><span class='row-meta'>владелец: Исполнитель текущего чата · стоимость: модель не выбрана · лист не назвал ни модель, ни класс · ждёт: После L09: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-queued)">⋯ В очереди</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-time'>план 20 мин</span><span class='cell-sub'>оценка 10 мин–20 мин</span></div></td><td data-label="Усилие" class="">не измерено</td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='15' aria-expanded='false' aria-label='Подробнее: Проверить живой путь Codex'>Подробнее</button></td></tr><tr data-status="queued" data-text="l11 проверить живой путь minimax code исполнитель текущего чата тот же полный сценарий с exact native request и receipt; idle minimax desktop принимает одно новое opencode-сообщение в exact session через штатную queue/wake route. предыдущие accepted/unknown input не replay-ятся. неподдерживаемый permission-mode transition остаётся незавершённым требованием, а не pass. проверить существующую minimax fixture через её реальный native controller; не подменять minimax маршрутом opencode и не использовать платный fallback. .agents/tasks/20261025-permission-control-fullcycle/acceptance/minimax-code.json" data-details-id='16' class='leaf-row'><td class='task-title'><span class='row-id'>L11</span><span class='row-name'>Проверить живой путь MiniMax Code</span><span class='row-times'>время не зафиксировано</span><span class='row-meta'>владелец: Исполнитель текущего чата · стоимость: модель не выбрана · лист не назвал ни модель, ни класс · ждёт: После L10: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-queued)">⋯ В очереди</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-time'>план 20 мин</span><span class='cell-sub'>оценка 10 мин–20 мин</span></div></td><td data-label="Усилие" class="">не измерено</td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='16' aria-expanded='false' aria-label='Подробнее: Проверить живой путь MiniMax Code'>Подробнее</button></td></tr><tr data-status="queued" data-text="l12 закрыть полный цикл по пользовательскому результату исполнитель текущего чата full four-harness/user cycle не закрыт до consumer acceptance zcode/opencode/codex/minimax, подтверждённой notice place delivery и idle minimax delivery. codex/minimax ещё blocked/unproved; notice place delivery не поставлена. title composer source tests and existing 8/8 app rename proof are complete, but the new composer is not installed until l07. все четыре среды имеют реальную consumer evidence и понятную инструкцию; нет pending обязательных ветвей, чужих изменений, повторных unknown действий и тестовых звонков человеку; план и отчёт согласованы. проверить согласованность четырёх сценариев, ui, ошибок, секретов, повторов и итогов выпуска; исправить найденные дефекты и повторить только затронутую приёмку. независимая проверка существующим исполнителем без создания нового агента, если его участие разрешено. .agents/tasks/20261025-permission-control-fullcycle/result.md" data-details-id='17' class='leaf-row'><td class='task-title'><span class='row-id'>L12</span><span class='row-name'>Закрыть полный цикл по пользовательскому результату</span><span class='row-times'>время не зафиксировано</span><span class='row-meta'>владелец: исполнитель текущего чата · стоимость: модель не выбрана · лист не назвал ни модель, ни класс · ждёт: Финальная проверка включает обязательное доказательство activity ветки MiniMax.</span></td><td data-label="Статус"><span class="status" style="--c:var(--st-queued)">⋯ В очереди</span></td><td data-label="Оценка"><div class='cell-plan'><span class='plan-time'>план 25 мин</span><span class='cell-sub'>оценка 15 мин–25 мин</span></div></td><td data-label="Усилие" class="">не измерено</td><td class='details-cell'><button type='button' class='task-details-trigger' data-details-id='17' aria-expanded='false' aria-label='Подробнее: Закрыть полный цикл по пользовательскому результату'>Подробнее</button></td></tr></tbody></table></div>
+    <div id='task-details-host' class='task-details-host' hidden></div><template id='task-details-template-0'><div class='task-details-card'><div class='task-details-head'><h3>Проверить нативные возможности и безопасные тестовые сессии</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L01</dd><dt>Описание задачи</dt><dd>Проследить текущие native APIs четырёх адаптеров, смену режима существующей сессии, получение запроса и ответ; установить исходные состояния и разрешённые тестовые identity без запуска новых агентов.</dd><dt>Ожидаемый результат</dt><dd>Матрица четырёх сред с проверенными методами, scope и ограничениями; определены доступные контроллеры, source ownership и правила безопасной приёмки. Конкретные тестовые identity закрепляются перед соответствующими L08–L11 и не заменяются product-сессиями.</dd><dt>Затрагиваемые файлы</dt><dd>.agents/tasks/20261025-permission-control-fullcycle/capabilities.md</dd><dt>Примечание</dt><dd>Исследование зафиксировано в capabilities.md: Codex local schema сгенерирована; MiniMax native request routes найдены, default desktop manifest отсутствует; source worktree явно разрешён и создан, initial интегратор освободил пути. Live приёмка нового цикла не выполнена.</dd><dt>Владелец</dt><dd>Исполнитель текущего чата</dd><dt>Зависит от</dt><dd>—</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Рантайм</dt><dd>codex</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>17 мин</dd><dt>Окно работы</dt><dd>2026-10-25T14:33:23+03:00 – 2026-10-25T14:51:11+03:00</dd><dt>Оценка</dt><dd>15 мин–25 мин</dd><dt>План</dt><dd class='plan-value'>25 мин</dd><dt>Сверх плана</dt><dd>в пределах плана</dd><dt>Начало</dt><dd>2026-10-25T14:33:23+03:00</dd><dt>Конец</dt><dd>2026-10-25T14:51:11+03:00</dd><dt>Почему нет оценки</dt><dd>Поддержка изменения активного режима и native approval в Codex/MiniMax ещё не доказана; внешний запрет не подменяется обходом.</dd></dl></div></template><template id='task-details-template-1'><div class='task-details-card'><div class='task-details-head'><h3>Исправить нулевые текстовые результаты поиска по каталогу</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L18</dd><dt>Описание задачи</dt><dd>Проверить сообщение пользователя: при большом каталоге около 3200 записей текстовый поиск Herder возвращает ноль результатов. Найти точную причину в поиске/индексе и исправить только подтверждённый слой.</dd><dt>Ожидаемый результат</dt><dd>RED воспроизводит нулевой результат на запросе с известным совпадением в контролируемом каталоге. GREEN возвращает точное совпадение с корректным host/harness scope; неполный или недоступный индекс явно отличается от полного нуля. Нет transcript export, Telegram API, native writes или повторной доставки.</dd><dt>Затрагиваемые файлы</dt><dd>src/session-search.ts, tests/l72-session-search-incremental.test.ts</dd><dt>Примечание</dt><dd>Metrics delta 6099a19 is installed in combined a34; independent review SHIP for durable-vs-processed accounting; focused 7/7 and tsc GREEN. MCP receipt directly separates processed* (current scan) and indexed* (durable host+harness data). Required next proof: capture a fresh source-versioned receipt and read-only COUNT on the same snapshot/scope; compare dynamic counts without hardcoding; run the exact real query and preserve matching message/snippet, with partial/stale explicit. No root-cause claim for the user's query yet; bridgeworker owns reproduction.</dd><dt>Владелец</dt><dd>permission_reply_bridge</dd><dt>Зависит от</dt><dd>—</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>—</dd><dt>Оценка</dt><dd>15 мин–25 мин</dd><dt>План</dt><dd class='plan-value'>25 мин</dd><dt>Сверх плана</dt><dd>длительность не измерена</dd><dt>Начало</dt><dd>не зафиксировано</dd><dt>Конец</dt><dd>не зафиксировано</dd></dl></div></template><template id='task-details-template-2'><div class='task-details-card'><div class='task-details-head'><h3>Определить единый контракт режима и точного разрешения</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L02</dd><dt>Описание задачи</dt><dd>Нормализовать возможности каждой среды, readback режима, host/session/request identity, устаревание и ровно одно применение ответа. Отсутствующая native функция показывается явно.</dd><dt>Ожидаемый результат</dt><dd>Контракт сохраняет native security boundary, unknown/accepted не повторяются, подмена host/session/request и устаревший ответ отвергаются focused тестами.</dd><dt>Затрагиваемые файлы</dt><dd>src/permission-control/contract.ts, tests/permission-control-contract.test.ts</dd><dt>Примечание</dt><dd>Безопасный exact identity/reply guard независимым review оценён SHIP; focused regression RED 5 → GREEN 7, TypeScript compile GREEN. Production reply и live browser/native acceptance остаются невыполненными в будущих leaves.</dd><dt>Владелец</dt><dd>permission_reply_bridge</dd><dt>Зависит от</dt><dd>Проверить нативные возможности и безопасные тестовые сессии</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Рантайм</dt><dd>codex</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>18 мин</dd><dt>Окно работы</dt><dd>2026-10-25T14:51:11+03:00 – 2026-10-25T15:10:00+03:00</dd><dt>Оценка</dt><dd>20 мин–30 мин</dd><dt>План</dt><dd class='plan-value'>30 мин</dd><dt>Сверх плана</dt><dd>в пределах плана</dd><dt>Начало</dt><dd>2026-10-25T14:51:11+03:00</dd><dt>Конец</dt><dd>2026-10-25T15:10:00+03:00</dd></dl></div></template><template id='task-details-template-3'><div class='task-details-card'><div class='task-details-head'><h3>Подключить смену режима в четырёх адаптерах</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L03</dd><dt>Описание задачи</dt><dd>Подключить поддерживаемые native операции для выбранной существующей сессии, включая Full Access; возвращать подтверждённый режим. Не перезапускать сессию, не менять модель и не разрешать накопленные запросы автоматически.</dd><dt>Ожидаемый результат</dt><dd>У каждого адаптера проверены mapping, native ответ и независимый readback; ошибки и неподдерживаемые переходы не возвращают успех. Все четыре среды остаются обязательной приёмкой.</dd><dt>Затрагиваемые файлы</dt><dd>src/adapters/zcode.ts, src/adapters/opencode.ts, src/adapters/codex-app-server.ts, src/adapters/minimax-code.ts, src/adapters/minimax-code-control.ts, tests/permission-control-modes.test.ts</dd><dt>Примечание</dt><dd>Source commits 5354887/4214d47/2a137f3/6dadd73 integrated in public commit 49b2c13; the contradictory fullAccess/mode inputs now fail closed before native create. Independent review SHIP; merged focused suite 170/170 and production build GREEN. Native default create canary is separate L15/L08. Four-harness mode consumer acceptance remains open.</dd><dt>Владелец</dt><dd>permission_native</dd><dt>Зависит от</dt><dd>Проверить нативные возможности и безопасные тестовые сессии</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>—</dd><dt>Оценка</dt><dd>25 мин–45 мин</dd><dt>План</dt><dd class='plan-value'>45 мин</dd><dt>Сверх плана</dt><dd>длительность не измерена</dd><dt>Начало</dt><dd>не зафиксировано</dd><dt>Конец</dt><dd>не зафиксировано</dd></dl></div></template><template id='task-details-template-4'><div class='task-details-card'><div class='task-details-head'><h3>Восстановить рабочие папки MiniMax в Herder</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L13</dd><dt>Описание задачи</dt><dd>Проследить native session identity до workspace metadata и фильтрации Herder; исправить потерю рабочего каталога без угадывания по title или launchCwd. Разделять runtime/GUI host и work-computer path.</dd><dt>Ожидаемый результат</dt><dd>Exact native runtime/session cwd либо явная декларация проходит reliable roundtrip до Herder; фильтр TelegramAuto видит workspace только по проверенным данным. Нет title guess. Focused regression и readback на той же native identity.</dd><dt>Затрагиваемые файлы</dt><dd>src/session-workspaces.ts, src/session-workspaces-tools.ts, src/session-workspaces-backfill.ts, src/adapters/minimax-code-active.ts, src/adapters/minimax-code-runtime-activity.ts, src/adapters/minimax-code-native-session.ts, src/mesh/native-minimax-code.ts, tests/minimax-active-runtime.test.ts, tests/session-workspaces-backfill.test.ts</dd><dt>Примечание</dt><dd>Source commit 57e18c8 is installed inside release 49b2c13; RED→GREEN focused regression 17 tests. Post-install Herder MCP list_active_sessions filter (harness=minimax-code, hostId=100, runtimeHostId=100) returned six active rows with partial metadata enumeration, including the exact active root whose observed native cwd is TelegramAuto. Exact session_workspaces_get for that same identity returned host100 and /home/roomhacker/PycharmProjects/TelegramAuto with source=observed, evidence=native_session_cwd:native_runtime_turn_lease. No title guess, Telegram API or native write.</dd><dt>Результат исполнителя</dt><dd>Verified native workspace_dir из active MiniMax session/turn теперь записывается в ledger как observed native_session_cwd только для точной native activity identity. Focused regression и isolated exact-identity host-filter canary зелёные. Runtime install/deployment остаются в L07.</dd><dt>Владелец</dt><dd>workspace_activity</dd><dt>Зависит от</dt><dd>Проверить нативные возможности и безопасные тестовые сессии</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Рантайм</dt><dd>codex</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>9 мин</dd><dt>Окно работы</dt><dd>2026-10-25T15:03:00+03:00 – 2026-10-25T15:12:00+03:00</dd><dt>Оценка</dt><dd>15 мин–25 мин</dd><dt>План</dt><dd class='plan-value'>25 мин</dd><dt>Сверх плана</dt><dd>в пределах плана</dd><dt>Начало</dt><dd>2026-10-25T15:03:00+03:00</dd><dt>Конец</dt><dd>2026-10-25T15:12:00+03:00</dd></dl></div></template><template id='task-details-template-5'><div class='task-details-card'><div class='task-details-head'><h3>Доставлять сообщение в idle MiniMax desktop без повтора</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L16</dd><dt>Описание задачи</dt><dd>Проследить и исправить bounded route, по которому OpenCode передаёт сообщение в idle MiniMax desktop session. Сохранить exact native host/session identity и штатную очередь; accepted/UNKNOWN input не replay-ить и не превращать в новую сессию.</dd><dt>Ожидаемый результат</dt><dd>Focused regression доказывает доставку одного нового сообщения в точную idle MiniMax session штатным механизмом; отсутствие capability/неизвестный результат видны явно. Ранее accepted/queued сообщения не переотправляются, никакая новая native session не создаётся.</dd><dt>Примечание</dt><dd>Earlier read-only trace and exact constraints remain: source fix not started, no accepted/queued input replayed. Deferred behind the new user search defect by Lead priority; existing estimate retained.</dd><dt>Владелец</dt><dd>permission_reply_bridge</dd><dt>Зависит от</dt><dd>Проверить нативные возможности и безопасные тестовые сессии</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>—</dd><dt>Оценка</dt><dd>20 мин–35 мин</dd><dt>План</dt><dd class='plan-value'>35 мин</dd><dt>Сверх плана</dt><dd>длительность не измерена</dd><dt>Начало</dt><dd>не зафиксировано</dd><dt>Конец</dt><dd>не зафиксировано</dd><dt>Почему в очереди</dt><dd>Lead reprioritized the newly reported catalog text-search zero-result defect (L18) after immutable 49b release capture. Resume this bounded idle MiniMax delivery investigation after L18; never replay accepted/UNKNOWN queued messages.</dd></dl></div></template><template id='task-details-template-6'><div class='task-details-card'><div class='task-details-head'><h3>Исправить заголовки задач в Herder и проверить восемь сессий</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L17</dd><dt>Описание задачи</dt><dd>Переставить генерируемый заголовок в формат задача | короткое canonical имя проекта; исключить статус и full path, сохранять цель целиком. Перенести только существующие автосгенерированные названия по подтверждённому списку.</dd><dt>Ожидаемый результат</dt><dd>Scoped source commit 9238bf9: focused 28/28 и TypeScript GREEN; формат поддерживает POSIX/Mac/Windows/worktree пути, не угадывает/не режет задачу. Независимый native app readback подтверждает 8/8 точных названий после rename; это пользовательский app proof, отдельно от установленного генератора.</dd><dt>Затрагиваемые файлы</dt><dd>src/session-labels.ts, src/mcp/session-tools.ts, src/mesh/register-tools.ts, tests/l69-session-label-write.test.ts, tests/l71-mcp-mesh-label.test.ts, tests/l54-panel-routes.test.ts</dd><dt>Примечание</dt><dd>Source composer commit 9238bf9 is installed in public backend release 49b2c13. Focused source 28/28 + tsc GREEN; native app readback of the eight renamed sessions was 8/8 before install. Installed generator and app rename proof are separate evidence layers.</dd><dt>Владелец</dt><dd>workspace_activity</dd><dt>Зависит от</dt><dd>Проверить нативные возможности и безопасные тестовые сессии</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>—</dd><dt>План</dt><dd>плана нет</dd><dt>Сверх плана</dt><dd>длительность не измерена</dd><dt>Начало</dt><dd>не зафиксировано</dd><dt>Конец</dt><dd>не зафиксировано</dd></dl></div></template><template id='task-details-template-7'><div class='task-details-card'><div class='task-details-head'><h3>Собирать запросы и возвращать точный ответ в нативную среду</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L04</dd><dt>Описание задачи</dt><dd>Подключить native permission events/readback и response для четырёх сред. Сохранять pending при неизвестном результате; ответ не становится новой командой агенту.</dd><dt>Ожидаемый результат</dt><dd>Разрешение/отказ применяются только к актуальному native request, повтор callback не исполняет команду вновь, чужой и закрытый запрос не принимаются.</dd><dt>Затрагиваемые файлы</dt><dd>src/permission-control/native-requests.ts, src/adapters/zcode.ts, src/adapters/opencode.ts, src/adapters/codex-app-server.ts, src/adapters/minimax-code-control.ts, tests/permission-control-native-requests.test.ts</dd><dt>Примечание</dt><dd>Lead подтвердил native readback по четырём exact ZCode sessions на host100: mode=yolo, pendingRequests=[]; исходные четыре durable pending approvals исполнены единственный раз native executor. Отдельный Airlock list_pages request также отвечен один раз по отдельному подтверждению Lead. Это current native business evidence, но не source/runtime causality и не приёмка четырёх harness; не re-approve и не менять mode повторно.</dd><dt>Владелец</dt><dd>permission_native</dd><dt>Зависит от</dt><dd>Подключить смену режима в четырёх адаптерах</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>—</dd><dt>Оценка</dt><dd>25 мин–45 мин</dd><dt>План</dt><dd class='plan-value'>45 мин</dd><dt>Сверх плана</dt><dd>длительность не измерена</dd><dt>Начало</dt><dd>не зафиксировано</dd><dt>Конец</dt><dd>не зафиксировано</dd><dt>Почему в очереди</dt><dd>Запускается после завершения L03.</dd></dl></div></template><template id='task-details-template-8'><div class='task-details-card'><div class='task-details-head'><h3>Проверить активность агента в TelegramAuto</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L14</dd><dt>Описание задачи</dt><dd>Проверить на реальной поверхности Herder, что фильтр TelegramAuto и activity indicator показывают реально работающего MiniMax агента с точной workspace и host identity.</dd><dt>Ожидаемый результат</dt><dd>Herder UI/MCP фильтр для exact host и native identity показывает актуальную activity/workspace; собственный browser fixture допускается только для отдельной собственной сессии, screenshot обязателен при ошибке до retry. Без Telegram API.</dd><dt>Затрагиваемые файлы</dt><dd>workspace/activity acceptance evidence</dd><dt>Примечание</dt><dd>Текущий live Herder MCP host filter показывает активного MiniMax агента и child в TelegramAuto на server100; декларации совпадают с точными workspace_dir из native runtime. В live data у других сессий остаются неизвестные workspace; source фиксация и причинность этого readback не заявляются.</dd><dt>Результат исполнителя</dt><dd>На момент проверки точная activity identity, workspace и host filter показывают две TelegramAuto session как active. Consumer proof — только текущий MCP readback; он не доказывает установку commit 57e18c8. Без Telegram API и без изменения чужих сессий.</dd><dt>Владелец</dt><dd>workspace_activity</dd><dt>Зависит от</dt><dd>Восстановить рабочие папки MiniMax в Herder</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>—</dd><dt>Оценка</dt><dd>10 мин–20 мин</dd><dt>План</dt><dd class='plan-value'>20 мин</dd><dt>Сверх плана</dt><dd>длительность не измерена</dd><dt>Начало</dt><dd>не зафиксировано</dd><dt>Конец</dt><dd>2026-10-25T15:12:00+03:00</dd></dl></div></template><template id='task-details-template-9'><div class='task-details-card'><div class='task-details-head'><h3>Установить Full Access по умолчанию для новых ZCode-сессий</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L15</dd><dt>Описание задачи</dt><dd>Добавить требуемый владельцем безопасный default: новая ZCode-сессия создаётся в native YOLO/Full Access. Существующие сессии меняются отдельной явной операцией; ожидающие permission requests отвечаются только native approval executor.</dd><dt>Ожидаемый результат</dt><dd>Focused source test доказывает default YOLO при создании новой ZCode-сессии и точный native readback того же sessionId; отсутствующий/другой mode не считается успехом. Живой readback выполняется после установки на разрешённой fixture; чужие sessions и запросы не трогаются.</dd><dt>Затрагиваемые файлы</dt><dd>src/adapters/zcode.ts, tests/zcode-adapter.test.ts</dd><dt>Примечание</dt><dd>Native projectId mapping fix a34a4fee0ddd8e1e31f2911699e170c142226ab7 independently reviewed SHIP; focused ZCode tests 98/98 GREEN. Source pushed to main, official existing-tree candidate passed 14/14, installed host100 and accepted 21/21. Native executor has been signalled for exactly one public new-ZCode default-create canary plus same-session readback. No canary result yet. Five existing sessions remain read-only; no mode writes or approvals.</dd><dt>Результат исполнителя</dt><dd>Source a34 опубликован fast-forward, native projectId resolver independently SHIP; focused ZCode tests 98/98 GREEN, official build checks 14/14. После установки owner acceptance 21/21 public default-create без mode/fullAccess/model/initialMessage создала exact ZCode session; same-session readback YOLO, pending[], humanMessageCount=0, no active turn. Fixture закрыта официальным closeSession/archiveTask, final idle/nativeLoaded=false; task-delete query unavailable, без replay. Пять existing sessions не тронуты; private native receipt сохранён вне публичного плана.</dd><dt>Владелец</dt><dd>permission_native</dd><dt>Зависит от</dt><dd>Подключить смену режима в четырёх адаптерах</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>—</dd><dt>Оценка</dt><dd>10 мин–20 мин</dd><dt>План</dt><dd class='plan-value'>20 мин</dd><dt>Сверх плана</dt><dd>длительность не измерена</dd><dt>Начало</dt><dd>не зафиксировано</dd><dt>Конец</dt><dd>16:37</dd></dl></div></template><template id='task-details-template-10'><div class='task-details-card'><div class='task-details-head'><h3>Доставлять карточку с контекстом через Notice Place</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L05</dd><dt>Описание задачи</dt><dd>Использовать существующий API Notice Place и его маршрут UserIO: точная ссылка на сессию, текущая команда, предыдущее сообщение агента и последнее сообщение человека; удалять секреты. Ответ связан с host/session/request и сохраняет однократность.</dd><dt>Ожидаемый результат</dt><dd>Одна карточка на native request, подтверждённая доставка и возврат ответа; однократное разрешение и отказ; секреты не уходят в карточку; недоступный контекст помечается явно, а не выдумывается.</dd><dt>Затрагиваемые файлы</dt><dd>src/permission-control/noticeplace-bridge.ts, src/permission-control/context.ts, tests/permission-control-noticeplace.test.ts</dd><dt>Примечание</dt><dd>Bridge commit b9aea61 исправляет generic native permission resume и focused проверки по сообщению Lead; native delta-review ещё ожидается. Observer и автоматическая доставка permission.requested через Notice Place в source/runtime не подключены: Leaf остаётся queued, delivery/feature-complete не заявляются.</dd><dt>Владелец</dt><dd>permission_reply_bridge</dd><dt>Зависит от</dt><dd>Определить единый контракт режима и точного разрешения, Собирать запросы и возвращать точный ответ в нативную среду</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>—</dd><dt>Оценка</dt><dd>25 мин–40 мин</dd><dt>План</dt><dd class='plan-value'>40 мин</dd><dt>Сверх плана</dt><dd>длительность не измерена</dd><dt>Начало</dt><dd>не зафиксировано</dd><dt>Конец</dt><dd>не зафиксировано</dd><dt>Почему в очереди</dt><dd>Нужны готовые reply contract L02 и native adapters L04.</dd></dl></div></template><template id='task-details-template-11'><div class='task-details-card'><div class='task-details-head'><h3>Показать управление режимами и разрешениями в Herder</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L06</dd><dt>Описание задачи</dt><dd>В выбранной сессии показать реальный режим, допустимые переходы, текущий запрос и результат решения. Использовать существующий UI/MCP; избегать неподтверждённых универсальных кнопок.</dd><dt>Ожидаемый результат</dt><dd>UI и MCP показывают одинаковый readback; поддержка каждой среды видна пользователю; ссылка карточки открывает ту же сессию; ошибки не маскируются под успех.</dd><dt>Затрагиваемые файлы</dt><dd>src/web-ui/main.tsx, src/web/server.ts, src/mcp-tools/definitions.ts, src/mcp-tools/handlers.ts, tests/permission-control-ui.test.ts</dd><dt>Примечание</dt><dd>Существующий установленный compact one-time Allow и queue edit подтверждены Lead, но mode controller отсутствует в принятом UI release. Mode UI отложен до source join/ownership check. Нужны capability-driven state/readback, видимый scope, unknown как unknown и disabled unsupported; не часть настоящей source ветки.</dd><dt>Владелец</dt><dd>интегратор 01a172c2</dd><dt>Зависит от</dt><dd>Подключить смену режима в четырёх адаптерах, Доставлять карточку с контекстом через Notice Place</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>—</dd><dt>Оценка</dt><dd>20 мин–30 мин</dd><dt>План</dt><dd class='plan-value'>30 мин</dd><dt>Сверх плана</dt><dd>длительность не измерена</dd><dt>Начало</dt><dd>не зафиксировано</dd><dt>Конец</dt><dd>не зафиксировано</dd><dt>Почему в очереди</dt><dd>Нужны режимы и карточка ответа. Интегратор отдельно владеет compact Allow UI и queue edit; его исходники не подменяются.</dd></dl></div></template><template id='task-details-template-12'><div class='task-details-card'><div class='task-details-head'><h3>Опубликовать и установить согласованный выпуск</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L07</dd><dt>Описание задачи</dt><dd>После focused проверок и source review опубликовать только owned изменения в main и установить штатным маршрутом единственного владельца; сохранить чужой WIP и rollback.</dd><dt>Ожидаемый результат</dt><dd>Remote main содержит owned delta; установленный source/artifact и живой PID совпадают; существующие sessions/history сохранены. Нет новой копии, ветки или worktree без отдельного разрешения.</dd><dt>Затрагиваемые файлы</dt><dd>.agents/tasks/20261025-permission-control-fullcycle/release.md</dd><dt>Примечание</dt><dd>Current immutable backend release a34a4fee0ddd8e1e31f2911699e170c142226ab7 is installed on host100; node acceptance 21/21 via exact reachable peer 88. Previous rollback release preserved. UI frontend copied from the verified live release dist/web-static; exact static tree digest matched source, modes 755/644. Scoped ServersAdministartion commit 57d2adee updates exactly the 3 existing pin/header occurrences; nginx-dev timer applied it, deployed-git-sha=57d2adee, and sudo nginxctl diff reports no managed drift. Public page remains behind auth (unauthenticated GET redirects to auth). This does not claim successful new ZCode session creation or full four-harness acceptance.</dd><dt>Результат исполнителя</dt><dd>Отдельно: baseline release 49b2c13 установлен и принят 21/21; frontend pin для baseline зафиксирован 313ec897. Затем combined hotfix a34a4fee0ddd8e1e31f2911699e170c142226ab7 (включая 6099 search metrics и reviewed native projectId mapping) установлен и принят 21/21. Для a34 опубликован frontend pin commit 57d2adee и применён штатным timer; managed nginx drift=0. Runtime/UI release proof зафиксирован; это не закрывает общий четырёх-harness цикл.</dd><dt>Владелец</dt><dd>исполнитель текущего чата</dd><dt>Зависит от</dt><dd>Показать управление режимами и разрешениями в Herder, Проверить активность агента в TelegramAuto, Установить Full Access по умолчанию для новых ZCode-сессий, Исправить заголовки задач в Herder и проверить восемь сессий</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>—</dd><dt>Оценка</dt><dd>15 мин–25 мин</dd><dt>План</dt><dd class='plan-value'>25 мин</dd><dt>Сверх плана</dt><dd>длительность не измерена</dd><dt>Начало</dt><dd>не зафиксировано</dd><dt>Конец</dt><dd>16:23</dd></dl></div></template><template id='task-details-template-13'><div class='task-details-card'><div class='task-details-head'><h3>Проверить живой путь ZCode</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L08</dd><dt>Описание задачи</dt><dd>В согласованной тестовой сессии проверить смену режима/readback и контролируемый permission→карточка→ответ→единственное завершение без новых product writes.</dd><dt>Ожидаемый результат</dt><dd>После установки на разрешённой ZCode fixture доказаны: native режим существующей сессии и exact readback; новый ZCode session по умолчанию создаётся в YOLO/Full Access с readback того же sessionId; текущий exact pending request отвечает единственный native approval executor с независимым receipt. Записаны installed SHA и свежие identity; без product writes и без повтора UNKNOWN.</dd><dt>Затрагиваемые файлы</dt><dd>.agents/tasks/20261025-permission-control-fullcycle/acceptance/zcode.json</dd><dt>Примечание</dt><dd>Current combined SHA a34a4fee0ddd8e1e31f2911699e170c142226ab7 is installed and accepted 21/21. The bounded new public default-create canary was signalled to the sole native executor after install; waiting for exact created session and same-session mode/pending readback. Prior 49b canary failed closed three times with created=false, no session; cause was missing native projectId. Do not repeat it or act on the five existing ZCode sessions.</dd><dt>Результат исполнителя</dt><dd>На installed a34 публичная новая ZCode сессия создана без mode/fullAccess/model/initialMessage; exact same-session native readback подтвердил YOLO, pending пусто, humanMessageCount=0, активного turn нет. Nativeworker использовал официальное закрытие session+archive task; final readback idle/nativeLoaded=false, root не затронуты; удаление task недоступно через query, повторов не было. Частный receipt хранит точный ID. Пять прежних ZCode sessions не изменялись. Это ZCode canary, не общий full-cycle.</dd><dt>Владелец</dt><dd>Исполнитель текущего чата</dd><dt>Зависит от</dt><dd>Опубликовать и установить согласованный выпуск</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>—</dd><dt>Оценка</dt><dd>10 мин–20 мин</dd><dt>План</dt><dd class='plan-value'>20 мин</dd><dt>Сверх плана</dt><dd>длительность не измерена</dd><dt>Начало</dt><dd>не зафиксировано</dd><dt>Конец</dt><dd>16:37</dd></dl></div></template><template id='task-details-template-14'><div class='task-details-card'><div class='task-details-head'><h3>Проверить живой путь OpenCode</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L09</dd><dt>Описание задачи</dt><dd>Повторить полный потребительский сценарий на существующей разрешённой OpenCode fixture без подмены провайдера или модели.</dd><dt>Ожидаемый результат</dt><dd>Подтверждены режим, карточка, точная привязка ответа и отсутствие повторного выполнения; отдельно проверен отказ.</dd><dt>Затрагиваемые файлы</dt><dd>.agents/tasks/20261025-permission-control-fullcycle/acceptance/opencode.json</dd><dt>Владелец</dt><dd>Исполнитель текущего чата</dd><dt>Зависит от</dt><dd>Проверить живой путь ZCode</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>—</dd><dt>Оценка</dt><dd>10 мин–20 мин</dd><dt>План</dt><dd class='plan-value'>20 мин</dd><dt>Сверх плана</dt><dd>длительность не измерена</dd><dt>Начало</dt><dd>не зафиксировано</dd><dt>Конец</dt><dd>не зафиксировано</dd><dt>Почему в очереди</dt><dd>После L08: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.</dd></dl></div></template><template id='task-details-template-15'><div class='task-details-card'><div class='task-details-head'><h3>Проверить живой путь Codex</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L10</dd><dt>Описание задачи</dt><dd>Проверить native app-server approval и режим существующего thread через штатную capability, сохраняя HumanStop и текущий turn.</dd><dt>Ожидаемый результат</dt><dd>Native ответы и readback доказывают смену режима и permission roundtrip; одна source регрессия не заменяет установленную приёмку.</dd><dt>Затрагиваемые файлы</dt><dd>.agents/tasks/20261025-permission-control-fullcycle/acceptance/codex.json</dd><dt>Владелец</dt><dd>Исполнитель текущего чата</dd><dt>Зависит от</dt><dd>Проверить живой путь OpenCode</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>—</dd><dt>Оценка</dt><dd>10 мин–20 мин</dd><dt>План</dt><dd class='plan-value'>20 мин</dd><dt>Сверх плана</dt><dd>длительность не измерена</dd><dt>Начало</dt><dd>не зафиксировано</dd><dt>Конец</dt><dd>не зафиксировано</dd><dt>Почему в очереди</dt><dd>После L09: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.</dd></dl></div></template><template id='task-details-template-16'><div class='task-details-card'><div class='task-details-head'><h3>Проверить живой путь MiniMax Code</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L11</dd><dt>Описание задачи</dt><dd>Проверить существующую MiniMax fixture через её реальный native controller; не подменять MiniMax маршрутом OpenCode и не использовать платный fallback.</dd><dt>Ожидаемый результат</dt><dd>Тот же полный сценарий с exact native request и receipt; idle MiniMax desktop принимает одно новое OpenCode-сообщение в exact session через штатную queue/wake route. Предыдущие accepted/UNKNOWN input не replay-ятся. Неподдерживаемый permission-mode transition остаётся незавершённым требованием, а не PASS.</dd><dt>Затрагиваемые файлы</dt><dd>.agents/tasks/20261025-permission-control-fullcycle/acceptance/minimax-code.json</dd><dt>Владелец</dt><dd>Исполнитель текущего чата</dd><dt>Зависит от</dt><dd>Проверить живой путь Codex, Доставлять сообщение в idle MiniMax desktop без повтора</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>—</dd><dt>Оценка</dt><dd>10 мин–20 мин</dd><dt>План</dt><dd class='plan-value'>20 мин</dd><dt>Сверх плана</dt><dd>длительность не измерена</dd><dt>Начало</dt><dd>не зафиксировано</dd><dt>Конец</dt><dd>не зафиксировано</dd><dt>Почему в очереди</dt><dd>После L10: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.</dd></dl></div></template><template id='task-details-template-17'><div class='task-details-card'><div class='task-details-head'><h3>Закрыть полный цикл по пользовательскому результату</h3><button type='button' class='task-details-close'>Закрыть</button></div><dl class='task-details'><dt>Код</dt><dd>L12</dd><dt>Описание задачи</dt><dd>Проверить согласованность четырёх сценариев, UI, ошибок, секретов, повторов и итогов выпуска; исправить найденные дефекты и повторить только затронутую приёмку. Независимая проверка существующим исполнителем без создания нового агента, если его участие разрешено.</dd><dt>Ожидаемый результат</dt><dd>Все четыре среды имеют реальную consumer evidence и понятную инструкцию; нет pending обязательных ветвей, чужих изменений, повторных UNKNOWN действий и тестовых звонков человеку; план и отчёт согласованы.</dd><dt>Затрагиваемые файлы</dt><dd>.agents/tasks/20261025-permission-control-fullcycle/result.md</dd><dt>Примечание</dt><dd>Full four-harness/user cycle не закрыт до consumer acceptance ZCode/OpenCode/Codex/MiniMax, подтверждённой Notice Place delivery и idle MiniMax delivery. Codex/MiniMax ещё blocked/unproved; Notice Place delivery не поставлена. Title composer source tests and existing 8/8 app rename proof are complete, but the new composer is not installed until L07.</dd><dt>Владелец</dt><dd>исполнитель текущего чата</dd><dt>Зависит от</dt><dd>Проверить живой путь MiniMax Code, Проверить активность агента в TelegramAuto, Доставлять сообщение в idle MiniMax desktop без повтора, Исправить заголовки задач в Herder и проверить восемь сессий</dd><dt>Параллельно с</dt><dd>—</dd><dt>Сессия</dt><dd>—</dd><dt>Стоимость</dt><dd class='plan-none'>модель не выбрана · лист не назвал ни модель, ни класс</dd><dt>Усилие (суммарно)</dt><dd>не измерено</dd><dt>Длительность по часам</dt><dd>—</dd><dt>Оценка</dt><dd>15 мин–25 мин</dd><dt>План</dt><dd class='plan-value'>25 мин</dd><dt>Сверх плана</dt><dd>длительность не измерена</dd><dt>Начало</dt><dd>не зафиксировано</dd><dt>Конец</dt><dd>не зафиксировано</dd><dt>Почему в очереди</dt><dd>Финальная проверка включает обязательное доказательство activity ветки MiniMax.</dd></dl></div></template>
+  </div>
+  <div>
+    <div class="panel">
+      <h2>Технические привязки</h2>
+      <details class="technical"><summary>Владельцы, сессии, harness и модели</summary>
+        <div class='table-scroll'><table class='table'><thead><tr><th>ID</th><th>Лист</th><th>Владелец</th><th>Сессия</th><th>Harness</th><th>Модель</th><th>Статус</th></tr></thead><tbody><tr><td><span class="dot" style="background:var(--st-done)"></span>L01</td><td>Проверить нативные возможности и безопасные тестовые сессии</td><td>Исполнитель текущего чата</td><td>—</td><td>codex</td><td>—</td><td>Готово</td></tr><tr><td><span class="dot" style="background:var(--st-running)"></span>L18</td><td>Исправить нулевые текстовые результаты поиска по каталогу</td><td>permission_reply_bridge</td><td>—</td><td>—</td><td>—</td><td>В работе</td></tr><tr><td><span class="dot" style="background:var(--st-done)"></span>L02</td><td>Определить единый контракт режима и точного разрешения</td><td>permission_reply_bridge</td><td>—</td><td>codex</td><td>—</td><td>Готово</td></tr><tr><td><span class="dot" style="background:var(--st-running)"></span>L03</td><td>Подключить смену режима в четырёх адаптерах</td><td>permission_native</td><td>—</td><td>—</td><td>—</td><td>В работе</td></tr><tr><td><span class="dot" style="background:var(--st-done)"></span>L13</td><td>Восстановить рабочие папки MiniMax в Herder</td><td>workspace_activity</td><td>—</td><td>codex</td><td>—</td><td>Готово</td></tr><tr><td><span class="dot" style="background:var(--st-queued)"></span>L16</td><td>Доставлять сообщение в idle MiniMax desktop без повтора</td><td>permission_reply_bridge</td><td>—</td><td>—</td><td>—</td><td>В очереди</td></tr><tr><td><span class="dot" style="background:var(--st-done)"></span>L17</td><td>Исправить заголовки задач в Herder и проверить восемь сессий</td><td>workspace_activity</td><td>—</td><td>—</td><td>—</td><td>Готово</td></tr><tr><td><span class="dot" style="background:var(--st-queued)"></span>L04</td><td>Собирать запросы и возвращать точный ответ в нативную среду</td><td>permission_native</td><td>—</td><td>—</td><td>—</td><td>В очереди</td></tr><tr><td><span class="dot" style="background:var(--st-done)"></span>L14</td><td>Проверить активность агента в TelegramAuto</td><td>workspace_activity</td><td>—</td><td>—</td><td>—</td><td>Готово</td></tr><tr><td><span class="dot" style="background:var(--st-done)"></span>L15</td><td>Установить Full Access по умолчанию для новых ZCode-сессий</td><td>permission_native</td><td>—</td><td>—</td><td>—</td><td>Готово</td></tr><tr><td><span class="dot" style="background:var(--st-queued)"></span>L05</td><td>Доставлять карточку с контекстом через Notice Place</td><td>permission_reply_bridge</td><td>—</td><td>—</td><td>—</td><td>В очереди</td></tr><tr><td><span class="dot" style="background:var(--st-queued)"></span>L06</td><td>Показать управление режимами и разрешениями в Herder</td><td>интегратор 01a172c2</td><td>—</td><td>—</td><td>—</td><td>В очереди</td></tr><tr><td><span class="dot" style="background:var(--st-done)"></span>L07</td><td>Опубликовать и установить согласованный выпуск</td><td>исполнитель текущего чата</td><td>—</td><td>—</td><td>—</td><td>Готово</td></tr><tr><td><span class="dot" style="background:var(--st-done)"></span>L08</td><td>Проверить живой путь ZCode</td><td>Исполнитель текущего чата</td><td>—</td><td>—</td><td>—</td><td>Готово</td></tr><tr><td><span class="dot" style="background:var(--st-queued)"></span>L09</td><td>Проверить живой путь OpenCode</td><td>Исполнитель текущего чата</td><td>—</td><td>—</td><td>—</td><td>В очереди</td></tr><tr><td><span class="dot" style="background:var(--st-queued)"></span>L10</td><td>Проверить живой путь Codex</td><td>Исполнитель текущего чата</td><td>—</td><td>—</td><td>—</td><td>В очереди</td></tr><tr><td><span class="dot" style="background:var(--st-queued)"></span>L11</td><td>Проверить живой путь MiniMax Code</td><td>Исполнитель текущего чата</td><td>—</td><td>—</td><td>—</td><td>В очереди</td></tr><tr><td><span class="dot" style="background:var(--st-queued)"></span>L12</td><td>Закрыть полный цикл по пользовательскому результату</td><td>исполнитель текущего чата</td><td>—</td><td>—</td><td>—</td><td>В очереди</td></tr></tbody></table></div>
+      </details>
+    </div>
+    <div class="panel" id="lhc-forecast">
+      <h2>Прогноз</h2>
+      <ul class='facts'><li><b>Усилие</b> (сумма известных оценок): 7 ч 50 мин · 1 оценок неизвестны</li><li><b>Длительность (план с 3 слотами): 5 ч 15 мин</li><li><b>Осталось</b> (без завершённых): 4 ч 05 мин</li><li><b>Пик параллельности</b> по плану: неизвестен — оценки длительности не заданы</li><li><b>Критический путь</b>: неизвестен — оценки длительности не заданы</li><li><b>Заблокировано</b> работы: 0 мин</li></ul>
+      
+      
+    </div>
+    <div class="panel journal-fold" id="lhc-journal">
+      <details>
+        <summary><h2>Журнал изменений</h2></summary>
+
+      <h2>Журнал изменений</h2>
+      <ul class="live"><li><span class="dot" style="background:var(--st-done)"></span><span class="live-text">Проверить нативные возможности и безопасные тестовые сессии</span><span class="leaf-tag">Проверить нативные возможности и безопасные тестовые сессии</span></li><li><span class="dot" style="background:var(--st-running)"></span><span class="live-text">Исправить нулевые текстовые результаты поиска по каталогу</span><span class="leaf-tag">Исправить нулевые текстовые результаты поиска по каталогу</span></li><li><span class="dot" style="background:var(--st-done)"></span><span class="live-text">Определить единый контракт режима и точного разрешения</span><span class="leaf-tag">Определить единый контракт режима и точного разрешения</span></li><li><span class="dot" style="background:var(--st-running)"></span><span class="live-text">Подключить смену режима в четырёх адаптерах</span><span class="leaf-tag">Подключить смену режима в четырёх адаптерах</span></li><li><span class="dot" style="background:var(--st-done)"></span><span class="live-text">Восстановить рабочие папки MiniMax в Herder</span><span class="leaf-tag">Восстановить рабочие папки MiniMax в Herder</span></li><li><span class="dot" style="background:var(--st-queued)"></span><span class="live-text">Доставлять сообщение в idle MiniMax desktop без повтора</span><span class="leaf-tag">Доставлять сообщение в idle MiniMax desktop без повтора</span></li><li><span class="dot" style="background:var(--st-done)"></span><span class="live-text">Исправить заголовки задач в Herder и проверить восемь сессий</span><span class="leaf-tag">Исправить заголовки задач в Herder и проверить восемь сессий</span></li><li><span class="dot" style="background:var(--st-queued)"></span><span class="live-text">Собирать запросы и возвращать точный ответ в нативную среду</span><span class="leaf-tag">Собирать запросы и возвращать точный ответ в нативную среду</span></li><li><span class="dot" style="background:var(--st-done)"></span><span class="live-text">Проверить активность агента в TelegramAuto</span><span class="leaf-tag">Проверить активность агента в TelegramAuto</span></li><li><span class="dot" style="background:var(--st-done)"></span><span class="live-text">Установить Full Access по умолчанию для новых ZCode-сессий</span><span class="leaf-tag">Установить Full Access по умолчанию для новых ZCode-сессий</span></li><li><span class="dot" style="background:var(--st-queued)"></span><span class="live-text">Доставлять карточку с контекстом через Notice Place</span><span class="leaf-tag">Доставлять карточку с контекстом через Notice Place</span></li><li><span class="dot" style="background:var(--st-queued)"></span><span class="live-text">Показать управление режимами и разрешениями в Herder</span><span class="leaf-tag">Показать управление режимами и разрешениями в Herder</span></li><li><span class="dot" style="background:var(--st-done)"></span><span class="live-text">Опубликовать и установить согласованный выпуск</span><span class="leaf-tag">Опубликовать и установить согласованный выпуск</span></li><li><span class="dot" style="background:var(--st-done)"></span><span class="live-text">Проверить живой путь ZCode</span><span class="leaf-tag">Проверить живой путь ZCode</span></li><li><span class="dot" style="background:var(--st-queued)"></span><span class="live-text">Проверить живой путь OpenCode</span><span class="leaf-tag">Проверить живой путь OpenCode</span></li><li><span class="dot" style="background:var(--st-queued)"></span><span class="live-text">Проверить живой путь Codex</span><span class="leaf-tag">Проверить живой путь Codex</span></li><li><span class="dot" style="background:var(--st-queued)"></span><span class="live-text">Проверить живой путь MiniMax Code</span><span class="leaf-tag">Проверить живой путь MiniMax Code</span></li><li><span class="dot" style="background:var(--st-queued)"></span><span class="live-text">Закрыть полный цикл по пользовательскому результату</span><span class="leaf-tag">Закрыть полный цикл по пользовательскому результату</span></li></ul>
+
+      </details>
+    </div>
+  </div>
+</div>
+</div>
+
+<footer>
+  LHC task graph · ревизия da4182069cce · один файл, без внешних зависимостей · собран 25.10.2026 16:41
+  <details class="technical"><summary>Путь исходного плана</summary><code>/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261025-permission-control-fullcycle/plan.graph.json</code></details>
+</footer>
+
+<script>
+(function () {
+  // The theme is the reader's choice, remembered between openings. Without a
+  // stored choice the dashboard follows the system.
+  var root = document.documentElement;
+  var stored = null;
+  try { stored = window.localStorage.getItem('lhc-theme'); } catch (error) { stored = null; }
+  function systemPrefersLight() {
+    return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+  }
+  function applyTheme(state) {
+    if (state === 'light' || state === 'dark') {
+      root.setAttribute('data-theme', state);
+    } else {
+      // "as the system": no attribute, and the light scheme of the system wins.
+      root.removeAttribute('data-theme');
+      if (systemPrefersLight()) { root.setAttribute('data-theme', 'light'); }
+    }
+  }
+  function currentTheme() {
+    var value = null;
+    try { value = window.localStorage.getItem('lhc-theme'); } catch (error) { value = null; }
+    return value === 'light' || value === 'dark' ? value : 'auto';
+  }
+  applyTheme(currentTheme());
+  var toggle = document.getElementById('theme-toggle');
+  if (toggle) {
+    var order = ['auto', 'light', 'dark'];
+    var names = { auto: 'Тема: как в системе', light: 'Тема: светлая', dark: 'Тема: тёмная' };
+    function label() { toggle.textContent = names[currentTheme()]; }
+    label();
+    toggle.addEventListener('click', function () {
+      var next = order[(order.indexOf(currentTheme()) + 1) % order.length];
+      applyTheme(next);
+      try {
+        if (next === 'auto') { window.localStorage.removeItem('lhc-theme'); }
+        else { window.localStorage.setItem('lhc-theme', next); }
+      } catch (error) { /* no storage */ }
+      label();
+    });
+  }
+})();
+(function () {
+  var chips = Array.prototype.slice.call(document.querySelectorAll('.chip'));
+  var rows = Array.prototype.slice.call(document.querySelectorAll('.table-leaves tbody tr'));
+  var input = document.getElementById('search');
+  var activeDetailsRow = null;
+  var filter = 'all';
+  function apply() {
+    var query = (input && input.value || '').trim().toLowerCase();
+    rows.forEach(function (row) {
+      var okFilter = filter === 'all' || row.dataset.status === filter;
+      var okQuery = !query || (row.dataset.text || '').indexOf(query) !== -1;
+      row.style.display = (okFilter && okQuery) ? '' : 'none';
+    });
+  }
+  chips.forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      chips.forEach(function (other) { other.classList.remove('active'); });
+      chip.classList.add('active');
+      filter = chip.dataset.filter;
+      apply();
+    });
+  });
+  if (input) { input.addEventListener('input', apply); }
+  // The task opens where the owner taps it. The card used to open in a host
+  // below the whole table, which on a phone is thousands of pixels away from
+  // the finger that asked for it.
+  function closeDetails() {
+    if (!activeDetailsRow) { return; }
+    if (activeDetailsRow.previousElementSibling) {
+      var previousButton = activeDetailsRow.previousElementSibling.querySelector('.task-details-trigger');
+      if (previousButton) { previousButton.setAttribute('aria-expanded', 'false'); }
+    }
+    activeDetailsRow.remove();
+    activeDetailsRow = null;
+  }
+  function openDetails(row, id) {
+    var template = document.getElementById('task-details-template-' + id);
+    if (!template || !row) { return; }
+    closeDetails();
+    var detailsRow = document.createElement('tr');
+    detailsRow.className = 'task-details-row';
+    var cell = document.createElement('td');
+    cell.colSpan = 5;
+    cell.appendChild(template.content.cloneNode(true));
+    detailsRow.appendChild(cell);
+    row.after(detailsRow);
+    activeDetailsRow = detailsRow;
+    var button = row.querySelector('.task-details-trigger');
+    if (button) { button.setAttribute('aria-expanded', 'true'); }
+    var close = detailsRow.querySelector('.task-details-close');
+    if (close) {
+      close.addEventListener('click', function () { closeDetails(); });
+      close.focus({ preventScroll: true });
+    }
+    detailsRow.scrollIntoView({ block: 'nearest' });
+  }
+  document.querySelectorAll('.task-details-trigger').forEach(function (button) {
+    button.addEventListener('click', function (event) {
+      event.stopPropagation();
+      var row = button.closest('tr');
+      openDetails(row, button.dataset.detailsId);
+    });
+  });
+  rows.forEach(function (row) {
+    if (!row.dataset.detailsId) { return; }
+    row.addEventListener('click', function () {
+      openDetails(row, row.dataset.detailsId);
+    });
+  });
+  // Every number of the page can be opened: the tile shows the tasks behind
+  // it, and a task in that list opens its full card.
+  var tileIndex = null;
+  try {
+    var island = document.getElementById('lhc-tile-index');
+    tileIndex = island ? JSON.parse(island.content.textContent) : null;
+  } catch (error) { tileIndex = null; }
+  var tileCard = document.getElementById('lhc-tile-card');
+  var currentTile = null;
+  function tileTitle(key) {
+    return (tileIndex && tileIndex.titles && tileIndex.titles[key]) || 'Задачи';
+  }
+  function renderTileList(key) {
+    if (!tileIndex || !tileCard) { return; }
+    var ids = (tileIndex.tiles && tileIndex.tiles[key]) || [];
+    var head = document.createElement('div');
+    head.className = 'tile-card-head';
+    var title = document.createElement('b');
+    title.textContent = tileTitle(key) + ' · ' + ids.length;
+    var close = document.createElement('button');
+    close.type = 'button'; close.className = 'tile-card-close'; close.textContent = 'Закрыть';
+    close.addEventListener('click', function () {
+      tileCard.hidden = true; tileCard.replaceChildren(); currentTile = null;
+    });
+    head.appendChild(title); head.appendChild(close);
+    var list = document.createElement('ul');
+    list.className = 'tile-card-list';
+    ids.forEach(function (id) {
+      var leaf = (tileIndex.leaves && tileIndex.leaves[id]) || {};
+      var item = document.createElement('li');
+      item.className = 'tile-card-item';
+      var code = document.createElement('span'); code.className = 'row-id'; code.textContent = id;
+      var name = document.createElement('span'); name.className = 'row-name';
+      name.textContent = leaf.label || id;
+      var meta = document.createElement('span'); meta.className = 'row-meta';
+      meta.textContent = [leaf.status_label, leaf.owner, leaf.estimate].filter(Boolean).join(' · ');
+      item.appendChild(code); item.appendChild(name); item.appendChild(meta);
+      item.addEventListener('click', function () { openLeafInTile(id); });
+      list.appendChild(item);
+    });
+    if (!ids.length) {
+      var empty = document.createElement('div');
+      empty.className = 'empty'; empty.textContent = 'Задач нет.';
+      list.appendChild(empty);
+    }
+    tileCard.replaceChildren(head, list);
+    tileCard.hidden = false;
+  }
+  function openLeafInTile(id) {
+    if (!tileIndex || !tileCard) { return; }
+    var leaf = (tileIndex.leaves && tileIndex.leaves[id]) || {};
+    var template = document.getElementById('task-details-template-' + leaf.template);
+    if (!template) { return; }
+    var back = document.createElement('button');
+    back.type = 'button'; back.className = 'tile-card-back'; back.textContent = '← ко всем задачам';
+    back.addEventListener('click', function () { renderTileList(currentTile); });
+    var card = template.content.cloneNode(true);
+    tileCard.replaceChildren(back, card);
+    tileCard.hidden = false;
+    var progressStrip = document.getElementById('lhc-progress-strip');
+    var stickySpace = progressStrip ? progressStrip.getBoundingClientRect().height + 12 : 76;
+    tileCard.style.scrollMarginTop = Math.max(76, Math.ceil(stickySpace)) + 'px';
+    tileCard.scrollIntoView({ block: 'start' });
+    var close = tileCard.querySelector('.task-details-close');
+    if (close) {
+      close.addEventListener('click', function () { renderTileList(currentTile); });
+    }
+  }
+  document.querySelectorAll('[data-tile]').forEach(function (tile) {
+    tile.addEventListener('click', function () {
+      currentTile = tile.dataset.tile;
+      renderTileList(currentTile);
+    });
+    tile.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        tile.click();
+      }
+    });
+  });
+  apply();
+})();
+
+</script>
+<script id="lhc-live" data-lhc-live="1">
+(function () {
+  if (window.__lhcLive) { return; }
+  window.__lhcLive = true;
+  var source = "";
+  var interval = 2000;
+
+  function address() {
+    var base = source || (window.location.href.split('#')[0]);
+    if (!base) { return ''; }
+    return base + (base.indexOf('?') >= 0 ? '&' : '?') + 'lhc_live=' + Date.now();
+  }
+
+  function text_of(node) {
+    if (!node) { return ''; }
+    var text = node.textContent || '';
+    return text.replace(/\s+/g, ' ').trim();
+  }
+
+  function swap(parsed) {
+    if (!parsed || !parsed.body) { return false; }
+    var body = document.body;
+    var scripts = [];
+    Array.prototype.slice.call(parsed.body.querySelectorAll('script')).forEach(
+      function (old) { scripts.push(old); }
+    );
+    while (body.firstChild) { body.removeChild(body.firstChild); }
+    while (parsed.body.firstChild) { body.appendChild(document.adoptNode(parsed.body.firstChild)); }
+    if (parsed.title) { document.title = parsed.title; }
+    scripts.forEach(function (old) {
+      if (old.getAttribute('data-lhc-live') === '1') { return; }
+      var fresh = document.createElement('script');
+      if (old.src) { fresh.src = old.src; } else { fresh.textContent = old.textContent; }
+      body.appendChild(fresh);
+    });
+    return true;
+  }
+
+  function poll() {
+    var url = address();
+    if (!url || typeof window.fetch !== 'function' || typeof window.DOMParser !== 'function') { return; }
+    window.fetch(url, { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (response) { return response && response.ok ? response.text() : null; })
+      .then(function (text) {
+        if (!text) { return; }
+        var parsed = new DOMParser().parseFromString(text, 'text/html');
+        if (!parsed || !parsed.body) { return; }
+        if (text_of(parsed.body) === text_of(document.body)) { return; }
+        swap(parsed);
+      })
+      .catch(function () {
+        /* A page opened from the disk cannot fetch itself: it stays as rendered. */
+      });
+  }
+
+  window.setInterval(poll, interval);
+  poll();
+})();
+</script>
+</body>
+</html>

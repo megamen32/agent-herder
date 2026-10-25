@@ -1,0 +1,33 @@
+{
+  "id": "L11",
+  "label": "Проверить живой путь MiniMax Code",
+  "status": "queued",
+  "description": "Проверить существующую MiniMax fixture через её реальный native controller; не подменять MiniMax маршрутом OpenCode и не использовать платный fallback.",
+  "acceptance": "Тот же полный сценарий с exact native request и receipt; idle MiniMax desktop принимает одно новое OpenCode-сообщение в exact session через штатную queue/wake route. Предыдущие accepted/UNKNOWN input не replay-ятся. Неподдерживаемый permission-mode transition остаётся незавершённым требованием, а не PASS.",
+  "affected_files": [
+    ".agents/tasks/20261025-permission-control-fullcycle/acceptance/minimax-code.json"
+  ],
+  "owner": "Исполнитель текущего чата",
+  "depends_on": [
+    "L10",
+    "L16"
+  ],
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 20
+  },
+  "updated_at": "2026-10-25T15:40:00+03:00",
+  "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной MiniMax fixture.",
+  "wait_reason": "После L10: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.",
+  "progress_events": [
+    {
+      "at": "2026-10-25T14:37:49+03:00",
+      "note": "",
+      "changes": {
+        "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной MiniMax fixture.",
+        "wait_reason": "После L10: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+      },
+      "harness": "unknown"
+    }
+  ]
+}

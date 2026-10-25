@@ -1,0 +1,32 @@
+{
+  "id": "L10",
+  "label": "Проверить живой путь Codex",
+  "status": "queued",
+  "description": "Проверить native app-server approval и режим существующего thread через штатную capability, сохраняя HumanStop и текущий turn.",
+  "acceptance": "Native ответы и readback доказывают смену режима и permission roundtrip; одна source регрессия не заменяет установленную приёмку.",
+  "affected_files": [
+    ".agents/tasks/20261025-permission-control-fullcycle/acceptance/codex.json"
+  ],
+  "owner": "Исполнитель текущего чата",
+  "depends_on": [
+    "L09"
+  ],
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 20
+  },
+  "updated_at": "2026-10-25T14:37:48+03:00",
+  "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной Codex fixture.",
+  "wait_reason": "После L09: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.",
+  "progress_events": [
+    {
+      "at": "2026-10-25T14:37:48+03:00",
+      "note": "",
+      "changes": {
+        "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной Codex fixture.",
+        "wait_reason": "После L09: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+      },
+      "harness": "unknown"
+    }
+  ]
+}

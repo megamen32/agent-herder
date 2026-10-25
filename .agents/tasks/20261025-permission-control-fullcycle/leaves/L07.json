@@ -1,0 +1,51 @@
+{
+  "id": "L07",
+  "label": "Опубликовать и установить согласованный выпуск",
+  "status": "done",
+  "description": "После focused проверок и source review опубликовать только owned изменения в main и установить штатным маршрутом единственного владельца; сохранить чужой WIP и rollback.",
+  "acceptance": "Remote main содержит owned delta; установленный source/artifact и живой PID совпадают; существующие sessions/history сохранены. Нет новой копии, ветки или worktree без отдельного разрешения.",
+  "affected_files": [
+    ".agents/tasks/20261025-permission-control-fullcycle/release.md"
+  ],
+  "owner": "исполнитель текущего чата",
+  "depends_on": [
+    "L06",
+    "L14",
+    "L15",
+    "L17"
+  ],
+  "estimate_minutes": {
+    "minimum": 15,
+    "maximum": 25
+  },
+  "updated_at": "2026-10-25T16:37:05+03:00",
+  "estimate_over_limit_reason": "Штатная сборка, переключение и проверка реально установленного процесса — одна транзакция с rollback.",
+  "wait_reason": "Backend 49b2c13 принят 21/21, но public ZCode create canary выявила missing native projectId, поэтому 6099a19 search-only candidate не активировать. Дождаться bounded ZCode projectId fix и independent review; затем один combined candidate из существующего authorized worktree, одна установка/readback. UI pin должен target только финальный combined SHA, не 49b2c13.",
+  "progress_events": [
+    {
+      "at": "2026-10-25T14:37:48+03:00",
+      "note": "",
+      "changes": {
+        "estimate_over_limit_reason": "Штатная сборка, переключение и проверка реально установленного процесса — одна транзакция с rollback.",
+        "wait_reason": "После L06: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+      },
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-10-25T15:02:00+03:00",
+      "note": "Lead подтвердил новую декомпозицию и владельца/зависимости.",
+      "changes": {
+        "owner": "исполнитель текущего чата",
+        "status": "queued",
+        "depends_on": [
+          "L06",
+          "L14"
+        ]
+      },
+      "harness": "codex"
+    }
+  ],
+  "note": "Current immutable backend release a34a4fee0ddd8e1e31f2911699e170c142226ab7 is installed on host100; node acceptance 21/21 via exact reachable peer 88. Previous rollback release preserved. UI frontend copied from the verified live release dist/web-static; exact static tree digest matched source, modes 755/644. Scoped ServersAdministartion commit 57d2adee updates exactly the 3 existing pin/header occurrences; nginx-dev timer applied it, deployed-git-sha=57d2adee, and sudo nginxctl diff reports no managed drift. Public page remains behind auth (unauthenticated GET redirects to auth). This does not claim successful new ZCode session creation or full four-harness acceptance.",
+  "finished_at": "16:23",
+  "result": "Отдельно: baseline release 49b2c13 установлен и принят 21/21; frontend pin для baseline зафиксирован 313ec897. Затем combined hotfix a34a4fee0ddd8e1e31f2911699e170c142226ab7 (включая 6099 search metrics и reviewed native projectId mapping) установлен и принят 21/21. Для a34 опубликован frontend pin commit 57d2adee и применён штатным timer; managed nginx drift=0. Runtime/UI release proof зафиксирован; это не закрывает общий четырёх-harness цикл."
+}

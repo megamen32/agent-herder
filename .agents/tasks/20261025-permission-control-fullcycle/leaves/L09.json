@@ -1,0 +1,32 @@
+{
+  "id": "L09",
+  "label": "Проверить живой путь OpenCode",
+  "status": "queued",
+  "description": "Повторить полный потребительский сценарий на существующей разрешённой OpenCode fixture без подмены провайдера или модели.",
+  "acceptance": "Подтверждены режим, карточка, точная привязка ответа и отсутствие повторного выполнения; отдельно проверен отказ.",
+  "affected_files": [
+    ".agents/tasks/20261025-permission-control-fullcycle/acceptance/opencode.json"
+  ],
+  "owner": "Исполнитель текущего чата",
+  "depends_on": [
+    "L08"
+  ],
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 20
+  },
+  "updated_at": "2026-10-25T14:37:48+03:00",
+  "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной OpenCode fixture.",
+  "wait_reason": "После L08: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.",
+  "progress_events": [
+    {
+      "at": "2026-10-25T14:37:48+03:00",
+      "note": "",
+      "changes": {
+        "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной OpenCode fixture.",
+        "wait_reason": "После L08: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+      },
+      "harness": "unknown"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "L18",
+  "label": "Исправить нулевые текстовые результаты поиска по каталогу",
+  "status": "running",
+  "description": "Проверить сообщение пользователя: при большом каталоге около 3200 записей текстовый поиск Herder возвращает ноль результатов. Найти точную причину в поиске/индексе и исправить только подтверждённый слой.",
+  "acceptance": "RED воспроизводит нулевой результат на запросе с известным совпадением в контролируемом каталоге. GREEN возвращает точное совпадение с корректным host/harness scope; неполный или недоступный индекс явно отличается от полного нуля. Нет transcript export, Telegram API, native writes или повторной доставки.",
+  "affected_files": [
+    "src/session-search.ts",
+    "tests/l72-session-search-incremental.test.ts"
+  ],
+  "owner": "permission_reply_bridge",
+  "depends_on": [],
+  "estimate_minutes": {
+    "minimum": 15,
+    "maximum": 25
+  },
+  "estimate_over_limit_reason": "Одна bounded search/index цепочка с узкой регрессией. Приёмка отдельно покажет полноту данных; не расширять до общего перестроения индекса.",
+  "note": "Metrics delta 6099a19 is installed in combined a34; independent review SHIP for durable-vs-processed accounting; focused 7/7 and tsc GREEN. MCP receipt directly separates processed* (current scan) and indexed* (durable host+harness data). Required next proof: capture a fresh source-versioned receipt and read-only COUNT on the same snapshot/scope; compare dynamic counts without hardcoding; run the exact real query and preserve matching message/snippet, with partial/stale explicit. No root-cause claim for the user's query yet; bridgeworker owns reproduction.",
+  "updated_at": "2026-10-25T16:37:05+03:00"
+}
