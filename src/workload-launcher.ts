@@ -69,22 +69,34 @@ exec "$@"
 `;
 
 /**
- * The place where the guard script lives.
+ * The scripts of the runtime state, one kind of script per shape.
  *
- * The script is a file of the runtime state of the herder, not a part of the
- * command line: systemd-run takes the Description of the transient unit from
- * the command line, and a line break inside it lands in the unit file as a
- * line of the [Unit] section. systemd then drops such a line ("Missing '='",
- * "Unknown key name"), and the scope stays in the error state. The directory
- * belongs to the user of the herder alone: a place that another user prepared
- * is not used, and a place that another user may write is not used.
+ * A script is a file of the runtime state of the herder and never a part of
+ * the command line: systemd-run takes the Description of the transient unit
+ * from the command line, and a line break inside it lands in the unit file as
+ * a line of the [Unit] section. systemd then drops such a line ("Missing '='",
+ * "Unknown key name"), and the scope stays in the error state.
  */
-function zcodeGuardDirectory(): string {
+const RUNTIME_SCRIPTS = {
+  "zcode-resource-guard": { directory: "zcode-resource-guard", prefix: "guard", extension: ".sh" },
+  "fast-agent-create-session": { directory: "fast-agent-scripts", prefix: "create-session", extension: ".py" },
+} as const;
+
+export type RuntimeScriptKind = keyof typeof RUNTIME_SCRIPTS;
+
+/**
+ * The place where a script lives.
+ *
+ * The directory belongs to the user of the herder alone: a place that another
+ * user prepared is not used, and a place that another user may write is not
+ * used.
+ */
+function runtimeScriptDirectory(kind: RuntimeScriptKind): string {
   const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
   const bases = process.env.XDG_RUNTIME_DIR ? [join(process.env.XDG_RUNTIME_DIR, "agent-herder")] : [];
   bases.push(join(tmpdir(), `agent-herder-${uid ?? "unknown"}`));
   for (const base of bases) {
-    const dir = join(base, "zcode-resource-guard");
+    const dir = join(base, RUNTIME_SCRIPTS[kind].directory);
     try {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
       const state = statSync(dir);
@@ -92,36 +104,48 @@ function zcodeGuardDirectory(): string {
       if ((state.mode & 0o022) !== 0) continue;
       return dir;
     } catch {
-      // The next place holds the guard.
+      // The next place holds the script.
     }
   }
-  return mkdtempSync(join(tmpdir(), `agent-herder-guard-${uid ?? "unknown"}-`));
+  return mkdtempSync(join(tmpdir(), `agent-herder-${kind}-${uid ?? "unknown"}-`));
 }
 
-let zcodeGuardFile: string | undefined;
+const runtimeScriptFiles = new Map<string, string>();
 
 /**
- * The path of the guard script, written once for the reviewed budget.
+ * The path of a script of the runtime state, written once for its text.
  *
  * The name of the file carries the digest of its text: the herder and another
- * process of the same user write the same bytes, and the scope that reads the
- * file always reads the reviewed budget.
+ * process of the same user write the same bytes, and the process that reads
+ * the file always reads the reviewed text.
  */
-export function zcodeResourceGuardPath(): string {
-  if (zcodeGuardFile) return zcodeGuardFile;
-  const digest = createHash("sha256").update(ZCODE_SHARED_RESOURCE_CHECK).digest("hex").slice(0, 16);
-  const dir = zcodeGuardDirectory();
-  const file = join(dir, `guard-${digest}.sh`);
-  const temp = join(dir, `.guard-${digest}.${randomUUID().slice(0, 8)}.tmp`);
+export function runtimeScriptPath(kind: RuntimeScriptKind, text: string): string {
+  const shape = RUNTIME_SCRIPTS[kind];
+  const digest = createHash("sha256").update(text).digest("hex").slice(0, 16);
+  const cacheKey = `${kind}:${digest}`;
+  const known = runtimeScriptFiles.get(cacheKey);
+  if (known) return known;
+  const dir = runtimeScriptDirectory(kind);
+  const file = join(dir, `${shape.prefix}-${digest}${shape.extension}`);
+  const temp = join(dir, `.${shape.prefix}-${digest}.${randomUUID().slice(0, 8)}.tmp`);
   try {
-    writeFileSync(temp, ZCODE_SHARED_RESOURCE_CHECK, { mode: 0o400, flag: "wx" });
+    writeFileSync(temp, text, { mode: 0o400, flag: "wx" });
     renameSync(temp, file);
   } catch (error) {
     try { unlinkSync(temp); } catch { /* nothing to remove */ }
     throw error;
   }
-  zcodeGuardFile = file;
+  runtimeScriptFiles.set(cacheKey, file);
   return file;
+}
+
+/**
+ * The path of the guard script, written once for the reviewed budget.
+ *
+ * The scope that reads the file always reads the reviewed budget.
+ */
+export function zcodeResourceGuardPath(): string {
+  return runtimeScriptPath("zcode-resource-guard", ZCODE_SHARED_RESOURCE_CHECK);
 }
 
 function runtimeBusEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

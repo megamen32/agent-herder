@@ -4,6 +4,7 @@ import { join } from "node:path";
 import * as workloadLauncher from "../src/workload-launcher.js";
 import { FastAgentFileAdapter } from "../src/adapters/fast-agent.js";
 import { handleCreateSession, handleNewOrResume } from "../src/mcp-tools/handlers.js";
+import { fixtureInterpreter } from "./helpers/fast-agent-interpreter.js";
 
 const cleanups: string[] = [];
 
@@ -36,9 +37,14 @@ describe("Fast Agent persisted observer", () => {
   it("persists a bounded named creation and reuses it through a fresh native observer", async () => {
     const home = await fixtureHome("fast-agent-create-");
     cleanups.push(home);
-    const moduleDir = join(home, "fast_agent", "session");
+    // The native package lives in the site-packages of the interpreter of the
+    // fixture, as in the real deployment: the herder runs its script as a
+    // file, and the path of a script is the directory of that script, not the
+    // working directory.
+    const { interpreter, sitePackages } = fixtureInterpreter(home);
+    const moduleDir = join(sitePackages, "fast_agent", "session");
     await mkdir(moduleDir, { recursive: true });
-    await writeFile(join(home, "fast_agent", "__init__.py"), "");
+    await writeFile(join(sitePackages, "fast_agent", "__init__.py"), "");
     await writeFile(join(moduleDir, "__init__.py"), "");
     // Minimal native persistence fixture; execute the adapter's actual Python script.
     await writeFile(join(moduleDir, "session_manager.py"), [
@@ -54,7 +60,7 @@ describe("Fast Agent persisted observer", () => {
       "        return SimpleNamespace(info=SimpleNamespace(name=name))",
     ].join("\n"));
     const bin = join(home, "fast-agent");
-    await writeFile(bin, "#!/usr/bin/python3\n");
+    await writeFile(bin, `#!${interpreter}\n`);
     vi.stubEnv("PYTHONPATH", home);
     const isolated = vi.spyOn(workloadLauncher, "spawnIsolatedWorkload");
     const adapter = new FastAgentFileAdapter({ home, cwd: "/fallback", fastAgentBin: bin });
