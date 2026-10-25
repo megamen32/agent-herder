@@ -35,6 +35,16 @@ const completed = async (f: ReturnType<typeof fixture>, id: string) => {
 };
 
 describe("actual human message queue admission", () => {
+  it("refuses a non-persistent registry before reserving a delivery job or calling the native sender",()=>{
+    const jobs=new HerderJobRegistry(new HerderEventBus());
+    const start=vi.spyOn(jobs,"start");
+    const f=fixture({jobs});
+    expect(()=>f.delivery.submit(f.input("no-durable-store"))).toThrow(/native_stock_case_durable_registry_required/);
+    expect(start).not.toHaveBeenCalled();
+    expect(f.sendMessage).not.toHaveBeenCalled();
+    f.delivery.close();
+  });
+
   it("durably freezes visible response baseline in the same job before native submit",async()=>{
     const root=await mkdtemp(join(tmpdir(),"herder-response-baseline-"));
     const jobs=new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(root,"jobs.json")});

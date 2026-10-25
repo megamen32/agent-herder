@@ -236,6 +236,7 @@ export class UserMessageDelivery {
   }
 
   private submitPrepared(input: UserMessageInput, route?: UserMessageRoute, minimaxExecPolicy?: { mode: MinimaxExecPolicyMode; revision: number }, admissionReservation?: { target: MinimaxExecPolicyTarget; jobId: string }, actor:UserMessageActor={kind:"human"},targetHostId?:string): UserMessageReceipt {
+    if (!this.jobs.supportsDurableOnce()) throw new Error("native_stock_case_durable_registry_required");
     input={...input,images:input.images?.map(image=>({...image}))};
     if (Buffer.byteLength(input.message, "utf8") > 256 * 1024) throw new Error("Сообщение слишком большое для очереди отправки");
     const targetAdapter = route?.adapter ?? this.adapters.get(input.harness);
