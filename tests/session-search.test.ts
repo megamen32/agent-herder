@@ -35,6 +35,32 @@ describe('disposable lexical session mirror',()=>{
   index.finishSource({harness:'codex',source:'fixture',state:'complete',sessions:0},'c');
   expect(index.search({query:'preservedword'}).results).toHaveLength(0);
  });
+ it('does not publish completeness or prune sessions when source iteration fails after a partial yield',async()=>{
+  const index=fixture();
+  async function* previous(){
+   yield{...session('preservedaword'),nativeSessionId:'session-a'};
+   yield{...session('preservedbword'),nativeSessionId:'session-b'};
+  }
+  await index.scan(previous(),[{harness:'codex',source:'fixture',state:'complete',sessions:2}]);
+  expect(index.search({query:'preservedbword',harnesses:['codex']}).results).toHaveLength(1);
+
+  async function* partialThenThrow(){
+   yield{...session('updatedaword','2'),nativeSessionId:'session-a'};
+   throw new Error('source_enumeration_failed');
+  }
+  await expect(index.scan(partialThenThrow(),[{harness:'codex',source:'fixture',state:'complete',sessions:1}])).rejects.toThrow('source_enumeration_failed');
+
+  const failed=index.status();
+  expect(failed.run).toMatchObject({status:'error',error:'source_enumeration_failed'});
+  expect(failed.sources.find(source=>source.harness==='codex')).toMatchObject({state:'partial',reason:'source_scan_failed'});
+  expect(index.search({query:'preservedbword',harnesses:['codex']})).toMatchObject({partial:true});
+  expect(index.search({query:'preservedbword',harnesses:['codex']}).results).toHaveLength(1);
+
+  async function* nextComplete(){yield{...session('finalaword','3'),nativeSessionId:'session-a'};}
+  await index.scan(nextComplete(),[{harness:'codex',source:'fixture',state:'complete',sessions:1}]);
+  expect(index.search({query:'preservedbword',harnesses:['codex']}).results).toHaveLength(0);
+  expect(index.search({query:'finalaword',harnesses:['codex']})).toMatchObject({partial:false});
+ });
  it('continues later sessions and harnesses after lazy content failure',async()=>{
   const index=fixture();await index.ingest(session('previousword'),'old');
   async function* broken(){throw new Error('bad_json_after_first_user');yield{id:'x',text:''};}

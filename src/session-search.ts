@@ -110,10 +110,10 @@ export class SessionSearchIndex {
   }catch(error){this.db.prepare('DELETE FROM chunks WHERE harness=? AND native_id=? AND generation=?').run(session.harness,session.nativeSessionId,generation);throw error;}
  }
  /** Only successful exhaustive sources may remove missing sessions. */
- finishSource(receipt:SearchSourceReceipt,scan:string){
+ finishSource(receipt:SearchSourceReceipt,scan:string,options:{pruneComplete?:boolean}={}){
   this.db.exec('BEGIN IMMEDIATE');
   try{
-   if(receipt.state==='complete'){
+   if(receipt.state==='complete'&&options.pruneComplete!==false){
     this.db.prepare('DELETE FROM chunks WHERE harness=? AND native_id IN (SELECT native_id FROM sessions WHERE harness=? AND scan<>?)').run(receipt.harness,receipt.harness,scan);
     this.db.prepare('DELETE FROM sessions WHERE harness=? AND scan<>?').run(receipt.harness,scan);
    }
@@ -131,16 +131,25 @@ export class SessionSearchIndex {
   try{
    const failures=new Map<string,number>();
    let recorded=0;
-   const flushReceipts=()=>{for(;recorded<receipts.length;recorded++){const receipt=receipts[recorded];this.finishSource(failures.has(receipt.harness)?{...receipt,state:'partial',reason:`session_content_read_failed:${failures.get(receipt.harness)}`} : receipt,scan);}};
-   try{
+   const withIngestFailures=(receipt:SearchSourceReceipt)=>failures.has(receipt.harness)?{...receipt,state:'partial' as const,reason:`session_content_read_failed:${failures.get(receipt.harness)}`} : receipt;
+   const publishAvailableReceipts=()=>{for(;recorded<receipts.length;recorded++)this.finishSource(withIngestFailures(receipts[recorded]),scan,{pruneComplete:false});};
    for await(const session of sessions){
     try{await this.ingest(session,scan);}catch{failures.set(session.harness,(failures.get(session.harness)??0)+1);}
-    processed++;record('running');flushReceipts();if(processed%16===0)await yieldToConsumers();
+    processed++;record('running');publishAvailableReceipts();if(processed%16===0)await yieldToConsumers();
    }
-   }finally{flushReceipts();}
+   // Only normal iterator exhaustion proves a complete source snapshot safe to prune.
+   for(const receipt of receipts)this.finishSource(withIngestFailures(receipt),scan,{pruneComplete:true});
    record('complete');
   }
-  catch(error){record('error',error instanceof Error?error.message.slice(0,160):'source_scan_failed');throw error;}
+  catch(error){
+   // A source iterator can fail outside the per-session catch. Keep its prior
+   // indexed rows and make any provisional complete receipt explicitly partial.
+   for(const receipt of receipts){
+    const failed:SearchSourceReceipt=receipt.state==='complete'?{...receipt,state:'partial',reason:'source_scan_failed'}:receipt;
+    this.finishSource(failed,scan,{pruneComplete:false});
+   }
+   record('error',error instanceof Error?error.message.slice(0,160):'source_scan_failed');throw error;
+  }
   finally{this.ingesting=false;}
  }
  search(input:SessionSearchQuery){
