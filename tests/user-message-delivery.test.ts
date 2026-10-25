@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { HerderEventBus } from "../src/herder-events.js";
 import { HerderJobRegistry } from "../src/herder-jobs.js";
 import { UserMessageDelivery, type UserMessageInput } from "../src/user-message-delivery.js";
+import { MINIMAX_CLI_TIMEOUT_MS } from "../src/adapters/minimax-code-control.js";
 import type { HarnessAdapter, SendMessageResult } from "../src/types/index.js";
 
 function fixture(options?: { jobs?: HerderJobRegistry; harness?: string; result?: SendMessageResult; maxWaitMs?: number }) {
@@ -24,6 +25,65 @@ const completed = async (f: ReturnType<typeof fixture>, id: string) => {
 };
 
 describe("actual human message queue admission", () => {
+  it("waits for a native MiniMax CLI turn that completes after thirty seconds", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const f = fixture({ harness: "minimax-code", maxWaitMs: 10 * 60_000 });
+    let started!: () => void;
+    const sendStarted = new Promise<void>(resolve => { started = resolve; });
+    f.sendMessage.mockImplementationOnce(() => new Promise(resolve => {
+      started();
+      setTimeout(() => resolve({ ok: true, admitted: true, turnId: "late-minimax-turn" }), 31_500);
+    }));
+    try {
+      f.idle();
+      const receipt = f.delivery.submit(f.input("minimax-late-completion"));
+      await sendStarted;
+      await vi.advanceTimersByTimeAsync(31_500);
+      await Promise.resolve();
+      expect(f.jobs.get(receipt.job!.id)).toMatchObject({
+        state: "completed",
+        result: { ok: true, admitted: true, turnId: "late-minimax-turn", inputId: "minimax-late-completion" },
+      });
+      expect(f.delivery.submit(f.input("minimax-late-completion"))).toMatchObject({ admitted: true, turnId: "late-minimax-turn" });
+      expect(f.sendMessage).toHaveBeenCalledTimes(1);
+    } finally {
+      f.delivery.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns terminal UNKNOWN after a hung MiniMax CLI deadline and never replays", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const f = fixture({ harness: "minimax-code", maxWaitMs: 10 * 60_000 });
+    let started!: () => void;
+    let finishLate!: (result: SendMessageResult) => void;
+    const sendStarted = new Promise<void>(resolve => { started = resolve; });
+    f.sendMessage.mockImplementationOnce(() => new Promise(resolve => {
+      started();
+      finishLate = resolve;
+    }));
+    try {
+      f.idle();
+      const receipt = f.delivery.submit(f.input("minimax-hung-completion"));
+      await sendStarted;
+      await vi.advanceTimersByTimeAsync(MINIMAX_CLI_TIMEOUT_MS + 5_000);
+      await Promise.resolve();
+      expect(f.jobs.get(receipt.job!.id)).toMatchObject({
+        state: "completed",
+        result: { ok: false, admissionUnknown: true, nonRetryable: true, inputId: "minimax-hung-completion" },
+      });
+      expect(f.delivery.submit(f.input("minimax-hung-completion"))).toMatchObject({ admissionUnknown: true, nonRetryable: true });
+      expect(f.sendMessage).toHaveBeenCalledTimes(1);
+      finishLate({ ok: true, admitted: true, turnId: "late-after-unknown" });
+      await Promise.resolve();
+      expect(f.jobs.get(receipt.job!.id)?.result).toMatchObject({ admissionUnknown: true, nonRetryable: true });
+      expect(f.sendMessage).toHaveBeenCalledTimes(1);
+    } finally {
+      f.delivery.close();
+      vi.useRealTimers();
+    }
+  });
+
   it("rejects editing while a native call is still in flight",async()=>{
     const f=fixture();let release!:(value:SendMessageResult)=>void;
     f.sendMessage.mockImplementationOnce(()=>new Promise(resolve=>{release=resolve;}));

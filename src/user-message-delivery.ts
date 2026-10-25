@@ -4,6 +4,7 @@ import { HerderJobRegistry, type HerderJob } from "./herder-jobs.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import type { HarnessAdapter, SendMessageResult, MessageImage } from "./types/index.js";
 import type { ZcodeRetainedInput } from "./adapters/zcode-undelivered.js";
+import { MINIMAX_CLI_TIMEOUT_MS } from "./adapters/minimax-code-control.js";
 
 export type UserMessageInput = { harness: string; sessionId: string; inputId: string; message: string; mode: "queue" | "steer"; images?: MessageImage[] };
 export type UserMessageReceipt = SendMessageResult & { delivery?: "deferred"; job?: HerderJob<SendMessageResult> };
@@ -165,13 +166,20 @@ export class UserMessageDelivery {
               editable.attempted=true;
               attempted = true;
               const supervisor = route?.supervisor ?? this.supervisor;
+              // The MiniMax CLI returns its exact native turn receipt after the
+              // model completes. Give that operation its own full CLI deadline
+              // plus a small result-delivery grace; the generic 30s bound is
+              // still used for metadata reads and the other harnesses.
+              const sendObservationTimeoutMs = input.harness === "minimax-code"
+                ? MINIMAX_CLI_TIMEOUT_MS + 5_000
+                : 30_000;
               const result = await this.withSlot(combined, () => supervisor.sendMessage(input.harness, input.sessionId, {
                 message: input.message, origin: "human", inputId: input.inputId, images: input.images,
                 humanRequestedAt,
                 steer: input.mode === "steer", queue: ["codex", "opencode", "zcode"].includes(input.harness),
                 durableUserDelivery: signDurableDeliveryClaim({ jobId, inputId: input.inputId, requestFingerprint: fingerprint,
                   harness: input.harness, sessionId: input.sessionId, mode: input.mode, nonce: randomBytes(16).toString("hex") }),
-              }));
+              }), sendObservationTimeoutMs);
               // A writer rejected admission before input submission. Recheck the
               // native turn; uncertain/accepted input is never replayed.
               if (input.mode === "queue" && !result.ok && !result.nonRetryable && !result.admitted && !result.admissionUnknown
@@ -259,7 +267,7 @@ export class UserMessageDelivery {
     return receipt;
   }
 
-  private async withSlot<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
+  private async withSlot<T>(signal: AbortSignal, operation: () => Promise<T>, timeoutMs = 30_000): Promise<T> {
     signal.throwIfAborted();
     if (this.slots > 0) this.slots--;
     else await new Promise<void>((resolve, reject) => {
@@ -281,13 +289,26 @@ export class UserMessageDelivery {
     // A deadline abandons observation, never the native operation. Retain its
     // slot until it settles so unavailable transports cannot spawn more reads
     // or duplicate a possibly admitted prompt after the caller times out.
-    const bounded = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
     const pending = Promise.resolve().then(operation).finally(release);
-    return new Promise<T>((resolve, reject) => {
-      const cancel = () => reject(bounded.reason);
-      bounded.addEventListener("abort", cancel, { once: true });
-      pending.then(resolve, reject).finally(() => bounded.removeEventListener("abort", cancel));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const error = new Error("Native operation observation timed out");
+        error.name = "TimeoutError";
+        reject(error);
+      }, timeoutMs);
     });
+    const aborted = new Promise<never>((_, reject) => {
+      onAbort = () => reject(signal.reason);
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+    try {
+      return await Promise.race([pending, deadline, aborted]);
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (onAbort) signal.removeEventListener("abort", onAbort);
+    }
   }
 
   close(): void {

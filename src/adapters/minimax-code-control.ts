@@ -40,6 +40,9 @@ export const MINIMAX_CONTROL_MANIFEST_PATH =
   process.env.MINIMAX_CODE_CONTROL_MANIFEST?.trim() ||
   join(homedir(), ".minimax", "run", "mcode-diagnostic.json");
 
+/** Bound for an exact-session CLI turn. Delivery observers allow a short grace after it. */
+export const MINIMAX_CLI_TIMEOUT_MS = 5 * 60_000;
+
 /** Prefix of the generated DesktopService routes. */
 export const MINIMAX_CONTROL_API_PREFIX = "/minimax-desktop/api/v1";
 
@@ -98,7 +101,7 @@ export class MinimaxCodeControl {
     this.manifestTtlMs = options.manifestTtlMs ?? 2_000;
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.cliPath = options.cliPath || join(homedir(), ".npm-global", "bin", "mcode");
-    this.cliTimeoutMs = options.cliTimeoutMs ?? 5 * 60_000;
+    this.cliTimeoutMs = options.cliTimeoutMs ?? MINIMAX_CLI_TIMEOUT_MS;
   }
 
   /** Read the published transport manifest, if the app published one. */
