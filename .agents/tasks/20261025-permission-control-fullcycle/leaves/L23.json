@@ -12,11 +12,11 @@
     "minimum": 30,
     "maximum": 60
   },
-  "note": "Новые worktrees не создаются. Сверка должна сохранить самостоятельные preview/composer/permission/search/Notice функции существующих WIP.",
+  "note": "Канонический preservation commit 1b919b2 содержит 43 проверенных пути; 121 несвязанный untracked/private item сохранён локально и исключён из публикации. Это подтверждает сохранение состояния, но inventory/reconciliation всех WIP, перенос требуемых функций в main и exact remote-main readback ещё не завершены.",
   "wait_reason": "Ждёт независимого review joined source diff.",
   "id": "L23",
   "harness": "codex",
-  "updated_at": "2026-10-25T20:49:44+03:00",
+  "updated_at": "2026-10-25T23:59:31+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T20:48:55+03:00",
@@ -47,7 +47,17 @@
         "estimate_over_limit_reason": "Инвентаризация существующих WIP и main sync образуют один сохраняющий функции handoff; частичное перенесение до сверки остальных источников может скрыть или потерять уникальное поведение."
       },
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T23:59:31+03:00",
+      "note": "Канонический preservation commit 1b919b2 содержит 43 проверенных пути; 121 несвязанный untracked/private item сохранён локально и исключён из публикации. Это подтверждает сохранение состояния, но inventory/reconciliation всех WIP, перенос требуемых функций в main и exact remote-main readback ещё не завершены.",
+      "changes": {
+        "note": "Канонический preservation commit 1b919b2 содержит 43 проверенных пути; 121 несвязанный untracked/private item сохранён локально и исключён из публикации. Это подтверждает сохранение состояния, но inventory/reconciliation всех WIP, перенос требуемых функций в main и exact remote-main readback ещё не завершены."
+      },
+      "session": "unknown",
+      "harness": "codex"
     }
   ],
-  "estimate_over_limit_reason": "Инвентаризация существующих WIP и main sync образуют один сохраняющий функции handoff; частичное перенесение до сверки остальных источников может скрыть или потерять уникальное поведение."
+  "estimate_over_limit_reason": "Инвентаризация существующих WIP и main sync образуют один сохраняющий функции handoff; частичное перенесение до сверки остальных источников может скрыть или потерять уникальное поведение.",
+  "session": "unknown"
 }

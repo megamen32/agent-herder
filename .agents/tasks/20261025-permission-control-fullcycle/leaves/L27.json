@@ -18,6 +18,39 @@
     "L25"
   ],
   "estimate_unknown_reason": "Helper и transport contract проверены изолированно; до оценки остаётся shared-job wiring, authorization/readback join и consumer path.",
-  "note": "Source helper commit 522464d + follow-up 53d4ce7; focused helper/resource SDK2 tests 17/17 и tsc GREEN. Coverage/order ambiguity fails closed, reads receive a deadline AbortSignal, and continuation requires a per-job target/input/URI/SHA/length receipt. MCP v2 legacy resources/subscribe is not served; the tested supported path is 2026-07-28 Client.listen/resourceSubscriptions through official serveStdio. Bridge still owns same-job persistence, authorized resource reader, event wiring and response result delivery; no integrated consumer claim yet.",
-  "wait_reason": "Waits for the existing durable delivery job hooks/receipt fields and same principal/target authorization in the bridge."
+  "note": "Response helper/shared UMD source 324f65e и durable guard 5cf6c22 получили independent SHIP; observer 8cc9754 прошёл 55 focused tests + TypeScript и также получил SHIP. Remote response-resource reader f47288b отдельно получил SHIP. MCP и local mesh используют один durable job без второго sender; возвращается inline результат в пределах 30 секунд и stable fetch после. Установленный runtime остаётся 8936deb. Эти source reviews не заменяют exact joined install и consumer proof; subscribe/notification не заявляются без подтверждённого transport/readback. ZCode последующий model/network error не дал финальный assistant response.",
+  "wait_reason": "Source helper, observer and owner-bound remote reader получили independent SHIP; остаются canonical main join, единая финальная установка и consumer proof.",
+  "session": "unknown",
+  "harness": "codex",
+  "updated_at": "2026-10-26T00:01:43+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-25T23:59:34+03:00",
+      "note": "Response helper и same-job guard source review SHIP: 324f65e + 5cf6c22; observer 8cc9754 имеет 55 focused tests + TypeScript GREEN и ждёт delta-review. MCP и local mesh используют единый durable UMD job, без второго sender; доступен inline результат в пределах 30 секунд и stable fetch после. Установленный runtime остаётся 8936deb. Remote response-resource owner routing и полный same-principal consumer join ещё у bridge; subscribe/notification не заявляются без подтверждённого маршрута. Native delivery observation остаётся только по новым видимым assistant output с точным baseline; прошлый ZCode turn получил network/server error и final response не подтверждён.",
+      "changes": {
+        "note": "Response helper и same-job guard source review SHIP: 324f65e + 5cf6c22; observer 8cc9754 имеет 55 focused tests + TypeScript GREEN и ждёт delta-review. MCP и local mesh используют единый durable UMD job, без второго sender; доступен inline результат в пределах 30 секунд и stable fetch после. Установленный runtime остаётся 8936deb. Remote response-resource owner routing и полный same-principal consumer join ещё у bridge; subscribe/notification не заявляются без подтверждённого маршрута. Native delivery observation остаётся только по новым видимым assistant output с точным baseline; прошлый ZCode turn получил network/server error и final response не подтверждён.",
+        "wait_reason": "Ждём observer delta-review и bridge owner-bound remote resource routing/persistence join; затем нужны joined review/install и consumer proof. До этого response/fetch path остаётся source-only."
+      },
+      "session": "unknown",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T00:01:30+03:00",
+      "note": "Response helper/shared UMD source 324f65e и durable guard 5cf6c22 получили independent SHIP; observer 8cc9754 прошёл 55 focused tests + TypeScript и также получил SHIP. Remote response-resource reader f47288b отдельно получил SHIP. MCP и local mesh используют один durable job без второго sender; возвращается inline результат в пределах 30 секунд и stable fetch после. Установленный runtime остаётся 8936deb. Эти source reviews не заменяют exact joined install и consumer proof; subscribe/notification не заявляются без подтверждённого transport/readback. ZCode последующий model/network error не дал финальный assistant response.",
+      "changes": {
+        "note": "Response helper/shared UMD source 324f65e и durable guard 5cf6c22 получили independent SHIP; observer 8cc9754 прошёл 55 focused tests + TypeScript и также получил SHIP. Remote response-resource reader f47288b отдельно получил SHIP. MCP и local mesh используют один durable job без второго sender; возвращается inline результат в пределах 30 секунд и stable fetch после. Установленный runtime остаётся 8936deb. Эти source reviews не заменяют exact joined install и consumer proof; subscribe/notification не заявляются без подтверждённого transport/readback. ZCode последующий model/network error не дал финальный assistant response."
+      },
+      "session": "unknown",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T00:01:43+03:00",
+      "note": "Обновлена граница после SHIP source slices 8cc9754 и f47288b: остаются main join/install и consumer acceptance.",
+      "changes": {
+        "wait_reason": "Source helper, observer and owner-bound remote reader получили independent SHIP; остаются canonical main join, единая финальная установка и consumer proof."
+      },
+      "session": "unknown",
+      "harness": "codex"
+    }
+  ]
 }

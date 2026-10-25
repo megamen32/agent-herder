@@ -17,9 +17,9 @@
     "L25"
   ],
   "estimate_unknown_reason": "Native API для загруженной сессии подтверждён на уровне дизайна; состояние unloaded runtime и завершённая consumer приёмка пока неизвестны.",
-  "note": "Native source/recovery evidence: one durable CAS resumed the original ZCode queued head and exact native turn.started event correlated it to the promoted message/turn. The subsequent provider/network attempt failed and scheduled native retry, so only admission/start is proven; answer/task completion is unknown. Source commit 4631e50f877792ee41930a15fa7114f0c0b69923 passed 130 tests and TypeScript. The public bridge API/MCP wiring and shared UI remain pending; installed public UI acceptance is not claimed.",
-  "wait_reason": "Waiting for integrated bridge route plus shared UI and installed same-session acceptance. Do not infer message delivery from queue preference or native phase alone. Unloaded TelegramAuto queue remains unsupported; other loaded queues with explicit holds are not auto-resumed.",
-  "updated_at": "2026-10-25T22:40:56+03:00",
+  "note": "Queue UI/API source теперь полностью review-SHIP: source commits 1fb5c77 + adc1d6d + dfd1f78; 47 focused UI tests, 65 gateway tests и TypeScript GREEN. Own mock-browser подтвердил точный stalled autoDrain=true control, один POST и отсутствие повторной отправки. Установленный runtime всё ещё 8936deb и не содержит этот объединённый UI/API; публичная установленная same-session acceptance ещё не проведена. Native source recovery 4631e50 доказал только admission/start исходного ZCode head по точному turn-start событию, затем model/network error и запланированный native retry; assistant output/task completion UNKNOWN, дубликат не отправлялся. На последнем inventory хранилось 500 retained jobs и 0 in-flight. Предполагаемый unloaded TelegramAuto head на 1276 сообщений оказался Desktop compact card, не human message; состояние не меняли, история 1445 сообщений сохранена. Исходники самой программы ZCode остаются вне разрешённого изменения.",
+  "wait_reason": "Нужны общий reviewed main source join, финальная установка и read-only consumer proof UI/API. Не возобновлять hold и не приписывать подтверждённый start/output по одному autoDrain/readback.",
+  "updated_at": "2026-10-25T23:59:33+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T22:40:56+03:00",
@@ -30,6 +30,18 @@
       },
       "session": "unknown",
       "harness": "unknown"
+    },
+    {
+      "at": "2026-10-25T23:59:33+03:00",
+      "note": "Queue UI/API source теперь полностью review-SHIP: source commits 1fb5c77 + adc1d6d + dfd1f78; 47 focused UI tests, 65 gateway tests и TypeScript GREEN. Own mock-browser подтвердил точный stalled autoDrain=true control, один POST и отсутствие повторной отправки. Установленный runtime всё ещё 8936deb и не содержит этот объединённый UI/API; публичная установленная same-session acceptance ещё не проведена. Native source recovery 4631e50 доказал только admission/start исходного ZCode head по точному turn-start событию, затем model/network error и запланированный native retry; assistant output/task completion UNKNOWN, дубликат не отправлялся. На последнем inventory хранилось 500 retained jobs и 0 in-flight. Предполагаемый unloaded TelegramAuto head на 1276 сообщений оказался Desktop compact card, не human message; состояние не меняли, история 1445 сообщений сохранена. Исходники самой программы ZCode остаются вне разрешённого изменения.",
+      "changes": {
+        "note": "Queue UI/API source теперь полностью review-SHIP: source commits 1fb5c77 + adc1d6d + dfd1f78; 47 focused UI tests, 65 gateway tests и TypeScript GREEN. Own mock-browser подтвердил точный stalled autoDrain=true control, один POST и отсутствие повторной отправки. Установленный runtime всё ещё 8936deb и не содержит этот объединённый UI/API; публичная установленная same-session acceptance ещё не проведена. Native source recovery 4631e50 доказал только admission/start исходного ZCode head по точному turn-start событию, затем model/network error и запланированный native retry; assistant output/task completion UNKNOWN, дубликат не отправлялся. На последнем inventory хранилось 500 retained jobs и 0 in-flight. Предполагаемый unloaded TelegramAuto head на 1276 сообщений оказался Desktop compact card, не human message; состояние не меняли, история 1445 сообщений сохранена. Исходники самой программы ZCode остаются вне разрешённого изменения.",
+        "wait_reason": "Нужны общий reviewed main source join, финальная установка и read-only consumer proof UI/API. Не возобновлять hold и не приписывать подтверждённый start/output по одному autoDrain/readback."
+      },
+      "session": "unknown",
+      "harness": "codex"
     }
-  ]
+  ],
+  "session": "unknown",
+  "harness": "codex"
 }

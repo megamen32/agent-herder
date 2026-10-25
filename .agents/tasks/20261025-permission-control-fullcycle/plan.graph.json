@@ -2,15 +2,15 @@
   "schema_version": 2,
   "title": "Agent Herder: разрешения, доставка и единый проверенный выпуск",
   "goal": "Сохранить подтверждённый режим доступа и адресную обработку разрешений; объединить human/agent/site доставку и recovery native очереди; дать пользователю единый composer с безопасным голосовым вводом, 8000-token preview и ответом/fetch для нового agent output; сохранить все существующие worktree/WIP функции, затем провести независимый review, синхронизацию main и одну финальную реальную приёмку.",
-  "business_result": "Уже принятые результаты остаются раздельными: immutable installed release 8936debbe39935770ec3903ac460916269a954f9, build 14/14 и owner acceptance 21/21; frontend pin 76e83d031cc7b3178a785001c1d86a9af4b45d6b применён timer/readback без managed drift. ZCode omitted-mode create и пять read-only YOLO sessions подтверждены. Codex exact-session fullAuto/session readback и два native mode перехода приняты; Codex/MiniMax session-mode capability не поддержана где установлено. MiniMax idle desktop human delivery accepted без replay с точным same-session/provider/model readback. MiniMax workspace/activity, TelegramAuto host filtering и 8/8 task-title app readback приняты как отдельные прежние outcomes; installed title generator и activity source causality остаются отделены в исходных leaves. Existing one-time Allow и queue edit/cancel/collapse semantics с сохранением inputId/jobId сохраняются; новый queue-resume API пока не принят. OpenCode filtered search вернул 10 совпадений при partial index coverage 3189/3200; исходный полный запрос остаётся UNKNOWN. Не закрытые source slices: 8000-token preview 2ce5c18; composer 609c784 + privacy fix 2dda29d и Whisper route 1a3d948; delivery-response helper 522464d + guard/resource fix 53d4ce7. Они не входят в установленный 8936 и не являются финальной joined приёмкой. Notice topic binding подготовлен в защищённой конфигурации; runtime card и exact permission response ещё не приняты.",
+  "business_result": "Уже принятые результаты остаются раздельными: immutable installed release 8936debbe39935770ec3903ac460916269a954f9, build 14/14 и owner acceptance 21/21; frontend pin 76e83d031cc7b3178a785001c1d86a9af4b45d6b применён timer/readback без managed drift. ZCode omitted-mode create и пять read-only YOLO sessions подтверждены. Codex exact-session fullAuto/session readback и два native mode перехода приняты; Codex/MiniMax session-mode capability не поддержана где установлено. MiniMax idle desktop human delivery accepted без replay с точным same-session/provider/model readback. MiniMax workspace/activity, TelegramAuto host filtering и 8/8 task-title app readback приняты как отдельные прежние outcomes; installed title generator и activity source causality остаются отделены в исходных leaves. Existing one-time Allow и queue edit/cancel/collapse semantics с сохранением inputId/jobId сохраняются; queue-resume UI/API source прошёл SHIP review (1fb5c77, adc1d6d, dfd1f78; 47 UI и 65 gateway tests, mock-browser с одним POST); он ещё не установлен в public runtime, который остаётся на 8936deb. OpenCode filtered search вернул 10 совпадений при partial index coverage 3189/3200; исходный полный запрос остаётся UNKNOWN. Не закрытые source slices: 8000-token preview 2ce5c18; composer 609c784 + privacy fix 2dda29d и Whisper route 1a3d948; delivery-response helper/guard 324f65e + 5cf6c22 прошли SHIP review; observer 8cc9754 прошёл 55 tests + TypeScript и получил independent SHIP; remote resource reader f47288b также SHIP. Joined install и consumer acceptance ещё не выполнены. Queue UI/API source review также готов, но ни эти изменения, ни preview/composer/voice slices не входят в installed 8936 и не являются финальной joined приёмкой. Notice topic binding подготовлен в защищённой конфигурации; runtime card и exact permission response ещё не приняты.",
   "business_results": [
-    "Уже принятые результаты остаются раздельными: immutable installed release 8936debbe39935770ec3903ac460916269a954f9, build 14/14 и owner acceptance 21/21; frontend pin 76e83d031cc7b3178a785001c1d86a9af4b45d6b применён timer/readback без managed drift. ZCode omitted-mode create и пять read-only YOLO sessions подтверждены. Codex exact-session fullAuto/session readback и два native mode перехода приняты; Codex/MiniMax session-mode capability не поддержана где установлено. MiniMax idle desktop human delivery accepted без replay с точным same-session/provider/model readback. MiniMax workspace/activity, TelegramAuto host filtering и 8/8 task-title app readback приняты как отдельные прежние outcomes; installed title generator и activity source causality остаются отделены в исходных leaves. Existing one-time Allow и queue edit/cancel/collapse semantics с сохранением inputId/jobId сохраняются; новый queue-resume API пока не принят. OpenCode filtered search вернул 10 совпадений при partial index coverage 3189/3200; исходный полный запрос остаётся UNKNOWN. Не закрытые source slices: 8000-token preview 2ce5c18; composer 609c784 + privacy fix 2dda29d и Whisper route 1a3d948; delivery-response helper 522464d + guard/resource fix 53d4ce7. Они не входят в установленный 8936 и не являются финальной joined приёмкой. Notice topic binding подготовлен в защищённой конфигурации; runtime card и exact permission response ещё не приняты."
+    "Уже принятые результаты остаются раздельными: immutable installed release 8936debbe39935770ec3903ac460916269a954f9, build 14/14 и owner acceptance 21/21; frontend pin 76e83d031cc7b3178a785001c1d86a9af4b45d6b применён timer/readback без managed drift. ZCode omitted-mode create и пять read-only YOLO sessions подтверждены. Codex exact-session fullAuto/session readback и два native mode перехода приняты; Codex/MiniMax session-mode capability не поддержана где установлено. MiniMax idle desktop human delivery accepted без replay с точным same-session/provider/model readback. MiniMax workspace/activity, TelegramAuto host filtering и 8/8 task-title app readback приняты как отдельные прежние outcomes; installed title generator и activity source causality остаются отделены в исходных leaves. Existing one-time Allow и queue edit/cancel/collapse semantics с сохранением inputId/jobId сохраняются; queue-resume UI/API source прошёл SHIP review (1fb5c77, adc1d6d, dfd1f78; 47 UI и 65 gateway tests, mock-browser с одним POST); он ещё не установлен в public runtime, который остаётся на 8936deb. OpenCode filtered search вернул 10 совпадений при partial index coverage 3189/3200; исходный полный запрос остаётся UNKNOWN. Не закрытые source slices: 8000-token preview 2ce5c18; composer 609c784 + privacy fix 2dda29d и Whisper route 1a3d948; delivery-response helper/guard 324f65e + 5cf6c22 прошли SHIP review; observer 8cc9754 прошёл 55 tests + TypeScript и получил independent SHIP; remote resource reader f47288b также SHIP. Joined install и consumer acceptance ещё не выполнены. Queue UI/API source review также готов, но ни эти изменения, ни preview/composer/voice slices не входят в installed 8936 и не являются финальной joined приёмкой. Notice topic binding подготовлен в защищённой конфигурации; runtime card и exact permission response ещё не приняты."
   ],
   "acceptance_scenarios": [],
-  "current_progress": "Публичная установленная база остаётся release 8936debbe39935770ec3903ac460916269a954f9 с frontend pin 76e83d031cc7b3178a785001c1d86a9af4b45d6b; нового объединённого UI/MCP выпуска нет. Native/source commit 4631e50f877792ee41930a15fa7114f0c0b69923 прошёл 130 focused tests и TypeScript. На одной существующей загруженной ZCode-очереди durable CAS допустил исходный head; точное native turn-start событие связало исходный queued input с promoted message и turn. Следующий model request завершился native network/server error с расписанным native retry; итогового assistant-ответа и выполнения задачи нет, повторного input не отправляли. Общий UI/MCP control ещё не соединён с публичным backend и не установлен. MiniMax ingress/HumanStop serialization остаётся на исправлении. Отдельные безопасные случаи: loaded broker queue удерживается явным hold; unloaded TelegramAuto не имеет подтверждённого безопасного load API. Старые принятые ZCode/Codex/MiniMax outcomes и остальные исходные acceptance сохранены.",
-  "external_waits": "Открыты пять последовательных этапов без общего процента и числового ETA: (1) общий delivery core и устранение MiniMax inter-agent idle-wake/HumanStop race плюс ZCode completed/idle recovery; (2) same-job 30s visible-response/fetch/resource wiring; (3) инвентаризация существующих WIP и main reconciliation; (4) независимый review exact joined source; (5) один финальный release и реальные consumer checks. Native ZCode admission/start одного существующего queued input подтверждён source-side и связан точным turn-start evidence, но следующий model request завершился network/server error; ответ и задача остаются UNKNOWN, native retry не превращён в новый send. UI/API/MCP recovery ещё не установлен и не принят. Loaded broker queue остаётся на явном hold; unloaded TelegramAuto не имеет безопасного официального load path. MiniMax ingress/HumanStop race блокирует integrated canary. Установленная база остаётся 8936 с pin 76e83d0. Notice config-ready не означает runtime card. OpenCode исходная полная цитата UNKNOWN при partial index. L03/L06/L18 и полный четырёх-harness цикл не закрывать по частичным/source-only доказательствам.",
+  "current_progress": "Установленная база остаётся immutable release 8936debbe39935770ec3903ac460916269a954f9 с pin 76e83d031cc7b3178a785001c1d86a9af4b45d6b. Queue UI/API source 1fb5c77 + adc1d6d + dfd1f78 прошёл независимый SHIP review; 47 focused UI tests, 65 gateway tests и TypeScript GREEN, собственный mock-browser показал один POST без повтора. Это source/mock proof, не installed public UI acceptance. Общий UMD source 324f65e и durable guard 5cf6c22 — SHIP; observer 8cc9754 — 55 focused tests + TypeScript и independent SHIP; remote response-resource reader f47288b также SHIP. MCP/local mesh используют один durable job без второго sender, inline ≤30s и stable fetch. Это source readiness, не installed consumer acceptance. На ZCode source/native 4631e50 подтверждены admission/start исходного queued input точным turn-start; последующий model/network error поставил native retry, assistant output/task completion не доказаны. Unloaded TelegramAuto предположительно pending head оказался Desktop compact card, а не human message; ничего не меняли, история сохранена. На installed readback 500 retained jobs, 0 in-flight. MiniMax inter-agent live canary не запускался из-за прочитанной квоты 0%; прежняя accepted human→MiniMax доставка L16 ограничена своим сценарием. Preservation commit 1b919b2 охватывает 43 проверенных пути; 121 несвязанный untracked/private item сохранён и исключён из публикации. Main reconciliation, joined review, единый финальный release и live consumer acceptance впереди.",
+  "external_waits": "Открыты пять оставшихся этапов без общего процента и числового ETA: (1) закончить общий delivery/recovery, bridge remote response owner routing и безопасные ZCode queue cases; (2) завершить observer delta-review и response/fetch consumer join; (3) сверить существующие WIP и синхронизировать проверенные пути в main, сохранив 121 локальный untracked/private item; (4) независимый review точного joined source; (5) один финальный release и реальные consumer checks. Queue UI/API и UMD/durable guard source получили scoped SHIP, но остаются вне установленного 8936; observer 8cc9754 и remote reader f47288b получили SHIP; остаётся joined integration/release и live consumer proof. MiniMax inter-agent live canary не выполнялся при квоте 0%, поэтому не является PASS; ранее принятый human desktop сценарий не расширяется. ZCode native start доказан, итоговый assistant response — нет; unloaded TelegramAuto head был Desktop compact card, не human message, не изменялся, история сохранена. Loaded broker queue остаётся на explicit hold. L03/L06/L18, Notice card/runtime response и полный четырёх-harness цикл остаются открыты по их исходным acceptance. OpenCode full query остаётся UNKNOWN при partial index coverage; 8000 preview и composer/voice source не входят в installed release. Release 8936 и frontend pin 76e83d0 остаются текущей публичной базой.",
   "slots": 3,
-  "updated_at": "2026-10-25T22:41:14+03:00",
+  "updated_at": "2026-10-26T00:01:43+03:00",
   "tasks": [
     {
       "id": "L01",
@@ -331,9 +331,11 @@
       "description": "Объединить пути отправки человека, агента и сайта вокруг одного durable delivery core с точными target/host/session/input/job метаданными и единой admission/readback семантикой.",
       "acceptance": "Все входные поверхности проходят общий durable job и сохраняют точную native identity и receipt; accepted/UNKNOWN не повторяются. Отдельные source review и реальные пути подтверждают, что idle wake и завершённая ZCode очередь не получают ложный ok:true без фактического native результата.",
       "owner": "permission_reply_bridge",
-      "note": "The shared delivery and recovery lane remains open. Source commit 4631e50f877792ee41930a15fa7114f0c0b69923 passed 130 tests and TypeScript. A native ZCode CAS admitted the original queued input and exact turn.started evidence correlated input→promoted message→turn; the following provider/network attempt failed and scheduled a native retry. No completed assistant answer, task completion, or duplicate send is claimed. Broker loaded queue remains on explicit hold; TelegramAuto unloaded queue is unsupported by the official safe-load API. MiniMax ingress/HumanStop serialization still blocks integrated source canary. No installed UI/MCP acceptance yet.",
+      "session": "unknown",
+      "harness": "codex",
+      "note": "Единый delivery core остаётся открытым. Общий UMD source 324f65e и durable guard 5cf6c22 получили независимый SHIP; observer 8cc9754 прошёл 55 focused tests + TypeScript и теперь также получил SHIP review. MCP и локальный mesh используют один UMD/durable job без второго sender; inline окно ≤30 секунд и stable fetch ref. Remote response resource reader f47288b получил independent SHIP; это source readiness, не installed consumer proof. Установленный release остаётся 8936deb. MiniMax inter-agent live canary не выполнялся: на последнем чтении 2026-10-25 19:47 UTC квота была 0%; ранее принятый human→MiniMax outcome L16 ограничен своим сценарием. ZCode native source 4631e50 допустил один исходный head и связал его точным turn-start; последующий model/network error поставил native retry, assistant answer/task completion не доказаны и input не дублировался. На installed readback 23:39 UTC было 500 retained jobs и 0 in-flight. Loaded broker queue остаётся на явном hold. Предполагаемые 1276 сообщений unloaded TelegramAuto оказались compact-карточкой Desktop, а не human message; ничего не меняли, история в 1445 сообщений сохранена. Финальный main join/release и consumer acceptance остаются впереди.",
       "estimate_unknown_reason": "Исправление двух наблюдавшихся consumer дефектов и объединение уже существующих WIP; оставшийся объём зависит от native adapter результата и обязательной повторной приёмки.",
-      "wait_reason": "Waiting for the MiniMax ingress/HumanStop race repair and exact consumer readback. ZCode native admission is evidenced, but completion/result is not; loaded broker hold and unloaded TelegramAuto capability remain separate cases.",
+      "wait_reason": "Ждём завершения bridge integration/reconciliation и joined release перед реальной consumer acceptance. MiniMax live canary не запускался при прочитанной квоте 0%; ZCode native start подтверждён, но итоговый assistant response отсутствует. Не считать source SHIP, retained jobs или human MiniMax proof доказательством inter-agent delivery.",
       "origin": "",
       "supersedes": [],
       "progress_events": [
@@ -346,6 +348,26 @@
           },
           "session": "unknown",
           "harness": "unknown"
+        },
+        {
+          "at": "2026-10-25T23:59:32+03:00",
+          "note": "Единый delivery core остаётся открытым. Общий UMD source 324f65e и durable guard 5cf6c22 получили независимый SHIP review; observer 8cc9754 прошёл 55 focused tests и TypeScript, но ждёт delta-review. MCP и локальный mesh используют один UMD/durable job без второго sender; inline окно ограничено 30 секундами, после него используется тот же stable fetch ref. Exact owner routing для удалённого response resource ещё у bridge. Установленный release остаётся 8936deb; на readback 23:39 UTC было 500 retained jobs и 0 in-flight. MiniMax inter-agent canary не выполнялся при прочитанной 19:47 UTC квоте 0%, поэтому live agent→agent результат не заявлен. Ранее принятый human→MiniMax desktop outcome L16 сохраняет только свою исходную область. Источник ZCode queue native recovery 4631e50 допустил один исходный head и связал его с точным turn-start; subsequent model/network error поставил native retry, assistant answer/task completion не доказаны и input не дублировался. Загруженная broker очередь остаётся на явном hold. Предполагаемые 1276 сообщений unloaded TelegramAuto оказались compact-карточкой Desktop, не human message; ничего не меняли, история в 1445 сообщений сохранена. Финальный main join/release и соответствующая consumer приёмка остаются впереди.",
+          "changes": {
+            "note": "Единый delivery core остаётся открытым. Общий UMD source 324f65e и durable guard 5cf6c22 получили независимый SHIP review; observer 8cc9754 прошёл 55 focused tests и TypeScript, но ждёт delta-review. MCP и локальный mesh используют один UMD/durable job без второго sender; inline окно ограничено 30 секундами, после него используется тот же stable fetch ref. Exact owner routing для удалённого response resource ещё у bridge. Установленный release остаётся 8936deb; на readback 23:39 UTC было 500 retained jobs и 0 in-flight. MiniMax inter-agent canary не выполнялся при прочитанной 19:47 UTC квоте 0%, поэтому live agent→agent результат не заявлен. Ранее принятый human→MiniMax desktop outcome L16 сохраняет только свою исходную область. Источник ZCode queue native recovery 4631e50 допустил один исходный head и связал его с точным turn-start; subsequent model/network error поставил native retry, assistant answer/task completion не доказаны и input не дублировался. Загруженная broker очередь остаётся на явном hold. Предполагаемые 1276 сообщений unloaded TelegramAuto оказались compact-карточкой Desktop, не human message; ничего не меняли, история в 1445 сообщений сохранена. Финальный main join/release и соответствующая consumer приёмка остаются впереди.",
+            "wait_reason": "Ждём delta-review observer, bridge exact owner routing и исправления/подтверждения критичных delivery/recovery путей перед consumer acceptance. MiniMax live canary не был запущен при квоте 0%; ZCode native start подтверждён, но результат отсутствует. Не считать source review, retained jobs или human MiniMax proof доказательством inter-agent delivery."
+          },
+          "session": "unknown",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T00:01:29+03:00",
+          "note": "Единый delivery core остаётся открытым. Общий UMD source 324f65e и durable guard 5cf6c22 получили независимый SHIP; observer 8cc9754 прошёл 55 focused tests + TypeScript и теперь также получил SHIP review. MCP и локальный mesh используют один UMD/durable job без второго sender; inline окно ≤30 секунд и stable fetch ref. Remote response resource reader f47288b получил independent SHIP; это source readiness, не installed consumer proof. Установленный release остаётся 8936deb. MiniMax inter-agent live canary не выполнялся: на последнем чтении 2026-10-25 19:47 UTC квота была 0%; ранее принятый human→MiniMax outcome L16 ограничен своим сценарием. ZCode native source 4631e50 допустил один исходный head и связал его точным turn-start; последующий model/network error поставил native retry, assistant answer/task completion не доказаны и input не дублировался. На installed readback 23:39 UTC было 500 retained jobs и 0 in-flight. Loaded broker queue остаётся на явном hold. Предполагаемые 1276 сообщений unloaded TelegramAuto оказались compact-карточкой Desktop, а не human message; ничего не меняли, история в 1445 сообщений сохранена. Финальный main join/release и consumer acceptance остаются впереди.",
+          "changes": {
+            "note": "Единый delivery core остаётся открытым. Общий UMD source 324f65e и durable guard 5cf6c22 получили независимый SHIP; observer 8cc9754 прошёл 55 focused tests + TypeScript и теперь также получил SHIP review. MCP и локальный mesh используют один UMD/durable job без второго sender; inline окно ≤30 секунд и stable fetch ref. Remote response resource reader f47288b получил independent SHIP; это source readiness, не installed consumer proof. Установленный release остаётся 8936deb. MiniMax inter-agent live canary не выполнялся: на последнем чтении 2026-10-25 19:47 UTC квота была 0%; ранее принятый human→MiniMax outcome L16 ограничен своим сценарием. ZCode native source 4631e50 допустил один исходный head и связал его точным turn-start; последующий model/network error поставил native retry, assistant answer/task completion не доказаны и input не дублировался. На installed readback 23:39 UTC было 500 retained jobs и 0 in-flight. Loaded broker queue остаётся на явном hold. Предполагаемые 1276 сообщений unloaded TelegramAuto оказались compact-карточкой Desktop, а не human message; ничего не меняли, история в 1445 сообщений сохранена. Финальный main join/release и consumer acceptance остаются впереди.",
+            "wait_reason": "Ждём завершения bridge integration/reconciliation и joined release перед реальной consumer acceptance. MiniMax live canary не запускался при прочитанной квоте 0%; ZCode native start подтверждён, но итоговый assistant response отсутствует. Не считать source SHIP, retained jobs или human MiniMax proof доказательством inter-agent delivery."
+          },
+          "session": "unknown",
+          "harness": "codex"
         }
       ],
       "affected_files": [
@@ -579,10 +601,23 @@
       "description": "Проследить и исправить bounded route, по которому OpenCode передаёт сообщение в idle MiniMax desktop session. Сохранить exact native host/session identity и штатную очередь; accepted/UNKNOWN input не replay-ить и не превращать в новую сессию.",
       "acceptance": "Focused regression доказывает доставку одного нового сообщения в точную idle MiniMax session штатным механизмом; отсутствие capability/неизвестный результат видны явно. Ранее accepted/queued сообщения не переотправляются, никакая новая native session не создаётся.",
       "owner": "permission_reply_bridge",
-      "note": "Финальная приёмка на установленном combined release 00fe2e3692d5dae7e3bd5e5f2cfda77d3c26c1ec завершилась accepted: durable public MCP job и exact same-session readback подтвердили одну доставку user/assistant в idle MiniMax desktop с совпадающими provider/model. Предыдущий UNKNOWN после CLI timeout остался terminal и не replay-ился; финальный accepted job не повторяли. Отдельных новых сессий и provider fallback не создавали.",
+      "session": "unknown",
+      "harness": "codex",
+      "note": "Определённая исходная приёмка остаётся accepted: installed release 00fe2e3692d5dae7e3bd5e5f2cfda77d3c26c1ec, durable public MCP job и exact same-session readback подтвердили одну доставку user/assistant в idle MiniMax desktop с теми же provider/model; прежний timeout UNKNOWN не replay-или. Это доказывает human→desktop outcome данного leaf, не inter-agent idle-wake. Отдельный MiniMax inter-agent live canary не запускался: на последнем чтении 2026-10-25 19:47 UTC квота была 0%; новых отправок и replay не было.",
       "estimate_over_limit_reason": "Одна bounded cross-harness delivery route; exact root cause сейчас read-only трассируется, путь/consumer proof будут уточнены до исходного патча.",
       "origin": "",
       "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-25T23:59:29+03:00",
+          "note": "Определённая исходная приёмка остаётся accepted: installed release 00fe2e3692d5dae7e3bd5e5f2cfda77d3c26c1ec, durable public MCP job и exact same-session readback подтвердили одну доставку user/assistant в idle MiniMax desktop с теми же provider/model; прежний timeout UNKNOWN не replay-или. Это доказывает human→desktop outcome данного leaf, не inter-agent idle-wake. Отдельный MiniMax inter-agent live canary не запускался: на последнем чтении 2026-10-25 19:47 UTC квота была 0%; новых отправок и replay не было.",
+          "changes": {
+            "note": "Определённая исходная приёмка остаётся accepted: installed release 00fe2e3692d5dae7e3bd5e5f2cfda77d3c26c1ec, durable public MCP job и exact same-session readback подтвердили одну доставку user/assistant в idle MiniMax desktop с теми же provider/model; прежний timeout UNKNOWN не replay-или. Это доказывает human→desktop outcome данного leaf, не inter-agent idle-wake. Отдельный MiniMax inter-agent live canary не запускался: на последнем чтении 2026-10-25 19:47 UTC квота была 0%; новых отправок и replay не было."
+          },
+          "session": "unknown",
+          "harness": "codex"
+        }
+      ],
       "depends_on": [
         "L01"
       ],
@@ -620,8 +655,9 @@
       "description": "Независимо проверить конкретный joined source diff после bounded implementation, включая безопасность, совместимость, отсутствие replay и соответствие исходным acceptance.",
       "acceptance": "Независимый reviewer изучил exact joined commit and changed paths; все findings исправлены или явно отложены владельцем; final SHIP с точным source SHA получен до main sync/release.",
       "owner": "Lead / independent reviewer",
+      "session": "unknown",
       "harness": "codex",
-      "note": "Review не назначен до готовности concrete joined diff. Никакой текущий source-review статус не предполагается.",
+      "note": "Частичный независимый review завершён только для queue UI/API source: SHIP для 1fb5c77, adc1d6d и dfd1f78; 47 focused UI tests и 65 gateway tests, TypeScript и own mock-browser (один POST, без повторной отправки). Это не review полного joined diff и не installed/live acceptance; полный review остаётся queued до завершения source leaves.",
       "estimate_over_limit_reason": "Независимый reviewer проверяет один конкретный joined source diff и возвращает единый SHIP/HOLD перед sync; дробление на файловые обзоры не подтверждает межфайловые границы.",
       "wait_reason": "Ждёт завершения source leaves L20 и L21.",
       "origin": "",
@@ -657,6 +693,15 @@
             "estimate_over_limit_reason": "Независимый reviewer проверяет один конкретный joined source diff и возвращает единый SHIP/HOLD перед sync; дробление на файловые обзоры не подтверждает межфайловые границы."
           },
           "harness": "codex"
+        },
+        {
+          "at": "2026-10-25T23:59:30+03:00",
+          "note": "Частичный независимый review завершён только для queue UI/API source: SHIP для 1fb5c77, adc1d6d и dfd1f78; 47 focused UI tests и 65 gateway tests, TypeScript и own mock-browser (один POST, без повторной отправки). Это не review полного joined diff и не installed/live acceptance; полный review остаётся queued до завершения source leaves.",
+          "changes": {
+            "note": "Частичный независимый review завершён только для queue UI/API source: SHIP для 1fb5c77, adc1d6d и dfd1f78; 47 focused UI tests и 65 gateway tests, TypeScript и own mock-browser (один POST, без повторной отправки). Это не review полного joined diff и не installed/live acceptance; полный review остаётся queued до завершения source leaves."
+          },
+          "session": "unknown",
+          "harness": "codex"
         }
       ],
       "depends_on": [
@@ -675,9 +720,11 @@
       "description": "Показать отдельное явное управление native queue processing в той же выбранной ZCode-сессии; сохранять scope сессии и persistent autoDrain, отделить это от обычной отправки сообщения.",
       "acceptance": "Свежий native state содержит session scope, revision, autoDrain, pending count и loaded/canResume; пользовательское действие передаёт один stable inputId и expectedRevision. accepted/stale/unknown/unsupported/noop честно различаются, повтор при неизвестном результате отсутствует, Send не вызывает resume. Незапущенные native runtime возможности явно unsupported.",
       "owner": "permission_native",
-      "note": "Native source/recovery evidence: one durable CAS resumed the original ZCode queued head and exact native turn.started event correlated it to the promoted message/turn. The subsequent provider/network attempt failed and scheduled native retry, so only admission/start is proven; answer/task completion is unknown. Source commit 4631e50f877792ee41930a15fa7114f0c0b69923 passed 130 tests and TypeScript. The public bridge API/MCP wiring and shared UI remain pending; installed public UI acceptance is not claimed.",
+      "session": "unknown",
+      "harness": "codex",
+      "note": "Queue UI/API source теперь полностью review-SHIP: source commits 1fb5c77 + adc1d6d + dfd1f78; 47 focused UI tests, 65 gateway tests и TypeScript GREEN. Own mock-browser подтвердил точный stalled autoDrain=true control, один POST и отсутствие повторной отправки. Установленный runtime всё ещё 8936deb и не содержит этот объединённый UI/API; публичная установленная same-session acceptance ещё не проведена. Native source recovery 4631e50 доказал только admission/start исходного ZCode head по точному turn-start событию, затем model/network error и запланированный native retry; assistant output/task completion UNKNOWN, дубликат не отправлялся. На последнем inventory хранилось 500 retained jobs и 0 in-flight. Предполагаемый unloaded TelegramAuto head на 1276 сообщений оказался Desktop compact card, не human message; состояние не меняли, история 1445 сообщений сохранена. Исходники самой программы ZCode остаются вне разрешённого изменения.",
       "estimate_unknown_reason": "Native API для загруженной сессии подтверждён на уровне дизайна; состояние unloaded runtime и завершённая consumer приёмка пока неизвестны.",
-      "wait_reason": "Waiting for integrated bridge route plus shared UI and installed same-session acceptance. Do not infer message delivery from queue preference or native phase alone. Unloaded TelegramAuto queue remains unsupported; other loaded queues with explicit holds are not auto-resumed.",
+      "wait_reason": "Нужны общий reviewed main source join, финальная установка и read-only consumer proof UI/API. Не возобновлять hold и не приписывать подтверждённый start/output по одному autoDrain/readback.",
       "origin": "",
       "supersedes": [],
       "progress_events": [
@@ -690,6 +737,16 @@
           },
           "session": "unknown",
           "harness": "unknown"
+        },
+        {
+          "at": "2026-10-25T23:59:33+03:00",
+          "note": "Queue UI/API source теперь полностью review-SHIP: source commits 1fb5c77 + adc1d6d + dfd1f78; 47 focused UI tests, 65 gateway tests и TypeScript GREEN. Own mock-browser подтвердил точный stalled autoDrain=true control, один POST и отсутствие повторной отправки. Установленный runtime всё ещё 8936deb и не содержит этот объединённый UI/API; публичная установленная same-session acceptance ещё не проведена. Native source recovery 4631e50 доказал только admission/start исходного ZCode head по точному turn-start событию, затем model/network error и запланированный native retry; assistant output/task completion UNKNOWN, дубликат не отправлялся. На последнем inventory хранилось 500 retained jobs и 0 in-flight. Предполагаемый unloaded TelegramAuto head на 1276 сообщений оказался Desktop compact card, не human message; состояние не меняли, история 1445 сообщений сохранена. Исходники самой программы ZCode остаются вне разрешённого изменения.",
+          "changes": {
+            "note": "Queue UI/API source теперь полностью review-SHIP: source commits 1fb5c77 + adc1d6d + dfd1f78; 47 focused UI tests, 65 gateway tests и TypeScript GREEN. Own mock-browser подтвердил точный stalled autoDrain=true control, один POST и отсутствие повторной отправки. Установленный runtime всё ещё 8936deb и не содержит этот объединённый UI/API; публичная установленная same-session acceptance ещё не проведена. Native source recovery 4631e50 доказал только admission/start исходного ZCode head по точному turn-start событию, затем model/network error и запланированный native retry; assistant output/task completion UNKNOWN, дубликат не отправлялся. На последнем inventory хранилось 500 retained jobs и 0 in-flight. Предполагаемый unloaded TelegramAuto head на 1276 сообщений оказался Desktop compact card, не human message; состояние не меняли, история 1445 сообщений сохранена. Исходники самой программы ZCode остаются вне разрешённого изменения.",
+            "wait_reason": "Нужны общий reviewed main source join, финальная установка и read-only consumer proof UI/API. Не возобновлять hold и не приписывать подтверждённый start/output по одному autoDrain/readback."
+          },
+          "session": "unknown",
+          "harness": "codex"
         }
       ],
       "affected_files": [
@@ -711,11 +768,43 @@
       "description": "После уже принятой отправки сравнивать только новый видимый assistant text с приватным baseline; вернуть inline ответ в пределах 30 секунд, иначе тот же durable jobRef для последующего fetch и точечного MCP resource update.",
       "acceptance": "Baseline exact target/job/input сохраняется до native write в том же durable job. Возвращаются только новые нормализованные видимые части; correlation называется reply_to только при exact turn ID, иначе observed_after_delivery. 30s ограничивает только наблюдение, не native admission; fetch/continuation никогда не отправляют повторно. Long continuation закреплён durable per-job receipt; subscribe уведомляет только exact bound resource URI через реально поддержанный transport, fetch остаётся обязательным.",
       "owner": "permission_mode_ui",
-      "note": "Source helper commit 522464d + follow-up 53d4ce7; focused helper/resource SDK2 tests 17/17 и tsc GREEN. Coverage/order ambiguity fails closed, reads receive a deadline AbortSignal, and continuation requires a per-job target/input/URI/SHA/length receipt. MCP v2 legacy resources/subscribe is not served; the tested supported path is 2026-07-28 Client.listen/resourceSubscriptions through official serveStdio. Bridge still owns same-job persistence, authorized resource reader, event wiring and response result delivery; no integrated consumer claim yet.",
+      "session": "unknown",
+      "harness": "codex",
+      "note": "Response helper/shared UMD source 324f65e и durable guard 5cf6c22 получили independent SHIP; observer 8cc9754 прошёл 55 focused tests + TypeScript и также получил SHIP. Remote response-resource reader f47288b отдельно получил SHIP. MCP и local mesh используют один durable job без второго sender; возвращается inline результат в пределах 30 секунд и stable fetch после. Установленный runtime остаётся 8936deb. Эти source reviews не заменяют exact joined install и consumer proof; subscribe/notification не заявляются без подтверждённого transport/readback. ZCode последующий model/network error не дал финальный assistant response.",
       "estimate_unknown_reason": "Helper и transport contract проверены изолированно; до оценки остаётся shared-job wiring, authorization/readback join и consumer path.",
-      "wait_reason": "Waits for the existing durable delivery job hooks/receipt fields and same principal/target authorization in the bridge.",
+      "wait_reason": "Source helper, observer and owner-bound remote reader получили independent SHIP; остаются canonical main join, единая финальная установка и consumer proof.",
       "origin": "",
       "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-25T23:59:34+03:00",
+          "note": "Response helper и same-job guard source review SHIP: 324f65e + 5cf6c22; observer 8cc9754 имеет 55 focused tests + TypeScript GREEN и ждёт delta-review. MCP и local mesh используют единый durable UMD job, без второго sender; доступен inline результат в пределах 30 секунд и stable fetch после. Установленный runtime остаётся 8936deb. Remote response-resource owner routing и полный same-principal consumer join ещё у bridge; subscribe/notification не заявляются без подтверждённого маршрута. Native delivery observation остаётся только по новым видимым assistant output с точным baseline; прошлый ZCode turn получил network/server error и final response не подтверждён.",
+          "changes": {
+            "note": "Response helper и same-job guard source review SHIP: 324f65e + 5cf6c22; observer 8cc9754 имеет 55 focused tests + TypeScript GREEN и ждёт delta-review. MCP и local mesh используют единый durable UMD job, без второго sender; доступен inline результат в пределах 30 секунд и stable fetch после. Установленный runtime остаётся 8936deb. Remote response-resource owner routing и полный same-principal consumer join ещё у bridge; subscribe/notification не заявляются без подтверждённого маршрута. Native delivery observation остаётся только по новым видимым assistant output с точным baseline; прошлый ZCode turn получил network/server error и final response не подтверждён.",
+            "wait_reason": "Ждём observer delta-review и bridge owner-bound remote resource routing/persistence join; затем нужны joined review/install и consumer proof. До этого response/fetch path остаётся source-only."
+          },
+          "session": "unknown",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T00:01:30+03:00",
+          "note": "Response helper/shared UMD source 324f65e и durable guard 5cf6c22 получили independent SHIP; observer 8cc9754 прошёл 55 focused tests + TypeScript и также получил SHIP. Remote response-resource reader f47288b отдельно получил SHIP. MCP и local mesh используют один durable job без второго sender; возвращается inline результат в пределах 30 секунд и stable fetch после. Установленный runtime остаётся 8936deb. Эти source reviews не заменяют exact joined install и consumer proof; subscribe/notification не заявляются без подтверждённого transport/readback. ZCode последующий model/network error не дал финальный assistant response.",
+          "changes": {
+            "note": "Response helper/shared UMD source 324f65e и durable guard 5cf6c22 получили independent SHIP; observer 8cc9754 прошёл 55 focused tests + TypeScript и также получил SHIP. Remote response-resource reader f47288b отдельно получил SHIP. MCP и local mesh используют один durable job без второго sender; возвращается inline результат в пределах 30 секунд и stable fetch после. Установленный runtime остаётся 8936deb. Эти source reviews не заменяют exact joined install и consumer proof; subscribe/notification не заявляются без подтверждённого transport/readback. ZCode последующий model/network error не дал финальный assistant response."
+          },
+          "session": "unknown",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T00:01:43+03:00",
+          "note": "Обновлена граница после SHIP source slices 8cc9754 и f47288b: остаются main join/install и consumer acceptance.",
+          "changes": {
+            "wait_reason": "Source helper, observer and owner-bound remote reader получили independent SHIP; остаются canonical main join, единая финальная установка и consumer proof."
+          },
+          "session": "unknown",
+          "harness": "codex"
+        }
+      ],
       "affected_files": [
         "src/session-delivery-response.ts",
         "src/mcp/delivery-response-resources.ts",
@@ -871,8 +960,9 @@
       "description": "Инвентаризировать существующие Agent Herder worktrees, ветки и незакоммиченный WIP; сопоставить дубли/зависимости и перенести только необходимые проверенные изменения в main без потери функций и без удаления чужого состояния.",
       "acceptance": "Есть inventory точных источников и владельцев; каждый уникальный нужный behavior представлен на main и покрыт подходящей проверкой; overlaps reconciled, чужой WIP сохранён или явно согласован; main fast-forward/sync подтверждён exact remote SHA и committed path list. Не force-rebase/reset чужих изменений.",
       "owner": "Lead",
+      "session": "unknown",
       "harness": "codex",
-      "note": "Новые worktrees не создаются. Сверка должна сохранить самостоятельные preview/composer/permission/search/Notice функции существующих WIP.",
+      "note": "Канонический preservation commit 1b919b2 содержит 43 проверенных пути; 121 несвязанный untracked/private item сохранён локально и исключён из публикации. Это подтверждает сохранение состояния, но inventory/reconciliation всех WIP, перенос требуемых функций в main и exact remote-main readback ещё не завершены.",
       "estimate_over_limit_reason": "Инвентаризация существующих WIP и main sync образуют один сохраняющий функции handoff; частичное перенесение до сверки остальных источников может скрыть или потерять уникальное поведение.",
       "wait_reason": "Ждёт независимого review joined source diff.",
       "origin": "",
@@ -906,6 +996,15 @@
           "changes": {
             "estimate_over_limit_reason": "Инвентаризация существующих WIP и main sync образуют один сохраняющий функции handoff; частичное перенесение до сверки остальных источников может скрыть или потерять уникальное поведение."
           },
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-25T23:59:31+03:00",
+          "note": "Канонический preservation commit 1b919b2 содержит 43 проверенных пути; 121 несвязанный untracked/private item сохранён локально и исключён из публикации. Это подтверждает сохранение состояния, но inventory/reconciliation всех WIP, перенос требуемых функций в main и exact remote-main readback ещё не завершены.",
+          "changes": {
+            "note": "Канонический preservation commit 1b919b2 содержит 43 проверенных пути; 121 несвязанный untracked/private item сохранён локально и исключён из публикации. Это подтверждает сохранение состояния, но inventory/reconciliation всех WIP, перенос требуемых функций в main и exact remote-main readback ещё не завершены."
+          },
+          "session": "unknown",
           "harness": "codex"
         }
       ],
