@@ -5,10 +5,12 @@ import { DEFAULT_THEME, applyTheme, normalizeTheme, readTheme, writeTheme } from
 import { currentModelOption, modelSwitchSupported, requestModelChange, shortModelLabel } from "../src/web-ui/model-chip.js";
 import {
   acquireCurrentVoiceStream,
+  QueueProcessingActionOwner,
   attemptQueueProcessingResume,
   queueProcessingCanResume,
   queueProcessingIntentCanClearOnReadback,
   queueProcessingIntentStorageKey,
+  queueProcessingStatusLabel,
   type QueueProcessingState,
 } from "../src/web-ui/composer-controls.js";
 import { readSessionQueueProcessing, submitSessionQueueProcessing } from "../src/web-ui/fleet/RemoteSessionView.js";
@@ -354,10 +356,30 @@ describe("shared queue-processing control state machine",()=>{
   expect(composerControls).toContain("export function QueueProcessingControl");
   expect(styles).toContain(".queue-processing-control");
   expect(composerControls).toContain('aria-label="Обработка очереди этой сессии"');
+  expect(composerControls).toContain("queueProcessingStatusLabel(state.nativeStatus)");
+  expect(composerControls).toContain("if (!isCurrent()) return;");
+  expect(composerControls).not.toContain("Настройка очереди сохранена для этой сессии и следующих сообщений");
   expect(main).toContain("<QueueProcessingControl target={{hostId:activeSession.hostId");
   expect(remoteComposer).toContain("<QueueProcessingControl target={{hostId:captured.hostId");
   expect(main).toContain("readState={readSessionQueueProcessing} resume={submitSessionQueueProcessing}");
   expect(remoteComposer).toContain("readState={readSessionQueueProcessing} resume={submitSessionQueueProcessing}");
+ });
+
+ it("invalidates async UI completions when the selected session changes or the control unmounts",()=>{
+  const owner=new QueueProcessingActionOwner("host-a\0zcode\0session-a");
+  const first=owner.capture();
+  expect(owner.isCurrent(first)).toBe(true);
+  owner.setTarget("host-b\0zcode\0session-b");
+  expect(owner.isCurrent(first)).toBe(false);
+  const second=owner.capture();
+  owner.dispose();
+  expect(owner.isCurrent(second)).toBe(false);
+ });
+
+ it("shows translated concise native status labels",()=>{
+  expect(queueProcessingStatusLabel("completedSuccess")).toBe("завершено");
+  expect(queueProcessingStatusLabel("completedInterrupted")).toBe("прервано");
+  expect(queueProcessingStatusLabel("unexpected-v4-state")).toBe("не сообщён");
  });
 
  it("enables only for a fresh exact loaded session with pending work and the V4 capability",()=>{
@@ -392,6 +414,36 @@ describe("shared queue-processing control state machine",()=>{
   expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toContain('"inputId":"intent-unknown"');
  });
 
+ it("write-ahead stores the CAS revision before POST so a reload can reconcile it",async()=>{
+  const storage=memoryStorage();let beforePost:any;
+  const result=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState({revision:11}),storage,makeInputId:()=>"intent-reload",
+   readState:async()=>({available:true,state:queueState({revision:11})}),
+   resume:async(_target,request)=>{beforePost=JSON.parse(storage.getItem(queueProcessingIntentStorageKey(queueTarget))||"{}");expect(request.expectedRevision).toBe(11);return{inputId:request.inputId,status:"unknown" as const};}});
+  expect(result.kind).toBe("unknown");
+  expect(beforePost).toMatchObject({inputId:"intent-reload",status:"pending",expectedRevision:11});
+  expect(queueProcessingIntentCanClearOnReadback(beforePost,queueState({revision:12}))).toBe(true);
+ });
+
+ it("does not POST after the selected target changes while fresh state is loading",async()=>{
+  const storage=memoryStorage();let current=true,writes=0;
+  const result=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,makeInputId:()=>"intent-switch-read",
+   isCurrent:()=>current,
+   readState:async()=>{current=false;return{available:true as const,state:queueState()};},
+   resume:async()=>{writes++;return{inputId:"intent-switch-read",status:"accepted" as const,state:queueState({autoDrain:true,revision:8})};}} as any);
+  expect(result.kind).toBe("not-ready");expect(writes).toBe(0);
+  expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toBeNull();
+ });
+
+ it("does not publish an old target result after the target changes during POST",async()=>{
+  const storage=memoryStorage();let current=true,writes=0;
+  const result=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState({revision:11}),storage,makeInputId:()=>"intent-switch-post",
+   isCurrent:()=>current,
+   readState:async()=>({available:true as const,state:queueState({revision:11})}),
+   resume:async(_target,request)=>{writes++;current=false;return{inputId:request.inputId,status:"accepted" as const,state:queueState({autoDrain:true,revision:12})};}} as any);
+  expect(result.kind).toBe("not-ready");expect(writes).toBe(1);
+  expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toContain('"inputId":"intent-switch-post"');
+ });
+
  it("does not call native action for unloaded or unsupported scope",async()=>{
   const storage=memoryStorage();let sends=0;
   const result=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,
@@ -407,8 +459,7 @@ describe("shared queue-processing control state machine",()=>{
    readState:async()=>({available:true,state:queueState()}),
    resume:async(_target,request)=>({inputId:request.inputId,status:"accepted",state:queueState({autoDrain:true,revision:8})})});
   expect(attempt.kind).toBe("accepted");
-  expect(attempt.message).toContain("Настройка очереди сохранена");
-  expect(attempt.message).toContain("начало обработки не подтверждено");
+  expect(attempt.message).toBe("Команда принята. Запуск сообщения пока не подтверждён.");
   expect(attempt.message).not.toMatch(/доставлено|сообщение отправлено/i);
   expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toContain('"inputId":"intent-accepted"');
   expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toContain('"status":"accepted"');

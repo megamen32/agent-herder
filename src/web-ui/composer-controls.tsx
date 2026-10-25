@@ -97,6 +97,38 @@ export type QueueProcessingAttempt = {
   message: string;
 };
 
+export type QueueProcessingActionToken = Readonly<{ targetKey: string; generation: number }>;
+
+export class QueueProcessingActionOwner {
+  private targetKey: string;
+  private generation = 0;
+  private active = true;
+  constructor(targetKey: string) { this.targetKey = targetKey; }
+  setTarget(targetKey: string): void {
+    if (this.targetKey === targetKey) return;
+    this.targetKey = targetKey;
+    this.generation++;
+  }
+  capture(): QueueProcessingActionToken { return Object.freeze({ targetKey: this.targetKey, generation: this.generation }); }
+  isCurrent(token: QueueProcessingActionToken): boolean {
+    return this.active && token.targetKey === this.targetKey && token.generation === this.generation;
+  }
+  activate(): void { this.active = true; }
+  dispose(): void { this.active = false; this.generation++; }
+}
+
+export function queueProcessingStatusLabel(status: string | undefined): string {
+  switch (status) {
+    case "draft": return "черновик";
+    case "prewarming": return "подготовка";
+    case "running": return "выполняется";
+    case "completedSuccess": return "завершено";
+    case "completedInterrupted": return "прервано";
+    case "error": return "ошибка";
+    default: return "не сообщён";
+  }
+}
+
 /** One explicit CAS intent. It never retries, and writes a durable-in-tab intent before POST. */
 export async function attemptQueueProcessingResume(input: {
   target: QueueProcessingTarget;
@@ -105,12 +137,15 @@ export async function attemptQueueProcessingResume(input: {
   resume: (target: QueueProcessingTarget, request: { inputId: string; expectedRevision: number }) => Promise<QueueProcessingResumeResult>;
   storage: QueueProcessingIntentStorage;
   makeInputId?: () => string;
+  isCurrent?: () => boolean;
 }): Promise<QueueProcessingAttempt> {
+  const isCurrent = input.isCurrent ?? (() => true);
+  if (!isCurrent()) return { kind: "not-ready", message: "Выбранная сессия изменилась. Действие не отправлено." };
   const storageKey = queueProcessingIntentStorageKey(input.target);
   const existing = readQueueProcessingIntent(input.storage, storageKey);
   if (existing) {
     return { kind: existing.status === "accepted" ? "accepted" : "unknown", inputId: existing.inputId, message: existing.status === "accepted"
-      ? "Настройка очереди принята. Повтор заблокирован до изменения native revision; начало обработки не подтверждено."
+      ? "Команда принята. Запуск сообщения пока не подтверждён. Повтор заблокирован."
       : "Предыдущая команда не получила подтверждённого исхода. Повтор заблокирован; проверьте состояние вручную." };
   }
   if (!queueProcessingStateMatchesTarget(input.displayedState, input.target)) {
@@ -120,6 +155,7 @@ export async function attemptQueueProcessingResume(input: {
   let fresh: QueueProcessingRead;
   try { fresh = await input.readState(input.target); }
   catch { return { kind: "not-ready", message: "Не удалось обновить состояние очереди. Команда не отправлена." }; }
+  if (!isCurrent()) return { kind: "not-ready", message: "Выбранная сессия изменилась. Действие не отправлено." };
   if (!fresh.available) return { kind: "unsupported", message: fresh.reason || "Управление очередью недоступно для этой сессии." };
   if (!queueProcessingStateMatchesTarget(fresh.state, input.target)) {
     return { kind: "unsupported", message: "Свежее состояние относится к другой сессии; команда не отправлена." };
@@ -132,7 +168,7 @@ export async function attemptQueueProcessingResume(input: {
   }
 
   const inputId = (input.makeInputId ?? newInputId)();
-  try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "pending" } satisfies QueueProcessingIntent)); }
+  try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "pending", expectedRevision: fresh.state.revision } satisfies QueueProcessingIntent)); }
   catch { return { kind: "not-ready", state: fresh.state, message: "Не удалось сохранить идентификатор команды; ничего не отправлено." }; }
 
   let result: QueueProcessingResumeResult;
@@ -141,6 +177,7 @@ export async function attemptQueueProcessingResume(input: {
     try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "unknown", expectedRevision: fresh.state.revision } satisfies QueueProcessingIntent)); } catch { /* the original pending key still fails closed */ }
     return { kind: "unknown", inputId, message: "Исход команды неизвестен. Повтор не выполняется." };
   }
+  if (!isCurrent()) return { kind: "not-ready", inputId, message: "Сессия изменилась. Исход команды проверится при следующем открытии этой сессии." };
   if (result.inputId !== inputId) {
     try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "unknown", expectedRevision: fresh.state.revision } satisfies QueueProcessingIntent)); } catch { /* keep the existing pending key */ }
     return { kind: "unknown", inputId, message: "Ответ не совпадает с этой командой. Повтор заблокирован." };
@@ -160,7 +197,7 @@ export async function attemptQueueProcessingResume(input: {
     try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "accepted", expectedRevision: fresh.state.revision, acceptedRevision: result.state.revision } satisfies QueueProcessingIntent)); } catch { /* keep the previous pending key */ }
     return result.nativeInputActuallyStarted === true
       ? { kind: "started", inputId, state: result.state, message: "Обработка очереди началась в этой сессии." }
-      : { kind: "accepted", inputId, state: result.state, message: "Настройка очереди сохранена для этой сессии и следующих сообщений; начало обработки не подтверждено." };
+      : { kind: "accepted", inputId, state: result.state, message: "Команда принята. Запуск сообщения пока не подтверждён." };
   }
   input.storage.removeItem(storageKey);
   if (result.status === "stale") return { kind: "stale", inputId, state: result.state, message: result.reason || "Состояние очереди изменилось. Действие не повторялось." };
@@ -180,6 +217,10 @@ export function QueueProcessingControl({
   storage?: QueueProcessingIntentStorage;
 }) {
   const targetKey = `${target.hostId}\0${target.harness}\0${target.sessionId}`;
+  const ownerRef = useRef<QueueProcessingActionOwner | null>(null);
+  if (!ownerRef.current) ownerRef.current = new QueueProcessingActionOwner(targetKey);
+  ownerRef.current.setTarget(targetKey);
+  const owner = ownerRef.current;
   const targetRef = useRef(target);
   targetRef.current = target;
   const readStateRef = useRef(readState);
@@ -197,14 +238,19 @@ export function QueueProcessingControl({
   const [message, setMessage] = useState("");
 
   const refresh = async (signal?: AbortSignal) => {
+    const token = owner.capture();
+    const exactTarget = { ...targetRef.current };
+    const exactKey = queueProcessingIntentStorageKey(exactTarget);
+    const isCurrent = () => owner.isCurrent(token) && !signal?.aborted;
+    if (!isCurrent()) return;
     setLoading(true);
     try {
-      const value = await readStateRef.current(targetRef.current);
-      if (signal?.aborted) return;
-      if (value.available && queueProcessingStateMatchesTarget(value.state, targetRef.current)) {
-        const storedIntent = readQueueProcessingIntent(storageRef.current, intentKey);
+      const value = await readStateRef.current(exactTarget);
+      if (!isCurrent()) return;
+      if (value.available && queueProcessingStateMatchesTarget(value.state, exactTarget)) {
+        const storedIntent = readQueueProcessingIntent(storageRef.current, exactKey);
         if (queueProcessingIntentCanClearOnReadback(storedIntent, value.state)) {
-          storageRef.current?.removeItem(intentKey);
+          storageRef.current?.removeItem(exactKey);
           setIntent(undefined);
           setMessage("Свежая версия очереди отличается от предыдущей команды. Проверьте состояние перед новым действием.");
         }
@@ -215,43 +261,51 @@ export function QueueProcessingControl({
         setReason(value.available ? "Ответ состояния не относится к выбранной сессии." : value.reason);
       }
     } catch {
-      if (!signal?.aborted) { setState(undefined); setReason("Не удалось прочитать состояние обработки очереди."); }
-    } finally { if (!signal?.aborted) setLoading(false); }
+      if (isCurrent()) { setState(undefined); setReason("Не удалось прочитать состояние обработки очереди."); }
+    } finally { if (isCurrent()) setLoading(false); }
   };
 
   useEffect(() => {
+    owner.activate();
     const controller = new AbortController();
-    setState(undefined); setReason(""); setMessage(""); setLoading(true);
+    setState(undefined); setReason(""); setMessage(""); setLoading(true); setBusy(false);
     setIntent(readQueueProcessingIntent(storageRef.current, queueProcessingIntentStorageKey(targetRef.current)));
     void refresh(controller.signal);
-    return () => controller.abort();
+    return () => { controller.abort(); owner.dispose(); };
   }, [targetKey]);
 
   const run = async () => {
     if (!state || busy || intent) return;
+    const token = owner.capture();
+    const exactTarget = { ...targetRef.current };
+    const exactIntentKey = queueProcessingIntentStorageKey(exactTarget);
+    const isCurrent = () => owner.isCurrent(token);
+    if (!isCurrent()) return;
     setBusy(true); setMessage("");
     try {
       const attempt = await attemptQueueProcessingResume({
-        target: targetRef.current,
+        target: exactTarget,
         displayedState: state,
         readState: (exactTarget) => readStateRef.current(exactTarget),
         resume: (exactTarget, request) => resumeRef.current(exactTarget, request),
         storage: storageRef.current ?? { getItem: () => null, setItem: () => { throw new Error("storage unavailable"); }, removeItem: () => {} },
+        isCurrent,
       });
+      if (!isCurrent()) return;
       if (attempt.kind === "stale") {
         setState(undefined);
         setReason("Состояние очереди изменилось. Нажмите «Обновить очередь» перед новым действием.");
-      } else if (attempt.state && queueProcessingStateMatchesTarget(attempt.state, targetRef.current)) setState(attempt.state);
+      } else if (attempt.state && queueProcessingStateMatchesTarget(attempt.state, exactTarget)) setState(attempt.state);
       if ((attempt.kind === "unknown" || attempt.kind === "accepted") && attempt.inputId) {
-        const nextIntent = readQueueProcessingIntent(storageRef.current, intentKey) ?? { inputId: attempt.inputId, status: attempt.kind === "accepted" ? "accepted" as const : "unknown" as const };
+        const nextIntent = readQueueProcessingIntent(storageRef.current, exactIntentKey) ?? { inputId: attempt.inputId, status: attempt.kind === "accepted" ? "accepted" as const : "unknown" as const };
         setIntent(nextIntent);
       } else if (attempt.kind === "unknown" || attempt.kind === "accepted") {
-        setIntent(readQueueProcessingIntent(storageRef.current, intentKey));
+        setIntent(readQueueProcessingIntent(storageRef.current, exactIntentKey));
       } else if (["accepted", "started", "stale", "unsupported", "noop"].includes(attempt.kind)) {
-        setIntent(readQueueProcessingIntent(storageRef.current, intentKey));
+        setIntent(readQueueProcessingIntent(storageRef.current, exactIntentKey));
       }
       setMessage(attempt.message);
-    } finally { setBusy(false); }
+    } finally { if (isCurrent()) setBusy(false); }
   };
 
   const unresolved = Boolean(intent);
@@ -259,15 +313,15 @@ export function QueueProcessingControl({
   return <section className="queue-processing-control" aria-label="Обработка очереди этой сессии">
     <div className="queue-processing-copy">
       <strong>Обработка очереди</strong>
-      <small>{state?.scope === "session" ? "Настройка сохраняется только для этой сессии и следующих сообщений." : "Управление относится только к точно выбранной сессии."}</small>
-      {state && <small>{state.pendingCount} сообщений ожидают · статус: {state.nativeStatus || "не сообщён"}</small>}
+      <small>{state?.scope === "session" ? "Только эта сессия; настройка действует и для следующих сообщений." : "Управление относится только к выбранной сессии."}</small>
+      {state && <small>В очереди ожидают: {state.pendingCount} · состояние: {queueProcessingStatusLabel(state.nativeStatus)}</small>}
       {reason && <small role="status">{reason}</small>}
       {message && <small role={message.includes("неизвест") || message.includes("не подтвержд") ? "alert" : "status"}>{message}</small>}
-      {intent && <small role="alert">{intent.status === "accepted" ? "Настройка очереди принята; начало обработки не подтверждено. Повтор заблокирован до изменения native revision." : "Исход команды не подтверждён. Идентификатор сохранён; повтор заблокирован."}</small>}
+      {intent && <small role="alert">{intent.status === "accepted" ? "Команда принята. Запуск сообщения пока не подтверждён. Повтор заблокирован." : "Исход команды неизвестен. Повтор заблокирован."}</small>}
     </div>
     <div className="queue-processing-actions">
       <button type="button" className="quiet-button" disabled={loading || busy} onClick={() => void refresh()}>{loading ? "Читаю…" : "Обновить очередь"}</button>
-      {state?.autoDrain && <span className="queue-processing-enabled" role="status">Обработка включена</span>}
+      {state?.autoDrain && <span className="queue-processing-enabled" role="status">Автообработка очереди включена</span>}
       {ready && <button type="button" className="quiet-button" disabled={loading || busy || unresolved} title="Изменяет только эту сессию и сохраняется для следующих сообщений." onClick={() => void run()}>{busy ? "Применяю…" : "Возобновить обработку очереди"}</button>}
       {state && !ready && !state.autoDrain && !unresolved && !loading && <small>{state.reason || (state.pendingCount === 0 ? "Очередь пуста." : !state.loaded ? "Нативная сессия не загружена; возобновление недоступно." : !state.canResume ? "Нативный контрол очереди недоступен." : "Состояние очереди пока не позволяет действие.")}</small>}
     </div>
