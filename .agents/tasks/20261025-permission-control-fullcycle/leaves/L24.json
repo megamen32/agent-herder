@@ -1,0 +1,53 @@
+{
+  "label": "Выпустить единый проверенный main и принять реальный результат",
+  "status": "queued",
+  "description": "После main sync выполнить один финальный immutable build/deploy и провести разрешённые реальные consumer проверки полного согласованного объёма без дополнительных промежуточных release.",
+  "acceptance": "Exact main/source/install SHA совпадают; штатный build/acceptance зелёный; UI preview/composer/voice, permission mode/strip, OpenCode search, MiniMax delivery и разрешённая Notice card/ответ проверены на точных fixtures по исходным критериям. Четырёх-harness полный результат называется PASS только если все исходные обязательные критерии доказаны; UNKNOWN/unsupported остаются явно разделены.",
+  "affected_files": [],
+  "owner": "Lead / release executor",
+  "depends_on": [
+    "L23"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 60
+  },
+  "note": "До начала consumer checks нужен exact accepted joined main SHA. Не выполнять mode writes, provider canaries или owner notices вне конкретной оставшейся авторизации.",
+  "wait_reason": "Ждёт завершения inventory/reconciliation и main sync.",
+  "id": "L24",
+  "harness": "codex",
+  "updated_at": "2026-10-25T20:49:44+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-25T20:48:55+03:00",
+      "note": "Новый финальный release/consumer acceptance leaf; пока не начат.",
+      "changes": {
+        "label": "Выпустить единый проверенный main и принять реальный результат",
+        "status": "queued",
+        "description": "После main sync выполнить один финальный immutable build/deploy и провести разрешённые реальные consumer проверки полного согласованного объёма без дополнительных промежуточных release.",
+        "acceptance": "Exact main/source/install SHA совпадают; штатный build/acceptance зелёный; UI preview/composer/voice, permission mode/strip, OpenCode search, MiniMax delivery и разрешённая Notice card/ответ проверены на точных fixtures по исходным критериям. Четырёх-harness полный результат называется PASS только если все исходные обязательные критерии доказаны; UNKNOWN/unsupported остаются явно разделены.",
+        "affected_files": [],
+        "owner": "Lead / release executor",
+        "depends_on": [
+          "L23"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 60
+        },
+        "note": "До начала consumer checks нужен exact accepted joined main SHA. Не выполнять mode writes, provider canaries или owner notices вне конкретной оставшейся авторизации.",
+        "wait_reason": "Ждёт завершения inventory/reconciliation и main sync."
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T20:49:44+03:00",
+      "note": "Добавлено объяснение согласованной оценки выше обычного 15-минутного предела.",
+      "changes": {
+        "estimate_over_limit_reason": "Единая immutable установка и связанные реальные consumer проверки должны использовать один exact SHA; разделение создаёт промежуточные релизы и повторную путаницу identity."
+      },
+      "harness": "codex"
+    }
+  ],
+  "estimate_over_limit_reason": "Единая immutable установка и связанные реальные consumer проверки должны использовать один exact SHA; разделение создаёт промежуточные релизы и повторную путаницу identity."
+}

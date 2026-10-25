@@ -13,9 +13,9 @@
     "maximum": 30
   },
   "wait_reason": "",
-  "note": "Установленный immutable combined release 00fe2e3692d5dae7e3bd5e5f2cfda77d3c26c1ec принят: официальный build 14/14 и owner acceptance 21/21. Consumer evidence: OpenCode filtered native query вернул 10 реальных совпадений; текущий индекс частичный — 3189/3200, поэтому исходный полный поиск остаётся UNKNOWN. Финальный read-only browser inspector прошёл на ширине 287px; native session mode и scope показаны, реальные mode writes не выполнялись. Frontend pin подтверждён commit 0ceeccbcfd46b3a9d33d4d8f24f67e836ade8f46 и штатным timer без managed drift. HTTPS root отвечает SSO 302, authenticated public content не подтверждён. L19 закрыт только по заданным критериям; полный четырёх-harness цикл остаётся открытым.",
+  "note": "Immutable release 8936debbe39935770ec3903ac460916269a954f9 установлен: official build 14/14, host acceptance 21/21. MiniMax consumer gate accepted без replay: durable full rev1, ровно одна native user/assistant пара с same-session/provider/model readback, затем unset rev2. Codex exact-session API mode fullAuto/session и два native перехода accepted; MiniMax native session mode явно unsupported. Read-only inspectors и mobile 287px browser visual regression accepted. OpenCode filtered query дал 10 реальных совпадений при partial coverage 3189/3200; исходный full query остаётся UNKNOWN. Frontend pin 8936 штатно применён: infra commit 76e83d031cc7b3178a785001c1d86a9af4b45d6b, timer readback совпадает, managed drift отсутствует. Public unauth HTTPS остаётся SSO 302; authenticated public content не подтверждён. Параллельный source-only commit 2ce5c18 про 8000-token preview ещё не установлен и не принят live. Notice topic binding готов в защищённой конфигурации, но runtime/card consumer proof pending; полный четырёх-harness цикл открыт.",
   "id": "L19",
-  "updated_at": "2026-10-25T18:32:35+03:00",
+  "updated_at": "2026-10-25T20:48:53+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T17:44:23+03:00",
@@ -52,8 +52,17 @@
         "wait_reason": "Source/review gate пройден: UI/API source 509f2b8 и search sources получили independent SHIP; MiniMax bridge correction 7643500 прошла independent SHIP. Теперь можно собрать только reviewed source join. Installed release a34 этих fixes не содержит, поэтому L19 остаётся queued до штатной install и consumer acceptance; dependency на полное live завершение L03/L06/L18 не ставится, чтобы не создать цикл.",
         "note": "Source inputs прошли independent review: UI/API 509f2b8; MiniMax durable 5f3d3a9 с исправлением 7643500; search 3380e8a/896a38be. Текущий installed release a34 не содержит эти изменения. Source join ready; install/browser/consumer canaries ещё не выполнялись."
       }
+    },
+    {
+      "at": "2026-10-25T20:48:53+03:00",
+      "note": "Факты установлены и приняты только по исходной acceptance L19; отдельные preview/composer/notification/aggregate checks остаются открыты.",
+      "changes": {
+        "note": "Immutable release 8936debbe39935770ec3903ac460916269a954f9 установлен: official build 14/14, host acceptance 21/21. MiniMax consumer gate accepted без replay: durable full rev1, ровно одна native user/assistant пара с same-session/provider/model readback, затем unset rev2. Codex exact-session API mode fullAuto/session и два native перехода accepted; MiniMax native session mode явно unsupported. Read-only inspectors и mobile 287px browser visual regression accepted. OpenCode filtered query дал 10 реальных совпадений при partial coverage 3189/3200; исходный full query остаётся UNKNOWN. Frontend pin 8936 штатно применён: infra commit 76e83d031cc7b3178a785001c1d86a9af4b45d6b, timer readback совпадает, managed drift отсутствует. Public unauth HTTPS остаётся SSO 302; authenticated public content не подтверждён. Параллельный source-only commit 2ce5c18 про 8000-token preview ещё не установлен и не принят live. Notice topic binding готов в защищённой конфигурации, но runtime/card consumer proof pending; полный четырёх-harness цикл открыт."
+      },
+      "harness": "codex"
     }
   ],
   "estimate_over_limit_reason": "Leaf объединяет одну транзакцию установки и несколько точных потребительских readback; разделение размыло бы source/install/consumer identity и не уменьшило согласованную оценку 15–30 минут.",
-  "finished_at": "18:32"
+  "finished_at": "18:32",
+  "harness": "codex"
 }

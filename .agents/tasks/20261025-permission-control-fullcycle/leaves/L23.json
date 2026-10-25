@@ -1,0 +1,53 @@
+{
+  "label": "Сверить WIP и синхронизировать проверенные изменения в main",
+  "status": "queued",
+  "description": "Инвентаризировать существующие Agent Herder worktrees, ветки и незакоммиченный WIP; сопоставить дубли/зависимости и перенести только необходимые проверенные изменения в main без потери функций и без удаления чужого состояния.",
+  "acceptance": "Есть inventory точных источников и владельцев; каждый уникальный нужный behavior представлен на main и покрыт подходящей проверкой; overlaps reconciled, чужой WIP сохранён или явно согласован; main fast-forward/sync подтверждён exact remote SHA и committed path list. Не force-rebase/reset чужих изменений.",
+  "affected_files": [],
+  "owner": "Lead",
+  "depends_on": [
+    "L22"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 60
+  },
+  "note": "Новые worktrees не создаются. Сверка должна сохранить самостоятельные preview/composer/permission/search/Notice функции существующих WIP.",
+  "wait_reason": "Ждёт независимого review joined source diff.",
+  "id": "L23",
+  "harness": "codex",
+  "updated_at": "2026-10-25T20:49:44+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-25T20:48:55+03:00",
+      "note": "Добавлен по прямому поручению о полном сохранении и объединении существующих WIP.",
+      "changes": {
+        "label": "Сверить WIP и синхронизировать проверенные изменения в main",
+        "status": "queued",
+        "description": "Инвентаризировать существующие Agent Herder worktrees, ветки и незакоммиченный WIP; сопоставить дубли/зависимости и перенести только необходимые проверенные изменения в main без потери функций и без удаления чужого состояния.",
+        "acceptance": "Есть inventory точных источников и владельцев; каждый уникальный нужный behavior представлен на main и покрыт подходящей проверкой; overlaps reconciled, чужой WIP сохранён или явно согласован; main fast-forward/sync подтверждён exact remote SHA и committed path list. Не force-rebase/reset чужих изменений.",
+        "affected_files": [],
+        "owner": "Lead",
+        "depends_on": [
+          "L22"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 60
+        },
+        "note": "Новые worktrees не создаются. Сверка должна сохранить самостоятельные preview/composer/permission/search/Notice функции существующих WIP.",
+        "wait_reason": "Ждёт независимого review joined source diff."
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T20:49:44+03:00",
+      "note": "Добавлено объяснение согласованной оценки выше обычного 15-минутного предела.",
+      "changes": {
+        "estimate_over_limit_reason": "Инвентаризация существующих WIP и main sync образуют один сохраняющий функции handoff; частичное перенесение до сверки остальных источников может скрыть или потерять уникальное поведение."
+      },
+      "harness": "codex"
+    }
+  ],
+  "estimate_over_limit_reason": "Инвентаризация существующих WIP и main sync образуют один сохраняющий функции handoff; частичное перенесение до сверки остальных источников может скрыть или потерять уникальное поведение."
+}

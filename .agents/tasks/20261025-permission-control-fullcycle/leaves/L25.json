@@ -1,0 +1,19 @@
+{
+  "id": "L25",
+  "label": "Свести доставку человека и агента к единому delivery core",
+  "status": "running",
+  "description": "Объединить пути отправки человека, агента и сайта вокруг одного durable delivery core с точными target/host/session/input/job метаданными и единой admission/readback семантикой.",
+  "acceptance": "Все входные поверхности проходят общий durable job и сохраняют точную native identity и receipt; accepted/UNKNOWN не повторяются. Отдельные source review и реальные пути подтверждают, что idle wake и завершённая ZCode очередь не получают ложный ok:true без фактического native результата.",
+  "affected_files": [
+    "src/user-message-delivery.ts",
+    "src/mesh/",
+    "src/mcp/",
+    "src/web/server.ts",
+    "src/adapters/"
+  ],
+  "owner": "permission_reply_bridge",
+  "depends_on": [],
+  "estimate_unknown_reason": "Исправление двух наблюдавшихся consumer дефектов и объединение уже существующих WIP; оставшийся объём зависит от native adapter результата и обязательной повторной приёмки.",
+  "note": "Критическая работа в процессе. Отдельный MiniMax human→desktop canary ранее accepted, но не доказывает agent→agent wake. Сейчас зафиксированы MiniMax inter-agent ok:true без пробуждения idle target и завершённая/idle ZCode web session с застрявшей очередью и неработающим resume. Эти consumer пути исправляются bridge/native; новых PASS нет.",
+  "wait_reason": "Нужны проверенные bridge/native source изменения и exact consumer readback для обоих observed defects."
+}

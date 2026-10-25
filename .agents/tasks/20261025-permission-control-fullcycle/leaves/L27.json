@@ -1,0 +1,23 @@
+{
+  "id": "L27",
+  "label": "Возвращать новый ответ доставки через inline результат и fetch",
+  "status": "running",
+  "description": "После уже принятой отправки сравнивать только новый видимый assistant text с приватным baseline; вернуть inline ответ в пределах 30 секунд, иначе тот же durable jobRef для последующего fetch и точечного MCP resource update.",
+  "acceptance": "Baseline exact target/job/input сохраняется до native write в том же durable job. Возвращаются только новые нормализованные видимые части; correlation называется reply_to только при exact turn ID, иначе observed_after_delivery. 30s ограничивает только наблюдение, не native admission; fetch/continuation никогда не отправляют повторно. Long continuation закреплён durable per-job receipt; subscribe уведомляет только exact bound resource URI через реально поддержанный transport, fetch остаётся обязательным.",
+  "affected_files": [
+    "src/session-delivery-response.ts",
+    "src/mcp/delivery-response-resources.ts",
+    "src/user-message-delivery.ts",
+    "src/herder-jobs.ts",
+    "src/mcp/session-tools.ts",
+    "tests/session-delivery-response.test.ts",
+    "tests/session-delivery-response-resources.test.ts"
+  ],
+  "owner": "permission_mode_ui",
+  "depends_on": [
+    "L25"
+  ],
+  "estimate_unknown_reason": "Helper и transport contract проверены изолированно; до оценки остаётся shared-job wiring, authorization/readback join и consumer path.",
+  "note": "Source helper commit 522464d + follow-up 53d4ce7; focused helper/resource SDK2 tests 17/17 и tsc GREEN. Coverage/order ambiguity fails closed, reads receive a deadline AbortSignal, and continuation requires a per-job target/input/URI/SHA/length receipt. MCP v2 legacy resources/subscribe is not served; the tested supported path is 2026-07-28 Client.listen/resourceSubscriptions through official serveStdio. Bridge still owns same-job persistence, authorized resource reader, event wiring and response result delivery; no integrated consumer claim yet.",
+  "wait_reason": "Waits for the existing durable delivery job hooks/receipt fields and same principal/target authorization in the bridge."
+}

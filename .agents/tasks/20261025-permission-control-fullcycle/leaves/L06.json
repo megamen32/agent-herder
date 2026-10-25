@@ -20,7 +20,7 @@
     "minimum": 20,
     "maximum": 30
   },
-  "updated_at": "2026-10-25T18:32:35+03:00",
+  "updated_at": "2026-10-25T22:03:20+03:00",
   "estimate_over_limit_reason": "Согласованное отображение одного состояния в UI и MCP; оценка включает браузерное действие/readback.",
   "wait_reason": "Нужны режимы и карточка ответа. Интегратор отдельно владеет compact Allow UI и queue edit; его исходники не подменяются.",
   "progress_events": [
@@ -53,7 +53,24 @@
         "status": "running",
         "note": "Source UI/API commit 509f2b8 получил independent SHIP; focused UI/permission tests 44/44 и tsc GREEN, UI↔MCP source join также reviewed SHIP. Текущий installed a34 этого source не содержит. Browser inspector acceptance и реальная смена режима ещё не выполнялись; производственный mode write не делался. Codex/MiniMax session mode показывается как unsupported."
       }
+    },
+    {
+      "at": "2026-10-25T20:48:52+03:00",
+      "note": "Inspector consumer подтверждён; notification/card связь остаётся pending runtime.",
+      "changes": {
+        "note": "Read-only inspectors на installed 8936 приняты: Codex показывает fullAuto/session/canSetMode, MiniMax — native unsupported плюс отдельную Herder CLI policy. Mode/policy controls не нажимались. Исходная acceptance также требует связать реальную permission card с той же сессией; L05 topic binding подготовлен в защищённой конфигурации, но runtime/card consumer proof pending. Leaf остаётся running."
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T22:03:20+03:00",
+      "note": "Factual source/runtime/consumer boundary update; prior acceptance unchanged.",
+      "changes": {
+        "note": "Read-only inspector на installed 8936 принят: Codex fullAuto/session/canSetMode и MiniMax native unsupported с отдельной Herder CLI policy. Mode/policy controls не нажимали. Исторически подтверждены existing compact one-time Allow и queue edit/cancel/collapse с сохранением inputId/jobId; это не доказывает новый queue-resume API. Реальная Notice card и точный native permission response остаются pending."
+      },
+      "harness": "codex"
     }
   ],
-  "note": "Установленный release 00fe2e3692d5dae7e3bd5e5f2cfda77d3c26c1ec проверен в read-only inspector: ZCode показывает фактический native YOLO/session scope и selector, Codex и MiniMax честно отмечены как неподдерживающие смену режима. Визуальная проверка на 287px прошла. Реальную смену native mode и точный native readback после записи не выполняли; исходная acceptance листа включает этот сценарий, поэтому leaf остаётся running."
+  "note": "Read-only inspector на installed 8936 принят: Codex fullAuto/session/canSetMode и MiniMax native unsupported с отдельной Herder CLI policy. Mode/policy controls не нажимали. Исторически подтверждены existing compact one-time Allow и queue edit/cancel/collapse с сохранением inputId/jobId; это не доказывает новый queue-resume API. Реальная Notice card и точный native permission response остаются pending.",
+  "harness": "codex"
 }

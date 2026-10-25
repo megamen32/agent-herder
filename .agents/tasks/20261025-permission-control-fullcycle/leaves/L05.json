@@ -1,7 +1,7 @@
 {
   "id": "L05",
   "label": "Доставлять карточку с контекстом через Notice Place",
-  "status": "queued",
+  "status": "running",
   "description": "Использовать существующий API Notice Place и его маршрут UserIO: точная ссылка на сессию, текущая команда, предыдущее сообщение агента и последнее сообщение человека; удалять секреты. Ответ связан с host/session/request и сохраняет однократность.",
   "acceptance": "Одна карточка на native request, подтверждённая доставка и возврат ответа; однократное разрешение и отказ; секреты не уходят в карточку; недоступный контекст помечается явно, а не выдумывается.",
   "affected_files": [
@@ -18,9 +18,9 @@
     "minimum": 25,
     "maximum": 40
   },
-  "updated_at": "2026-10-25T17:44:22+03:00",
+  "updated_at": "2026-10-25T22:03:19+03:00",
   "estimate_over_limit_reason": "Один полный путь карточка/контекст/ответ/дедупликация; отдельные неполные части не проверяют возврат ответа.",
-  "wait_reason": "Нужны готовые reply contract L02 и native adapters L04.",
+  "wait_reason": "После общего source join и установки проверить runtime binding, одну точную project-topic карточку и возврат ответа; до этого не считать consumer приёмку.",
   "progress_events": [
     {
       "at": "2026-10-25T14:37:48+03:00",
@@ -50,7 +50,30 @@
       "changes": {
         "note": "Автоматический trigger permission.requested для Notice Place не подключён, реальный Notice consumer proof отсутствует. Leaf остаётся queued; не считать отдельные ответы разрешений доказательством карточки или delivery."
       }
+    },
+    {
+      "at": "2026-10-25T20:48:52+03:00",
+      "note": "Уточнение владельца сняло ошибочный direct-DM blocker; exact topic binding подготовлен, runtime/card proof pending.",
+      "changes": {
+        "status": "running",
+        "wait_reason": "После общего source join и установки проверить runtime binding, одну точную project-topic карточку и возврат ответа; до этого не считать consumer приёмку.",
+        "note": "Владелец подтвердил, что существующая группа с темами — нужный маршрут; прямой DM не требуется. Точный topic binding исправлен только в защищённой Herder конфигурации. Runtime config ещё не установлен, карточка и permission turn ещё не проверены и не создавались. Исходные критерии карточки, контекста, ответа и однократности сохранены.",
+        "blocker": "",
+        "blocker_details": {}
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T22:03:19+03:00",
+      "note": "Factual source/runtime/consumer boundary update; prior acceptance unchanged.",
+      "changes": {
+        "note": "Владелец подтвердил существующую project group с темами как намеренный маршрут; ошибочный direct-DM blocker снят. Exact topic binding подготовлен в защищённой конфигурации. Runtime применения, одной permission card и точного native ответа ещё нет; исходные требования контекста, доставки и однократности сохранены."
+      },
+      "harness": "codex"
     }
   ],
-  "note": "Автоматическое подключение Notice Place отсутствует: typed creator с dedup уже есть, но raw permission event не имеет durable journal, а ZCode permission.requested не несёт permissionId. Без durable exact request identity auto card должна fail closed. Реальный Notice consumer proof отсутствует; leaf остаётся queued."
+  "note": "Владелец подтвердил существующую project group с темами как намеренный маршрут; ошибочный direct-DM blocker снят. Exact topic binding подготовлен в защищённой конфигурации. Runtime применения, одной permission card и точного native ответа ещё нет; исходные требования контекста, доставки и однократности сохранены.",
+  "blocker": "",
+  "blocker_details": {},
+  "harness": "codex"
 }

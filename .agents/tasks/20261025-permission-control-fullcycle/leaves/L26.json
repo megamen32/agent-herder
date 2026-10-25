@@ -1,0 +1,22 @@
+{
+  "id": "L26",
+  "label": "Восстановить обработку очереди в загруженной ZCode-сессии",
+  "status": "running",
+  "description": "Показать отдельное явное управление native queue processing в той же выбранной ZCode-сессии; сохранять scope сессии и persistent autoDrain, отделить это от обычной отправки сообщения.",
+  "acceptance": "Свежий native state содержит session scope, revision, autoDrain, pending count и loaded/canResume; пользовательское действие передаёт один stable inputId и expectedRevision. accepted/stale/unknown/unsupported/noop честно различаются, повтор при неизвестном результате отсутствует, Send не вызывает resume. Незапущенные native runtime возможности явно unsupported.",
+  "affected_files": [
+    "src/adapters/zcode.ts",
+    "src/session-supervisor.ts",
+    "src/web-ui/main.tsx",
+    "src/web-ui/fleet/RemoteSessionView.tsx",
+    "src/web/server.ts",
+    "src/mcp/"
+  ],
+  "owner": "permission_native",
+  "depends_on": [
+    "L25"
+  ],
+  "estimate_unknown_reason": "Native API для загруженной сессии подтверждён на уровне дизайна; состояние unloaded runtime и завершённая consumer приёмка пока неизвестны.",
+  "note": "Native/bridge согласовали отдельные getQueueProcessingState/resumeQueueProcessing contracts с CAS revision, stable inputId и explicit outcomes. Native implementation, bridge route, общий UI и real same-session readback ещё не завершены. Не путать восстановление обработки уже существующих queued inputs с новой отправкой.",
+  "wait_reason": "Зависит от общего admission/delivery core; unloaded native API остаётся отдельным capability blocker."
+}

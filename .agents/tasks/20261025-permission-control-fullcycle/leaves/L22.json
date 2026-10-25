@@ -1,0 +1,55 @@
+{
+  "label": "Независимо проверить объединённые изменения",
+  "status": "queued",
+  "description": "Независимо проверить конкретный joined source diff после bounded implementation, включая безопасность, совместимость, отсутствие replay и соответствие исходным acceptance.",
+  "acceptance": "Независимый reviewer изучил exact joined commit and changed paths; все findings исправлены или явно отложены владельцем; final SHIP с точным source SHA получен до main sync/release.",
+  "affected_files": [],
+  "owner": "Lead / independent reviewer",
+  "depends_on": [
+    "L20",
+    "L21"
+  ],
+  "estimate_minutes": {
+    "minimum": 15,
+    "maximum": 30
+  },
+  "note": "Review не назначен до готовности concrete joined diff. Никакой текущий source-review статус не предполагается.",
+  "wait_reason": "Ждёт завершения source leaves L20 и L21.",
+  "id": "L22",
+  "harness": "codex",
+  "updated_at": "2026-10-25T20:49:43+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-25T20:48:54+03:00",
+      "note": "Новый обязательный независимый review leaf перед синхронизацией/release.",
+      "changes": {
+        "label": "Независимо проверить объединённые изменения",
+        "status": "queued",
+        "description": "Независимо проверить конкретный joined source diff после bounded implementation, включая безопасность, совместимость, отсутствие replay и соответствие исходным acceptance.",
+        "acceptance": "Независимый reviewer изучил exact joined commit and changed paths; все findings исправлены или явно отложены владельцем; final SHIP с точным source SHA получен до main sync/release.",
+        "affected_files": [],
+        "owner": "Lead / independent reviewer",
+        "depends_on": [
+          "L20",
+          "L21"
+        ],
+        "estimate_minutes": {
+          "minimum": 15,
+          "maximum": 30
+        },
+        "note": "Review не назначен до готовности concrete joined diff. Никакой текущий source-review статус не предполагается.",
+        "wait_reason": "Ждёт завершения source leaves L20 и L21."
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T20:49:43+03:00",
+      "note": "Добавлено объяснение согласованной оценки выше обычного 15-минутного предела.",
+      "changes": {
+        "estimate_over_limit_reason": "Независимый reviewer проверяет один конкретный joined source diff и возвращает единый SHIP/HOLD перед sync; дробление на файловые обзоры не подтверждает межфайловые границы."
+      },
+      "harness": "codex"
+    }
+  ],
+  "estimate_over_limit_reason": "Независимый reviewer проверяет один конкретный joined source diff и возвращает единый SHIP/HOLD перед sync; дробление на файловые обзоры не подтверждает межфайловые границы."
+}
