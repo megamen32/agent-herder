@@ -38,6 +38,15 @@ describe('owner direct route local logic only',()=>{
   await new FleetDirectTransport([peer]).readSession('mcp:shell:roomhacker-server-88:AgentHerder','minimax-code','mvs_existing');
   expect(state.spawns[0].body).toMatchObject({method:'session/read',params:{harness:'minimax-code',sessionId:'mvs_existing'}});
  });
+ it('allows only the exact owner queue controls and owner job read on the existing peer route',async()=>{
+  const t=new FleetDirectTransport([peer]);const target='mcp:shell:roomhacker-server-88:AgentHerder';
+  await t.call(target,'session_queue_processing_get',{hostId:'roomhacker-server-88',harness:'zcode',sessionId:'z-session'});
+  await t.call(target,'session_queue_processing_resume',{hostId:'roomhacker-server-88',harness:'zcode',sessionId:'z-session',inputId:'resume-once',expectedRevision:7});
+  await t.call(target,'job_get',{jobId:'job_exact'});
+  expect(state.spawns.map(call=>call.body.params?.name)).toEqual(['session_queue_processing_get','session_queue_processing_resume','job_get']);
+  await expect(t.call(target,'session_queue_processing_force',{})).rejects.toThrow('direct_tool_not_authorized');
+  expect(state.spawns).toHaveLength(3);
+ });
  // Focused integration expected1s/max3s: roaming Mac must use the authenticated canonical reverse route, never its LAN IP.
  it.each(['roomhacker-server-100','server-44'])('routes Mac through the existing server100 reverse SSH from %s',async(host)=>{
   state.host=host;await new FleetDirectTransport([macPeer]).call('mcp:shell:MacBook-Pro-User.local:AgentHerder','fleet_node_info',{});

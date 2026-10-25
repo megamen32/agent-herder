@@ -118,6 +118,7 @@ import { agentHerderRag } from "../rag-search.js";
 import {startSessionSearchBackground} from '../session-search-worker.js';
 import { handleIntegratorSessionTranscript } from "../integrator-session-route.js";
 import { COMPOSER_TRANSCRIPTION_PATH, ComposerTranscriptionError, readComposerAudioUpload, transcribeComposerAudio, type ComposerTranscriber } from "./composer-transcription.js";
+import type {SessionQueueControlGateway} from "../session-queue-control-gateway.js";
 
 /** How many skipped sessions of one recovery are named in the operator's log. */
 const MAX_LOGGED_SKIP_REASONS = 50;
@@ -164,6 +165,8 @@ export interface WebDependencies {
   jobs?: HerderJobRegistry;
   /** Reuse the process-owned canonical delivery core across HTTP and MCP ingress. */
   userMessageDelivery?: UserMessageDelivery;
+  /** Reuse the same native-owner queue control as MCP. */
+  sessionQueueControl?: SessionQueueControlGateway;
   /** Reuse the process-owned supervisor when the daemon starts observation before HTTP. */
   supervisor?: SessionSupervisor;
   /** Resolve exact H34-bound native addresses before owner-HTTP session access. */
@@ -1080,7 +1083,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
       // checks the owner of the request itself.
       if (await settingsApi(request, response)) return;
       if (await rag.handleHttp(request, response, async (harness, id) => (await dependencies.adapters.get(harness)?.getSession(id)) || undefined)) return;
-      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport, dependencies.noticeAnswerFetch, dependencies.composerTranscriber);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport, dependencies.noticeAnswerFetch, dependencies.composerTranscriber, dependencies.sessionQueueControl);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -1526,7 +1529,7 @@ export async function computeModelLaunchVerdicts(input: {
   return Object.fromEntries(entries);
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch, composerTranscriber?: ComposerTranscriber): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch, composerTranscriber?: ComposerTranscriber, sessionQueueControl?: SessionQueueControlGateway): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   const resolveSessionRoute = async (harness: string, sessionId: string) => await resolveSessionRouteFor(integratorRuntime, adapters, scopedSupervisorFactory, harness, sessionId);
   if (url.pathname === COMPOSER_TRANSCRIPTION_PATH && request.method === "POST") {
@@ -1581,6 +1584,24 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       if (error instanceof MinimaxExecPolicyConflict) return sendJson(response, 409, { state: "not_attempted", error: error.message });
       return sendJson(response, 503, { state: "not_attempted", error: "Could not save the Herder execution policy." });
     }
+  }
+  const queueProcessingMatch=url.pathname.match(/^\/api\/sessions\/zcode\/([^/]+)\/queue-processing$/);
+  if(queueProcessingMatch&&(request.method==="GET"||request.method==="POST")){
+    response.setHeader("cache-control","no-store");
+    if(!sessionQueueControl)return sendJson(response,503,{available:false,error:"Native queue control is unavailable."});
+    const sessionId=decodeURIComponent(queueProcessingMatch[1]!);
+    if(request.method==="GET"){
+      const hostId=url.searchParams.get("hostId")?.trim();
+      if(!hostId||hostId.length>512)return sendJson(response,400,{available:false,error:"Exact hostId is required."});
+      const result=await sessionQueueControl.read({hostId,harness:"zcode",sessionId});
+      return sendJson(response,"available" in result?503:200,result);
+    }
+    const body=await readJson(request);
+    if(typeof body.hostId!=="string"||!body.hostId.trim()||body.hostId.length>512||typeof body.inputId!=="string"||!body.inputId.trim()||body.inputId.length>512||typeof body.expectedRevision!=="number"||!Number.isSafeInteger(body.expectedRevision)||body.expectedRevision<0){
+      return sendJson(response,400,{state:"not_attempted",nonRetryable:true,error:"Exact hostId, inputId and expectedRevision are required."});
+    }
+    const result=await sessionQueueControl.submit({hostId:body.hostId,harness:"zcode",sessionId,inputId:body.inputId,expectedRevision:body.expectedRevision});
+    return sendJson(response,result.state==="queued"?202:200,result);
   }
   const permissionStateMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/permissions$/);
   if (permissionStateMatch && request.method === "GET") {
@@ -3027,8 +3048,19 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   }
   const jobMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)$/);
   if (jobMatch && request.method === "GET") {
+    const jobId=decodeURIComponent(jobMatch[1]!);
+    const hostId=url.searchParams.get("hostId")?.trim();
+    if(hostId&&sessionQueueControl){
+      const harness=url.searchParams.get("harness")?.trim();
+      const sessionId=url.searchParams.get("sessionId")?.trim();
+      const inputId=url.searchParams.get("inputId")?.trim();
+      if(harness!=="zcode"||!sessionId||!inputId)return sendJson(response,400,{error:"Remote queue job reads require exact host, harness, session and inputId."});
+      const result=await sessionQueueControl.job({hostId,harness,sessionId},inputId,jobId);
+      if("available" in result)return sendJson(response,503,result);
+      return result.job?sendJson(response,200,result):sendJson(response,404,{error:"Job not found"});
+    }
     if (!jobs) return sendJson(response, 503, { error: "Job registry is disabled" });
-    const job = jobs.get(decodeURIComponent(jobMatch[1]));
+    const job = jobs.get(jobId);
     return job ? sendJson(response, 200, { job }) : sendJson(response, 404, { error: "Job not found" });
   }
   const jobCancelMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/cancel$/);

@@ -25,6 +25,7 @@ import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopil
 import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "./autopilot/session-store.js";
 import { AutomationLaunchPolicyStore } from "./automation-launch-policy.js";
+import { AutomationDisarmStore, automationDisarmDecisionWithWork, sessionWorkKey } from "./automation-disarm/index.js";
 import { IntegratorSessionBindingStore } from "./integrator-session-binding.js";
 import { IntegratorFleetRuntime } from "./integrator-fleet-runtime.js";
 import { dispatchProjectLaunch, namedSessionRunner, ProjectLaunchAttemptLog, type ProjectLaunchDispatcher } from "./automation/project-launch-dispatch.js";
@@ -72,7 +73,10 @@ import { registerHumanRequestTools } from "./mcp/human-request-tools.js";
 import { createPermissionNoticeObserver } from "./permission-control/notice-bridge.js";
 import { registerCdpTools } from "./mcp/cdp-tools.js";
 import { registerSessionTools } from "./mcp/session-tools.js";
+import {withCatalogProjection} from "./mcp/catalog-projection.js";
 import { UserMessageDelivery } from "./user-message-delivery.js";
+import {SessionQueueControl} from "./session-queue-control.js";
+import {SessionQueueControlGateway} from "./session-queue-control-gateway.js";
 import { registerResourceOwnershipTools } from "./mcp/resource-ownership-tools.js";
 import { registerHarnessMeshTools } from "./mesh/register-tools.js";
 import { trustedMeshIngressFromMcpAuthInfo } from "./mesh/authenticated-ingress.js";
@@ -637,6 +641,7 @@ function registerTools(
   cadence?: CadenceScheduler,
   userMessageDelivery?: UserMessageDelivery,
   trustedMeshIngress?: ReturnType<typeof trustedMeshIngressFromMcpAuthInfo>,
+  sessionQueueControl?: SessionQueueControlGateway,
 ) {
   registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
   registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: autopilotSessionCommand } });
@@ -651,7 +656,7 @@ function registerTools(
     adapters,
   });
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
-  registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate, userMessageDelivery });
+  registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate, userMessageDelivery, sessionQueueControl });
   registerRagTools(server, adapters);
   registerResourceOwnershipTools(server);
   const workspaceTransport = new FleetDirectTransport(fleetPeers().filter(peer => peer.hostId !== "MacBook-Pro-User.local"));
@@ -737,6 +742,8 @@ export interface AgentHerderMcpServerOptions {
   humanResumeQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   /** Authenticated owner MCP request context, bound before tools are registered. */
   trustedMeshIngress?: ReturnType<typeof trustedMeshIngressFromMcpAuthInfo>;
+  /** Shared local/remote native-owner queue control for HTTP and MCP ingress. */
+  sessionQueueControl?: SessionQueueControlGateway;
 }
 
 /** Build one Agent Herder MCP server over process-owned CDP archive state. */
@@ -765,7 +772,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     server.server.onclose = () => { unsubscribe(); };
   }
 
-  registerTools(
+  withCatalogProjection(server, () => registerTools(
     server,
     cdpChatDriver ? new CdpChatClient(cdpChatDriver, { mediaRoot: process.env.CDP_CHAT_MEDIA_ROOT }) : undefined,
     cdpChatDriver?.capabilities ?? (cdpChatDriver ? ALL_CDP_CHAT_CAPABILITIES : undefined),
@@ -783,7 +790,8 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     options.cadence,
     options.userMessageDelivery,
     options.trustedMeshIngress,
-  );
+    options.sessionQueueControl,
+  ));
   return server;
 }
 
@@ -943,6 +951,28 @@ async function main() {
     permissionNoticeObserver,
   });
   const userMessageDelivery = new UserMessageDelivery(adapters,processSupervisor,herderJobs);
+  const localSessionQueueControl=new SessionQueueControl({jobs:herderJobs,humanStops:humanStopStore,
+    readTarget:async target=>{
+      if(target.hostId.toLowerCase()!==hostname().toLowerCase()||target.harness!=="zcode")return null;
+      const adapter=adapters.get("zcode");
+      if(!adapter?.getSession)return null;
+      let session;
+      try{session=await adapter.getSession(target.sessionId);}catch{return null;}
+      if(!session||session.id!==target.sessionId||session.harness!==target.harness||session.hostId!==target.hostId)return null;
+      let holds:readonly string[]|null=null;
+      if(typeof session.cwd==="string"&&session.cwd.startsWith("/")&&typeof session.title==="string"&&session.title.trim()){
+        try{
+          const decision=await automationDisarmDecisionWithWork(AutomationDisarmStore.forRuntime(),async()=>[sessionWorkKey(session!.harness,session!.title,session!.cwd)],"automation");
+          holds=decision.allowed?[]:[decision.reason??"Автоматическое продолжение запрещено политикой владельца."];
+        }catch{holds=null;}
+      }
+      const state=await processSupervisor.getQueueProcessingState("zcode",target.sessionId).catch(()=>null);
+      return {session:{id:session.id,harness:session.harness,hostId:session.hostId,status:session.status,needsPermission:session.needsPermission},state,holds};
+    },
+    resume:(target,options)=>processSupervisor.resumeQueueProcessing("zcode",target.sessionId,options),
+  });
+  const sessionQueueControl=new SessionQueueControlGateway({ownerHostId:hostname(),local:localSessionQueueControl,jobs:herderJobs,
+    transport:new FleetDirectTransport(fleetPeers()),peers:fleetPeers().map(peer=>({hostId:peer.hostId,target:`mcp:shell:${peer.hostId}:AgentHerder`}))});
   const scopedSupervisorFactory = (sessionAdapters: Map<string, HarnessAdapter>) => new SessionSupervisor(sessionAdapters, processSessionConverter, lineageStore, {
     humanStopStore, events: herderEvents, unfinishedSessions: unfinishedSessionLauncher,
     autoCompact: autoCompactService, admissionGate: recoveryAdmissionGate,
@@ -1032,9 +1062,10 @@ async function main() {
   const createHttpMcpServer = (context?: { authInfo?: unknown }) => createAgentHerderMcpServer(cdpChatDriver, {
     cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery,
     inventorySupervisor: processSupervisor, userMessageDelivery, resumeAfter: resumeAfterRuntime.service, cadence,
+    sessionQueueControl,
     trustedMeshIngress: trustedMeshIngressFromMcpAuthInfo(context?.authInfo),
   });
-  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor, userMessageDelivery, resumeAfter: resumeAfterRuntime.service, cadence });
+  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor, userMessageDelivery, resumeAfter: resumeAfterRuntime.service, cadence, sessionQueueControl });
   let shuttingDown = false;
   const shutdown = () => {
     if (shuttingDown) return; shuttingDown = true;
@@ -1074,6 +1105,7 @@ async function main() {
       herderEvents,
       jobs: herderJobs,
       userMessageDelivery,
+      sessionQueueControl,
       supervisor: processSupervisor,
       integratorRuntime: integratorFleetRuntime,
       scopedSupervisorFactory,

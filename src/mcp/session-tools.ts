@@ -51,6 +51,7 @@ import { composeSessionTitle, mergeSessionLabel, writeSessionLabel } from "../se
 import { assertModelAllowedForDirectory, assertModelAllowedForDirectoryWithPolicy, policyRestrictsModels, type ProjectModelPolicyProvider } from "../project-model-gate.js";
 import { checkDeliveryModel, resolveSessionWorkDirectory, type ProjectModelPolicyStateProvider } from "../project-model-delivery-gate.js";
 import { applySessionTarget } from "../session-target.js";
+import type {SessionQueueControlGateway} from "../session-queue-control-gateway.js";
 
 const harnessSchema = z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]);
 
@@ -92,6 +93,8 @@ export function registerSessionTools(server: McpServer, deps: {
   deliveryPolicy?: ProjectModelPolicyStateProvider;
   /** Shared durable queue for public human delivery into native sessions. */
   userMessageDelivery?: UserMessageDelivery;
+  /** Owner-routed explicit ZCode queue processing, backed by its native owner's durable job registry. */
+  sessionQueueControl?: SessionQueueControlGateway;
 }): void {
   const { adapters, jobs, events } = deps;
   const userMessageDelivery = deps.userMessageDelivery ?? new UserMessageDelivery(adapters, {
@@ -650,5 +653,29 @@ export function registerSessionTools(server: McpServer, deps: {
   server.registerTool("list_models", { description: "List available AI models for each harness.", inputSchema: z.object({ harness: harnessSchema.optional() }), outputSchema: z.object({ harnesses: z.array(z.object({ harness: z.string(), name: z.string(), models: z.array(z.string()), defaultModel: z.string().optional() })) }) }, async (args) => {
     const harnesses = await listModelsResult(adapters, args);
     return { content: [{ type: "text" as const, text: formatListModelsResult(harnesses) }], structuredContent: { harnesses } };
+  });
+
+  const queueTargetSchema=z.object({hostId:z.string().trim().min(1).max(512),harness:z.literal("zcode"),sessionId:z.string().trim().min(1).max(512)});
+  const queueStateSchema=z.object({autoDrain:z.boolean(),baseRevision:z.number().int().nonnegative(),pendingCount:z.number().int().nonnegative(),oldestQueueItemId:z.string().nullable(),nativeState:z.string(),loaded:z.literal(true),capability:z.literal("setAutoDrain")}).nullable();
+  const queueViewSchema=z.object({target:queueTargetSchema,state:queueStateSchema,canResume:z.boolean(),humanStopHeld:z.boolean(),error:z.string().optional()});
+  const queueUnavailableSchema=z.object({available:z.literal(false),target:queueTargetSchema,error:z.string()});
+  server.registerTool("session_queue_processing_get",{
+    description:"Read the exact native ZCode queue state on its owner. This read does not resume, load, or send a message.",
+    inputSchema:queueTargetSchema,
+    outputSchema:z.union([queueViewSchema,queueUnavailableSchema]),
+  },async(args)=>{
+    const value=deps.sessionQueueControl?await deps.sessionQueueControl.read(args):{available:false as const,target:args,error:"Native queue control is unavailable."};
+    return {content:[{type:"text" as const,text:JSON.stringify(value)}],structuredContent:value};
+  });
+  const queueSubmitSchema=z.object({hostId:z.string().trim().min(1).max(512),harness:z.literal("zcode"),sessionId:z.string().trim().min(1).max(512),inputId:z.string().trim().min(1).max(512),expectedRevision:z.number().int().nonnegative()});
+  const queueJobSchema=z.object({id:z.string(),state:z.string(),resultRef:z.string()});
+  const queueSubmitResultSchema=z.object({target:queueTargetSchema,inputId:z.string(),state:z.enum(["queued","unknown","not_attempted"]),nonRetryable:z.boolean(),job:queueJobSchema.optional(),error:z.string().optional()});
+  server.registerTool("session_queue_processing_resume",{
+    description:"Explicitly resume processing an already accepted native ZCode queue after exact owner, queue revision, HumanStop, permission, and automation-hold checks. Accepted means the native queue-processing preference was confirmed; it does not claim a queued input has started. Unknown is terminal and must not be retried.",
+    inputSchema:queueSubmitSchema,
+    outputSchema:queueSubmitResultSchema,
+  },async(args)=>{
+    const value=deps.sessionQueueControl?await deps.sessionQueueControl.submit(args):{target:{hostId:args.hostId,harness:args.harness,sessionId:args.sessionId},inputId:args.inputId,state:"not_attempted" as const,nonRetryable:true,error:"Native queue control is unavailable."};
+    return {content:[{type:"text" as const,text:JSON.stringify(value)}],structuredContent:value};
   });
 }
