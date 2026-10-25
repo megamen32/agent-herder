@@ -92,10 +92,18 @@ describe('session search reads a native database incrementally',()=>{
   const {root,path}=await fixture();
   const indexPath=join(root,'index.sqlite');
   const index=new SessionSearchIndex(indexPath);
+  const scan=async()=>{
+   const receipts:any[]=[];
+   await index.scan(scanSessionSearchSources({onStatus:status=>receipts.push(status)}),receipts);
+   return index.status().sources.find(source=>source.harness==='opencode');
+  };
   try{
    // First cycle: the index is empty, so every record is read once for the hash
    // and once for the chunks.
-   await index.scan(scanSessionSearchSources({}),[]);
+   const firstReceipt=await scan();
+   expect(firstReceipt).toMatchObject({indexedTextSessions:2,indexedChunks:80,processedTextSessions:2,processedChunks:80});
+   const firstSearch=index.search({query:'alpha-needle-7',harnesses:['opencode']}).results[0];
+   expect(firstSearch).toMatchObject({nativeSessionId:'ses-alpha',chunkId:'prt-alpha-7'});
    const firstContent=contentRows(path);
    expect(firstContent).toBeGreaterThan(0);
    const revisions=readRevisions(indexPath);
@@ -104,11 +112,13 @@ describe('session search reads a native database incrementally',()=>{
    // Second cycle over the same database: no content row may be read at all,
    // the catalog and the cheap key are still visited.
    for(const key of Object.keys(reads))delete reads[key];
-   await index.scan(scanSessionSearchSources({}),[]);
+   const unchangedReceipt=await scan();
    expect(contentRows(path)).toBe(0);
    expect(catalogRows(path)).toBe(2);
    expect(envelopeRows(path)).toBeGreaterThan(0);
    expect(readRevisions(indexPath)).toEqual(revisions);
+   expect(unchangedReceipt).toMatchObject({indexedTextSessions:2,indexedChunks:80,processedTextSessions:0,processedChunks:0});
+   expect(index.search({query:'alpha-needle-7',harnesses:['opencode']}).results[0]).toMatchObject({nativeSessionId:firstSearch!.nativeSessionId,chunkId:firstSearch!.chunkId,revision:firstSearch!.revision});
 
    // A changed record is still indexed, and only that session is re-read.
    const db=new DatabaseSync(path);
@@ -117,7 +127,8 @@ describe('session search reads a native database incrementally',()=>{
    db.prepare('UPDATE session SET time_updated=? WHERE id=?').run(21,'ses-beta');
    db.close();
    for(const key of Object.keys(reads))delete reads[key];
-   await index.scan(scanSessionSearchSources({}),[]);
+   const changedReceipt=await scan();
+   expect(changedReceipt).toMatchObject({indexedTextSessions:2,indexedChunks:81,processedTextSessions:1,processedChunks:41});
    const changed=readRevisions(indexPath);
    expect(changed['ses-beta']).not.toBe(revisions['ses-beta']);
    expect(changed['ses-alpha']).toBe(revisions['ses-alpha']);

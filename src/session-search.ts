@@ -8,7 +8,7 @@ import {setImmediate as yieldToConsumers} from 'node:timers/promises';
 /** A disposable mirror. Never point this at a native harness database. */
 export const SESSION_SEARCH_PATH=process.env.AGENT_HERDER_SESSION_SEARCH_DB??join(homedir(),'.local/state/agent-herder/session-search/index.sqlite');
 export interface SearchSessionInput {harness:string;nativeSessionId:string;title:string;cwd:string;revision:string;chunks:AsyncIterable<{id:string;text:string}>;contentUnavailable?:boolean}
-export interface SearchSourceReceipt {harness:string;source:string;state:'complete'|'partial'|'unavailable'|'unsupported';sessions:number;catalogSessions?:number;textSessions?:number;missingContent?:number;chunks?:number;reason?:string}
+export interface SearchSourceReceipt {harness:string;source:string;state:'complete'|'partial'|'unavailable'|'unsupported';sessions:number;catalogSessions?:number;textSessions?:number;missingContent?:number;chunks?:number;processedTextSessions?:number;processedChunks?:number;indexedTextSessions?:number;indexedChunks?:number;reason?:string}
 export interface SessionSearchQuery {query:string;harnesses?:string[];limit?:number}
 
 /** Quote user words: the public API accepts words, never raw FTS operators. */
@@ -113,7 +113,9 @@ export class SessionSearchIndex {
     this.db.prepare('DELETE FROM chunks WHERE harness=? AND native_id IN (SELECT native_id FROM sessions WHERE harness=? AND scan<>?)').run(receipt.harness,receipt.harness,scan);
     this.db.prepare('DELETE FROM sessions WHERE harness=? AND scan<>?').run(receipt.harness,scan);
    }
-   this.db.prepare('INSERT INTO sources VALUES(?,?) ON CONFLICT(harness) DO UPDATE SET receipt=excluded.receipt').run(receipt.harness,JSON.stringify({...receipt,observedAt:new Date().toISOString()}));
+   const indexed=this.db.prepare("SELECT count(DISTINCT native_id) AS textSessions,count(*) AS chunks FROM chunks WHERE harness=? AND length(text)>0").get(receipt.harness) as {textSessions:number;chunks:number};
+   const recorded={...receipt,processedTextSessions:receipt.textSessions??0,processedChunks:receipt.chunks??0,indexedTextSessions:Number(indexed?.textSessions??0),indexedChunks:Number(indexed?.chunks??0),observedAt:new Date().toISOString()};
+   this.db.prepare('INSERT INTO sources VALUES(?,?) ON CONFLICT(harness) DO UPDATE SET receipt=excluded.receipt').run(receipt.harness,JSON.stringify(recorded));
    this.db.exec('COMMIT');
   }catch(error){this.db.exec('ROLLBACK');throw error;}
  }
