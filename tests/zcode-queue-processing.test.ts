@@ -1,15 +1,17 @@
+import {crc32} from 'node:zlib';
 import {expect,it,vi} from 'vitest';
 import {ZcodeAdapter} from '../src/adapters/zcode.js';
 
-function fixture(options:{stale?:boolean;reset?:boolean;lost?:boolean;foreign?:boolean;unloaded?:boolean}={}) {
- let revision=7, autoDrain=false, listener:(frame:any)=>void=()=>{};
+function fixture(options:{stale?:boolean;reset?:boolean;lost?:boolean;foreign?:boolean;unloaded?:boolean;fragment?:boolean;corrupt?:boolean;enabled?:boolean}={}) {
+ let revision=7, autoDrain=options.enabled??false, listener:(frame:any)=>void=()=>{};
  const calls:any[]=[];
  const frame=()=>({topic:'conversation/owned',subscriptionId:'sub',fromSeq:0,toSeq:revision,payload:{kind:'snapshot',snapshot:{sessionId:'owned',revision,logEpoch:'epoch',seq:revision,control:{phase:'completedSuccess'},queue:{autoDrain,items:[{queueItemId:'oldest'},{queueItemId:'newer'}]}}}});
+ const emit=()=>{const wire={wireVersion:3,logicalFrameId:'f-'+revision,logicalFrameOrdinal:revision,topic:'conversation/owned',subscriptionId:'sub'};if(!options.fragment){listener({...wire,kind:'complete',frame:frame()});return;}const bytes=Buffer.from(JSON.stringify(frame())),mid=Math.floor(bytes.length/2);for(const i of [1,0])listener({...wire,kind:'fragment',fragmentCount:2,fragmentIndex:i,logicalBytes:bytes.length,checksum:{algorithm:'crc32',value:options.corrupt?'00000000':crc32(bytes).toString(16).padStart(8,'0')},dataBase64:(i?bytes.subarray(mid):bytes.subarray(0,mid)).toString('base64')});};
  const call=vi.fn(async(_channel:string,method:string,args:any[])=>{
   const p=args[0];calls.push({method,p});
   if(method==='readSession'){if(options.unloaded)throw Object.assign(Error('Session not found'),{code:'proto.sessionNotFound'});return{session:{sessionId:'owned',status:'idle'},runtime:{pendingRequestIds:[]}};}
-  if(method==='subscribeConversationV4'){if(options.foreign)listener({...frame(),subscriptionId:'foreign'});listener(frame());return{ack:{subscriptionId:'sub',mode:'snapshot',logEpoch:'epoch'}};}
-  if(method==='resyncConversationV4'){listener(frame());return{ack:{subscriptionId:'sub',mode:'snapshot',logEpoch:'epoch'}};}
+  if(method==='subscribeConversationV4'){if(options.foreign)listener({...frame(),subscriptionId:'foreign'});emit();return{ack:{subscriptionId:'sub',mode:'snapshot',logEpoch:'epoch'}};}
+  if(method==='resyncConversationV4'){emit();return{ack:{subscriptionId:'sub',mode:'snapshot',logEpoch:'epoch'}};}
   if(method==='unsubscribeConversationV4')return{};
   if(method==='queryConversationCommandsV4')return{results:[{key:{sessionId:'owned',commandId:'resume'},result:'unknown'}]};
   if(method==='sendConversationCommandV4'){
@@ -54,3 +56,8 @@ it('unloaded session refuses before subscribe and never invokes destructive resu
  expect(await adapter.resumeQueueProcessing('owned',{inputId:'resume',expectedRevision:7})).toMatchObject({ok:false,status:'not-submitted'});
  expect(calls.map(c=>c.method)).toEqual(['readSession']);
 });
+
+it('assembles official out-of-order CRC32 snapshot fragments',async()=>{const{adapter}=fixture({fragment:true});expect(await adapter.resumeQueueProcessing('owned',{inputId:'resume',expectedRevision:7})).toMatchObject({ok:true,status:'accepted'});});
+it('rejects corrupted snapshot fragments before any queue write',async()=>{const{adapter,calls}=fixture({fragment:true,corrupt:true});expect(await adapter.resumeQueueProcessing('owned',{inputId:'resume',expectedRevision:7})).toMatchObject({ok:false,status:'not-submitted',error:expect.stringContaining('checksum')});expect(calls.some(c=>c.method==='sendConversationCommandV4')).toBe(false);});
+
+it('explicitly reevaluates a stalled queue when autoDrain is already true',async()=>{const{adapter,calls}=fixture({enabled:true});expect(await adapter.resumeQueueProcessing('owned',{inputId:'resume',expectedRevision:7})).toMatchObject({ok:true,status:'accepted'});expect(calls.filter(c=>c.method==='sendConversationCommandV4')).toHaveLength(1);});

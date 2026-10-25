@@ -1197,7 +1197,9 @@ export class ZcodeAdapter implements HarnessAdapter {
       if (state.baseRevision!==options.expectedRevision) return result('stale-no-write','Очередь изменилась; обновите состояние.',state);
       if (!['completedSuccess','completedInterrupted','error'].includes(state.nativeState))
         return result('not-submitted','Возобновление доступно только для загруженной завершённой сессии.',state);
-      if (!state.pendingCount || state.autoDrain) return result('not-submitted','Очередь пуста или её обработка уже включена.',state);
+      if (!state.pendingCount) return result('not-submitted','Очередь пуста.',state);
+      // Native setAutoDrain(true) always reevaluates the oldest queued item,
+      // including a stalled queue whose persistent preference is already true.
       const queried=record(await subscription.call('queryConversationCommandsV4',{commands:[{sessionId:id,commandId:options.inputId}]}));
       const receipt=Array.isArray(queried.results)?queried.results.find((item:any)=>item.key?.sessionId===id&&item.key?.commandId===options.inputId):undefined;
       if (!receipt) return result('not-submitted','Native не подтвердил проверку идентификатора действия.',state);
