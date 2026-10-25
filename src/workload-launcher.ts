@@ -1,5 +1,8 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdirSync, mkdtempSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DEFAULT_ALLOWED_ENV, harnessWorkloadEnv } from "./web/settings-harness-env.js";
 
 export interface DetachedWorkloadOptions extends SpawnOptions {
@@ -65,6 +68,62 @@ case "$quota:$period" in *[!0-9:]*|:*|*:) fail ;; esac
 exec "$@"
 `;
 
+/**
+ * The place where the guard script lives.
+ *
+ * The script is a file of the runtime state of the herder, not a part of the
+ * command line: systemd-run takes the Description of the transient unit from
+ * the command line, and a line break inside it lands in the unit file as a
+ * line of the [Unit] section. systemd then drops such a line ("Missing '='",
+ * "Unknown key name"), and the scope stays in the error state. The directory
+ * belongs to the user of the herder alone: a place that another user prepared
+ * is not used, and a place that another user may write is not used.
+ */
+function zcodeGuardDirectory(): string {
+  const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
+  const bases = process.env.XDG_RUNTIME_DIR ? [join(process.env.XDG_RUNTIME_DIR, "agent-herder")] : [];
+  bases.push(join(tmpdir(), `agent-herder-${uid ?? "unknown"}`));
+  for (const base of bases) {
+    const dir = join(base, "zcode-resource-guard");
+    try {
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      const state = statSync(dir);
+      if (typeof process.getuid === "function" && state.uid !== process.getuid()) continue;
+      if ((state.mode & 0o022) !== 0) continue;
+      return dir;
+    } catch {
+      // The next place holds the guard.
+    }
+  }
+  return mkdtempSync(join(tmpdir(), `agent-herder-guard-${uid ?? "unknown"}-`));
+}
+
+let zcodeGuardFile: string | undefined;
+
+/**
+ * The path of the guard script, written once for the reviewed budget.
+ *
+ * The name of the file carries the digest of its text: the herder and another
+ * process of the same user write the same bytes, and the scope that reads the
+ * file always reads the reviewed budget.
+ */
+export function zcodeResourceGuardPath(): string {
+  if (zcodeGuardFile) return zcodeGuardFile;
+  const digest = createHash("sha256").update(ZCODE_SHARED_RESOURCE_CHECK).digest("hex").slice(0, 16);
+  const dir = zcodeGuardDirectory();
+  const file = join(dir, `guard-${digest}.sh`);
+  const temp = join(dir, `.guard-${digest}.${randomUUID().slice(0, 8)}.tmp`);
+  try {
+    writeFileSync(temp, ZCODE_SHARED_RESOURCE_CHECK, { mode: 0o400, flag: "wx" });
+    renameSync(temp, file);
+  } catch (error) {
+    try { unlinkSync(temp); } catch { /* nothing to remove */ }
+    throw error;
+  }
+  zcodeGuardFile = file;
+  return file;
+}
+
 function runtimeBusEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
   if (uid === undefined) return env;
@@ -129,6 +188,7 @@ export function buildDetachedWorkloadCommand(
   }
 
   const unitName = `agent-herder-${safeLabel(label)}-${randomUUID().slice(0, 8)}`;
+  const guardArgs = resourceGuard ? ["/bin/sh", zcodeResourceGuardPath(), command, ...args] : [command, ...args];
   return {
     command: "systemd-run",
     args: [
@@ -137,11 +197,13 @@ export function buildDetachedWorkloadCommand(
       "--quiet",
       "--collect",
       `--unit=${unitName}`,
+      // The Description of the transient unit names the workload, never the
+      // command line: a payload with a line break in it would break the unit
+      // file of the scope.
+      `--description=agent-herder ${safeLabel(label)}`,
       ...(resourceGuard ? ZCODE_SHARED_RESOURCE_PROPERTIES : resourceProperties)
         .flatMap((property) => ["--property", property]),
-      ...(resourceGuard
-        ? ["/bin/sh", "-c", ZCODE_SHARED_RESOURCE_CHECK, "zcode-resource-guard", command, ...args]
-        : [command, ...args]),
+      ...guardArgs,
     ],
     options: {
       ...spawnOptions,
