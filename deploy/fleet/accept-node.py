@@ -191,42 +191,79 @@ IMPORT_PROBE = r"""
 const {createRequire} = require("module");
 const fs = require("fs");
 const path = require("path");
-const release = process.argv[2];
+
+// The probe lives in /tmp: a resolution made from the probe itself would
+// resolve relative to the script in /tmp. Every resolution is made from the
+// file that makes the import, with a createRequire bound to that file: that
+// is where the runtime of the release resolves it.
+const releaseArgument = process.argv[2];
 const shared = process.argv[3] || "";
+const release = (() => {
+  try { return fs.realpathSync(releaseArgument); }
+  catch { return path.resolve(releaseArgument); }
+})();
 const entry = path.join(release, "dist", "index.js");
 const requireFromRelease = createRequire(entry);
 
-const visited = new Set();
-const bare = new Map();
-const importers = new Map();
 const pattern = /(?:^|[\s;{(])(?:import|export)[^'"`]*?from\s*["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)|require\s*\(\s*["']([^"']+)["']\s*\)/g;
+const builtins = new Set(require("module").builtinModules);
 
-function walk(file) {
-  let real;
-  try { real = fs.realpathSync(file); } catch { return; }
-  if (visited.has(real)) return;
-  visited.add(real);
-  let source;
-  try { source = fs.readFileSync(real, "utf8"); } catch { return; }
-  for (const match of source.matchAll(pattern)) {
-    const spec = match[1] || match[2] || match[3];
-    if (!spec) continue;
-    if (spec.startsWith(".") || spec.startsWith("/")) {
-      walk(path.resolve(path.dirname(real), spec));
-      continue;
-    }
-    if (spec.startsWith("node:")) continue;
-    if (!bare.has(spec)) bare.set(spec, real);
-    if (!importers.has(spec)) importers.set(spec, new Set());
-    importers.get(spec).add(real);
-  }
+// The bounds of the walk. A bound that was reached is named in the report:
+// a walk that stopped early has not seen everything, and the acceptance
+// must not be green on a walk that did not finish.
+const MAX_FILES = 20000;
+const MAX_PACKAGES = 800;
+const MAX_RESOLUTIONS = 60000;
+
+const visited = new Set();
+const resolutions = new Set();
+const resolved = [];
+const outside = [];
+const unresolved = [];
+const bareSpecs = new Set();
+const walkedPackages = new Set();
+const pendingPackages = [];
+let filesRead = 0;
+let builtinCount = 0;
+let truncated = false;
+
+function isBuiltin(spec) { return builtins.has(spec) || spec.startsWith("node:"); }
+
+function kindOf(target) {
+  if (target === release || target.startsWith(release + path.sep)) return "release";
+  if (!shared) return "outside";
+  const root = path.resolve(shared);
+  if (target === root || target.startsWith(root + path.sep)) return "shared";
+  return "outside";
 }
 
-// A package of the release, whether it is a commonjs one or an esm only one.
-function packageDirectory(spec) {
+// Where a file lives: the release, the store of the area, or neither. The
+// imports of the release must resolve; an import of a package of the store
+// may name an optional dependency that is not installed anywhere, and that
+// is a fact of the package, not a fault of the area.
+function scopeOf(importer) {
+  if (importer === release || importer.startsWith(release + path.sep)) return "release";
+  if (shared) {
+    const root = path.resolve(shared);
+    if (importer === root || importer.startsWith(root + path.sep)) return "store";
+  }
+  return "other";
+}
+
+function packageDirectory(spec, importer) {
+  // The directory of the package of an import, found the way the resolver of
+  // Node finds it: up the parents of the importer.
   const parts = spec.split("/");
   const depth = (spec.startsWith("@") && parts.length > 1) ? 2 : 1;
-  return path.join(release, "node_modules", ...parts.slice(0, depth));
+  let dir = path.dirname(importer);
+  for (let step = 0; step < 32; step++) {
+    const candidate = path.join(dir, "node_modules", ...parts.slice(0, depth));
+    if (fs.existsSync(path.join(candidate, "package.json"))) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
 }
 
 function entryOf(directory) {
@@ -234,73 +271,146 @@ function entryOf(directory) {
   const exportsField = meta.exports && meta.exports["."];
   let entry = null;
   if (typeof exportsField === "string") entry = exportsField;
-  else if (exportsField && typeof exportsField === "object") entry = exportsField.import || exportsField.default || exportsField.require;
+  else if (exportsField && typeof exportsField === "object") {
+    entry = exportsField.import || exportsField.default || exportsField.require;
+  }
   if (!entry && exportsField && typeof exportsField === "object") entry = exportsField.import;
   entry = entry || meta.module || meta.main || "index.js";
   return path.join(directory, String(entry).replace(/^\.\//, ""));
 }
 
-walk(entry);
-const builtins = new Set(require("module").builtinModules);
-const resolved = [];
-const outside = [];
-const unresolved = [];
-for (const [spec, from] of bare) {
-  if (builtins.has(spec)) { resolved.push({spec, kind: "builtin"}); continue; }
+// The resolution of one import, made from the file that makes it.
+function resolveSpec(spec, importer, via) {
+  const key = path.dirname(importer) + "\0" + spec;
+  if (resolutions.has(key)) return null;
+  resolutions.add(key);
+  if (resolutions.size > MAX_RESOLUTIONS) { truncated = true; return null; }
   let target = null;
-  let via = "require";
-  try { target = fs.realpathSync(requireFromRelease.resolve(spec)); }
+  try { target = fs.realpathSync(createRequire(importer).resolve(spec)); }
   catch (error) {
     // An esm only package: the commonjs resolver refuses it, the runtime
-    // imports it as a module. The package must still live in the release.
+    // imports it as a module. The package must still live in the release or
+    // in the verified store.
     via = "package.json";
     try {
-      const directory = packageDirectory(spec);
-      if (!fs.existsSync(path.join(directory, "package.json"))) throw error;
-      target = path.resolve(entryOf(directory));
-      if (!fs.existsSync(target)) throw error;
+      const directory = packageDirectory(spec, importer);
+      if (!directory) throw error;
+      const candidate = path.resolve(entryOf(directory));
+      if (!fs.existsSync(candidate)) throw error;
+      // The real path of the file: the area may offer the store under a
+      // link, and the comparison is made against the store it names.
+      target = fs.realpathSync(candidate);
     } catch (inner) {
-      unresolved.push({spec, from, error: String(inner.message).slice(0, 140)});
-      continue;
+      unresolved.push({spec, from: importer, via, scope: scopeOf(importer),
+                       error: String(inner.message).slice(0, 140)});
+      return null;
     }
   }
-  const insideRelease = target.startsWith(path.resolve(release) + path.sep);
-  const insideShared = shared ? target.startsWith(path.resolve(shared) + path.sep) : false;
-  const inside = insideRelease || insideShared;
-  resolved.push({spec, kind: insideRelease ? "release" : (insideShared ? "shared" : "outside"), target, via});
-  if (!inside) outside.push({spec, target, via});
-  // The import of a package of the store is resolved by the importer of the
-  // package, not by the release: the resolver follows the real path of the
-  // importer and walks up its parents. That resolution must land in the
-  // release or in the verified store as well - a legacy root store of the
-  // area would otherwise resolve the import silently, and the new store
-  // would not be the source of the resolution at all.
-  if (via === "require") {
-    for (const importer of (importers.get(spec) || new Set())) {
-      let nested = null;
-      let nestedError = null;
-      try { nested = fs.realpathSync(createRequire(importer).resolve(spec)); }
-      catch (error) { nestedError = String(error.message).slice(0, 140); }
-      if (nested === null) {
-        if (nestedError) unresolved.push({spec, from: importer, via: "nested", error: nestedError});
+  const kind = kindOf(target);
+  resolved.push({spec, kind, target, via});
+  if (kind === "outside") {
+    outside.push({spec, target, via, from: importer, scope: scopeOf(importer)});
+  }
+  return {target, kind};
+}
+
+function packageDirectoryUnder(root, target) {
+  if (!root) return null;
+  const relative = path.relative(path.resolve(root), target);
+  if (!relative || relative.startsWith("..")) return null;
+  const parts = relative.split(path.sep);
+  const depth = (parts[0].startsWith("@") && parts.length > 1) ? 2 : 1;
+  return path.join(path.resolve(root), ...parts.slice(0, depth));
+}
+
+function queuePackage(target) {
+  const directory = packageDirectoryUnder(shared, target);
+  if (!directory) return;
+  if (walkedPackages.has(directory)) return;
+  walkedPackages.add(directory);
+  pendingPackages.push(directory);
+}
+
+function walkFile(file) {
+  // A file of the release or of the store: its imports are resolved from it.
+  let real;
+  try { real = fs.realpathSync(file); } catch { return; }
+  if (visited.has(real)) return;
+  visited.add(real);
+  filesRead += 1;
+  if (filesRead > MAX_FILES) { truncated = true; return; }
+  let source;
+  try { source = fs.readFileSync(real, "utf8"); } catch { return; }
+  for (const match of source.matchAll(pattern)) {
+    const spec = match[1] || match[2] || match[3];
+    if (!spec) continue;
+    if (spec.startsWith(".") || spec.startsWith("/")) {
+      walkFile(path.resolve(path.dirname(real), spec));
+      continue;
+    }
+    if (isBuiltin(spec)) { builtinCount += 1; continue; }
+    bareSpecs.add(spec);
+    const result = resolveSpec(spec, real, "require");
+    if (result) queuePackage(result.target);
+  }
+}
+
+function walkPackage(directory) {
+  // Every file of a package of the store: the imports a package makes of its
+  // siblings are resolved from the package that makes them, and that is the
+  // place the legacy root store of the area would be found instead of the
+  // verified store.
+  const stack = [directory];
+  while (stack.length) {
+    const current = stack.pop();
+    let entries;
+    try { entries = fs.readdirSync(current, {withFileTypes: true}); } catch { continue; }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules") continue;
+        stack.push(full);
         continue;
       }
-      const nestedRelease = nested.startsWith(path.resolve(release) + path.sep);
-      const nestedShared = shared ? nested.startsWith(path.resolve(shared) + path.sep) : false;
-      if (!nestedRelease && !nestedShared) {
-        outside.push({spec, target: nested, via: "nested", from: importer});
-      }
+      if (!entry.isFile()) continue;
+      if (!/\.(js|mjs|cjs)$/.test(entry.name)) continue;
+      walkFile(full);
+      if (truncated) return;
     }
   }
 }
+
+// The bundle of the release.
+const error = fs.existsSync(entry) ? "" : `the entry of the release is absent: ${entry}`;
+if (!error) {
+  walkFile(entry);
+  // The resolution the runtime makes from the entry of the release.
+  for (const spec of new Set(bareSpecs)) {
+    const result = resolveSpec(spec, entry, "require");
+    if (result) queuePackage(result.target);
+  }
+  // The packages of the store the runtime reaches.
+  while (pendingPackages.length) {
+    if (walkedPackages.size > MAX_PACKAGES) { truncated = true; break; }
+    walkPackage(pendingPackages.shift());
+    if (truncated) break;
+  }
+}
 console.log(JSON.stringify({
-  modules: visited.size,
-  imports: bare.size,
+  error,
+  modules: filesRead,
+  imports: bareSpecs.size,
   resolved: resolved.length,
   from_release: resolved.filter((item) => item.kind === "release").length,
-  builtins: resolved.filter((item) => item.kind === "builtin").length,
+  from_store: resolved.filter((item) => item.kind === "shared").length,
+  builtins: builtinCount,
   outside,
   unresolved,
+  unresolved_release: unresolved.filter((item) => item.scope !== "store").length,
+  unresolved_store: unresolved.filter((item) => item.scope === "store").length,
+  store_packages: walkedPackages.size,
+  resolutions: resolutions.size,
+  truncated,
 }));
 """
 
@@ -343,6 +453,8 @@ def import_check(release: Path, node_bin: str) -> dict:
         data = json.loads(result.stdout.strip().splitlines()[-1])
     except Exception as error:
         return {"ok": False, "error": str(error)[:200]}
+    if data.get("error"):
+        return {"ok": False, "error": str(data["error"])[:200]}
     area = {}
     area_ok = True
     if shared:
@@ -353,14 +465,30 @@ def import_check(release: Path, node_bin: str) -> dict:
         # its own packages there instead, and the store of the release would
         # not be the source of the resolution: the acceptance has to see that.
         area_ok = area.get("state") == "link" and bool(area.get("points_at_store"))
+    # An import of the release must resolve. An import of a package of the
+    # store may name an optional dependency that is installed nowhere: that
+    # is a fact of the package and not a fault of the area, so it is named
+    # and counted, not refused.
+    unresolved = data["unresolved"]
+    unresolved_release = [item for item in unresolved if item.get("scope") != "store"]
+    unresolved_store = [item for item in unresolved if item.get("scope") == "store"]
     return {
-        "ok": not data["outside"] and not data["unresolved"] and area_ok,
+        # A walk that stopped at its bound has not seen every import: the
+        # acceptance is not green on a walk that did not finish.
+        "ok": (not data["outside"] and not unresolved_release
+               and area_ok and not data.get("truncated")),
         "modules": data["modules"],
         "imports": data["imports"],
         "from_release": data["from_release"],
+        "from_store": data.get("from_store", 0),
         "builtins": data["builtins"],
         "outside": data["outside"],
-        "unresolved": data["unresolved"],
+        "unresolved": unresolved,
+        "unresolved_release": len(unresolved_release),
+        "unresolved_store": len(unresolved_store),
+        "store_packages": data.get("store_packages", 0),
+        "resolutions": data.get("resolutions", 0),
+        "truncated": bool(data.get("truncated")),
         "shared_store": shared,
         "area_package_root": area,
         "area_package_root_ok": area_ok,
@@ -993,8 +1121,12 @@ def main() -> int:
          f"{bundle.get('source_sha')} vs {arguments.sha}"),
         ("every import of the runtime resolves from the release", imports.get("ok", False),
          f"modules={imports.get('modules')} imports={imports.get('imports')} from_release={imports.get('from_release')} "
-         f"builtins={imports.get('builtins')} outside={len(imports.get('outside', []))} "
-         f"unresolved={len(imports.get('unresolved', []))}"
+         f"from_store={imports.get('from_store')} builtins={imports.get('builtins')} "
+         f"outside={len(imports.get('outside', []))} "
+         f"unresolved={len(imports.get('unresolved', []))} "
+         f"(release={imports.get('unresolved_release')}, store={imports.get('unresolved_store')}) "
+         f"store_packages={imports.get('store_packages')} resolutions={imports.get('resolutions')} "
+         f"truncated={imports.get('truncated')}"
          + (f" error={imports.get('error')}" if imports.get("error") else "")),
         ("the area offers the packages of the store to the resolver of Node",
          imports.get("area_package_root_ok", True),
