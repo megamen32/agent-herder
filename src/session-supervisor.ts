@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { getHumanStopStore, type HumanStopStore } from "./human-stop-store.js";
 import type {NativeHookTurn} from './adapters/zcode-workspace-lifecycle.js';
+import type {ZcodeQueueProcessingState,ZcodeResumeQueueOptions,ZcodeResumeQueueResult} from './adapters/zcode-v4-queue.js';
 import type {
   AgentSession,
   SessionSnapshotReceipt,
@@ -870,6 +871,19 @@ export class SessionSupervisor {
     const state = await adapter.getPermissionState(id);
     if (!state || state.target.harness !== harness || state.target.sessionId !== id) return null;
     return state;
+  }
+
+  async getQueueProcessingState(harness: string, id: string): Promise<ZcodeQueueProcessingState | null> {
+    const adapter=this.requireAdapter(harness) as HarnessAdapter & {getQueueProcessingState?:(id:string)=>Promise<ZcodeQueueProcessingState>};
+    return adapter.getQueueProcessingState ? adapter.getQueueProcessingState(id) : null;
+  }
+
+  async resumeQueueProcessing(harness: string, id: string, options: ZcodeResumeQueueOptions): Promise<ZcodeResumeQueueResult> {
+    const adapter=this.requireAdapter(harness) as HarnessAdapter & {resumeQueueProcessing?:(id:string,options:ZcodeResumeQueueOptions)=>Promise<ZcodeResumeQueueResult>};
+    if (!adapter.resumeQueueProcessing) return {ok:false,status:'not-submitted',inputId:options.inputId,error:'Этот исполнитель не поддерживает возобновление native очереди.'};
+    const result=await adapter.resumeQueueProcessing(id,options);
+    if (result.ok) this.publishSessionChanged(harness,id,'changed');
+    return result;
   }
 
   async setPermissionMode(

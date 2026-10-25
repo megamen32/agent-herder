@@ -25,6 +25,7 @@ import {
   localSessionHostId,
 } from "../types/index.js";
 import { ZcodeAppServerClient, type ZcodeClientLike } from "./zcode-protocol.js";
+import { openZcodeQueueSnapshot, queueProcessingState, type ZcodeQueueProcessingState, type ZcodeResumeQueueOptions, type ZcodeResumeQueueResult } from './zcode-v4-queue.js';
 import { readZcodeActiveCandidates, zcodeStoredTailCanBeActive } from "./zcode-active.js";
 import {readZcodeOfficialRunning,connectZcodeOfficialWebSocket,type ZcodeOfficialRunning} from "./zcode-server-control.js";
 import { readExistingZcodeRuntimeObservation } from "./zcode-runtime-observation.js";
@@ -1156,6 +1157,66 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   getSessionSnapshotReceipt(): SessionSnapshotReceipt {
     return { ...this.sessionSnapshotReceipt };
+  }
+
+  private readonly queueResumeAttempts = new Map<string, Promise<ZcodeResumeQueueResult>>();
+
+  private async openLoadedQueue(id: string) {
+    if (!this.client.callIfReady) throw new Error('Existing native transport unavailable');
+    const workspace=this.sessionWorkspaces.get(id) || this.workspace();
+    const baseline=record(await this.client.callIfReady('zcode-agent','readSession',[{...workspace,sessionId:id,runtimePolicy:'existing-only',messageLimit:1}]));
+    if (record(baseline.session).sessionId !== id) throw new Error('Exact loaded session unavailable');
+    return openZcodeQueueSnapshot(this.client,{...workspace},id);
+  }
+
+  async getQueueProcessingState(id: string): Promise<ZcodeQueueProcessingState> {
+    const subscription=await this.openLoadedQueue(id);
+    try { return queueProcessingState(subscription.snapshot); } finally { await subscription.close(); }
+  }
+
+  /** Explicit user action only. This changes a persistent native session preference;
+   * ordinary sendMessage must never invoke it. Stable IDs may only be queried after uncertainty. */
+  async resumeQueueProcessing(id: string, options: ZcodeResumeQueueOptions): Promise<ZcodeResumeQueueResult> {
+    const key=JSON.stringify([id,options.inputId]);
+    const previous=this.queueResumeAttempts.get(key);
+    if (previous) return previous;
+    const attempt=this.resumeQueueProcessingOnce(id,options);
+    this.queueResumeAttempts.set(key,attempt);
+    return attempt;
+  }
+
+  private async resumeQueueProcessingOnce(id: string, options: ZcodeResumeQueueOptions): Promise<ZcodeResumeQueueResult> {
+    const result=(status:ZcodeResumeQueueResult['status'],error:string,state?:ZcodeQueueProcessingState):ZcodeResumeQueueResult =>
+      ({ok:false,status,inputId:options.inputId,error,...(state?{state}:{}),...(status==='unknown'?{nonRetryable:true}:{})});
+    if (!options.inputId?.trim() || !Number.isSafeInteger(options.expectedRevision) || options.expectedRevision<0)
+      return result('not-submitted','Требуется точный идентификатор действия и V4-ревизия.');
+    let subscription: Awaited<ReturnType<typeof openZcodeQueueSnapshot>> | undefined, attempted=false;
+    try {
+      subscription=await this.openLoadedQueue(id);
+      const baseline=subscription.snapshot, state=queueProcessingState(baseline);
+      if (state.baseRevision!==options.expectedRevision) return result('stale-no-write','Очередь изменилась; обновите состояние.',state);
+      if (!['completedSuccess','completedInterrupted','error'].includes(state.nativeState))
+        return result('not-submitted','Возобновление доступно только для загруженной завершённой сессии.',state);
+      if (!state.pendingCount || state.autoDrain) return result('not-submitted','Очередь пуста или её обработка уже включена.',state);
+      const queried=record(await subscription.call('queryConversationCommandsV4',{commands:[{sessionId:id,commandId:options.inputId}]}));
+      const receipt=Array.isArray(queried.results)?queried.results.find((item:any)=>item.key?.sessionId===id&&item.key?.commandId===options.inputId):undefined;
+      if (!receipt) return result('not-submitted','Native не подтвердил проверку идентификатора действия.',state);
+      let ack:Record<string,any>;
+      if (receipt.result==='unknown') {
+        attempted=true;
+        ack=record(await subscription.call('sendConversationCommandV4',{envelope:{commandId:options.inputId,clientId:'agent-herder',sessionId:id,
+          type:'setAutoDrain',payload:{autoDrain:true},baseRevision:baseline.revision,baseLogEpoch:baseline.logEpoch,issuedAt:Date.now()}}));
+      } else ack=record(receipt.result);
+      if (ack.commandId!==options.inputId) return result('unknown','Квитанция относится к другому действию; повтор запрещён.');
+      const fresh=queueProcessingState(await subscription.fresh());
+      if (ack.status==='stale') return result('stale-no-write','Native отклонил устаревшую ревизию без записи.',fresh);
+      if (['accepted','duplicate'].includes(String(ack.status)) && fresh.autoDrain && fresh.baseRevision>=baseline.revision
+        && Number.isSafeInteger(ack.revisionAtDecision) && fresh.baseRevision>=ack.revisionAtDecision)
+        return {ok:true,status:'accepted',inputId:options.inputId,state:fresh};
+      return result('unknown','Обработка очереди не подтверждена свежим native состоянием; повтор запрещён.',fresh);
+    } catch(error) {
+      return result(attempted?'unknown':'not-submitted',error instanceof Error?error.message:String(error));
+    } finally { await subscription?.close(); }
   }
 
   /** Operator-selected exact input only; no native load, provider or send. */
@@ -2325,7 +2386,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     const origin = options.origin === "human" ? "human" : "automation";
     const inputId = options.inputId || randomUUID();
     const commandId = zcodeInputId(inputId, origin);
-    let requestedDelivery: "guide" | "queue" | "startNow" = options.steer ? "guide" : "queue";
+    const requestedDelivery: "guide" | "queue" = options.steer ? "guide" : "queue";
     let attempted = false;
     try {
       if (await getHumanStopStore().isHeld("zcode", id)) return {ok:false,inputId,error:"Чат явно остановлен; автоматическая отправка запрещена."};
@@ -2344,27 +2405,6 @@ export class ZcodeAdapter implements HarnessAdapter {
       }
       const permissionError = this.pendingPermissionError(baseline);
       if (permissionError) return { ok: false, inputId, error: permissionError };
-      const nativeSession = record(baseline.session);
-      const nativeRuntime = record(baseline.runtime);
-      if (!options.steer && nativeSession.status === "idle") {
-        // The common delivery core already observed this session idle. For a
-        // clean native idle state, V4 startNow atomically claims the turn;
-        // queue would only persist an input that no active turn can drain.
-        if (nonEmptyString(nativeRuntime.activeTurnId) || nonEmptyString(nativeRuntime.activeTurnKind)) {
-          return { ok: false, inputId, admitted: false, notSubmitted: true, nonRetryable: true,
-            error: "Состояние ZCode противоречиво: сессия idle, но native turn ещё активен; сообщение не отправлено." };
-        }
-        const pendingInputs = await this.readPendingNativeInputs(id);
-        if (pendingInputs === null) {
-          return { ok: false, inputId, admitted: false, notSubmitted: true, nonRetryable: true,
-            error: "Не удалось подтвердить отсутствие уже принятого native ввода; новое сообщение не отправлено." };
-        }
-        if (pendingInputs) {
-          return { ok: false, inputId, admitted: false, notSubmitted: true, nonRetryable: true,
-            error: "В idle-сессии уже есть принятый native ввод. Он сохранён; новое сообщение не отправлено и сессия не возобновлялась." };
-        }
-        requestedDelivery = "startNow";
-      }
       const stopStore = getHumanStopStore();
       if (await stopStore.isHeld("zcode", id)) return { ok: false, inputId, error: "Чат явно остановлен; автоматическая отправка запрещена." };
       if (origin !== "human") await stopStore.rememberGeneratedPrompt("zcode", id, options.message);
@@ -2389,9 +2429,8 @@ export class ZcodeAdapter implements HarnessAdapter {
       }
       attempted = true;
       // Pinned installed zcode-server.cjs exposes this exact service method.
-      // startNow atomically claims a clean idle turn; guide injects at the next
-      // supported native boundary; queue remains a native input intent, not a
-      // Herder timer/new inputId.
+      // Guide injects at the next supported native boundary; queue remains
+      // a native input intent. Resuming processing is a separate user action.
       const params = {
         ...workspace,
         envelope: {

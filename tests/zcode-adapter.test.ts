@@ -2051,7 +2051,7 @@ describe("ZCode adapter", () => {
     } finally { await adapter.dispose(); vi.useRealTimers(); }
   });
 
-  it("atomically starts a fresh input on an idle native session when its durable queue is empty", async () => {
+  it("queues a fresh idle input without implicitly enabling queue processing", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-idle-start-now-"));
     const path = join(root, "native.sqlite");
     const db = new DatabaseSync(path);
@@ -2070,7 +2070,7 @@ describe("ZCode adapter", () => {
       });
       expect(result).toMatchObject({ ok: true, admitted: true, inputId: "idle-start-now-1" });
       expect(client.calls.find(call => call.method === "sendConversationCommandV4")?.args[0]).toMatchObject({
-        envelope: { commandId: "idle-start-now-1", payload: { text: "fresh idle input", requestedDelivery: "startNow" } },
+        envelope: { commandId: "idle-start-now-1", payload: { text: "fresh idle input", requestedDelivery: "queue" } },
       });
       expect(client.calls.some(call => call.method === "resumeSession")).toBe(false);
     } finally {
@@ -2079,7 +2079,7 @@ describe("ZCode adapter", () => {
     }
   });
 
-  it("does not add a new native input to an idle session with an already-admitted queue row", async () => {
+  it("appends native queue input without overtaking an already-admitted idle input", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-idle-existing-input-"));
     const path = join(root, "native.sqlite");
     const db = new DatabaseSync(path);
@@ -2097,8 +2097,8 @@ describe("ZCode adapter", () => {
       const result = await adapter.sendMessage("session-1", {
         message: "do not overtake old queue", queue: true, origin: "human", inputId: "new-after-existing-1",
       });
-      expect(result).toMatchObject({ ok: false, admitted: false, notSubmitted: true, nonRetryable: true });
-      expect(client.calls.some(call => call.method === "sendConversationCommandV4")).toBe(false);
+      expect(result).toMatchObject({ ok: true, admitted: true, pending: true });
+      expect(client.calls.find(call => call.method === "sendConversationCommandV4")?.args[0]).toMatchObject({envelope:{payload:{requestedDelivery:"queue"}}});
       expect(client.calls.some(call => call.method === "resumeSession")).toBe(false);
     } finally {
       await adapter.dispose();
@@ -2118,7 +2118,7 @@ describe("ZCode adapter", () => {
           this.calls.push({ channel, method, args });
           const { envelope } = args[0] as { envelope: { commandId: string } };
           return { commandId: envelope.commandId, status: "accepted", revisionAtDecision: 3,
-            result: { type: "inputAccepted", inputId: "native-queued-start", delivery: "queue" } };
+            result: { type: "inputAccepted", inputId: "native-queued-start", delivery: "startNow" } };
         }
         return super.call(channel, method, args);
       }
@@ -2143,7 +2143,7 @@ describe("ZCode adapter", () => {
     }
   });
 
-  it("treats a native startNow busy race as a terminal exact refusal without fallback", async () => {
+  it("treats a native queue refusal as terminal without fallback", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-start-now-busy-"));
     const path = join(root, "native.sqlite");
     const db = new DatabaseSync(path);
@@ -2173,7 +2173,7 @@ describe("ZCode adapter", () => {
       expect(result).toMatchObject({ ok: false, notSubmitted: true, admission: "not_submitted", nonRetryable: true, inputId: "idle-start-busy-1" });
       expect(client.calls.filter(call => call.method === "sendConversationCommandV4")).toHaveLength(1);
       expect(client.calls.find(call => call.method === "sendConversationCommandV4")?.args[0]).toMatchObject({
-        envelope: { payload: { requestedDelivery: "startNow" } },
+        envelope: { payload: { requestedDelivery: "queue" } },
       });
       expect(client.calls.some(call => ["sendPrompt", "resumeSession"].includes(call.method))).toBe(false);
     } finally {

@@ -98,11 +98,11 @@ describe("ZCode registered communication native command admission", () => {
     expect(result.quotaFailure).toBeUndefined();
     expect(client.calls.filter(c=>c.method === "sendConversationCommandV4")).toHaveLength(1);
   });
-  it("lets native idle guide resolve to startNow without inventing an active turnId", async () => {
+  it("preserves an unexpected native startNow admission without replay", async () => {
     const client = new NativeCommands();
     client.reply = ({ envelope }) => ({ commandId: envelope.commandId, status: "accepted", revisionAtDecision: 5, result: { type: "inputAccepted", inputId: "native", delivery: "startNow" } });
     const result = await adapter(client).sendMessage("owned", { ...message, steer: true });
-    expect(result).toMatchObject({ ok: true, admitted: true, inputId: "operation-1" });
+    expect(result).toMatchObject({ ok: false, admitted: true, nonRetryable: true, inputId: "operation-1" });
     expect(result.turnId).toBeUndefined();
   });
   it("uses the automation origin identity on the registered MCP path", async () => {
