@@ -24,6 +24,16 @@ export function trustedMeshIngressFromMcpAuthInfo(value: unknown): TrustedMeshIn
   });
 }
 
+/** The owner-launched stdio MCP process is itself the authenticated local boundary.
+ * Tool arguments still provide attribution only; they cannot mint this capability. */
+export function trustedMeshIngressForOwnerStdio(): TrustedMeshIngress {
+  return Object.freeze({
+    principal: TRUSTED_MESH_MCP_CLIENT_ID,
+    senderVerified: false as const,
+    [trustedIngressBrand]: true as const,
+  });
+}
+
 export function isTrustedMeshIngress(value: unknown): value is TrustedMeshIngress {
   return Boolean(value && typeof value === "object" && (value as Partial<TrustedMeshIngress>)[trustedIngressBrand] === true);
 }
