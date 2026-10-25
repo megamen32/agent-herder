@@ -81,7 +81,7 @@ import {SessionQueueControl} from "./session-queue-control.js";
 import {SessionQueueControlGateway} from "./session-queue-control-gateway.js";
 import { registerResourceOwnershipTools } from "./mcp/resource-ownership-tools.js";
 import { registerHarnessMeshTools } from "./mesh/register-tools.js";
-import { trustedMeshIngressFromMcpAuthInfo } from "./mesh/authenticated-ingress.js";
+import { trustedMeshIngressForOwnerStdio, trustedMeshIngressFromMcpAuthInfo } from "./mesh/authenticated-ingress.js";
 import { FleetDirectTransport, fleetPeers } from "./mesh/fleet-direct-transport.js";
 import { registerWorkspaceTools } from "./mesh/workspace-tools.js";
 import { registerBackgroundTools } from "./mcp/background-tools.js";
@@ -1109,7 +1109,7 @@ async function main() {
     sessionQueueControl,
     trustedMeshIngress: trustedMeshIngressFromMcpAuthInfo(context?.authInfo),
   });
-  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor, userMessageDelivery, resumeAfter: resumeAfterRuntime.service, cadence, sessionQueueControl });
+  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor, userMessageDelivery, resumeAfter: resumeAfterRuntime.service, cadence, sessionQueueControl, trustedMeshIngress: trustedMeshIngressForOwnerStdio() });
   let shuttingDown = false;
   const shutdown = () => {
     if (shuttingDown) return; shuttingDown = true;
@@ -1155,6 +1155,7 @@ async function main() {
       scopedSupervisorFactory,
       sessionObservationManagedExternally: true,
       mcpAuthToken: httpToken,
+      allowOwnerLoopbackMcp: !httpToken && isManagedFleetNode() && isLoopbackHost(host),
       fleetApiHandler: createConfiguredFleetApiHandler(),
       fleetHttpGuard: createManagedFleetHttpGuard(httpToken),
       backgroundAutopilotStop,

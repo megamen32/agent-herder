@@ -109,7 +109,7 @@ export class LocalHarnessMesh {
    const refusal=await this.checkDeliveryModel(request,adapter);
    if(refusal)return refusal;
    if(officialZcode(request.target.harness,adapter))return this.deliverZcodeOfficial(request,adapter);
-   if(request.target.harness!=="codex")return reject("native_admission_receipt_unverified");
+   if(request.target.harness!=="codex"&&request.target.harness!=="opencode")return reject("native_admission_receipt_unverified");
    const sessionId=this.ids.get(addressKey(request.target))||request.target.nativeSessionId;
    const session=await adapter.getSession(sessionId);
    if(!session)return reject("native_session_not_found");
