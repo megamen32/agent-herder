@@ -12,6 +12,7 @@ import { LaunchPolicySettings } from "./launch-policy-settings.js";
 import { FallbackModelsSettings } from "./fallback-models-controls.js";
 import { SettingsScreen } from "./settings/settings-screen.js";
 import { SessionMetadata } from "./session-metadata.js";
+import { NativePermissionStrip } from "./native-permission.js";
 import { emptyInspectorText, sessionDetailsErrorText } from "./session-error-text.js";
 import { HarnessAutomationSettings, withAutopilotHarness } from "./harness-automation-settings.js";
 import "./styles.css";
@@ -2172,11 +2173,7 @@ function App() {
         </div>
         {chatMenuOpen && <div className="chat-menu" aria-label="Меню чата"><button type="button" className="chat-menu-close" aria-label="Закрыть меню чата" title="Закрыть меню чата" onClick={() => setChatMenuOpen(false)}>×</button>{chatMenuContent}</div>}
       </header>
-      {activeSession?.needsPermission && !remoteSelection && !showCreateSession && !showJobs && !showStatistics && !showQuota && <div className="cached-view-notice" role="status" aria-label="Нативный запрос разрешения">
-        <strong>Сессия ждёт вашего разрешения</strong>
-        <p>Среда приостановила инструмент {activeSession.permissionDetails?.toolName || "до вашего решения"}. Откройте эту существующую сессию в {activeSession.harness} и проверьте запрос. Решение ещё не принято.</p>
-        <small>{activeSession.hostId || directory.localHostId} · {activeSession.harness} · {activeSession.id}<br />Запрос: {activeSession.permissionDetails?.id || "идентификатор недоступен"}{typeof activeSession.meta?.activityObservedAt === "string" && <> · Проверено: {activeSession.meta.activityObservedAt}</>}</small>
-      </div>}
+      {activeSession?.needsPermission && !remoteSelection && !showCreateSession && !showJobs && !showStatistics && !showQuota && <NativePermissionStrip key={`${activeSession.harness}:${activeSession.id}:${activeSession.permissionDetails?.id}`} session={activeSession} onRefresh={()=>{void loadSessions();if(activeKey)void loadDetails(activeKey,false);}}/>}
       {activeSession && !remoteSelection && !showCreateSession && !showJobs && !showStatistics && !showQuota && <SessionWorkTarget
         session={{ id: activeSession.id, harness: activeSession.harness, cwd: activeSession.cwd, hostId: activeSession.hostId }}
         hosts={workTargetHosts}

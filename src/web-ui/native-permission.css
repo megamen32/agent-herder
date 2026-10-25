@@ -1,0 +1,10 @@
+.native-permission-strip { flex: 0 0 auto; border-bottom: 1px solid var(--border); color: var(--text-2); font-size: 12px; }
+.native-permission-row { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 2px 14px; }
+.native-permission-toggle, .native-permission-refresh { display: inline-flex; align-items: center; gap: 5px; padding: 3px 0; background: transparent; color: var(--status-waiting); white-space: nowrap; font-size: 12px; }
+.native-permission-tool { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.native-permission-allow { margin-left: auto; border: 1px solid var(--border-2); border-radius: 5px; padding: 3px 9px; background: var(--surface-3); font-size: 12px; white-space: nowrap; }
+.native-permission-allow:hover { background: var(--surface-hover); }
+.native-permission-allow:disabled { cursor: default; opacity: .6; }
+.native-permission-details { max-height: 180px; overflow: auto; padding: 2px 14px 8px; overflow-wrap: anywhere; }
+.native-permission-details p { margin: 4px 0; font-size: 12px; line-height: 1.4; }
+@media(max-width:600px) { .native-permission-row { padding-inline: 10px; gap: 6px; } }
