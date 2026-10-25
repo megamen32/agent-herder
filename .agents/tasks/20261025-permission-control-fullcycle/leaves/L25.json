@@ -14,6 +14,19 @@
   "owner": "permission_reply_bridge",
   "depends_on": [],
   "estimate_unknown_reason": "Исправление двух наблюдавшихся consumer дефектов и объединение уже существующих WIP; оставшийся объём зависит от native adapter результата и обязательной повторной приёмки.",
-  "note": "Критическая работа в процессе. Отдельный MiniMax human→desktop canary ранее accepted, но не доказывает agent→agent wake. Сейчас зафиксированы MiniMax inter-agent ok:true без пробуждения idle target и завершённая/idle ZCode web session с застрявшей очередью и неработающим resume. Эти consumer пути исправляются bridge/native; новых PASS нет.",
-  "wait_reason": "Нужны проверенные bridge/native source изменения и exact consumer readback для обоих observed defects."
+  "note": "The shared delivery and recovery lane remains open. Source commit 4631e50f877792ee41930a15fa7114f0c0b69923 passed 130 tests and TypeScript. A native ZCode CAS admitted the original queued input and exact turn.started evidence correlated input→promoted message→turn; the following provider/network attempt failed and scheduled a native retry. No completed assistant answer, task completion, or duplicate send is claimed. Broker loaded queue remains on explicit hold; TelegramAuto unloaded queue is unsupported by the official safe-load API. MiniMax ingress/HumanStop serialization still blocks integrated source canary. No installed UI/MCP acceptance yet.",
+  "wait_reason": "Waiting for the MiniMax ingress/HumanStop race repair and exact consumer readback. ZCode native admission is evidenced, but completion/result is not; loaded broker hold and unloaded TelegramAuto capability remain separate cases.",
+  "updated_at": "2026-10-25T22:40:52+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-25T22:40:52+03:00",
+      "note": "Native/source evidence advanced but delivery remains open. Source commit 4631e50f877792ee41930a15fa7114f0c0b69923 passed 130 focused tests and TypeScript. On the existing ZCode queue, one durable CAS advanced the queue revision and admitted the original head; the exact native turn-start event linked that original input to the promoted message and turn. The subsequent model request failed with native network/server errors and scheduled a native retry; no final assistant result or completed task is confirmed, and no duplicate was sent. Other safe cases remain distinct: loaded broker queue has an explicit hold; unloaded TelegramAuto cannot be safely resumed through the official API. MiniMax ingress/HumanStop serialization remains under repair. This is source/native evidence only, not installed public UI/MCP acceptance.",
+      "changes": {
+        "note": "The shared delivery and recovery lane remains open. Source commit 4631e50f877792ee41930a15fa7114f0c0b69923 passed 130 tests and TypeScript. A native ZCode CAS admitted the original queued input and exact turn.started evidence correlated input→promoted message→turn; the following provider/network attempt failed and scheduled a native retry. No completed assistant answer, task completion, or duplicate send is claimed. Broker loaded queue remains on explicit hold; TelegramAuto unloaded queue is unsupported by the official safe-load API. MiniMax ingress/HumanStop serialization still blocks integrated source canary. No installed UI/MCP acceptance yet.",
+        "wait_reason": "Waiting for the MiniMax ingress/HumanStop race repair and exact consumer readback. ZCode native admission is evidenced, but completion/result is not; loaded broker hold and unloaded TelegramAuto capability remain separate cases."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ]
 }

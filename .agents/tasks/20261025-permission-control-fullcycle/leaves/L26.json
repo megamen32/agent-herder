@@ -17,6 +17,19 @@
     "L25"
   ],
   "estimate_unknown_reason": "Native API для загруженной сессии подтверждён на уровне дизайна; состояние unloaded runtime и завершённая consumer приёмка пока неизвестны.",
-  "note": "Native/bridge согласовали отдельные getQueueProcessingState/resumeQueueProcessing contracts с CAS revision, stable inputId и explicit outcomes. Native implementation, bridge route, общий UI и real same-session readback ещё не завершены. Не путать восстановление обработки уже существующих queued inputs с новой отправкой.",
-  "wait_reason": "Зависит от общего admission/delivery core; unloaded native API остаётся отдельным capability blocker."
+  "note": "Native source/recovery evidence: one durable CAS resumed the original ZCode queued head and exact native turn.started event correlated it to the promoted message/turn. The subsequent provider/network attempt failed and scheduled native retry, so only admission/start is proven; answer/task completion is unknown. Source commit 4631e50f877792ee41930a15fa7114f0c0b69923 passed 130 tests and TypeScript. The public bridge API/MCP wiring and shared UI remain pending; installed public UI acceptance is not claimed.",
+  "wait_reason": "Waiting for integrated bridge route plus shared UI and installed same-session acceptance. Do not infer message delivery from queue preference or native phase alone. Unloaded TelegramAuto queue remains unsupported; other loaded queues with explicit holds are not auto-resumed.",
+  "updated_at": "2026-10-25T22:40:56+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-25T22:40:56+03:00",
+      "note": "Native-only recovery is now evidenced for one already queued ZCode head: a durable CAS advanced revision 2375→2380, queue count 7→6, and native turn-start event linked the original input, promoted message and new turn. A subsequent model request hit network/server errors and scheduled native retry; this proves admission/start, not successful assistant output or task completion. Source commit 4631e50f877792ee41930a15fa7114f0c0b69923 passed 130 tests and TypeScript. The public API/MCP route and shared main+remote UI control remain uninstalled/unaccepted; no new prompt or duplicate input was submitted.",
+      "changes": {
+        "note": "Native source/recovery evidence: one durable CAS resumed the original ZCode queued head and exact native turn.started event correlated it to the promoted message/turn. The subsequent provider/network attempt failed and scheduled native retry, so only admission/start is proven; answer/task completion is unknown. Source commit 4631e50f877792ee41930a15fa7114f0c0b69923 passed 130 tests and TypeScript. The public bridge API/MCP wiring and shared UI remain pending; installed public UI acceptance is not claimed.",
+        "wait_reason": "Waiting for integrated bridge route plus shared UI and installed same-session acceptance. Do not infer message delivery from queue preference or native phase alone. Unloaded TelegramAuto queue remains unsupported; other loaded queues with explicit holds are not auto-resumed."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ]
 }
