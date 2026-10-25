@@ -5,10 +5,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { restoreCommonSettingsLocalValues } from "../src/common-settings/apply.js";
+import { CommonSettingsNodeService } from "../src/common-settings/node-service.js";
 import { CommonSettingsStateStore } from "../src/common-settings/node-state.js";
+import { COMMON_SETTINGS_FORMAT, commonSettingsRevision } from "../src/common-settings/document.js";
 import { SecretStore, SettingsStore, settingsFingerprint } from "../src/web/settings-store.js";
 
 const LEGACY_LOCAL_SECRET = "synthetic-legacy-local-secret";
+const LEGACY_DOCUMENT_SECRET = "synthetic-legacy-document-secret";
 
 let directory = "";
 
@@ -86,5 +89,53 @@ describe("legacy common-settings secret migration", () => {
     await expect(stateStore.read()).rejects.toThrow("without the node SecretStore");
     expect(await readFile(statePath, "utf8")).toBe(legacy);
     expect(await new SecretStore({ path: join(directory, "secrets.json") }).readLocal("NOTIFY_CENTER_TOKEN")).toBeUndefined();
+  });
+
+  it("migrates a document-only secret and preserves its revision for export", async () => {
+    const settings = new SettingsStore({
+      envPath: join(directory, "herder.env"),
+      nodeConfigPath: join(directory, "node-config.json"),
+      stateDir: join(directory, "settings"),
+    });
+    const environment = { NOTIFY_CENTER_TOKEN: LEGACY_DOCUMENT_SECRET };
+    const revision = commonSettingsRevision({ environment });
+    const statePath = join(directory, "common-settings.json");
+    const state = {
+      optIn: true,
+      role: "member",
+      appliedRevision: revision,
+      appliedAt: "2026-10-02T00:00:00.000Z",
+      document: {
+        format: COMMON_SETTINGS_FORMAT,
+        revision,
+        owner: "synthetic-owner",
+        createdAt: "2026-10-02T00:00:00.000Z",
+        environment,
+      },
+      conflicts: [],
+      rollback: {},
+    };
+    await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`);
+    const stateStore = new CommonSettingsStateStore({ path: statePath, secretStore: settings.secretStore });
+
+    const loaded = await stateStore.read();
+    expect(loaded.appliedRevision).toBe(revision);
+    expect(loaded.document?.revision).toBe(revision);
+    expect(loaded.document?.environment.NOTIFY_CENTER_TOKEN).toBe(settingsFingerprint(LEGACY_DOCUMENT_SECRET));
+
+    const stored = await readFile(statePath, "utf8");
+    expect(stored).not.toContain(LEGACY_DOCUMENT_SECRET);
+    expect(JSON.parse(stored).document.revision).toBe(revision);
+    expect(await settings.secretStore.readSecret("NOTIFY_CENTER_TOKEN")).toBe(LEGACY_DOCUMENT_SECRET);
+
+    const service = new CommonSettingsNodeService({
+      hostId: "synthetic-node",
+      role: "member",
+      stateStore,
+      target: settings,
+    });
+    const exported = await service.document();
+    expect(exported?.revision).toBe(revision);
+    expect(exported?.environment.NOTIFY_CENTER_TOKEN).toBe(LEGACY_DOCUMENT_SECRET);
   });
 });

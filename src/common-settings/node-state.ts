@@ -375,15 +375,34 @@ export class CommonSettingsStateStore {
       if (key && !localValues.has(key)) localValues.set(key, value);
     }
 
-    if (localValues.size === 0) return;
-    if (!this.secretStore) {
+    const documentValues = new Map<string, string>();
+    if (state.document) {
+      for (const [key, value] of Object.entries(state.document.environment)) {
+        const id = `herder.env/${key}`;
+        if (!holdsSecretSetting(id) || typeof value !== "string" || isSecretMarker(value)) continue;
+        documentValues.set(key, value);
+      }
+    }
+
+    if (localValues.size === 0 && documentValues.size === 0) return;
+    const secretStore = this.secretStore;
+    if (!secretStore) {
       throw new Error("Cannot migrate legacy common-settings secrets without the node SecretStore");
+    }
+    for (const [key, value] of documentValues) {
+      const existing = await secretStore.readSecret(key);
+      if (existing !== undefined && existing !== value) {
+        throw new Error(`Cannot migrate legacy common-settings document secret ${key}: SecretStore already has a different value`);
+      }
+      if (existing === undefined) await secretStore.writeSecret(key, value);
     }
     for (const [key, value] of localValues) {
       // Repeating this write is safe: the value comes from the same legacy
       // state until the redacted state replacement below succeeds.
-      await this.secretStore.writeLocal(key, value);
+      await secretStore.writeLocal(key, value);
     }
+    // Persist even when the legacy document was the only place that carried
+    // raw secrets; otherwise the in-memory redaction would leave disk drift.
     await this.write(state);
   }
 
