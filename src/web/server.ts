@@ -1521,6 +1521,50 @@ export async function computeModelLaunchVerdicts(input: {
 async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   const resolveSessionRoute = async (harness: string, sessionId: string) => await resolveSessionRouteFor(integratorRuntime, adapters, scopedSupervisorFactory, harness, sessionId);
+  const permissionStateMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/permissions$/);
+  if (permissionStateMatch && request.method === "GET") {
+    response.setHeader("cache-control", "no-store");
+    const harness = decodeURIComponent(permissionStateMatch[1]);
+    const sessionId = decodeURIComponent(permissionStateMatch[2]);
+    const expectedHostId = url.searchParams.get("hostId")?.trim();
+    if (!expectedHostId || expectedHostId.length > 255) return sendJson(response, 400, { error: "hostId is required for an exact permission-state read" });
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { available: false, reason: "Scoped permission-state read is unavailable." });
+    const adapter = route.kind === "scoped" ? route.adapter : adapters.get(harness);
+    if (!adapter?.getPermissionState) return sendJson(response, 200, { available: false, reason: `${harness} does not expose native permission state or mode control.` });
+    let state: Awaited<ReturnType<SessionSupervisor["getPermissionState"]>>;
+    try {
+      state = route.kind === "scoped"
+        ? await route.supervisor!.getPermissionState(harness, sessionId)
+        : await supervisor.getPermissionState(harness, sessionId);
+    } catch { return sendJson(response, 503, { available: false, reason: "Could not read the current native permission state." }); }
+    if (!state) return sendJson(response, 503, { available: false, reason: "The native permission state could not be confirmed for this session." });
+    if (state.target.hostId !== expectedHostId) return sendJson(response, 409, { available: false, error: "Native permission state belongs to a different host." });
+    return sendJson(response, 200, { available: true, permissionState: state });
+  }
+  if (permissionStateMatch && request.method === "POST") {
+    const body = await readJson(request);
+    const harness = decodeURIComponent(permissionStateMatch[1]);
+    const sessionId = decodeURIComponent(permissionStateMatch[2]);
+    if (typeof body.hostId !== "string" || !body.hostId.trim() || body.hostId.length > 255
+      || typeof body.inputId !== "string" || !body.inputId.trim() || body.inputId.length > 512
+      || typeof body.expectedCurrentMode !== "string" || !body.expectedCurrentMode.trim() || body.expectedCurrentMode.length > 128
+      || typeof body.mode !== "string" || !body.mode.trim() || body.mode.length > 128) {
+      return sendJson(response, 400, { ok: false, state: "not_attempted", error: "hostId, inputId, expectedCurrentMode and mode are required." });
+    }
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { ok: false, state: "not_attempted", error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { ok: false, state: "not_attempted", error: "Scoped permission mode control is unavailable." });
+    const sessionSupervisor = route.kind === "scoped" ? route.supervisor! : supervisor;
+    const result = await sessionSupervisor.setPermissionMode(harness, sessionId, {
+      hostId: body.hostId.trim(),
+      inputId: body.inputId.trim(),
+      expectedCurrentMode: body.expectedCurrentMode,
+      mode: body.mode,
+    });
+    return sendJson(response, result.ok ? 200 : result.state === "unknown" ? 502 : 409, result);
+  }
   if (url.pathname === "/api/resources/s21-lease" && request.method === "GET") {
     response.setHeader("cache-control", "no-store");
     return sendJson(response, 200, await getS21Ownership());

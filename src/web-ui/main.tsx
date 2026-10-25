@@ -54,7 +54,7 @@ import { currentModelOption, modelSwitchSupported, requestModelChange, shortMode
 import { readSessionListSettings, writeSessionListSettings, SESSION_LIST_SHOW_COMPLETED_ARIA, SESSION_LIST_SHOW_COMPLETED_HINT, SESSION_LIST_SHOW_COMPLETED_LABEL } from "./session-list-preferences.js";
 import { readModelTimeline, writeModelTimeline, recordModelAt, modelAt, latestModel, type ModelTimelineEntry } from "./session-model-timeline.js";
 import type { UploadedImage } from "../session-images.js";
-import type { SessionMessageView } from "../types/index.js";
+import type { HarnessPermissionState, SessionMessageView } from "../types/index.js";
 
 type HerderSession = SessionListSession & {
   lastMessage?: string;
@@ -68,6 +68,8 @@ type HerderSession = SessionListSession & {
 };
 type SessionMessage = SessionMessageView;
 type SessionDetails = { session: HerderSession; lineage?: { kind?: string; parentId?: string; role?: string; task?: string }; children?: HerderSession[]; messages: SessionMessage[] };
+type PermissionModeRead = { available: boolean; permissionState?: HarnessPermissionState; reason?: string };
+type PermissionModeAttempt = { inputId: string; expectedCurrentMode: string; mode: string; status: "unknown" | "accepted"; at: string };
 type StatisticsDistribution = { count: number; percentilesSec: { p50: number; p75: number; p90: number; p95: number; p99: number }; coverage: Array<{ seconds: number; count: number; percent: number }>; histogram: Array<{ label: string; minSec: number; maxSec?: number; count: number; percent: number }> };
 type NumericSummary = { count: number; mean: number; median: number; p75: number; p90: number; p95: number; p99: number; min: number; max: number };
 type RankedCount = { name: string; count: number; percent: number };
@@ -130,6 +132,22 @@ const readSessionFromHash = (): string | undefined => {
   return sessionTurnLinkFromHash(window.location.hash)?.sessionKey;
 };
 const readTurnFromHash = (): string | undefined => sessionTurnLinkFromHash(window.location.hash)?.turnId;
+const permissionModeAttemptsStorageKey = (hostId: string, harness: string, sessionId: string): string =>
+  `agent-herder.permission-mode-attempts:${JSON.stringify([hostId, harness, sessionId])}`;
+const readPermissionModeAttempts = (hostId: string, harness: string, sessionId: string): PermissionModeAttempt[] => {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(permissionModeAttemptsStorageKey(hostId, harness, sessionId)) || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is PermissionModeAttempt => Boolean(entry && typeof entry === "object"
+      && typeof entry.inputId === "string" && typeof entry.expectedCurrentMode === "string"
+      && typeof entry.mode === "string" && (entry.status === "unknown" || entry.status === "accepted")
+      && typeof entry.at === "string"));
+  } catch { return []; }
+};
+const writePermissionModeAttempts = (hostId: string, harness: string, sessionId: string, attempts: PermissionModeAttempt[]): void => {
+  try { window.localStorage.setItem(permissionModeAttemptsStorageKey(hostId, harness, sessionId), JSON.stringify(attempts.slice(-20))); }
+  catch { /* The server ledger remains authoritative if browser storage is unavailable. */ }
+};
 const writeSessionToHash = (key?: string) => {
   const linked=sessionTurnLinkFromHash(window.location.hash);
   const focus=key&&linked?.sessionKey===key&&linked.turnId?`?turn=${encodeURIComponent(linked.turnId)}`:"";
@@ -858,6 +876,13 @@ function App() {
   const [sessionAutostart, setSessionAutostart] = React.useState<WebSessionAutostart>();
   const [sessionAutostartSaving, setSessionAutostartSaving] = React.useState(false);
   const [sessionAutostartError, setSessionAutostartError] = React.useState<string>();
+  const [permissionModeRead, setPermissionModeRead] = React.useState<PermissionModeRead>();
+  const [permissionModeLoading, setPermissionModeLoading] = React.useState(false);
+  const [permissionModeChoice, setPermissionModeChoice] = React.useState("");
+  const [permissionModeSaving, setPermissionModeSaving] = React.useState(false);
+  const [permissionModeError, setPermissionModeError] = React.useState<string>();
+  const [permissionModeAttempts, setPermissionModeAttempts] = React.useState<PermissionModeAttempt[]>([]);
+  const permissionModeReadOwner = React.useRef<string | undefined>(undefined);
   const [continuationHarnesses, setContinuationHarnesses] = React.useState<Partial<Record<AutocontinueHarness, WebSessionAutostartHarness>>>({});
   const [continuationHarnessSaving, setContinuationHarnessSaving] = React.useState<AutocontinueHarness>();
   const [continuationHarnessError, setContinuationHarnessError] = React.useState<string>();
@@ -1300,6 +1325,80 @@ function App() {
     const merged=mergeActiveActivity([activeSessionBase],activity.snapshot.confirmed,{hostId:directory.localHostId,goals:activity.goals})[0];
     return (merged??activeSessionBase) as HerderSession;
   },[activeSessionBase,activity.snapshot.confirmed,activity.goals,directory.localHostId]);
+  const refreshPermissionModeState = React.useCallback(async () => {
+    const session = activeSession;
+    if (!showInspector || !session?.hostId) {
+      permissionModeReadOwner.current = undefined;
+      setPermissionModeRead(undefined);
+      setPermissionModeAttempts([]);
+      setPermissionModeChoice("");
+      return;
+    }
+    const owner = JSON.stringify([session.hostId, session.harness, session.id]);
+    permissionModeReadOwner.current = owner;
+    setPermissionModeRead(undefined);
+    setPermissionModeChoice("");
+    setPermissionModeLoading(true);
+    setPermissionModeError(undefined);
+    setPermissionModeAttempts(readPermissionModeAttempts(session.hostId, session.harness, session.id));
+    try {
+      const result = await api<PermissionModeRead>(`/api/sessions/${encodeURIComponent(session.harness)}/${encodeURIComponent(session.id)}/permissions?hostId=${encodeURIComponent(session.hostId)}`);
+      if (permissionModeReadOwner.current !== owner) return;
+      if (result.available && result.permissionState
+        && (result.permissionState.target.hostId !== session.hostId || result.permissionState.target.harness !== session.harness || result.permissionState.target.sessionId !== session.id)) {
+        throw new Error("Состояние разрешений относится к другой сессии.");
+      }
+      setPermissionModeRead(result);
+      setPermissionModeChoice(result.permissionState?.currentMode || "");
+    } catch (error) {
+      if (permissionModeReadOwner.current !== owner) return;
+      setPermissionModeRead({ available: false, reason: (error as Error).message });
+    } finally {
+      if (permissionModeReadOwner.current === owner) setPermissionModeLoading(false);
+    }
+  }, [activeSession?.hostId, activeSession?.harness, activeSession?.id, showInspector]);
+  React.useEffect(() => { void refreshPermissionModeState(); }, [refreshPermissionModeState]);
+  const applyPermissionMode = React.useCallback(async () => {
+    const session = activeSession;
+    const state = permissionModeRead?.permissionState;
+    const mode = permissionModeChoice;
+    if (!session?.hostId || !state || !state.canSetMode || state.scope !== "session"
+      || !state.supportedModes?.includes(mode) || state.pendingRequests.length > 0
+      || !state.currentMode || mode === state.currentMode || permissionModeSaving) return;
+    const prior = permissionModeAttempts.find((attempt) => attempt.status === "unknown"
+      && attempt.mode === mode && attempt.expectedCurrentMode === state.currentMode);
+    const attempt: PermissionModeAttempt = prior || { inputId: newInputId(), expectedCurrentMode: state.currentMode, mode, status: "unknown", at: new Date().toISOString() };
+    const prepared = [...permissionModeAttempts.filter((item) => item.inputId !== attempt.inputId), attempt];
+    setPermissionModeAttempts(prepared);
+    writePermissionModeAttempts(session.hostId, session.harness, session.id, prepared);
+    setPermissionModeSaving(true);
+    setPermissionModeError(undefined);
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(session.harness)}/${encodeURIComponent(session.id)}/permissions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        signal: AbortSignal.timeout(15_000),
+        body: JSON.stringify({ hostId: session.hostId, inputId: attempt.inputId, expectedCurrentMode: attempt.expectedCurrentMode, mode: attempt.mode }),
+      });
+      const receipt = await response.json().catch(() => undefined) as { ok?: boolean; state?: "accepted" | "unknown" | "not_attempted"; error?: string } | undefined;
+      if (receipt?.ok && receipt.state === "accepted") {
+        const completed = prepared.map((item) => item.inputId === attempt.inputId ? { ...item, status: "accepted" as const } : item);
+        setPermissionModeAttempts(completed);
+        writePermissionModeAttempts(session.hostId, session.harness, session.id, completed);
+        await refreshPermissionModeState();
+      } else if (receipt?.state === "not_attempted") {
+        const remaining = prepared.filter((item) => item.inputId !== attempt.inputId);
+        setPermissionModeAttempts(remaining);
+        writePermissionModeAttempts(session.hostId, session.harness, session.id, remaining);
+        setPermissionModeError(receipt.error || "Режим не изменён.");
+        await refreshPermissionModeState();
+      } else {
+        setPermissionModeError(receipt?.error || "Исход смены режима неизвестен. Идентификатор попытки сохранён; автоматического повтора не будет.");
+      }
+    } catch (error) {
+      setPermissionModeError(`Исход смены режима неизвестен. Идентификатор попытки сохранён: ${(error as Error).message}`);
+    } finally { setPermissionModeSaving(false); }
+  }, [activeSession?.hostId, activeSession?.harness, activeSession?.id, permissionModeRead?.permissionState, permissionModeChoice, permissionModeAttempts, permissionModeSaving, refreshPermissionModeState]);
   // Факты работы сессии нужны только правой панели: пока её нет, панель их не читает.
   const sessionFacts = useSessionFacts(activeSession, showInspector, details?.messages.length ?? 0);
   // Машины флота для блока рабочего места: подпись машины и её точный идентификатор.
@@ -2319,7 +2418,7 @@ function App() {
         </>}
       </form></div>}
     </section>
-    {showInspector && !showCreateSession && !showStatistics && !showJobs && <><div className="inspector-scrim" aria-hidden="true" onClick={closeSessionInspector} /><aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">СЕССИЯ</span><button className={sessionSettingsReturn ? "quiet-button" : "icon-button"} onClick={closeSessionInspector} aria-label={sessionSettingsReturn ? "Вернуться к общим настройкам" : "Закрыть настройки сессии"}>{sessionSettingsReturn ? "← К общим настройкам" : "×"}</button></div>{activeSession ? <><div className="inspector-title">{cleanSessionTitle(activeSession.title) || activeSession.title || activeSession.id}</div><div className="inspector-status"><span className={`status-dot status-${statusClass(activeSession.status)}`} /><span className={`status-label status-${statusClass(activeSession.status)}`}>{activeSession.meta?.humanStopHeld === true ? "Явная остановка — автоматика приостановлена" : statusLabel(activeSession.status)}</span></div>{sessionAutostart && <div className="autopilot-control session-autostart-control"><div><span className="eyebrow">АВТОПРОДОЛЖЕНИЕ</span><strong>{sessionAutostart.enabled ? "Включено" : "Выключено"}</strong><small>{sessionAutostart.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : sessionAutostart.source === "harness" ? `Сейчас наследуется общая настройка для ${activeSession.harness}. Нажатие создаст исключение только для этой сессии и применится сразу.` : sessionAutostart.source === "global" ? "Сейчас наследуется общий переключатель. Нажатие создаст исключение только для этой сессии и применится сразу." : "Используется значение по умолчанию. Нажатие создаст отдельную настройку только для этой сессии и применится сразу."}</small>{sessionAutostart.source === "session" && <button className="inherit-button" disabled={sessionAutostartSaving} onClick={() => void inheritSessionAutostart()}>Использовать общую настройку {activeSession.harness}</button>}</div><button className={`switch-control ${sessionAutostart.enabled ? "enabled" : ""}`} role="switch" aria-checked={sessionAutostart.enabled} aria-label="Автопродолжение для текущей сессии" disabled={sessionAutostartSaving} onClick={() => void toggleSessionAutostart()}><span /></button></div>}{sessionAutostartError && <small className="autopilot-error">{sessionAutostartError}</small>}{["opencode", "zcode"].includes(activeSession.harness) && <QuotaRecoveryControls session={{harness: activeSession.harness, id: activeSession.id, cwd: activeSession.cwd}} />}{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">АВТОПИЛОТ</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : autopilotSession.source === "policy" ? (autopilotPolicyDraft?.enabled && !autopilotPolicyDraft.harnesses.includes(activeSession.harness as AutopilotHarness) ? `${AUTOPILOT_HARNESS_LABELS[activeSession.harness as AutopilotHarness]} выключен в общих настройках сред. Нажатие включит автопилот только для этой сессии и применится сразу.` : "Сейчас наследуется общая настройка автопилота. Нажатие создаст исключение только для этой сессии и применится сразу.") : autopilotSession.source === "plugin-default" ? "Сейчас наследуется настройка среды. Нажатие создаст исключение только для этой сессии и применится сразу." : "По умолчанию выключен. Нажатие включит автопилот только для этой сессии и применится сразу."}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Использовать общую настройку</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label="Автопилот для текущей сессии" disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}{!AUTOCONTINUE_HARNESSES.has(activeSession.harness) && <p className="settings-help">Автопродолжение после сбоя в этой среде пока недоступно. Можно продолжить сессию вручную.</p>}<dl><dt>Агент</dt><dd>{activeSession.harness}</dd><dt>Папка</dt><dd title={activeSession.cwd}>{lastSegment(activeSession.cwd)}</dd>{activeSession.messageCount !== undefined && <><dt>Сообщения</dt><dd>{activeSession.messageCount}</dd></>}{activeSession.durationSec !== undefined && <><dt>Длительность</dt><dd>{formatDuration(activeSession.durationSec)}</dd></>}{activeSession.model !== undefined && activeSession.model.includes("/") && <><dt>Источник</dt><dd title={activeSession.model}>{modelSourceLabel(activeSession.model)}</dd></>}{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) !== undefined && <><dt>Токены</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"])}</dd></>}<><dt>Траты</dt><dd>{typeof activeSession.costUsd === "number" ? `$${activeSession.costUsd.toFixed(4)}` : "среда не сообщает"}</dd></></dl><SessionInspectBlock facts={sessionFacts} pendingModel={selectedModel} /><SessionActivityPanel messages={details?.messages} /><SessionMetadata sessionId={activeSession.id} harness={activeSession.harness} />{activeSession.messageCount === 0 && <div className="inspector-empty-metrics">Пока нет сообщений. Отправьте сообщение или продолжите сессию.</div>}<div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer" title="История сообщений и изменений файлов — в новой вкладке">Визуализация ↗</a>}{(activeSession.status === "running" || sending) && <button className="stop-button" onClick={() => void runAction("stop")}>Остановить</button>}{(!sending && activeSession.status !== "running" && (activeSession.status === "stopped" || activeSession.status === "error" || activeSession.meta?.humanStopHeld === true)) && <button className="primary-button" onClick={() => void runAction("resume")}>Возобновить работу</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Восстановить</button>}</div></> : <div className="empty-inspector">{emptyInspectorText(activeKey, detailsError)}</div>}</aside></>}
+    {showInspector && !showCreateSession && !showStatistics && !showJobs && <><div className="inspector-scrim" aria-hidden="true" onClick={closeSessionInspector} /><aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">СЕССИЯ</span><button className={sessionSettingsReturn ? "quiet-button" : "icon-button"} onClick={closeSessionInspector} aria-label={sessionSettingsReturn ? "Вернуться к общим настройкам" : "Закрыть настройки сессии"}>{sessionSettingsReturn ? "← К общим настройкам" : "×"}</button></div>{activeSession ? <><div className="inspector-title">{cleanSessionTitle(activeSession.title) || activeSession.title || activeSession.id}</div><div className="inspector-status"><span className={`status-dot status-${statusClass(activeSession.status)}`} /><span className={`status-label status-${statusClass(activeSession.status)}`}>{activeSession.meta?.humanStopHeld === true ? "Явная остановка — автоматика приостановлена" : statusLabel(activeSession.status)}</span></div>{sessionAutostart && <div className="autopilot-control session-autostart-control"><div><span className="eyebrow">АВТОПРОДОЛЖЕНИЕ</span><strong>{sessionAutostart.enabled ? "Включено" : "Выключено"}</strong><small>{sessionAutostart.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : sessionAutostart.source === "harness" ? `Сейчас наследуется общая настройка для ${activeSession.harness}. Нажатие создаст исключение только для этой сессии и применится сразу.` : sessionAutostart.source === "global" ? "Сейчас наследуется общий переключатель. Нажатие создаст исключение только для этой сессии и применится сразу." : "Используется значение по умолчанию. Нажатие создаст отдельную настройку только для этой сессии и применится сразу."}</small>{sessionAutostart.source === "session" && <button className="inherit-button" disabled={sessionAutostartSaving} onClick={() => void inheritSessionAutostart()}>Использовать общую настройку {activeSession.harness}</button>}</div><button className={`switch-control ${sessionAutostart.enabled ? "enabled" : ""}`} role="switch" aria-checked={sessionAutostart.enabled} aria-label="Автопродолжение для текущей сессии" disabled={sessionAutostartSaving} onClick={() => void toggleSessionAutostart()}><span /></button></div>}{sessionAutostartError && <small className="autopilot-error">{sessionAutostartError}</small>}{["opencode", "zcode"].includes(activeSession.harness) && <QuotaRecoveryControls session={{harness: activeSession.harness, id: activeSession.id, cwd: activeSession.cwd}} />}{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">АВТОПИЛОТ</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : autopilotSession.source === "policy" ? (autopilotPolicyDraft?.enabled && !autopilotPolicyDraft.harnesses.includes(activeSession.harness as AutopilotHarness) ? `${AUTOPILOT_HARNESS_LABELS[activeSession.harness as AutopilotHarness]} выключен в общих настройках сред. Нажатие включит автопилот только для этой сессии и применится сразу.` : "Сейчас наследуется общая настройка автопилота. Нажатие создаст исключение только для этой сессии и применится сразу.") : autopilotSession.source === "plugin-default" ? "Сейчас наследуется настройка среды. Нажатие создаст исключение только для этой сессии и применится сразу." : "По умолчанию выключен. Нажатие включит автопилот только для этой сессии и применится сразу."}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Использовать общую настройку</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label="Автопилот для текущей сессии" disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}{!AUTOCONTINUE_HARNESSES.has(activeSession.harness) && <p className="settings-help">Автопродолжение после сбоя в этой среде пока недоступно. Можно продолжить сессию вручную.</p>}<dl><dt>Агент</dt><dd>{activeSession.harness}</dd><dt>Папка</dt><dd title={activeSession.cwd}>{lastSegment(activeSession.cwd)}</dd>{activeSession.messageCount !== undefined && <><dt>Сообщения</dt><dd>{activeSession.messageCount}</dd></>}{activeSession.durationSec !== undefined && <><dt>Длительность</dt><dd>{formatDuration(activeSession.durationSec)}</dd></>}{activeSession.model !== undefined && activeSession.model.includes("/") && <><dt>Источник</dt><dd title={activeSession.model}>{modelSourceLabel(activeSession.model)}</dd></>}{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) !== undefined && <><dt>Токены</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"])}</dd></>}<><dt>Траты</dt><dd>{typeof activeSession.costUsd === "number" ? `$${activeSession.costUsd.toFixed(4)}` : "среда не сообщает"}</dd></></dl><section className="permission-mode-control" aria-label="Режим разрешений сессии"><div className="permission-mode-heading"><span className="eyebrow">РЕЖИМ РАЗРЕШЕНИЙ</span><button className="quiet-button" disabled={permissionModeLoading || permissionModeSaving} onClick={() => void refreshPermissionModeState()}>{permissionModeLoading ? "Читаю…" : "Обновить"}</button></div>{permissionModeLoading && !permissionModeRead ? <small>Читаю состояние выбранной сессии…</small> : permissionModeRead?.available && permissionModeRead.permissionState ? <><div className="permission-mode-facts"><span>Текущий режим</span><strong>{permissionModeRead.permissionState.currentMode || "не сообщён средой"}</strong><span>Область</span><strong>{permissionModeRead.permissionState.scope}</strong><span>Ожидают решения</span><strong>{permissionModeRead.permissionState.pendingRequests.length}</strong></div>{permissionModeRead.permissionState.pendingRequests.map((pending) => <small className="permission-mode-pending-reason" key={pending.id}>{pending.toolName || pending.reason || pending.unsupportedReason || "Ожидает решения"}{pending.canRespond === false ? " — среда не позволяет ответить через этот интерфейс." : ""}</small>)}{permissionModeRead.permissionState.scope === "session" && permissionModeRead.permissionState.canSetMode && (permissionModeRead.permissionState.supportedModes?.length ?? 0) > 0 ? <div className="permission-mode-editor"><label>Выбрать режим<select aria-label="Режим разрешений сессии" value={permissionModeChoice} onChange={(event) => setPermissionModeChoice(event.target.value)} disabled={permissionModeSaving || permissionModeRead.permissionState.pendingRequests.length > 0}><option value="" disabled>Выберите режим</option>{permissionModeRead.permissionState.supportedModes!.map((mode) => <option key={mode} value={mode}>{mode}</option>)}</select></label><button className="quiet-button" disabled={permissionModeSaving || permissionModeLoading || permissionModeRead.permissionState.pendingRequests.length > 0 || !permissionModeRead.permissionState.currentMode || permissionModeChoice === permissionModeRead.permissionState.currentMode} onClick={() => void applyPermissionMode()}>{permissionModeSaving ? "Применяю…" : "Применить к этой сессии"}</button>{permissionModeRead.permissionState.pendingRequests.length > 0 && <small>Сначала обработайте ожидающие запросы разрешений.</small>}</div> : <small>{permissionModeRead.permissionState.scope !== "session" ? `Среда сообщает область «${permissionModeRead.permissionState.scope}»; менять общий режим из панели сессии нельзя.` : permissionModeRead.permissionState.canSetMode ? "Среда не сообщила доступные режимы для этой сессии." : "Нативное управление режимом для этой сессии недоступно."}</small>}</> : <small>{permissionModeRead?.reason || "Нативное состояние режима недоступно для этой среды."}</small>}{permissionModeError && <small className="permission-mode-error">{permissionModeError}</small>}{permissionModeAttempts.some((attempt) => attempt.status === "unknown") && <small>Есть попытка с неизвестным исходом. Её inputId сохранён; автоматического повтора не будет.</small>}</section><SessionInspectBlock facts={sessionFacts} pendingModel={selectedModel} /><SessionActivityPanel messages={details?.messages} /><SessionMetadata sessionId={activeSession.id} harness={activeSession.harness} />{activeSession.messageCount === 0 && <div className="inspector-empty-metrics">Пока нет сообщений. Отправьте сообщение или продолжите сессию.</div>}<div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer" title="История сообщений и изменений файлов — в новой вкладке">Визуализация ↗</a>}{(activeSession.status === "running" || sending) && <button className="stop-button" onClick={() => void runAction("stop")}>Остановить</button>}{(!sending && activeSession.status !== "running" && (activeSession.status === "stopped" || activeSession.status === "error" || activeSession.meta?.humanStopHeld === true)) && <button className="primary-button" onClick={() => void runAction("resume")}>Возобновить работу</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Восстановить</button>}</div></> : <div className="empty-inspector">{emptyInspectorText(activeKey, detailsError)}</div>}</aside></>}
   </main>;
 }
 

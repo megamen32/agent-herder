@@ -15,6 +15,7 @@ import type {
   SendMessageResult,
   SessionDetails,
   SessionHistoryInfo,
+  HarnessPermissionState,
   SessionLineage,
   SessionMessagePart,
   SessionMessageView,
@@ -34,7 +35,7 @@ import { harnessEventHealth, type HarnessEventHealthRegistry } from "./harness-e
 import type { UnfinishedSessionLauncher } from "./autopilot/unfinished-session-launcher.js";
 import type { AutoCompactService } from "./autocontinue/auto-compact.js";
 import { deferredMessages, isBusyCodexWriter } from "./deferred-messages.js";
-import { respondToNativePermission } from "./permission-control/reply.js";
+import { respondToNativePermission, setNativePermissionModeOnce } from "./permission-control/reply.js";
 
 export interface SessionFilters {
   harness?: string;
@@ -815,6 +816,29 @@ export class SessionSupervisor {
     } catch { /* the guard performs its own required fresh read */ }
     if (!expectedHostId) return { ok: false, error: "Could not bind the permission response to its native host." };
     const result = await respondToNativePermission(adapter, harness, id, permissionId, response, remember, expectedHostId);
+    if (result.ok) this.publishSessionChanged(harness, id, "changed");
+    return result;
+  }
+
+  async getPermissionState(harness: string, id: string): Promise<HarnessPermissionState | null> {
+    const adapter = this.requireAdapter(harness);
+    if (!adapter.getPermissionState) return null;
+    const state = await adapter.getPermissionState(id);
+    if (!state || state.target.harness !== harness || state.target.sessionId !== id) return null;
+    return state;
+  }
+
+  async setPermissionMode(
+    harness: string,
+    id: string,
+    input: { hostId: string; inputId: string; expectedCurrentMode: string; mode: string },
+  ): Promise<Awaited<ReturnType<typeof setNativePermissionModeOnce>>> {
+    const adapter = this.requireAdapter(harness);
+    const result = await setNativePermissionModeOnce(adapter, {
+      ...input,
+      harness,
+      sessionId: id,
+    });
     if (result.ok) this.publishSessionChanged(harness, id, "changed");
     return result;
   }
