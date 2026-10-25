@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { McpServer } from "@modelcontextprotocol/server";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
@@ -24,12 +24,14 @@ function fakeSession(): AgentSession {
     status: "stopped",
     title: "Test session",
     cwd: "/tmp/project",
+    hostId: "test-host",
     lastActivity: new Date().toISOString(),
-    needsPermission: false,
+    needsPermission: true,
+    permissionDetails: { id: "p-1", type: "permission", description: "Test permission request" },
   };
 }
 
-function fakeAdapter(): HarnessAdapter {
+function fakeAdapter(pendingPermissionId: string): HarnessAdapter {
   const session = fakeSession();
   return {
     type: "claude",
@@ -37,6 +39,16 @@ function fakeAdapter(): HarnessAdapter {
     async init() {},
     async listSessions() { return [session]; },
     async getSession(id) { return id === session.id ? session : null; },
+    async getPermissionState(id) {
+      if (id !== session.id) return null;
+      return {
+        target: { hostId: session.hostId, harness: session.harness, sessionId: session.id },
+        scope: "session",
+        canSetMode: false,
+        pendingRequests: pendingPermissionId ? [{ id: pendingPermissionId, canRespond: true }] : [],
+        observedAt: new Date().toISOString(),
+      };
+    },
     async sendMessage() { return { ok: true }; },
     async stopSession() { return { ok: false, error: "cannot stop" }; },
     async respondPermission() { return { ok: false, error: "permission backend unavailable" }; },
@@ -243,7 +255,7 @@ describe("agent-herder web API", () => {
 
   it("serves sessions, resume, conversion, and the PWA shell", async () => {
     const server = createWebServer({
-      adapters: new Map([["claude", fakeAdapter()], ["opencode", fakeNamedAdapter()]]),
+      adapters: new Map([["claude", fakeAdapter("p-1")], ["opencode", fakeNamedAdapter()]]),
       converter: {
         async convert() {
           return { success: true, targetSessionId: "codex-session-1", targetPath: "/tmp/codex.jsonl", messageCount: 2 };
@@ -328,6 +340,54 @@ describe("agent-herder web API", () => {
     const html = await (await fetch(`${base}/`)).text();
     expect(html).toContain("Agent Herder");
     expect(html).toContain("Convert");
+  });
+
+  it("refuses a permission reply that cannot be bound to its native host", async () => {
+    const nativeReply = vi.fn(async () => ({ ok: false, error: "permission backend unavailable" }));
+    const unboundAdapter = (target: { hostId: string; sessionId: string }): HarnessAdapter => ({
+      type: "claude",
+      name: "Fake Claude",
+      async init() {},
+      async listSessions() { return []; },
+      async getSession() { return null; },
+      async getPermissionState() {
+        return {
+          target: { hostId: target.hostId, harness: "claude", sessionId: target.sessionId },
+          scope: "session",
+          canSetMode: false,
+          pendingRequests: [{ id: "p-1", canRespond: true }],
+          observedAt: new Date().toISOString(),
+        };
+      },
+      async sendMessage() { return { ok: true }; },
+      async stopSession() { return { ok: false, error: "cannot stop" }; },
+      respondPermission: nativeReply,
+      async setPermissions() { return { ok: true }; },
+    });
+    const cases: Array<{ label: string; target: { hostId: string; sessionId: string } }> = [
+      { label: "empty native host", target: { hostId: "", sessionId: "session-1" } },
+      { label: "foreign native session", target: { hostId: "other-host", sessionId: "other-session" } },
+    ];
+    for (const testCase of cases) {
+      const server = createWebServer({
+        adapters: new Map([["claude", unboundAdapter(testCase.target)]]),
+        converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+      });
+      servers.push(server);
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("server did not bind");
+      const refused = await fetch(`http://127.0.0.1:${address.port}/api/sessions/claude/session-1/permissions/p-1`, {
+        method: "POST",
+        body: JSON.stringify({ response: "allow", remember: true }),
+      });
+      expect(refused.status, testCase.label).toBe(502);
+      expect(await refused.json(), testCase.label).toEqual({
+        ok: false,
+        error: "Could not bind the permission response to its native host.",
+      });
+    }
+    expect(nativeReply).not.toHaveBeenCalled();
   });
 
   it("serves bounded useful progress that is stable across timestamp-only heartbeat changes", async () => {
