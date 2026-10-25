@@ -16,7 +16,7 @@ import {
   type CommonSettingsLaunchPolicyTarget,
   type CommonSettingsTarget,
 } from "./apply.js";
-import { readOwnerDocument, type CommonSettingsDocument, type CommonSettingsHooksLever } from "./document.js";
+import { readOwnerDocument, rehydrateCommonDocument, type CommonSettingsDocument, type CommonSettingsHooksLever } from "./document.js";
 import {
   CommonSettingsStateStore,
   redactCommonSettingsConflicts,
@@ -135,7 +135,10 @@ export class CommonSettingsNodeService {
       });
     }
     const state = await this.state();
-    return state.document;
+    // The state of the node keeps the marker of every secret: the document the
+    // node hands on is the document with the values put back, and a node that
+    // cannot put them back hands on nothing.
+    return await rehydrateCommonDocument(state.document, this.options.target);
   }
 
   /**

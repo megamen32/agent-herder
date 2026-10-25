@@ -279,9 +279,12 @@ describe("the settings of the herder are managed by the owner from one API", () 
     expect(JSON.stringify(view.applied)).not.toContain(secret);
     expect(view.applied[0].after.fingerprint).toBe(settingsFingerprint(secret));
 
-    // The value is in the file of the product: the form manages the file, it
-    // does not replace it.
-    expect(await readFile(envPath, "utf8")).toContain(`NOTIFY_CENTER_TOKEN=${secret}`);
+    // The file of the product keeps the marker of the value: the form manages
+    // the file, it does not replace it, and the value itself lives in the
+    // store of the secrets.
+    expect(await readFile(envPath, "utf8")).toContain(`NOTIFY_CENTER_TOKEN=${settingsFingerprint(secret)}`);
+    expect(await readFile(envPath, "utf8")).not.toContain(secret);
+    expect(await store.readSecretValue("NOTIFY_CENTER_TOKEN")).toBe(secret);
 
     // A later read never returns it either.
     const later = await (await fetch(`http://127.0.0.1:${port}/api/settings`)).text();
@@ -347,8 +350,11 @@ describe("the settings of the herder are managed by the owner from one API", () 
     // The value of the secret is nowhere in the answer.
     expect(text).not.toContain("rolled-back-secret");
     expect(text).not.toContain("center-token-value");
-    // The value before the change is back in the file of the product.
-    expect(await readFile(envPath, "utf8")).toContain("NOTIFY_CENTER_TOKEN=center-token-value");
+    // The value before the change is back — in the store of the secrets: the
+    // file of the product keeps the marker of the value and never the value.
+    expect(await readFile(envPath, "utf8")).toContain(`NOTIFY_CENTER_TOKEN=${settingsFingerprint("center-token-value")}`);
+    expect(await readFile(envPath, "utf8")).not.toContain("center-token-value");
+    expect(await store.readSecretValue("NOTIFY_CENTER_TOKEN")).toBe("center-token-value");
   });
 
   it("refuses a change without the version it was made on", async () => {
@@ -610,9 +616,11 @@ describe("the settings of the herder are managed by the owner from one API", () 
     }
     const checked = await (await putSettings(port, { secrets: { NOTIFY_CENTER_TOKEN: { operation: "check" } } })).text();
     expect(checked).not.toContain(secret);
-    // The value is in the file of the product: the form manages the file, it
-    // does not replace it.
-    expect(await readFile(envPath, "utf8")).toContain(`NOTIFY_CENTER_TOKEN=${secret}`);
+    // The file of the product keeps the marker of the value and never the
+    // value: the value lives in the store of the secrets.
+    expect(await readFile(envPath, "utf8")).toContain(`NOTIFY_CENTER_TOKEN=${settingsFingerprint(secret)}`);
+    expect(await readFile(envPath, "utf8")).not.toContain(secret);
+    expect(await store.readSecretValue("NOTIFY_CENTER_TOKEN")).toBe(secret);
   });
 
   it("keeps the profiles of the mesh as named entities of the settings", async () => {

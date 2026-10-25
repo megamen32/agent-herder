@@ -12,13 +12,13 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createSettingsApi } from "../src/web/settings-api.js";
-import { SettingsStore } from "../src/web/settings-store.js";
+import { SettingsStore, settingsFingerprint } from "../src/web/settings-store.js";
 import {
   applyCommonSettingsDocument,
   buildCommonDocument,
@@ -262,6 +262,7 @@ describe("the answer of the panel holds no value of a secret", () => {
 /** The settings of a node, as a fake of the product of the node. */
 function fakeTarget(initial: Record<string, string> = {}) {
   const values: Record<string, string> = { ...initial };
+  const local: Record<string, string> = {};
   const target: CommonSettingsTarget = {
     async readEnvironment() {
       return {
@@ -276,8 +277,13 @@ function fakeTarget(initial: Record<string, string> = {}) {
       }
       return [];
     },
+    async keepLocalSecretValue(key: string, value: string | undefined) {
+      if (value === undefined) delete local[key];
+      else local[key] = value;
+    },
+    async readLocalSecretValue(key: string) { return local[key]; },
   };
-  return { values, target };
+  return { values, local, target };
 }
 
 /** The tools of the node, as a fake of the server of the MCP. */
@@ -336,11 +342,14 @@ describe("the tools of the node hold no value of a secret", () => {
     await service.apply(document);
     // The common value wins on the node.
     expect(node.values.NOTIFY_CENTER_TOKEN).toBe(COMMON_SECRET);
-    // The value the node held is kept in the state of the node: that is what
-    // lets the owner put it back.
+    // The value the node held is kept where the secrets of the node live: the
+    // state of the node keeps the fingerprint of it and never the value, and
+    // the value is what lets the owner put it back.
     const state = await stateStore.read();
     const kept = state.conflicts.find((item) => item.id === "herder.env/NOTIFY_CENTER_TOKEN");
-    expect(kept?.localValue).toBe(LOCAL_SECRET);
+    expect(kept?.localValue).toBeNull();
+    expect(kept?.localFingerprint).toBe(settingsFingerprint(LOCAL_SECRET));
+    expect(await readFile(join(stateDir, "common-settings.json"), "utf8")).not.toContain(LOCAL_SECRET);
     // The answer of the tool of the restore holds no value of the secret.
     const restored = await tools.get("common_settings_restore")!({});
     console.log("=== the answer of the tool common_settings_restore ===");
