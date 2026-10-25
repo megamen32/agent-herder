@@ -79,8 +79,9 @@ export class SessionQueueControlGateway {
       const value=unwrapResult(await promise);
       const target=value.target as Record<string,unknown>|undefined;
       const job=value.job as Record<string,unknown>|undefined;
+      const expectedJobId=sessionQueueControlJobId(input);
       if(value.state==='queued'&&value.inputId===input.inputId&&target?.hostId===input.hostId&&target.harness===input.harness&&target.sessionId===input.sessionId
-        &&typeof job?.id==='string'&&typeof job.state==='string'&&typeof job.resultRef==='string'){
+        &&job?.id===expectedJobId&&typeof job.state==='string'&&typeof job.resultRef==='string'){
         return {target:targetOf(input),inputId:input.inputId,state:'queued',nonRetryable:false,job:{id:job.id,state:job.state,resultRef:job.resultRef}};
       }
       if(value.state==='not_attempted'&&value.inputId===input.inputId)return {target:targetOf(input),inputId:input.inputId,state:'not_attempted',nonRetryable:true,error:typeof value.error==='string'?value.error:'Native owner refused the request.'};

@@ -1,6 +1,6 @@
 import {describe,expect,it,vi} from 'vitest';
 import {SessionQueueControlGateway} from '../src/session-queue-control-gateway.js';
-import type {SessionQueueControl} from '../src/session-queue-control.js';
+import {sessionQueueControlJobId,type SessionQueueControl} from '../src/session-queue-control.js';
 import type {HerderJobRegistry} from '../src/herder-jobs.js';
 import type {GptAdminTransport} from '../src/mesh/gptadmin.js';
 
@@ -32,10 +32,15 @@ describe('native queue owner gateway',()=>{
  it('forwards remote reads and resume once to the exact native owner',async()=>{
   const call=vi.fn(async(_target:string,_tool:string,args:Record<string,unknown>)=>({structuredContent:{target:args,state,canResume:true,humanStopHeld:false}}));
   const f=gateway({call} as unknown as GptAdminTransport);
+  const remoteInput={...input,hostId:'server-44'};
   expect(await f.service.read({...target,hostId:'server-44'})).toMatchObject({target:{hostId:'server-44',sessionId:target.sessionId},canResume:true});
-  call.mockResolvedValueOnce({structuredContent:{target:{...target,hostId:'server-44'},inputId:input.inputId,state:'queued',nonRetryable:false,job:{id:'job_remote',state:'queued',resultRef:'herder://jobs/job_remote'}}});
-  expect(await f.service.submit({...input,hostId:'server-44'})).toMatchObject({state:'queued',job:{id:'job_remote'}});
-  expect(call.mock.calls.map(row=>row[1])).toEqual(['session_queue_processing_get','session_queue_processing_resume']);
+  const expectedJobId=sessionQueueControlJobId(remoteInput);
+  call.mockResolvedValueOnce({structuredContent:{target:{...target,hostId:'server-44'},inputId:input.inputId,state:'queued',nonRetryable:false,job:{id:expectedJobId,state:'queued',resultRef:`herder://jobs/${expectedJobId}`}}});
+  expect(await f.service.submit(remoteInput)).toMatchObject({state:'queued',job:{id:expectedJobId}});
+  const mismatchInput={...remoteInput,inputId:'resume-fixture-mismatch'};
+  call.mockResolvedValueOnce({structuredContent:{target:{...target,hostId:'server-44'},inputId:mismatchInput.inputId,state:'queued',nonRetryable:false,job:{id:'job_wrong',state:'queued',resultRef:'herder://jobs/job_wrong'}}});
+  expect(await f.service.submit(mismatchInput)).toMatchObject({state:'unknown',nonRetryable:true,inputId:mismatchInput.inputId});
+  expect(call.mock.calls.map(row=>row[1])).toEqual(['session_queue_processing_get','session_queue_processing_resume','session_queue_processing_resume']);
   expect(call.mock.calls[1]?.[2]).toMatchObject({hostId:'server-44',sessionId:input.sessionId,inputId:input.inputId,expectedRevision:17});
   expect(f.local.submit).not.toHaveBeenCalled();
  });
