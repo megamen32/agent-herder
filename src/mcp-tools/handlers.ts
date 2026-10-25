@@ -564,7 +564,13 @@ async function sendMessageOnce(
         error: "The configured MiniMax policy applies only to queued exact-session CLI fallback; steer/sync was not sent." });
     }
   }
-  if (!parsed.humanRequested && parsed.mode === "steer" && !isCoordinationActive(found.session)) return skippedCoordination(found.session);
+  if (!parsed.humanRequested && parsed.mode === "steer" && !isCoordinationActive(found.session)) {
+    return JSON.stringify({
+      ok: false, sessionId: found.session.id, harness: found.session.harness, inputId: parsed.inputId,
+      delivery: "not_attempted", reason: "inactive_requires_queue", activated: false,
+      nextAction: { mode: "queue", instruction: "Send once with mode=queue to deliver this task to the inactive session." },
+    });
+  }
 
   const provenanceHeader = parsed.humanRequested
     ? "Поручение пользователя, переданное агентом" + (parsed.fromSessionId ? `\n${await buildMessageProvenanceHeader(adapters, parsed, found.session)}` : "")

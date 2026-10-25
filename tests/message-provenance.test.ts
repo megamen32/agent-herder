@@ -213,4 +213,43 @@ describe("send_message sender provenance", () => {
       await delivery.getMinimaxExecPolicy({ hostId: "host-a", harness: "minimax-code", sessionId: target.id });
     }
   });
+
+  it("returns a typed queue next action for an ordinary default send to an idle session", async () => {
+    tempRoot = await mkdtemp(join(tmpdir(), "agent-herder-message-provenance-idle-default-"));
+    const target: AgentSession = {
+      id: "target-idle-default", harness: "codex", hostId: "host-a", status: "idle", title: "idle default target",
+      cwd: "/tmp", lastActivity: new Date().toISOString(), needsPermission: false,
+    };
+    let nativeWrites = 0;
+    const adapter: HarnessAdapter = {
+      type: "codex", name: "idle default fixture", async init() {},
+      async listSessions() { return [target]; },
+      async getSession(id) { return id === target.id ? target : null; },
+      async sendMessage() { nativeWrites++; return { ok: true, admitted: true, turnId: "unexpected" }; },
+      async stopSession() { return { ok: true }; },
+      async respondPermission() { return { ok: true }; },
+      async setPermissions() { return { ok: true }; },
+    };
+    const events = new HerderEventBus();
+    const jobs = new HerderJobRegistry(events, { persistencePath: join(tempRoot, "jobs.json") });
+    const server = new McpServer({ name: "idle-default-next-action-test", version: "1" });
+    registerSessionTools(server, { adapters: new Map([["codex", adapter]]), jobs, events, routingPeers: [] });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "idle-default-next-action-client", version: "1" }, { versionNegotiation: { mode: "auto" } });
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    cleanup.push(async () => { await client.close(); await server.close(); });
+
+    const result = await client.callTool({ name: "send_message", arguments: {
+      harness: "codex", sessionId: target.id, inputId: "idle-default-next-action", message: "Do this task.",
+    } });
+    const payload = JSON.parse(result.content[0]?.text ?? "{}");
+    expect(payload).toMatchObject({
+      delivery: "not_attempted", reason: "inactive_requires_queue", activated: false,
+      nextAction: { mode: "queue" },
+    });
+    expect(payload.nextAction.instruction).toContain("mode=queue");
+    expect(nativeWrites).toBe(0);
+    expect(jobs.list()).toHaveLength(0);
+  });
 });
