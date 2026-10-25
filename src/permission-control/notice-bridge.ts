@@ -1,11 +1,14 @@
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 import { mkdir, open } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
 import lockfile from "proper-lockfile";
-import type { HumanRequestRecord } from "../human-request/registry.js";
-import { loadAskHumanProducer } from "../human-request/ask-human-producer.js";
-import type { AgentSession, HarnessAdapter, HarnessPermissionState, SessionMessageView } from "../types/index.js";
+import { buildAskHumanRequest, deliverNoticeQuestion, type DeliverableHumanQuestion } from "../human-request/notice-question.js";
+import { nativeTarget, type HumanQuestionBinding } from "../human-request/question-binding.js";
+import { loadAskHumanProducer, type AskHumanProducer } from "../human-request/ask-human-producer.js";
+import type { HumanRequestRecord, HumanRequestRegistry } from "../human-request/registry.js";
+import type { AgentSession, HarnessAdapter, HarnessEvent, HarnessPermissionState, SessionMessageView } from "../types/index.js";
 
 const PREFIX = "agent-herder:permission-reply:v1:";
 
@@ -24,7 +27,160 @@ export interface CanonicalNoticeAnswer {
 
 export interface PreparedPermissionQuestion {
   target: PermissionReplyTarget;
+  sessionCwd?: string;
   message: string;
+}
+
+export interface PermissionNoticeObserver {
+  onEvent(adapter: HarnessAdapter, event: HarnessEvent): Promise<void>;
+  reconcileInitialSnapshot(adapter: HarnessAdapter, sessions: AgentSession[]): Promise<boolean>;
+}
+
+export interface PermissionNoticeObserverDependencies {
+  loadProducer?: () => Promise<AskHumanProducer | undefined>;
+  fetchImpl?: typeof fetch;
+}
+
+export interface CreatedPermissionQuestion {
+  record: HumanRequestRecord;
+  binding: HumanQuestionBinding;
+  producer: AskHumanProducer;
+  created: boolean;
+}
+
+/** Create or reuse the existing typed question after an exact fresh native read. */
+export async function createPermissionHumanQuestion(
+  adapter: HarnessAdapter,
+  registry: HumanRequestRegistry,
+  harness: string,
+  sessionId: string,
+  permissionRequestId: string,
+  dependencies: PermissionNoticeObserverDependencies = {},
+  expectedRouting?: { project: string; recipient: string },
+  noticeDeliveryMode: "manual" | "automatic" = "manual",
+  requestedSession?: { cwd?: string; marker?: string },
+): Promise<CreatedPermissionQuestion> {
+  const prepared = await preparePermissionNoticeQuestion(adapter, harness, sessionId, permissionRequestId, "Нужно ли разрешить выполнение этого нативного запроса?");
+  if (!prepared.sessionCwd || !isAbsolute(prepared.sessionCwd)
+    || (requestedSession?.cwd !== undefined && requestedSession.cwd !== prepared.sessionCwd)) {
+    throw new Error("native permission session identity is incomplete or changed");
+  }
+  const producer = await (dependencies.loadProducer ?? (() => loadAskHumanProducer()))();
+  if (!producer) throw new Error("Notice question producer is not configured");
+  if (expectedRouting && (producer.project !== expectedRouting.project || producer.recipient !== expectedRouting.recipient)) {
+    throw new Error("Notice routing does not match the configured recipient policy");
+  }
+  const contextRef = permissionReplyContextRef(prepared.target);
+  let cardQuestionMessage = prepared.message;
+  const admitted = await withPermissionQuestionCreationLock(async () => {
+    const current = await preparePermissionNoticeQuestion(adapter, harness, sessionId, permissionRequestId, "Нужно ли разрешить выполнение этого нативного запроса?");
+    if (current.target.hostId !== prepared.target.hostId || current.target.harness !== prepared.target.harness
+      || current.target.sessionId !== prepared.target.sessionId || current.target.permissionRequestId !== prepared.target.permissionRequestId
+      || current.sessionCwd !== prepared.sessionCwd || (requestedSession?.cwd !== undefined && current.sessionCwd !== requestedSession.cwd)) {
+      throw new Error("native permission target changed before Notice request creation");
+    }
+    cardQuestionMessage = current.message;
+    const prior = (await registry.list()).find((entry) => entry.contextRef === contextRef);
+    if (prior) {
+      if (prior.status !== "pending") throw new Error("this native permission request already has a terminal Notice answer");
+      if (noticeDeliveryMode === "manual" && prior.noticeDeliveryMode === "automatic") {
+        throw new Error("this native permission request is already owned by automatic Notice delivery");
+      }
+      return { record: prior, created: false };
+    }
+    const record = await registry.create({
+      kind: "user", answerSource: "notice_question",
+      noticeDeliveryMode,
+      target: { harness, sessionId, cwd: current.sessionCwd, ...(requestedSession?.marker ? { marker: requestedSession.marker } : {}) }, contextRef,
+      notify: { project: producer.project, recipient: producer.recipient, kind: "human_request", severity: "important", title: "Требуется решение по разрешению агента" },
+    });
+    return { record, created: true };
+  });
+  const { record } = admitted;
+  const binding: HumanQuestionBinding = {
+    request_id: record.requestId, native_target: nativeTarget(record),
+    dedup_key: record.notify!.dedupKey, context_ref: record.contextRef, kind: "user",
+    question: { message: cardQuestionMessage, choices: [
+      { choice_id: "allow", label: "Разрешить" }, { choice_id: "deny", label: "Запретить" },
+    ] },
+    answer: { mcp_tool: "human_request_resolve", completion_path: "/internal/human-requests/ask-user-completion" },
+    record,
+  };
+  return { record, binding, producer, created: admitted.created };
+}
+
+/** Existing observer join: exact event IDs, plus a one-time authoritative pending-state reconciliation. */
+export function createPermissionNoticeObserver(
+  registry: HumanRequestRegistry,
+  dependencies: PermissionNoticeObserverDependencies = {},
+): PermissionNoticeObserver {
+  const reported = new Set<string>();
+  const reportOnce = (harness: string, reason: string) => {
+    const key = `${harness}:${reason}`;
+    if (reported.has(key)) return;
+    reported.add(key);
+    console.warn(`[agent-herder] permission Notice unavailable: ${reason} (${harness})`);
+  };
+  const deliverExact = async (adapter: HarnessAdapter, harness: string, sessionId: string, permissionRequestId: string): Promise<void> => {
+    try {
+      const { record, binding, producer } = await createPermissionHumanQuestion(adapter, registry, harness, sessionId, permissionRequestId, dependencies, undefined, "automatic");
+      const config = { project: producer.project, recipient: producer.recipient, allowedActors: producer.allowedActors };
+      const payloadFingerprint = createHash("sha256").update(JSON.stringify(buildAskHumanRequest(binding as DeliverableHumanQuestion, config))).digest("hex");
+      const claim = await registry.claimNoticeDelivery(record.requestId, payloadFingerprint);
+      if (!claim.admitted || !claim.claimId) return;
+      try {
+        const receipt = await deliverNoticeQuestion(binding as DeliverableHumanQuestion, {
+          ...config, endpoint: producer.endpoint, token: producer.token, fetchImpl: dependencies.fetchImpl,
+          requireExactTelegramReceipt: true,
+        });
+        if (!receipt) throw new Error("missing exact Notice receipt");
+        await registry.completeNoticeDelivery(record.requestId, claim.claimId, {
+          state: "accepted", httpStatus: receipt.httpStatus, noticeRequestId: receipt.requestId, deliveryStatus: receipt.deliveryStatus,
+        });
+      } catch {
+        await registry.completeNoticeDelivery(record.requestId, claim.claimId, { state: "unknown" });
+        reportOnce(harness, "delivery_unknown_no_replay");
+      }
+    } catch (error) {
+      const reason = error instanceof Error && error.message === "Notice question producer is not configured"
+        ? "producer_not_configured"
+        : error instanceof Error && error.message.includes("exact native permission request")
+          ? "exact_request_not_pending_or_actionable"
+          : "exact_native_binding_unavailable";
+      reportOnce(harness, reason);
+    }
+  };
+  return {
+    async onEvent(adapter, event) {
+      if (event.kind !== "permission.requested") return;
+      if (!event.sessionId) { reportOnce(event.harness, "event_missing_session_id"); return; }
+      if (!event.permissionId) { reportOnce(event.harness, "event_missing_exact_permission_id"); return; }
+      await deliverExact(adapter, event.harness, event.sessionId, event.permissionId);
+    },
+    async reconcileInitialSnapshot(adapter, sessions) {
+      if (!adapter.getPermissionState) return true;
+      let complete = true;
+      for (const session of sessions) {
+        if (session.needsPermission !== true) continue;
+        let state: HarnessPermissionState | null;
+        try { state = await adapter.getPermissionState(session.id); } catch {
+          complete = false;
+          reportOnce(session.harness, "initial_permission_snapshot_unavailable");
+          continue;
+        }
+        if (!state || state.target.hostId !== session.hostId || state.target.harness !== session.harness || state.target.sessionId !== session.id) {
+          complete = false;
+          reportOnce(session.harness, "initial_permission_snapshot_target_mismatch"); continue;
+        }
+        // The adapter's fresh state explicitly enumerates each ID; no event is mapped to an arbitrary pending request.
+        for (const request of state.pendingRequests) {
+          if (request.canRespond !== true) continue;
+          await deliverExact(adapter, session.harness, session.id, request.id);
+        }
+      }
+      return complete;
+    },
+  };
 }
 
 /** Verify one fresh native request and build a redacted, visible-only card body. */
@@ -44,6 +200,7 @@ export async function preparePermissionNoticeQuestion(
   const messages = adapter.getSessionMessages ? await adapter.getSessionMessages(sessionId, 30) : null;
   return {
     target: { hostId: state.target.hostId, harness, sessionId, permissionRequestId },
+    ...(session.cwd ? { sessionCwd: session.cwd } : {}),
     message: formatPermissionNoticeQuestion(session, state, messages ?? [], permissionRequestId, humanQuestion),
   };
 }

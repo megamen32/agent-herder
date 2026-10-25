@@ -26,6 +26,14 @@ export interface NoticeQuestionConfig {
   recipient: string;
   allowedActors?: string[];
   fetchImpl?: typeof fetch;
+  /** Require the exact persisted Notice question and channel receipt for permission cards. */
+  requireExactTelegramReceipt?: boolean;
+}
+
+export interface NoticeQuestionDeliveryReceipt {
+  requestId: string;
+  httpStatus: 200 | 201;
+  deliveryStatus: "sent";
 }
 
 /** The minimal question shape a delivery needs; a binding also satisfies it. */
@@ -63,10 +71,18 @@ export function buildAskHumanRequest(
  * lives in the same question row as the source session, message and choices, and
  * the answer returns through the existing Herder completion path.
  */
+export function deliverNoticeQuestion(
+  binding: DeliverableHumanQuestion,
+  config: NoticeQuestionConfig & { requireExactTelegramReceipt: true },
+): Promise<NoticeQuestionDeliveryReceipt>;
+export function deliverNoticeQuestion(
+  binding: DeliverableHumanQuestion,
+  config: NoticeQuestionConfig,
+): Promise<void>;
 export async function deliverNoticeQuestion(
   binding: DeliverableHumanQuestion,
   config: NoticeQuestionConfig,
-): Promise<void> {
+): Promise<unknown> {
   const envelope = buildAskHumanRequest(binding, config);
   const fetchImpl = config.fetchImpl ?? fetch;
   const response = await fetchImpl(config.endpoint, {
@@ -81,6 +97,30 @@ export async function deliverNoticeQuestion(
     body: JSON.stringify(envelope),
   });
   if (!response.ok) throw new Error(`Notice human request rejected with HTTP ${response.status}`);
+  if (!config.requireExactTelegramReceipt) return undefined;
+  if (response.status !== 200 && response.status !== 201) throw new Error("Notice human request returned an unexpected success status");
+  let raw: unknown;
+  try { raw = await response.json(); } catch { throw new Error("Notice human request returned no verifiable receipt"); }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Notice human request returned a malformed receipt");
+  const receipt = raw as Record<string, unknown>;
+  const target = binding.native_target;
+  const channel = receipt.telegram && typeof receipt.telegram === "object" && !Array.isArray(receipt.telegram)
+    ? receipt.telegram as Record<string, unknown> : undefined;
+  const choices = Array.isArray(receipt.choices) ? receipt.choices as Array<Record<string, unknown>> : [];
+  const exactChoices = choices.length === 2
+    && choices[0]?.value === "allow" && choices[0]?.label === "Разрешить"
+    && choices[1]?.value === "deny" && choices[1]?.label === "Запретить";
+  const telegramSent = channel?.status === "sent" && typeof channel.chat_id === "string" && channel.chat_id.trim().length > 0
+    && Number.isInteger(channel.message_id) && Number(channel.message_id) > 0;
+  const validState = ["pending", "resolving", "resolved", "cancelled", "expired"].includes(String(receipt.state));
+  if (receipt.schema !== "ask_human.response.v1" || receipt.request_id !== binding.request_id || !validState
+    || receipt.project !== config.project || receipt.recipient !== config.recipient || receipt.kind !== "user"
+    || receipt.mode !== "choice" || !exactChoices
+    || receipt.native_harness !== target.harness || receipt.native_session_id !== target.session_id
+    || receipt.native_cwd !== (target.cwd ?? "") || !telegramSent) {
+    throw new Error("Notice human request receipt does not prove the exact bound card was sent");
+  }
+  return { requestId: binding.request_id, httpStatus: response.status as 200 | 201, deliveryStatus: "sent" };
 }
 
 /**

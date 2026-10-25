@@ -36,6 +36,7 @@ import type { UnfinishedSessionLauncher } from "./autopilot/unfinished-session-l
 import type { AutoCompactService } from "./autocontinue/auto-compact.js";
 import { deferredMessages, isBusyCodexWriter } from "./deferred-messages.js";
 import { respondToNativePermission, setNativePermissionModeOnce } from "./permission-control/reply.js";
+import type { PermissionNoticeObserver } from "./permission-control/notice-bridge.js";
 
 export interface SessionFilters {
   harness?: string;
@@ -82,6 +83,8 @@ export interface SessionSupervisorOptions {
   unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession" | "recordNativeHook" | "getQuotaRecoveryWaitStatus" | "reconcileQuotaRecoverySettings" | "enrollOperatorCohortEntry" | "enrollOperatorContinuationEntry">>);
   /** Native compact maintenance outcomes; never a task prompt or a resume. */
   autoCompact?: Pick<AutoCompactService, "observe">;
+  /** Existing native observer join for exact typed permission questions. */
+  permissionNoticeObserver?: PermissionNoticeObserver;
 }
 
 interface AutomaticResumeState {
@@ -118,6 +121,9 @@ export class SessionSupervisor {
   private readonly inventoryFailures = new Map<string,string>();
   private readonly nativeProviderSnapshots = new Map<string,{sessions:AgentSession[];observedAt:number;receipt:SessionSnapshotReceipt}>();
   private readonly nativeProviderRefreshes = new Map<string,Promise<AgentSession[]>>();
+  private readonly permissionSnapshotProviders = new Set<string>();
+  private readonly permissionSnapshotInFlight = new Set<string>();
+  private readonly permissionSnapshotWarnings = new Set<string>();
   /** The declared work place of every session, read once per update. */
   private projection: { observations: Map<string, WorkspaceObservation>; at: number } | null = null;
   /** The running projection update. */
@@ -143,6 +149,7 @@ export class SessionSupervisor {
   private readonly immediateStops = new Set<string>();
   private readonly unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession" | "recordNativeHook" | "getQuotaRecoveryWaitStatus" | "reconcileQuotaRecoverySettings" | "enrollOperatorCohortEntry" | "enrollOperatorContinuationEntry">>);
   private readonly autoCompact?: Pick<AutoCompactService, "observe">;
+  private readonly permissionNoticeObserver?: PermissionNoticeObserver;
 
   constructor(
     private readonly adapters: Map<string, HarnessAdapter>,
@@ -161,6 +168,7 @@ export class SessionSupervisor {
       ?? Number(process.env.AGENT_HERDER_AUTO_RESUME_DELAY_MS || 2_000));
     this.unfinishedSessions = options.unfinishedSessions;
     this.autoCompact = options.autoCompact;
+    this.permissionNoticeObserver = options.permissionNoticeObserver;
     this.admissionGate = options.admissionGate;
     this.humanStops = options.humanStopStore ?? getHumanStopStore();
   }
@@ -264,9 +272,11 @@ export class SessionSupervisor {
   startObservation(intervalMs = 5_000): () => void {
     this.stopObservation();
     this.ensureNativeSubscriptions();
+    if (this.permissionNoticeObserver) void this.reconcileInitialPermissionSnapshot();
     const bounded = Math.max(1_000, intervalMs);
     const tick = () => {
       this.ensureNativeSubscriptions();
+      if (this.permissionNoticeObserver) void this.reconcileInitialPermissionSnapshot();
       for(const [provider,adapter]of this.adapters)if(!adapter.lazyStart||adapter.lazyDiscovery||!adapter.isReady||adapter.isReady())void this.refreshNativeProvider(provider,adapter);
       void this.refreshSessionSnapshot().catch(() => undefined);
     };
@@ -274,6 +284,40 @@ export class SessionSupervisor {
     this.observationTimer.unref?.();
     tick();
     return () => this.stopObservation();
+  }
+
+  private async reconcileInitialPermissionSnapshot(): Promise<void> {
+    for (const [provider, adapter] of this.adapters) {
+      if (this.permissionSnapshotProviders.has(provider) || this.permissionSnapshotInFlight.has(provider)
+        || (adapter.isReady && !adapter.isReady())) continue;
+      this.permissionSnapshotInFlight.add(provider);
+      let sessions: AgentSession[];
+      try {
+        sessions = await this.refreshNativeProvider(provider, adapter);
+        const snapshot = this.nativeProviderSnapshots.get(provider);
+        if (!snapshot || this.inventoryFailures.has(provider)) {
+          this.reportPermissionSnapshotGap(provider, "session_snapshot_unavailable");
+          continue;
+        }
+        if (!snapshot.receipt.exhaustive) {
+          this.reportPermissionSnapshotGap(provider, "session_inventory_partial");
+          continue;
+        }
+        const complete = await this.permissionNoticeObserver?.reconcileInitialSnapshot(adapter, sessions);
+        if (complete !== false) this.permissionSnapshotProviders.add(provider);
+      } catch {
+        // Observer reports only bounded reason codes; never dump native event or message text.
+      } finally {
+        this.permissionSnapshotInFlight.delete(provider);
+      }
+    }
+  }
+
+  private reportPermissionSnapshotGap(provider: string, reason: string): void {
+    const key = `${provider}:${reason}`;
+    if (this.permissionSnapshotWarnings.has(key)) return;
+    this.permissionSnapshotWarnings.add(key);
+    console.warn(`[agent-herder] permission Notice snapshot incomplete: ${reason} (${provider})`);
   }
 
   stopObservation(): void {
@@ -1139,6 +1183,11 @@ export class SessionSupervisor {
         });
       }
       return;
+    }
+
+    if (event.kind === "permission.requested" && this.permissionNoticeObserver) {
+      const adapter = this.adapters.get(provider);
+      if (adapter) void this.permissionNoticeObserver.onEvent(adapter, event).catch(() => undefined);
     }
 
     void this.autoCompact?.observe(event).catch((error) => {

@@ -8,7 +8,8 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { afterEach, expect, it, vi } from "vitest";
 import { HumanRequestRegistry } from "../src/human-request/index.js";
 import { registerHumanRequestTools } from "../src/mcp/human-request-tools.js";
-import { permissionReplyContextRef, readCanonicalNoticePermissionAnswer } from "../src/permission-control/notice-bridge.js";
+import { createPermissionHumanQuestion, createPermissionNoticeObserver, permissionReplyContextRef, readCanonicalNoticePermissionAnswer } from "../src/permission-control/notice-bridge.js";
+import { SessionSupervisor } from "../src/session-supervisor.js";
 import type { AgentSession, HarnessAdapter, HarnessPermissionState, SessionMessageView } from "../src/types/index.js";
 import { createWebServer } from "../src/web/server.js";
 
@@ -16,6 +17,18 @@ const connected: Array<{ client: Client; server: McpServer }> = [];
 const servers: Server[] = [];
 const roots: string[] = [];
 const oldAskHumanEnvFile = process.env.ASK_HUMAN_ENV_FILE;
+
+function nativePermissionReceipt(requestId: string, session: AgentSession, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    schema: "ask_human.response.v1", request_id: requestId, state: "pending", kind: "user",
+    project: "test-project", recipient: "test-recipient", mode: "choice",
+    choices: [{ value: "allow", label: "Разрешить" }, { value: "deny", label: "Запретить" }],
+    native_harness: session.harness,
+    native_session_id: session.id, native_cwd: session.cwd,
+    telegram: { status: "sent", chat_id: "fixture-only", message_id: 42 },
+    ...overrides,
+  };
+}
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
@@ -71,6 +84,161 @@ it("creates one exact, redacted Notice binding per pending native permission", a
   expect(records).toHaveLength(1);
 });
 
+it("joins an exact permission event and initial pending snapshot to one durable Notice delivery", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-herder-permission-auto-notice-")); roots.push(root);
+  const session: AgentSession = { id: "s-auto", harness: "codex", hostId: "host-test", cwd: root, title: "Fixture", status: "needs_input", needsPermission: true, lastActivity: new Date().toISOString() };
+  const state: HarnessPermissionState = { target: { hostId: "host-test", harness: "codex", sessionId: session.id }, scope: "session", canSetMode: false,
+    pendingRequests: [{ id: "native-p-auto", canRespond: true, nativeMethod: "item/commandExecution/requestApproval", command: "printf safe" }], observedAt: new Date().toISOString() };
+  let listener: ((event: HarnessEvent) => void) | undefined;
+  let stateReads = 0;
+  const posts: Array<{ body: any; key: string }> = [];
+  const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
+  const observer = createPermissionNoticeObserver(registry, {
+    loadProducer: async () => ({ endpoint: "https://notice.test/v1/human-requests", token: "fixture-token", project: "test-project", recipient: "test-recipient", allowedActors: ["fixture:only"], source: "ask_human_env" }),
+    fetchImpl: async (_input, init) => {
+      const body = JSON.parse(String(init?.body));
+      posts.push({ body, key: new Headers(init?.headers).get("idempotency-key") || "" });
+      return new Response(JSON.stringify(nativePermissionReceipt(body.request_id, session)), { status: 201 });
+    },
+  });
+  const adapter: HarnessAdapter = {
+    type: "codex", name: "fixture", async init() {},
+    subscribeEvents(handler) { listener = handler; return () => { listener = undefined; }; },
+    async listSessions() { return [session]; }, async getSession() { return session; },
+    async getPermissionState() { stateReads += 1; return state; },
+    async getSessionMessages() { return [
+      { id: "u1", role: "user", text: "Check this", parts: [{ type: "text", text: "Check this" }] },
+      { id: "a1", role: "assistant", text: "thinking secret=hidden", parts: [{ type: "thinking", text: "hidden reasoning" }, { type: "text", text: "Visible explanation" }] },
+    ]; },
+    async sendMessage() { return { ok: true }; }, async stopSession() { return { ok: true }; },
+    async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
+  };
+  const supervisor = new SessionSupervisor(new Map([["codex", adapter]]), { async convert() { return { success: true }; } } as any, undefined, { permissionNoticeObserver: observer });
+  const stop = supervisor.startObservation(60_000);
+  try {
+    const requested: HarnessEvent = { kind: "permission.requested", harness: "codex", sessionId: session.id, permissionId: "native-p-auto" };
+    listener?.(requested);
+    listener?.(requested);
+    for (let attempt = 0; attempt < 100 && posts.length === 0; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(posts).toHaveLength(1);
+    for (let attempt = 0; attempt < 100 && (await registry.list()).length === 0; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(posts).toHaveLength(1);
+    const [record] = await registry.list();
+    expect(record).toMatchObject({ answerSource: "notice_question", contextRef: expect.any(String), noticeDelivery: { state: "accepted", noticeRequestId: record.requestId, deliveryStatus: "sent" } });
+    expect(posts[0]?.key).toBe(`human-request:${record.requestId}`);
+    expect(posts[0]?.body.request_id).toBe(record.requestId);
+    expect(posts[0]?.body.native_target).toMatchObject({ harness: "codex", session_id: session.id, cwd: root });
+    expect(posts[0]?.body.choices.map((choice: { value: string }) => choice.value)).toEqual(["allow", "deny"]);
+    expect(posts[0]?.body.message).toContain("Visible explanation");
+    expect(posts[0]?.body.message).not.toContain("hidden reasoning");
+    expect(JSON.stringify(await registry.get(record.requestId))).not.toContain("Check this");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const readsBeforeRestart = stateReads;
+    stop();
+    const stopSameSupervisorRestart = supervisor.startObservation(60_000);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(stateReads).toBe(readsBeforeRestart);
+    stopSameSupervisorRestart();
+  } finally { stop(); }
+});
+
+it("retries a partial native inventory on the existing poll and shares one listSessions read", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-herder-permission-partial-snapshot-")); roots.push(root);
+  const session: AgentSession = { id: "s-snapshot-retry", harness: "codex", hostId: "host-test", cwd: root, title: "Fixture", status: "needs_input", needsPermission: true, lastActivity: new Date().toISOString() };
+  const state: HarnessPermissionState = { target: { hostId: "host-test", harness: "codex", sessionId: session.id }, scope: "session", canSetMode: false,
+    pendingRequests: [{ id: "p-snapshot-retry", canRespond: true, command: "printf safe" }], observedAt: new Date().toISOString() };
+  let listReads = 0;
+  let permissionReads = 0;
+  let posts = 0;
+  const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
+  const observer = createPermissionNoticeObserver(registry, {
+    loadProducer: async () => ({ endpoint: "https://notice.test/v1/human-requests", token: "fixture-token", project: "test-project", recipient: "test-recipient", source: "ask_human_env" }),
+    fetchImpl: async (_input, init) => {
+      posts += 1;
+      const body = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify(nativePermissionReceipt(body.request_id, session)), { status: 201 });
+    },
+  });
+  const adapter: HarnessAdapter = {
+    type: "codex", name: "partial-snapshot-fixture", async init() {},
+    async listSessions() { listReads += 1; return listReads === 1 ? [] : [session]; },
+    getSessionSnapshotReceipt() { return { exhaustive: listReads >= 2, observedAt: new Date().toISOString(), source: "fixture", ...(listReads < 2 ? { reason: "fixture_partial_first_read" } : {}) }; },
+    async getSession() { return session; }, async getPermissionState() { permissionReads += 1; return state; },
+    async getSessionMessages() { return []; },
+    async sendMessage() { return { ok: true }; }, async stopSession() { return { ok: true }; },
+    async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
+  };
+  const supervisor = new SessionSupervisor(new Map([["codex", adapter]]), { async convert() { return { success: true }; } } as any, undefined,
+    { permissionNoticeObserver: observer });
+  const stop = supervisor.startObservation(1_000);
+  try {
+    for (let attempt = 0; attempt < 200 && posts === 0; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(posts).toBe(1);
+    expect(listReads).toBe(2);
+    let [record] = await registry.list();
+    for (let attempt = 0; attempt < 100 && record?.noticeDelivery?.state !== "accepted"; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      [record] = await registry.list();
+    }
+    expect(record).toMatchObject({ target: { harness: "codex", sessionId: session.id }, noticeDelivery: { state: "accepted" } });
+    const readsAtAdmission = listReads;
+    const permissionReadsAtAdmission = permissionReads;
+    await new Promise((resolve) => setTimeout(resolve, 1_050));
+    expect(listReads - readsAtAdmission).toBe(1);
+    expect(permissionReads).toBe(permissionReadsAtAdmission);
+  } finally { stop(); }
+});
+
+it("fails closed on an ID-less permission event and freezes an ambiguous Notice POST as unknown", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-herder-permission-auto-unknown-")); roots.push(root);
+  const session: AgentSession = { id: "s-unknown", harness: "codex", hostId: "host-test", cwd: root, title: "Fixture", status: "needs_input", needsPermission: true, lastActivity: new Date().toISOString() };
+  const state: HarnessPermissionState = { target: { hostId: "host-test", harness: "codex", sessionId: session.id }, scope: "session", canSetMode: false,
+    pendingRequests: [{ id: "native-p-unknown", canRespond: true }], observedAt: new Date().toISOString() };
+  let listener: ((event: HarnessEvent) => void) | undefined;
+  let posts = 0;
+  const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
+  const observer = createPermissionNoticeObserver(registry, {
+    loadProducer: async () => ({ endpoint: "https://notice.test/v1/human-requests", token: "fixture-token", project: "test-project", recipient: "test-recipient", source: "ask_human_env" }),
+    fetchImpl: async (_input, init) => {
+      posts += 1;
+      const body = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify(nativePermissionReceipt(body.request_id, session, { request_id: "mismatched-id" })), { status: 201 });
+    },
+  });
+  const adapter: HarnessAdapter = {
+    type: "codex", name: "fixture", async init() {}, subscribeEvents(handler) { listener = handler; return () => { listener = undefined; }; },
+    async listSessions() { return []; }, async getSession() { return session; }, async getPermissionState() { return state; },
+    async sendMessage() { return { ok: true }; }, async stopSession() { return { ok: true }; },
+    async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
+  };
+  const supervisor = new SessionSupervisor(new Map([["codex", adapter]]), { async convert() { return { success: true }; } } as any, undefined, { permissionNoticeObserver: observer });
+  const stop = supervisor.startObservation(60_000);
+  try {
+    listener?.({ kind: "permission.requested", harness: "codex", sessionId: session.id, nativeType: "requestApproval" });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(posts).toBe(0);
+    listener?.({ kind: "permission.requested", harness: "codex", sessionId: session.id, permissionId: "native-p-unknown" });
+    for (let attempt = 0; attempt < 100 && posts === 0; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+    listener?.({ kind: "permission.requested", harness: "codex", sessionId: session.id, permissionId: "native-p-unknown" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(posts).toBe(1);
+    const [record] = await registry.list();
+    expect(record.noticeDelivery).toMatchObject({ state: "unknown" });
+    expect(record.noticeDelivery?.noticeRequestId).toBeUndefined();
+    stop();
+    const restarted = new SessionSupervisor(new Map([["codex", { ...adapter, async listSessions() { return [session]; } }]]), { async convert() { return { success: true }; } } as any, undefined,
+      { permissionNoticeObserver: createPermissionNoticeObserver(new HumanRequestRegistry(join(root, "human-requests.json")), {
+        loadProducer: async () => ({ endpoint: "https://notice.test/v1/human-requests", token: "fixture-token", project: "test-project", recipient: "test-recipient", source: "ask_human_env" }),
+        fetchImpl: async (_input, init) => { posts += 1; const body = JSON.parse(String(init?.body)); return new Response(JSON.stringify(nativePermissionReceipt(body.request_id, session)), { status: 201 }); },
+      }) });
+    const stopRestarted = restarted.startObservation(60_000);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(posts).toBe(1);
+    stopRestarted();
+  } finally { stop(); }
+});
+
 it("rechecks the exact pending native request under the creation lock before admitting a card", async () => {
   const root = await mkdtemp(join(tmpdir(), "agent-herder-permission-stale-create-")); roots.push(root);
   const envFile = join(root, "ask-human.env");
@@ -108,6 +276,51 @@ it("keeps typed permission routing refs within the Human Request opaque-referenc
   expect(() => permissionReplyContextRef({
     hostId: "h".repeat(512), harness: "opencode", sessionId: "s-1", permissionRequestId: "p-1",
   })).toThrow("exceeds the Human Request context reference limit");
+});
+
+it("rejects a CWD change between initial and under-lock permission reads", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-herder-permission-cwd-drift-")); roots.push(root);
+  const session: AgentSession = { id: "s-cwd", harness: "codex", hostId: "host-test", cwd: root, title: "Fixture", status: "needs_input", needsPermission: true, lastActivity: new Date().toISOString() };
+  const state: HarnessPermissionState = { target: { hostId: "host-test", harness: "codex", sessionId: session.id }, scope: "session", canSetMode: false,
+    pendingRequests: [{ id: "p-cwd", canRespond: true }], observedAt: new Date().toISOString() };
+  let sessionReads = 0;
+  const adapter: HarnessAdapter = {
+    type: "codex", name: "fixture", async init() {}, async getPermissionState() { return state; },
+    async getSession() { sessionReads += 1; return { ...session, cwd: sessionReads === 1 ? root : `${root}-changed` }; },
+    async sendMessage() { return { ok: true }; }, async stopSession() { return { ok: true }; },
+    async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
+  };
+  const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
+  await expect(createPermissionHumanQuestion(adapter, registry, "codex", session.id, "p-cwd", {
+    loadProducer: async () => ({ endpoint: "https://notice.test/v1/human-requests", token: "fixture-token", project: "test-project", recipient: "test-recipient", source: "ask_human_env" }),
+  }, undefined, "automatic")).rejects.toThrow("native permission target changed before Notice request creation");
+  expect(await registry.list()).toHaveLength(0);
+});
+
+it("uses the visible context from the exact under-lock permission recheck", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-herder-permission-fresh-context-")); roots.push(root);
+  const session: AgentSession = { id: "s-fresh-context", harness: "codex", hostId: "host-test", cwd: root, title: "Fixture", status: "needs_input", needsPermission: true, lastActivity: new Date().toISOString() };
+  const state: HarnessPermissionState = { target: { hostId: "host-test", harness: "codex", sessionId: session.id }, scope: "session", canSetMode: false,
+    pendingRequests: [{ id: "p-fresh-context", canRespond: true, command: "printf safe" }], observedAt: new Date().toISOString() };
+  let messageReads = 0;
+  const adapter: HarnessAdapter = {
+    type: "codex", name: "fresh-context-fixture", async init() {},
+    async getPermissionState() { return state; }, async getSession() { return session; },
+    async getSessionMessages() {
+      messageReads += 1;
+      const text = messageReads === 1 ? "Earlier visible snapshot" : "Fresh visible under lock";
+      return [{ id: `a${messageReads}`, role: "assistant", text, parts: [{ type: "text", text }] }];
+    },
+    async sendMessage() { return { ok: true }; }, async stopSession() { return { ok: true }; },
+    async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
+  };
+  const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
+  const created = await createPermissionHumanQuestion(adapter, registry, "codex", session.id, "p-fresh-context", {
+    loadProducer: async () => ({ endpoint: "https://notice.test/v1/human-requests", token: "fixture-token", project: "test-project", recipient: "test-recipient", source: "ask_human_env" }),
+  });
+  expect(messageReads).toBe(2);
+  expect(created.binding.question?.message).toContain("Fresh visible under lock");
+  expect(created.binding.question?.message).not.toContain("Earlier visible snapshot");
 });
 
 it("dispatches the canonical Notice answer to the exact native permission once", async () => {

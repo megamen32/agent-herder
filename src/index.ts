@@ -69,6 +69,7 @@ import type { CadenceScheduler } from "./cadence-scheduler.js";
 import { createCadenceRuntime } from "./cadence-runtime.js";
 import { registerCadenceTools } from "./mcp/cadence-tools.js";
 import { registerHumanRequestTools } from "./mcp/human-request-tools.js";
+import { createPermissionNoticeObserver } from "./permission-control/notice-bridge.js";
 import { registerCdpTools } from "./mcp/cdp-tools.js";
 import { registerSessionTools } from "./mcp/session-tools.js";
 import { registerResourceOwnershipTools } from "./mcp/resource-ownership-tools.js";
@@ -154,6 +155,7 @@ const adapters = new Map<string, HarnessAdapter>();
 const autopilotStateDir = resolveAutopilotStateDir();
 const autopilotStateReady = adoptLegacyAutopilotState(autopilotStateDir);
 const humanRequests = new HumanRequestRegistry(resolveHumanRequestStorePath(autopilotStateDir));
+const permissionNoticeObserver = createPermissionNoticeObserver(humanRequests);
 const choiceRegistry = new ChoiceRegistry(process.env.AGENT_HERDER_AUTOPILOT_CHOICE_STORE || join(autopilotStateDir, "choices.json"));
 const autopilotPolicyStore = new AutopilotPolicyStore(resolveAutopilotPolicyStorePath(autopilotStateDir));
 const autopilotSessionStore = new AutopilotSessionStore(join(autopilotStateDir, "sessions.json"));
@@ -928,10 +930,12 @@ async function main() {
     unfinishedSessions: unfinishedSessionLauncher,
     autoCompact: autoCompactService,
     admissionGate: recoveryAdmissionGate,
+    permissionNoticeObserver,
   });
   const scopedSupervisorFactory = (sessionAdapters: Map<string, HarnessAdapter>) => new SessionSupervisor(sessionAdapters, processSessionConverter, lineageStore, {
     humanStopStore, events: herderEvents, unfinishedSessions: unfinishedSessionLauncher,
     autoCompact: autoCompactService, admissionGate: recoveryAdmissionGate,
+    permissionNoticeObserver,
   });
   const resumeAfterRuntime = createResumeAfterRuntime(adapters, processSupervisor, (harness,id) => humanStopStore.isHeld(harness,id));
   const cadence = createCadenceRuntime(adapters, processSupervisor, join(autopilotStateDir, "cadence.json"));
