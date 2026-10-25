@@ -45,7 +45,7 @@ export type MeshNotesInjector=(session:{id:string;harness:string;cwd:string;host
 /** Independent native observation of one exact session of this host. */
 export type MeshNativeObserver=(harness:string,nativeSessionId:string)=>Promise<{nativeSessionId:string;status:string;cwd?:string|null}|null>;
 const officialZcode=(harness:string,adapter:HarnessAdapter|undefined)=>harness==='zcode'&&(adapter as HarnessAdapter & {getOfficialMeshAdmission?:()=>string|undefined}|undefined)?.getOfficialMeshAdmission?.()==='official-ws-v4';
-type Dependencies={hostId?:string;adapters:Map<string,HarnessAdapter>;send?:(args:Record<string,unknown>)=>Promise<unknown>;ledgerPath?:string;readDeadlineMs?:number;projectStore?:Pick<CoordinationNoteStore,"activeWorkspaceForSession"> & Partial<Pick<CoordinationNoteStore,"activeWorkspaceObservation">>;notes?:MeshNotesInjector;nativeObserve?:MeshNativeObserver;deliveryPolicy?:ProjectModelPolicyStateProvider;userMessageDelivery?:UserMessageDelivery;supervisor?:Pick<SessionSupervisor,"sendMessage">};
+type Dependencies={hostId?:string;adapters:Map<string,HarnessAdapter>;ledgerPath?:string;readDeadlineMs?:number;projectStore?:Pick<CoordinationNoteStore,"activeWorkspaceForSession"> & Partial<Pick<CoordinationNoteStore,"activeWorkspaceObservation">>;notes?:MeshNotesInjector;nativeObserve?:MeshNativeObserver;deliveryPolicy?:ProjectModelPolicyStateProvider;userMessageDelivery?:UserMessageDelivery;supervisor?:Pick<SessionSupervisor,"sendMessage">};
 export class LocalHarnessMesh {
  readonly hostId:string;
  private readonly ids=new Map<string,string>();
@@ -97,8 +97,8 @@ export class LocalHarnessMesh {
   const reject=(reason:string)=>({state:"not_attempted" as const,inputId:request.inputId,retryable:true,reason});
   if(request.target.hostId!==this.hostId)return reject("native_host_identity_mismatch");
   if(!request.inputId||request.inputId.length>256||!request.message.trim()||request.message.length>4000)throw new Error("A stable inputId and bounded delta are required");
+  if(!isTrustedMeshIngress(ingress))return {...reject("authenticated_mesh_ingress_required"),retryable:false};
   if(request.target.harness===MINIMAX_CODE_HARNESS){
-   if(!isTrustedMeshIngress(ingress))return {...reject("authenticated_mesh_ingress_required"),retryable:false};
    return this.deliverMinimaxThroughCommonCore(request,ingress);
   }
   return this.ledger.once(request,async()=>{
@@ -115,7 +115,12 @@ export class LocalHarnessMesh {
    if(!session)return reject("native_session_not_found");
    if(compactSession(this.hostId,session).address.nativeSessionId!==request.target.nativeSessionId)return reject("native_session_identity_mismatch");
    const args={sessionId,harness:request.target.harness,inputId:request.inputId,mode:"queue",meshSender:request.sender,message:request.message};
-   const raw=this.deps.send?await this.deps.send(args):await handleSendMessage(this.deps.adapters,args);
+   const raw=await handleSendMessage(this.deps.adapters,args,this.deps.userMessageDelivery,ingress);
+   const current=this.deps.userMessageDelivery?.get(request.target.harness,sessionId,request.inputId);
+   if(current?.job){
+    if(["queued","running","waiting","cancelling"].includes(current.job.state))return {state:"queued",inputId:request.inputId,jobId:current.job.id,retryable:false,reason:"durable_job_pending"};
+    if(current.job.state==="completed"&&current.job.result)return parseNativeReceipt(current.job.result,request.inputId);
+   }
    return parseNativeReceipt(typeof raw==="string"?{content:[{type:"text",text:raw}]}:raw,request.inputId);
   });
  }

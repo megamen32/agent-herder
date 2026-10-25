@@ -34,6 +34,7 @@ import { auditWorktrees } from "../worktree-audit.js";
 import { BrowserWakeService } from "../browser-wake.js";
 import { deliveryBudgetFor } from "../coordination-delivery-budget.js";
 import type { UserMessageDelivery, UserMessageRoute } from "../user-message-delivery.js";
+import type { TrustedMeshIngress } from "../mesh/authenticated-ingress.js";
 import { coordinationNotes, normalizeHostId } from "../coordination-notes.js";
 import { withSessionLabelMeta } from "../session-labels.js";
 import { unwrapResult } from "../mesh/protocol.js";
@@ -496,22 +497,15 @@ export async function handleExportTranscript(
   }
 }
 
-export type McpSendResponseObserver = (input: {
-  target: import("../session-delivery-response.js").DeliveryResponseTarget;
-  inputId: string;
-  requestFingerprint: string;
-  send: () => Promise<import("../types/index.js").SendMessageResult>;
-}) => Promise<import("../types/index.js").SendMessageResult>;
-
-export async function handleSendMessage(adapters: Map<string, HarnessAdapter>, args: unknown, userMessageDelivery?: UserMessageDelivery, observeSyncSend?: McpSendResponseObserver): Promise<string> {
+export async function handleSendMessage(adapters: Map<string, HarnessAdapter>, args: unknown, userMessageDelivery?: UserMessageDelivery, trustedIngress?: TrustedMeshIngress, onTargetResolved?: (session: AgentSession) => void): Promise<string> {
   const parsed = SendMessageSchema.parse(args);
   if (parsed.meshSender && parsed.humanRequested) throw new Error("Automatic mesh sender cannot claim humanRequested");
-  if (parsed.humanRequested) return sendMessageOnce(adapters, parsed, userMessageDelivery, observeSyncSend);
+  if (parsed.humanRequested) return sendMessageOnce(adapters, parsed, userMessageDelivery, trustedIngress, onTargetResolved);
   return deliveryBudgetFor(adapters).run({
     target: `${parsed.harness || "auto"}:${parsed.sessionId}`,
     sender: parsed.meshSender ? `mesh:${JSON.stringify([parsed.meshSender.hostId,parsed.meshSender.harness,parsed.meshSender.nativeSessionId])}` : `${parsed.fromHarness || "auto"}:${parsed.fromSessionId || "unknown"}`,
     inputId: parsed.inputId, message: parsed.message,
-  }, () => sendMessageOnce(adapters, parsed, userMessageDelivery, observeSyncSend));
+  }, () => sendMessageOnce(adapters, parsed, userMessageDelivery, trustedIngress, onTargetResolved));
 }
 
 export async function handleReadMessage(args: unknown): Promise<string> {
@@ -530,11 +524,17 @@ async function sendMessageOnce(
   adapters: Map<string, HarnessAdapter>,
   args: unknown,
   userMessageDelivery?: UserMessageDelivery,
-  observeSyncSend?: McpSendResponseObserver,
+  trustedIngress?: TrustedMeshIngress,
+  onTargetResolved?: (session: AgentSession) => void,
 ): Promise<string> {
   const parsed = SendMessageSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return `Session '${parsed.sessionId}' not found.`;
+  onTargetResolved?.(found.session);
+  parsed.inputId ??= createHash("sha256").update(JSON.stringify({
+    hostId: found.session.hostId ?? "unknown", harness: found.session.harness, sessionId: found.session.id,
+    mode: parsed.mode, message: parsed.message, humanRequested: parsed.humanRequested === true,
+  })).digest("hex");
   if (!parsed.humanRequested) {
     // The owner-level automation lever: this tool delivers straight to the
     // native adapter, so the lever is checked here too. A run a person
@@ -564,7 +564,7 @@ async function sendMessageOnce(
         error: "The configured MiniMax policy applies only to queued exact-session CLI fallback; steer/sync was not sent." });
     }
   }
-  if (!parsed.humanRequested && !isCoordinationActive(found.session)) return skippedCoordination(found.session);
+  if (!parsed.humanRequested && parsed.mode === "steer" && !isCoordinationActive(found.session)) return skippedCoordination(found.session);
 
   const provenanceHeader = parsed.humanRequested
     ? "Поручение пользователя, переданное агентом" + (parsed.fromSessionId ? `\n${await buildMessageProvenanceHeader(adapters, parsed, found.session)}` : "")
@@ -577,17 +577,8 @@ async function sendMessageOnce(
   const injected = await coordinationNotes.inject(found.session, pending.message);
   const injectedMessage = parsed.humanRequested ? injected : await compactAutomaticMessage(injected, parsed.message);
   if (await automaticDeliveryHeld(found.session, false, found.adapter)) return HUMAN_STOP_MESSAGE;
-  const options = {
-    origin: parsed.humanRequested ? "human" as const : "automation" as const,
-    inputId: parsed.inputId ?? (parsed.humanRequested ? undefined : createHash("sha256").update(baseMessage).digest("hex")),
-    message: injectedMessage,
-    retainedInboxIds:pending.ids,
-    queue: parsed.mode === "queue",
-    steer: parsed.mode === "steer",
-  };
   let result;
   if (parsed.humanRequested && found.session.harness === "minimax-code" && parsed.mode === "queue") {
-    if (!parsed.inputId) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: "MiniMax Code durable delivery requires a stable inputId" });
     if (!userMessageDelivery) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, inputId: parsed.inputId, error: "Durable human delivery queue is unavailable" });
     const route: UserMessageRoute = {
       adapter: found.adapter,
@@ -599,27 +590,31 @@ async function sendMessageOnce(
     }
     result = receipt;
   } else {
-    const send = () => parsed.humanRequested
-      ? found.adapter.sendMessage(parsed.sessionId, options)
-      : sendCurrentTurnOnly(found.adapter, parsed.sessionId, options);
-    if (observeSyncSend) {
-      if (!found.session.hostId) return JSON.stringify({ ok: false, delivery: "not_attempted", error: "Exact target host is unavailable; message was not sent." });
-      const inputId = parsed.inputId ?? createHash("sha256").update(JSON.stringify({
-        hostId: found.session.hostId, harness: found.session.harness, sessionId: found.session.id,
-        mode: parsed.mode, message: parsed.message,
-      })).digest("hex");
-      options.inputId = inputId;
-      result = await observeSyncSend({
-        target: { hostId: found.session.hostId, harness: found.session.harness as import("../session-delivery-response.js").DeliveryResponseTarget["harness"], sessionId: found.session.id },
-        inputId,
-        requestFingerprint: createHash("sha256").update(JSON.stringify({
-          hostId: found.session.hostId, harness: found.session.harness, sessionId: found.session.id,
-          mode: parsed.mode, message: parsed.message, humanRequested: parsed.humanRequested === true,
-        })).digest("hex"),
-        send,
-      });
-    } else {
-      result = await send();
+    if (!userMessageDelivery) return JSON.stringify({ ok: false, delivery: "not_attempted", inputId: parsed.inputId,
+      nonRetryable: true, error: "Shared durable message delivery is unavailable; message was not sent." });
+    const route: UserMessageRoute = {
+      adapter: found.adapter,
+      supervisor: { sendMessage: (_harness, sessionId, sendOptions) => parsed.humanRequested
+        ? found.adapter.sendMessage(sessionId, sendOptions)
+        : parsed.mode === "steer"
+          ? sendCurrentTurnOnly(found.adapter, sessionId, sendOptions)
+          : found.adapter.sendMessage(sessionId, sendOptions) },
+    };
+    const deliveryInput = { harness: found.session.harness, sessionId: parsed.sessionId, inputId: parsed.inputId,
+      message: injectedMessage, mode: parsed.mode };
+    try {
+      result = parsed.humanRequested
+        ? found.session.harness === "minimax-code"
+          ? await userMessageDelivery.submitMinimaxExecPolicy(deliveryInput, route)
+          : userMessageDelivery.submit(deliveryInput, route)
+        : await userMessageDelivery.submitAgent(deliveryInput, {
+          hostId: parsed.meshSender?.hostId ?? hostname(),
+          harness: parsed.meshSender?.harness ?? parsed.fromHarness ?? "unknown",
+          nativeSessionId: parsed.meshSender?.nativeSessionId ?? parsed.fromSessionId ?? "unknown",
+        }, trustedIngress, route);
+    } catch (error) {
+      return JSON.stringify({ ok: false, delivery: "not_attempted", inputId: parsed.inputId, nonRetryable: true,
+        error: error instanceof Error ? error.message : String(error) });
     }
   }
   if (result.notSubmitted) return result.error?.startsWith('skipped_inactive') ? skippedCoordination(found.session)

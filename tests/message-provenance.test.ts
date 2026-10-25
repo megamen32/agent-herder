@@ -1,12 +1,17 @@
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { McpServer } from "@modelcontextprotocol/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerSessionTools } from "../src/mcp/session-tools.js";
 import { HerderEventBus } from "../src/herder-events.js";
 import { HerderJobRegistry } from "../src/herder-jobs.js";
+import { UserMessageDelivery } from "../src/user-message-delivery.js";
+import { MinimaxExecPolicyStore } from "../src/permission-control/minimax-exec-policy.js";
+import { handleSendMessage } from "../src/mcp-tools/handlers.js";
+import { TRUSTED_MESH_MCP_CLIENT_ID, TRUSTED_MESH_MCP_SCOPE, trustedMeshIngressFromMcpAuthInfo } from "../src/mesh/authenticated-ingress.js";
+import { verifyDurableUserDeliveryClaim } from "../src/user-message-delivery.js";
 import type { AgentSession, HarnessAdapter, SendMessageOptions } from "../src/types/index.js";
 
 const cleanup: Array<() => Promise<void>> = [];
@@ -34,7 +39,7 @@ describe("send_message sender provenance", () => {
     tempRoot = await mkdtemp(join(tmpdir(), "agent-herder-message-provenance-"));
     previousHumanStopStore = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
     process.env.AGENT_HERDER_HUMAN_STOP_STORE = join(tempRoot, "human-stops.json");
-    const target = session("target:thread/7", "zcode");
+    const target = { ...session("target:thread/7", "zcode"), status: "idle" as const };
     const sender = session("parent:thread/42", "codex");
     const received: Array<{ id: string; options: SendMessageOptions }> = [];
     const adapter = (current: AgentSession): HarnessAdapter => ({
@@ -52,7 +57,7 @@ describe("send_message sender provenance", () => {
     for (const fixture of adapters.values()) fixture.sendActiveMessage = fixture.sendMessage.bind(fixture);
     registerSessionTools(server, {
       adapters,
-      jobs: new HerderJobRegistry(events), events,
+      jobs: new HerderJobRegistry(events, { persistencePath: join(tempRoot, "jobs.json") }), events,
     });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: "message-provenance-client", version: "1" }, { versionNegotiation: { mode: "auto" } });
@@ -64,7 +69,7 @@ describe("send_message sender provenance", () => {
     expect(registered?.description).toContain("do not authenticate the caller");
     await client.callTool({ name: "send_message", arguments: {
       harness: "zcode", sessionId: target.id, message: "Please inspect this.", mode: "queue",
-      fromSessionId: sender.id,
+      fromSessionId: sender.id, humanRequested: true,
     } });
 
     const expectedUrl = `https://agent.bezrabotnyi.com/#/session/${encodeURIComponent(`codex:${sender.id}`)}`;
@@ -77,7 +82,7 @@ describe("send_message sender provenance", () => {
 
     await client.callTool({ name: "send_message", arguments: {
       harness: "zcode", sessionId: target.id, message: "Continue without a known sender.", mode: "queue",
-      fromSessionId: "missing-parent",
+      fromSessionId: "missing-parent", humanRequested: true,
     } });
     expect(received[1]?.options.message).toContain("Отправитель неизвестен: сессия не проверена.");
     expect(received[1]?.options.message).not.toContain("#/session/");
@@ -90,7 +95,7 @@ describe("send_message sender provenance", () => {
     tempRoot = await mkdtemp(join(tmpdir(), "agent-herder-message-provenance-timeout-"));
     previousHumanStopStore = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
     process.env.AGENT_HERDER_HUMAN_STOP_STORE = join(tempRoot, "human-stops.json");
-    const target = session("target-timeout", "zcode");
+    const target = { ...session("target-timeout", "zcode"), status: "idle" as const };
     let delivered = "";
     let laterSenderLookupCalls = 0;
     const targetAdapter: HarnessAdapter = {
@@ -123,7 +128,7 @@ describe("send_message sender provenance", () => {
     for (const fixture of adapters.values()) fixture.sendActiveMessage = fixture.sendMessage.bind(fixture);
     registerSessionTools(server, {
       adapters,
-      jobs: new HerderJobRegistry(events), events,
+      jobs: new HerderJobRegistry(events, { persistencePath: join(tempRoot, "jobs.json") }), events,
     });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: "message-provenance-timeout-client", version: "1" }, { versionNegotiation: { mode: "auto" } });
@@ -134,7 +139,7 @@ describe("send_message sender provenance", () => {
     const startedAt = Date.now();
     const result = await client.callTool({ name: "send_message", arguments: {
       harness: "zcode", sessionId: target.id, message: "deliver despite sender lookup timeout", mode: "queue",
-      fromSessionId: "slow-sender",
+      fromSessionId: "slow-sender", humanRequested: true,
     } });
     expect(Date.now() - startedAt).toBeLessThan(3_000);
     expect(result.isError).not.toBe(true);
@@ -145,5 +150,67 @@ describe("send_message sender provenance", () => {
     finishSenderLookup(null);
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(laterSenderLookupCalls).toBe(0);
+  });
+
+  it("admits an authenticated idle MiniMax agent queue through one shared UMD job", async () => {
+    tempRoot = await mkdtemp(join(tmpdir(), "agent-herder-message-provenance-idle-minimax-"));
+    previousHumanStopStore = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
+    process.env.AGENT_HERDER_HUMAN_STOP_STORE = join(tempRoot, "human-stops.json");
+    const target: AgentSession = {
+      id: "mvs_idle_agent", harness: "minimax-code", hostId: "host-a", status: "idle", title: "idle recipient",
+      cwd: "/tmp", lastActivity: new Date().toISOString(), needsPermission: false,
+    };
+    const sendMessage = vi.fn(async (_id: string, options: SendMessageOptions) => ({
+      ok: true, admitted: true, inputId: options.inputId, turnId: "native-turn-idle",
+    }));
+    const adapter: HarnessAdapter = {
+      type: "minimax-code", name: "idle MiniMax recipient", async init() {},
+      async listSessions() { return [target]; },
+      async getSession(id) { return id === target.id ? target : null; },
+      async sendMessage(id, options) { return sendMessage(id, options); },
+      async stopSession() { return { ok: true }; },
+      async respondPermission() { return { ok: true }; },
+      async setPermissions() { return { ok: true }; },
+    };
+    const adapters = new Map([["minimax-code", adapter]]);
+    const events = new HerderEventBus();
+    const jobs = new HerderJobRegistry(events, { persistencePath: join(tempRoot, "jobs.json") });
+    const delivery = new UserMessageDelivery(adapters, { sendMessage: async (_harness, id, options) => sendMessage(id, options) }, jobs,
+      { pollMs: 1, maxWaitMs: 2_000, maxPending: 4 }, new MinimaxExecPolicyStore(join(tempRoot, "policies.json")));
+    const ingress = trustedMeshIngressFromMcpAuthInfo({
+      token: "test-transport-token", clientId: TRUSTED_MESH_MCP_CLIENT_ID, scopes: [TRUSTED_MESH_MCP_SCOPE],
+    })!;
+    try {
+      await handleSendMessage(adapters, {
+        harness: "minimax-code", sessionId: target.id, inputId: "idle-agent-queue", message: "Start this task.",
+        mode: "queue", meshSender: { hostId: "source-host", harness: "codex", nativeSessionId: "source-session" },
+      }, delivery, ingress);
+      const job = jobs.list().find((row) => row.ownerSessionId === target.id);
+      expect(job).toBeDefined();
+      await vi.waitFor(() => expect(jobs.get(job!.id)?.state).toBe("completed"));
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+      expect(sendMessage.mock.calls[0]?.[0]).toBe(target.id);
+      expect(sendMessage.mock.calls[0]?.[1]).toMatchObject({
+        inputId: "idle-agent-queue", origin: "automation", queue: false, steer: false,
+      });
+      expect(sendMessage.mock.calls[0]?.[1]).not.toHaveProperty("activeTurnOnly");
+      expect(jobs.list()).toHaveLength(1);
+      const nativeOptions = sendMessage.mock.calls[0]![1];
+      expect(verifyDurableUserDeliveryClaim(nativeOptions.durableUserDelivery, {
+        jobId: job!.id, inputId: "idle-agent-queue", requestFingerprint: job!.requestFingerprint!,
+        harness: "minimax-code", sessionId: target.id, targetHostId: "host-a", mode: "queue",
+        actor: { kind: "agent", principal: TRUSTED_MESH_MCP_CLIENT_ID,
+          senderAssertion: { hostId: "source-host", harness: "codex", nativeSessionId: "source-session" }, senderVerified: false },
+        minimaxExecPolicy: { mode: "unset", revision: 0 },
+      }, nativeOptions.message!)).toBe(true);
+      await handleSendMessage(adapters, {
+        harness: "minimax-code", sessionId: target.id, inputId: "idle-agent-queue", message: "Start this task.",
+        mode: "queue", meshSender: { hostId: "source-host", harness: "codex", nativeSessionId: "source-session" },
+      }, delivery, ingress);
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+    } finally {
+      delivery.close();
+      await delivery.getMinimaxExecPolicy({ hostId: "host-a", harness: "minimax-code", sessionId: target.id });
+    }
   });
 });

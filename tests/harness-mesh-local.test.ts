@@ -6,9 +6,18 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {CoordinationNoteStore} from "../src/coordination-notes.js";
 import {HerderEventBus} from "../src/herder-events.js";
+import {HerderJobRegistry} from "../src/herder-jobs.js";
+import {UserMessageDelivery} from "../src/user-message-delivery.js";
+import {TRUSTED_MESH_MCP_CLIENT_ID,TRUSTED_MESH_MCP_SCOPE,trustedMeshIngressFromMcpAuthInfo} from "../src/mesh/authenticated-ingress.js";
 import {coordinationNotes} from "../src/coordination-notes.js";
 import {randomUUID} from "node:crypto";
 const base={id:"n",harness:"codex",status:"running",cwd:"/launch",title:"t",lastActivity:new Date().toISOString(),needsPermission:false,meta:{activeCwd:"/actual",launchCwd:"/launch",projectSource:"native"}};
+function sharedDelivery(root:string,adapter:any){
+ const events=new HerderEventBus(),jobs=new HerderJobRegistry(events,{persistencePath:join(root,"jobs.json")});
+ const delivery=new UserMessageDelivery(new Map([["codex",adapter]]),{sendMessage:async(_harness,id,options)=>adapter.sendMessage(id,options)},jobs,{pollMs:1,maxWaitMs:2_000,maxPending:32});
+ const ingress=trustedMeshIngressFromMcpAuthInfo({token:"test-transport-token",clientId:TRUSTED_MESH_MCP_CLIENT_ID,scopes:[TRUSTED_MESH_MCP_SCOPE]})!;
+ return {delivery,jobs,ingress};
+}
 describe("local mesh capabilities (focused integration; expected 5s, maximum 30s)",()=>{
  it("validates the configurable discovery timeout inside the fleet deadline",()=>{
   const diagnostic=vi.spyOn(console,"error").mockImplementation(()=>{});
@@ -78,44 +87,65 @@ describe("local mesh capabilities (focused integration; expected 5s, maximum 30s
    expect((await m.snapshot()).sessions[0]?.project).toEqual({launchCwd:"/launch",currentCwd:"/work",source:"coordination_activity",hostId:store.localHostId});
   }finally{await rm(dir,{recursive:true,force:true});}
  });
- it("returns durable admission before reading a disappeared or stopped target",async()=>{
+ it("reuses the shared durable job after admission without reading a disappeared target",async()=>{
   const dir=await mkdtemp(join(tmpdir(),"herder-mesh-replay-"));try{
-   const send=vi.fn(async()=>({admitted:true,inputId:"replay",turnId:"t"})),getSession=vi.fn(async()=>base);
-   const adapters=new Map([['codex',{type:"codex",getSession,isReady:()=>true}]]) as any;
+   const sendMessage=vi.fn(async(_id:string,options:any)=>({ok:true,admitted:true,inputId:options.inputId,turnId:"t"}));
+   const getSession=vi.fn(async()=>({...base,hostId:"h"}));
+   const adapter={type:"codex",getSession,sendMessage,sendActiveMessage:vi.fn(async(_id:string,options:any)=>sendMessage(_id,options)),isReady:()=>true};
+   const adapters=new Map([['codex',adapter]]) as any;
+   const core=sharedDelivery(dir,adapter);
    const request={target:{hostId:"h",harness:"codex",nativeSessionId:"n"},sender:{hostId:"s",harness:"codex",nativeSessionId:"s"},inputId:"replay",message:"delta"};
-   const deps={hostId:"h",adapters,send,ledgerPath:join(dir,"ledger.json")};expect((await new LocalHarnessMesh(deps).deliver(request)).state).toBe("admitted");
-   getSession.mockRejectedValue(new Error("target gone"));expect((await new LocalHarnessMesh(deps).deliver(request)).state).toBe("admitted");expect(getSession).toHaveBeenCalledTimes(1);expect(send).toHaveBeenCalledTimes(1);
+   const mesh=new LocalHarnessMesh({hostId:"h",adapters,userMessageDelivery:core.delivery,ledgerPath:join(dir,"ledger.json")});
+   const first=await mesh.deliver(request,core.ingress);expect(first.state).toBe("queued");
+   await vi.waitFor(()=>expect(core.jobs.get(first.jobId!)?.state).toBe("completed"));
+   const readsBeforeDuplicate=getSession.mock.calls.length;
+   getSession.mockRejectedValue(new Error("target gone"));
+   expect(await mesh.deliver(request,core.ingress)).toMatchObject({state:"queued",jobId:first.jobId});
+   expect(getSession).toHaveBeenCalledTimes(readsBeforeDuplicate);expect(sendMessage).toHaveBeenCalledTimes(1);
+   core.delivery.close();
   }finally{await rm(dir,{recursive:true,force:true});}
  });
  it("keeps per-sender budgets distinct through the real send handler: 6+6, target12, pair7 rejected",async()=>{
   const dir=await mkdtemp(join(tmpdir(),"herder-mesh-budget-")),oldStop=process.env.AGENT_HERDER_HUMAN_STOP_STORE;
   process.env.AGENT_HERDER_HUMAN_STOP_STORE=join(dir,"stop.json");const inject=vi.spyOn(coordinationNotes,"inject").mockImplementation(async(_session,message)=>message);
   try{
-   const id=randomUUID(),session={...base,id},sendMessage=vi.fn(async(_id,options)=>({ok:true,admitted:true,inputId:options.inputId,turnId:"turn"}));
+   const id=randomUUID(),session={...base,id,hostId:"h"},sendMessage=vi.fn(async(_id,options)=>({ok:true,admitted:true,inputId:options.inputId,turnId:"turn"}));
    // Real codex transports deliver into the verified active turn; the mesh
    // handler refuses other lanes, so the fixture mirrors that transport.
    const sendActiveMessage=vi.fn(async(activeId:string,activeOptions:any)=>sendMessage(activeId,{...activeOptions,activeTurnOnly:true,steer:true}));
    const getSession=vi.fn(async(target)=>target===id?session:null),adapter={type:"codex",getSession,sendMessage,sendActiveMessage,isReady:()=>true};
-   const m=new LocalHarnessMesh({hostId:"h",adapters:new Map([['codex',adapter]]) as any,ledgerPath:join(dir,"ledger.json")});
+   const core=sharedDelivery(dir,adapter);
+   const m=new LocalHarnessMesh({hostId:"h",adapters:new Map([['codex',adapter]]) as any,userMessageDelivery:core.delivery,ledgerPath:join(dir,"ledger.json")});
    const request={target:{hostId:"h",harness:"codex",nativeSessionId:id},sender:{hostId:"source",harness:"codex",nativeSessionId:"sender-a"},inputId:"",message:"delta"};
-   for(const sender of ['sender-a','sender-b'])for(let n=0;n<6;n++)expect((await m.deliver({...request,sender:{...request.sender,nativeSessionId:sender},inputId:`${sender}-${n}`})).state).toBe("admitted");
-   expect((await m.deliver({...request,inputId:"pair-seven"})).reason).toBe("rate_limited");expect(sendMessage).toHaveBeenCalledTimes(12);
+   for(const sender of ['sender-a','sender-b'])for(let n=0;n<6;n++)expect((await m.deliver({...request,sender:{...request.sender,nativeSessionId:sender},inputId:`${sender}-${n}`},core.ingress)).state).toBe("queued");
+   expect((await m.deliver({...request,inputId:"pair-seven"},core.ingress)).reason).toBe("rate_limited");
+   await vi.waitFor(()=>expect(core.jobs.list().filter(job=>job.state==="completed")).toHaveLength(12));
+   expect(sendMessage).toHaveBeenCalledTimes(12);
+   core.delivery.close();
   }finally{inject.mockRestore();if(oldStop===undefined)delete process.env.AGENT_HERDER_HUMAN_STOP_STORE;else process.env.AGENT_HERDER_HUMAN_STOP_STORE=oldStop;await rm(dir,{recursive:true,force:true});}
  });
  it("rejects another host before touching a native adapter",async()=>{
-  const send=vi.fn();const m=new LocalHarnessMesh({hostId:"host",adapters:new Map(),send});
+  const m=new LocalHarnessMesh({hostId:"host",adapters:new Map()});
   const r=await m.deliver({target:{hostId:"other",harness:"codex",nativeSessionId:"n"},sender:{hostId:"src",harness:"codex",nativeSessionId:"s"},inputId:"i",message:"delta"});
-  expect(r.state).toBe("not_attempted");expect(send).not.toHaveBeenCalled();
+  expect(r.state).toBe("not_attempted");
  });
  it("keeps same native ID and hands admission proof back, never CLI textual success",async()=>{
   const dir=await mkdtemp(join(tmpdir(),"herder-mesh-local-test-"));try{
-  const send=vi.fn(async()=>({admitted:true,inputId:"i",turnId:"t"}));
-  const adapter={type:"codex",getSession:vi.fn(async()=>base),isReady:()=>true};
-  const m=new LocalHarnessMesh({hostId:"host",adapters:new Map([['codex',adapter]]) as any,send,ledgerPath:join(dir,"ledger.json")});
-  const r=await m.deliver({target:{hostId:"host",harness:"codex",nativeSessionId:"n"},sender:{hostId:"src",harness:"codex",nativeSessionId:"s"},inputId:"i",message:"delta"});
-  expect(r.state).toBe("admitted");expect(send.mock.calls[0]?.[0]).toEqual(expect.objectContaining({sessionId:"n",inputId:"i"}));
-  expect(send.mock.calls[0]?.[0]).toMatchObject({meshSender:{hostId:"src",harness:"codex",nativeSessionId:"s"},message:"delta"});
-  expect(send.mock.calls[0]?.[0]).not.toHaveProperty("fromSessionId");expect(send.mock.calls[0]?.[0]).not.toHaveProperty("fromHarness");
+  const sendMessage=vi.fn(async(_id:string,options:any)=>({ok:true,admitted:true,inputId:options.inputId,turnId:"t"}));
+  const sendActiveMessage=vi.fn(async(_id:string,options:any)=>({ok:true,admitted:true,inputId:options.inputId,turnId:"unexpected-active-turn"}));
+  const adapter={type:"codex",getSession:vi.fn(async()=>({...base,hostId:"host"})),sendMessage,sendActiveMessage,isReady:()=>true};
+  const core=sharedDelivery(dir,adapter);
+  const m=new LocalHarnessMesh({hostId:"host",adapters:new Map([['codex',adapter]]) as any,userMessageDelivery:core.delivery,ledgerPath:join(dir,"ledger.json")});
+  const r=await m.deliver({target:{hostId:"host",harness:"codex",nativeSessionId:"n"},sender:{hostId:"src",harness:"codex",nativeSessionId:"s"},inputId:"i",message:"delta"},core.ingress);
+  expect(r.state).toBe("queued");expect(r.jobId).toBeTruthy();
+  await vi.waitFor(()=>expect(core.jobs.get(r.jobId!)?.state).toBe("completed"));
+  expect(sendMessage).toHaveBeenCalledTimes(1);
+  expect(sendMessage.mock.calls[0]?.[0]).toBe("n");
+  expect(sendMessage.mock.calls[0]?.[1]).toMatchObject({inputId:"i",queue:true,steer:false,origin:"automation"});
+  expect(sendMessage.mock.calls[0]?.[1]).not.toHaveProperty("activeTurnOnly");
+  expect(sendActiveMessage).not.toHaveBeenCalled();
+  expect(core.jobs.list()).toHaveLength(1);
+  core.delivery.close();
   }finally{await rm(dir,{recursive:true,force:true});}
  });
 });
