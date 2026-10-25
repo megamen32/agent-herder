@@ -3,7 +3,13 @@ import { describe, expect, it } from "vitest";
 import { matchesSessionQuery } from "../src/web-ui/session-list.js";
 import { DEFAULT_THEME, applyTheme, normalizeTheme, readTheme, writeTheme } from "../src/web-ui/theme.js";
 import { currentModelOption, modelSwitchSupported, requestModelChange, shortModelLabel } from "../src/web-ui/model-chip.js";
-import { acquireCurrentVoiceStream } from "../src/web-ui/composer-controls.js";
+import {
+  acquireCurrentVoiceStream,
+  attemptQueueProcessingResume,
+  queueProcessingCanResume,
+  queueProcessingIntentStorageKey,
+  type QueueProcessingState,
+} from "../src/web-ui/composer-controls.js";
 
 const main = readFileSync(new URL("../src/web-ui/main.tsx", import.meta.url), "utf8");
 const composerControls = readFileSync(new URL("../src/web-ui/composer-controls.tsx", import.meta.url), "utf8");
@@ -21,6 +27,12 @@ const memoryStorage = () => {
     removeItem: (key: string) => { map.delete(key); },
   };
 };
+
+const queueTarget={hostId:"server-100",harness:"zcode",sessionId:"fixture-session"};
+const queueState=(patch:Partial<QueueProcessingState>={}):QueueProcessingState=>({
+  ...queueTarget,scope:"session",loaded:true,canResume:true,capability:"setAutoDrain",revision:7,
+  autoDrain:false,pendingCount:2,oldestQueueItemId:"oldest",nativeStatus:"completed",...patch,
+});
 
 describe("mobile chat and session controls", () => {
   it("searches sessions across title, harness, cwd, and preview", () => {
@@ -333,6 +345,67 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain("loadDetails(activeKey, false)");
     expect(streamEffect).not.toContain("?limit=50");
   });
+});
+
+describe("shared queue-processing control state machine",()=>{
+ it("has a shared compact control style for both composer surfaces",()=>{
+  expect(composerControls).toContain("export function QueueProcessingControl");
+  expect(styles).toContain(".queue-processing-control");
+  expect(composerControls).toContain('aria-label="Обработка очереди этой сессии"');
+ });
+
+ it("enables only for a fresh exact loaded session with pending work and the V4 capability",()=>{
+  const good=queueState();
+  expect(queueProcessingCanResume(good,queueTarget,false)).toBe(true);
+  expect(queueProcessingCanResume({...good,loaded:false},queueTarget,false)).toBe(false);
+  expect(queueProcessingCanResume({...good,scope:"harness"},queueTarget,false)).toBe(false);
+  expect(queueProcessingCanResume({...good,capability:undefined},queueTarget,false)).toBe(false);
+  expect(queueProcessingCanResume({...good,autoDrain:true},queueTarget,false)).toBe(false);
+  expect(queueProcessingCanResume({...good,pendingCount:0},queueTarget,false)).toBe(false);
+  expect(queueProcessingCanResume(good,{...queueTarget,hostId:"server-44"},false)).toBe(false);
+  expect(queueProcessingCanResume(good,queueTarget,true)).toBe(false);
+ });
+
+ it("refreshes a changed revision and never retries the stale CAS",async()=>{
+  const storage=memoryStorage();let sends=0;let reads=0;
+  const result=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,makeInputId:()=>"intent-stale",
+   readState:async()=>{reads++;return {available:true,state:queueState({revision:8})};},
+   resume:async()=>{sends++;return {inputId:"intent-stale",status:"accepted"};}});
+  expect(result).toMatchObject({kind:"stale",state:{revision:8}});
+  expect(reads).toBe(1);expect(sends).toBe(0);
+  expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toBeNull();
+ });
+
+ it("keeps one unknown inputId and blocks every automatic replay",async()=>{
+  const storage=memoryStorage();let sends=0;
+  const callbacks={readState:async()=>({available:true as const,state:queueState()}),resume:async(_target:typeof queueTarget,request:{inputId:string;expectedRevision:number})=>{sends++;expect(request).toEqual({inputId:"intent-unknown",expectedRevision:7});return {inputId:request.inputId,status:"unknown" as const};}};
+  const first=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,makeInputId:()=>"intent-unknown",...callbacks});
+  const second=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,makeInputId:()=>"new-must-not-exist",...callbacks});
+  expect(first.kind).toBe("unknown");expect(second).toMatchObject({kind:"unknown",inputId:"intent-unknown"});
+  expect(sends).toBe(1);
+  expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toContain('"inputId":"intent-unknown"');
+ });
+
+ it("does not call native action for unloaded or unsupported scope",async()=>{
+  const storage=memoryStorage();let sends=0;
+  const result=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,
+   readState:async()=>({available:true,state:queueState({loaded:false,canResume:false,reason:"Сессия не загружена."})}),
+   resume:async()=>{sends++;return {inputId:"unused",status:"accepted"};}});
+  expect(result.kind).toBe("not-ready");expect(result.message).toContain("Сессия не загружена");expect(sends).toBe(0);
+  expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toBeNull();
+ });
+
+ it("labels preference readback separately from a confirmed native start",async()=>{
+  const storage=memoryStorage();
+  const attempt=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,makeInputId:()=>"intent-accepted",
+   readState:async()=>({available:true,state:queueState()}),
+   resume:async(_target,request)=>({inputId:request.inputId,status:"accepted",state:queueState({autoDrain:true}),nativeInputActuallyStarted:false})});
+  expect(attempt.kind).toBe("accepted");
+  expect(attempt.message).toContain("Настройка очереди сохранена");
+  expect(attempt.message).toContain("начало обработки не подтверждено");
+  expect(attempt.message).not.toMatch(/доставлено|сообщение отправлено/i);
+  expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toBeNull();
+ });
 });
 
 describe("две темы оформления", () => {

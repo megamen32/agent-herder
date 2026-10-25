@@ -6,7 +6,249 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
-import type { DeliveryMode } from "./composer-delivery.js";
+import { newInputId, type DeliveryMode } from "./composer-delivery.js";
+
+export type QueueProcessingTarget = { hostId: string; harness: string; sessionId: string };
+
+export type QueueProcessingState = QueueProcessingTarget & {
+  scope: string;
+  loaded: boolean;
+  canResume: boolean;
+  capability?: string;
+  revision: number;
+  autoDrain: boolean;
+  pendingCount: number;
+  oldestQueueItemId?: string | null;
+  nativeStatus?: string;
+  pendingRequestCount?: number;
+  reason?: string;
+};
+
+export type QueueProcessingRead =
+  | { available: true; state: QueueProcessingState }
+  | { available: false; reason: string };
+
+export type QueueProcessingResumeResult = {
+  inputId: string;
+  status: "accepted" | "stale" | "unknown" | "unsupported" | "noop";
+  state?: QueueProcessingState;
+  nativeInputActuallyStarted?: boolean;
+  reason?: string;
+};
+
+type QueueProcessingIntent = { inputId: string; status: "pending" | "unknown" };
+type QueueProcessingIntentStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+export function queueProcessingIntentStorageKey(target: QueueProcessingTarget): string {
+  return `agent-herder.queue-processing-intent:${encodeURIComponent(target.hostId)}:${encodeURIComponent(target.harness)}:${encodeURIComponent(target.sessionId)}`;
+}
+
+function readQueueProcessingIntent(storage: QueueProcessingIntentStorage | undefined, key: string): QueueProcessingIntent | undefined {
+  try {
+    const raw = storage?.getItem(key);
+    if (!raw) return undefined;
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object") return { inputId: "unknown", status: "unknown" };
+    const candidate = value as Partial<QueueProcessingIntent>;
+    if (typeof candidate.inputId !== "string" || !candidate.inputId || !["pending", "unknown"].includes(candidate.status || "")) {
+      return { inputId: "unknown", status: "unknown" };
+    }
+    return { inputId: candidate.inputId, status: candidate.status as QueueProcessingIntent["status"] };
+  } catch {
+    return { inputId: "unknown", status: "unknown" };
+  }
+}
+
+export function queueProcessingStateMatchesTarget(state: QueueProcessingState, target: QueueProcessingTarget): boolean {
+  return state.hostId === target.hostId && state.harness === target.harness && state.sessionId === target.sessionId;
+}
+
+export function queueProcessingCanResume(state: QueueProcessingState | undefined, target: QueueProcessingTarget, unresolved: boolean): boolean {
+  return Boolean(state
+    && !unresolved
+    && queueProcessingStateMatchesTarget(state, target)
+    && state.scope === "session"
+    && state.loaded === true
+    && state.canResume === true
+    && state.capability === "setAutoDrain"
+    && Number.isSafeInteger(state.revision)
+    && state.revision >= 0
+    && state.autoDrain === false
+    && Number.isSafeInteger(state.pendingCount)
+    && state.pendingCount > 0);
+}
+
+export type QueueProcessingAttempt = {
+  kind: "accepted" | "started" | "stale" | "unknown" | "unsupported" | "noop" | "not-ready";
+  inputId?: string;
+  state?: QueueProcessingState;
+  message: string;
+};
+
+/** One explicit CAS intent. It never retries, and writes a durable-in-tab intent before POST. */
+export async function attemptQueueProcessingResume(input: {
+  target: QueueProcessingTarget;
+  displayedState: QueueProcessingState;
+  readState: (target: QueueProcessingTarget) => Promise<QueueProcessingRead>;
+  resume: (target: QueueProcessingTarget, request: { inputId: string; expectedRevision: number }) => Promise<QueueProcessingResumeResult>;
+  storage: QueueProcessingIntentStorage;
+  makeInputId?: () => string;
+}): Promise<QueueProcessingAttempt> {
+  const storageKey = queueProcessingIntentStorageKey(input.target);
+  const existing = readQueueProcessingIntent(input.storage, storageKey);
+  if (existing) {
+    return { kind: "unknown", inputId: existing.inputId, message: "Предыдущая команда не получила подтверждённого исхода. Повтор заблокирован; проверьте состояние вручную." };
+  }
+  if (!queueProcessingStateMatchesTarget(input.displayedState, input.target)) {
+    return { kind: "unsupported", message: "Состояние принадлежит другой сессии; команда не отправлена." };
+  }
+
+  let fresh: QueueProcessingRead;
+  try { fresh = await input.readState(input.target); }
+  catch { return { kind: "not-ready", message: "Не удалось обновить состояние очереди. Команда не отправлена." }; }
+  if (!fresh.available) return { kind: "unsupported", message: fresh.reason || "Управление очередью недоступно для этой сессии." };
+  if (!queueProcessingStateMatchesTarget(fresh.state, input.target)) {
+    return { kind: "unsupported", message: "Свежее состояние относится к другой сессии; команда не отправлена." };
+  }
+  if (fresh.state.revision !== input.displayedState.revision) {
+    return { kind: "stale", state: fresh.state, message: "Состояние очереди изменилось. Я обновил его; действие не повторялось." };
+  }
+  if (!queueProcessingCanResume(fresh.state, input.target, false)) {
+    return { kind: "not-ready", state: fresh.state, message: fresh.state.reason || "Для этой сессии сейчас нет загруженной поддерживаемой очереди для возобновления." };
+  }
+
+  const inputId = (input.makeInputId ?? newInputId)();
+  try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "pending" } satisfies QueueProcessingIntent)); }
+  catch { return { kind: "not-ready", state: fresh.state, message: "Не удалось сохранить идентификатор команды; ничего не отправлено." }; }
+
+  let result: QueueProcessingResumeResult;
+  try { result = await input.resume(input.target, { inputId, expectedRevision: fresh.state.revision }); }
+  catch {
+    try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "unknown" } satisfies QueueProcessingIntent)); } catch { /* the original pending key still fails closed */ }
+    return { kind: "unknown", inputId, message: "Исход команды неизвестен. Повтор не выполняется." };
+  }
+  if (result.inputId !== inputId) {
+    try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "unknown" } satisfies QueueProcessingIntent)); } catch { /* keep the existing pending key */ }
+    return { kind: "unknown", inputId, message: "Ответ не совпадает с этой командой. Повтор заблокирован." };
+  }
+  if (result.status === "unknown") {
+    try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "unknown" } satisfies QueueProcessingIntent)); } catch { /* keep the existing pending key */ }
+    const exactState = result.state && queueProcessingStateMatchesTarget(result.state, input.target) ? result.state : undefined;
+    return { kind: "unknown", inputId, state: exactState, message: result.reason || "Исход команды неизвестен. Повтор не выполняется." };
+  }
+  if (result.status === "accepted") {
+    if (!result.state || !queueProcessingStateMatchesTarget(result.state, input.target) || result.state.scope !== "session"
+      || !result.state.loaded || result.state.capability !== "setAutoDrain" || !result.state.autoDrain) {
+      try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "unknown" } satisfies QueueProcessingIntent)); } catch { /* keep the existing pending key */ }
+      return { kind: "unknown", inputId, state: result.state, message: "Команда принята, но точный readback настройки очереди не подтверждён. Повтор заблокирован." };
+    }
+    input.storage.removeItem(storageKey);
+    return result.nativeInputActuallyStarted === true
+      ? { kind: "started", inputId, state: result.state, message: "Обработка очереди началась в этой сессии." }
+      : { kind: "accepted", inputId, state: result.state, message: "Настройка очереди сохранена для этой сессии и следующих сообщений; начало обработки не подтверждено." };
+  }
+  input.storage.removeItem(storageKey);
+  if (result.status === "stale") return { kind: "stale", inputId, state: result.state, message: result.reason || "Состояние очереди изменилось. Действие не повторялось." };
+  if (result.status === "noop") return { kind: "noop", inputId, state: result.state, message: result.reason || "Настройка уже применена; новая команда не отправлена." };
+  return { kind: "unsupported", inputId, state: result.state, message: result.reason || "Эта сессия не поддерживает возобновление обработки очереди." };
+}
+
+export function QueueProcessingControl({
+  target,
+  readState,
+  resume,
+  storage,
+}: {
+  target: QueueProcessingTarget;
+  readState: (target: QueueProcessingTarget) => Promise<QueueProcessingRead>;
+  resume: (target: QueueProcessingTarget, request: { inputId: string; expectedRevision: number }) => Promise<QueueProcessingResumeResult>;
+  storage?: QueueProcessingIntentStorage;
+}) {
+  const targetKey = `${target.hostId}\0${target.harness}\0${target.sessionId}`;
+  const targetRef = useRef(target);
+  targetRef.current = target;
+  const readStateRef = useRef(readState);
+  readStateRef.current = readState;
+  const resumeRef = useRef(resume);
+  resumeRef.current = resume;
+  const storageRef = useRef(storage);
+  storageRef.current = storage ?? (typeof window !== "undefined" ? window.sessionStorage : undefined);
+  const intentKey = queueProcessingIntentStorageKey(target);
+  const [intent, setIntent] = useState<QueueProcessingIntent | undefined>(() => readQueueProcessingIntent(storageRef.current, intentKey));
+  const [state, setState] = useState<QueueProcessingState>();
+  const [reason, setReason] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const refresh = async (signal?: AbortSignal) => {
+    setLoading(true);
+    try {
+      const value = await readStateRef.current(targetRef.current);
+      if (signal?.aborted) return;
+      if (value.available && queueProcessingStateMatchesTarget(value.state, targetRef.current)) {
+        setState(value.state);
+        setReason("");
+      } else {
+        setState(undefined);
+        setReason(value.available ? "Ответ состояния не относится к выбранной сессии." : value.reason);
+      }
+    } catch {
+      if (!signal?.aborted) { setState(undefined); setReason("Не удалось прочитать состояние обработки очереди."); }
+    } finally { if (!signal?.aborted) setLoading(false); }
+  };
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setState(undefined); setReason(""); setMessage(""); setLoading(true);
+    setIntent(readQueueProcessingIntent(storageRef.current, queueProcessingIntentStorageKey(targetRef.current)));
+    void refresh(controller.signal);
+    return () => controller.abort();
+  }, [targetKey]);
+
+  const run = async () => {
+    if (!state || busy || intent) return;
+    setBusy(true); setMessage("");
+    try {
+      const attempt = await attemptQueueProcessingResume({
+        target: targetRef.current,
+        displayedState: state,
+        readState: (exactTarget) => readStateRef.current(exactTarget),
+        resume: (exactTarget, request) => resumeRef.current(exactTarget, request),
+        storage: storageRef.current ?? { getItem: () => null, setItem: () => { throw new Error("storage unavailable"); }, removeItem: () => {} },
+      });
+      if (attempt.state && queueProcessingStateMatchesTarget(attempt.state, targetRef.current)) setState(attempt.state);
+      if (attempt.kind === "unknown" && attempt.inputId) {
+        const nextIntent = { inputId: attempt.inputId, status: "unknown" as const };
+        setIntent(nextIntent);
+      } else if (attempt.kind === "unknown") {
+        setIntent(readQueueProcessingIntent(storageRef.current, intentKey));
+      } else if (["accepted", "started", "stale", "unsupported", "noop"].includes(attempt.kind)) {
+        setIntent(readQueueProcessingIntent(storageRef.current, intentKey));
+      }
+      setMessage(attempt.message);
+    } finally { setBusy(false); }
+  };
+
+  const unresolved = Boolean(intent);
+  const ready = queueProcessingCanResume(state, target, unresolved);
+  return <section className="queue-processing-control" aria-label="Обработка очереди этой сессии">
+    <div className="queue-processing-copy">
+      <strong>Обработка очереди</strong>
+      <small>{state?.scope === "session" ? "Настройка сохраняется только для этой сессии и следующих сообщений." : "Управление относится только к точно выбранной сессии."}</small>
+      {state && <small>{state.pendingCount} сообщений ожидают · статус: {state.nativeStatus || "не сообщён"}</small>}
+      {reason && <small role="status">{reason}</small>}
+      {message && <small role={message.includes("неизвест") || message.includes("не подтвержд") ? "alert" : "status"}>{message}</small>}
+      {intent && <small role="alert">Исход команды не подтверждён. Идентификатор сохранён; повтор заблокирован.</small>}
+    </div>
+    <div className="queue-processing-actions">
+      <button type="button" className="quiet-button" disabled={loading || busy} onClick={() => void refresh()}>{loading ? "Читаю…" : "Обновить очередь"}</button>
+      {state?.autoDrain && <span className="queue-processing-enabled" role="status">Обработка включена</span>}
+      {ready && <button type="button" className="quiet-button" disabled={loading || busy || unresolved} title="Изменяет только эту сессию и сохраняется для следующих сообщений." onClick={() => void run()}>{busy ? "Применяю…" : "Возобновить обработку очереди"}</button>}
+      {state && !ready && !state.autoDrain && !unresolved && !loading && <small>{state.reason || (state.pendingCount === 0 ? "Очередь пуста." : !state.loaded ? "Нативная сессия не загружена; возобновление недоступно." : !state.canResume ? "Нативный контрол очереди недоступен." : "Состояние очереди пока не позволяет действие.")}</small>}
+    </div>
+  </section>;
+}
 
 export function isComposerSubmitShortcut(
   event: Pick<KeyboardEvent<HTMLTextAreaElement>, "key" | "metaKey" | "ctrlKey" | "shiftKey">,

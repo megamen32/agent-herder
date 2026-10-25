@@ -216,6 +216,12 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .composer-voice-cancel:hover { background: var(--surface-hover); color: var(--text); }
 .composer-voice-status, .composer-voice-error { flex: 1 0 100%; min-width: 0; padding: 1px 5px; color: var(--muted); font-size: var(--text-xs); overflow-wrap: anywhere; }
 .composer-voice-error { color: var(--status-error); }
+.queue-processing-control { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-1); }
+.queue-processing-copy { display: grid; gap: 2px; min-width: 0; flex: 1 1 240px; color: var(--text-2); font-size: var(--text-xs); }
+.queue-processing-copy strong { color: var(--text); font-size: var(--text-sm); }
+.queue-processing-copy small, .queue-processing-actions small { overflow-wrap: anywhere; }
+.queue-processing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.queue-processing-enabled { color: var(--status-done); font-size: var(--text-xs); font-weight: 600; }
 .voice-loading { animation: pulse 1s ease-in-out infinite; }
 .composer-send-mode-menu { position: absolute; right: 8px; bottom: calc(100% + 8px); z-index: 42; display: grid; gap: 4px; width: min(270px, calc(100vw - 24px)); padding: 8px; border: 1px solid var(--border-2); border-radius: var(--radius-m); background: var(--surface-2); box-shadow: 0 14px 36px var(--shadow-menu); }
 .composer-send-mode-menu > strong { padding: 4px 7px; font-size: var(--text-sm); }
