@@ -167,7 +167,11 @@ export class FleetCabinetService {
   const results=new Map<string,Cached>();let next=0;
   const queried=this.deps.hosts.filter(h=>!selectedHostId||h.hostId===selectedHostId);
   await Promise.all(Array.from({length:3},async()=>{for(;;){const definition=queried[next++];if(!definition)return;
-   const {hostId}=definition;const shell=registry.find(r=>r.server_id===`shell:${hostId}`);
+   const {hostId}=definition;
+   // A host another session leads is offline for our fleet: its own registry
+   // entry may still say online, and that truth is not ours to publish.
+   if(definition.offline){results.set(hostId,{revision,host:{...definition,state:'offline',fetchedAt:null,expiresAt:null,generation:null,createHarnesses:[],reason:definition.offlineReason??'offline_by_owner'},sessions:[],complete:false,limited:false,target:''});continue;}
+   const shell=registry.find(r=>r.server_id===`shell:${hostId}`);
    const peers=registry.filter(r=>r.kind==='child_mcp'&&typeof r.server_id==='string'&&r.server_id.startsWith(`mcp:shell:${hostId}:`));
    const peer=peers.find(r=>/^(AgentHerder|agent-herder)$/i.test(String(r.server_id).split(':').at(-1)!))??peers.find(r=>/HarnessMesh/i.test(String(r.server_id).split(':').at(-1)!));
    const unavailable=(reason:string,state:FleetHost['state']='unavailable'):Cached=>{

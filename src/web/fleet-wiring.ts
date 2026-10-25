@@ -18,7 +18,7 @@ export const fleetHosts: readonly FleetHostDefinition[] = [
   {hostId: "roomhacker-server-100", label: "Сервер 100", nativeUser: "roomhacker", uiUrl: "https://agent.bezrabotnyi.com"},
   {hostId: "server-44", label: "Сервер 44", nativeUser: "roomhacker", uiUrl: "https://agent44.bezrabotnyi.com"},
   {hostId: "roomhacker-server-88", label: "Сервер 88", nativeUser: "roomhacker", uiUrl: "https://agent88.bezrabotnyi.com"},
-  {hostId: "mac-mini-2012.lan", label: "Mac Mini", nativeUser: "roomhacker", uiUrl: "https://agent-mac-mini.bezrabotnyi.com"},
+  {hostId: "mac-mini-2012.lan", label: "Mac Mini", nativeUser: "roomhacker", uiUrl: "https://agent-mac-mini.bezrabotnyi.com", offline: true, offlineReason: "led by another session"},
   {hostId: "MacBook-Pro-User.local", label: "Mac M1", nativeUser: "user", uiUrl: "https://agent-mac-m1.bezrabotnyi.com"},
 ];
 

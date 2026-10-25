@@ -2,7 +2,7 @@ import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { homedir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
-import { spawnIsolatedWorkload } from "../workload-launcher.js";
+import { runtimeScriptPath, spawnIsolatedWorkload } from "../workload-launcher.js";
 import type {
   AgentSession,
   CreateSessionOptions,
@@ -151,8 +151,12 @@ export class FastAgentFileAdapter implements HarnessAdapter {
       "session=SessionManager(cwd=Path(cwd),home_override=home).create_session(name=name,metadata={'title':name,'model':model,'cwd':cwd,'healthRecovery':recovery=='true','herderManaged':True})",
       "print(json.dumps({'id':session.info.name}))",
     ].join("\n");
+    // The script is a file of the runtime state and not an argument of the
+    // command: the command line of a scope becomes the Description of the
+    // transient unit, and a line break in it breaks the unit file of the scope.
+    const scriptPath = runtimeScriptPath("fast-agent-create-session", script);
     const stdout = await new Promise<string>((resolveOutput, reject) => {
-      const child = spawnIsolatedWorkload(python, ["-c", script, this.home, cwd, options.name, options.model || "", String(options.healthRecovery === true)], {
+      const child = spawnIsolatedWorkload(python, [scriptPath, this.home, cwd, options.name, options.model || "", String(options.healthRecovery === true)], {
         label: "fast-agent-create", resourceProperties: [...FAST_AGENT_RESOURCE_PROPERTIES], cwd,
         timeout: 15_000, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FAST_AGENT_HOME: this.home },
       }) as ChildProcessWithoutNullStreams;
