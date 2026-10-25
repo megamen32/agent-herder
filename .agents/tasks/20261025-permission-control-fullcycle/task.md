@@ -26,21 +26,22 @@ Canonical checkout остаётся на main, чужой WIP сохраняет
 
 ## Plan
 Цель: Доставить полный цикл управления native permissions и режимами для ZCode, OpenCode, Codex и MiniMax Code, плюс исправить обнаруженные workspace, activity, titles и session-search дефекты в Agent Herder; без Telegram API, runtime forks и replay accepted/UNKNOWN.
-Бизнес-результат: Combined backend release a34a4fee0ddd8e1e31f2911699e170c142226ab7 установлен и принят 21/21. На нём публичная новая ZCode сессия, созданная без параметров режима, прочитана как native YOLO без pending/активного turn; своя fixture закрыта официально, пять старых сессий не изменялись. Frontend pin `57d2adee` применён штатным timer, managed nginx drift 0. Остальной четырёх-harness цикл открыт.
-Декомпозиция: 18 листьев · 3 параллельно · 11 волн · слотов: 3
+Бизнес-результат: Установленный combined backend release a34a4fee0ddd8e1e31f2911699e170c142226ab7 на host100 принят 21/21. На нём одна публичная новая ZCode-сессия без параметров режима прочитана как native YOLO без pending/active turn, fixture официально закрыта, пять прежних сессий не изменялись. Frontend pin 57d2adee применён штатно, managed nginx drift 0. Это подтверждённый предыдущий выпуск; полный четырёх-harness цикл и новый combined release остаются открытыми.
+Декомпозиция: 19 листьев · 3 параллельно · 11 волн · слотов: 3
 
-**Подтверждено:** source a34 опубликован и independently reviewed; focused ZCode tests 98/98; official artifact checks 14/14; installed host100, PID readback и owner acceptance 21/21. Отдельный baseline 49b также был установлен/принят, но заменён a34. UI static tree точно скопирован из verified live release; commit 57d2adee изменил две root pins и один source header. Nginx timer применил commit, deployed-git-sha=57d2adee, `nginxctl diff` сообщает no managed drift. Публичный endpoint остаётся за auth; authenticated browser readback и workspace filter остаются открытым доказательством.
+**Подтверждено:** source и installed a34 отдельно приняты; focused ZCode tests 98/98, official checks 14/14, host100 PID/readback и owner acceptance 21/21. Для a34 frontend pin 57d2adee применён штатным timer, `nginxctl diff` сообщает no managed drift. Эти факты относятся только к предыдущему выпуску.
 
-**ZCode default create:** первая ограниченная canary на 49b трижды завершилась `created=false`, native session не создавалась; причина — отсутствующий native `projectId`. В a34 вошёл reviewed exact owner-scoped project mapping. Одна публичная canary после установки a34 создана без mode/fullAccess/model/initialMessage; exact same-session native readback показал YOLO, pending пусто, humanMessageCount=0, active turn отсутствует. Тестовую fixture закрыли `closeSession` + `archiveTask`; итоговый readback idle/nativeLoaded=false, root untouched. Task-delete query был unavailable, повторов не было; приватный receipt вне public plan. Пять старых ZCode sessions не менялись.
+**ZCode default create:** Первая ограниченная canary на 49b завершилась `created=false` из-за отсутствующего native `projectId`; повторять её не стали. Reviewed mapping вошёл в a34. Одна новая публичная ZCode-сессия после установки создана без mode/fullAccess/model/initialMessage; exact same-session readback подтвердил YOLO, pending пусто, humanMessageCount=0, active turn отсутствует. Fixture официально закрыта; пять прежних сессий прочитаны как YOLO и не изменялись. Это принятая ZCode canary, не полный цикл.
 
-**Search:** 6099a19 metrics входят в установленный a34 и различают current processed и durable indexed значения. Приёмка требует свежий source receipt и read-only COUNT на одном snapshot/version, exact host+harness scope; partial/stale отражать явно, counts динамические. Нужен точный реальный query→message/snippet. Цитата пользователя и её root cause пока не подтверждены.
+**Source/review:** UI/API `509f2b8` и UI↔MCP source join получили independent SHIP; focused UI/permission tests 44/44 и TypeScript GREEN. MiniMax durable source `5f3d3a9`, consumer WIP и same-DB atomic proof имеют ранее подтверждённые 52 tests + TypeScript; review correction `7643500` получила independent SHIP. Search fixes `3380e8a` и `896a38be` получили independent SHIP, focused 15/15. Ни один из этих fixes не входит в установленный a34; build/install и live consumer checks остаются в L19.
 
-**Открыто:** аутентифицированный UI/browser readback нового frontend pin и TelegramAuto workspace filter; Codex mode не поддержан; MiniMax mode/delivery; Notice Place permission observer/response; idle MiniMax delivery; общий четырёх-harness consumer acceptance. Не считать ZCode canary или installed source доказательством этих веток.
+**Открыто:** Codex и MiniMax не поддерживают session-mode change; UI должен показывать это честно. Browser inspector readback ещё не выполнялся, production mode writes не делались. Для MiniMax pending exact-fixture consumer proof; для OpenCode — filtered native query/readback. Automatic Notice permission trigger и реальный Notice consumer proof отсутствуют. L19 ждёт reviewed source join и затем докажет install/consumer слой. Полный четырёх-harness результат остаётся открытым; незапущенные проверки не считаются PASS.
 
 **Листья по порядку графа:**
 
 ✅ L01 — Проверить нативные возможности и безопасные тестовые сессии.
 🔄 L18 — Исправить нулевые текстовые результаты поиска по каталогу.
+⏳ L19 — Установить и проверить объединённые исправления.
 ✅ L02 — Определить единый контракт режима и точного разрешения; зависит: L01.
 🔄 L03 — Подключить смену режима в четырёх адаптерах; зависит: L01.
 ✅ L13 — Восстановить рабочие папки MiniMax в Herder; зависит: L01.
@@ -50,12 +51,12 @@ Canonical checkout остаётся на main, чужой WIP сохраняет
 ✅ L14 — Проверить активность агента в TelegramAuto; зависит: L13.
 ✅ L15 — Установить Full Access по умолчанию для новых ZCode-сессий; зависит: L03.
 ⏳ L05 — Доставлять карточку с контекстом через Notice Place; зависит: L02, L04.
-⏳ L06 — Показать управление режимами и разрешениями в Herder; зависит: L03, L05.
+🔄 L06 — Показать управление режимами и разрешениями в Herder; зависит: L03, L05.
 ✅ L07 — Опубликовать и установить согласованный выпуск; зависит: L06, L14, L15, L17.
 ✅ L08 — Проверить живой путь ZCode; зависит: L07.
-⏳ L09 — Проверить живой путь OpenCode; зависит: L08.
+⏳ L09 — Проверить живой путь OpenCode; зависит: L08, L19.
 ⏳ L10 — Проверить живой путь Codex; зависит: L09.
 ⏳ L11 — Проверить живой путь MiniMax Code; зависит: L10, L16.
 ⏳ L12 — Закрыть полный цикл по пользовательскому результату; зависит: L11, L14, L16, L17.
 
-Слотов: 3; исходные оценки сохранены. Public plan содержит безопасные метаданные; private native IDs/receipts/transcripts не публикуются. Не повторять accepted/UNKNOWN.
+Слотов: 3; исходные оценки сохранены. Public plan содержит только безопасные source/review/install facts; private native IDs и receipts не публикуются. Не повторять accepted/UNKNOWN.

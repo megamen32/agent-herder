@@ -15,6 +15,15 @@
     "maximum": 25
   },
   "estimate_over_limit_reason": "Одна bounded search/index цепочка с узкой регрессией. Приёмка отдельно покажет полноту данных; не расширять до общего перестроения индекса.",
-  "note": "Metrics delta 6099a19 is installed in combined a34; independent review SHIP for durable-vs-processed accounting; focused 7/7 and tsc GREEN. MCP receipt directly separates processed* (current scan) and indexed* (durable host+harness data). Required next proof: capture a fresh source-versioned receipt and read-only COUNT on the same snapshot/scope; compare dynamic counts without hardcoding; run the exact real query and preserve matching message/snippet, with partial/stale explicit. No root-cause claim for the user's query yet; bridgeworker owns reproduction.",
-  "updated_at": "2026-10-25T16:37:05+03:00"
+  "note": "Search source fixes 3380e8a/896a38be получили independent SHIP; focused 15/15. Installed a34 содержит предыдущие 6099 metrics, но не эти fixes. Свежий source-versioned receipt и read-only COUNT на одном snapshot/scope, затем exact real query/matching snippet ещё pending; leaf остаётся running до consumer proof.",
+  "updated_at": "2026-10-25T17:44:23+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-25T17:44:23+03:00",
+      "note": "Lead-confirmed evidence/status refresh; future consumer checks remain pending.",
+      "changes": {
+        "note": "Search source fixes 3380e8a/896a38be получили independent SHIP; focused 15/15. Installed a34 содержит предыдущие 6099 metrics, но не эти fixes. Свежий source-versioned receipt и read-only COUNT на одном snapshot/scope, затем exact real query/matching snippet ещё pending; leaf остаётся running до consumer proof."
+      }
+    }
+  ]
 }

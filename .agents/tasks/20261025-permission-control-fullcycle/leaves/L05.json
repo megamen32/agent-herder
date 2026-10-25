@@ -18,7 +18,7 @@
     "minimum": 25,
     "maximum": 40
   },
-  "updated_at": "2026-10-25T15:34:00+03:00",
+  "updated_at": "2026-10-25T17:44:22+03:00",
   "estimate_over_limit_reason": "Один полный путь карточка/контекст/ответ/дедупликация; отдельные неполные части не проверяют возврат ответа.",
   "wait_reason": "Нужны готовые reply contract L02 и native adapters L04.",
   "progress_events": [
@@ -43,7 +43,14 @@
         ]
       },
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T17:44:22+03:00",
+      "note": "Lead-confirmed evidence/status refresh; future consumer checks remain pending.",
+      "changes": {
+        "note": "Автоматический trigger permission.requested для Notice Place не подключён, реальный Notice consumer proof отсутствует. Leaf остаётся queued; не считать отдельные ответы разрешений доказательством карточки или delivery."
+      }
     }
   ],
-  "note": "Bridge commit b9aea61 исправляет generic native permission resume и focused проверки по сообщению Lead; native delta-review ещё ожидается. Observer и автоматическая доставка permission.requested через Notice Place в source/runtime не подключены: Leaf остаётся queued, delivery/feature-complete не заявляются."
+  "note": "Автоматическое подключение Notice Place отсутствует: typed creator с dedup уже есть, но raw permission event не имеет durable journal, а ZCode permission.requested не несёт permissionId. Без durable exact request identity auto card должна fail closed. Реальный Notice consumer proof отсутствует; leaf остаётся queued."
 }

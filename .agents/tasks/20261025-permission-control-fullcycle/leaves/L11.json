@@ -16,7 +16,7 @@
     "minimum": 10,
     "maximum": 20
   },
-  "updated_at": "2026-10-25T15:40:00+03:00",
+  "updated_at": "2026-10-25T17:45:26+03:00",
   "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной MiniMax fixture.",
   "wait_reason": "После L10: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.",
   "progress_events": [
@@ -28,6 +28,21 @@
         "wait_reason": "После L10: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
       },
       "harness": "unknown"
+    },
+    {
+      "at": "2026-10-25T17:44:23+03:00",
+      "note": "Lead-confirmed evidence/status refresh; future consumer checks remain pending.",
+      "changes": {
+        "note": "MiniMax session-mode unsupported. Durable permission source 5f3d3a9 и consumer WIP имеют ранее подтверждённые 52 tests + tsc и same-DB atomic proof; independent review HOLD из-за Desktop 2xx без item_id, который ошибочно принимался как accepted, worker исправляет. Exact fixture live consumer proof не выполнен; automatic Notice trigger/real consumer proof отсутствуют. No PASS, accepted/UNKNOWN не повторять."
+      }
+    },
+    {
+      "at": "2026-10-25T17:45:26+03:00",
+      "note": "Lead confirmed current source/review evidence; live consumer still pending.",
+      "changes": {
+        "note": "MiniMax session-mode unsupported. Durable permission source 5f3d3a9 и consumer WIP: ранее подтверждены 52 tests + tsc и same-DB atomic proof; fix ложного accepted для Desktop 2xx без item_id вошёл в 7643500 и получил independent SHIP. Exact fixture live consumer proof ещё не выполнен; automatic Notice trigger/real consumer proof отсутствуют. No PASS, accepted/UNKNOWN не повторять."
+      }
     }
-  ]
+  ],
+  "note": "MiniMax session-mode unsupported. Durable permission source 5f3d3a9 и consumer WIP: ранее подтверждены 52 tests + tsc и same-DB atomic proof; fix ложного accepted для Desktop 2xx без item_id вошёл в 7643500 и получил independent SHIP. Exact fixture live consumer proof ещё не выполнен; automatic Notice trigger/real consumer proof отсутствуют. No PASS, accepted/UNKNOWN не повторять."
 }

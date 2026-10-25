@@ -18,7 +18,7 @@
     "minimum": 15,
     "maximum": 25
   },
-  "updated_at": "2026-10-25T15:40:00+03:00",
+  "updated_at": "2026-10-25T17:44:23+03:00",
   "estimate_over_limit_reason": "Проверка сквозных инвариантов четырёх сред и итогового consumer доказательства, без нового аудита или полной suite.",
   "wait_reason": "Финальная проверка включает обязательное доказательство activity ветки MiniMax.",
   "progress_events": [
@@ -43,7 +43,14 @@
         ]
       },
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T17:44:23+03:00",
+      "note": "Lead-confirmed evidence/status refresh; future consumer checks remain pending.",
+      "changes": {
+        "note": "Полный четырёх-harness цикл открыт. ZCode omitted-mode-create canary, пять read-only YOLO sessions и 8/8 title readback приняты как ограниченные доказательства; это не закрывает весь цикл. Ожидаются L19 combined install/browser inspector, OpenCode filtered native query, MiniMax exact fixture, решение по Codex/MiniMax unsupported session mode и automatic Notice permission trigger/real consumer proof. Эти будущие проверки не PASS."
+      }
     }
   ],
-  "note": "Full four-harness/user cycle не закрыт до consumer acceptance ZCode/OpenCode/Codex/MiniMax, подтверждённой Notice Place delivery и idle MiniMax delivery. Codex/MiniMax ещё blocked/unproved; Notice Place delivery не поставлена. Title composer source tests and existing 8/8 app rename proof are complete, but the new composer is not installed until L07."
+  "note": "Полный четырёх-harness цикл открыт. ZCode omitted-mode-create canary, пять read-only YOLO sessions и 8/8 title readback приняты как ограниченные доказательства; это не закрывает весь цикл. Ожидаются L19 combined install/browser inspector, OpenCode filtered native query, MiniMax exact fixture, решение по Codex/MiniMax unsupported session mode и automatic Notice permission trigger/real consumer proof. Эти будущие проверки не PASS."
 }
