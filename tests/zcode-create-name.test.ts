@@ -12,6 +12,7 @@ class DraftClient implements ZcodeClientLike {
   this.calls.push({channel,method,args});
   const session={sessionId:'own-draft',title:this.title,workspace:{workspacePath:'/workspace'},status:'idle',mode:'yolo',createdAt:1,updatedAt:1};
   if(method==='initialize')return {available:true};
+  if(channel==='project'&&method==='readTree')return {projects:[{id:'project-workspace',hostId:'local',roots:[{rootPath:'/workspace',isPrimary:true}]}]};
   if(method==='createSession'||method==='readSession')return {session,settings:{permission:{mode:'yolo'}},runtime:{eventSeq:0,pendingRequestIds:[]},messages:[]};
   if(method==='readSessionEvents')return {events:[]};
   if(channel==='zcode-task'&&method==='renameTask'){

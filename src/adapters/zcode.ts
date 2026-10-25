@@ -2120,6 +2120,40 @@ export class ZcodeAdapter implements HarnessAdapter {
     } catch { return undefined; }
   }
 
+  /** Resolve a project only from the current native owner catalog and an exact root match. */
+  private async resolveNativeProjectId(workspacePath: string): Promise<string> {
+    let tree: Record<string, unknown>;
+    try {
+      // Omitting hostId reads the app-server owner's catalog. Its ProjectRepository filters
+      // rows to that native owner; do not substitute Agent Herder's host ID here.
+      tree = record(await this.client.call("project", "readTree", []));
+    } catch (error) {
+      throw new Error(`ZCode native project mapping is unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (!Array.isArray(tree.projects) || tree.projects.length === 0) {
+      throw new Error("ZCode native project mapping has no registered projects for its owner namespace");
+    }
+
+    const projects = tree.projects.map(record);
+    const nativeHosts = projects.map((project) => nonEmptyString(project.hostId));
+    if (nativeHosts.some((hostId) => !hostId) || new Set(nativeHosts).size !== 1) {
+      throw new Error("ZCode native project mapping has a missing or mixed owner host namespace");
+    }
+
+    const matches = projects.filter((project) => {
+      const roots = Array.isArray(project.roots) ? project.roots.map(record) : [];
+      return roots.length === 1 && nonEmptyString(roots[0]?.rootPath) === workspacePath;
+    });
+    if (matches.length !== 1) {
+      throw new Error(`ZCode native project mapping requires one registered project with exact root ${workspacePath}; found ${matches.length}`);
+    }
+    const projectId = nonEmptyString(matches[0]?.id);
+    if (!projectId || nonEmptyString(matches[0]?.hostId) !== nativeHosts[0]) {
+      throw new Error("ZCode native project mapping does not match its verified owner host namespace");
+    }
+    return projectId;
+  }
+
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
     const requestsYolo = options.mode === "yolo" || options.mode === "fullAuto";
     if (options.fullAccess !== undefined && options.mode !== undefined
@@ -2128,6 +2162,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     }
     const workspace = this.workspace(options.cwd);
     const fullAccess = options.fullAccess ?? (options.mode === undefined || requestsYolo);
+    const nativeProjectId = await this.resolveNativeProjectId(workspace.workspacePath);
     // The installed native bridge does not implicitly import user MCP config.
     // Read through its supported resolver before creating the runtime draft.
     const mcpServers = this.useLocalConfig
@@ -2142,6 +2177,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       : {};
     let snapshot = await this.callAgent("createSession", {
       ...workspace,
+      projectId: nativeProjectId,
       sessionTraceId: randomUUID(),
       // mode must be a concrete session mode ("build"): omitting it or
       // passing non-session values crashes this zcode-server build with an

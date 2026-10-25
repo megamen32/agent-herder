@@ -56,6 +56,7 @@ const snapshot = {
 
 class FakeClient implements ZcodeClientLike {
   currentSnapshot: any = snapshot;
+  nativeProjectTree: any = { projects: [{ id: "project-workspace", hostId: "local", roots: [{ rootPath: "/workspace", isPrimary: true }] }] };
   readonly calls: Array<{ channel: string; method: string; args: unknown[] }> = [];
   nativeEvents: Array<Record<string, unknown>> = [];
   started = false;
@@ -75,6 +76,7 @@ class FakeClient implements ZcodeClientLike {
     if (channel === "zcode-agent" && method === "initialize") {
       return { available: true, protocolName: "ZCode Protocol", protocolVersion: 1, transportKind: "stdio" };
     }
+    if (channel === "project" && method === "readTree") return this.nativeProjectTree;
     if (channel === "zcode-agent" && method === "listSessions") return [session];
     if (channel === "zcode-agent" && method === "readSession") return this.currentSnapshot;
     if (channel === "zcode-agent" && method === "setMode" && (args[0] as { sessionId?: string }).sessionId === "session-1") {
@@ -1261,6 +1263,42 @@ describe("ZCode adapter", () => {
     await adapter.createSession({ name: "full-auto-alias", cwd: "/workspace", fullAccess: true, mode: "fullAuto" });
     expect(client.calls.find((call) => call.method === "createSession")?.args[0]).toMatchObject({ mode: "yolo" });
     expect(client.calls.find((call) => call.method === "setMode")?.args[0]).toMatchObject({ sessionId: "created-1", mode: "yolo" });
+    await adapter.dispose();
+  });
+
+  it("passes the unique exact-root project from the native owner catalog to createSession", async () => {
+    const client = new FakeClient();
+    client.nativeProjectTree = { projects: [{ id: "native-project-1", hostId: "remote:server:fixture", roots: [{ rootPath: "/workspace", isPrimary: true }] }] };
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+
+    await adapter.createSession({ name: "registered-project", cwd: "/workspace" });
+    const createArgs = client.calls.find((call) => call.channel === "zcode-agent" && call.method === "createSession")?.args[0] as Record<string, unknown>;
+    expect(createArgs).toMatchObject({ workspacePath: "/workspace", projectId: "native-project-1", mode: "yolo" });
+    expect(createArgs).not.toHaveProperty("hostId");
+    expect(client.calls.some((call) => call.channel === "project" && call.method === "readTree" && call.args.length === 0)).toBe(true);
+    await adapter.dispose();
+  });
+
+  it.each([
+    { label: "missing exact project", projects: [] },
+    { label: "ambiguous exact roots", projects: [
+      { id: "native-project-1", hostId: "remote:server:fixture", roots: [{ rootPath: "/workspace" }] },
+      { id: "native-project-2", hostId: "remote:server:fixture", roots: [{ rootPath: "/workspace" }] },
+    ] },
+    { label: "mixed native owner namespaces", projects: [
+      { id: "native-project-1", hostId: "remote:server:other", roots: [{ rootPath: "/workspace" }] },
+      { id: "native-project-2", hostId: "remote:server:fixture", roots: [{ rootPath: "/other" }] },
+    ] },
+  ])("fails closed before native session creation for $label", async ({ projects }) => {
+    const client = new FakeClient();
+    client.nativeProjectTree = { projects };
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+
+    await expect(adapter.createSession({ name: "unmapped", cwd: "/workspace" }))
+      .rejects.toThrow("ZCode native project mapping");
+    expect(client.calls.some((call) => call.channel === "zcode-agent" && call.method === "createSession")).toBe(false);
     await adapter.dispose();
   });
 
