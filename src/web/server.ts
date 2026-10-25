@@ -1009,7 +1009,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   // that take it. A node without the owner named in its environment has no
   // common settings and claims nothing about the fleet.
   const commonSettingsConfig = readCommonSettingsConfig(process.env, hostname());
-  const commonSettingsState = new CommonSettingsStateStore();
+  const commonSettingsState = new CommonSettingsStateStore({ secretStore: settingsStore.secretStore });
   const commonSettingsPeers = defaultFleetConfirmationPeers(hostname());
   const commonSettingsHooks = dependencies.hooksProhibitionsStore
     ? hooksLeverFromStore(dependencies.hooksProhibitionsStore)

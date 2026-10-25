@@ -76,7 +76,10 @@ export function commonSettingsService(options: {
     role: role as CommonSettingsRole,
     ownerHostId,
     ownerTarget: ownerTarget(ownerHostId, hostId),
-    stateStore: new CommonSettingsStateStore(options.statePath ? { path: options.statePath } : {}),
+    stateStore: new CommonSettingsStateStore({
+      ...(options.statePath ? { path: options.statePath } : {}),
+      secretStore: store.secretStore,
+    }),
     target: store,
     ...(launchPolicy ? { launchPolicy } : {}),
     ...(options.hooks ? { hooks: options.hooks } : {}),

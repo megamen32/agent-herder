@@ -14,7 +14,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { settingsFingerprint, isSecretMarker } from "../web/settings-store.js";
+import { SecretStore, settingsFingerprint, isSecretMarker } from "../web/settings-store.js";
 import type { CommonSettingsDocument } from "./document.js";
 import { holdsSecretSetting, purposeOfSettingId } from "./scope.js";
 
@@ -296,10 +296,12 @@ function redactedRollback(rollback: Record<string, string | null>): Record<strin
 export class CommonSettingsStateStore {
   private readonly path: string;
   private readonly now: () => Date;
+  private readonly secretStore?: SecretStore;
 
-  constructor(options: { path?: string; now?: () => Date } = {}) {
+  constructor(options: { path?: string; now?: () => Date; secretStore?: SecretStore } = {}) {
     this.path = options.path ?? COMMON_SETTINGS_STATE_FILE;
     this.now = options.now ?? (() => new Date());
+    this.secretStore = options.secretStore;
   }
 
   /** The path of the file of the state. */
@@ -314,6 +316,7 @@ export class CommonSettingsStateStore {
    * common settings: nothing is claimed about a node whose state is unknown.
    */
   async read(): Promise<CommonSettingsNodeState> {
+    let state: CommonSettingsNodeState;
     try {
       const parsed = JSON.parse(await readFile(this.path, "utf8")) as unknown;
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return emptyCommonSettingsState();
@@ -336,7 +339,7 @@ export class CommonSettingsStateStore {
           if (value === null || typeof value === "string") rollback[key] = value;
         }
       }
-      return {
+      state = {
         optIn: raw.optIn === true,
         role,
         appliedRevision: typeof raw.appliedRevision === "string" ? raw.appliedRevision : null,
@@ -348,6 +351,40 @@ export class CommonSettingsStateStore {
     } catch {
       return emptyCommonSettingsState();
     }
+    // Do not swallow a failed secret-store write: callers must not proceed
+    // with a state whose rollback value could be lost on the next write.
+    await this.migrateLegacySecrets(state);
+    return redactedState(state);
+  }
+
+  /**
+   * Move values left in an older state file into the secret store before
+   * replacing that file with its redacted form. Writing the secret store
+   * first makes an interrupted migration safe to repeat.
+   */
+  private async migrateLegacySecrets(state: CommonSettingsNodeState): Promise<void> {
+    const localValues = new Map<string, string>();
+    for (const conflict of state.conflicts) {
+      if (!holdsSecretSetting(conflict.id) || typeof conflict.localValue !== "string" || isSecretMarker(conflict.localValue)) continue;
+      const key = conflict.id.startsWith("herder.env/") ? conflict.id.slice("herder.env/".length) : "";
+      if (key) localValues.set(key, conflict.localValue);
+    }
+    for (const [id, value] of Object.entries(state.rollback)) {
+      if (!holdsSecretSetting(id) || typeof value !== "string" || isSecretMarker(value)) continue;
+      const key = id.startsWith("herder.env/") ? id.slice("herder.env/".length) : "";
+      if (key && !localValues.has(key)) localValues.set(key, value);
+    }
+
+    if (localValues.size === 0) return;
+    if (!this.secretStore) {
+      throw new Error("Cannot migrate legacy common-settings secrets without the node SecretStore");
+    }
+    for (const [key, value] of localValues) {
+      // Repeating this write is safe: the value comes from the same legacy
+      // state until the redacted state replacement below succeeds.
+      await this.secretStore.writeLocal(key, value);
+    }
+    await this.write(state);
   }
 
   /** The state of this node, written whole. */
