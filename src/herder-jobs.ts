@@ -196,6 +196,20 @@ export class HerderJobRegistry {
     return clone(baseline);
   }
 
+  /** Read the private baseline by the persisted delivery identity after native submission. */
+  readDeliveryResponseBaselineForInput(jobId: string, inputId: string): DeliveryResponseBaseline {
+    if (this.persistenceRestoreError) throw new Error("job_history_unreadable_hold; response baseline unavailable");
+    const record = this.jobs.get(jobId)?.record;
+    const baseline = record?.deliveryResponseBaseline;
+    if (!record?.durableOnce || !baseline || !record.ownerSessionId
+      || baseline.jobId !== jobId || baseline.inputId !== inputId
+      || baseline.target.sessionId !== record.ownerSessionId
+      || !validateDeliveryResponseBaseline(baseline, { jobId, inputId, target: baseline.target })) {
+      throw new Error("delivery_response_baseline_unavailable_or_unbound");
+    }
+    return clone(baseline);
+  }
+
   recordDeliveryResponseReceipt(jobId:string,receipt:DeliveryResponseReceipt):void{
     if(this.persistenceRestoreError)throw new Error("job_history_unreadable_hold; response receipt not persisted");
     const record=this.jobs.get(jobId)?.record;

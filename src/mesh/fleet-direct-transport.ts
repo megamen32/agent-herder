@@ -5,6 +5,7 @@ import {mkdirSync,lstatSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {hostname,userInfo} from 'node:os';
 import type {GptAdminTransport} from './gptadmin.js';
+import type {DeliveryResponseResourceBinding} from '../mcp/delivery-response-resources.js';
 /** Reuses owner-authorized fleet SSH, transporting HTTP to each existing singleton. Never starts MCP stdio or a native controller. */
 export type DirectPeer={hostId:string;sshHost:string;sshPort?:number;nativeUser:string;port:number;python:string};
 export const directFleetPeers:readonly DirectPeer[]=[
@@ -219,6 +220,16 @@ export class FleetDirectTransport implements GptAdminTransport {
  readSession(target:string,harness:string,sessionId:string):Promise<unknown>{
   if(!['codex','zcode','opencode','minimax-code'].includes(harness)||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))throw new Error('direct_session_invalid');
   return this.rpc(this.peer(target),'session/read',{harness,sessionId},this.deadlineMs);
+ }
+ /** Read one exact response resource from the native owner MCP; never use caller-local jobs for a remote binding. */
+ async readDeliveryResponseResource(target:string,binding:DeliveryResponseResourceBinding):Promise<unknown>{
+  const peer=this.peer(target);
+  for(const value of [binding.hostId,binding.harness,binding.sessionId,binding.jobId,binding.inputId]){
+   if(typeof value!=='string'||!value||value.length>512||/[\x00-\x1f\x7f]/.test(value))throw new Error('direct_response_binding_invalid');
+  }
+  if(binding.hostId!==peer.hostId)throw new Error('direct_response_owner_mismatch');
+  const uri=`herder://delivery-responses/${encodeURIComponent(binding.hostId)}/${encodeURIComponent(binding.harness)}/${encodeURIComponent(binding.sessionId)}/${encodeURIComponent(binding.jobId)}/${encodeURIComponent(binding.inputId)}`;
+  return await this.rpc(peer,'resources/read',{uri},Math.max(this.deadlineMs,30_000));
  }
  readSessionPage(target:string,cursor?:string,limit=100):Promise<unknown>{return this.call(target,'fleet_session_page',{limit,...(cursor?{cursor}:{})});}
  schema(target:string):Promise<unknown>{return this.rpc(this.peer(target),'tools/list',{},this.deadlineMs);}

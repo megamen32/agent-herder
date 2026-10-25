@@ -62,7 +62,8 @@ import { herderEvents, type HerderEventBus } from "./herder-events.js";
 import { herderJobs, type HerderJobRegistry } from "./herder-jobs.js";
 import { harnessEventHealth } from "./harness-event-health.js";
 import { registerHerderResources } from "./mcp/resources.js";
-import { registerDeliveryResponseResource } from "./mcp/delivery-response-resources.js";
+import { registerDeliveryResponseResource, type DeliveryResponseResourceBinding } from "./mcp/delivery-response-resources.js";
+import { createDeliveryResponseOwnerReader } from "./mcp/delivery-response-owner-routing.js";
 import { registerControlPlaneTools } from "./mcp/control-plane-tools.js";
 import { registerResumeAfterTools } from "./mcp/resume-after-tools.js";
 import { createResumeAfterRuntime } from "./resume-after-runtime.js";
@@ -769,7 +770,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
   registerHerderResources(server, {
     adapters, coordination: coordinationNotes, humanRequests, jobs, events, eventHealth: harnessEventHealth,
   });
-  registerDeliveryResponseResource(server, async (binding) => {
+  const readLocalDeliveryResponse = async (binding: DeliveryResponseResourceBinding) => {
     const adapter = adapters.get(binding.harness);
     if (!adapter?.getSession || !adapter.getSessionMessages) throw new Error("delivery_response_history_unavailable");
     const current = await adapter.getSession(binding.sessionId);
@@ -803,7 +804,13 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
       recordResponseReceipt: (jobId, receipt) => jobs.recordDeliveryResponseReceipt(jobId, receipt),
       returnOnVisibleText: true,
     });
-  }, events);
+  };
+  const readDeliveryResponse = createDeliveryResponseOwnerReader({
+    localHostId: hostname(),
+    readLocal: readLocalDeliveryResponse,
+    readRemote: (target, binding) => new FleetDirectTransport(fleetPeers()).readDeliveryResponseResource(target, binding),
+  });
+  registerDeliveryResponseResource(server, readDeliveryResponse, events);
   if (options.notifyDomainEvents) {
     const unsubscribe = events.subscribe((event) => { void server.server.sendResourceUpdated({ uri: event.uri }); });
     server.server.onclose = () => { unsubscribe(); };

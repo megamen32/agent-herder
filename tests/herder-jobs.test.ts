@@ -4,10 +4,31 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { HerderEventBus } from "../src/herder-events.js";
 import { HerderJobRegistry } from "../src/herder-jobs.js";
+import { captureDeliveryResponseBaseline } from "../src/session-delivery-response.js";
 
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 describe("HerderJobRegistry", () => {
+  it("reads response baseline from the durable job by exact input identity", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agent-herder-response-baseline-"));
+    const jobs = new HerderJobRegistry(new HerderEventBus(), { persistencePath: join(dir, "jobs.json") });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const job = jobs.start({ kind: "delivery", ownerSessionId: "session-1", idempotencyKey: "delivery-1", requestFingerprint: "a".repeat(64), durableOnce: true, run: async () => gate });
+    const target = { hostId: "host-1", harness: "minimax-code" as const, sessionId: "session-1" };
+    try {
+      await tick();
+      const baseline = await captureDeliveryResponseBaseline({ jobId: job.id, inputId: "input-1", target, readMessages: async () => ({ messages: [], complete: true }) });
+      jobs.recordDeliveryResponseBaseline(job.id, baseline);
+      expect(jobs.readDeliveryResponseBaselineForInput(job.id, "input-1")).toEqual(baseline);
+      expect(() => jobs.readDeliveryResponseBaselineForInput(job.id, "another-input")).toThrow(/unavailable_or_unbound/);
+      expect(() => jobs.readDeliveryResponseBaselineForInput("another-job", "input-1")).toThrow(/unavailable_or_unbound/);
+    } finally {
+      release();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("owns long-running state independently from an MCP transport", async () => {
     const events = new HerderEventBus();
     const seen: string[] = [];
