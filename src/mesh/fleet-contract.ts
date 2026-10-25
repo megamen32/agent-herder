@@ -5,7 +5,9 @@ export type FleetHarness="codex"|"zcode"|"opencode";
  * silently disappearing from the fleet view. */
 export const fleetHarnesses:readonly FleetHarness[]=["codex","zcode","opencode"];
 /** Display/expected-host policy only. Routes and liveness come from GPTAdmin. */
-export interface FleetHostDefinition {hostId:string;label:string;uiUrl?:string;nativeUser?:string}
+export interface FleetHostDefinition {hostId:string;label:string;uiUrl?:string;nativeUser?:string;
+/** A machine another session leads: our fleet reads it as offline and never probes it. */
+offline?:boolean;offlineReason?:string}
 export interface FleetScope {profileId:string;userId:string}
 export interface FleetHost extends FleetHostDefinition {
  state:"ready"|"metadata_only"|"offline"|"unavailable"|"stale";
