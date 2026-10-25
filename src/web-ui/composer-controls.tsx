@@ -36,7 +36,7 @@ export type QueueProcessingResumeResult = {
   reason?: string;
 };
 
-type QueueProcessingIntent = { inputId: string; status: "pending" | "unknown" };
+type QueueProcessingIntent = { inputId: string; status: "pending" | "unknown" | "accepted"; expectedRevision?: number; acceptedRevision?: number };
 type QueueProcessingIntentStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export function queueProcessingIntentStorageKey(target: QueueProcessingTarget): string {
@@ -50,10 +50,15 @@ function readQueueProcessingIntent(storage: QueueProcessingIntentStorage | undef
     const value: unknown = JSON.parse(raw);
     if (!value || typeof value !== "object") return { inputId: "unknown", status: "unknown" };
     const candidate = value as Partial<QueueProcessingIntent>;
-    if (typeof candidate.inputId !== "string" || !candidate.inputId || !["pending", "unknown"].includes(candidate.status || "")) {
+    if (typeof candidate.inputId !== "string" || !candidate.inputId || !["pending", "unknown", "accepted"].includes(candidate.status || "")) {
       return { inputId: "unknown", status: "unknown" };
     }
-    return { inputId: candidate.inputId, status: candidate.status as QueueProcessingIntent["status"] };
+    return {
+      inputId: candidate.inputId,
+      status: candidate.status as QueueProcessingIntent["status"],
+      ...(Number.isSafeInteger(candidate.expectedRevision) ? { expectedRevision: candidate.expectedRevision } : {}),
+      ...(Number.isSafeInteger(candidate.acceptedRevision) ? { acceptedRevision: candidate.acceptedRevision } : {}),
+    };
   } catch {
     return { inputId: "unknown", status: "unknown" };
   }
@@ -73,9 +78,16 @@ export function queueProcessingCanResume(state: QueueProcessingState | undefined
     && state.capability === "setAutoDrain"
     && Number.isSafeInteger(state.revision)
     && state.revision >= 0
-    && state.autoDrain === false
     && Number.isSafeInteger(state.pendingCount)
     && state.pendingCount > 0);
+}
+
+export function queueProcessingIntentCanClearOnReadback(
+  intent: QueueProcessingIntent | undefined,
+  state: QueueProcessingState,
+): boolean {
+  const priorRevision = intent?.status === "accepted" ? intent.acceptedRevision : intent?.expectedRevision;
+  return Boolean(intent && priorRevision !== undefined && state.revision > priorRevision);
 }
 
 export type QueueProcessingAttempt = {
@@ -97,7 +109,9 @@ export async function attemptQueueProcessingResume(input: {
   const storageKey = queueProcessingIntentStorageKey(input.target);
   const existing = readQueueProcessingIntent(input.storage, storageKey);
   if (existing) {
-    return { kind: "unknown", inputId: existing.inputId, message: "Предыдущая команда не получила подтверждённого исхода. Повтор заблокирован; проверьте состояние вручную." };
+    return { kind: existing.status === "accepted" ? "accepted" : "unknown", inputId: existing.inputId, message: existing.status === "accepted"
+      ? "Настройка очереди принята. Повтор заблокирован до изменения native revision; начало обработки не подтверждено."
+      : "Предыдущая команда не получила подтверждённого исхода. Повтор заблокирован; проверьте состояние вручную." };
   }
   if (!queueProcessingStateMatchesTarget(input.displayedState, input.target)) {
     return { kind: "unsupported", message: "Состояние принадлежит другой сессии; команда не отправлена." };
@@ -124,25 +138,26 @@ export async function attemptQueueProcessingResume(input: {
   let result: QueueProcessingResumeResult;
   try { result = await input.resume(input.target, { inputId, expectedRevision: fresh.state.revision }); }
   catch {
-    try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "unknown" } satisfies QueueProcessingIntent)); } catch { /* the original pending key still fails closed */ }
+    try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "unknown", expectedRevision: fresh.state.revision } satisfies QueueProcessingIntent)); } catch { /* the original pending key still fails closed */ }
     return { kind: "unknown", inputId, message: "Исход команды неизвестен. Повтор не выполняется." };
   }
   if (result.inputId !== inputId) {
-    try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "unknown" } satisfies QueueProcessingIntent)); } catch { /* keep the existing pending key */ }
+    try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "unknown", expectedRevision: fresh.state.revision } satisfies QueueProcessingIntent)); } catch { /* keep the existing pending key */ }
     return { kind: "unknown", inputId, message: "Ответ не совпадает с этой командой. Повтор заблокирован." };
   }
   if (result.status === "unknown") {
-    try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "unknown" } satisfies QueueProcessingIntent)); } catch { /* keep the existing pending key */ }
+    try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "unknown", expectedRevision: fresh.state.revision } satisfies QueueProcessingIntent)); } catch { /* keep the existing pending key */ }
     const exactState = result.state && queueProcessingStateMatchesTarget(result.state, input.target) ? result.state : undefined;
     return { kind: "unknown", inputId, state: exactState, message: result.reason || "Исход команды неизвестен. Повтор не выполняется." };
   }
   if (result.status === "accepted") {
     if (!result.state || !queueProcessingStateMatchesTarget(result.state, input.target) || result.state.scope !== "session"
-      || !result.state.loaded || result.state.capability !== "setAutoDrain" || !result.state.autoDrain) {
-      try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "unknown" } satisfies QueueProcessingIntent)); } catch { /* keep the existing pending key */ }
+      || !result.state.loaded || result.state.capability !== "setAutoDrain" || !result.state.autoDrain
+      || result.state.revision < fresh.state.revision) {
+      try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "unknown", expectedRevision: fresh.state.revision } satisfies QueueProcessingIntent)); } catch { /* keep the existing pending key */ }
       return { kind: "unknown", inputId, state: result.state, message: "Команда принята, но точный readback настройки очереди не подтверждён. Повтор заблокирован." };
     }
-    input.storage.removeItem(storageKey);
+    try { input.storage.setItem(storageKey, JSON.stringify({ inputId, status: "accepted", expectedRevision: fresh.state.revision, acceptedRevision: result.state.revision } satisfies QueueProcessingIntent)); } catch { /* keep the previous pending key */ }
     return result.nativeInputActuallyStarted === true
       ? { kind: "started", inputId, state: result.state, message: "Обработка очереди началась в этой сессии." }
       : { kind: "accepted", inputId, state: result.state, message: "Настройка очереди сохранена для этой сессии и следующих сообщений; начало обработки не подтверждено." };
@@ -187,6 +202,12 @@ export function QueueProcessingControl({
       const value = await readStateRef.current(targetRef.current);
       if (signal?.aborted) return;
       if (value.available && queueProcessingStateMatchesTarget(value.state, targetRef.current)) {
+        const storedIntent = readQueueProcessingIntent(storageRef.current, intentKey);
+        if (queueProcessingIntentCanClearOnReadback(storedIntent, value.state)) {
+          storageRef.current?.removeItem(intentKey);
+          setIntent(undefined);
+          setMessage("Свежая версия очереди отличается от предыдущей команды. Проверьте состояние перед новым действием.");
+        }
         setState(value.state);
         setReason("");
       } else {
@@ -217,11 +238,14 @@ export function QueueProcessingControl({
         resume: (exactTarget, request) => resumeRef.current(exactTarget, request),
         storage: storageRef.current ?? { getItem: () => null, setItem: () => { throw new Error("storage unavailable"); }, removeItem: () => {} },
       });
-      if (attempt.state && queueProcessingStateMatchesTarget(attempt.state, targetRef.current)) setState(attempt.state);
-      if (attempt.kind === "unknown" && attempt.inputId) {
-        const nextIntent = { inputId: attempt.inputId, status: "unknown" as const };
+      if (attempt.kind === "stale") {
+        setState(undefined);
+        setReason("Состояние очереди изменилось. Нажмите «Обновить очередь» перед новым действием.");
+      } else if (attempt.state && queueProcessingStateMatchesTarget(attempt.state, targetRef.current)) setState(attempt.state);
+      if ((attempt.kind === "unknown" || attempt.kind === "accepted") && attempt.inputId) {
+        const nextIntent = readQueueProcessingIntent(storageRef.current, intentKey) ?? { inputId: attempt.inputId, status: attempt.kind === "accepted" ? "accepted" as const : "unknown" as const };
         setIntent(nextIntent);
-      } else if (attempt.kind === "unknown") {
+      } else if (attempt.kind === "unknown" || attempt.kind === "accepted") {
         setIntent(readQueueProcessingIntent(storageRef.current, intentKey));
       } else if (["accepted", "started", "stale", "unsupported", "noop"].includes(attempt.kind)) {
         setIntent(readQueueProcessingIntent(storageRef.current, intentKey));
@@ -239,7 +263,7 @@ export function QueueProcessingControl({
       {state && <small>{state.pendingCount} сообщений ожидают · статус: {state.nativeStatus || "не сообщён"}</small>}
       {reason && <small role="status">{reason}</small>}
       {message && <small role={message.includes("неизвест") || message.includes("не подтвержд") ? "alert" : "status"}>{message}</small>}
-      {intent && <small role="alert">Исход команды не подтверждён. Идентификатор сохранён; повтор заблокирован.</small>}
+      {intent && <small role="alert">{intent.status === "accepted" ? "Настройка очереди принята; начало обработки не подтверждено. Повтор заблокирован до изменения native revision." : "Исход команды не подтверждён. Идентификатор сохранён; повтор заблокирован."}</small>}
     </div>
     <div className="queue-processing-actions">
       <button type="button" className="quiet-button" disabled={loading || busy} onClick={() => void refresh()}>{loading ? "Читаю…" : "Обновить очередь"}</button>

@@ -1,7 +1,7 @@
 import {AUTOCONTINUE_HARNESS_IDS,loadAutocontinueHarnesses,saveAutocontinueHarness,type AutocontinueHarness,type WebSessionAutostartHarness} from "./autocontinue-harnesses.js";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
-import {ComposerSendControl,VoiceComposerControl,isComposerSubmitShortcut} from "./composer-controls.js";
+import {ComposerSendControl,QueueProcessingControl,VoiceComposerControl,isComposerSubmitShortcut} from "./composer-controls.js";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { SESSION_LIST_REFRESH_MS, sessionListRefreshDelay, sampleSessionActivity, filterAndArrangeSessions, matchesSessionQuery, pluralRu, projectFor, sessionKey, sessionTurnLinkFromHash, selectionAfterSessionRefresh, sessionListCounts, sessionListCounterRu, sessionListEmptyReason, summarizeSessionSample, type SessionListEntry, type SessionListSession, type SessionListSettings, type SessionListSort, type SessionSampleCounts } from "./session-list.js";
@@ -34,7 +34,7 @@ import {useSessionFacts} from './use-session-facts.js';
 import {SessionActivityPanel} from './session-activity-panel.js';
 import {readPanelLayout, writePanelLayout, type PanelLayout} from './ui-layout.js';
 import {directorySession} from './fleet/session-directory.js';
-import {RemoteSessionView,TranscriptRequestOwner,fetchIntegratorTranscriptPage,firstEventIndexForTurn,integratorEventDisplay,localTranscriptAddressFor,mergeTranscriptPageIfCurrent,transcriptForAddress,transcriptValueIfCurrent,type TranscriptView} from './fleet/RemoteSessionView.js';
+import {RemoteSessionView,TranscriptRequestOwner,fetchIntegratorTranscriptPage,firstEventIndexForTurn,integratorEventDisplay,localTranscriptAddressFor,mergeTranscriptPageIfCurrent,readSessionQueueProcessing,submitSessionQueueProcessing,transcriptForAddress,transcriptValueIfCurrent,type TranscriptView} from './fleet/RemoteSessionView.js';
 import {SessionViewCache,indexedViewCacheStore,readViewCacheSettings,writeViewCacheSettings,type ViewCacheSettings} from './fleet/view-cache.js';
 import type {MeshAddress} from '../mesh/protocol.js';
 import { FleetCabinet } from "./fleet/FleetCabinet.js";
@@ -2450,6 +2450,7 @@ function App() {
       {!showCreateSession && !showStatistics && !showJobs && !showQuota && showScrollToLatest && <button className="scroll-latest" aria-label="Прокрутить к последним" onClick={scrollToBottom}>↓</button>}
       {!showStatistics && !showJobs && !showQuota && <div className="composer-stack">
       <div className="activity-slot">{!showCreateSession && sessionActivity && <div className={`activity-line activity-${sessionActivity.kind}`} role="status" aria-live="polite"><span className="pulse-dot" aria-hidden="true" />{activeSession?.status === "running" && !sending ? <span><ActivityElapsed sinceMs={runningSince} />{sessionActivity.label ? <em className="activity-detail"> · {sessionActivity.label}</em> : null}</span> : <span>{sessionActivity.label}</span>}</div>}</div>
+      {!showCreateSession && activeSession?.harness === "zcode" && activeSession.hostId && <QueueProcessingControl target={{hostId:activeSession.hostId,harness:activeSession.harness,sessionId:activeSession.id}} readState={readSessionQueueProcessing} resume={submitSessionQueueProcessing}/>}
       {activeOutbox.length>0&&<ComposerQueue entries={activeOutbox} busy={cancellingOutbox} pending={id=>messageDispatcherRef.current.hasPending(id)} canSteer={entry=>canSteerOutboxEntry(entry,splitKey(entry.sessionKey).harness,harnessAdapters.find(adapter=>adapter.id===splitKey(entry.sessionKey).harness)?.capabilities?.steer===true)} onSteer={id=>void steerOutboxEntry(id)} onCancel={id=>void deleteOutboxEntry(id)} onEdit={id=>void editOutboxEntry(id)} onCheck={entry=>void checkOutboxEntry(entry)} onRetry={id=>void retryOutboxEntry(id)} onDismiss={dismissOutboxEntry}/>}
       {queueEdit&&<div className="composer-queue-edit"><span>Редактирование сообщения очереди</span><button type="button" disabled={queueEditSaving} onClick={cancelQueueEdit}>Отмена редактирования</button>{queueEdit.unknown&&<button type="button" onClick={()=>void checkQueueEdit()}>Проверить</button>}</div>}
       {queueEditError&&<div className="composer-queue-edit-error" role="status">{queueEditError}</div>}

@@ -7,9 +7,11 @@ import {
   acquireCurrentVoiceStream,
   attemptQueueProcessingResume,
   queueProcessingCanResume,
+  queueProcessingIntentCanClearOnReadback,
   queueProcessingIntentStorageKey,
   type QueueProcessingState,
 } from "../src/web-ui/composer-controls.js";
+import { readSessionQueueProcessing, submitSessionQueueProcessing } from "../src/web-ui/fleet/RemoteSessionView.js";
 
 const main = readFileSync(new URL("../src/web-ui/main.tsx", import.meta.url), "utf8");
 const composerControls = readFileSync(new URL("../src/web-ui/composer-controls.tsx", import.meta.url), "utf8");
@@ -352,6 +354,10 @@ describe("shared queue-processing control state machine",()=>{
   expect(composerControls).toContain("export function QueueProcessingControl");
   expect(styles).toContain(".queue-processing-control");
   expect(composerControls).toContain('aria-label="Обработка очереди этой сессии"');
+  expect(main).toContain("<QueueProcessingControl target={{hostId:activeSession.hostId");
+  expect(remoteComposer).toContain("<QueueProcessingControl target={{hostId:captured.hostId");
+  expect(main).toContain("readState={readSessionQueueProcessing} resume={submitSessionQueueProcessing}");
+  expect(remoteComposer).toContain("readState={readSessionQueueProcessing} resume={submitSessionQueueProcessing}");
  });
 
  it("enables only for a fresh exact loaded session with pending work and the V4 capability",()=>{
@@ -360,7 +366,7 @@ describe("shared queue-processing control state machine",()=>{
   expect(queueProcessingCanResume({...good,loaded:false},queueTarget,false)).toBe(false);
   expect(queueProcessingCanResume({...good,scope:"harness"},queueTarget,false)).toBe(false);
   expect(queueProcessingCanResume({...good,capability:undefined},queueTarget,false)).toBe(false);
-  expect(queueProcessingCanResume({...good,autoDrain:true},queueTarget,false)).toBe(false);
+  expect(queueProcessingCanResume({...good,autoDrain:true},queueTarget,false)).toBe(true);
   expect(queueProcessingCanResume({...good,pendingCount:0},queueTarget,false)).toBe(false);
   expect(queueProcessingCanResume(good,{...queueTarget,hostId:"server-44"},false)).toBe(false);
   expect(queueProcessingCanResume(good,queueTarget,true)).toBe(false);
@@ -399,12 +405,75 @@ describe("shared queue-processing control state machine",()=>{
   const storage=memoryStorage();
   const attempt=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,makeInputId:()=>"intent-accepted",
    readState:async()=>({available:true,state:queueState()}),
-   resume:async(_target,request)=>({inputId:request.inputId,status:"accepted",state:queueState({autoDrain:true}),nativeInputActuallyStarted:false})});
+   resume:async(_target,request)=>({inputId:request.inputId,status:"accepted",state:queueState({autoDrain:true,revision:8})})});
   expect(attempt.kind).toBe("accepted");
   expect(attempt.message).toContain("Настройка очереди сохранена");
   expect(attempt.message).toContain("начало обработки не подтверждено");
   expect(attempt.message).not.toMatch(/доставлено|сообщение отправлено/i);
-  expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toBeNull();
+  expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toContain('"inputId":"intent-accepted"');
+  expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toContain('"status":"accepted"');
+  expect(queueProcessingIntentCanClearOnReadback({inputId:"intent-accepted",status:"accepted",acceptedRevision:8},queueState({revision:8}))).toBe(false);
+  expect(queueProcessingIntentCanClearOnReadback({inputId:"intent-accepted",status:"accepted",acceptedRevision:8},queueState({revision:7}))).toBe(false);
+  expect(queueProcessingIntentCanClearOnReadback({inputId:"intent-accepted",status:"accepted",acceptedRevision:8},queueState({revision:9}))).toBe(true);
+ });
+
+ it("locks an accepted response whose native revision regresses behind the pre-write read",async()=>{
+  const storage=memoryStorage();let writes=0;
+  const result=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState({revision:9}),storage,makeInputId:()=>"intent-regressed",
+   readState:async()=>({available:true,state:queueState({revision:9})}),
+   resume:async(_target,request)=>{writes++;return{inputId:request.inputId,status:"accepted",state:queueState({autoDrain:true,revision:8})};}});
+  expect(result.kind).toBe("unknown");expect(result.message).toContain("readback");
+  const firstIntent=storage.getItem(queueProcessingIntentStorageKey(queueTarget));
+  expect(firstIntent).toContain('"inputId":"intent-regressed"');expect(firstIntent).toContain('"status":"unknown"');
+  const repeat=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState({revision:9}),storage,readState:async()=>({available:true,state:queueState({revision:9})}),resume:async()=>{writes++;return{inputId:"bad",status:"accepted"};}});
+  expect(repeat).toMatchObject({kind:"unknown",inputId:"intent-regressed"});expect(writes).toBe(1);
+ });
+
+ it("reads exact-session ZCode queue state and reports HumanStop without offering an action",async()=>{
+  const fetcher=async(input:RequestInfo|URL,init?:RequestInit)=>{
+   expect(String(input)).toBe("/api/sessions/zcode/fixture-session/queue-processing?hostId=server-100");
+   expect(init?.method).toBeUndefined();
+   return new Response(JSON.stringify({target:queueTarget,state:{autoDrain:true,baseRevision:7,pendingCount:2,oldestQueueItemId:"oldest",nativeState:"completedSuccess",loaded:true,capability:"setAutoDrain"},canResume:true,humanStopHeld:false}),{status:200});
+  };
+  const read=await readSessionQueueProcessing(queueTarget,fetcher as typeof fetch);
+  expect(read).toMatchObject({available:true,state:{hostId:"server-100",harness:"zcode",sessionId:"fixture-session",revision:7,autoDrain:true,canResume:true,scope:"session"}});
+  const held=await readSessionQueueProcessing(queueTarget,async()=>new Response(JSON.stringify({target:queueTarget,state:null,canResume:false,humanStopHeld:true,error:"HumanStop удерживает очередь."}),{status:200}) as Response);
+  expect(held).toMatchObject({available:false,reason:"HumanStop удерживает очередь."});
+ });
+
+ it("posts once with exact target/CAS and polls the existing durable job without claiming input start",async()=>{
+  let posts=0,gets=0;
+  const fetcher=async(input:RequestInfo|URL,init?:RequestInit)=>{
+   if(init?.method==="POST"){
+    posts++;
+    expect(String(input)).toBe("/api/sessions/zcode/fixture-session/queue-processing?hostId=server-100");
+    expect(JSON.parse(String(init.body))).toEqual({hostId:"server-100",inputId:"resume-once",expectedRevision:7});
+    return new Response(JSON.stringify({target:queueTarget,inputId:"resume-once",state:"queued",nonRetryable:false,job:{id:"job-1",state:"queued",resultRef:"herder://jobs/job-1"}}),{status:202});
+   }
+   gets++;
+   expect(String(input)).toBe("/api/jobs/job-1?hostId=server-100&harness=zcode&sessionId=fixture-session&inputId=resume-once");
+   return new Response(JSON.stringify({job:{id:"job-1",state:"completed",result:{ok:true,status:"accepted",inputId:"resume-once",state:{autoDrain:true,baseRevision:8,pendingCount:2,oldestQueueItemId:"oldest",nativeState:"completedSuccess",loaded:true,capability:"setAutoDrain"}}}}),{status:200});
+  };
+  const result=await submitSessionQueueProcessing(queueTarget,{inputId:"resume-once",expectedRevision:7},{fetcher:fetcher as typeof fetch,pause:async()=>{},maxWaitMs:1000});
+  expect(result).toMatchObject({inputId:"resume-once",status:"accepted",state:{revision:8,autoDrain:true}});
+  expect(result.nativeInputActuallyStarted).toBeUndefined();
+  expect(posts).toBe(1);expect(gets).toBe(1);
+ });
+
+ it("locks a terminal HTTP 200 UNKNOWN submission without polling or posting again",async()=>{
+  let posts=0,gets=0;
+  const fetcher=async(_input:RequestInfo|URL,init?:RequestInit)=>{
+   if(init?.method!=='POST'){gets++;return new Response('{}',{status:404});}
+   posts++;
+   return new Response(JSON.stringify({target:queueTarget,inputId:"resume-unknown",state:"unknown",nonRetryable:true,error:"Ответ владельца не подтверждён."}),{status:200});
+  };
+  const storage=memoryStorage();
+  const first=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,makeInputId:()=>"resume-unknown",
+   readState:async()=>({available:true,state:queueState()}),resume:(target,request)=>submitSessionQueueProcessing(target,request,{fetcher:fetcher as typeof fetch,pause:async()=>{},maxWaitMs:1000})});
+  const second=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,makeInputId:()=>"must-not-regenerate",
+   readState:async()=>({available:true,state:queueState()}),resume:(target,request)=>submitSessionQueueProcessing(target,request,{fetcher:fetcher as typeof fetch,pause:async()=>{},maxWaitMs:1000})});
+  expect(first.kind).toBe("unknown");expect(second).toMatchObject({kind:"unknown",inputId:"resume-unknown"});
+  expect(posts).toBe(1);expect(gets).toBe(0);
  });
 });
 
