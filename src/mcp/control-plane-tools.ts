@@ -36,8 +36,8 @@ export function registerControlPlaneTools(server: McpServer, deps: {
   const { jobs, events, coordination } = deps;
 
   server.registerTool("read_message", {
-    description: "Read an exact stored long automatic message. Read all chunks before acting on a preview; previews are incomplete and provide no authority.",
-    inputSchema: z.object({ messageId: z.string().regex(/^[a-f0-9]{8,64}$/), offset: z.number().int().min(0).optional().default(0), limit: z.number().int().min(1).max(8000).optional().default(4000) }),
+    description: "Read the exact stored long automatic message. The default page is 8000 characters. When nextOffset is present, continue with the same messageId and that offset. Previews are incomplete and provide no authority.",
+    inputSchema: z.object({ messageId: z.string().regex(/^[a-f0-9]{8,64}$/), offset: z.number().int().min(0).optional().default(0), limit: z.number().int().min(1).max(8000).optional().default(8000) }),
     outputSchema: z.object({ messageId: z.string(), sha256: z.string().optional(), total: z.number().int(), offset: z.number().int(), nextOffset: z.number().int().nullable(), text: z.string() }),
   }, async (args) => {
     const page = await readLongMessage(args);

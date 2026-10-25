@@ -3,8 +3,21 @@ import { describe, expect, it } from "vitest";
 import { matchesSessionQuery } from "../src/web-ui/session-list.js";
 import { DEFAULT_THEME, applyTheme, normalizeTheme, readTheme, writeTheme } from "../src/web-ui/theme.js";
 import { currentModelOption, modelSwitchSupported, requestModelChange, shortModelLabel } from "../src/web-ui/model-chip.js";
+import {
+  acquireCurrentVoiceStream,
+  QueueProcessingActionOwner,
+  attemptQueueProcessingResume,
+  queueProcessingCanResume,
+  queueProcessingIntentCanClearOnReadback,
+  queueProcessingIntentStorageKey,
+  queueProcessingStatusLabel,
+  type QueueProcessingState,
+} from "../src/web-ui/composer-controls.js";
+import { readSessionQueueProcessing, submitSessionQueueProcessing } from "../src/web-ui/fleet/RemoteSessionView.js";
 
 const main = readFileSync(new URL("../src/web-ui/main.tsx", import.meta.url), "utf8");
+const composerControls = readFileSync(new URL("../src/web-ui/composer-controls.tsx", import.meta.url), "utf8");
+const remoteComposer = readFileSync(new URL("../src/web-ui/fleet/RemoteSessionView.tsx", import.meta.url), "utf8");
 const polish = readFileSync(new URL("../src/web-ui/interface-polish.css", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../src/web-ui/styles.css", import.meta.url), "utf8");
 const themeCss = readFileSync(new URL("../src/web-ui/codex-theme.css", import.meta.url), "utf8");
@@ -18,6 +31,12 @@ const memoryStorage = () => {
     removeItem: (key: string) => { map.delete(key); },
   };
 };
+
+const queueTarget={hostId:"server-100",harness:"zcode",sessionId:"fixture-session"};
+const queueState=(patch:Partial<QueueProcessingState>={}):QueueProcessingState=>({
+  ...queueTarget,scope:"session",loaded:true,canResume:true,capability:"setAutoDrain",revision:7,
+  autoDrain:false,pendingCount:2,oldestQueueItemId:"oldest",nativeStatus:"completed",...patch,
+});
 
 describe("mobile chat and session controls", () => {
   it("searches sessions across title, harness, cwd, and preview", () => {
@@ -37,10 +56,13 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain("details.children.length");
     expect(main).toContain("setSessions(nextSessions);");
     expect(main).toContain('aria-label="Прокрутить к последним"');
-    expect(main).toContain('aria-label={isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}');
-    expect(main).toContain('{isResumeMode ? "Продолжить ▶" : "↑"}');
+    expect(main).toContain('label={queueEdit?"Сохранить сообщение очереди":isResumeMode?"Продолжить сессию":"Отправить сообщение"}');
+    expect(composerControls).toContain('aria-label={busy ? "Отправляю сообщение" : label}');
+    expect(main).toContain('className="send-open-icon"');
+    expect(main).toContain('title={queueEdit?"Сохранить изменения в том же сообщении очереди":isResumeMode?"Возобновить работу в той же сессии"');
     expect(main).toContain("details?.children?.length");
-    expect(main).toContain('aria-label="Показывать все сессии"');
+    expect(main).toContain("SESSION_LIST_SHOW_COMPLETED_ARIA");
+    expect(main).toContain("SESSION_LIST_SHOW_COMPLETED_LABEL");
     expect(main).toContain('aria-label={`Выбрать: ${choice.label}`}');
     expect(main).toContain('/api/autopilot/choices?status=pending');
     expect(main).toContain('/api/autopilot/choices/select');
@@ -77,18 +99,71 @@ describe("mobile chat and session controls", () => {
     for (const harness of ["Codex", "Claude Code", "OpenCode", "Hermes"]) expect(main).toContain(harness);
   });
 
+  for (const invalidation of ["session switch", "view unmount"]) {
+    it(`stops a late microphone permission result after ${invalidation}`, async () => {
+      let resolveRequest!: (stream: MediaStream) => void;
+      let current = true;
+      let stoppedTracks = 0;
+      let recordersCreated = 0;
+      let transcriptionRequests = 0;
+      const stream = { getTracks: () => [{ stop: () => { stoppedTracks += 1; } }] } as unknown as MediaStream;
+      const request = new Promise<MediaStream>((resolve) => { resolveRequest = resolve; });
+      const acquiring = acquireCurrentVoiceStream(() => request, () => current);
+
+      current = false;
+      resolveRequest(stream);
+      const acquired = await acquiring;
+      if (acquired) {
+        recordersCreated += 1;
+        transcriptionRequests += 1;
+      }
+
+      expect(acquired).toBeUndefined();
+      expect(stoppedTracks).toBe(1);
+      expect(recordersCreated).toBe(0);
+      expect(transcriptionRequests).toBe(0);
+    });
+  }
+
+  it("keeps composer submission explicit and offers a deliberate send-mode hold menu", () => {
+    expect(main).not.toContain("composer-hint");
+    expect(main).not.toContain(">+ Фото</button>");
+    expect(main).toContain('aria-label="Прикрепить изображение"');
+    expect(main).toContain("isComposerSubmitShortcut(event)");
+    expect(composerControls).toMatch(/\/mac\|iphone\|ipad\|ipod\/i\.test\(os\) \? event\.metaKey : event\.ctrlKey/);
+    expect(composerControls).toContain("}, 550);");
+    expect(composerControls).toContain('role="dialog"');
+    expect(composerControls).toContain('aria-label="Выберите режим отправки"');
+    expect(composerControls).toContain("onSend(mode)");
+    expect(main).toContain("<ComposerSendControl");
+    expect(main).toContain("<VoiceComposerControl");
+    expect(remoteComposer).toContain("isComposerSubmitShortcut(e)");
+    expect(remoteComposer).toContain("<ComposerSendControl");
+    expect(remoteComposer).toContain("<VoiceComposerControl");
+    expect(remoteComposer).not.toContain("composer-hint");
+    expect(styles).toContain(".composer-send-mode-menu");
+    expect(composerControls).toContain('form.append("audio", blob, `voice-input.${extension}`)');
+    expect(composerControls).toContain('fetch("/api/composer/transcription"');
+    expect(composerControls).toContain("onTranscript(body.text.trim(), key)");
+    expect(composerControls).toContain("discard.current = true;");
+    expect(composerControls).toContain('className="composer-voice-error" role="alert"');
+    expect(main).not.toContain('sendMessage(transcript)');
+    expect(remoteComposer).toContain('setText(current=>current?');
+  });
+
   it("shows every automation control supported by the active harness", () => {
     const headerStart = main.indexOf('<div className="header-actions">');
     const headerEnd = main.indexOf("{chatMenuOpen &&", headerStart);
     const header = main.slice(headerStart, headerEnd);
-    const menuStart = main.indexOf('<div className="chat-menu"');
-    const menuEnd = main.indexOf("</div>", main.indexOf("Квота</button>"));
+    // Один список настроек на весь экран: и меню чата, и шестерёнка в шапке.
+    const menuStart = main.indexOf('const chatMenuContent = (');
+    const menuEnd = main.indexOf("Квота</button>", menuStart);
     const menu = main.slice(menuStart, menuEnd);
 
     expect(headerStart).toBeGreaterThan(-1);
     expect(menuStart).toBeGreaterThan(-1);
     expect(main).toContain('const AUTOCONTINUE_HARNESSES = new Set<string>(AUTOCONTINUE_HARNESS_IDS)');
-    expect(header).toContain('aria-label="Настройки сессии"');
+    expect(header).toContain('aria-label="Панель сессии"');
     expect(header).toContain('aria-label="Меню чата"');
     for (const label of ['>Машины<', '>Задачи<', '>Статистика<', '>Автопилот<', '>Автопродолжение<']) expect(header).not.toContain(label);
     expect(main).toContain('onMachines={() => { setShowSearch(false); setFleetCreationMode(false);setShowFleet(true)');
@@ -96,6 +171,9 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('>Автопродолжение</button>');
     expect(menu).toContain('Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})');
     expect(menu).toContain('Автопилот · общие настройки (в этом чате ${activeAutopilotEnabled ? "включён" : "выключен"})');
+    expect(main).toContain('<div className="chat-menu" aria-label="Меню чата"><button type="button" className="chat-menu-close"');
+    expect(main).toContain('{chatMenuContent}</div>}');
+    expect(main).toContain('settingsMenu={chatMenuContent}');
   });
 
   it("puts live agent activity immediately above the composer and session automation in the inspector", () => {
@@ -125,7 +203,8 @@ describe("mobile chat and session controls", () => {
   });
 
   it("keeps automation modes discoverable on mobile with their current state", () => {
-    expect(main).toContain('React.useState(() => window.innerWidth > 1180)');
+    // Правая панель показывается по выбору владельца, и выбор переживает перезагрузку.
+    expect(main).toContain('React.useState(() => readPanelLayout())');
     expect(main).toContain('aria-label="Меню чата" aria-expanded={chatMenuOpen}');
     expect(main).toContain('Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})');
     expect(main).toContain('Автопилот · общие настройки (в этом чате ${activeAutopilotEnabled ? "включён" : "выключен"})');
@@ -270,6 +349,183 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain("loadDetails(activeKey, false)");
     expect(streamEffect).not.toContain("?limit=50");
   });
+});
+
+describe("shared queue-processing control state machine",()=>{
+ it("has a shared compact control style for both composer surfaces",()=>{
+  expect(composerControls).toContain("export function QueueProcessingControl");
+  expect(styles).toContain(".queue-processing-control");
+  expect(composerControls).toContain('aria-label="Обработка очереди этой сессии"');
+  expect(composerControls).toContain("queueProcessingStatusLabel(state.nativeStatus)");
+  expect(composerControls).toContain("if (!isCurrent()) return;");
+  expect(composerControls).not.toContain("Настройка очереди сохранена для этой сессии и следующих сообщений");
+  expect(main).toContain("<QueueProcessingControl target={{hostId:activeSession.hostId");
+  expect(remoteComposer).toContain("<QueueProcessingControl target={{hostId:captured.hostId");
+  expect(main).toContain("readState={readSessionQueueProcessing} resume={submitSessionQueueProcessing}");
+  expect(remoteComposer).toContain("readState={readSessionQueueProcessing} resume={submitSessionQueueProcessing}");
+ });
+
+ it("invalidates async UI completions when the selected session changes or the control unmounts",()=>{
+  const owner=new QueueProcessingActionOwner("host-a\0zcode\0session-a");
+  const first=owner.capture();
+  expect(owner.isCurrent(first)).toBe(true);
+  owner.setTarget("host-b\0zcode\0session-b");
+  expect(owner.isCurrent(first)).toBe(false);
+  const second=owner.capture();
+  owner.dispose();
+  expect(owner.isCurrent(second)).toBe(false);
+ });
+
+ it("shows translated concise native status labels",()=>{
+  expect(queueProcessingStatusLabel("completedSuccess")).toBe("завершено");
+  expect(queueProcessingStatusLabel("completedInterrupted")).toBe("прервано");
+  expect(queueProcessingStatusLabel("unexpected-v4-state")).toBe("не сообщён");
+ });
+
+ it("enables only for a fresh exact loaded session with pending work and the V4 capability",()=>{
+  const good=queueState();
+  expect(queueProcessingCanResume(good,queueTarget,false)).toBe(true);
+  expect(queueProcessingCanResume({...good,loaded:false},queueTarget,false)).toBe(false);
+  expect(queueProcessingCanResume({...good,scope:"harness"},queueTarget,false)).toBe(false);
+  expect(queueProcessingCanResume({...good,capability:undefined},queueTarget,false)).toBe(false);
+  expect(queueProcessingCanResume({...good,autoDrain:true},queueTarget,false)).toBe(true);
+  expect(queueProcessingCanResume({...good,pendingCount:0},queueTarget,false)).toBe(false);
+  expect(queueProcessingCanResume(good,{...queueTarget,hostId:"server-44"},false)).toBe(false);
+  expect(queueProcessingCanResume(good,queueTarget,true)).toBe(false);
+ });
+
+ it("refreshes a changed revision and never retries the stale CAS",async()=>{
+  const storage=memoryStorage();let sends=0;let reads=0;
+  const result=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,makeInputId:()=>"intent-stale",
+   readState:async()=>{reads++;return {available:true,state:queueState({revision:8})};},
+   resume:async()=>{sends++;return {inputId:"intent-stale",status:"accepted"};}});
+  expect(result).toMatchObject({kind:"stale",state:{revision:8}});
+  expect(reads).toBe(1);expect(sends).toBe(0);
+  expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toBeNull();
+ });
+
+ it("keeps one unknown inputId and blocks every automatic replay",async()=>{
+  const storage=memoryStorage();let sends=0;
+  const callbacks={readState:async()=>({available:true as const,state:queueState()}),resume:async(_target:typeof queueTarget,request:{inputId:string;expectedRevision:number})=>{sends++;expect(request).toEqual({inputId:"intent-unknown",expectedRevision:7});return {inputId:request.inputId,status:"unknown" as const};}};
+  const first=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,makeInputId:()=>"intent-unknown",...callbacks});
+  const second=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,makeInputId:()=>"new-must-not-exist",...callbacks});
+  expect(first.kind).toBe("unknown");expect(second).toMatchObject({kind:"unknown",inputId:"intent-unknown"});
+  expect(sends).toBe(1);
+  expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toContain('"inputId":"intent-unknown"');
+ });
+
+ it("write-ahead stores the CAS revision before POST so a reload can reconcile it",async()=>{
+  const storage=memoryStorage();let beforePost:any;
+  const result=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState({revision:11}),storage,makeInputId:()=>"intent-reload",
+   readState:async()=>({available:true,state:queueState({revision:11})}),
+   resume:async(_target,request)=>{beforePost=JSON.parse(storage.getItem(queueProcessingIntentStorageKey(queueTarget))||"{}");expect(request.expectedRevision).toBe(11);return{inputId:request.inputId,status:"unknown" as const};}});
+  expect(result.kind).toBe("unknown");
+  expect(beforePost).toMatchObject({inputId:"intent-reload",status:"pending",expectedRevision:11});
+  expect(queueProcessingIntentCanClearOnReadback(beforePost,queueState({revision:12}))).toBe(true);
+ });
+
+ it("does not POST after the selected target changes while fresh state is loading",async()=>{
+  const storage=memoryStorage();let current=true,writes=0;
+  const result=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,makeInputId:()=>"intent-switch-read",
+   isCurrent:()=>current,
+   readState:async()=>{current=false;return{available:true as const,state:queueState()};},
+   resume:async()=>{writes++;return{inputId:"intent-switch-read",status:"accepted" as const,state:queueState({autoDrain:true,revision:8})};}} as any);
+  expect(result.kind).toBe("not-ready");expect(writes).toBe(0);
+  expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toBeNull();
+ });
+
+ it("does not publish an old target result after the target changes during POST",async()=>{
+  const storage=memoryStorage();let current=true,writes=0;
+  const result=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState({revision:11}),storage,makeInputId:()=>"intent-switch-post",
+   isCurrent:()=>current,
+   readState:async()=>({available:true as const,state:queueState({revision:11})}),
+   resume:async(_target,request)=>{writes++;current=false;return{inputId:request.inputId,status:"accepted" as const,state:queueState({autoDrain:true,revision:12})};}} as any);
+  expect(result.kind).toBe("not-ready");expect(writes).toBe(1);
+  expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toContain('"inputId":"intent-switch-post"');
+ });
+
+ it("does not call native action for unloaded or unsupported scope",async()=>{
+  const storage=memoryStorage();let sends=0;
+  const result=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,
+   readState:async()=>({available:true,state:queueState({loaded:false,canResume:false,reason:"Сессия не загружена."})}),
+   resume:async()=>{sends++;return {inputId:"unused",status:"accepted"};}});
+  expect(result.kind).toBe("not-ready");expect(result.message).toContain("Сессия не загружена");expect(sends).toBe(0);
+  expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toBeNull();
+ });
+
+ it("labels preference readback separately from a confirmed native start",async()=>{
+  const storage=memoryStorage();
+  const attempt=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,makeInputId:()=>"intent-accepted",
+   readState:async()=>({available:true,state:queueState()}),
+   resume:async(_target,request)=>({inputId:request.inputId,status:"accepted",state:queueState({autoDrain:true,revision:8})})});
+  expect(attempt.kind).toBe("accepted");
+  expect(attempt.message).toBe("Команда принята. Запуск сообщения пока не подтверждён.");
+  expect(attempt.message).not.toMatch(/доставлено|сообщение отправлено/i);
+  expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toContain('"inputId":"intent-accepted"');
+  expect(storage.getItem(queueProcessingIntentStorageKey(queueTarget))).toContain('"status":"accepted"');
+  expect(queueProcessingIntentCanClearOnReadback({inputId:"intent-accepted",status:"accepted",acceptedRevision:8},queueState({revision:8}))).toBe(false);
+  expect(queueProcessingIntentCanClearOnReadback({inputId:"intent-accepted",status:"accepted",acceptedRevision:8},queueState({revision:7}))).toBe(false);
+  expect(queueProcessingIntentCanClearOnReadback({inputId:"intent-accepted",status:"accepted",acceptedRevision:8},queueState({revision:9}))).toBe(true);
+ });
+
+ it("locks an accepted response whose native revision regresses behind the pre-write read",async()=>{
+  const storage=memoryStorage();let writes=0;
+  const result=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState({revision:9}),storage,makeInputId:()=>"intent-regressed",
+   readState:async()=>({available:true,state:queueState({revision:9})}),
+   resume:async(_target,request)=>{writes++;return{inputId:request.inputId,status:"accepted",state:queueState({autoDrain:true,revision:8})};}});
+  expect(result.kind).toBe("unknown");expect(result.message).toContain("readback");
+  const firstIntent=storage.getItem(queueProcessingIntentStorageKey(queueTarget));
+  expect(firstIntent).toContain('"inputId":"intent-regressed"');expect(firstIntent).toContain('"status":"unknown"');
+  const repeat=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState({revision:9}),storage,readState:async()=>({available:true,state:queueState({revision:9})}),resume:async()=>{writes++;return{inputId:"bad",status:"accepted"};}});
+  expect(repeat).toMatchObject({kind:"unknown",inputId:"intent-regressed"});expect(writes).toBe(1);
+ });
+
+ it("reads exact-session ZCode queue state and reports HumanStop without offering an action",async()=>{
+  const fetcher=async(input:RequestInfo|URL,init?:RequestInit)=>{
+   expect(String(input)).toBe("/api/sessions/zcode/fixture-session/queue-processing?hostId=server-100");
+   expect(init?.method).toBeUndefined();
+   return new Response(JSON.stringify({target:queueTarget,state:{autoDrain:true,baseRevision:7,pendingCount:2,oldestQueueItemId:"oldest",nativeState:"completedSuccess",loaded:true,capability:"setAutoDrain"},canResume:true,humanStopHeld:false}),{status:200});
+  };
+  const read=await readSessionQueueProcessing(queueTarget,fetcher as typeof fetch);
+  expect(read).toMatchObject({available:true,state:{hostId:"server-100",harness:"zcode",sessionId:"fixture-session",revision:7,autoDrain:true,canResume:true,scope:"session"}});
+  const held=await readSessionQueueProcessing(queueTarget,async()=>new Response(JSON.stringify({target:queueTarget,state:null,canResume:false,humanStopHeld:true,error:"HumanStop удерживает очередь."}),{status:200}) as Response);
+  expect(held).toMatchObject({available:false,reason:"HumanStop удерживает очередь."});
+ });
+
+ it("posts once with exact target/CAS and polls the existing durable job without claiming input start",async()=>{
+  let posts=0,gets=0;
+  const fetcher=async(input:RequestInfo|URL,init?:RequestInit)=>{
+   if(init?.method==="POST"){
+    posts++;
+    expect(String(input)).toBe("/api/sessions/zcode/fixture-session/queue-processing?hostId=server-100");
+    expect(JSON.parse(String(init.body))).toEqual({hostId:"server-100",inputId:"resume-once",expectedRevision:7});
+    return new Response(JSON.stringify({target:queueTarget,inputId:"resume-once",state:"queued",nonRetryable:false,job:{id:"job-1",state:"queued",resultRef:"herder://jobs/job-1"}}),{status:202});
+   }
+   gets++;
+   expect(String(input)).toBe("/api/jobs/job-1?hostId=server-100&harness=zcode&sessionId=fixture-session&inputId=resume-once");
+   return new Response(JSON.stringify({job:{id:"job-1",state:"completed",result:{ok:true,status:"accepted",inputId:"resume-once",state:{autoDrain:true,baseRevision:8,pendingCount:2,oldestQueueItemId:"oldest",nativeState:"completedSuccess",loaded:true,capability:"setAutoDrain"}}}}),{status:200});
+  };
+  const result=await submitSessionQueueProcessing(queueTarget,{inputId:"resume-once",expectedRevision:7},{fetcher:fetcher as typeof fetch,pause:async()=>{},maxWaitMs:1000});
+  expect(result).toMatchObject({inputId:"resume-once",status:"accepted",state:{revision:8,autoDrain:true}});
+  expect(result.nativeInputActuallyStarted).toBeUndefined();
+  expect(posts).toBe(1);expect(gets).toBe(1);
+ });
+
+ it("locks a terminal HTTP 200 UNKNOWN submission without polling or posting again",async()=>{
+  let posts=0,gets=0;
+  const fetcher=async(_input:RequestInfo|URL,init?:RequestInit)=>{
+   if(init?.method!=='POST'){gets++;return new Response('{}',{status:404});}
+   posts++;
+   return new Response(JSON.stringify({target:queueTarget,inputId:"resume-unknown",state:"unknown",nonRetryable:true,error:"Ответ владельца не подтверждён."}),{status:200});
+  };
+  const storage=memoryStorage();
+  const first=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,makeInputId:()=>"resume-unknown",
+   readState:async()=>({available:true,state:queueState()}),resume:(target,request)=>submitSessionQueueProcessing(target,request,{fetcher:fetcher as typeof fetch,pause:async()=>{},maxWaitMs:1000})});
+  const second=await attemptQueueProcessingResume({target:queueTarget,displayedState:queueState(),storage,makeInputId:()=>"must-not-regenerate",
+   readState:async()=>({available:true,state:queueState()}),resume:(target,request)=>submitSessionQueueProcessing(target,request,{fetcher:fetcher as typeof fetch,pause:async()=>{},maxWaitMs:1000})});
+  expect(first.kind).toBe("unknown");expect(second).toMatchObject({kind:"unknown",inputId:"resume-unknown"});
+  expect(posts).toBe(1);expect(gets).toBe(0);
+ });
 });
 
 describe("две темы оформления", () => {

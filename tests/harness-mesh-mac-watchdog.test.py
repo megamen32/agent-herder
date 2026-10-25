@@ -708,6 +708,44 @@ class MacWatchdogTests(unittest.TestCase):
             with self.assertRaisesRegex(w.Refused,'protected_pointer_permissions'):
                 w.protected_env(pointer)
 
+    def test_opencode_stale_pid_adopts_the_live_listener_and_records_it(self):
+        # The recorded pid is gone: the live OpenCode of the same port is adopted.
+        with tempfile.TemporaryDirectory() as folder:
+            home=Path(folder);pointer=home/'native.env';pointer.write_text('OPENCODE_SERVER_PASSWORD="test fixture"\n');pointer.chmod(0o600)
+            base=home/'.local/share/agent-herder/fleet';base.mkdir(parents=True)
+            config={'opencodePort':4097,'opencodePid':3688,'opencodeEnvFile':str(pointer)}
+            (base/'node-config.json').write_text(json.dumps(config,indent=1)+'\n')
+            def native(args):
+                if args[0]=='/bin/ps':
+                    if args[2]=='3688':return ''
+                    return f'{w.os.getuid()} /usr/local/bin/opencode serve --port 4097\n'
+                return '2053045\n'
+            with patch.object(w,'command',side_effect=native):
+                env=w.opencode_environment(config,base)
+                self.assertEqual(env['OPENCODE_URL'],'http://127.0.0.1:4097')
+                self.assertEqual(env['OPENCODE_SERVER_PASSWORD'],'test fixture')
+            self.assertEqual(json.loads((base/'node-config.json').read_text())['opencodePid'],2053045)
+
+    def test_a_gone_process_is_a_state_and_not_a_probe_error(self):
+        argv=['/bin/ps','-p','3688','-o','uid=,command=']
+        gone=subprocess.CompletedProcess(argv,1,b'',b'')
+        with patch.object(w.subprocess,'run',return_value=gone),patch.object(w.os,'kill',side_effect=ProcessLookupError):
+            self.assertEqual(w.command(argv),'')
+        with patch.object(w.subprocess,'run',return_value=gone),patch.object(w.os,'kill',side_effect=PermissionError):
+            with self.assertRaisesRegex(w.Refused,'native_observation_failed'):
+                w.command(argv)
+
+    def test_opencode_without_a_live_process_refuses_and_names_the_port(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home=Path(folder);pointer=home/'native.env';pointer.write_text('OPENCODE_SERVER_PASSWORD="test fixture"\n');pointer.chmod(0o600)
+            base=home/'.local/share/agent-herder/fleet';base.mkdir(parents=True)
+            config={'opencodePort':4097,'opencodePid':3688,'opencodeEnvFile':str(pointer)}
+            (base/'node-config.json').write_text(json.dumps(config,indent=1)+'\n')
+            with patch.object(w,'command',return_value=''):
+                with self.assertRaisesRegex(w.Refused,'no live OpenCode serves port 4097'):
+                    w.opencode_environment(config,base)
+            self.assertEqual(json.loads((base/'node-config.json').read_text())['opencodePid'],3688)
+
     def test_cleanup_never_signals_foreign_or_reused_group(self):
         child=unittest.mock.Mock(pid=42);child.poll.return_value=None
         with patch.object(w.os,'getpgid',return_value=99),patch.object(w.os,'killpg') as kill:

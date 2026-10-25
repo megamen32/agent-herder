@@ -1,9 +1,9 @@
 import {readFile,mkdir,writeFile,rename} from 'node:fs/promises';
 import {dirname,resolve} from 'node:path';import {homedir,hostname} from 'node:os';import {randomUUID} from 'node:crypto';
 import {filterActiveInventory,readActiveInventory,type ActiveInventory,type ActiveInventoryQuery} from './active-session-inventory.js';
-import {FleetDirectTransport,directFleetPeers} from './mesh/fleet-direct-transport.js';import {unwrapResult} from './mesh/protocol.js';
+import {FleetDirectTransport,fleetPeers} from './mesh/fleet-direct-transport.js';import {unwrapResult} from './mesh/protocol.js';
 type Peer={hostId:string;target:string};type RecordFile={version:1;owners:Record<string,ActiveInventory>;errors:Record<string,string>};
-const configured=():Peer[]=>directFleetPeers.map(p=>({hostId:p.hostId,target:`mcp:shell:${p.hostId}:AgentHerder`}));
+const configured=():Peer[]=>fleetPeers().map(p=>({hostId:p.hostId,target:`mcp:shell:${p.hostId}:AgentHerder`}));
 export const activeFleetInventoryPath=()=>process.env.AGENT_HERDER_ACTIVE_FLEET_INVENTORY||resolve(homedir(),'.local/state/agent-herder/active-fleet-inventory.json');
 function validate(value:ActiveInventory,hostId:string){if(!Array.isArray(value?.sessions)||value.hosts?.length!==1||value.hosts[0].hostId!==hostId||value.sessions.some(s=>s.runtimeHostId!==hostId||typeof s.id!=='string'||!Array.isArray(s.workspaces))||typeof value.partial!=='boolean')throw Error('active_fleet_owner_identity_invalid');return value;}
 /** A read never starts transport, extends activity TTL or discards an expired known row. */
@@ -20,7 +20,7 @@ export async function readFleetActiveInventory(input:ActiveInventoryQuery={},opt
 }
 /** One bounded background read per exact owner; publish each completion independently. */
 export function startActiveFleetInventoryOwner(options:{path?:string;peers?:readonly Peer[];intervalMs?:number;readOwner?:(peer:Peer)=>Promise<unknown>}={}){
- const peers=options.peers??configured(),path=options.path??activeFleetInventoryPath(),transport=new FleetDirectTransport(directFleetPeers,10000);
+ const peers=options.peers??configured(),path=options.path??activeFleetInventoryPath(),transport=new FleetDirectTransport(fleetPeers(),10000);
  const readOwner=options.readOwner??(async(peer:Peer)=>peer.hostId===hostname()?readActiveInventory():transport.call(peer.target,'list_active_sessions_local',{}));
  let closed=false;const file:RecordFile={version:1,owners:{},errors:{}};const pending=new Set<string>();let publishing=Promise.resolve();
  const publish=()=>{publishing=publishing.catch(()=>{}).then(async()=>{if(closed)return;await mkdir(dirname(path),{recursive:true});const tmp=path+'.'+randomUUID()+'.tmp';await writeFile(tmp,JSON.stringify(file),{mode:0o600});await rename(tmp,path);});};

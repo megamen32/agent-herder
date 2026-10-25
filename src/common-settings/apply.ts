@@ -232,6 +232,9 @@ export async function applyCommonSettingsDocument(input: {
   return {
     ok: true,
     hostId: input.hostId,
+    // The revision of the owner: the node keeps the identity of the document it
+    // received and never a revision of its own files, so the owner sees that
+    // the node took its document.
     appliedRevision: document.revision,
     appliedAt: detectedAt,
     changed,

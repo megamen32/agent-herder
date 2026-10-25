@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HumanRequestRegistry } from "../src/human-request/index.js";
 import { registerHumanRequestTools } from "../src/mcp/human-request-tools.js";
+import { permissionReplyContextRef } from "../src/permission-control/notice-bridge.js";
 import type { ResumeReceipt, ResumeTransportRequest } from "../src/resume-transport.js";
 
 const connected: Array<{ client: Client; server: McpServer }> = [];
@@ -18,6 +19,31 @@ afterEach(async () => {
 });
 
 describe("native MCP human question and resolve", () => {
+  it.each(["human_request_resolve", "human_request_resolve_interactive"] as const)("%s refuses to resume a typed native permission request", async (tool) => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-mcp-permission-no-resume-"));
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
+    const record = await registry.create({
+      kind: "user", target: { agent: "opencode", sessionId: "exact-session", cwd: root }, answerSource: "notice_question",
+      contextRef: permissionReplyContextRef({ hostId: "host-1", harness: "opencode", sessionId: "exact-session", permissionRequestId: "native-request-1" }),
+    });
+    const admit = vi.spyOn(registry, "admitResume");
+    const humanResume = vi.fn(async (): Promise<ResumeReceipt> => { throw new Error("must not call generic resume"); });
+    const server = new McpServer({ name: "typed-permission-no-resume", version: "1.0.0" });
+    registerHumanRequestTools(server, registry, { humanResume });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const client = new Client({ name: "typed-permission-no-resume-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
+    await client.connect(clientTransport);
+    connected.push({ client, server });
+
+    const result = await client.callTool({ name: tool, arguments: { requestId: record.requestId, resolutionRef: "result://answer" } });
+    expect(result.isError).toBe(true);
+    expect(humanResume).not.toHaveBeenCalled();
+    expect(admit).not.toHaveBeenCalled();
+    await expect(registry.get(record.requestId)).resolves.toMatchObject({ status: "pending" });
+  });
+
   it.each(["human_request_resolve", "human_request_resolve_interactive"])("%s exposes retry and atomically resumes the same unavailable answer once after recovery", async (tool) => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-mcp-human-retry-"));
     cleanups.push(() => rm(root, { recursive: true, force: true }));

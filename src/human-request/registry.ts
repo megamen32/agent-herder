@@ -36,6 +36,8 @@ export interface CreateHumanRequestInput {
   answerSource?: HumanRequestAnswerSource;
   /** Provider-owned opaque correlation handle; never a prompt or secret. */
   contextRef?: string;
+  /** Internal creation source for typed Notice permission questions. */
+  noticeDeliveryMode?: "manual" | "automatic";
   /** Explicit Notify event tuple. Agent Herder does not choose any of these values. */
   notify?: NotifyRoutingTupleInput;
 }
@@ -83,6 +85,17 @@ export interface ResumeCompletionInput {
   retryable?: boolean;
 }
 
+export interface NoticeDeliveryClaim {
+  state: "claimed" | "accepted" | "unknown";
+  claimId: string;
+  payloadFingerprint: string;
+  claimedAt: string;
+  settledAt?: string;
+  httpStatus?: number;
+  noticeRequestId?: string;
+  deliveryStatus?: "sent";
+}
+
 /** Single admission receipt. Only `admitted` may invoke the resume transport. */
 export interface ResumeAdmissionReceipt {
   /** True only for the caller that owns the one transport invocation of this attempt. */
@@ -102,6 +115,8 @@ export interface HumanRequestRecord {
   status: HumanRequestStatus;
   /** How the answer reaches the resumed session. Never guessed at resume time. */
   answerSource: HumanRequestAnswerSource;
+  /** Whether a typed permission question is delivered by the user flow or observer. */
+  noticeDeliveryMode?: "manual" | "automatic";
   continuation: "resume";
   resolutionRef?: string;
   resultRef?: string;
@@ -115,6 +130,8 @@ export interface HumanRequestRecord {
   receipt?: string;
   /** False fences ambiguous/admitted failures even if their reason looks retryable. */
   resumeRetryable?: boolean;
+  /** Write-ahead Notice card delivery metadata only; never stores the card text. */
+  noticeDelivery?: NoticeDeliveryClaim;
   createdAt: string;
   resolvedAt?: string;
   notify?: NotifyRoutingTuple;
@@ -191,6 +208,10 @@ function validateRecord(record: HumanRequestRecord): HumanRequestRecord {
     // A record written before the discriminator existed had no Notice row.
     if (record.answerSource !== undefined) throw new Error("invalid request answer source");
   }
+  if (record.noticeDeliveryMode !== undefined && (record.answerSource !== "notice_question"
+    || (record.noticeDeliveryMode !== "manual" && record.noticeDeliveryMode !== "automatic"))) {
+    throw new Error("invalid Notice delivery mode");
+  }
   targetOf(record.target);
   opaqueRef(record.contextRef, "contextRef");
   opaqueRef(record.resolutionRef, "resolutionRef");
@@ -199,6 +220,20 @@ function validateRecord(record: HumanRequestRecord): HumanRequestRecord {
   opaqueRef(record.idempotencyKey, "idempotencyKey");
   opaqueRef(record.receipt, "receipt");
   if (record.resumeRetryable !== undefined && typeof record.resumeRetryable !== "boolean") throw new Error("invalid resume retry evidence");
+  if (record.noticeDelivery) {
+    const delivery = record.noticeDelivery;
+    if ((delivery.state !== "claimed" && delivery.state !== "accepted" && delivery.state !== "unknown")
+      || !/^[a-f0-9]{64}$/.test(delivery.payloadFingerprint)
+      || !delivery.claimId || delivery.claimId.length > 128 || !delivery.claimedAt) throw new Error("invalid Notice delivery claim");
+    if (delivery.settledAt !== undefined && !Number.isFinite(Date.parse(delivery.settledAt))) throw new Error("invalid Notice delivery settlement time");
+    if (delivery.httpStatus !== undefined && (!Number.isInteger(delivery.httpStatus) || delivery.httpStatus < 100 || delivery.httpStatus > 599)) throw new Error("invalid Notice delivery HTTP status");
+    if (delivery.noticeRequestId !== undefined && delivery.noticeRequestId !== record.requestId) throw new Error("Notice receipt request id does not match the Human Request");
+    if (delivery.deliveryStatus !== undefined && delivery.deliveryStatus !== "sent") throw new Error("invalid Notice channel delivery status");
+    if (delivery.state === "accepted" && (!delivery.settledAt || delivery.httpStatus === undefined
+      || delivery.noticeRequestId !== record.requestId || delivery.deliveryStatus !== "sent")) throw new Error("accepted Notice delivery is missing its exact receipt");
+    if (delivery.state === "unknown" && !delivery.settledAt) throw new Error("unknown Notice delivery is missing its terminal time");
+    if (record.answerSource !== "notice_question") throw new Error("Notice delivery metadata requires a typed Notice question");
+  }
   if (record.notify) {
     notifyOf(record.notify, record.requestId);
     if (record.notify.dedupKey !== `human-request:${record.requestId}`) throw new Error("invalid Notify dedupKey");
@@ -257,6 +292,7 @@ export class HumanRequestRegistry {
         kind: input.kind,
         target,
         answerSource: input.answerSource ?? "human_channel",
+        ...(input.answerSource === "notice_question" ? { noticeDeliveryMode: input.noticeDeliveryMode ?? "manual" } : {}),
         ...(contextRef ? { contextRef } : {}),
         status: "pending",
         continuation: "resume",
@@ -280,6 +316,54 @@ export class HumanRequestRegistry {
     if (typeof requestId !== "string" || requestId.trim().length === 0) throw new Error("requestId is required");
     const record = (await this.read()).requests.find((item) => item.requestId === requestId);
     return record ? cloneRecord(record) : null;
+  }
+
+  /** Atomically admit the only Notice POST for one typed question. Claims never expire or replay. */
+  async claimNoticeDelivery(requestId: string, payloadFingerprint: string): Promise<{ admitted: boolean; claimId?: string; record: HumanRequestRecord }> {
+    if (!/^[a-f0-9]{64}$/.test(payloadFingerprint)) throw new Error("payloadFingerprint must be a SHA-256 hex digest");
+    return this.mutate(async () => {
+      const file = await this.read();
+      const record = file.requests.find((item) => item.requestId === requestId);
+      if (!record) throw new Error(`Human request '${requestId}' not found`);
+      if (record.status !== "pending" || record.answerSource !== "notice_question" || record.noticeDeliveryMode !== "automatic" || !record.notify) {
+        return { admitted: false, record: cloneRecord(record) };
+      }
+      if (record.noticeDelivery) return { admitted: false, record: cloneRecord(record) };
+      const claimId = randomUUID();
+      record.noticeDelivery = { state: "claimed", claimId, payloadFingerprint, claimedAt: new Date().toISOString() };
+      await this.write(file);
+      this.publishRequest(record.requestId, "updated");
+      return { admitted: true, claimId, record: cloneRecord(record) };
+    });
+  }
+
+  /** Settle the single POST; ambiguous transport outcomes are terminal and never retried. */
+  async completeNoticeDelivery(
+    requestId: string,
+    claimId: string,
+    outcome: { state: "accepted"; httpStatus: number; noticeRequestId: string; deliveryStatus: "sent" }
+      | { state: "unknown"; httpStatus?: number },
+  ): Promise<HumanRequestRecord> {
+    return this.mutate(async () => {
+      const file = await this.read();
+      const record = file.requests.find((item) => item.requestId === requestId);
+      if (!record) throw new Error(`Human request '${requestId}' not found`);
+      const current = record.noticeDelivery;
+      if (!current || current.claimId !== claimId) throw new Error(`Notice delivery claim for '${requestId}' is not owned by this caller`);
+      if (current.state !== "claimed") return cloneRecord(record);
+      const settledAt = new Date().toISOString();
+      if (outcome.state === "accepted") {
+        if ((outcome.httpStatus !== 200 && outcome.httpStatus !== 201) || outcome.noticeRequestId !== requestId || outcome.deliveryStatus !== "sent") {
+          throw new Error("accepted Notice delivery requires an exact sent receipt");
+        }
+        record.noticeDelivery = { ...current, state: "accepted", settledAt, httpStatus: outcome.httpStatus, noticeRequestId: outcome.noticeRequestId, deliveryStatus: outcome.deliveryStatus };
+      } else {
+        record.noticeDelivery = { ...current, state: "unknown", settledAt, ...(outcome.httpStatus ? { httpStatus: outcome.httpStatus } : {}) };
+      }
+      await this.write(file);
+      this.publishRequest(record.requestId, "updated");
+      return cloneRecord(record);
+    });
   }
 
   async resolve(requestId: string, resolution: HumanRequestResolution): Promise<HumanRequestRecord> {
@@ -548,6 +632,7 @@ function cloneRecord(record: HumanRequestRecord): HumanRequestRecord {
     answerSource: record.answerSource ?? "human_channel",
     target: targetOf(record.target),
     ...(record.notify ? { notify: { ...record.notify } } : {}),
+    ...(record.noticeDelivery ? { noticeDelivery: { ...record.noticeDelivery } } : {}),
   };
 }
 

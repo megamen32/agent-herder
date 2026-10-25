@@ -15,11 +15,17 @@ class ModelResolutionClient implements ZcodeClientLike {
 
   async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
     this.calls.push({ channel, method, args });
+    if (channel === "project" && method === "readTree") {
+      return { projects: [{ id: "project-workspace", hostId: "local", roots: [{ rootPath: "/workspace", isPrimary: true }] }] };
+    }
     if (channel === "model-selection" && method === "getView") {
       return { providers: [{ providerId, providerName: "minimax", models: [{ modelId: "MiniMax-M3", config: { enabled: true } }] }] };
     }
     if (channel === "zcode-agent" && method === "createSession") {
       return { session: { sessionId: "created-fake-session", status: "idle", model: (args[0] as { model?: unknown }).model } };
+    }
+    if (channel === "zcode-agent" && method === "setMode") {
+      return { session: { sessionId: "created-fake-session", status: "idle" }, settings: { permission: { mode: (args[0] as { mode?: string }).mode } } };
     }
     if (channel === "zcode-task" && method === "renameTask") return { title: (args[0] as { title: string }).title };
     throw new Error(`unexpected fake ZCode call ${channel}.${method}`);

@@ -3,12 +3,17 @@ import { createServer, request, type Server } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { DeferredMessageStore, deferredMessages } from '../src/deferred-messages.js';
 import { OpenCodeAdapter } from '../src/adapters/opencode.js';
 import { createWebServer } from '../src/web/server.js';
 import plugin from '../integrations/opencode/agent-herder-autopilot.js';
 import { getHumanStopStore } from '../src/human-stop-store.js';
+import { turnHooksRuntimeOn } from './helpers/hooks-runtime.js';
+
+// The switch of the hooks lives in an isolated state directory: the test never
+// changes the state of the machine.
+afterEach(()=>{vi.unstubAllEnvs();});
 
 // Focused integration: real store, HTTP, adapter and plugin; simulated read-only native API.
 // Expected 3s/max 15s. No native task, provider, control or installed plugin calls.
@@ -47,7 +52,7 @@ it('a Stop during the final store read is checked after the wait, before transfe
   } finally {release.resolve();await offering;delayed.mockRestore();await stops.release('opencode',id);await rm(dir,{recursive:true,force:true});}
 });
 
-it('three delayed native reads fit the unchanged 1200ms plugin body deadline', async () => {
+it('three delayed native reads fit the unchanged 1200ms plugin body deadline', async () => { await turnHooksRuntimeOn();
   const id = 'opencode-' + randomUUID(), root = 'native-user', mutations: string[] = [];
   let delay = 0;
   const native = createServer((req, res) => {
@@ -82,7 +87,7 @@ it('three delayed native reads fit the unchanged 1200ms plugin body deadline', a
   }
 });
 
-it('client disconnect during native read refuses the durable offer', async () => {
+it('client disconnect during native read refuses the durable offer', async () => { await turnHooksRuntimeOn();
   const id = 'opencode-' + randomUUID(), entered = gate(), release = gate(), finished = gate();
   const adapter = {type:'opencode', getCoordinationActiveTurnId:async()=>{entered.resolve(); await release.promise; finished.resolve(); return 'user';}} as any;
   const server = createWebServer({adapters:new Map([['opencode',adapter]]), converter:{} as any, supervisor:{isAutomationHeld:async()=>false} as any});
@@ -100,7 +105,7 @@ it('client disconnect during native read refuses the durable offer', async () =>
   } finally { release.resolve(); await close(server); }
 });
 
-it('a persisted Stop arriving during native read drops pending context and retains explicit inbox', async () => {
+it('a persisted Stop arriving during native read drops pending context and retains explicit inbox', async () => { await turnHooksRuntimeOn();
   const id = 'opencode-' + randomUUID(), stops = getHumanStopStore();
   const adapter = {type:'opencode',getCoordinationActiveTurnId:async()=>{
     await stops.hold({id,harness:'opencode',cwd:'/workspace',status:'running'} as any,{id:'human-stop',at:new Date().toISOString(),reason:'human Stop'});

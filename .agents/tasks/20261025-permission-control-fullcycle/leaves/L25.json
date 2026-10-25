@@ -1,0 +1,54 @@
+{
+  "id": "L25",
+  "label": "Свести доставку человека и агента к единому delivery core",
+  "status": "running",
+  "description": "Объединить пути отправки человека, агента и сайта вокруг одного durable delivery core с точными target/host/session/input/job метаданными и единой admission/readback семантикой.",
+  "acceptance": "Все входные поверхности проходят общий durable job и сохраняют точную native identity и receipt; accepted/UNKNOWN не повторяются. Отдельные source review и реальные пути подтверждают, что idle wake и завершённая ZCode очередь не получают ложный ok:true без фактического native результата.",
+  "affected_files": [
+    "src/user-message-delivery.ts",
+    "src/mesh/",
+    "src/mcp/",
+    "src/web/server.ts",
+    "src/adapters/"
+  ],
+  "owner": "permission_reply_bridge",
+  "depends_on": [],
+  "estimate_unknown_reason": "Исправление двух наблюдавшихся consumer дефектов и объединение уже существующих WIP; оставшийся объём зависит от native adapter результата и обязательной повторной приёмки.",
+  "note": "Единый delivery core остаётся открытым. Общий UMD source 324f65e и durable guard 5cf6c22 получили независимый SHIP; observer 8cc9754 прошёл 55 focused tests + TypeScript и теперь также получил SHIP review. MCP и локальный mesh используют один UMD/durable job без второго sender; inline окно ≤30 секунд и stable fetch ref. Remote response resource reader f47288b получил independent SHIP; это source readiness, не installed consumer proof. Установленный release остаётся 8936deb. MiniMax inter-agent live canary не выполнялся: на последнем чтении 2026-10-25 19:47 UTC квота была 0%; ранее принятый human→MiniMax outcome L16 ограничен своим сценарием. ZCode native source 4631e50 допустил один исходный head и связал его точным turn-start; последующий model/network error поставил native retry, assistant answer/task completion не доказаны и input не дублировался. На installed readback 23:39 UTC было 500 retained jobs и 0 in-flight. Loaded broker queue остаётся на явном hold. Предполагаемые 1276 сообщений unloaded TelegramAuto оказались compact-карточкой Desktop, а не human message; ничего не меняли, история в 1445 сообщений сохранена. Финальный main join/release и consumer acceptance остаются впереди.",
+  "wait_reason": "Ждём завершения bridge integration/reconciliation и joined release перед реальной consumer acceptance. MiniMax live canary не запускался при прочитанной квоте 0%; ZCode native start подтверждён, но итоговый assistant response отсутствует. Не считать source SHIP, retained jobs или human MiniMax proof доказательством inter-agent delivery.",
+  "updated_at": "2026-10-26T00:01:29+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-25T22:40:52+03:00",
+      "note": "Native/source evidence advanced but delivery remains open. Source commit 4631e50f877792ee41930a15fa7114f0c0b69923 passed 130 focused tests and TypeScript. On the existing ZCode queue, one durable CAS advanced the queue revision and admitted the original head; the exact native turn-start event linked that original input to the promoted message and turn. The subsequent model request failed with native network/server errors and scheduled a native retry; no final assistant result or completed task is confirmed, and no duplicate was sent. Other safe cases remain distinct: loaded broker queue has an explicit hold; unloaded TelegramAuto cannot be safely resumed through the official API. MiniMax ingress/HumanStop serialization remains under repair. This is source/native evidence only, not installed public UI/MCP acceptance.",
+      "changes": {
+        "note": "The shared delivery and recovery lane remains open. Source commit 4631e50f877792ee41930a15fa7114f0c0b69923 passed 130 tests and TypeScript. A native ZCode CAS admitted the original queued input and exact turn.started evidence correlated input→promoted message→turn; the following provider/network attempt failed and scheduled a native retry. No completed assistant answer, task completion, or duplicate send is claimed. Broker loaded queue remains on explicit hold; TelegramAuto unloaded queue is unsupported by the official safe-load API. MiniMax ingress/HumanStop serialization still blocks integrated source canary. No installed UI/MCP acceptance yet.",
+        "wait_reason": "Waiting for the MiniMax ingress/HumanStop race repair and exact consumer readback. ZCode native admission is evidenced, but completion/result is not; loaded broker hold and unloaded TelegramAuto capability remain separate cases."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-10-25T23:59:32+03:00",
+      "note": "Единый delivery core остаётся открытым. Общий UMD source 324f65e и durable guard 5cf6c22 получили независимый SHIP review; observer 8cc9754 прошёл 55 focused tests и TypeScript, но ждёт delta-review. MCP и локальный mesh используют один UMD/durable job без второго sender; inline окно ограничено 30 секундами, после него используется тот же stable fetch ref. Exact owner routing для удалённого response resource ещё у bridge. Установленный release остаётся 8936deb; на readback 23:39 UTC было 500 retained jobs и 0 in-flight. MiniMax inter-agent canary не выполнялся при прочитанной 19:47 UTC квоте 0%, поэтому live agent→agent результат не заявлен. Ранее принятый human→MiniMax desktop outcome L16 сохраняет только свою исходную область. Источник ZCode queue native recovery 4631e50 допустил один исходный head и связал его с точным turn-start; subsequent model/network error поставил native retry, assistant answer/task completion не доказаны и input не дублировался. Загруженная broker очередь остаётся на явном hold. Предполагаемые 1276 сообщений unloaded TelegramAuto оказались compact-карточкой Desktop, не human message; ничего не меняли, история в 1445 сообщений сохранена. Финальный main join/release и соответствующая consumer приёмка остаются впереди.",
+      "changes": {
+        "note": "Единый delivery core остаётся открытым. Общий UMD source 324f65e и durable guard 5cf6c22 получили независимый SHIP review; observer 8cc9754 прошёл 55 focused tests и TypeScript, но ждёт delta-review. MCP и локальный mesh используют один UMD/durable job без второго sender; inline окно ограничено 30 секундами, после него используется тот же stable fetch ref. Exact owner routing для удалённого response resource ещё у bridge. Установленный release остаётся 8936deb; на readback 23:39 UTC было 500 retained jobs и 0 in-flight. MiniMax inter-agent canary не выполнялся при прочитанной 19:47 UTC квоте 0%, поэтому live agent→agent результат не заявлен. Ранее принятый human→MiniMax desktop outcome L16 сохраняет только свою исходную область. Источник ZCode queue native recovery 4631e50 допустил один исходный head и связал его с точным turn-start; subsequent model/network error поставил native retry, assistant answer/task completion не доказаны и input не дублировался. Загруженная broker очередь остаётся на явном hold. Предполагаемые 1276 сообщений unloaded TelegramAuto оказались compact-карточкой Desktop, не human message; ничего не меняли, история в 1445 сообщений сохранена. Финальный main join/release и соответствующая consumer приёмка остаются впереди.",
+        "wait_reason": "Ждём delta-review observer, bridge exact owner routing и исправления/подтверждения критичных delivery/recovery путей перед consumer acceptance. MiniMax live canary не был запущен при квоте 0%; ZCode native start подтверждён, но результат отсутствует. Не считать source review, retained jobs или human MiniMax proof доказательством inter-agent delivery."
+      },
+      "session": "unknown",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T00:01:29+03:00",
+      "note": "Единый delivery core остаётся открытым. Общий UMD source 324f65e и durable guard 5cf6c22 получили независимый SHIP; observer 8cc9754 прошёл 55 focused tests + TypeScript и теперь также получил SHIP review. MCP и локальный mesh используют один UMD/durable job без второго sender; inline окно ≤30 секунд и stable fetch ref. Remote response resource reader f47288b получил independent SHIP; это source readiness, не installed consumer proof. Установленный release остаётся 8936deb. MiniMax inter-agent live canary не выполнялся: на последнем чтении 2026-10-25 19:47 UTC квота была 0%; ранее принятый human→MiniMax outcome L16 ограничен своим сценарием. ZCode native source 4631e50 допустил один исходный head и связал его точным turn-start; последующий model/network error поставил native retry, assistant answer/task completion не доказаны и input не дублировался. На installed readback 23:39 UTC было 500 retained jobs и 0 in-flight. Loaded broker queue остаётся на явном hold. Предполагаемые 1276 сообщений unloaded TelegramAuto оказались compact-карточкой Desktop, а не human message; ничего не меняли, история в 1445 сообщений сохранена. Финальный main join/release и consumer acceptance остаются впереди.",
+      "changes": {
+        "note": "Единый delivery core остаётся открытым. Общий UMD source 324f65e и durable guard 5cf6c22 получили независимый SHIP; observer 8cc9754 прошёл 55 focused tests + TypeScript и теперь также получил SHIP review. MCP и локальный mesh используют один UMD/durable job без второго sender; inline окно ≤30 секунд и stable fetch ref. Remote response resource reader f47288b получил independent SHIP; это source readiness, не installed consumer proof. Установленный release остаётся 8936deb. MiniMax inter-agent live canary не выполнялся: на последнем чтении 2026-10-25 19:47 UTC квота была 0%; ранее принятый human→MiniMax outcome L16 ограничен своим сценарием. ZCode native source 4631e50 допустил один исходный head и связал его точным turn-start; последующий model/network error поставил native retry, assistant answer/task completion не доказаны и input не дублировался. На installed readback 23:39 UTC было 500 retained jobs и 0 in-flight. Loaded broker queue остаётся на явном hold. Предполагаемые 1276 сообщений unloaded TelegramAuto оказались compact-карточкой Desktop, а не human message; ничего не меняли, история в 1445 сообщений сохранена. Финальный main join/release и consumer acceptance остаются впереди.",
+        "wait_reason": "Ждём завершения bridge integration/reconciliation и joined release перед реальной consumer acceptance. MiniMax live canary не запускался при прочитанной квоте 0%; ZCode native start подтверждён, но итоговый assistant response отсутствует. Не считать source SHIP, retained jobs или human MiniMax proof доказательством inter-agent delivery."
+      },
+      "session": "unknown",
+      "harness": "codex"
+    }
+  ],
+  "session": "unknown",
+  "harness": "codex"
+}

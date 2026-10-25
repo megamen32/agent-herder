@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { getHumanStopStore, type HumanStopStore } from "./human-stop-store.js";
 import type {NativeHookTurn} from './adapters/zcode-workspace-lifecycle.js';
+import type {ZcodeQueueProcessingState,ZcodeResumeQueueOptions,ZcodeResumeQueueResult} from './adapters/zcode-v4-queue.js';
 import type {
   AgentSession,
   SessionSnapshotReceipt,
@@ -15,6 +16,7 @@ import type {
   SendMessageResult,
   SessionDetails,
   SessionHistoryInfo,
+  HarnessPermissionState,
   SessionLineage,
   SessionMessagePart,
   SessionMessageView,
@@ -34,6 +36,8 @@ import { harnessEventHealth, type HarnessEventHealthRegistry } from "./harness-e
 import type { UnfinishedSessionLauncher } from "./autopilot/unfinished-session-launcher.js";
 import type { AutoCompactService } from "./autocontinue/auto-compact.js";
 import { deferredMessages, isBusyCodexWriter } from "./deferred-messages.js";
+import { respondToNativePermission, setNativePermissionModeOnce } from "./permission-control/reply.js";
+import type { PermissionNoticeObserver } from "./permission-control/notice-bridge.js";
 
 export interface SessionFilters {
   harness?: string;
@@ -80,6 +84,8 @@ export interface SessionSupervisorOptions {
   unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession" | "recordNativeHook" | "getQuotaRecoveryWaitStatus" | "reconcileQuotaRecoverySettings" | "enrollOperatorCohortEntry" | "enrollOperatorContinuationEntry">>);
   /** Native compact maintenance outcomes; never a task prompt or a resume. */
   autoCompact?: Pick<AutoCompactService, "observe">;
+  /** Existing native observer join for exact typed permission questions. */
+  permissionNoticeObserver?: PermissionNoticeObserver;
 }
 
 interface AutomaticResumeState {
@@ -116,6 +122,9 @@ export class SessionSupervisor {
   private readonly inventoryFailures = new Map<string,string>();
   private readonly nativeProviderSnapshots = new Map<string,{sessions:AgentSession[];observedAt:number;receipt:SessionSnapshotReceipt}>();
   private readonly nativeProviderRefreshes = new Map<string,Promise<AgentSession[]>>();
+  private readonly permissionSnapshotProviders = new Set<string>();
+  private readonly permissionSnapshotInFlight = new Set<string>();
+  private readonly permissionSnapshotWarnings = new Set<string>();
   /** The declared work place of every session, read once per update. */
   private projection: { observations: Map<string, WorkspaceObservation>; at: number } | null = null;
   /** The running projection update. */
@@ -141,6 +150,7 @@ export class SessionSupervisor {
   private readonly immediateStops = new Set<string>();
   private readonly unfinishedSessions?: (Pick<UnfinishedSessionLauncher, "handleEvent" | "armSession" | "forget"> & Partial<Pick<UnfinishedSessionLauncher, "adoptActiveSession" | "recordNativeHook" | "getQuotaRecoveryWaitStatus" | "reconcileQuotaRecoverySettings" | "enrollOperatorCohortEntry" | "enrollOperatorContinuationEntry">>);
   private readonly autoCompact?: Pick<AutoCompactService, "observe">;
+  private readonly permissionNoticeObserver?: PermissionNoticeObserver;
 
   constructor(
     private readonly adapters: Map<string, HarnessAdapter>,
@@ -159,6 +169,7 @@ export class SessionSupervisor {
       ?? Number(process.env.AGENT_HERDER_AUTO_RESUME_DELAY_MS || 2_000));
     this.unfinishedSessions = options.unfinishedSessions;
     this.autoCompact = options.autoCompact;
+    this.permissionNoticeObserver = options.permissionNoticeObserver;
     this.admissionGate = options.admissionGate;
     this.humanStops = options.humanStopStore ?? getHumanStopStore();
   }
@@ -262,9 +273,11 @@ export class SessionSupervisor {
   startObservation(intervalMs = 5_000): () => void {
     this.stopObservation();
     this.ensureNativeSubscriptions();
+    if (this.permissionNoticeObserver) void this.reconcileInitialPermissionSnapshot();
     const bounded = Math.max(1_000, intervalMs);
     const tick = () => {
       this.ensureNativeSubscriptions();
+      if (this.permissionNoticeObserver) void this.reconcileInitialPermissionSnapshot();
       for(const [provider,adapter]of this.adapters)if(!adapter.lazyStart||adapter.lazyDiscovery||!adapter.isReady||adapter.isReady())void this.refreshNativeProvider(provider,adapter);
       void this.refreshSessionSnapshot().catch(() => undefined);
     };
@@ -272,6 +285,40 @@ export class SessionSupervisor {
     this.observationTimer.unref?.();
     tick();
     return () => this.stopObservation();
+  }
+
+  private async reconcileInitialPermissionSnapshot(): Promise<void> {
+    for (const [provider, adapter] of this.adapters) {
+      if (this.permissionSnapshotProviders.has(provider) || this.permissionSnapshotInFlight.has(provider)
+        || (adapter.isReady && !adapter.isReady())) continue;
+      this.permissionSnapshotInFlight.add(provider);
+      let sessions: AgentSession[];
+      try {
+        sessions = await this.refreshNativeProvider(provider, adapter);
+        const snapshot = this.nativeProviderSnapshots.get(provider);
+        if (!snapshot || this.inventoryFailures.has(provider)) {
+          this.reportPermissionSnapshotGap(provider, "session_snapshot_unavailable");
+          continue;
+        }
+        if (!snapshot.receipt.exhaustive) {
+          this.reportPermissionSnapshotGap(provider, "session_inventory_partial");
+          continue;
+        }
+        const complete = await this.permissionNoticeObserver?.reconcileInitialSnapshot(adapter, sessions);
+        if (complete !== false) this.permissionSnapshotProviders.add(provider);
+      } catch {
+        // Observer reports only bounded reason codes; never dump native event or message text.
+      } finally {
+        this.permissionSnapshotInFlight.delete(provider);
+      }
+    }
+  }
+
+  private reportPermissionSnapshotGap(provider: string, reason: string): void {
+    const key = `${provider}:${reason}`;
+    if (this.permissionSnapshotWarnings.has(key)) return;
+    this.permissionSnapshotWarnings.add(key);
+    console.warn(`[agent-herder] permission Notice snapshot incomplete: ${reason} (${provider})`);
   }
 
   stopObservation(): void {
@@ -804,7 +851,52 @@ export class SessionSupervisor {
     response: "allow" | "deny",
     remember = false,
   ): Promise<{ ok: boolean; error?: string }> {
-    const result = await this.requireAdapter(harness).respondPermission(id, permissionId, response, remember);
+    const adapter = this.requireAdapter(harness);
+    let expectedHostId: string | undefined;
+    try {
+      if (adapter.getPermissionState) {
+        const state = await adapter.getPermissionState(id);
+        if (state?.target.harness === harness && state.target.sessionId === id) expectedHostId = state.target.hostId;
+      } else expectedHostId = (await adapter.getSession(id))?.hostId;
+    } catch { /* the guard performs its own required fresh read */ }
+    if (!expectedHostId) return { ok: false, error: "Could not bind the permission response to its native host." };
+    const result = await respondToNativePermission(adapter, harness, id, permissionId, response, remember, expectedHostId);
+    if (result.ok) this.publishSessionChanged(harness, id, "changed");
+    return result;
+  }
+
+  async getPermissionState(harness: string, id: string): Promise<HarnessPermissionState | null> {
+    const adapter = this.requireAdapter(harness);
+    if (!adapter.getPermissionState) return null;
+    const state = await adapter.getPermissionState(id);
+    if (!state || state.target.harness !== harness || state.target.sessionId !== id) return null;
+    return state;
+  }
+
+  async getQueueProcessingState(harness: string, id: string): Promise<ZcodeQueueProcessingState | null> {
+    const adapter=this.requireAdapter(harness) as HarnessAdapter & {getQueueProcessingState?:(id:string)=>Promise<ZcodeQueueProcessingState>};
+    return adapter.getQueueProcessingState ? adapter.getQueueProcessingState(id) : null;
+  }
+
+  async resumeQueueProcessing(harness: string, id: string, options: ZcodeResumeQueueOptions): Promise<ZcodeResumeQueueResult> {
+    const adapter=this.requireAdapter(harness) as HarnessAdapter & {resumeQueueProcessing?:(id:string,options:ZcodeResumeQueueOptions)=>Promise<ZcodeResumeQueueResult>};
+    if (!adapter.resumeQueueProcessing) return {ok:false,status:'not-submitted',inputId:options.inputId,error:'Этот исполнитель не поддерживает возобновление native очереди.'};
+    const result=await adapter.resumeQueueProcessing(id,options);
+    if (result.ok) this.publishSessionChanged(harness,id,'changed');
+    return result;
+  }
+
+  async setPermissionMode(
+    harness: string,
+    id: string,
+    input: { hostId: string; inputId: string; expectedCurrentMode: string; mode: string },
+  ): Promise<Awaited<ReturnType<typeof setNativePermissionModeOnce>>> {
+    const adapter = this.requireAdapter(harness);
+    const result = await setNativePermissionModeOnce(adapter, {
+      ...input,
+      harness,
+      sessionId: id,
+    });
     if (result.ok) this.publishSessionChanged(harness, id, "changed");
     return result;
   }
@@ -922,7 +1014,9 @@ export class SessionSupervisor {
   async getSessionDetails(provider: string, id: string, options: SessionDetailOptions = {}): Promise<SessionDetails> {
     // An exact MiniMax read must not hydrate up to 500 unrelated transcripts.
     const cachedSessions = options.quick
-      ? provider === "minimax-code" ? undefined : provider === "codex"
+      ? provider === "minimax-code" ? undefined : provider === "zcode"
+        ? this.sessionSnapshot?.sessions.filter((session) => session.harness === provider)
+        : provider === "codex"
         ? this.sessionSnapshot?.sessions.filter((session) => session.harness === provider)
           ?? await this.adapters.get(provider)?.listSessions().catch(() => undefined)
         : await this.listSessions({ harness: provider })
@@ -1103,6 +1197,11 @@ export class SessionSupervisor {
         });
       }
       return;
+    }
+
+    if (event.kind === "permission.requested" && this.permissionNoticeObserver) {
+      const adapter = this.adapters.get(provider);
+      if (adapter) void this.permissionNoticeObserver.onEvent(adapter, event).catch(() => undefined);
     }
 
     void this.autoCompact?.observe(event).catch((error) => {

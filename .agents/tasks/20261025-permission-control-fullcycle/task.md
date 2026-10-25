@@ -18,44 +18,45 @@
 
 Работа только в Agent Herder. Notice Place и UserIO используются через существующие API; новый Telegram-клиент и прямой Bot API не добавляются. Никаких телефонных тестов, дополнительных исполнителей или worktree, моделей/fallback, изменений брокера/AFC/TGC, снятия HumanStop или воспроизведения accepted/UNKNOWN. Текущие четыре product-сессии не становятся тестовыми автоматически. Full Access не означает выдачу владения исходниками соседних проектов.
 
-Canonical checkout остаётся на main, чужой WIP сохраняется. Пользователь отдельно разрешил один Git worktree `/home/roomhacker/agents-projects/.worktrees/herder-permissions-20261025` и ветку `codex/herder-permissions-20261025` от актуального origin/main. Дерево создано на `9d2abbe`, подготовлены собственные зависимости из lockfile. Предыдущий интегратор подтвердил принятую первоначальную поставку `9d2abbe` и освободил исходники и выпуск; дальнейшая запись нового цикла выполняется только в разрешённом дереве. План остаётся единственным, в canonical `.agents/tasks/20261025-permission-control-fullcycle`.
+Каноническая цель и текущий worktree сверяются при общей reconciliation; чужой WIP сохраняется. Разрешённое рабочее дерево и исходная ветка не раскрываются в публичной копии. План остаётся единственным для этого полного цикла.
 
 ## Доказательства
 
 Каждая из четырёх приёмок отдельно доказывает source regression, установленную версию, native mode readback, доставку карточки, ответ в exact request и единственное завершение. Карточка не содержит секретов; unavailable context обозначается явно. Реальный отказ пользователя не заменяется тестовой фикстурой. Реальный ответ человека и тестовый callback — отдельные виды доказательств.
 
 ## Plan
-Цель: Доставить полный цикл управления native permissions и режимами для ZCode, OpenCode, Codex и MiniMax Code, плюс исправить обнаруженные workspace, activity, titles и session-search дефекты в Agent Herder; без Telegram API, runtime forks и replay accepted/UNKNOWN.
-Бизнес-результат: Combined backend release a34a4fee0ddd8e1e31f2911699e170c142226ab7 установлен и принят 21/21. На нём публичная новая ZCode сессия, созданная без параметров режима, прочитана как native YOLO без pending/активного turn; своя fixture закрыта официально, пять старых сессий не изменялись. Frontend pin `57d2adee` применён штатным timer, managed nginx drift 0. Остальной четырёх-harness цикл открыт.
-Декомпозиция: 18 листьев · 3 параллельно · 11 волн · слотов: 3
 
-**Подтверждено:** source a34 опубликован и independently reviewed; focused ZCode tests 98/98; official artifact checks 14/14; installed host100, PID readback и owner acceptance 21/21. Отдельный baseline 49b также был установлен/принят, но заменён a34. UI static tree точно скопирован из verified live release; commit 57d2adee изменил две root pins и один source header. Nginx timer применил commit, deployed-git-sha=57d2adee, `nginxctl diff` сообщает no managed drift. Публичный endpoint остаётся за auth; authenticated browser readback и workspace filter остаются открытым доказательством.
+Цель: Сохранить подтверждённый режим доступа и адресную обработку разрешений; объединить human/agent/site доставку и recovery native очереди; дать пользователю единый composer с безопасным голосовым вводом, 8000-token preview и ответом/fetch для нового agent output; сохранить все существующие worktree/WIP функции, затем провести независимый review, синхронизацию main и одну финальную реальную приёмку.
+Бизнес-результат: Уже принятые результаты остаются раздельными: immutable installed release 8936debbe39935770ec3903ac460916269a954f9, build 14/14 и owner acceptance 21/21; frontend pin 76e83d031cc7b3178a785001c1d86a9af4b45d6b применён timer/readback без managed drift. ZCode omitted-mode create и пять read-only YOLO sessions подтверждены. Codex exact-session fullAuto/session readback и два native mode перехода приняты; Codex/MiniMax session-mode capability не поддержана где установлено. MiniMax idle desktop human delivery accepted без replay с точным same-session/provider/model readback. MiniMax workspace/activity, TelegramAuto host filtering и 8/8 task-title app readback приняты как отдельные прежние outcomes; installed title generator и activity source causality остаются отделены в исходных leaves. Existing one-time Allow и queue edit/cancel/collapse semantics с сохранением inputId/jobId сохраняются; queue-resume UI/API source прошёл SHIP review (1fb5c77, adc1d6d, dfd1f78; 47 UI и 65 gateway tests, mock-browser с одним POST); он ещё не установлен в public runtime, который остаётся на 8936deb. OpenCode filtered search вернул 10 совпадений при partial index coverage 3189/3200; исходный полный запрос остаётся UNKNOWN. Не закрытые source slices: 8000-token preview 2ce5c18; composer 609c784 + privacy fix 2dda29d и Whisper route 1a3d948; delivery-response helper/guard 324f65e + 5cf6c22 прошли SHIP review; observer 8cc9754 прошёл 55 tests + TypeScript и получил independent SHIP; remote resource reader f47288b также SHIP. Joined install и consumer acceptance ещё не выполнены. Queue UI/API source review также готов, но ни эти изменения, ни preview/composer/voice slices не входят в installed 8936 и не являются финальной joined приёмкой. Notice topic binding подготовлен в защищённой конфигурации; runtime card и exact permission response ещё не приняты.
+Декомпозиция: 27 листьев · 3 параллельно · 11 волн · слотов: 3
+Ревизия плана: 0b12a79032ec
 
-**ZCode default create:** первая ограниченная canary на 49b трижды завершилась `created=false`, native session не создавалась; причина — отсутствующий native `projectId`. В a34 вошёл reviewed exact owner-scoped project mapping. Одна публичная canary после установки a34 создана без mode/fullAccess/model/initialMessage; exact same-session native readback показал YOLO, pending пусто, humanMessageCount=0, active turn отсутствует. Тестовую fixture закрыли `closeSession` + `archiveTask`; итоговый readback idle/nativeLoaded=false, root untouched. Task-delete query был unavailable, повторов не было; приватный receipt вне public plan. Пять старых ZCode sessions не менялись.
+L01 ✅ (Проверить нативные возможности и безопасные тестовые сессии) начата 2026-10-25T14:33:23+03:00 закончена 2026-10-25T14:51:11+03:00, оценка 15–25 минут, факт не измерено
+L19 ✅ (Установить и проверить объединённые исправления) закончена 18:32, оценка 15–30 минут, факт не измерено
+L02 ✅ (Определить единый контракт режима и точного разрешения) начата 2026-10-25T14:51:11+03:00 закончена 2026-10-25T15:10:00+03:00, оценка 20–30 минут, факт не измерено, зависит: L01
+L13 ✅ (Восстановить рабочие папки MiniMax в Herder) начата 2026-10-25T15:03:00+03:00 закончена 2026-10-25T15:12:00+03:00, оценка 15–25 минут, факт не измерено, зависит: L01
+L16 ✅ (Доставлять сообщение в idle MiniMax desktop без повтора) оценка 20–35 минут, факт не измерено, зависит: L01
+L17 ✅ (Исправить заголовки задач в Herder и проверить восемь сессий) оценка не записана, факт не измерено, зависит: L01
+L14 ✅ (Проверить активность агента в TelegramAuto) закончена 2026-10-25T15:12:00+03:00, оценка 10–20 минут, факт не измерено, зависит: L13
+L15 ✅ (Установить Full Access по умолчанию для новых ZCode-сессий) закончена 16:37, оценка 10–20 минут, факт не измерено, зависит: L03
+L07 ✅ (Опубликовать и установить согласованный выпуск) закончена 16:23, оценка 15–25 минут, факт не измерено, зависит: L06, L14, L15, L17
+L08 ✅ (Проверить живой путь ZCode) закончена 16:37, оценка 10–20 минут, факт не измерено, зависит: L07
 
-**Search:** 6099a19 metrics входят в установленный a34 и различают current processed и durable indexed значения. Приёмка требует свежий source receipt и read-only COUNT на одном snapshot/version, exact host+harness scope; partial/stale отражать явно, counts динамические. Нужен точный реальный query→message/snippet. Цитата пользователя и её root cause пока не подтверждены.
+L18 🔄 работаем (Исправить нулевые текстовые результаты поиска по каталогу) оценка 15–25 минут, прошло не измерено
+L20 🔄 работаем (Проверить 8000-token preview на реальном consumer пути) оценка 15–30 минут, прошло не измерено
+L21 🔄 работаем (Завершить Codex-like composer и безопасный voice input) начата 2026-10-25T20:42:00+03:00, оценка 30–45 минут, прошло не измерено
+L25 🔄 работаем (Свести доставку человека и агента к единому delivery core) оценка не записана, прошло не измерено
+L03 🔄 работаем (Подключить смену режима в четырёх адаптерах) оценка 25–45 минут, прошло не измерено, зависит: L01
+L26 🔄 работаем (Восстановить обработку очереди в загруженной ZCode-сессии) оценка не записана, прошло не измерено, зависит: L25
+L27 🔄 работаем (Возвращать новый ответ доставки через inline результат и fetch) оценка не записана, прошло не измерено, зависит: L25
+L05 🔄 работаем (Доставлять карточку с контекстом через Notice Place) оценка 25–40 минут, прошло не измерено, зависит: L02, L04
+L06 🔄 работаем (Показать управление режимами и разрешениями в Herder) оценка 20–30 минут, прошло не измерено, зависит: L03, L05
 
-**Открыто:** аутентифицированный UI/browser readback нового frontend pin и TelegramAuto workspace filter; Codex mode не поддержан; MiniMax mode/delivery; Notice Place permission observer/response; idle MiniMax delivery; общий четырёх-harness consumer acceptance. Не считать ZCode canary или installed source доказательством этих веток.
-
-**Листья по порядку графа:**
-
-✅ L01 — Проверить нативные возможности и безопасные тестовые сессии.
-🔄 L18 — Исправить нулевые текстовые результаты поиска по каталогу.
-✅ L02 — Определить единый контракт режима и точного разрешения; зависит: L01.
-🔄 L03 — Подключить смену режима в четырёх адаптерах; зависит: L01.
-✅ L13 — Восстановить рабочие папки MiniMax в Herder; зависит: L01.
-⏳ L16 — Доставлять сообщение в idle MiniMax desktop без повтора; зависит: L01.
-✅ L17 — Исправить заголовки задач в Herder и проверить восемь сессий; зависит: L01.
-⏳ L04 — Собирать запросы и возвращать точный ответ в нативную среду; зависит: L03.
-✅ L14 — Проверить активность агента в TelegramAuto; зависит: L13.
-✅ L15 — Установить Full Access по умолчанию для новых ZCode-сессий; зависит: L03.
-⏳ L05 — Доставлять карточку с контекстом через Notice Place; зависит: L02, L04.
-⏳ L06 — Показать управление режимами и разрешениями в Herder; зависит: L03, L05.
-✅ L07 — Опубликовать и установить согласованный выпуск; зависит: L06, L14, L15, L17.
-✅ L08 — Проверить живой путь ZCode; зависит: L07.
-⏳ L09 — Проверить живой путь OpenCode; зависит: L08.
-⏳ L10 — Проверить живой путь Codex; зависит: L09.
-⏳ L11 — Проверить живой путь MiniMax Code; зависит: L10, L16.
-⏳ L12 — Закрыть полный цикл по пользовательскому результату; зависит: L11, L14, L16, L17.
-
-Слотов: 3; исходные оценки сохранены. Public plan содержит безопасные метаданные; private native IDs/receipts/transcripts не публикуются. Не повторять accepted/UNKNOWN.
+L22 ⏳ (Независимо проверить объединённые изменения), начнём после листов L20, L21, потому что Ждёт завершения source leaves L20 и L21., оценка 15–30 минут
+L04 ⏳ (Собирать запросы и возвращать точный ответ в нативную среду), начнём после листа L03, потому что Запускается после завершения L03., оценка 25–45 минут
+L23 ⏳ (Сверить WIP и синхронизировать проверенные изменения в main), начнём после листа L22, потому что Ждёт независимого review joined source diff., оценка 30–60 минут
+L24 ⏳ (Выпустить единый проверенный main и принять реальный результат), начнём после листа L23, потому что Ждёт завершения inventory/reconciliation и main sync., оценка 30–60 минут
+L09 ⏳ (Проверить живой путь OpenCode), начнём после листов L08, L19, потому что После L19: сначала установить объединённые исправления и доказать точную native query/readback; до этого новый OpenCode live canary не запускать., оценка 10–20 минут
+L10 ⏳ (Проверить живой путь Codex), начнём после листа L09, потому что После L09: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один., оценка 10–20 минут
+L11 ⏳ (Проверить живой путь MiniMax Code), начнём после листов L10, L16, потому что После L10: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один., оценка 10–20 минут
+L12 ⏳ (Закрыть полный цикл по пользовательскому результату), начнём после листов L11, L14, L16, L17, потому что Финальная проверка включает обязательное доказательство activity ветки MiniMax., оценка 15–25 минут

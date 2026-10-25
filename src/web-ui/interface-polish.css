@@ -185,3 +185,136 @@
 .work-target-ok { color: var(--accent); }
 .work-target-neutral { color: var(--muted); }
 .work-target-error { color: var(--status-error); }
+
+/* The header of the session is folded by default: one line with the machine
+   and the directory, a gear that opens every setting and a caret that unfolds
+   the details. The conversation keeps the height of the screen. */
+.work-target { flex: 0 0 auto; display: grid; gap: 0; padding: 0; border-bottom: 1px solid var(--border); background: var(--surface-1); }
+.work-target-bar { position: relative; display: flex; align-items: center; gap: var(--space-2); min-height: 38px; padding: 5px 14px 5px 22px; }
+.work-target-summary { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 8px; padding: 3px 6px; margin-left: -6px; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.work-target-summary:hover { background: var(--surface-hover); }
+.work-target-summary:hover .work-target-label { color: var(--text); }
+.work-target-caret-button { flex: 0 0 auto; display: grid; place-items: center; width: 28px; height: 28px; margin-left: -6px; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--muted); cursor: pointer; }
+.work-target-caret-button:hover, .work-target-caret-button:focus-visible { background: var(--surface-hover); color: var(--text); }
+.work-target-caret { width: 14px; height: 14px; transition: transform .12s ease; }
+.work-target-open .work-target-caret { transform: rotate(90deg); }
+.work-target-summary:hover { color: var(--text); }
+.work-target-summary:focus-visible, .work-target-caret-button:focus-visible, .work-target-settings:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.work-target-label { flex: 0 0 auto; color: var(--muted); font-size: var(--text-xs); letter-spacing: .08em; text-transform: uppercase; }
+.work-target-summary strong { flex: 0 0 auto; font-weight: 500; font-size: 13px; }
+.work-target-summary code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+.work-target-bar-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; }
+.work-target-settings { width: 26px; height: 26px; }
+.work-target-settings svg { width: 15px; height: 15px; }
+.work-target-details { display: grid; gap: 10px; padding: 12px 22px 14px; border-top: 1px solid var(--border); }
+.work-target-hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.work-target-convert { display: grid; gap: 8px; justify-items: start; padding-top: 4px; }
+.work-target-popover { position: absolute; top: calc(100% + 6px); right: 14px; z-index: 30; display: grid; gap: 9px; min-width: 230px; max-width: 320px; max-height: 70vh; overflow-y: auto; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-2); box-shadow: 0 12px 28px var(--shadow-menu); }
+.work-target-popover label { display: flex; align-items: center; gap: var(--space-2); color: var(--text); font-size: var(--text-sm); }
+.work-target-popover input { accent-color: var(--accent); }
+.work-target-popover .quiet-button { padding: 5px 0; text-align: left; }
+
+/* The list of chats can go away: the chat takes the whole width. */
+@media (min-width: 901px) {
+  .oc-app.no-sessions { grid-template-columns: 60px 0 minmax(0, 1fr); }
+  /* Колонка остаётся на месте: скрытая панель не сдвигает чат и инспектор
+     на соседние колонки сетки, а просто занимает ноль ширины. */
+  .oc-app.no-sessions .sessions-pane { overflow: hidden; min-width: 0; padding: 0; border-right: 0; }
+}
+@media (min-width: 1181px) {
+  .oc-app.no-sessions:not(.no-inspector) { grid-template-columns: 60px 0 minmax(0, 1fr) 320px; }
+  .oc-app.no-sessions.no-inspector { grid-template-columns: 60px 0 minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+  .chat-list-toggle { display: none; }
+}
+
+/* The folds of the inspector: the count first, the list on demand. */
+.inspector-fold { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
+.inspector-fold > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: var(--text-xs); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; list-style: none; }
+.inspector-fold > summary::-webkit-details-marker { display: none; }
+.inspector-fold > summary span { color: var(--text); font-size: var(--text-xs); }
+.inspector-facts-files { max-height: 220px; overflow-y: auto; margin: 8px 0 0; padding-left: 18px; }
+.inspector-facts-files li { color: var(--muted); font-size: var(--text-xs); overflow-wrap: anywhere; }
+.inspector-facts-subagents, .inspector-mcp-list { display: grid; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+.inspector-facts-subagents li, .inspector-mcp-list li { display: grid; gap: 1px; }
+.inspector-facts-subagents strong, .inspector-mcp-list strong { font-weight: 500; font-size: var(--text-sm); overflow-wrap: anywhere; }
+.inspector-facts-subagents small, .inspector-mcp-list small { color: var(--muted); font-size: var(--text-xs); }
+.inspector-mcp-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.inspector-timeline { display: grid; gap: 8px; max-height: 260px; overflow-y: auto; margin: 8px 0 0; padding: 0; list-style: none; }
+.inspector-timeline li { display: grid; gap: 1px; padding-left: 9px; border-left: 2px solid var(--border); }
+.inspector-timeline .timeline-time { color: var(--muted); font-size: 11px; }
+.inspector-timeline strong { font-weight: 500; font-size: var(--text-sm); }
+.inspector-timeline small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.inspector-timeline .timeline-kind-files { border-left-color: var(--accent); }
+.inspector-timeline .timeline-kind-git { border-left-color: #6ea8fe; }
+.inspector-timeline .timeline-kind-test { border-left-color: #7dd3a0; }
+.inspector-timeline .timeline-kind-error { border-left-color: var(--status-error); }
+
+/* Быстрые фильтры списка сессий: работают, ждут задачи, среда. */
+.session-quick-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.session-quick-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--muted); font-size: var(--text-xs); cursor: pointer; }
+.session-quick-chip:hover { background: var(--surface-hover); color: var(--text); }
+.session-quick-chip b { color: var(--text); font-weight: 600; }
+.session-quick-chip.pressed { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text); }
+.session-quick-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Запрос поиска должен быть виден: иначе после перезагрузки список выглядит сломанным. */
+.session-search-chip { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin: 8px 0 4px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-2); color: var(--muted); font-size: var(--text-xs); }
+.session-search-chip b { color: var(--text); font-weight: 500; overflow-wrap: anywhere; }
+.session-search-chip .quiet-button { padding: 2px 6px; }
+.sessions-active-filter { border: 0; background: transparent; color: var(--muted); font-size: var(--text-xs); text-align: left; cursor: pointer; }
+.sessions-active-filter:hover { color: var(--text); text-decoration: underline; }
+
+/* Инспектор-шторка: на узких экранах он перекрывает чат, поэтому чат под ним
+   не должен ловить клики, а на телефоне шапка остаётся поверх шторки. */
+@media (min-width: 901px) and (max-width: 1180px) {
+  .oc-app:not(.no-inspector) .chat-pane { pointer-events: none; }
+}
+@media (max-width: 900px) {
+  .inspector-pane { padding-top: 8px; }
+  .oc-app:not(.no-inspector) .chat-header { position: relative; z-index: 46; background: var(--surface-1); }
+}
+
+/* Текст инспектора не обрезается по правому краю. */
+.inspector-pane, .inspector-pane * { min-width: 0; }
+.inspector-pane p, .inspector-pane small, .inspector-pane dd, .inspector-pane label, .inspector-pane select { overflow-wrap: anywhere; }
+.inspector-pane select { max-width: 100%; width: 100%; }
+
+/* Меню чата не должно обрезаться низом окна и должно иметь видимую кнопку закрытия. */
+.chat-menu { max-height: min(70dvh, calc(100dvh - 80px)); overflow-y: auto; overscroll-behavior: contain; padding-bottom: 44px; }
+.chat-menu-close { position: sticky; top: -10px; float: right; margin: -4px -4px 0 0; width: 32px; height: 32px; border: 1px solid var(--border); border-radius: 50%; background: var(--surface-1); color: var(--text); font-size: 18px; line-height: 1; z-index: 2; }
+
+/* Шестерёнка настроек в шапке сессии не уезжает за правый край на телефоне. */
+@media (max-width: 560px) {
+  .work-target-bar { padding-inline: 8px; gap: 4px; }
+  .work-target-summary { min-width: 0; }
+  .work-target-summary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
+  .work-target-summary code { min-width: 0; flex: 1 1 auto; }
+  .work-target-label { display: none; }
+  .work-target-settings { width: 34px; height: 34px; flex: 0 0 34px; }
+}
+
+/* Счётчики в шапке списка не ломаются на четыре строки. */
+.sessions-heading { flex-wrap: wrap; row-gap: 2px; }
+.sessions-heading > div { min-width: 0; }
+.sessions-heading .directory-status { display: inline-block; max-width: 100%; padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sessions-heading > div > .directory-status { margin-right: 10px; }
+
+/* Настройки списка сессий скроллятся отдельно от самого списка. */
+.session-settings { max-height: min(46dvh, 420px); overflow-y: auto; overscroll-behavior: contain; }
+.session-cache-settings, .directory-status { max-height: 40dvh; overflow-y: auto; }
+
+/* Факты сессии (файлы, таймлайн, MCP) идут выше длинных текстов про квоту
+   и автопродолжение: порядок в разметке менять нельзя, поэтому работает order. */
+.inspector-pane { display: flex; flex-direction: column; }
+.inspector-pane > * { flex: 0 0 auto; }
+.inspector-heading { order: -2; }
+.inspector-facts { order: -1; }
+
+/* Шторка инспектора на узком экране: под ней — затемнение, чтобы было видно,
+   что чат позади, и чтобы шторку можно было закрыть щелчком по фону. */
+.inspector-scrim { display: none; }
+@media (min-width: 901px) and (max-width: 1180px) {
+  .inspector-scrim { display: block; position: fixed; inset: 0; z-index: 44; background: rgb(0 0 0 / 35%); }
+}

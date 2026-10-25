@@ -9,15 +9,16 @@
   ],
   "owner": "Исполнитель текущего чата",
   "depends_on": [
-    "L08"
+    "L08",
+    "L19"
   ],
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 20
   },
-  "updated_at": "2026-10-25T14:37:48+03:00",
+  "updated_at": "2026-10-25T17:44:47+03:00",
   "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной OpenCode fixture.",
-  "wait_reason": "После L08: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.",
+  "wait_reason": "После L19: сначала установить объединённые исправления и доказать точную native query/readback; до этого новый OpenCode live canary не запускать.",
   "progress_events": [
     {
       "at": "2026-10-25T14:37:48+03:00",
@@ -27,6 +28,25 @@
         "wait_reason": "После L08: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
       },
       "harness": "unknown"
+    },
+    {
+      "at": "2026-10-25T17:44:23+03:00",
+      "note": "Lead-confirmed evidence/status refresh; future consumer checks remain pending.",
+      "changes": {
+        "note": "OpenCode live consumer proof ещё не запускался на новом combined release. После L08 требуется L19 install и exact filtered native query/readback; status остаётся queued."
+      }
+    },
+    {
+      "at": "2026-10-25T17:44:47+03:00",
+      "note": "OpenCode consumer canary поставлена после combined install в L19.",
+      "changes": {
+        "depends_on": [
+          "L08",
+          "L19"
+        ],
+        "wait_reason": "После L19: сначала установить объединённые исправления и доказать точную native query/readback; до этого новый OpenCode live canary не запускать."
+      }
     }
-  ]
+  ],
+  "note": "OpenCode live consumer proof ещё не запускался на новом combined release. После L08 требуется L19 install и exact filtered native query/readback; status остаётся queued."
 }

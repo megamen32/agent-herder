@@ -1,0 +1,138 @@
+{
+  "schema_version": 2,
+  "title": "Восстановление управления Agent Herder",
+  "goal": "Пользователь видит четыре существующие ZCode-сессии, честные статусы, историю и квитанцию доставки в активный ход. Уточнение: проверить nginx sync и Notice Place. Очередь как в примере: компактное раскрытие, отмена и редактирование того же сообщения; однократное разрешение прямо на сайте.",
+  "business_result": "Herder478e22b установлен: четыре ZCode видны и честно ждут разрешения, история читается. Компактная очередь проверена реальным редактированием и отменой без доставки; кнопка Разрешить установлена с no-replay guard. Общая синхронизация nginx заблокирована чужим WIP и drift соседних сайтов.",
+  "business_results": [
+    "Herder478e22b установлен: четыре ZCode видны и честно ждут разрешения, история читается. Компактная очередь проверена реальным редактированием и отменой без доставки; кнопка Разрешить установлена с no-replay guard. Общая синхронизация nginx заблокирована чужим WIP и drift соседних сайтов."
+  ],
+  "current_progress": "",
+  "external_waits": "",
+  "slots": 1,
+  "updated_at": "2026-10-25T15:23:00+03:00",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "Установить готовое исправление и проверить управление четырьмя ZCode",
+      "status": "done",
+      "description": "Готовый фикс ремонтника интегрирован на актуальную линию; исправлены список, точечное чтение, свежесть и коллизия инвентаря; опубликован интерфейс.",
+      "acceptance": "Четыре exact ID видны; статусы и сообщения подтверждены нативно; активная доставка имеет admission и readback; inactive не пробуждается; runtime SHA проверен; приложен скриншот.",
+      "result": "Релиз9d2abbe, PID2065543, accept-node21/21. Все четыре needs_input и по три последних сообщения через MCP. Публичный UI pin9d2abbe; nginx source75cf1af2. Доставкаfinal-release-v3 admitted в текущий turn, сообщение прочитано из native history. Скриншоты четырёх сессий сохранены.",
+      "owner": "01a172c2-3daf-7190-82ef-639dea9dc8d2",
+      "session": "01a172c2-3daf-7190-82ef-639dea9dc8d2",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "note": "Нативные разрешения не подтверждались; бизнес-сессии не возобновлялись; новых исполнителей/контроллеров нет. Публичный SSO сохранён; браузерная приёмка того же приложения через loopback, публичный pin проверен отдельно.",
+      "estimate_over_limit_reason": "Один уже выполняемый ограниченный ремонт с общей установкой и приёмкой; не создавать новых исполнителей и конкурирующих выпусков.",
+      "origin": "",
+      "supersedes": [],
+      "affected_files": [
+        "src/adapters/zcode.ts",
+        "src/mesh/fleet-node.ts",
+        "src/types/common.ts",
+        "src/session-supervisor.ts",
+        "src/web-ui/main.tsx",
+        "tests/zcode-official-permission-read.test.ts",
+        ".agents/tasks/20261025-herder-repair-acceptance"
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 25.0,
+        "maximum": 45.0
+      },
+      "started_at": "2026-10-25T14:11:34+03:00",
+      "finished_at": "2026-10-25T14:49:20+03:00"
+    },
+    {
+      "id": "L02",
+      "label": "Сверить полную синхронизацию nginx и уведомление о её блокировке",
+      "status": "blocked",
+      "description": "Уточнение пользователя: после выпуска трёх строк проверить общую синхронизацию nginx и Notice Place. Наш vhost опубликован и применён; соседние сайты не присваивались.",
+      "acceptance": "Канонический Git синхронизирован с remote, managed live drift отсутствует; уведомление о реальном отказе видно в Notice Place.",
+      "result": "Только approved pin+его checksum опубликованы75cf1af2 и штатно применены кagent. NoticePlace inc_55aaf7978b0c40ae8cfa2c496e3dd447 открыт, не muted, реальные telegram.main sent подтверждены read-only mesh SELECT. Нового уведомителя не создавал.",
+      "owner": "01a172c2-3daf-7190-82ef-639dea9dc8d2",
+      "session": "01a172c2-3daf-7190-82ef-639dea9dc8d2",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "note": "Следующий минимальный шаг: владельцам перечисленных сайтов сверить их live/source и опубликовать собственные изменения; затем согласовать16локальных коммитов сremote. Не reset/stash/force и не полный nginx apply.",
+      "blocker": "Чужой WIP new.auto-gram.ru, lhc.bezrabotnyi.com и manifest; 16 локальных/537 удалённых коммита разошлись; 9 managed drift путей других сайтов. Нельзя автоматически выбрать источник и опубликовать чужую работу.",
+      "estimate_over_limit_reason": "Единая сверка Git, live drift и существующей доставки уведомления; пользователь запретил присваивать соседние сайты.",
+      "origin": "",
+      "supersedes": [],
+      "affected_files": [
+        "nginx-dev/state/files/sites-available/agent.bezrabotnyi.com",
+        "nginx-dev/state/manifest.json"
+      ],
+      "depends_on": [
+        "L01"
+      ],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 20.0
+      },
+      "started_at": "2026-10-25T14:39:00+03:00"
+    },
+    {
+      "id": "L03",
+      "label": "Сделать компактный запрос разрешения с кнопкой на сайте",
+      "status": "done",
+      "description": "Новое прямое поручение пользователя: одна минимальная строка над чатом, раскрываемые детали и реальное однократное Разрешить. UI этой сессии; native stale guard готовит уже действующий API-исполнитель.",
+      "acceptance": "В свёрнутом виде одна строка около30px; детали раскрываются кликом; Разрешить отвечает только текущему requestId без remember, double-click и UNKNOWN не повторяются; установленный UI проверен браузером без одобрения чужих бизнес-действий агентом.",
+      "result": "Установлен478e22b. Свёрнутая строка30px, детали раскрываются реальным кликом. Кнопка Разрешить отвечает exact requestId однократно без remember; guard stale/host/UNKNOWN проверен7регрессиями, UI2тестами. Бизнес-разрешений агентом0. Проверка браузером выполнена на loopback той же версии; публичный authenticated SSO недоступен.",
+      "owner": "01a172c2-3daf-7190-82ef-639dea9dc8d2",
+      "session": "01a172c2-3daf-7190-82ef-639dea9dc8d2",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "origin": "",
+      "supersedes": [],
+      "affected_files": [
+        "src/web-ui/main.tsx",
+        "src/web-ui/native-permission.tsx",
+        "src/web-ui/native-permission.css",
+        "tests/native-permission-ui.test.ts"
+      ],
+      "depends_on": [
+        "L01"
+      ],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 15.0
+      },
+      "started_at": "2026-10-25T14:51:00+03:00",
+      "finished_at": "2026-10-25T15:23:00+03:00"
+    },
+    {
+      "id": "L04",
+      "label": "Сделать компактную очередь с правкой существующего сообщения",
+      "status": "done",
+      "description": "Прямое уточнение пользователя: свёрнутая строка над полем чата, раскрытие слева, отмена и редактирование через то же поле. Сохранение меняет исходную запись очереди.",
+      "acceptance": "Реальный UI раскрывает полный текст, переносит его в поле, сохраняет при прежних inputId/jobId/createdAt и отменяет без native отправки. Начатые/UNKNOWN передачи не редактируются и не replay.",
+      "result": "Установлен478e22b. Реальный браузер: input329d1871-95ee-489e-a9db-67112ff300f8 отредактирован в том же job_cc18ca3f…, createdAt неизменён; отменён UI, сервер cancelled/notSubmitted, очередь пуста. 57focusedtests+tsc+buildGREEN;21/21runtimechecks.",
+      "owner": "01a172c2-3daf-7190-82ef-639dea9dc8d2",
+      "session": "01a172c2-3daf-7190-82ef-639dea9dc8d2",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "origin": "",
+      "supersedes": [],
+      "affected_files": [
+        "src/web-ui/composer-queue.tsx",
+        "src/web-ui/composer-queue.css",
+        "src/web-ui/main.tsx",
+        "src/user-message-delivery.ts",
+        "src/herder-jobs.ts",
+        "src/web/server.ts",
+        "tests/user-message-delivery.test.ts"
+      ],
+      "depends_on": [
+        "L01"
+      ],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 15.0
+      },
+      "started_at": "2026-10-25T15:00:00+03:00",
+      "finished_at": "2026-10-25T15:23:00+03:00"
+    }
+  ],
+  "leaf_count": 4
+}

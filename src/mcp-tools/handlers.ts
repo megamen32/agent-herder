@@ -33,12 +33,16 @@ import { realpath } from "node:fs/promises";
 import { auditWorktrees } from "../worktree-audit.js";
 import { BrowserWakeService } from "../browser-wake.js";
 import { deliveryBudgetFor } from "../coordination-delivery-budget.js";
+import type { UserMessageDelivery, UserMessageRoute } from "../user-message-delivery.js";
+import type { TrustedMeshIngress } from "../mesh/authenticated-ingress.js";
 import { coordinationNotes, normalizeHostId } from "../coordination-notes.js";
+import { withSessionLabelMeta } from "../session-labels.js";
 import { unwrapResult } from "../mesh/protocol.js";
 import type { GptAdminTransport } from "../mesh/gptadmin.js";
 import { fleetDirectTransport } from "../mesh/fleet-direct-transport.js";
 import { isCoordinationActive, sendCurrentTurnOnly, skippedCoordination, previousCoordinationReceipt } from "../coordination-active-delivery.js";
 import { deferredMessages, isBusyCodexWriter, withDeferred } from "../deferred-messages.js";
+import { respondToNativePermission } from "../permission-control/reply.js";
 import {
   buildTranscriptArchiveCard,
   transcriptArchiveFromEnvironment,
@@ -235,6 +239,7 @@ export interface ListAgentsResult {
 export async function listAgentsResult(
   adapters: Map<string, HarnessAdapter>,
   args: unknown,
+  options?: { discoveryTimeoutMs?: number },
 ): Promise<ListAgentsResult> {
   const parsed = ListAgentsSchema.parse(args);
   const discovered: AgentSession[] = [];
@@ -246,7 +251,7 @@ export async function listAgentsResult(
 
   const unavailable: Array<{harness: string; error: string}> = [];
   let discoveryLimited = false;
-  const discoveryTimeoutMs=meshDiscoveryTimeoutMs();
+  const discoveryTimeoutMs=options?.discoveryTimeoutMs??meshDiscoveryTimeoutMs();
   await Promise.all(targets.map(async adapter => {
     if (adapter.lazyStart && !adapter.lazyDiscovery && adapter.isReady && !adapter.isReady()) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -272,9 +277,11 @@ export async function listAgentsResult(
     const declared = declaredPlaces.get(session.id);
     const activeCwd = declared?.cwd;
     const hostId = declared?.hostId ?? session.hostId ?? hostname();
-    return activeCwd
+    const projected = activeCwd
       ? {...session, cwd:activeCwd, hostId, meta:{...session.meta,launchCwd:session.meta?.launchCwd??session.cwd,activeCwd,workspaceHostId:hostId,workspaceExpiresAt:declared?.expiresAt,projectSource:declared?.source??"coordination_activity"}}
       : {...session, hostId};
+    // The stored project, goal and stage travel with the session metadata.
+    return withSessionLabelMeta(projected);
   });
 
   // Filter by status
@@ -395,7 +402,7 @@ export async function agentInfoResult(adapters: Map<string, HarnessAdapter>, arg
   const parsed = AgentInfoSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   const session = found ? await found.adapter.getSession(found.session.id, {includeMetrics:true}) : null;
-  return session ? withSessionHost(session) : null;
+  return session ? withSessionLabelMeta(withSessionHost(session)) : null;
 }
 
 export async function handleAgentInfo(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
@@ -490,15 +497,15 @@ export async function handleExportTranscript(
   }
 }
 
-export async function handleSendMessage(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
+export async function handleSendMessage(adapters: Map<string, HarnessAdapter>, args: unknown, userMessageDelivery?: UserMessageDelivery, trustedIngress?: TrustedMeshIngress, onTargetResolved?: (session: AgentSession) => void): Promise<string> {
   const parsed = SendMessageSchema.parse(args);
   if (parsed.meshSender && parsed.humanRequested) throw new Error("Automatic mesh sender cannot claim humanRequested");
-  if (parsed.humanRequested) return sendMessageOnce(adapters, parsed);
+  if (parsed.humanRequested) return sendMessageOnce(adapters, parsed, userMessageDelivery, trustedIngress, onTargetResolved);
   return deliveryBudgetFor(adapters).run({
     target: `${parsed.harness || "auto"}:${parsed.sessionId}`,
     sender: parsed.meshSender ? `mesh:${JSON.stringify([parsed.meshSender.hostId,parsed.meshSender.harness,parsed.meshSender.nativeSessionId])}` : `${parsed.fromHarness || "auto"}:${parsed.fromSessionId || "unknown"}`,
     inputId: parsed.inputId, message: parsed.message,
-  }, () => sendMessageOnce(adapters, parsed));
+  }, () => sendMessageOnce(adapters, parsed, userMessageDelivery, trustedIngress, onTargetResolved));
 }
 
 export async function handleReadMessage(args: unknown): Promise<string> {
@@ -515,11 +522,19 @@ export async function handleSaveMessageToFile(args: unknown): Promise<{ path: st
 
 async function sendMessageOnce(
   adapters: Map<string, HarnessAdapter>,
-  args: unknown
+  args: unknown,
+  userMessageDelivery?: UserMessageDelivery,
+  trustedIngress?: TrustedMeshIngress,
+  onTargetResolved?: (session: AgentSession) => void,
 ): Promise<string> {
   const parsed = SendMessageSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return `Session '${parsed.sessionId}' not found.`;
+  onTargetResolved?.(found.session);
+  parsed.inputId ??= createHash("sha256").update(JSON.stringify({
+    hostId: found.session.hostId ?? "unknown", harness: found.session.harness, sessionId: found.session.id,
+    mode: parsed.mode, message: parsed.message, humanRequested: parsed.humanRequested === true,
+  })).digest("hex");
   if (!parsed.humanRequested) {
     // The owner-level automation lever: this tool delivers straight to the
     // native adapter, so the lever is checked here too. A run a person
@@ -534,30 +549,74 @@ async function sendMessageOnce(
     if (prior) return prior;
   }
   if (await automaticDeliveryHeld(found.session, parsed.humanRequested, found.adapter)) return HUMAN_STOP_MESSAGE;
-  if (!parsed.humanRequested && !isCoordinationActive(found.session)) return skippedCoordination(found.session);
+  if (parsed.humanRequested && found.session.harness === "minimax-code" && parsed.mode !== "queue") {
+    if (!userMessageDelivery || !found.session.hostId) {
+      return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: "MiniMax Herder execution policy could not be checked; message was not sent." });
+    }
+    let policy;
+    try {
+      policy = await userMessageDelivery.getMinimaxExecPolicy({ hostId: found.session.hostId, harness: "minimax-code", sessionId: parsed.sessionId });
+    } catch {
+      return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: "MiniMax Herder execution policy is unavailable; message was not sent." });
+    }
+    if (policy.mode !== "unset") {
+      return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false,
+        error: "The configured MiniMax policy applies only to queued exact-session CLI fallback; steer/sync was not sent." });
+    }
+  }
+  if (!parsed.humanRequested && parsed.mode === "steer" && !isCoordinationActive(found.session)) return skippedCoordination(found.session);
 
   const provenanceHeader = parsed.humanRequested
     ? "Поручение пользователя, переданное агентом" + (parsed.fromSessionId ? `\n${await buildMessageProvenanceHeader(adapters, parsed, found.session)}` : "")
     : parsed.meshSender
     ? `🤖 ${parsed.meshSender.harness}@${parsed.meshSender.hostId} ${parsed.meshSender.nativeSessionId}`
     : await buildMessageProvenanceHeader(adapters, parsed, found.session);
-  const deliveredBody = parsed.humanRequested ? parsed.message : await compactAutomaticMessage(parsed.message);
+  const deliveredBody = parsed.message;
   const baseMessage = `${provenanceHeader}\n\n${deliveredBody}`;
   const pending = await withDeferred(parsed.sessionId, baseMessage);
   const injected = await coordinationNotes.inject(found.session, pending.message);
-  const injectedMessage = parsed.humanRequested ? injected : await compactAutomaticMessage(injected, 1200, parsed.message);
+  const injectedMessage = parsed.humanRequested ? injected : await compactAutomaticMessage(injected, parsed.message);
   if (await automaticDeliveryHeld(found.session, false, found.adapter)) return HUMAN_STOP_MESSAGE;
-  const options = {
-    origin: parsed.humanRequested ? "human" as const : "automation" as const,
-    inputId: parsed.inputId ?? (parsed.humanRequested ? undefined : createHash("sha256").update(baseMessage).digest("hex")),
-    message: injectedMessage,
-    retainedInboxIds:pending.ids,
-    queue: parsed.mode === "queue",
-    steer: parsed.mode === "steer",
-  };
-  const result = parsed.humanRequested
-    ? await found.adapter.sendMessage(parsed.sessionId, options)
-    : await sendCurrentTurnOnly(found.adapter, parsed.sessionId, options);
+  let result;
+  if (parsed.humanRequested && found.session.harness === "minimax-code" && parsed.mode === "queue") {
+    if (!userMessageDelivery) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, inputId: parsed.inputId, error: "Durable human delivery queue is unavailable" });
+    const route: UserMessageRoute = {
+      adapter: found.adapter,
+      supervisor: { sendMessage: (_harness, sessionId, sendOptions) => found.adapter.sendMessage(sessionId, sendOptions) },
+    };
+    const receipt = await userMessageDelivery.submitMinimaxExecPolicy({ harness: found.session.harness, sessionId: parsed.sessionId, inputId: parsed.inputId, message: injectedMessage, mode: "queue" }, route);
+    if (receipt.delivery === "deferred" && receipt.job) {
+      return JSON.stringify({ ok: true, delivery: "durable_pending", nativeAdmission: "pending", inputId: parsed.inputId, jobId: receipt.job.id, jobState: receipt.job.state });
+    }
+    result = receipt;
+  } else {
+    if (!userMessageDelivery) return JSON.stringify({ ok: false, delivery: "not_attempted", inputId: parsed.inputId,
+      nonRetryable: true, error: "Shared durable message delivery is unavailable; message was not sent." });
+    const route: UserMessageRoute = {
+      adapter: found.adapter,
+      supervisor: { sendMessage: (_harness, sessionId, sendOptions) => parsed.humanRequested
+        ? found.adapter.sendMessage(sessionId, sendOptions)
+        : parsed.mode === "steer"
+          ? sendCurrentTurnOnly(found.adapter, sessionId, sendOptions)
+          : found.adapter.sendMessage(sessionId, sendOptions) },
+    };
+    const deliveryInput = { harness: found.session.harness, sessionId: parsed.sessionId, inputId: parsed.inputId,
+      message: injectedMessage, mode: parsed.mode };
+    try {
+      result = parsed.humanRequested
+        ? found.session.harness === "minimax-code"
+          ? await userMessageDelivery.submitMinimaxExecPolicy(deliveryInput, route)
+          : userMessageDelivery.submit(deliveryInput, route)
+        : await userMessageDelivery.submitAgent(deliveryInput, {
+          hostId: parsed.meshSender?.hostId ?? hostname(),
+          harness: parsed.meshSender?.harness ?? parsed.fromHarness ?? "unknown",
+          nativeSessionId: parsed.meshSender?.nativeSessionId ?? parsed.fromSessionId ?? "unknown",
+        }, trustedIngress, route);
+    } catch (error) {
+      return JSON.stringify({ ok: false, delivery: "not_attempted", inputId: parsed.inputId, nonRetryable: true,
+        error: error instanceof Error ? error.message : String(error) });
+    }
+  }
   if (result.notSubmitted) return result.error?.startsWith('skipped_inactive') ? skippedCoordination(found.session)
     : JSON.stringify({ok:false,delivery:'not_attempted',activated:false,error:result.error});
 
@@ -620,7 +679,7 @@ export async function handleDeliver(adapters: Map<string, HarnessAdapter>, args:
 
 async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
   const parsed = DeliverSchema.parse(args);
-  const deliveredMessage = await compactAutomaticMessage(parsed.message);
+  const deliveredMessage = parsed.message;
   if (parsed.sessionId) {
     const found = await findSession(adapters, parsed.sessionId, parsed.harness);
     if (!found) return JSON.stringify({ ok:false, delivery:"not_found", activated:false, error:`Session '${parsed.sessionId}' not found.` });
@@ -632,11 +691,11 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
     if (await automaticDeliveryHeld(fresh, false, found.adapter)) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: HUMAN_STOP_MESSAGE });
     if (activation === "if_running" && !isCoordinationActive(fresh)) return skippedCoordination(fresh);
     if (activation === "defer" && parsed.model && parsed.model !== fresh.model) return JSON.stringify({ok:false,sessionId:fresh.id,delivery:"not_attempted",activated:false,error:"A deferred message cannot preserve a model override; select it explicitly at delivery time"});
-    if (activation === "defer" && fresh.status !== "running") { await deferredMessages.add(fresh.id, deliveredMessage); return JSON.stringify({ ok:true, sessionId:fresh.id, harness:fresh.harness, sessionStatus:fresh.status, delivery:"deferred", activated:false }); }
+    if (activation === "defer" && fresh.status !== "running") { await deferredMessages.add(fresh.id, await compactAutomaticMessage(deliveredMessage)); return JSON.stringify({ ok:true, sessionId:fresh.id, harness:fresh.harness, sessionStatus:fresh.status, delivery:"deferred", activated:false }); }
     const modelError = await selectDeliveryModel(found.adapter,fresh,parsed.model);
     if (modelError) return JSON.stringify({ok:false,sessionId:fresh.id,delivery:"not_attempted",activated:false,error:modelError});
     const pending = await withDeferred(fresh.id, deliveredMessage);
-    const injected = await compactAutomaticMessage(await coordinationNotes.inject(fresh, pending.message), 1200, parsed.message);
+    const injected = await compactAutomaticMessage(await coordinationNotes.inject(fresh, pending.message), parsed.message);
     if (await automaticDeliveryHeld(fresh, false, found.adapter)) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: HUMAN_STOP_MESSAGE });
     const options = {message:injected,model:parsed.model,retainedInboxIds:pending.ids,queue:parsed.mode==="queue",inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),origin:"automation" as const};
     const sent = activation === 'if_running' ? await sendCurrentTurnOnly(found.adapter,fresh.id,options) : await found.adapter.sendMessage(fresh.id,options);
@@ -650,7 +709,7 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
       return JSON.stringify({ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"accepted_failed",activated:false,admitted:true,nonRetryable:true,error:sent.error||"Native turn failed after prompt admission"});
     }
     if (activation !== 'if_running' && !sent.ok && !sent.nonRetryable && isBusyCodexWriter(fresh.harness, sent.error)) {
-      await deferredMessages.add(fresh.id, deliveredMessage);
+      await deferredMessages.add(fresh.id, await compactAutomaticMessage(deliveredMessage));
       return JSON.stringify({ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"deferred",activated:false});
     }
     const receipt = {
@@ -667,7 +726,7 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
         : {ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:parsed.mode==="queue"?"accepted":"completed",activated:activation !== 'if_running'}
       : {ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"failed",activated:false,...(sent.nonRetryable?{nonRetryable:true}:{}),error:sent.error||"Message delivery failed"})});
   }
-  return JSON.stringify(await deliverNamedSession(adapters,{harness:parsed.harness!,name:parsed.name!,cwd:parsed.cwd!,message:deliveredMessage,inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),create:parsed.create,activation:parsed.activation,mode:parsed.mode,model:parsed.model,sourceSessionId:parsed.sourceSessionId,sourceHarness:parsed.sourceHarness,sourceSessions:parsed.sourceSessions}));
+  return JSON.stringify(await deliverNamedSession(adapters,{harness:parsed.harness!,name:parsed.name!,cwd:parsed.cwd!,message:await compactAutomaticMessage(deliveredMessage),inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),create:parsed.create,activation:parsed.activation,mode:parsed.mode,model:parsed.model,sourceSessionId:parsed.sourceSessionId,sourceHarness:parsed.sourceHarness,sourceSessions:parsed.sourceSessions}));
 }
 
 export async function handleStopAgent(
@@ -737,11 +796,14 @@ export async function handleRespondPermission(
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return `Session '${parsed.sessionId}' not found.`;
 
-  const result = await found.adapter.respondPermission(
+  const result = await respondToNativePermission(
+    found.adapter,
+    found.session.harness,
     parsed.sessionId,
     parsed.permissionId,
     parsed.response,
-    parsed.remember
+    parsed.remember,
+    found.session.hostId,
   );
 
   if (result.ok) {

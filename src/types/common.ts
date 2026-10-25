@@ -136,6 +136,20 @@ export interface ControlResult extends SendMessageResult {
   sessionId?: string;
 }
 
+/**
+ * The receipt of one in-place rename.
+ *
+ * The previous title and the new title are the native ones: the adapter reads
+ * the title back from the harness itself, so the receipt proves what the
+ * harness really shows instead of what was requested.
+ */
+export interface SessionRenameOutcome extends ControlResult {
+  /** The native title before the rename; null when the session had none. */
+  previousTitle?: string | null;
+  /** The native title after the rename, as the native readback returned it. */
+  title?: string;
+}
+
 export interface CompactSessionOptions {
   inputId: string;
   expectedUserMessageId?: string;
@@ -224,6 +238,11 @@ export interface SendMessageOptions {
   steer?: boolean;
   /** Stable native operation identity for crash-safe delivery reconciliation. */
   inputId?: string;
+  /**
+   * A persisted UserMessageDelivery job, created before a native CLI dispatch.
+   * The MiniMax idle-session CLI route is unavailable without this write-ahead claim.
+   */
+  durableUserDelivery?: { jobId: string; inputId: string; requestFingerprint: string; harness: string; sessionId: string; targetHostId?: string; mode: "queue" | "steer" | "sync"; actor: { kind: "human" } | { kind: "agent"; principal: "agent-herder-owner-mcp"; senderAssertion: { hostId: string; harness: string; nativeSessionId: string }; senderVerified: false }; minimaxExecPolicy?: { mode: "unset" | "smart" | "full" | "off"; revision: number }; nonce: string; signature: string };
 }
 
 export interface MessageImage { id: string; path: string; fileName: string; mimeType: string; bytes: number }
@@ -246,7 +265,7 @@ export interface CreateSessionOptions {
   cwd: string;
   /** Optional model selected when creating the session. */
   model?: string;
-  /** Enable full native tool access for explicitly unattended, Agent Herder-created sessions. */
+  /** Enable full native tool access; defaults to true without a mode selection. Use false or a conservative mode for an explicit restriction. */
   fullAccess?: boolean;
   /** Optional native session mode for harnesses that distinguish modes from permissions. */
   mode?: string;
@@ -264,6 +283,27 @@ export interface SetPermissionsOptions {
   allowedTools?: string;
   /** Permission mode: "default" | "plan" | "autoEdit" | "fullAuto" */
   mode?: string;
+}
+
+/** Fresh native permission state for one selected harness session. */
+export interface HarnessPermissionState {
+  target: { hostId: string; harness: HarnessType; sessionId: string };
+  currentMode?: string;
+  scope: "session" | "workspace" | "runtime";
+  supportedModes?: string[];
+  canSetMode: boolean;
+  pendingRequests: Array<{
+    id: string;
+    turnId?: string;
+    itemId?: string;
+    toolName?: string;
+    command?: string;
+    reason?: string;
+    canRespond?: boolean;
+    unsupportedReason?: string;
+    nativeMethod?: string;
+  }>;
+  observedAt: string;
 }
 
 /** Raw adapter-owned transcript material for archival, never a display summary. */
@@ -330,8 +370,24 @@ export interface HarnessAdapter {
   /** Get detailed info about a specific session */
   getSession(id: string, options?: { includeMetrics?: boolean }): Promise<AgentSession | null>;
 
+  /** Exact native workspace projection, when the harness owns a stronger read than its generic cwd. */
+  getNativeWorkspaceDirectory?(id: string): Promise<{ hostId: string; harness: string; sessionId: string; cwd: string } | null>;
+
+  /** Read exact native permission state without starting or resuming a session. */
+  getPermissionState?(sessionId: string): Promise<HarnessPermissionState | null>;
+
   /** Create a new named native session when supported by the harness. */
   createSession?(options: CreateSessionOptions): Promise<AgentSession>;
+
+  /**
+   * Rename one existing native session in place.
+   *
+   * The native title of the same session changes. No session is created, no
+   * model turn is started and no active turn is interrupted: a harness that
+   * has no native rename channel does not implement this method at all, so an
+   * unsupported rename is never reported as a success.
+   */
+  renameSession?(id: string, options: { title: string }): Promise<SessionRenameOutcome>;
 
   /** Find the native parent session, when the transport exposes lineage. */
   getParent?(id: string): Promise<AgentSession | null>;

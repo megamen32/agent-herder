@@ -9,6 +9,7 @@ import {
   recordsOf,
   rollbackSetting,
   saveSettings,
+  touchesCommonSettings,
   type SettingsAuditRecord,
   type SettingsChanges,
   type SettingsRecord,
@@ -16,6 +17,7 @@ import {
 } from "./settings-client.js";
 import { StopControl } from "./stop-control.js";
 import { HooksSection } from "../hooks-section.js";
+import { HooksRuntimeSwitch } from "../hooks-runtime-switch.js";
 import { ConnectionsSection } from "./connections-section.js";
 import { RuntimeSection } from "./runtime-section.js";
 import { ProjectsSection } from "./projects-section.js";
@@ -31,12 +33,14 @@ import "./settings.css";
  * way back. A secret is never shown: the owner types it once and the screen
  * keeps only the fact that it is set and its fingerprint.
  *
- * The screen is split into two tabs: the settings of the herder and the
- * models of the projects. The second tab is the screen of the Projects
+ * The first tab is «Настройки»: every setting of the product is in one
+ * place, and the general switch of the optional hooks of the herder comes
+ * first, because it is the switch that decides whether the herder gets in the
+ * way of the work at all. The second tab is the screen of the Projects
  * contour; the herder does not touch it, it only gives it a place.
  */
 
-export type SettingsTab = "herder" | "projects" | "hooks";
+export type SettingsTab = "settings" | "projects" | "hooks";
 
 /**
  * The one line that says how the state of a setting is in effect.
@@ -94,11 +98,11 @@ export function SettingsScreen({
           <button
             type="button"
             role="tab"
-            aria-selected={tab === "herder"}
-            className={tab === "herder" ? "herder-settings-tab herder-settings-tab-active" : "herder-settings-tab"}
-            onClick={() => onTabChange("herder")}
+            aria-selected={tab === "settings"}
+            className={tab === "settings" ? "herder-settings-tab herder-settings-tab-active" : "herder-settings-tab"}
+            onClick={() => onTabChange("settings")}
           >
-            Настройки herder
+            Настройки
           </button>
           <button
             type="button"
@@ -121,7 +125,7 @@ export function SettingsScreen({
         </div>
       </header>
       <div className="herder-settings-panel" role="tabpanel">
-        {tab === "herder"
+        {tab === "settings"
           ? <HerderSettings onOpenLaunchSettings={onOpenLaunchSettings} />
           : tab === "projects"
             ? <ProjectsSettings onOpenLaunchSettings={onOpenLaunchSettings} />
@@ -141,6 +145,10 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [difference, setDifference] = React.useState<string | null>(null);
+  // The round of the delivery of the common settings: it changes when the
+  // owner changes a common setting, and the section of the common settings
+  // asks the fleet to take the new document and shows who applied it.
+  const [delivery, setDelivery] = React.useState(0);
 
   const reload = React.useCallback(async () => {
     try {
@@ -185,7 +193,14 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
     // The value of a secret leaves the form with the answer: it is never
     // kept in the state of the screen.
     setSecretDrafts({});
-    setNotice("Записано.");
+    // A common setting changed: the fleet is asked to take the new document
+    // and the answer of the nodes is the confirmation of the delivery. The
+    // panel never says "применено" on its own.
+    const common = touchesCommonSettings(view, ids);
+    setNotice(common
+      ? "Записано. Доставка общих настроек на узлы — в блоке «Общие настройки флота»."
+      : "Записано.");
+    if (common) setDelivery((value) => value + 1);
     await reload();
   };
 
@@ -240,14 +255,22 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
 
   if (!view) {
     return (
-      <div className="herder-settings-block">
-        {error ? <p className="herder-settings-error" role="alert">{error}</p> : <p className="herder-settings-hint">Читаю настройки…</p>}
+      <div className="herder-settings-content">
+        {/* The general switch of the hooks comes first: it decides whether the
+            herder gets in the way of the work at all. */}
+        <HooksRuntimeSwitch />
+        <div className="herder-settings-block">
+          {error ? <p className="herder-settings-error" role="alert">{error}</p> : <p className="herder-settings-hint">Читаю настройки…</p>}
+        </div>
       </div>
     );
   }
 
   return (
     <div className="herder-settings-content">
+      {/* The general switch of the hooks comes first: it decides whether the
+          herder gets in the way of the work at all. */}
+      <HooksRuntimeSwitch />
       {error ? <p className="herder-settings-error" role="alert">{error}</p> : null}
       {difference ? <p className="herder-settings-notice" role="status">Разница: {difference}</p> : null}
       {notice ? <p className="herder-settings-notice" role="status">{notice}</p> : null}
@@ -425,7 +448,7 @@ export function HerderSettings({ onOpenLaunchSettings }: { onOpenLaunchSettings:
       <ConnectionsSection />
       <StopControl />
 
-      <CommonSettingsSection />
+      <CommonSettingsSection delivery={delivery} />
 
       <FleetConfirmation />
 

@@ -1,12 +1,17 @@
 import {startActiveFleetInventoryOwner} from '../active-session-fleet.js';
 import {startActiveInventoryOwner} from "../active-session-inventory.js";
 import {listActiveSessions} from "../mcp/active-session-tools.js";
+import {readMinimaxThreadGoals} from "../adapters/minimax-code-thread-goals.js";
+import {orderSessionListForPanel} from "../session-listing.js";
 import type { BackgroundAutopilotStop } from "../autopilot/background-stop.js";
 import type { AutopilotRunnerInput } from "../autopilot-runner.js";
 import { projectSessionInventory } from "./session-inventory.js";
+import { isRestrictedProjectPath } from "../web-ui/model-status.js";
 import { SessionImageStore } from "../session-images.js";
 import { homedir, hostname, userInfo } from "node:os";
 import { UserMessageDelivery, type UserMessageRoute } from "../user-message-delivery.js";
+import { MinimaxExecPolicyConflict, isMinimaxExecPolicyMode } from "../permission-control/minimax-exec-policy.js";
+import { TRUSTED_MESH_MCP_CLIENT_ID, TRUSTED_MESH_MCP_SCOPE } from "../mesh/authenticated-ingress.js";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { execFile } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
@@ -26,6 +31,11 @@ import { buildSessionProgress } from "../health-progress.js";
 import { buildIntegratorProgress } from "../integrator-progress.js";
 import { deliverStaleRunningQuestion } from "../human-request/notice-question.js";
 import { loadAskHumanProducer, type AskHumanProducer } from "../human-request/ask-human-producer.js";
+import { hasPermissionReplyContextRef, parsePermissionReplyContextRef, readCanonicalNoticePermissionAnswer } from "../permission-control/notice-bridge.js";
+import { respondToNativePermission } from "../permission-control/reply.js";
+import { sessionInspectFacts, type SessionInspectFacts } from "../session-visualization.js";
+// РЕШЕНО 24.10.2026 слиянием (лист L19): его WIP добавил `reportStaleRunningSession` (устаревшая сессия -> ровно один вопрос оператору) и импорты `buildIntegratorProgress` / `deliverStaleRunningQuestion` / `loadAskHumanProducer` / `lifecycleEntryFor` — всё это сохранено автослиянием без конфликта; спорный хунк — только импорт нашего инспектора сессии `sessionInspectFacts` (L68), он нужен инспектору.
+  // ORCHESTRATOR-CONFLICT: src/web/server.ts:27 — его три импорта (buildIntegratorProgress/deliverStaleRunningQuestion/loadAskHumanProducer) сохранены; добавлен наш sessionInspectFacts (инспектор сессии).
 import { NoticeplaceHealthObserver } from "../automation/noticeplace-health-observer.js";
 import { appendHealthRefusalAudit, healthRefusalAuditPath, type HealthReasonRefusal } from "../automation/health-reason-codes.js";
 import { NOTICEPLACE_HEALTH_MODELS, resolveLaunchHealthPlan } from "../automation/noticeplace-health-policy.js";
@@ -58,6 +68,15 @@ import {
 } from "../automation-disarm/index.js";
 import { DirectFleetDisarmTransport } from "../automation-disarm/direct-transport.js";
 import { AUTOMATION_CANNOT_CHANGE_PROHIBITIONS_REASON, HOOK_KINDS, HooksService, isHookKind, type HookKind } from "../hooks/index.js";
+import {
+  hooksReading,
+  prohibitionsReading,
+  quotaPolicyReading,
+  readNetworkPauseReading,
+  readSeparatedStateView,
+  sessionStopReading,
+  sessionStopUnknown,
+} from "../hooks/state-separation-read.js";
 import type { FleetDisarmNodeResult, FleetDisarmTransport } from "../automation-disarm/service.js";
 import type { AutomationDisarmDocument } from "../automation-disarm/state.js";
 import { renderSessionGraph } from "../session-visualization.js";
@@ -69,9 +88,16 @@ import { createMcpHandler, type McpServer } from "@modelcontextprotocol/server";
 import { createHash } from "node:crypto";
 import { toNodeHandler, type NodeMcpRequestHandler } from "@modelcontextprotocol/node";
 import type { AdapterRegistry } from "../adapter-registry.js";
+import {
+  composeSessionTitle,
+  mergeSessionLabel,
+  readSessionLabel,
+  writeSessionLabel,
+  SESSION_LABEL_LIMITS,
+} from "../session-labels.js";
 import { publishHealthRefusal, type HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
-import { checkCodexQuota, saveCodexQuotaPolicy } from "../codex-quota-guard.js";
+import { checkCodexQuota, loadCodexQuotaPolicy, saveCodexQuotaPolicy } from "../codex-quota-guard.js";
 import { handleQuotaLensRequest } from "./quota-lens.js";
 import { createSettingsApi } from "./settings-api.js";
 import { SettingsStore } from "./settings-store.js";
@@ -91,6 +117,8 @@ import { deferredMessages, renderDeferredMessages } from "../deferred-messages.j
 import { agentHerderRag } from "../rag-search.js";
 import {startSessionSearchBackground} from '../session-search-worker.js';
 import { handleIntegratorSessionTranscript } from "../integrator-session-route.js";
+import { COMPOSER_TRANSCRIPTION_PATH, ComposerTranscriptionError, readComposerAudioUpload, transcribeComposerAudio, type ComposerTranscriber } from "./composer-transcription.js";
+import type {SessionQueueControlGateway} from "../session-queue-control-gateway.js";
 
 /** How many skipped sessions of one recovery are named in the operator's log. */
 const MAX_LOGGED_SKIP_REASONS = 50;
@@ -102,13 +130,15 @@ export interface WebDependencies {
   lineageStore?: LineageStore;
   humanRequests?: HumanRequestRegistry;
   adapterRegistry?: AdapterRegistry;
-  mcpServerFactory?: () => McpServer;
+  mcpServerFactory?: (context?: { authInfo?: unknown }) => McpServer;
   mcpAuthToken?: string;
   herderEvents?: HerderEventBus;
   choiceRegistry?: ChoiceRegistry;
   choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   /** Canonical human-answer resume shared with the native MCP resolve surface. */
   humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
+  /** Canonical Notice answer reader transport; injectable only for isolated tests. */
+  noticeAnswerFetch?: typeof fetch;
   /** Ordered per-project harness routes with their durable attempt log. */
   projectLaunchDispatch?: ProjectLaunchDispatcher;
   choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
@@ -133,6 +163,10 @@ export interface WebDependencies {
   sessionVisualizer?: (details: SessionDetails) => Promise<string>;
   sessionObservationIntervalMs?: number;
   jobs?: HerderJobRegistry;
+  /** Reuse the process-owned canonical delivery core across HTTP and MCP ingress. */
+  userMessageDelivery?: UserMessageDelivery;
+  /** Reuse the same native-owner queue control as MCP. */
+  sessionQueueControl?: SessionQueueControlGateway;
   /** Reuse the process-owned supervisor when the daemon starts observation before HTTP. */
   supervisor?: SessionSupervisor;
   /** Resolve exact H34-bound native addresses before owner-HTTP session access. */
@@ -148,6 +182,8 @@ export interface WebDependencies {
   /** Optional profile-scoped fleet API; its handler authenticates each request. */
   fleetHttpGuard?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
   fleetApiHandler?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
+  /** Isolated route seam for contract tests; production uses the fixed Whisper consumer. */
+  composerTranscriber?: ComposerTranscriber;
 }
 
 export type AutopilotSweepOutcome = {
@@ -714,7 +750,7 @@ async function freshModelCatalog(supervisor: SessionSupervisor, harness: string,
 
 let healthQuotaPreflight: ReturnType<typeof createMiniMaxQuotaPreflight> | undefined;
 
-/** The MiniMax subscription quota check of one health launch. */
+/** The MiniMax route quota check of one health launch. */
 function noticeplaceHealthQuotaPreflight(): ReturnType<typeof createMiniMaxQuotaPreflight> {
   healthQuotaPreflight ??= createMiniMaxQuotaPreflight({ token: process.env.MINIMAX_API_KEY });
   return healthQuotaPreflight;
@@ -763,6 +799,19 @@ async function currentLaunchPolicyRevision(
  * and a request without a window keeps the whole list as before.
  */
 const MAX_SESSION_LIST_WINDOW = 500;
+
+/**
+ * The window of the list that a caller receives when it names none.
+ *
+ * The server bounds the answer of the list, not only the panel: an old
+ * panel, a tool of the mesh or a proxy that asks for the whole list used to
+ * receive megabytes of the history and to fill the route of the panel with
+ * them. The screens of the panel then waited for the history of another
+ * screen. The answer stays a window, and the counter of the whole list
+ * travels with it, so a caller that counts the sessions of the mesh still
+ * counts them all.
+ */
+const DEFAULT_SESSION_LIST_WINDOW = 100;
 
 /**
  * The budget of the answer of the list, in bytes.
@@ -848,7 +897,8 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const mcpAuthToken = dependencies.mcpAuthToken?.trim() || undefined;
   const selectedResume = dependencies.choiceResume ?? ((request: ResumeTransportRequest) => resumeSelectedTarget(request, supervisor, "automation"));
   const manualChoiceResume = dependencies.choiceResume ?? ((request: ResumeTransportRequest) => resumeSelectedTarget(request, supervisor, "human"));
-  const userMessageDelivery = dependencies.jobs ? new UserMessageDelivery(dependencies.adapters, supervisor, dependencies.jobs) : undefined;
+  const ownsUserMessageDelivery=!dependencies.userMessageDelivery;
+  const userMessageDelivery = dependencies.userMessageDelivery ?? (dependencies.jobs ? new UserMessageDelivery(dependencies.adapters, supervisor, dependencies.jobs) : undefined);
   const sessionImages = dependencies.sessionImageStore ?? new SessionImageStore(join(homedir(), ".local/state/agent-herder/session-images"));
   const rag = agentHerderRag();
   const stopActiveFleetInventory = process.env.VITEST ? undefined : startActiveFleetInventoryOwner();
@@ -1033,7 +1083,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
       // checks the owner of the request itself.
       if (await settingsApi(request, response)) return;
       if (await rag.handleHttp(request, response, async (harness, id) => (await dependencies.adapters.get(harness)?.getSession(id)) || undefined)) return;
-      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport, dependencies.noticeAnswerFetch, dependencies.composerTranscriber, dependencies.sessionQueueControl);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -1052,7 +1102,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
     stopActiveInventory?.();
     stopActiveFleetInventory?.();
     void searchIndexer.then(owner=>owner?.close());
-    userMessageDelivery?.close();
+    if(ownsUserMessageDelivery)userMessageDelivery?.close();
     stopSessionObservation?.();
     // The detached observers publish into the incident cards: they must stop
     // with the server instead of running on into the next process.
@@ -1154,6 +1204,204 @@ export function createWebServer(dependencies: WebDependencies): Server {
   return server;
 }
 
+/**
+ * The facts the session inspector shows: the model's real state, the agent's
+ * last action, the files it changed, and who its children are.
+ *
+ * Every fact comes from a canonical source: the session transcript, the
+ * lineage store, or the working directory. What is not measured stays absent.
+ */
+async function sessionInspectorFacts(details: SessionDetails): Promise<SessionInspectFacts> {
+  const facts = sessionInspectFacts(details);
+  return { ...facts, worktreeFiles: await dirtyWorktreeFiles(details.session.cwd) };
+}
+
+/**
+ * The task a child session was given, when the lineage store recorded one.
+ * A child the provider never named stays unnamed — it is not given a fake title.
+ */
+async function childTaskNames(
+  harness: string,
+  children: AgentSession[],
+): Promise<Map<string, { task?: string; role?: string }>> {
+  const named = new Map<string, { task?: string; role?: string }>();
+  if (!children.length) return named;
+  try {
+    const store = new LineageStore(lineageStorePath());
+    await store.load();
+    for (const child of children) {
+      const provider = typeof child.meta?.provider === "string" ? child.meta.provider : harness;
+      const record = await store.get(`${provider}:${child.id}`) ?? await store.get(`${harness}:${child.id}`);
+      if (record?.task || record?.role) named.set(child.id, { task: record.task, role: record.role });
+    }
+  } catch { /* the lineage store is optional; an absent task stays unnamed */ }
+  return named;
+}
+
+/** The lineage file the supervisor itself reads. */
+function lineageStorePath(): string {
+  const dataHome = process.env.XDG_DATA_HOME || `${process.env.HOME || process.cwd()}/.local/share`;
+  return `${dataHome}/agent-herder/lineage.json`;
+}
+
+/** Files changed in the session's working directory, by git itself. */
+async function dirtyWorktreeFiles(cwd: string): Promise<string[]> {
+  if (!cwd || !isAbsolute(cwd)) return [];
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", cwd, "status", "--porcelain=v1", "--untracked-files=all"], { timeout: 4000, maxBuffer: 1024 * 1024 });
+    return stdout.split("\n").filter(Boolean).map((line) => line.slice(3).trim()).filter(Boolean);
+  } catch { return []; }
+}
+
+/**
+ * A child session carries the task it was given, when Herder recorded one.
+ * The provider's own title stays the fallback; a missing name stays missing.
+ */
+async function withChildTasks(details: SessionDetails, harness: string): Promise<SessionDetails> {
+  const named = await childTaskNames(harness, details.children || []);
+  if (!named.size) return details;
+  return {
+    ...details,
+    children: (details.children || []).map((child) => {
+      const found = named.get(child.id);
+      if (!found) return child;
+      return { ...child, meta: { ...child.meta, ...(found.task ? { task: found.task } : {}), ...(found.role ? { agentRole: found.role } : {}) } };
+    }),
+  };
+}
+
+/** Why a converted session is or is not visible in the running OpenCode. */
+export type ConvertVisibilityCause =
+  | "served"
+  | "no-session-id"
+  | "server-unreachable"
+  | "database-mismatch"
+  | "table-mismatch"
+  | "not-served"
+  | "row-missing";
+
+/** The verdict about one converted session, with the reason in the owner's words. */
+export type ConvertVisibility = { visible: boolean; cause: ConvertVisibilityCause; note: string };
+
+/** The global OpenCode database — the file the running OpenCode server opens. */
+function opencodeGlobalDbPath(): string {
+  const dataHome = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share");
+  return process.env.OPENCODE_DB_PATH || join(dataHome, "opencode", "opencode.db");
+}
+
+/** The project-local database the converter writes into when a project path is given. */
+function opencodeProjectDbPath(projectPath: string): string {
+  return join(projectPath, ".opencode", "opencode.db");
+}
+
+/**
+ * What one OpenCode database holds: its tables, and the table that carries
+ * the converted session. A database that cannot be opened is absent, not empty.
+ */
+type OpencodeDbProbe = { tables: string[]; rowTable: string | null };
+
+/** The session tables a converted row can land in, served table first. */
+const SESSION_TABLES = ["session_v2", "session", "sessions"] as const;
+
+async function probeOpencodeDb(dbPath: string, sessionId: string): Promise<OpencodeDbProbe | null> {
+  let db: import("node:sqlite").DatabaseSync;
+  try {
+    const { DatabaseSync } = await import("node:sqlite");
+    db = new DatabaseSync(dbPath, { readOnly: true });
+  } catch {
+    return null;
+  }
+  try {
+    const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map((row) => row.name);
+    let rowTable: string | null = null;
+    for (const table of SESSION_TABLES) {
+      if (!tables.includes(table)) continue;
+      try {
+        if (db.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(sessionId)) { rowTable = table; break; }
+      } catch { /* a table of another shape is not this row */ }
+    }
+    return { tables, rowTable };
+  } catch {
+    return null;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Whether the running OpenCode server serves a converted session.
+ *
+ * The server's own answer decides: the OpenCode adapter asks that server for
+ * the session, and a session the server does not return is one the owner will
+ * not see. The databases are read only to explain the refusal — which file and
+ * which table the row landed in, next to the file and the table the server
+ * reads.
+ */
+async function opencodeSessionVisibility(
+  supervisor: SessionSupervisor,
+  targetSessionId: string | undefined,
+  projectPath: string | undefined,
+): Promise<ConvertVisibility> {
+  if (!targetSessionId) {
+    return { visible: false, cause: "no-session-id", note: "OpenCode не вернул идентификатор новой сессии." };
+  }
+  // The live server is asked twice: a row that was just written can be a
+  // moment behind the read, and a single miss would be a wrong verdict.
+  let lastError: string | undefined;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 250));
+    try {
+      const served = await supervisor.getSession("opencode", targetSessionId, undefined, { includeModelOptions: false });
+      if (served) return { visible: true, cause: "served", note: "Новая сессия видна в работающем OpenCode." };
+      lastError = undefined;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+  }
+  if (lastError !== undefined) {
+    return {
+      visible: false,
+      cause: "server-unreachable",
+      note: `работающий OpenCode не ответил (${lastError}), поэтому видимость новой сессии не подтверждена`,
+    };
+  }
+
+  // The server answered and did not serve the session: name the cause.
+  const globalDb = opencodeGlobalDbPath();
+  const projectDb = projectPath ? opencodeProjectDbPath(projectPath) : undefined;
+  const global = await probeOpencodeDb(globalDb, targetSessionId);
+  const project = projectDb && projectDb !== globalDb ? await probeOpencodeDb(projectDb, targetSessionId) : undefined;
+  const servedTable = global?.tables.includes("session_v2") ? "session_v2" : global?.tables.includes("session") ? "session" : undefined;
+
+  if (project?.rowTable) {
+    return {
+      visible: false,
+      cause: "database-mismatch",
+      note: `перенос записан в project-local базу \`${projectDb}\` (таблица \`${project.rowTable}\`), а работающий OpenCode читает глобальную базу \`${globalDb}\`${servedTable ? ` (таблица \`${servedTable}\`)` : ""}`,
+    };
+  }
+  if (global?.rowTable && servedTable && global.rowTable !== servedTable) {
+    return {
+      visible: false,
+      cause: "table-mismatch",
+      note: `перенос записан в таблицу \`${global.rowTable}\`, а работающий OpenCode читает таблицу \`${servedTable}\``,
+    };
+  }
+  if (global?.rowTable) {
+    return {
+      visible: false,
+      cause: "not-served",
+      note: `перенос записан в таблицу \`${global.rowTable}\` глобальной базы, но работающий OpenCode её не отдаёт`,
+    };
+  }
+  const checked = [globalDb, ...(projectDb ? [projectDb] : [])].map((path) => `\`${path}\``).join(", ");
+  return {
+    visible: false,
+    cause: "row-missing",
+    note: `строка переноса не найдена ни в одной базе OpenCode (проверены: ${checked})`,
+  };
+}
+
 /** Edited files are attributed to the git repo that actually owns them, so
  * each repo's coordination board sees the sessions touching it — a session
  * working across several repos appears on several boards. Non-repo paths
@@ -1177,9 +1425,228 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
   return top ?? fallback;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport): Promise<void> {
+/**
+ * The rule of the owner for one leaf of a route.
+ *
+ * This is the rule of the launcher (`src/autopilot/unfinished-session-launcher.ts`,
+ * `isAllowedRestrictedProviderLeaf`), kept here so the server answers the panel
+ * with the same answer the launcher gives. The rule of the guard itself is
+ * never touched: `tests/leaf-verdict-panel.test.ts` runs the rule of the
+ * launcher against this one, so the two cannot drift apart unnoticed.
+ */
+export function isAllowedRestrictedProviderLeaf(leaf: { providerId: string; modelId: string }): boolean {
+  const providerId = leaf.providerId.trim().toLocaleLowerCase("en-US");
+  const modelId = leaf.modelId.trim().toLocaleLowerCase("en-US");
+  if (!providerId || !modelId || /codex|claude/u.test(`${providerId}/${modelId}`)) return false;
+  const allowedMiniMax = new Set(["minimax", "minimax-code", "minimax-coding-plan"]);
+  const allowedGlm = new Set(["glm", "zai", "zai-coding-plan", "zhipu"]);
+  const isMiniMax = allowedMiniMax.has(providerId) && /minimax|mmcode/u.test(modelId);
+  const isGlm = allowedGlm.has(providerId) && /(^|[/_-])glm([-_/]|$)/u.test(modelId);
+  return isMiniMax || isGlm;
+}
+
+/**
+ * The verdict of the server about one route of a model.
+ *
+ * `allowed` means the route is proven and the rule of the owner lets it,
+ * `denied` means the route is proven and the rule refuses it, and `unknown`
+ * means the route could not be proven — then the guard of the medium revokes
+ * the launch, so an unknown route is never a promise.
+ */
+export type ModelLaunchVerdict = "allowed" | "denied" | "unknown";
+
+/** The answer of the server about one model id, with the reason of it. */
+export type ModelLaunchVerdictEntry = { verdict: ModelLaunchVerdict; reason: string };
+
+/** How long one route may take to be proven before the answer is unknown. */
+const MODEL_LAUNCH_VERDICT_TIMEOUT_MS = 8_000;
+
+/** The promise, but only while it is quick enough for the panel. */
+async function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([promise, deadline]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * The verdict of the server about every route the panel asks about.
+ *
+ * The raw leaves never leave the node: the proof of a route stays loopback-only,
+ * and the panel receives the word of the verdict and nothing else. A failure of
+ * the resolver is an `unknown`, never an `allowed`.
+ */
+export async function computeModelLaunchVerdicts(input: {
+  harness: string;
+  cwd: string;
+  modelIds: string[];
+  adapters: Map<string, HarnessAdapter>;
+}): Promise<Record<string, ModelLaunchVerdictEntry>> {
+  const restricted = input.harness === "opencode" && isRestrictedProjectPath(input.cwd);
+  if (!restricted) {
+    // The rule of the owner closes the route of a closed project only, so
+    // everywhere else there is nothing for the server to refuse.
+    return Object.fromEntries(input.modelIds.map((modelId) => [modelId, { verdict: "allowed", reason: "rule-not-applicable" }]));
+  }
+  const adapter = input.adapters.get("opencode") as (HarnessAdapter & {
+    resolveModelProviderLeaves?: (modelId: string) => Promise<{
+      nativeHarness: string;
+      nativeModelId: string;
+      resolvedProviderLeaves: Array<{ providerId: string; modelId: string }>;
+    } | null>;
+  }) | undefined;
+  if (!adapter?.resolveModelProviderLeaves) {
+    return Object.fromEntries(input.modelIds.map((modelId) => [modelId, { verdict: "unknown", reason: "resolver-unavailable" }]));
+  }
+  const entries = await Promise.all(input.modelIds.map(async (modelId): Promise<[string, ModelLaunchVerdictEntry]> => {
+    try {
+      const resolved = await withDeadline(adapter.resolveModelProviderLeaves!(modelId), MODEL_LAUNCH_VERDICT_TIMEOUT_MS);
+      const leaves = resolved?.resolvedProviderLeaves;
+      if (!resolved || resolved.nativeHarness !== "opencode" || resolved.nativeModelId !== modelId
+        || !Array.isArray(leaves) || leaves.length === 0
+        || leaves.some((leaf) => !leaf || typeof leaf.providerId !== "string" || typeof leaf.modelId !== "string")) {
+        return [modelId, { verdict: "unknown", reason: "unverified" }];
+      }
+      if (leaves.every((leaf) => isAllowedRestrictedProviderLeaf(leaf))) {
+        return [modelId, { verdict: "allowed", reason: "verified" }];
+      }
+      // The reason, not the rule: the rule of the launcher cuts codex and
+      // claude, and this wider token only names the reason the panel reads.
+      // Both ends of the answer are the same — a leaf with such a provider is
+      // denied either way.
+      const closed = leaves.some((leaf) => /codex|claude|anthropic/iu.test(`${leaf.providerId}/${leaf.modelId}`));
+      return [modelId, { verdict: "denied", reason: closed ? "closed-provider" : "not-allowed" }];
+    } catch {
+      return [modelId, { verdict: "unknown", reason: "unverified" }];
+    }
+  }));
+  return Object.fromEntries(entries);
+}
+
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch, composerTranscriber?: ComposerTranscriber, sessionQueueControl?: SessionQueueControlGateway): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   const resolveSessionRoute = async (harness: string, sessionId: string) => await resolveSessionRouteFor(integratorRuntime, adapters, scopedSupervisorFactory, harness, sessionId);
+  if (url.pathname === COMPOSER_TRANSCRIPTION_PATH && request.method === "POST") {
+    response.setHeader("cache-control", "no-store");
+    response.setHeader("x-content-type-options", "nosniff");
+    const controller = new AbortController();
+    const onClose = () => { if (!response.writableEnded) controller.abort(); };
+    response.once("close", onClose);
+    try {
+      const upload = await readComposerAudioUpload(request);
+      const result = await (composerTranscriber ?? transcribeComposerAudio)(upload, controller.signal);
+      if (!response.destroyed && !response.writableEnded) sendJson(response, 200, { text: result.text });
+    } catch (error) {
+      if (response.destroyed || response.writableEnded) return;
+      if (error instanceof ComposerTranscriptionError) return sendJson(response, error.status, { error: error.message });
+      return sendJson(response, 503, { error: "Распознавание сейчас недоступно. Попробуйте позже." });
+    } finally {
+      response.removeListener("close", onClose);
+    }
+    return;
+  }
+  const minimaxExecPolicyMatch = url.pathname.match(/^\/api\/sessions\/minimax-code\/([^/]+)\/herder-exec-policy$/);
+  if (minimaxExecPolicyMatch && (request.method === "GET" || request.method === "PUT")) {
+    response.setHeader("cache-control", "no-store");
+    if (!userMessageDelivery) return sendJson(response, 503, { available: false, error: "Herder delivery policy storage is unavailable." });
+    const sessionId = decodeURIComponent(minimaxExecPolicyMatch[1]);
+    const route = await resolveSessionRoute("minimax-code", sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { available: false, error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { available: false, error: "Scoped MiniMax session is unavailable." });
+    const adapter = route.kind === "scoped" ? route.adapter : adapters.get("minimax-code");
+    let session: AgentSession | null;
+    try { session = adapter?.getSession ? await adapter.getSession(sessionId) : null; }
+    catch { session = null; }
+    if (!session || session.id !== sessionId || session.harness !== "minimax-code" || !session.hostId) {
+      return sendJson(response, 503, { available: false, error: "Exact MiniMax host and session could not be confirmed." });
+    }
+    const target = { hostId: session.hostId, harness: "minimax-code" as const, sessionId };
+    if (request.method === "GET") {
+      try {
+        const policy = await userMessageDelivery.getMinimaxExecPolicy(target);
+        return sendJson(response, 200, { available: true, policy, nativeMode: { state: "unknown", reason: "MCode exec does not report a persistent native session mode." } });
+      } catch { return sendJson(response, 503, { available: false, error: "Could not read the Herder execution policy." }); }
+    }
+    const body = await readJson(request);
+    if (body.hostId !== target.hostId || !Number.isSafeInteger(body.expectedRevision) || !isMinimaxExecPolicyMode(body.mode)) {
+      return sendJson(response, 400, { state: "not_attempted", error: "Exact host, expectedRevision and a supported policy are required." });
+    }
+    try {
+      const policy = await userMessageDelivery.setMinimaxExecPolicy(target, body.expectedRevision as number, body.mode);
+      return sendJson(response, 200, { state: "configured", policy, nativeMode: { state: "unknown", reason: "This stores a Herder CLI invocation policy; it does not change native mode." } });
+    } catch (error) {
+      if (error instanceof MinimaxExecPolicyConflict) return sendJson(response, 409, { state: "not_attempted", error: error.message });
+      return sendJson(response, 503, { state: "not_attempted", error: "Could not save the Herder execution policy." });
+    }
+  }
+  const queueProcessingMatch=url.pathname.match(/^\/api\/sessions\/zcode\/([^/]+)\/queue-processing$/);
+  if(queueProcessingMatch&&(request.method==="GET"||request.method==="POST")){
+    response.setHeader("cache-control","no-store");
+    if(!sessionQueueControl)return sendJson(response,503,{available:false,error:"Native queue control is unavailable."});
+    const sessionId=decodeURIComponent(queueProcessingMatch[1]!);
+    if(request.method==="GET"){
+      const hostId=url.searchParams.get("hostId")?.trim();
+      if(!hostId||hostId.length>512)return sendJson(response,400,{available:false,error:"Exact hostId is required."});
+      const result=await sessionQueueControl.read({hostId,harness:"zcode",sessionId});
+      return sendJson(response,"available" in result?503:200,result);
+    }
+    const body=await readJson(request);
+    if(typeof body.hostId!=="string"||!body.hostId.trim()||body.hostId.length>512||typeof body.inputId!=="string"||!body.inputId.trim()||body.inputId.length>512||typeof body.expectedRevision!=="number"||!Number.isSafeInteger(body.expectedRevision)||body.expectedRevision<0){
+      return sendJson(response,400,{state:"not_attempted",nonRetryable:true,error:"Exact hostId, inputId and expectedRevision are required."});
+    }
+    const result=await sessionQueueControl.submit({hostId:body.hostId,harness:"zcode",sessionId,inputId:body.inputId,expectedRevision:body.expectedRevision});
+    return sendJson(response,result.state==="queued"?202:200,result);
+  }
+  const permissionStateMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/permissions$/);
+  if (permissionStateMatch && request.method === "GET") {
+    response.setHeader("cache-control", "no-store");
+    const harness = decodeURIComponent(permissionStateMatch[1]);
+    const sessionId = decodeURIComponent(permissionStateMatch[2]);
+    const expectedHostId = url.searchParams.get("hostId")?.trim();
+    if (!expectedHostId || expectedHostId.length > 255) return sendJson(response, 400, { error: "hostId is required for an exact permission-state read" });
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { available: false, reason: "Scoped permission-state read is unavailable." });
+    const adapter = route.kind === "scoped" ? route.adapter : adapters.get(harness);
+    if (!adapter?.getPermissionState) return sendJson(response, 200, { available: false, reason: `${harness} does not expose native permission state or mode control.` });
+    let state: Awaited<ReturnType<SessionSupervisor["getPermissionState"]>>;
+    try {
+      state = route.kind === "scoped"
+        ? await route.supervisor!.getPermissionState(harness, sessionId)
+        : await supervisor.getPermissionState(harness, sessionId);
+    } catch { return sendJson(response, 503, { available: false, reason: "Could not read the current native permission state." }); }
+    if (!state) return sendJson(response, 503, { available: false, reason: "The native permission state could not be confirmed for this session." });
+    if (state.target.hostId !== expectedHostId) return sendJson(response, 409, { available: false, error: "Native permission state belongs to a different host." });
+    return sendJson(response, 200, { available: true, permissionState: state });
+  }
+  if (permissionStateMatch && request.method === "POST") {
+    const body = await readJson(request);
+    const harness = decodeURIComponent(permissionStateMatch[1]);
+    const sessionId = decodeURIComponent(permissionStateMatch[2]);
+    if (typeof body.hostId !== "string" || !body.hostId.trim() || body.hostId.length > 255
+      || typeof body.inputId !== "string" || !body.inputId.trim() || body.inputId.length > 512
+      || typeof body.expectedCurrentMode !== "string" || !body.expectedCurrentMode.trim() || body.expectedCurrentMode.length > 128
+      || typeof body.mode !== "string" || !body.mode.trim() || body.mode.length > 128) {
+      return sendJson(response, 400, { ok: false, state: "not_attempted", error: "hostId, inputId, expectedCurrentMode and mode are required." });
+    }
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { ok: false, state: "not_attempted", error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { ok: false, state: "not_attempted", error: "Scoped permission mode control is unavailable." });
+    const sessionSupervisor = route.kind === "scoped" ? route.supervisor! : supervisor;
+    const result = await sessionSupervisor.setPermissionMode(harness, sessionId, {
+      hostId: body.hostId.trim(),
+      inputId: body.inputId.trim(),
+      expectedCurrentMode: body.expectedCurrentMode,
+      mode: body.mode,
+    });
+    return sendJson(response, result.ok ? 200 : result.state === "unknown" ? 502 : 409, result);
+  }
   if (url.pathname === "/api/resources/s21-lease" && request.method === "GET") {
     response.setHeader("cache-control", "no-store");
     return sendJson(response, 200, await getS21Ownership());
@@ -1211,18 +1678,24 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const sessionId = url.searchParams.get("sessionId")?.trim();
     const cwd = url.searchParams.get("cwd")?.trim();
     if (!harness || !sessionId || !cwd) return sendJson(response, 400, { error: "harness, sessionId, and cwd are required" });
+    // The optional hooks runtime of the herder is off: the hook carries
+    // nothing into the session. The answer is empty, so a handler that is
+    // already loaded in a running harness becomes quiet at once — no restart
+    // of the harness and no loss of its sessions. The lifecycle of the
+    // session is still marked: the listing keeps reporting a running turn.
+    const hooksEnabled = await hooksRuntimeEnabled();
     const coordinationHeld=async()=>await getHumanStopStore().isHeld(harness,sessionId)||await supervisor.isAutomationHeld(harness,sessionId);
     let humanStopHeld = await coordinationHeld();
     if (url.searchParams.get("touch") === "1" && !coordinationNotes.activeWorkspaceForSession(sessionId)) await coordinationNotes.heartbeatSession({ sessionId, cwd });
-    const coordinationContext = await coordinationNotes.renderForSession({ harness, id: sessionId, cwd });
+    const coordinationContext = hooksEnabled ? await coordinationNotes.renderForSession({ harness, id: sessionId, cwd }) : null;
     if (response.destroyed) return;
     humanStopHeld = humanStopHeld || await coordinationHeld();
     if(humanStopHeld)await deferredMessages.discardActive(harness,sessionId);
-    const inboxMessages = humanStopHeld ? [] : await deferredMessages.list(sessionId);
+    const inboxMessages = humanStopHeld || !hooksEnabled ? [] : await deferredMessages.list(sessionId);
     const activeTurnId=url.searchParams.get('activeTurnId')?.trim();
     const currentAdapter=adapters.get(harness);
     const contextConnected=()=>!response.destroyed&&!request.aborted&&!request.socket.destroyed;
-    const activeMessages=!humanStopHeld&&activeTurnId&&url.searchParams.get('consumeActive')==='1'
+    const activeMessages=!humanStopHeld&&hooksEnabled&&activeTurnId&&url.searchParams.get('consumeActive')==='1'
       ?await deferredMessages.offerActive(harness,sessionId,activeTurnId,async()=>{
         if(!currentAdapter?.getCoordinationActiveTurnId)return false;
         try{return await currentAdapter.getCoordinationActiveTurnId(sessionId)===activeTurnId;}
@@ -1235,9 +1708,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     // The hook may have waited for store/native reads. A late Stop suppresses output.
     if(humanStopHeld||activeMessages.length&&await coordinationHeld()){activeMessages.length=0;humanStopHeld=true;await deferredMessages.discardActive(harness,sessionId);}
     if(!contextConnected())return;
-    const inboxContext = humanStopHeld ? null : renderDeferredMessages(inboxMessages);
-    const context = [inboxContext, coordinationContext].filter(Boolean).join("\n\n") || null;
-    return sendJson(response, 200, { context, inboxContext, inboxCount: inboxMessages.length, inboxIds:inboxMessages.map(message=>message.id), activeInboxContext:renderDeferredMessages(activeMessages), activeInboxIds:activeMessages.map(message=>message.id), active: Boolean(context), humanStopHeld });
+    const inboxContext = humanStopHeld || !hooksEnabled ? null : renderDeferredMessages(inboxMessages);
+    const context = hooksEnabled ? ([inboxContext, coordinationContext].filter(Boolean).join("\n\n") || null) : null;
+    return sendJson(response, 200, { context, inboxContext, inboxCount: inboxMessages.length, inboxIds:inboxMessages.map(message=>message.id), activeInboxContext:renderDeferredMessages(activeMessages), activeInboxIds:activeMessages.map(message=>message.id), active: Boolean(context), humanStopHeld, hooksEnabled });
   }
   if (url.pathname === "/api/coordination/inbox-ack" && request.method === "POST") {
     const body = await readJson(request);
@@ -1275,12 +1748,19 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
 
     // The tool-call hooks fired: the panel shows when they ran last.
     const activityHook = typeof body.hook === "string" ? body.hook : "";
-    if (activityHook === "PreToolUse" || activityHook === "PostToolUse") {
+    const hooksEnabled = await hooksRuntimeEnabled();
+    if (hooksEnabled && (activityHook === "PreToolUse" || activityHook === "PostToolUse")) {
       await hooksServiceOf().recordActivity({ hook: activityHook, outcome: "fired", sessionId, harness });
     }
     const blocks: string[] = [];
     const reservations: CoordinationNote[] = [];
     const conflicts: CoordinationConflict[] = [];
+    // The optional hooks runtime is off: no context is carried into the
+    // session. The lifecycle of the session is still marked, so the listing
+    // keeps reporting a running turn.
+    if (!hooksEnabled) {
+      return sendJson(response, 200, { reservations, conflicts, context: null, hooksEnabled: false });
+    }
     for (const [board, boardPaths] of groups) {
       try {
         await coordinationNotes.heartbeatSession({ sessionId, cwd: board, ttlSeconds });
@@ -1359,6 +1839,75 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (event === "end") await coordinationNotes.endSession(sessionId);
     return sendJson(response, 200, { ok: true });
   }
+  // The five states of the product, each one read on its own.
+  //
+  // The stop of one session, the prohibitions, the runtime of the hooks, the
+  // quota policy and the emergency network pause of Notice Place are five
+  // different levers with different owners. This route answers with them
+  // apart, so the panel never has to read one of them as another. It writes
+  // nothing, changes no lever and starts no agent.
+  if (url.pathname === "/api/state-separation" && request.method === "GET") {
+    response.setHeader("cache-control", "no-store");
+    const harness = url.searchParams.get("harness")?.trim();
+    const sessionId = url.searchParams.get("sessionId")?.trim();
+    // The prohibitions and the runtime of the hooks are two fields of one
+    // document. The document is read once, so the panel sees one moment in
+    // time, and the two states stay apart inside it.
+    let hooksDocument: Promise<Awaited<ReturnType<HooksService["prohibitions"]["readState"]>>> | undefined;
+    const hooksDocumentOf = () => (hooksDocument ??= hooksServiceOf().prohibitions.readState());
+    const view = await readSeparatedStateView({
+      readSessionStop: async () => {
+        if (!harness || !sessionId) {
+          return sessionStopUnknown({
+            harness,
+            sessionId,
+            reason: "Для остановки конкретной сессии нужны harness и sessionId",
+          });
+        }
+        try {
+          return sessionStopReading({
+            harness,
+            sessionId,
+            held: await getHumanStopStore().isHeld(harness, sessionId),
+          });
+        } catch (error) {
+          return sessionStopUnknown({
+            harness,
+            sessionId,
+            reason: `Остановка сессии не прочитана: ${(error as Error).message}`,
+          });
+        }
+      },
+      readProhibitions: async () => {
+        const read = await hooksDocumentOf();
+        return prohibitionsReading({
+          enabled: read.state.prohibitionsEnabled,
+          known: read.known,
+          changedAt: read.state.changedAt,
+          changedBy: read.state.changedBy,
+          ...(read.reason ? { reason: read.reason } : {}),
+        });
+      },
+      readHooks: async () => {
+        const read = await hooksDocumentOf();
+        return hooksReading({
+          state: read.state,
+          known: read.known,
+          ...(read.reason ? { reason: read.reason } : {}),
+        });
+      },
+      readQuotaPolicy: async () => {
+        const loaded = await loadCodexQuotaPolicy();
+        return quotaPolicyReading({
+          policy: loaded.policy,
+          known: true,
+          revision: loaded.revision,
+        });
+      },
+      readNetworkPause: async () => await readNetworkPauseReading(),
+    });
+    return sendJson(response, 200, view);
+  }
   // The hooks of the product: the lever of the owner and what the hooks did.
   // The lever belongs to the hooks alone: it never touches the automation
   // lever, the emergency pause or the policy of the projects.
@@ -1370,7 +1919,10 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   }
   if (url.pathname === "/api/hooks/prohibitions" && request.method === "GET") {
     // The light answer the hook scripts ask for before they forbid anything.
-    const read = await hooksServiceOf().readProhibitions();
+    // The kind names the hook that asks: a hook that the owner switched off on
+    // its own is quiet even when the runtime of the others is on.
+    const kind = url.searchParams.get("kind")?.trim();
+    const read = await hooksServiceOf().readProhibitions(isHookKind(kind) ? kind : undefined);
     response.setHeader("etag", read.etag);
     response.setHeader("cache-control", "no-store");
     return sendJson(response, 200, read);
@@ -1399,6 +1951,13 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         error: `Такого хука нет. Доступны: ${HOOK_KINDS.join(", ")}.`,
       });
     }
+    const inactive = body.inactiveHooks;
+    if (inactive !== undefined && (!Array.isArray(inactive) || inactive.some((kind) => !isHookKind(kind)))) {
+      return sendJson(response, 400, {
+        ok: false,
+        error: `Такого хука нет. Доступны: ${HOOK_KINDS.join(", ")}.`,
+      });
+    }
     // The revision of the state the owner read: a state that moved on is a
     // conflict, and nothing is written over it.
     const ifMatchHeader = request.headers["if-match"];
@@ -1418,8 +1977,12 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const result = await hooksServiceOf().applyProhibitions({
       source: "owner",
       actor: typeof body.actor === "string" && body.actor.trim() ? body.actor.trim() : "owner",
+      // The switch of the whole optional hooks runtime. It moves only here,
+      // by an explicit action of the owner: an automatic path never writes it.
+      ...(typeof body.hooksEnabled === "boolean" ? { hooksEnabled: body.hooksEnabled } : {}),
       ...(typeof body.prohibitionsEnabled === "boolean" ? { prohibitionsEnabled: body.prohibitionsEnabled } : {}),
       ...(Array.isArray(disabled) ? { disabledHooks: disabled as HookKind[] } : {}),
+      ...(Array.isArray(inactive) ? { inactiveHooks: inactive as HookKind[] } : {}),
       ...(typeof body.reason === "string" && body.reason.trim() ? { reason: body.reason.trim() } : {}),
     });
     if (!result.ok) {
@@ -1861,6 +2424,36 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 503, { error: "The complete native provider route could not be verified" });
     }
   }
+  if (url.pathname === "/api/model-launch-verdict" && request.method === "GET") {
+    response.setHeader("cache-control", "no-store");
+    // The same origin check the neighbouring endpoints use: the panel reads the
+    // verdict from the browser, and a page of another origin must not ask.
+    if (request.headers["sec-fetch-site"] === "cross-site") return sendJson(response, 403, { error: "cross-site verdict read refused" });
+    const origin = request.headers.origin;
+    if (origin) {
+      try {
+        if (new URL(origin).host !== request.headers.host) return sendJson(response, 403, { error: "origin mismatch" });
+      } catch {
+        return sendJson(response, 403, { error: "invalid origin" });
+      }
+    }
+    const harness = url.searchParams.get("harness")?.trim() ?? "";
+    const cwd = url.searchParams.get("cwd")?.trim() ?? "";
+    const modelIds = (url.searchParams.get("modelIds") ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (!harness) return sendJson(response, 400, { error: "harness is required" });
+    if (!cwd) return sendJson(response, 400, { error: "cwd is required" });
+    if (modelIds.length === 0 || modelIds.length > 64) return sendJson(response, 400, { error: "modelIds must hold 1 to 64 model ids" });
+    if (modelIds.some((modelId) => modelId.length > 256 || /[\u0000-\u001f\u007f]/u.test(modelId))) {
+      return sendJson(response, 400, { error: "modelIds must hold clean model ids" });
+    }
+    // The answer holds the word of the verdict and nothing else: the provider
+    // behind the route never leaves the node that holds the proof of it.
+    const verdicts = await computeModelLaunchVerdicts({ harness, cwd, modelIds, adapters });
+    return sendJson(response, 200, { verdicts });
+  }
   if (url.pathname === "/api/human-stop/status" && request.method === "GET") {
     response.setHeader("cache-control", "no-store");
     const harness = url.searchParams.get("harness")?.trim();
@@ -1868,6 +2461,22 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!harness || !sessionId) return sendJson(response, 400, { error: "harness and sessionId are required" });
     if (!["opencode", "zcode", "codex", "claude", "qoder", "hermes", "fast-agent", "chatgpt", "minimax-code"].includes(harness)) return sendJson(response, 400, { error: "unknown harness" });
     return sendJson(response, 200, { harness, sessionId, held: await getHumanStopStore().isHeld(harness, sessionId) });
+  }
+  if (url.pathname === "/api/human-stop/generated-prompt" && request.method === "POST") {
+    // The digest of an automatic input of a harness.
+    //
+    // The hook of the runtime writes the text of its decision here, and the
+    // store remembers it as an automatic input. The route only registers the
+    // text: it does not release the fence and it does not hold it — that is
+    // the work of `releaseHumanStop`. The state of the lever of the owner is
+    // not read and not written here.
+    const body = await readJson(request);
+    const harness = typeof body.harness === "string" ? body.harness.trim() : "";
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+    const text = typeof body.text === "string" ? body.text : "";
+    if (!harness || !sessionId || !text.trim()) return sendJson(response, 400, { error: "harness, sessionId and text are required" });
+    await getHumanStopStore().rememberGeneratedPrompt(harness, sessionId, text);
+    return sendJson(response, 200, { ok: true });
   }
   if (url.pathname === "/api/quota-recovery/operator-cohort/enroll" && request.method === "POST") {
     if (!automationLaunchPolicyStore) return sendJson(response, 503, { error: "Project launch policy is unavailable" });
@@ -2166,6 +2775,16 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 401, { error: "unauthorized" });
     }
     if (!mcpNodeHandler) return sendJson(response, 503, { error: "MCP HTTP transport is disabled" });
+    // Propagate the already-validated bearer as transport context. Tool JSON
+    // cannot create this principal; an unconfigured/unauthenticated stdio
+    // request has no mesh-delivery capability and fails closed.
+    if (mcpAuthToken) {
+      (request as IncomingMessage & { auth?: { token: string; clientId: string; scopes: string[] } }).auth = {
+        token: mcpAuthToken,
+        clientId: TRUSTED_MESH_MCP_CLIENT_ID,
+        scopes: [TRUSTED_MESH_MCP_SCOPE],
+      };
+    }
     await mcpNodeHandler(request, response);
     return;
   }
@@ -2229,6 +2848,43 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!pending || pending.kind !== expectedKind) {
       return sendJson(response, 409, { error: "completion does not match the pending human request kind" });
     }
+    if (hasPermissionReplyContextRef(pending.contextRef)) {
+      const target = parsePermissionReplyContextRef(pending.contextRef);
+      if (!target || expectedKind !== "user") return sendJson(response, 409, { error: "typed permission request binding is invalid" });
+      let answer: Awaited<ReturnType<typeof readCanonicalNoticePermissionAnswer>>;
+      try { answer = await readCanonicalNoticePermissionAnswer(pending, noticeAnswerFetch ?? fetch); }
+      catch { return sendJson(response, 503, { request_id: pending.requestId, status: "pending", retry: true, error: "canonical human answer is not available" }); }
+      let admission: Awaited<ReturnType<HumanRequestRegistry["admitResume"]>>;
+      try {
+        admission = await humanRequests.admitResume(pending.requestId, { resultRef: answer.resultRef, resolutionRef: answer.resultRef });
+      } catch (error) {
+        if (error instanceof HumanRequestLockUnavailableError) {
+          return sendJson(response, 409, { request_id: pending.requestId, status: "pending", retry: true, error: error.message });
+        }
+        throw error;
+      }
+      if (!admission.admitted) {
+        if (admission.record.status === "resumed") {
+          return sendJson(response, 202, { request_id: pending.requestId, status: "resumed", continuation: "permission_reply", duplicate: true });
+        }
+        if (admission.record.status === "resume_failed") {
+          return sendJson(response, 502, { request_id: pending.requestId, status: "resume_failed", continuation: "permission_reply", retry: false });
+        }
+        return sendJson(response, 202, { request_id: pending.requestId, status: admission.record.status, continuation: "permission_reply", in_flight: true });
+      }
+      const adapter = adapters.get(target.harness);
+      const result = adapter
+        ? await respondToNativePermission(adapter, target.harness, target.sessionId, target.permissionRequestId, answer.answer, false, target.hostId)
+        : { ok: false, error: "native harness is unavailable" };
+      const attemptId = admission.record.attemptId;
+      if (!attemptId) return sendJson(response, 502, { request_id: pending.requestId, status: "resume_failed", continuation: "permission_reply", retry: false });
+      if (result.ok) {
+        const completed = await humanRequests.completeResume(pending.requestId, { attemptId, receipt: `agent-herder:permission-reply:${answer.answer}` });
+        return sendJson(response, 202, { request_id: pending.requestId, status: completed.status, continuation: "permission_reply" });
+      }
+      const failed = await humanRequests.failResume(pending.requestId, { attemptId, receipt: "agent-herder:permission-reply:unproven", retryable: false });
+      return sendJson(response, 502, { request_id: pending.requestId, status: failed.status, continuation: "permission_reply", retry: false });
+    }
     // One durable admission owns the only native resume of this answer. A repeated
     // provider callback, a concurrent duplicate and a service restart all read the
     // same attempt and idempotency key instead of launching the session again.
@@ -2265,7 +2921,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   }
   if (request.method === "GET" && url.pathname === "/") {
     const html = await readFile(htmlPath, "utf8");
-    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    // The shell of the panel names the bundle of the current release. A
+    // cached shell keeps an old bundle alive in the browser, and an old
+    // bundle asks for the whole history of the mesh. The shell is never
+    // cached; the assets keep their own hash and their own cache.
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
     response.end(html);
     return;
   }
@@ -2366,6 +3026,21 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     });
   }
 
+  const queuedMessageMatch=url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/message-queue\/([^/]+)$/u);
+  if(queuedMessageMatch&&(request.method==='GET'||request.method==='PATCH')){
+    if(!userMessageDelivery)return sendJson(response,503,{ok:false,error:'Очередь сообщений недоступна'});
+    const [,h,s,i]=queuedMessageMatch;
+    const harness=decodeURIComponent(h),sessionId=decodeURIComponent(s),inputId=decodeURIComponent(i);
+    const route=await resolveSessionRoute(harness,sessionId);
+    if(route.kind==='deny')return sendJson(response,409,{ok:false,error:'Не подтверждена область выбранной сессии'});
+    try{
+      if(request.method==='GET')return sendJson(response,200,{ok:true,...userMessageDelivery.queuedMessage(harness,sessionId,inputId)});
+      const body=await readJson(request);
+      if(typeof body.message!=='string'||typeof body.expectedMessage!=='string')return sendJson(response,400,{ok:false,error:'Требуются исходный и новый текст сообщения'});
+      return sendJson(response,200,{ok:true,...userMessageDelivery.editQueuedMessage(harness,sessionId,inputId,body.expectedMessage,body.message)});
+    }catch(error){return sendJson(response,409,{ok:false,error:error instanceof Error?error.message:'Не удалось изменить очередь'});}
+  }
+
   if (request.method === "GET" && url.pathname === "/api/jobs") {
     if (!jobs) return sendJson(response, 503, { error: "Job registry is disabled" });
     const limit = Number(url.searchParams.get("limit") || "100");
@@ -2373,8 +3048,19 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   }
   const jobMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)$/);
   if (jobMatch && request.method === "GET") {
+    const jobId=decodeURIComponent(jobMatch[1]!);
+    const hostId=url.searchParams.get("hostId")?.trim();
+    if(hostId&&sessionQueueControl){
+      const harness=url.searchParams.get("harness")?.trim();
+      const sessionId=url.searchParams.get("sessionId")?.trim();
+      const inputId=url.searchParams.get("inputId")?.trim();
+      if(harness!=="zcode"||!sessionId||!inputId)return sendJson(response,400,{error:"Remote queue job reads require exact host, harness, session and inputId."});
+      const result=await sessionQueueControl.job({hostId,harness,sessionId},inputId,jobId);
+      if("available" in result)return sendJson(response,503,result);
+      return result.job?sendJson(response,200,result):sendJson(response,404,{error:"Job not found"});
+    }
     if (!jobs) return sendJson(response, 503, { error: "Job registry is disabled" });
-    const job = jobs.get(decodeURIComponent(jobMatch[1]));
+    const job = jobs.get(jobId);
     return job ? sendJson(response, 200, { job }) : sendJson(response, 404, { error: "Job not found" });
   }
   const jobCancelMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/cancel$/);
@@ -2403,6 +3089,19 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   if (request.method === "GET" && url.pathname === "/api/sessions/active") {
     return sendJson(response,200,await listActiveSessions({hostId:url.searchParams.get("hostId")||undefined,runtimeHostId:url.searchParams.get("runtimeHostId")||undefined,harness:url.searchParams.get("harness")||undefined,...(url.searchParams.has("limit")?{limit:Math.max(1,Math.min(10000,Number(url.searchParams.get("limit"))||1))}:{}),...(url.searchParams.has("offset")?{offset:Math.max(0,Number(url.searchParams.get("offset"))||0)}:{})}));
   }
+  if (request.method === "GET" && url.pathname === "/api/sessions/activity/goals") {
+    // The business goal and the business result of the sessions the runtime of
+    // this host writes down. A session without a goal row has no result, and
+    // the answer says so instead of leaving the panel to guess.
+    const ids = (url.searchParams.get("ids") || "").split(",").map(value => value.trim()).filter(value => value.length > 0);
+    if (!ids.length) return sendJson(response, 200, { goals: [], source: "minimax_runtime_thread_goals" });
+    try {
+      const goals = await readMinimaxThreadGoals(ids);
+      return sendJson(response, 200, { goals, source: "minimax_runtime_thread_goals" });
+    } catch {
+      return sendJson(response, 200, { goals: [], source: "unavailable", reason: "runtime_state_unavailable" });
+    }
+  }
   if (request.method === "GET" && url.pathname === "/api/sessions") {
     const filters = {
       harness: url.searchParams.get("harness") || undefined,
@@ -2411,33 +3110,119 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     };
     // The window of the list. The panel asks for a window and the answer
     // carries the window and the counter of the whole list, so the panel
-    // knows that the list is longer than it shows. A request without a
-    // window keeps the old answer: the whole list, as before.
-    const asked = sessionListLimit(url.searchParams.get("limit"));
+    // knows that the list is longer than it shows. The server bounds the
+    // answer even when the caller names no window: the whole history of the
+    // mesh is megabytes of JSON, and a screen of the panel must not become
+    // slow because another screen asked for the history. The counter of the
+    // whole list travels with the answer either way.
+    const asked = sessionListLimit(url.searchParams.get("limit")) ?? DEFAULT_SESSION_LIST_WINDOW;
     if (url.searchParams.get("quick") === "1") {
       const snapshot = supervisor.listSessionsFast(filters);
       const total = snapshot.sessions.length;
-      // The window of the list applies when the caller names it: a caller
-      // that asks for the whole list gets the whole list, and the answer
-      // carries the counter of the list either way. The panel of the herder
-      // names its window, and the answer says that it is a window:
-      // `truncated`, `total` and `limit` travel with it.
-      const visible = asked === undefined ? snapshot.sessions : sessionListWindow(snapshot.sessions, asked);
+      // The answer is a window: the sessions of the window and the counter
+      // of the whole list. `truncated`, `total` and `limit` travel with it,
+      // so the panel knows that the list is longer than it shows.
+      // The window is a prefix, so the list is ordered first: the live
+      // sessions and then the newest ones, or the harness that was registered
+      // last would never reach the window at all.
+      const visible = sessionListWindow(orderSessionListForPanel(snapshot.sessions), asked);
       const truncated = visible.length < total;
       return sendJson(response, 200, url.searchParams.get("inventory") === "1"
-        ? { sessions: projectSessionInventory(visible), warming: snapshot.warming, total, ...(asked === undefined ? {} : { limit: asked, truncated }) }
-        : { ...snapshot, sessions: visible, total, ...(asked === undefined ? {} : { limit: asked, truncated }) });
+        ? { sessions: projectSessionInventory(visible), warming: snapshot.warming, total, limit: asked, truncated }
+        : { ...snapshot, sessions: visible, total, limit: asked, truncated });
     }
     const sessions = await supervisor.listSessions(filters);
     const total = sessions.length;
-    const visible = asked === undefined ? sessions : sessionListWindow(sessions, asked);
+    const visible = sessionListWindow(orderSessionListForPanel(sessions), asked);
     sendJson(response, 200, {
       sessions: url.searchParams.get("inventory") === "1" ? projectSessionInventory(visible) : visible,
       warming: false,
       total,
-      ...(asked === undefined ? {} : { limit: asked, truncated: visible.length < total }),
+      limit: asked,
+      truncated: visible.length < total,
     });
     return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/sessions/label") {
+    // The metadata of one session: the project, the goal and the stage.
+    // The answer is the stored label, nothing more and nothing less.
+    const sessionId = (url.searchParams.get("sessionId") || "").trim();
+    const harness = (url.searchParams.get("harness") || "").trim();
+    if (!sessionId || !harness) return sendJson(response, 400, { error: "sessionId and harness are required" });
+    const label = await readSessionLabel(harness, sessionId);
+    return sendJson(response, 200, { sessionId, harness, label });
+  }
+  if (request.method === "POST" && url.pathname === "/api/sessions/label") {
+    // The metadata of one session and, when the harness has one, its native name.
+    //
+    // The project, the goal and the stage belong to Herder and are stored next
+    // to the sessions: that store is the source of truth for the metadata, and
+    // it is written for every harness, with or without a native rename channel.
+    // The native name of the session is a separate and optional operation of
+    // the harness: a rename that did not happen never takes the stored metadata
+    // away, and the answer tells the two outcomes apart.
+    const body = await readJson(request);
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+    const harness = typeof body.harness === "string" ? body.harness.trim() : "";
+    if (!sessionId || !harness) return sendJson(response, 400, { ok: false, error: "sessionId and harness are required" });
+    const hostId = typeof body.hostId === "string" ? body.hostId.trim() : "";
+    if (hostId && hostId.toLowerCase() !== hostname().toLowerCase()) {
+      return sendJson(response, 409, {
+        ok: false,
+        error: "Сессия другой машины: переименование идёт через mesh-инструмент, а не через панель этого узла.",
+      });
+    }
+    const patch = {
+      ...(typeof body.project === "string" ? { project: body.project.trim().slice(0, SESSION_LABEL_LIMITS.project) } : {}),
+      ...(typeof body.goal === "string" ? { goal: body.goal.trim().slice(0, SESSION_LABEL_LIMITS.goal) } : {}),
+      ...(typeof body.stage === "string" ? { stage: body.stage.trim().slice(0, SESSION_LABEL_LIMITS.stage) } : {}),
+    };
+    const adapter = adapters.get(harness);
+    if (!adapter) {
+      return sendJson(response, 404, { ok: false, error: `Среда '${harness}' недоступна на этом узле.` });
+    }
+    const merged = await mergeSessionLabel(harness, sessionId, patch);
+    const title = (typeof body.title === "string" ? body.title.trim() : "") || composeSessionTitle(merged);
+    if (!title) {
+      return sendJson(response, 400, {
+        ok: false,
+        error: "Нужно название: дайте название или проект, цель и этап.",
+      });
+    }
+    // The metadata is written first and on its own: it belongs to Herder and
+    // does not depend on what the harness can or cannot do with a name.
+    const label = Object.keys(patch).length ? await writeSessionLabel(harness, sessionId, patch) : merged;
+    // The native name is an optional operation of the harness. The answer tells
+    // the two outcomes apart: the name changed, or it did not change and says
+    // why. A failed rename never takes the stored metadata away.
+    let renamed = false;
+    let previousTitle: string | null = null;
+    let nativeTitle: string | undefined;
+    let renameError: string | undefined;
+    if (typeof adapter.renameSession !== "function") {
+      renameError = `У среды '${harness}' нет нативного канала переименования: имя сессии осталось прежним.`;
+    } else {
+      const result = await adapter.renameSession(sessionId, { title });
+      previousTitle = result.previousTitle ?? null;
+      if (result.ok) {
+        renamed = true;
+        nativeTitle = result.title ?? title;
+      } else {
+        renameError = result.error || "Нативное переименование не удалось.";
+      }
+    }
+    events?.publish({ kind: "sessions", uri: "herder://sessions", action: "changed" });
+    return sendJson(response, 200, {
+      ok: true,
+      sessionId,
+      harness,
+      title,
+      renamed,
+      previousTitle,
+      ...(nativeTitle !== undefined ? { nativeTitle } : {}),
+      ...(renameError !== undefined ? { renameError } : {}),
+      label,
+    });
   }
   if (request.method === "GET" && url.pathname === "/api/health/remediation") {
     return sendJson(response, 405, { error: "method_not_allowed", route: "/api/health/remediation" });
@@ -2517,7 +3302,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       if (!catalog.models.includes(model)) {
         return sendJson(response, 409, { error: `OpenCode model unavailable: ${model}; no provider fallback` });
       }
-      // An exhausted MiniMax subscription quota is an explicit reason to
+      // An exhausted MiniMax route quota is an explicit reason to
       // refuse, not a random 429 in the middle of the repair.
       const quota = await noticeplaceHealthQuotaPreflight()(model);
       if (quota === "quota_exhausted") {
@@ -2598,7 +3383,8 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const receipt = await userMessageDelivery?.reconcile(harness, sessionId, inputId, route.kind === "scoped" ? route.adapter : undefined);
     return sendJson(response, receipt ? 200 : 404, receipt || { error: "Доставка сообщения не найдена; автоматический повтор запрещён" });
   }
-  const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)$/);
+  // The reserved activity path is never a harness/session pair: it has its own reader.
+  const sessionMatch = url.pathname === "/api/sessions/activity/goals" ? null : url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)$/);
   if (sessionMatch && request.method === "GET") {
     const harness = decodeURIComponent(sessionMatch[1]), sessionId = decodeURIComponent(sessionMatch[2]);
     const route = await resolveSessionRoute(harness, sessionId);
@@ -2632,14 +3418,14 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         { limit: Number.isFinite(limitValue) ? limitValue : 3, history: history || "auto", quick },
       );
       if (details.session.id !== sessionId || details.session.harness !== harness) return sendJson(response, 409, { error: "Exact native session identity mismatch." });
-      return sendJson(response, 200, details);
+      return sendJson(response, 200, quick ? details : await withChildTasks(details, harness));
     }
     const details = await supervisor.getSessionDetails(
       harness,
       sessionId,
       { limit: Number.isFinite(limitValue) ? limitValue : 3, history: history || "auto", quick },
     );
-    return sendJson(response, 200, details);
+    return sendJson(response, 200, quick ? details : await withChildTasks(details, harness));
   }
   const visualizationMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/visualization$/);
   if (visualizationMatch && request.method === "GET") {
@@ -2651,10 +3437,22 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { error: "Scoped session read port is unavailable." });
     const details = route.kind === "scoped" ? await route.supervisor!.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" })
       : await supervisor.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" });
-    const html = await sessionVisualizer(details);
+    const html = await sessionVisualizer(await withChildTasks(details, harness));
     response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
     response.end(html);
     return;
+  }
+  const inspectMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/inspect$/);
+  if (inspectMatch && request.method === "GET") {
+    const harness = decodeURIComponent(inspectMatch[1]);
+    const sessionId = decodeURIComponent(inspectMatch[2]);
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { error: "Scoped session read port is unavailable." });
+    const details = route.kind === "scoped" ? await route.supervisor!.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" })
+      : await supervisor.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" });
+    if (!details) return sendJson(response, 404, { error: "Session not found" });
+    return sendJson(response, 200, await sessionInspectorFacts(await withChildTasks(details, harness)));
   }
   const progressMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/progress$/);
   if (progressMatch && request.method === "GET") {
@@ -2764,7 +3562,10 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       if (!userMessageDelivery) return sendJson(response, 503, { error: "Надёжная очередь сообщений недоступна" });
       const deliveryRoute: UserMessageRoute | undefined = route.kind === "scoped" ? { adapter: route.adapter, supervisor: sessionSupervisor } : undefined;
       try {
-        const receipt = userMessageDelivery.submit({ harness, sessionId: id, inputId: body.inputId as string, message: body.message, mode: body.mode as "queue" | "steer", images }, deliveryRoute);
+        const input = { harness, sessionId: id, inputId: body.inputId as string, message: body.message, mode: body.mode as "queue" | "steer", images };
+        const receipt = harness === "minimax-code"
+          ? await userMessageDelivery.submitMinimaxExecPolicy(input, deliveryRoute)
+          : userMessageDelivery.submit(input, deliveryRoute);
         return sendJson(response, receipt.pending ? 202 : receipt.ok ? 200 : 502, receipt);
       } catch (error) {
         return sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
@@ -2780,6 +3581,64 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }));
   }
 
+  const convertMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/convert$/);
+  if (convertMatch && request.method === "POST") {
+    const harness = decodeURIComponent(convertMatch[1]) as HarnessType;
+    const sessionId = decodeURIComponent(convertMatch[2]);
+    const body = await readJson(request);
+    const to = typeof body.to === "string" ? body.to as HarnessType : undefined;
+    if (to !== "opencode") return sendJson(response, 400, { error: "Доступен перевод только в OpenCode." });
+    if (harness !== "codex") return sendJson(response, 400, { error: "Перевод в OpenCode доступен только для сессий Codex." });
+    const route = await resolveSessionRoute(harness, sessionId);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { error: "Scoped session read port is unavailable." });
+    const details = route.kind === "scoped" ? await route.supervisor!.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" })
+      : await supervisor.getSessionDetails(harness, sessionId, { limit: 50, history: "auto" });
+    if (!details) return sendJson(response, 404, { error: "Сессия не найдена." });
+    const nativeSessionId = typeof details.session.meta?.nativeSessionId === "string" ? details.session.meta.nativeSessionId : sessionId;
+    const readingSupervisor = route.kind === "scoped" ? route.supervisor! : supervisor;
+    const result = await supervisor.convertSession({
+      sessionId: nativeSessionId,
+      from: harness,
+      to,
+      projectPath: details.session.cwd || undefined,
+    });
+    if (!result.success) {
+      return sendJson(response, 502, {
+        ok: false,
+        from: harness,
+        to,
+        error: result.error || "Не удалось перевести сессию в OpenCode.",
+        warnings: result.warnings,
+      });
+    }
+    // The conversation was written into the OpenCode database. Whether the
+    // running OpenCode server serves that row is a separate fact, and it is
+    // measured against that server rather than assumed.
+    const visible = await opencodeSessionVisibility(readingSupervisor, result.targetSessionId, details.session.cwd || undefined);
+    return sendJson(response, 200, {
+      ok: true,
+      from: harness,
+      to,
+      // What was carried over to the new session.
+      transferred: {
+        messageCount: result.messageCount,
+        targetSessionId: result.targetSessionId,
+        targetPath: result.targetPath,
+      },
+      // What the running OpenCode server shows about that new session.
+      visibleInOpenCode: visible.visible,
+      visibilityCause: visible.cause,
+      visibilityNote: visible.note,
+      // What stays where it was: the original session is never moved or removed.
+      stayed: {
+        sessionId,
+        harness,
+        path: details.session.cwd || undefined,
+      },
+      warnings: result.warnings,
+    });
+  }
   if (request.method === "POST" && url.pathname === "/api/conversions") {
     const body = await readJson(request);
     if (typeof body.sessionId !== "string" || typeof body.from !== "string" || typeof body.to !== "string") {
@@ -2865,6 +3724,18 @@ function hooksServiceOf(): HooksService {
     hooksServiceDirectory = directory;
   }
   return hooksService;
+}
+
+/**
+ * Does the optional hooks runtime of the herder run at all?
+ *
+ * The switch is read from the durable document of the node, so it survives a
+ * restart and it is the same answer for every caller. A state that cannot be
+ * read runs no hook: an optional integration never comes back by itself.
+ */
+async function hooksRuntimeEnabled(): Promise<boolean> {
+  const read = await hooksServiceOf().readProhibitions();
+  return read.known && read.hooksEnabled;
 }
 
 /**

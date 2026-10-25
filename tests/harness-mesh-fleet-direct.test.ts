@@ -18,6 +18,8 @@ import {isDirectOwnerRequest,createManagedFleetHttpGuard,createConfiguredFleetAp
 import {FleetCabinetService} from '../src/mesh/fleet-service.js';
 import {registerFleetNodeTools} from '../src/mesh/fleet-node.js';
 const peer={hostId:'roomhacker-server-88',sshHost:'192.168.2.75',nativeUser:'roomhacker',port:18791,python:'/usr/bin/python3'};
+// The personal Mac answers through the authenticated reverse route of server-100.
+const macPeer={hostId:'MacBook-Pro-User.local',sshHost:'127.0.0.1',sshPort:2222,nativeUser:'user',port:18789,python:'/opt/homebrew/bin/python3'};
 // An empty state dir means the default quota policy: enabled, reserve 20%.
 const POLICY_DIR='/tmp/herder-quota-policy-none';
 beforeEach(async()=>{const {tmpdir}=await vi.importActual<typeof import('node:os')>('node:os');state.home=await mkdtemp(join(tmpdir(),'direct-'));state.spawns=[];state.reply={tools:[]};state.mode='ok';state.auth=false;state.host='server-44';state.stderr='';vi.stubEnv('AGENT_HERDER_AUTOPILOT_STATE_DIR',POLICY_DIR);});
@@ -25,7 +27,7 @@ afterEach(async()=>{await rm(state.home,{recursive:true,force:true});vi.useRealT
 describe('owner direct route local logic only',()=>{
  it('keeps personal Mac in native discovery while workspace mutation scope stays separate',()=>{
   const entry=readFileSync(new URL('../src/index.ts',import.meta.url),'utf8');
-  expect(entry).toContain('registerHarnessMeshTools(server, { adapters, gptadmin: new FleetDirectTransport(directFleetPeers)');
+  expect(entry).toContain('registerHarnessMeshTools(server, { adapters, gptadmin: new FleetDirectTransport(fleetPeers())');
   expect(entry).toContain('registerWorkspaceTools(server, { transport: workspaceTransport })');
  });
  it('gives a native snapshot thirty seconds plus transport margin',async()=>{
@@ -36,9 +38,28 @@ describe('owner direct route local logic only',()=>{
   await new FleetDirectTransport([peer]).readSession('mcp:shell:roomhacker-server-88:AgentHerder','minimax-code','mvs_existing');
   expect(state.spawns[0].body).toMatchObject({method:'session/read',params:{harness:'minimax-code',sessionId:'mvs_existing'}});
  });
+ it('allows only the exact owner queue controls and owner job read on the existing peer route',async()=>{
+  const t=new FleetDirectTransport([peer]);const target='mcp:shell:roomhacker-server-88:AgentHerder';
+  await t.call(target,'session_queue_processing_get',{hostId:'roomhacker-server-88',harness:'zcode',sessionId:'z-session'});
+  await t.call(target,'session_queue_processing_resume',{hostId:'roomhacker-server-88',harness:'zcode',sessionId:'z-session',inputId:'resume-once',expectedRevision:7});
+  await t.call(target,'job_get',{jobId:'job_exact'});
+  expect(state.spawns.map(call=>call.body.params?.name)).toEqual(['session_queue_processing_get','session_queue_processing_resume','job_get']);
+  await expect(t.call(target,'session_queue_processing_force',{})).rejects.toThrow('direct_tool_not_authorized');
+  expect(state.spawns).toHaveLength(3);
+ });
+ it('reads a delivery response resource only from the exact owner peer',async()=>{
+  const t=new FleetDirectTransport([peer]);const target='mcp:shell:roomhacker-server-88:AgentHerder';
+  const binding={hostId:peer.hostId,harness:'minimax-code',sessionId:'mvs_exact',jobId:'job_exact',inputId:'input_exact'};
+  const uri='herder://delivery-responses/roomhacker-server-88/minimax-code/mvs_exact/job_exact/input_exact';
+  state.reply={contents:[{uri,text:'{"jobId":"job_exact"}',mimeType:'application/json'}]};
+  await t.readDeliveryResponseResource(target,binding);
+  expect(state.spawns[0].body).toMatchObject({method:'resources/read',params:{uri}});
+  await expect(t.readDeliveryResponseResource(target,{...binding,hostId:'server-44'})).rejects.toThrow('direct_response_owner_mismatch');
+  expect(state.spawns).toHaveLength(1);
+ });
  // Focused integration expected1s/max3s: roaming Mac must use the authenticated canonical reverse route, never its LAN IP.
  it.each(['roomhacker-server-100','server-44'])('routes Mac through the existing server100 reverse SSH from %s',async(host)=>{
-  state.host=host;await new FleetDirectTransport().call('mcp:shell:MacBook-Pro-User.local:AgentHerder','fleet_node_info',{});
+  state.host=host;await new FleetDirectTransport([macPeer]).call('mcp:shell:MacBook-Pro-User.local:AgentHerder','fleet_node_info',{});
   const call=state.spawns[0];expect(call.args).toEqual(expect.arrayContaining(['-p','2222','127.0.0.1','StrictHostKeyChecking=yes','BatchMode=yes']));expect(call.args).not.toContain('192.168.2.8');expect(call.body.hostId).toBe('MacBook-Pro-User.local');expect(call.body.nativeUser).toBe('user');
   if(host==='server-44')expect(call.args).toEqual(expect.arrayContaining(['-J','roomhacker@192.168.2.100']));else expect(call.args).not.toContain('-J');
  });
@@ -198,7 +219,7 @@ exec(compile(source,'owned-http-bridge','exec'))`;
   const input={inputId:'e'.repeat(64),harness:'codex',name:'scoped task',cwd:'/caller/cwd',project:'project-alpha',projectReadinessContract:'integrator-host-readiness-v1',projectReadiness};
   const result=await callback(input);expect(ownerJournal.once).toHaveBeenCalledWith({...input,hostId:state.host},expect.any(Function));
   expect(runtime.validateReadiness).toHaveBeenCalledOnce();
-  expect(create).toHaveBeenCalledWith({inputId:input.inputId,name:input.name,cwd:input.cwd,project:input.project,projectReadinessContract:input.projectReadinessContract,projectReadiness:input.projectReadiness});
+  expect(create).toHaveBeenCalledWith({inputId:input.inputId,name:input.name,cwd:input.cwd,project:input.project,harness:input.harness,projectReadinessContract:input.projectReadinessContract,projectReadiness:input.projectReadiness});
   expect(JSON.parse(result.content[0].text)).toMatchObject({ok:true,sessionId:'scoped-native',cwd:'/configured/root'});
  });
 });

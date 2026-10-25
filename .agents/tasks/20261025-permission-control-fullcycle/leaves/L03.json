@@ -20,9 +20,9 @@
     "minimum": 25,
     "maximum": 45
   },
-  "updated_at": "2026-10-25T16:13:00+03:00",
+  "updated_at": "2026-10-25T22:03:18+03:00",
   "estimate_over_limit_reason": "Четыре нативных mapping выполняются одним владельцем общего интерфейса; промежуточный checkpoint через20мин, оценка включает проверки каждого.",
-  "wait_reason": "Контракт L02 синхронизируется с worker 1; текущая ветка использует согласованный контракт после синхронизации.",
+  "wait_reason": "Codex native mode proof now passes on an owned idle fixture; MiniMax native session-mode state/control remains unsupported, so the four-adapter acceptance remains open.",
   "progress_events": [
     {
       "at": "2026-10-25T14:37:48+03:00",
@@ -50,7 +50,30 @@
       "note": "Independent source review обнаружил нерешённые пункты: OpenCode setPermissions принимает mode readback без проверки session id; Codex getPermissionState сообщает свежее fullAccess по in-memory cache, а DTO не маркирует неподдерживаемую item/permissions approval как non-actionable; Codex itemId назван toolName. Findings переданы permission_native; исправление ожидается. Source SHIP/live PASS не заявляются.",
       "changes": {},
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T17:44:22+03:00",
+      "note": "Lead-confirmed evidence/status refresh; future consumer checks remain pending.",
+      "changes": {
+        "note": "MiniMax Code: source 5f3d3a9 и consumer WIP; предыдущие 52 tests + tsc и native same-DB atomic proof сохранены как source evidence. Независимое review сейчас HOLD: Desktop может вернуть 2xx без item_id, что ошибочно принималось за accepted; worker исправляет и повторит review. Live consumer proof pending. У Codex и MiniMax смена session mode не поддержана. Leaf остаётся running; полного consumer PASS нет."
+      }
+    },
+    {
+      "at": "2026-10-25T17:45:26+03:00",
+      "note": "Lead confirmed current source/review evidence; live consumer still pending.",
+      "changes": {
+        "note": "MiniMax Code: source 5f3d3a9 и consumer WIP; ранее подтверждены 52 tests + tsc и native same-DB atomic proof. Ошибка, из-за которой Desktop 2xx без item_id ошибочно принимался как accepted, исправлена в 7643500; независимое review теперь SHIP. Live consumer proof остаётся pending. У Codex и MiniMax session mode не поддержан. Leaf остаётся running, поскольку installed/full consumer acceptance ещё не завершены."
+      }
+    },
+    {
+      "at": "2026-10-25T22:03:18+03:00",
+      "note": "Factual source/runtime/consumer boundary update; prior acceptance unchanged.",
+      "changes": {
+        "note": "На установленном 8936 Codex exact-session API показал fullAuto/session, canSetMode=true и supported default/fullAuto; native worker подтвердил два контролируемых перехода fullAuto→default→fullAuto с exact readback и idle. MiniMax native session mode/control остаётся unsupported. Отдельный MiniMax delivery canary завершён accepted по L16, но не является подтверждением mode control или agent→agent wake. Полная исходная четырёх-harness приёмка остаётся открыта."
+      },
+      "harness": "codex"
     }
   ],
-  "note": "Source commits 5354887/4214d47/2a137f3/6dadd73 integrated in public commit 49b2c13; the contradictory fullAccess/mode inputs now fail closed before native create. Independent review SHIP; merged focused suite 170/170 and production build GREEN. Native default create canary is separate L15/L08. Four-harness mode consumer acceptance remains open."
+  "note": "На установленном 8936 Codex exact-session API показал fullAuto/session, canSetMode=true и supported default/fullAuto; native worker подтвердил два контролируемых перехода fullAuto→default→fullAuto с exact readback и idle. MiniMax native session mode/control остаётся unsupported. Отдельный MiniMax delivery canary завершён accepted по L16, но не является подтверждением mode control или agent→agent wake. Полная исходная четырёх-harness приёмка остаётся открыта.",
+  "harness": "codex"
 }

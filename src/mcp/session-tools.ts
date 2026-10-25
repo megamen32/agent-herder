@@ -1,10 +1,15 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { hostname } from "node:os";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { HarnessAdapter } from "../types/index.js";
 import { sessionIdentity } from "../session-identity.js";
 import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
+import { UserMessageDelivery } from "../user-message-delivery.js";
+import { waitForDeliveryResponse, type DeliveryResponseBaseline, type DeliveryResponseResult, type DeliveryResponseTarget } from "../session-delivery-response.js";
+import type { SendMessageResult } from "../types/index.js";
+import { trustedMeshIngressFromMcpAuthInfo } from "../mesh/authenticated-ingress.js";
 import {
   SendMessageSchema,
   CreateSessionSchema,
@@ -19,6 +24,7 @@ import {
   formatListAgentsResult,
   agentInfoResult,
   findParentResult,
+  findSession,
   listChildrenResult,
   listModelsResult,
   formatSession,
@@ -44,10 +50,12 @@ import type { IntegratorFleetRuntime } from "../integrator-fleet-runtime.js";
 import { coordinationNotes, normalizeHostId, type CoordinationNoteStore } from "../coordination-notes.js";
 import type { GptAdminTransport } from "../mesh/gptadmin.js";
 import { unwrapResult, type MeshAddress } from "../mesh/protocol.js";
-import { FleetDirectTransport, directFleetPeers } from "../mesh/fleet-direct-transport.js";
+import { FleetDirectTransport, fleetPeers, type DirectPeer } from "../mesh/fleet-direct-transport.js";
+import { composeSessionTitle, mergeSessionLabel, writeSessionLabel } from "../session-labels.js";
 import { assertModelAllowedForDirectory, assertModelAllowedForDirectoryWithPolicy, policyRestrictsModels, type ProjectModelPolicyProvider } from "../project-model-gate.js";
 import { checkDeliveryModel, resolveSessionWorkDirectory, type ProjectModelPolicyStateProvider } from "../project-model-delivery-gate.js";
 import { applySessionTarget } from "../session-target.js";
+import type {SessionQueueControlGateway} from "../session-queue-control-gateway.js";
 
 const harnessSchema = z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]);
 
@@ -79,22 +87,87 @@ export function registerSessionTools(server: McpServer, deps: {
   coordination?: CoordinationNoteStore;
   /** Peer transport used to verify a work directory on another machine. */
   transport?: GptAdminTransport;
+  /** Peers this process may call. Defaults to the fleet; a unit test narrows it to nobody. */
+  routingPeers?: readonly DirectPeer[];
   /** Fleet router used to retarget a session that lives on another machine. */
   fleet?: FleetSessionTargetRouter;
   /** Reads the current launch policy for the per-project model gate. */
   launchPolicy?: ProjectModelPolicyProvider;
   /** Reads the current launch policy state for the per-project model gate of a delivery. */
   deliveryPolicy?: ProjectModelPolicyStateProvider;
+  /** Shared durable queue for public human delivery into native sessions. */
+  userMessageDelivery?: UserMessageDelivery;
+  /** Owner-routed explicit ZCode queue processing, backed by its native owner's durable job registry. */
+  sessionQueueControl?: SessionQueueControlGateway;
 }): void {
   const { adapters, jobs, events } = deps;
+  const userMessageDelivery = deps.userMessageDelivery ?? new UserMessageDelivery(adapters, {
+    sendMessage: async (harness, sessionId, options) => {
+      const adapter = adapters.get(harness);
+      return adapter ? adapter.sendMessage(sessionId, options) : { ok: false, notSubmitted: true, error: "Адаптер отправки недоступен" };
+    },
+  }, jobs);
+  const observeExistingUserDelivery = async (harness: string, sessionId: string, inputId: string, target: DeliveryResponseTarget | undefined): Promise<DeliveryResponseResult | undefined> => {
+    const receipt = userMessageDelivery.get(harness, sessionId, inputId);
+    const job = receipt?.job;
+    const adapter = adapters.get(harness);
+    if (!job || !adapter?.getSession || !target) return undefined;
+    const deadline = Date.now() + 30_000;
+    let baseline: DeliveryResponseBaseline | undefined;
+    while (!baseline && Date.now() < deadline) {
+      const remaining = deadline - Date.now();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const read = userMessageDelivery.readDeliveryResponseBaseline(job.id, inputId, target);
+      const timedOut = Symbol("response-baseline-deadline");
+      try {
+        const value = await Promise.race([
+          read,
+          new Promise<typeof timedOut>((resolve) => { timer = setTimeout(() => resolve(timedOut), remaining); }),
+        ]);
+        if (value === timedOut) break;
+        baseline = value;
+      }
+      catch {
+        const latest = jobs.get<SendMessageResult>(job.id);
+        if (!latest || ["failed", "cancelled", "interrupted", "completed"].includes(latest.state)) break;
+        await new Promise((resolve) => setTimeout(resolve, Math.min(20, Math.max(1, deadline - Date.now()))));
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    }
+    if (!baseline) {
+      return {
+        jobId: job.id, inputId, jobRef: job.resultRef, target, status: "unknown", correlation: "unavailable",
+        text: "", totalTextLength: 0, responseSha256: createHash("sha256").update("").digest("hex"),
+        responseFetchUri: `herder://delivery-responses/${encodeURIComponent(target.hostId)}/${encodeURIComponent(target.harness)}/${encodeURIComponent(target.sessionId)}/${encodeURIComponent(job.id)}/${encodeURIComponent(inputId)}`,
+        baselineCoverage: "unavailable", reason: "baseline_unavailable",
+      };
+    }
+    return await waitForDeliveryResponse({
+      jobId: job.id, inputId, target, baseline,
+      readJob: (id) => jobs.get<SendMessageResult>(id),
+      readHistory: async (requested, limit) => {
+        if (!adapter.getSessionMessages) return { messages: null };
+        const current = await adapter.getSession(requested.sessionId);
+        if (!current || current.id !== requested.sessionId || current.harness !== requested.harness || current.hostId !== requested.hostId) return { messages: null };
+        return { messages: await adapter.getSessionMessages(requested.sessionId, limit), complete: false };
+      },
+      recordResponseReceipt: (id, value) => jobs.recordDeliveryResponseReceipt(id, value),
+      waitMs: Math.max(0, deadline - Date.now()),
+      returnOnVisibleText: true,
+    });
+  };
   const coordination = deps.coordination ?? coordinationNotes;
   let peerTransport: GptAdminTransport | undefined = deps.transport;
-  function selectedRemotePeer(hostId?: string) {
+  /**
+   * The peer that owns the named machine, if this process may call it. A machine
+   * that is not callable is not an error here: the caller decides what it means
+   * (a browse has no sessions of it, a message has no route to it).
+   */
+  function selectedRemotePeer(hostId?: string): DirectPeer | undefined {
     const requested = normalizeHostId(hostId, hostname());
     if (requested.toLowerCase() === hostname().toLowerCase()) return undefined;
-    const peer = directFleetPeers.find(candidate => candidate.hostId.toLowerCase() === requested.toLowerCase());
-    if (!peer) throw new Error(`host_target_unavailable:${requested}`);
-    return peer;
+    return (deps.routingPeers ?? fleetPeers()).find(candidate => candidate.hostId.toLowerCase() === requested.toLowerCase());
   }
   /**
    * Override the work machine and/or work directory of a live session.
@@ -108,6 +181,99 @@ export function registerSessionTools(server: McpServer, deps: {
       coordination,
       ...(peerTransport ? { transport: peerTransport } : {}),
     }, args);
+  }
+
+  /**
+   * Rename one native session of another machine through the fleet peer.
+   *
+   * The native title lives in the harness of the machine that owns the
+   * session, so the rename runs there. The address is checked against the
+   * machine the call really reaches, and an unproven rename is reported as
+   * such instead of being replayed.
+   */
+  async function renameRemoteSession(
+    args: { sessionId: string; harness?: string; title?: string; project?: string; goal?: string; stage?: string },
+    hostId: string,
+    transport?: GptAdminTransport,
+  ) {
+    const fail = (error: string) => ({
+      content: [{ type: "text" as const, text: error }],
+      structuredContent: { ok: false, supported: false, sessionId: args.sessionId, hostId, error },
+    });
+    if (!args.harness) {
+      return fail(`Session '${args.sessionId}' lives on host '${hostId}': name its harness to rename it there.`);
+    }
+    const peer = transport ?? new FleetDirectTransport(fleetPeers().filter((candidate) => candidate.hostId !== "MacBook-Pro-User.local"));
+    let reply: Record<string, unknown>;
+    try {
+      reply = unwrapResult(await peer.call(`mcp:shell:${hostId}:AgentHerder`, "mesh_rename_session", {
+        target: { hostId, harness: args.harness, nativeSessionId: args.sessionId },
+        ...(args.title ? { title: args.title } : {}),
+        ...(args.project ? { project: args.project } : {}),
+        ...(args.goal ? { goal: args.goal } : {}),
+        ...(args.stage ? { stage: args.stage } : {}),
+      }));
+    } catch (error) {
+      return fail(`Failed to rename [${args.harness}] ${args.sessionId} on host '${hostId}': ${error instanceof Error ? error.message : String(error)}`);
+    }
+    const state = String(reply.state ?? "");
+    const reason = typeof reply.reason === "string" && reply.reason ? `: ${reply.reason}` : "";
+    const label = (reply.label ?? {}) as { project?: string; goal?: string; stage?: string };
+    // The peer that owns the session stores the metadata and tells the two
+    // outcomes apart with renamed: the native name changed, or it did not
+    // change and the receipt says why.
+    if (reply.renamed === false) {
+      const renameError = typeof reply.renameError === "string" && reply.renameError
+        ? reply.renameError
+        : (typeof reply.reason === "string" && reply.reason ? reply.reason : "у среды нет нативного канала переименования.");
+      publishSessionsChanged();
+      const structured = {
+        ok: true,
+        supported: true,
+        sessionId: args.sessionId,
+        harness: args.harness,
+        hostId,
+        renamed: false,
+        previousTitle: typeof reply.previousTitle === "string" ? reply.previousTitle : null,
+        title: typeof reply.title === "string" ? reply.title : undefined,
+        renameError,
+        label,
+      };
+      return {
+        content: [{ type: "text" as const, text: `Метка сохранена. Имя сессии не изменилось — ${renameError}` }],
+        structuredContent: structured,
+      };
+    }
+    if (state === "renamed") {
+      publishSessionsChanged();
+      const nativeTitle = typeof reply.nativeTitle === "string"
+        ? reply.nativeTitle
+        : (typeof reply.title === "string" ? reply.title : undefined);
+      const structured = {
+        ok: true,
+        supported: true,
+        sessionId: args.sessionId,
+        harness: args.harness,
+        hostId,
+        renamed: true,
+        previousTitle: typeof reply.previousTitle === "string" ? reply.previousTitle : null,
+        title: typeof reply.title === "string" ? reply.title : undefined,
+        ...(nativeTitle !== undefined ? { nativeTitle } : {}),
+        label,
+      };
+      return {
+        content: [{ type: "text" as const, text: `Сохранено. Название сессии: «${nativeTitle ?? ""}».` }],
+        structuredContent: structured,
+      };
+    }
+    // An older peer does not report renamed: its honest refusals stay refusals.
+    if (state === "unsupported") {
+      return fail(`Host '${hostId}' cannot rename a [${args.harness}] session${reason}`);
+    }
+    if (state === "not_found") {
+      return fail(`Session '${args.sessionId}' was not found on host '${hostId}'${reason}`);
+    }
+    return fail(`The rename of [${args.harness}] ${args.sessionId} on host '${hostId}' is unproven and must not be replayed${reason}`);
   }
   async function sessionRoute<T extends { sessionId?: string; harness?: string; hostId?: string }>(args: T) {
     if (!args.sessionId || !deps.integratorRuntime) return { adapters, args, denied: false, hostTargetUnavailable: undefined as string | undefined };
@@ -238,7 +404,7 @@ export function registerSessionTools(server: McpServer, deps: {
   server.registerTool("agent_info", { description: "Get detailed info about a specific session. Always shows model and last message. Select hostId and harness to read an existing session on another machine.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional() }), outputSchema: z.object({ session: sessionSchema.nullable() }) }, async (args) => {
     const requestedHost = normalizeHostId(args.hostId, hostname());
     if (requestedHost.toLowerCase() !== hostname().toLowerCase()) {
-      const peer = directFleetPeers.find(candidate => candidate.hostId.toLowerCase() === requestedHost.toLowerCase());
+      const peer = (deps.routingPeers ?? fleetPeers()).find(candidate => candidate.hostId.toLowerCase() === requestedHost.toLowerCase());
       if (!peer || !args.harness) throw new Error("remote_session_host_and_harness_required");
       const scope = await deps.integratorRuntime?.adapterForSession({ hostId: peer.hostId, harness: args.harness, nativeSessionId: args.sessionId });
       if (scope?.kind === "deny") throw new Error("project_session_scope_unavailable");
@@ -305,6 +471,109 @@ export function registerSessionTools(server: McpServer, deps: {
     return { content: [{ type: "text" as const, text }], structuredContent: identity };
   });
 
+  server.registerTool("rename_session", {
+    description:
+      "Rename one existing session in place: the native title of the same session changes. " +
+      "No session is created, no model turn starts and no active turn is interrupted. " +
+      "Without a title the name is composed as 'goal | short project name' from stored Herder metadata; stage is omitted. " +
+      "The metadata of the session is stored first and on its own; the native name is an optional operation of the harness. " +
+      "The answer tells the two outcomes apart with renamed: the name changed, or it did not change and says why.",
+    inputSchema: z.object({
+      sessionId: z.string().trim().min(1).max(512),
+      harness: harnessSchema.optional(),
+      hostId: z.string().trim().min(1).max(512).optional()
+        .describe("Machine that owns the session. Omitted renames a session of this machine."),
+      title: z.string().trim().min(1).max(4096).optional()
+        .describe("Exact new title. If omitted, Herder composes 'goal | short project name' and omits stage."),
+      project: z.string().trim().min(1).max(512).optional().describe("The constant project of the session."),
+      goal: z.string().trim().min(1).max(2048).optional().describe("The current business goal of the session."),
+      stage: z.string().trim().min(1).max(2048).optional().describe("The current stage of the plan."),
+    }),
+    outputSchema: z.object({
+      ok: z.boolean(),
+      supported: z.boolean().optional(),
+      sessionId: z.string().optional(),
+      harness: z.string().optional(),
+      hostId: z.string().optional(),
+      renamed: z.boolean().optional(),
+      previousTitle: z.string().nullable().optional(),
+      title: z.string().optional(),
+      nativeTitle: z.string().optional(),
+      renameError: z.string().optional(),
+      label: z.object({ project: z.string().optional(), goal: z.string().optional(), stage: z.string().optional() }).optional(),
+      error: z.string().optional(),
+    }),
+  }, async (args) => {
+    const owner = args.hostId ? normalizeHostId(args.hostId, hostname()) : hostname();
+    // Another machine owns its own native session, so the rename runs there.
+    if (owner !== hostname()) return renameRemoteSession(args, owner, peerTransport);
+    const route = await sessionRoute(args);
+    if (route.denied) throw new Error("project_session_scope_unavailable");
+    if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
+    const found = await findSession(route.adapters, args.sessionId, route.args.harness);
+    if (!found) {
+      const error = `Session '${args.sessionId}' was not found.`;
+      return { content: [{ type: "text" as const, text: error }], structuredContent: { ok: false, supported: false, error } };
+    }
+    const adapter = found.adapter;
+    const patch = { project: args.project, goal: args.goal, stage: args.stage };
+    const hasFields = args.project !== undefined || args.goal !== undefined || args.stage !== undefined;
+    // The composed title uses the stored fields and the new ones together, so
+    // a single-field update never empties the other two.
+    const merged = hasFields
+      ? await mergeSessionLabel(found.session.harness, found.session.id, patch)
+      : await mergeSessionLabel(found.session.harness, found.session.id, {});
+    const title = args.title?.trim() || composeSessionTitle(merged);
+    if (!title) {
+      const error = "A session title is required: give a title, a project name, or a task goal.";
+      return { content: [{ type: "text" as const, text: error }], structuredContent: { ok: false, supported: true, sessionId: args.sessionId, harness: found.session.harness, hostId: owner, error } };
+    }
+    // The metadata is written first and on its own: it belongs to Herder and
+    // does not depend on what the harness can or cannot do with a name.
+    const label = hasFields
+      ? await writeSessionLabel(found.session.harness, found.session.id, patch)
+      : merged;
+    // The native name is an optional operation of the harness. The answer tells
+    // the two outcomes apart: the name changed, or it did not change and says
+    // why. A failed rename never takes the stored metadata away.
+    let renamed = false;
+    let previousTitle: string | null = null;
+    let nativeTitle: string | undefined;
+    let renameError: string | undefined;
+    if (typeof adapter.renameSession !== "function") {
+      renameError = `У среды '${found.session.harness}' нет нативного канала переименования: имя сессии осталось прежним.`;
+    } else {
+      const result = await adapter.renameSession(found.session.id, { title });
+      previousTitle = result.previousTitle ?? null;
+      if (result.ok) {
+        renamed = true;
+        nativeTitle = result.title ?? title;
+      } else {
+        renameError = result.error || "Нативное переименование не удалось.";
+      }
+    }
+    publishSessionsChanged();
+    const structured = {
+      ok: true,
+      supported: true,
+      sessionId: args.sessionId,
+      harness: found.session.harness,
+      hostId: owner,
+      renamed,
+      previousTitle,
+      title,
+      ...(nativeTitle !== undefined ? { nativeTitle } : {}),
+      ...(renameError !== undefined ? { renameError } : {}),
+      label,
+    };
+    return {
+      content: [{ type: "text" as const, text: renamed
+        ? `Сохранено. Название сессии: «${nativeTitle ?? title}».`
+        : `Метка сохранена. Имя сессии не изменилось — ${renameError}` }],
+      structuredContent: structured,
+    };
+  });
+
   server.registerTool("find_parent", { description: "Find the native parent session of an agent session.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }), outputSchema: z.object({ session: sessionSchema.nullable(), parent: sessionSchema.nullable(), supported: z.boolean(), error: z.string().optional() }) }, async (args) => {
     const result = await findParentResult(adapters, args);
     return { content: [{ type: "text" as const, text: formatFindParentResult(args.sessionId, result) }], structuredContent: result };
@@ -346,7 +615,7 @@ export function registerSessionTools(server: McpServer, deps: {
     return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
   });
 
-  server.registerTool("send_message", { description: "Send a message to an agent. Ordinary coordination is active-turn-only, including queue mode: inactive/completed targets return skipped_inactive without new turns or deferred debt. Explicit humanRequested=true permits a human new task/send/resume. inputId deduplicates retries for 24 hours. Active coordination notes are injected automatically. fromSessionId/fromHarness add verified reply attribution, do not authenticate the caller. For ordinary inter-agent exchange use explicit mode:\"steer\" (default) to redirect the current active turn. queue is only intentional deferred work after current work finishes; it may wait hours and is not immediate exchange. sync waits for response.", inputSchema: SendMessageSchema }, async (args) => {
+  server.registerTool("send_message", { description: "Send a message to an agent and wait up to 30 seconds for new visible assistant text. The result includes the existing delivery job reference and a read-only response resource; reading it never resends the message. Ordinary coordination defaults to mode:\"steer\" for the current active turn. Explicit queue and sync use the shared durable delivery and may start work according to the harness. Agent sends require authenticated owner-MCP ingress; sender fields are attribution only. Explicit humanRequested=true marks a human new task/send/resume. inputId deduplicates retries for 24 hours. Active coordination notes are injected automatically. fromSessionId/fromHarness add verified reply attribution, do not authenticate the caller. queue is intentional deferred work and may wait for current work to finish; it is not an immediate exchange. sync is a delivery mode and does not change the bounded response wait.", inputSchema: SendMessageSchema }, async (args, ctx) => {
     const peer = selectedRemotePeer(args.hostId);
     if (peer) {
       if (!args.harness) throw new Error("remote_session_host_and_harness_required");
@@ -366,8 +635,33 @@ export function registerSessionTools(server: McpServer, deps: {
     if (route.denied) throw new Error("project_session_scope_unavailable");
     if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     await assertDeliveryModelAllowed(route.adapters, { sessionId: args.sessionId, harness: args.harness });
-    const result = await handleSendMessage(route.adapters, route.args); publishSessionsChanged();
-    return { content: [{ type: "text" as const, text: result }] };
+    const found = await findSession(route.adapters, args.sessionId, args.harness);
+    const harness = found?.session.harness ?? route.args.harness ?? args.harness;
+    const inputId = args.inputId ?? (found ? createHash("sha256").update(JSON.stringify({
+      hostId: found.session.hostId ?? "unknown", harness: found.session.harness, sessionId: found.session.id,
+      mode: args.mode, message: args.message, humanRequested: args.humanRequested === true,
+    })).digest("hex") : undefined);
+    const requestArgs = { ...route.args, ...(harness ? { harness } : {}), ...(inputId ? { inputId } : {}) };
+    let resolvedTarget: DeliveryResponseTarget | undefined;
+    const result = await handleSendMessage(route.adapters, requestArgs,
+      userMessageDelivery, trustedMeshIngressFromMcpAuthInfo(ctx.http?.authInfo), (session) => {
+        if (session.hostId) resolvedTarget = { hostId: session.hostId, harness: session.harness as DeliveryResponseTarget["harness"], sessionId: session.id };
+      });
+    const response = harness && inputId ? await observeExistingUserDelivery(harness, args.sessionId, inputId, resolvedTarget) : undefined;
+    const receipt = harness && inputId ? userMessageDelivery.get(harness, args.sessionId, inputId) : null;
+    const job = receipt?.job;
+    const terminalWithoutReceipt = Boolean(job && ["failed", "cancelled", "interrupted"].includes(job.state) && !job.result);
+    const delivery = job?.result?.notSubmitted
+      ? JSON.stringify({ ok: false, delivery: "not_attempted", inputId, notSubmitted: true, nonRetryable: true,
+        error: typeof job.result.error === "string" ? job.result.error : "Delivery stopped before native admission." })
+      : terminalWithoutReceipt
+        ? JSON.stringify({ ok: false, delivery: "admission_unknown", inputId, admissionUnknown: true, nonRetryable: true,
+          error: "Delivery job ended without a native receipt; inspect the existing job before retrying." })
+        : result;
+    publishSessionsChanged();
+    return { content: [{ type: "text" as const, text: response
+      ? JSON.stringify({ delivery, response })
+      : delivery }] };
   });
   server.registerTool("create_session", { description: "Create one named OpenCode, Codex, ZCode, or Fast Agent session in an absolute canonical working directory.", inputSchema: CreateSessionSchema }, async (args) => {
     await assertModelAllowedForDirectoryWithPolicy(deps.launchPolicy, args.cwd, args.model, args.harness);
@@ -438,5 +732,29 @@ export function registerSessionTools(server: McpServer, deps: {
   server.registerTool("list_models", { description: "List available AI models for each harness.", inputSchema: z.object({ harness: harnessSchema.optional() }), outputSchema: z.object({ harnesses: z.array(z.object({ harness: z.string(), name: z.string(), models: z.array(z.string()), defaultModel: z.string().optional() })) }) }, async (args) => {
     const harnesses = await listModelsResult(adapters, args);
     return { content: [{ type: "text" as const, text: formatListModelsResult(harnesses) }], structuredContent: { harnesses } };
+  });
+
+  const queueTargetSchema=z.object({hostId:z.string().trim().min(1).max(512),harness:z.literal("zcode"),sessionId:z.string().trim().min(1).max(512)});
+  const queueStateSchema=z.object({autoDrain:z.boolean(),baseRevision:z.number().int().nonnegative(),pendingCount:z.number().int().nonnegative(),oldestQueueItemId:z.string().nullable(),nativeState:z.string(),loaded:z.literal(true),capability:z.literal("setAutoDrain")}).nullable();
+  const queueViewSchema=z.object({target:queueTargetSchema,state:queueStateSchema,canResume:z.boolean(),humanStopHeld:z.boolean(),error:z.string().optional()});
+  const queueUnavailableSchema=z.object({available:z.literal(false),target:queueTargetSchema,error:z.string()});
+  server.registerTool("session_queue_processing_get",{
+    description:"Read the exact native ZCode queue state on its owner. This read does not resume, load, or send a message.",
+    inputSchema:queueTargetSchema,
+    outputSchema:z.union([queueViewSchema,queueUnavailableSchema]),
+  },async(args)=>{
+    const value=deps.sessionQueueControl?await deps.sessionQueueControl.read(args):{available:false as const,target:args,error:"Native queue control is unavailable."};
+    return {content:[{type:"text" as const,text:JSON.stringify(value)}],structuredContent:value};
+  });
+  const queueSubmitSchema=z.object({hostId:z.string().trim().min(1).max(512),harness:z.literal("zcode"),sessionId:z.string().trim().min(1).max(512),inputId:z.string().trim().min(1).max(512),expectedRevision:z.number().int().nonnegative()});
+  const queueJobSchema=z.object({id:z.string(),state:z.string(),resultRef:z.string()});
+  const queueSubmitResultSchema=z.object({target:queueTargetSchema,inputId:z.string(),state:z.enum(["queued","unknown","not_attempted"]),nonRetryable:z.boolean(),job:queueJobSchema.optional(),error:z.string().optional()});
+  server.registerTool("session_queue_processing_resume",{
+    description:"Explicitly resume processing an already accepted native ZCode queue after exact owner, queue revision, HumanStop, permission, and automation-hold checks. Accepted means the native queue-processing preference was confirmed; it does not claim a queued input has started. Unknown is terminal and must not be retried.",
+    inputSchema:queueSubmitSchema,
+    outputSchema:queueSubmitResultSchema,
+  },async(args)=>{
+    const value=deps.sessionQueueControl?await deps.sessionQueueControl.submit(args):{target:{hostId:args.hostId,harness:args.harness,sessionId:args.sessionId},inputId:args.inputId,state:"not_attempted" as const,nonRetryable:true,error:"Native queue control is unavailable."};
+    return {content:[{type:"text" as const,text:JSON.stringify(value)}],structuredContent:value};
   });
 }

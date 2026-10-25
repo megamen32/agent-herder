@@ -17,7 +17,13 @@ import {
   type CommonSettingsTarget,
 } from "./apply.js";
 import { readOwnerDocument, type CommonSettingsDocument, type CommonSettingsHooksLever } from "./document.js";
-import { CommonSettingsStateStore, type CommonSettingsNodeState, type CommonSettingsNodeStatus, type CommonSettingsRole } from "./node-state.js";
+import {
+  CommonSettingsStateStore,
+  redactCommonSettingsConflicts,
+  type CommonSettingsNodeState,
+  type CommonSettingsNodeStatus,
+  type CommonSettingsRole,
+} from "./node-state.js";
 import { catchUpCommonSettings } from "./service.js";
 import type { CommonSettingsTransport } from "./transport.js";
 
@@ -98,7 +104,7 @@ export class CommonSettingsNodeService {
       optIn: state.optIn,
       appliedRevision: state.appliedRevision,
       appliedAt: state.appliedAt,
-      conflicts: state.conflicts,
+      conflicts: redactCommonSettingsConflicts(state.conflicts),
     };
   }
 
@@ -108,6 +114,10 @@ export class CommonSettingsNodeService {
    * The owner of the document builds it from the files of its own machine. A
    * member answers with the document it holds, and with nothing when it holds
    * none: a node without a document never claims one.
+   *
+   * A member never builds a document of its own: the document of the owner is
+   * the only document of the fleet, and the member holds the one it took from
+   * the owner — with the revision and the time of the assembly of the owner.
    */
   async document(): Promise<CommonSettingsDocument | null> {
     if (this.options.role === "owner") {
@@ -134,6 +144,10 @@ export class CommonSettingsNodeService {
    * The owner of the document has nothing to take: it is the source of the
    * truth. A member pulls the document over the transport of the fleet and
    * applies it to the files of its own machine.
+   *
+   * The revision the node names afterwards is the revision of the owner: the
+   * node never names a revision of its own, or the owner could never see that
+   * the node took its document.
    */
   async notice(revision: string): Promise<CommonSettingsApplyResult> {
     if (this.options.role === "owner") {
@@ -164,6 +178,10 @@ export class CommonSettingsNodeService {
    *
    * A node that was off or that had no connection takes the current revision
    * when it comes back: nobody does it by hand.
+   *
+   * The revision the node keeps is the revision of the owner that it took: the
+   * document of the owner travels with its identity, and the node remembers
+   * that identity, not a revision of its own files.
    */
   async catchUp(): Promise<CommonSettingsApplyResult> {
     if (this.options.role !== "member" || !this.options.transport || !this.options.ownerTarget) {

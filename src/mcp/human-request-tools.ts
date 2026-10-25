@@ -1,11 +1,13 @@
 import { acceptedContent, inputRequired, type McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { askHuman, type HumanQuestionBinding } from "../human-request/question-binding.js";
+import { askHuman } from "../human-request/question-binding.js";
 import type { HumanRequestRecord, HumanRequestRegistry } from "../human-request/registry.js";
 import { resumeHumanRequestOnce, humanRequestResumeTarget } from "../human-request/resume-admission.js";
 import { resolveMcpClientFeatures } from "../mcp-client-features.js";
 import type { ResumeReceipt, ResumeTransportRequest } from "../resume-transport.js";
 import { structuredResult } from "./results.js";
+import type { HarnessAdapter } from "../types/index.js";
+import { createPermissionHumanQuestion, hasPermissionReplyContextRef } from "../permission-control/notice-bridge.js";
 
 const humanRequestSchema = z.object({
   requestId: z.string(), kind: z.enum(["user", "secret"]),
@@ -37,6 +39,8 @@ export interface HumanRequestToolOptions {
   humanResume: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   /** Reads the durable provider receipt for the same idempotency key without launching the session. */
   queryReceipt?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
+  /** Native adapters for exact permission question creation. */
+  adapters?: Map<string, HarnessAdapter>;
 }
 
 export function registerHumanRequestTools(
@@ -54,6 +58,9 @@ export function registerHumanRequestTools(
   }> => {
     const record = await humanRequests.get(requestId);
     if (!record) throw new Error(`Human request '${requestId}' not found`);
+    if (hasPermissionReplyContextRef(record.contextRef)) {
+      throw new Error("native permission answers must be dispatched by the canonical Notice completion path; generic session resume is forbidden");
+    }
     const retryableFailure = record.status === "resume_failed"
       && record.receipt === "agent-resume:native-unavailable" && record.resumeRetryable !== false;
     if (record.status === "resumed" || (record.status === "resume_failed" && !retryableFailure)) {
@@ -86,6 +93,7 @@ export function registerHumanRequestTools(
     inputSchema: z.object({
       kind: z.enum(["user", "secret"]), harness: z.string().min(1), sessionId: z.string().min(1), cwd: z.string().min(1).optional(), marker: z.string().min(1).optional(),
       locator: z.record(z.string(), z.unknown()).optional(), contextRef: z.string().optional(),
+      permissionRequestId: z.string().min(1).max(512).optional().describe("Exact currently pending native permission request. Creates fixed Allow/Deny choices bound to this request; never used for general questions."),
       message: z.string().min(1).max(4096).optional().describe("The human-readable question. Omit it for a metadata-only request that shows no Notice card; never paste a secret value into it"),
       choices: z.array(z.object({ choiceId: z.string().min(1).max(64), label: z.string().min(1).max(512) })).min(2).max(4).optional(),
       notify: z.object({ project: z.string().min(1), recipient: z.string().min(1), kind: z.string().min(1), severity: z.string().min(1), title: z.string().min(1) }).optional(),
@@ -101,6 +109,18 @@ export function registerHumanRequestTools(
     }) }),
   }, async (args) => {
     if (args.harness === "hermes" && !args.locator) throw new Error("Hermes human request requires an immutable hermes.locator.v2 locator");
+    if (args.permissionRequestId !== undefined) {
+      if (args.kind !== "user" || !options.adapters) throw new Error("native permission questions require an available native adapter and a user request");
+      const adapter = options.adapters.get(args.harness);
+      if (!adapter) throw new Error("native permission harness is unavailable");
+      const created = await createPermissionHumanQuestion(
+        adapter, humanRequests, args.harness, args.sessionId, args.permissionRequestId,
+        {}, args.notify ? { project: args.notify.project, recipient: args.notify.recipient } : undefined,
+        "manual", { cwd: args.cwd, marker: args.marker },
+      );
+      const { record: _bindingRecord, ...binding } = created.binding;
+      return structuredResult({ request: created.record, binding });
+    }
     const binding = await askHuman(humanRequests, {
       kind: args.kind,
       target: { harness: args.harness, sessionId: args.sessionId, ...(args.cwd ? { cwd: args.cwd } : {}), ...(args.marker ? { marker: args.marker } : {}), ...(args.locator ? { locator: args.locator } : {}) },

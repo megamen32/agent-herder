@@ -48,6 +48,8 @@ function fixture(sessions: AgentSession[], transport?: { call: (target: string, 
       adapters: new Map([["codex", adapter]]),
       jobs: new HerderJobRegistry(events),
       events,
+      // This unit test addresses no machine: the fleet of the installation is not its topology.
+      routingPeers: [],
       ...(transport ? { transport: transport as never } : {}),
     },
   );

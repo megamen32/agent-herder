@@ -1,7 +1,7 @@
 import { hostname } from "node:os";
 import { randomUUID } from "node:crypto";
 
-import { directFleetPeers } from "../mesh/fleet-direct-transport.js";
+import { fleetPeers } from "../mesh/fleet-direct-transport.js";
 import {
   AutomationDisarmStore,
   AUTOMATION_CANNOT_CHANGE_DISARM_REASON,
@@ -225,7 +225,7 @@ export function buildAutomationDisarmStateSummary(result: {
 
 /** The fleet nodes the owner decision reaches by default. */
 export function defaultFleetPeerIds(localHostId: string = hostname()): string[] {
-  return directFleetPeers.map((peer) => peer.hostId).filter((hostId) => hostId !== localHostId);
+  return fleetPeers().map((peer) => peer.hostId).filter((hostId) => hostId !== localHostId);
 }
 
 /**

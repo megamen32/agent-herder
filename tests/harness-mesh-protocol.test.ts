@@ -19,6 +19,8 @@ describe("mesh address and current project (fast unit; expected 2s, maximum 30s)
     expect(parseNativeReceipt({content:[{type:"text",text:'Message sent. Native admission receipt: {"admitted":true,"turnId":"t","inputId":"i"}'}]},"i").state).toBe("admitted");
     expect(parseNativeReceipt({content:[{type:"text",text:"Message sent."}]},"i").state).toBe("unknown");
     expect(parseNativeReceipt({admitted:true,inputId:"other",turnId:"t"},"i").state).toBe("unknown");
+    expect(parseNativeReceipt({state:"queued",inputId:"i",jobId:"job_exact",retryable:false},"i")).toMatchObject({state:"queued",jobId:"job_exact",retryable:false});
+    expect(parseNativeReceipt({state:"queued",inputId:"other",jobId:"job_exact",retryable:false},"i").state).toBe("unknown");
   });
   it("preserves the exact live-owner rate limit/not-found/no-admission preflights",()=>{
     expect(parseNativeReceipt({content:[{type:"text",text:JSON.stringify({ok:false,delivery:"rate_limited",activated:false,retryAfterMs:321})}]},"i").state).toBe("not_attempted");
@@ -29,6 +31,7 @@ describe("mesh address and current project (fast unit; expected 2s, maximum 30s)
     expect(parseNativeReceipt({admitted:false,inputId:"i",nonRetryable:true},"i").state).toBe("unknown");
     expect(parseNativeReceipt({admitted:false,inputId:"i",admissionUnknown:true,delivery:"not_attempted"},"i").state).toBe("unknown");
     expect(parseNativeReceipt({ok:false,delivery:"rate_limited",activated:false,nonRetryable:true},"i").state).toBe("unknown");
+    expect(parseNativeReceipt({ok:false,notSubmitted:true,error:"control transport is not published"},"i")).toMatchObject({state:"not_attempted",inputId:"i",retryable:true});
     expect(parseNativeReceipt({content:[{type:"text",text:"Failed to send message: timeout"}]},"i").state).toBe("unknown");
   });
 });

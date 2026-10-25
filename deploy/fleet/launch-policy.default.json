@@ -1,0 +1,15 @@
+{
+  "note": "fleet model map: the models a node may launch with. The launch policy schema knows codex, opencode and zcode; minimax-code is not a policy harness. Edit this file to change the fleet models - the seed refuses to write a policy that does not cover every policy harness of a node.",
+  "preferredHarness": "codex",
+  "models": {
+    "codex": "gpt-6.1-sol",
+    "opencode": "omniroute/minimax-combo-m3.1",
+    "zcode": "account:zai-individual-coding-plan/GLM-5.3-Flash$high"
+  },
+  "fallbackModels": {
+    "opencode": [
+      "omniroute/minimax-combo-m3.1",
+      "minimax-coding-plan/MiniMax-M3.1-Flash"
+    ]
+  }
+}

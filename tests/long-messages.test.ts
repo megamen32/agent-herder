@@ -27,31 +27,54 @@ afterEach(async () => {
 });
 
 describe("durable long automatic messages", () => {
+  it("keeps messages through 8000 characters intact and previews the next character with an 8000-character continuation page", async () => {
+    root = await mkdtemp(join(tmpdir(), "herder-long-message-boundary-"));
+    oldDirectory = process.env.AGENT_HERDER_LONG_MESSAGES_DIR;
+    process.env.AGENT_HERDER_LONG_MESSAGES_DIR = join(root, "content");
+    const below = "b".repeat(7_999);
+    const exact = "e".repeat(8_000);
+    expect(await compactAutomaticMessage(below)).toBe(below);
+    expect(await compactAutomaticMessage(exact)).toBe(exact);
+
+    const original = "x".repeat(8_001);
+    const preview = await compactAutomaticMessage(original);
+    expect(preview.slice(0, 8_000)).toBe(original.slice(0, 8_000));
+    const id = preview.match(/herder:\/\/m\/([a-f0-9]{8,64})/)?.[1];
+    expect(id).toBeTruthy();
+    const first = await readLongMessage({ messageId: id! });
+    expect(first).toMatchObject({ total: original.length, offset: 0, nextOffset: 8_000 });
+    expect(first.text).toBe(original.slice(0, 8_000));
+    const second = await readLongMessage({ messageId: id!, offset: first.nextOffset! });
+    expect(second.text).toBe(original.slice(8_000));
+    expect(second.nextOffset).toBeNull();
+  });
+
   it("stores exact content privately and reconstructs it across store calls", async () => {
     root = await mkdtemp(join(tmpdir(), "herder-long-message-"));
     oldDirectory = process.env.AGENT_HERDER_LONG_MESSAGES_DIR;
     process.env.AGENT_HERDER_LONG_MESSAGES_DIR = join(root, "content");
-    const original = `${"first line\n".repeat(350)}tail 🧪`;
+    const original = `${"first line\n".repeat(900)}tail 🧪`;
     const digest = createHash("sha256").update(original).digest("hex");
     const preview = await compactAutomaticMessage(original);
     const id = preview.match(/herder:\/\/m\/([a-f0-9]{8,64})/)?.[1];
     expect(id).toHaveLength(8);
-    expect(preview.length).toBeLessThan(360);
+    expect(preview.length).toBeGreaterThan(8_000);
+    expect(preview.length).toBeLessThan(8_100);
+    expect(preview.slice(0, 8_000)).toBe(original.slice(0, 8_000));
     expect(preview).not.toContain(digest);
     expect(preview).not.toContain("read_message");
     expect(preview).not.toContain("Fallback");
-    expect(preview.length - 320).toBeLessThan(40);
+    expect(preview.length - 8_000).toBeLessThan(40);
     expect(preview).toContain(`herder://m/${id}`);
     expect((await stat(process.env.AGENT_HERDER_LONG_MESSAGES_DIR)).mode & 0o777).toBe(0o700);
     expect((await stat(join(process.env.AGENT_HERDER_LONG_MESSAGES_DIR, `${digest}.txt`))).mode & 0o777).toBe(0o600);
 
-    const first = await readLongMessage({ messageId: id!, offset: 0, limit: 1000 });
-    const second = await readLongMessage({ messageId: id!, offset: first.nextOffset!, limit: 1000 });
-    const third = await readLongMessage({ messageId: id!, offset: second.nextOffset!, limit: 1000 });
-    const fourth = await readLongMessage({ messageId: id!, offset: third.nextOffset!, limit: 1000 });
+    const first = await readLongMessage({ messageId: id! });
+    const second = await readLongMessage({ messageId: id!, offset: first.nextOffset! });
     expect(first.total).toBe(original.length);
     expect(first.sha256).toBe(digest);
-    expect(first.text + second.text + third.text + fourth.text).toBe(original);
+    expect(first.nextOffset).toBe(8_000);
+    expect(first.text + second.text).toBe(original);
   });
 
   it("extends colliding short IDs without overwrite and keeps legacy IDs readable", async () => {
@@ -60,7 +83,7 @@ describe("durable long automatic messages", () => {
     const directory = join(root, "content");
     process.env.AGENT_HERDER_LONG_MESSAGES_DIR = directory;
     await mkdir(directory, {mode:0o700});
-    const body = "Exact content with a checked public reference. ".repeat(30);
+    const body = "Exact content with a checked public reference. ".repeat(220);
     const digest = createHash("sha256").update(body).digest("hex");
     const occupied = digest.slice(0,8)+"0".repeat(56);
     await writeFile(join(directory, `ref-${digest.slice(0,8)}`), occupied, {mode:0o600});
@@ -68,8 +91,12 @@ describe("durable long automatic messages", () => {
     const id = preview.match(/herder:\/\/m\/([a-f0-9]+)/)![1]!;
     expect(id).toHaveLength(10);
     expect(await readFile(join(directory, `ref-${digest.slice(0,8)}`),"utf8")).toBe(occupied);
-    expect((await readLongMessage({messageId:id})).text).toBe(body);
-    expect((await readLongMessage({messageId:digest})).text).toBe(body);
+    const first = await readLongMessage({messageId:id});
+    const second = await readLongMessage({messageId:id, offset:first.nextOffset!});
+    expect(first.text + second.text).toBe(body);
+    const legacyFirst = await readLongMessage({messageId:digest});
+    const legacySecond = await readLongMessage({messageId:digest, offset:legacyFirst.nextOffset!});
+    expect(legacyFirst.text + legacySecond.text).toBe(body);
     await writeFile(join(directory, `ref-${id}`), "../outside");
     await expect(readLongMessage({messageId:id})).rejects.toThrow("Invalid message reference");
   });
@@ -97,14 +124,16 @@ describe("durable long automatic messages", () => {
       async stopSession() { return { ok: true }; }, async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
     };
     const adapters = new Map([["codex", adapter]]);
-    const original = `${"concrete assignment detail line\n".repeat(220)}final line ✅`;
+    const original = `${"concrete assignment detail line\n".repeat(360)}final line ✅`;
     const digest = createHash("sha256").update(original).digest("hex");
     const sent = await handleSendMessage(adapters, { harness: "codex", sessionId: session.id, inputId: "long-message-integration", message: original, mode: "queue" });
     expect(sent).toContain("Message sent");
     const id = delivered.match(/herder:\/\/m\/([a-f0-9]{8,64})/)?.[1];
     expect(id).toBeTruthy();
     expect(delivered).not.toContain(original);
-    expect(delivered.length).toBeLessThanOrEqual(1200);
+    expect(delivered).toContain(original.slice(0, 8_000));
+    expect(delivered.length).toBeGreaterThan(8_000);
+    expect(delivered.length).toBeLessThan(8_100);
     const fallbackUri = delivered.match(/(herder:\/\/m\/[a-f0-9]{8,64})/)?.[1];
     expect(fallbackUri).toBe(`herder://m/${id}`);
 
@@ -120,18 +149,20 @@ describe("durable long automatic messages", () => {
     const client = new Client({ name: "long-message-reader", version: "1" }, { versionNegotiation: { mode: "auto" } });
     await server.connect(serverTransport);
     await client.connect(clientTransport);
-    const chunks: string[] = [];
-    let offset = 0;
-    for (;;) {
-      const result = await client.callTool({ name: "read_message", arguments: { messageId: id, offset, limit: 2400 } });
-      expect(result.isError).not.toBe(true);
-      const body = result.structuredContent as { text: string; nextOffset: number | null; sha256: string; total: number };
-      chunks.push(body.text);
-      expect(body.sha256).toBeUndefined();
-      offset = body.nextOffset ?? 0;
-      if (body.nextOffset === null) { expect(body.total).toBe(original.length); break; }
-    }
-    expect(chunks.join("")).toBe(original);
+    const firstRead = await client.callTool({ name: "read_message", arguments: { messageId: id } });
+    expect(firstRead.isError).not.toBe(true);
+    const firstPage = firstRead.structuredContent as { text: string; nextOffset: number | null; sha256: string; total: number };
+    expect(firstPage.text.length).toBe(8_000);
+    expect(firstPage.nextOffset).toBe(8_000);
+    expect(firstPage.sha256).toBeUndefined();
+    const secondRead = await client.callTool({ name: "read_message", arguments: { messageId: id, offset: firstPage.nextOffset } });
+    expect(secondRead.isError).not.toBe(true);
+    const secondPage = secondRead.structuredContent as { text: string; nextOffset: number | null; sha256: string; total: number };
+    expect(secondPage.nextOffset).toBeNull();
+    expect(secondPage.sha256).toBeUndefined();
+    const storedText = firstPage.text + secondPage.text;
+    expect(storedText).toContain(original);
+    expect(firstPage.total).toBe(storedText.length);
 
     expect((await client.listResourceTemplates()).resourceTemplates.map(item => item.uriTemplate)).toContain("herder://messages/{messageId}/{offset}/{limit}");
     const resourceChunks: string[] = [];
@@ -141,12 +172,12 @@ describe("durable long automatic messages", () => {
       const page = JSON.parse(result.contents[0]?.text ?? "{}") as { text: string; nextOffset: number | null; nextResourceUri: string | null; sha256: string; total: number };
       resourceChunks.push(page.text);
       expect(page.sha256).toBeUndefined();
-      expect(page.total).toBe(original.length);
+      expect(page.total).toBe(storedText.length);
       if (page.nextResourceUri === null) { expect(page.nextOffset).toBeNull(); break; }
       expect(page.nextOffset).not.toBeNull();
       resourceUri = page.nextResourceUri;
     }
-    expect(resourceChunks.join("")).toBe(original);
+    expect(resourceChunks.join("")).toBe(storedText);
     await expect(client.readResource({ uri: "herder://messages/%2E%2E%2Fsecret/0/100" })).rejects.toThrow();
     await expect(client.readResource({ uri: `herder://messages/${id}/0/8001` })).rejects.toThrow();
 
@@ -157,9 +188,9 @@ describe("durable long automatic messages", () => {
     expect(Object.keys(exported).sort()).toEqual(["bytes", "host", "path"]);
     expect(exported).not.toHaveProperty("sha256");
     expect(exported.host).not.toHaveProperty("note");
-    expect(exported).toMatchObject({ path: expectedPath, bytes: Buffer.byteLength(original), host: { name: hostname() } });
+    expect(exported).toMatchObject({ path: expectedPath, bytes: Buffer.byteLength(storedText), host: { name: hostname() } });
     expect((await client.listTools()).tools.find(tool => tool.name === "save_message_to_file")?.description).toContain("not automatically available on the calling machine");
-    expect(Buffer.from(await readFile(expectedPath))).toEqual(Buffer.from(original, "utf8"));
+    expect(Buffer.from(await readFile(expectedPath))).toEqual(Buffer.from(storedText, "utf8"));
     expect((await stat(expectedPath)).mode & 0o777).toBe(0o600);
     expect((await stat(join(root!, ".agent-herder"))).mode & 0o777).toBe(0o700);
     expect((await stat(join(root!, ".agent-herder", "messages"))).mode & 0o777).toBe(0o700);
@@ -222,11 +253,16 @@ describe("durable long automatic messages", () => {
       async sendActiveMessage(_id, options) { delivered = options.message; receivedInputId = options.inputId || ""; return { ok: true, admitted: true, inputId: options.inputId }; },
       async createSession() { return session; }, async stopSession() { return { ok: true }; }, async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
     };
-    const original = "new assignment details\n".repeat(120);
+    const original = "new assignment details\n".repeat(500);
     const result = JSON.parse(await handleNewOrResume(new Map([["codex", adapter]]), { harness: "codex", name: "same", cwd: root, message: original, mode: "queue" }));
     expect(result.ok).toBe(true);
-    expect(delivered).toContain("herder://m/");
+    const id = delivered.match(/herder:\/\/m\/([a-f0-9]{8,64})/)?.[1];
+    expect(id).toBeTruthy();
+    expect(delivered).toContain(original.slice(0, 8_000));
     expect(delivered).not.toContain(original);
+    const first = await readLongMessage({messageId:id!});
+    const second = await readLongMessage({messageId:id!,offset:first.nextOffset!});
+    expect(first.text + second.text).toBe(original);
     expect(receivedInputId).toBe(createHash("sha256").update(original).digest("hex"));
     const short = await compactAutomaticMessage("short remains unchanged");
     expect(short).toBe("short remains unchanged");

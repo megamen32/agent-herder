@@ -11,16 +11,23 @@ and the endpoints must answer. If anything fails the node is put back on the
 previous release and restarted.
 """
 import argparse
+import base64
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import release_rules  # noqa: E402
 
 
 def sha256(path: Path) -> str:
@@ -97,7 +104,25 @@ def switch_current(fleet: Path, sha: str):
 
 
 def restart(command: list):
-    subprocess.run(command, check=False, capture_output=True, text=True)
+    return subprocess.run(command, check=False, capture_output=True, text=True)
+
+
+def systemd_daemon_reload() -> bool:
+    result = subprocess.run(["systemctl", "--user", "daemon-reload"],
+                            check=False, capture_output=True, text=True)
+    return result.returncode == 0
+
+
+def restore_install(fleet: Path, config_path: Path, config_backup: Path,
+                    release_sha: str, previous_sha: str, dropin_path: Path | None,
+                    dropin_snapshot: Path | None, restart_command: list) -> None:
+    atomic_copy(config_backup, config_path)
+    switch_current(fleet, previous_sha)
+    if dropin_path and dropin_snapshot:
+        restore_systemd_release_dropin(dropin_path, dropin_snapshot, release_sha)
+        if not systemd_daemon_reload():
+            print("rollback systemd daemon-reload failed")
+    restart(restart_command)
 
 
 def wait_port(port: int, attempts: int = 30) -> bool:
@@ -108,12 +133,27 @@ def wait_port(port: int, attempts: int = 30) -> bool:
     return False
 
 
-def linux_running_release() -> str:
-    """The release directory the live node process actually runs from.
+def release_from_cmdline(cmdline: bytes, fleet: Path) -> str:
+    """Return the immutable SHA named by an absolute release entrypoint arg."""
+    root = (fleet.expanduser().resolve() / "releases").as_posix().rstrip("/")
+    prefix = root + "/"
+    for argument in cmdline.split(b"\0"):
+        if not argument or not argument.startswith(b"/"):
+            continue
+        value = os.fsdecode(argument)
+        if not value.startswith(prefix):
+            continue
+        match = re.fullmatch(r"([a-f0-9]{40})/dist/index\.js", value[len(prefix):])
+        if match:
+            return match.group(1)
+    return ""
 
-    The bootstrap chdirs into the resolved release, so the working directory of
-    the process is the release itself: that is the fact, not a guess about the
-    command line.
+
+def linux_running_release(fleet: Path) -> str:
+    """Read release identity from the live absolute Node entrypoint argument.
+
+    The systemd WorkingDirectory intentionally remains the canonical checkout;
+    cwd therefore cannot identify the immutable runtime release.
     """
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
@@ -122,14 +162,9 @@ def linux_running_release() -> str:
             cmdline = (entry / "cmdline").read_bytes()
         except OSError:
             continue
-        if b"dist/index.js" not in cmdline:
-            continue
-        try:
-            cwd = os.readlink(entry / "cwd")
-        except OSError:
-            continue
-        if "releases/" in cwd:
-            return cwd.split("releases/")[1].split("/")[0]
+        release = release_from_cmdline(cmdline, fleet)
+        if release:
+            return release
     return ""
 
 
@@ -158,10 +193,134 @@ def darwin_running_release(label: str) -> str:
     return ""
 
 
-def running_release(launchd_label: str) -> str:
+def running_release(fleet: Path, launchd_label: str) -> str:
     if sys.platform == "darwin":
         return darwin_running_release(launchd_label)
-    return linux_running_release()
+    return linux_running_release(fleet)
+
+
+def atomic_write(path: Path, content: bytes, mode: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise RuntimeError(f"refusing to replace symlink: {path}")
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.tmp-", dir=path.parent)
+    try:
+        os.fchmod(fd, mode)
+        with os.fdopen(fd, "wb") as handle:
+            fd = -1
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        directory_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def atomic_copy(source: Path, destination: Path) -> None:
+    atomic_write(destination, source.read_bytes(), stat.S_IMODE(source.stat().st_mode))
+
+
+def unit_entrypoint(unit: str) -> str:
+    """The ExecStart of the live unit, as systemd reports it.
+
+    The entrypoint is the fact that says what kind of node this is: the owner
+    node runs the release itself, the fleet node runs the node through its
+    bootstrap. A fleet node that is started by its bootstrap must keep it.
+    """
+    result = subprocess.run(["systemctl", "--user", "show", unit, "-p", "ExecStart", "--value"],
+                            capture_output=True, text=True, check=False)
+    return result.stdout.strip()
+
+
+def systemd_release_dropin_path(unit: str, home: Path | None = None) -> Path:
+    if not re.fullmatch(r"[A-Za-z0-9_.@:-]+\.service", unit) or "/" in unit or ".." in unit:
+        raise ValueError("unit must be a plain systemd .service name")
+    base = (home or Path.home()).expanduser()
+    return base / ".config" / "systemd" / "user" / f"{unit}.d" / "10-release-exec.conf"
+
+
+def preserve_systemd_release_dropin(path: Path, sha: str) -> Path:
+    if not re.fullmatch(r"[a-f0-9]{40}", sha):
+        raise ValueError("release SHA must be a full Git commit")
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise RuntimeError("release drop-in is not a regular file")
+    existed = path.is_file()
+    content = path.read_bytes() if existed else b""
+    mode = stat.S_IMODE(path.stat().st_mode) if existed else 0o644
+    snapshot = path.with_name(f"{path.name}.rollback-{sha}.json")
+    if snapshot.exists() or snapshot.is_symlink():
+        raise FileExistsError(f"release rollback snapshot already exists: {snapshot}")
+    document = {
+        "schemaVersion": 1,
+        "sourceSha": sha,
+        "existed": existed,
+        "mode": mode,
+        "contentBase64": base64.b64encode(content).decode("ascii"),
+    }
+    atomic_write(snapshot, (json.dumps(document, sort_keys=True) + "\n").encode(), 0o600)
+    return snapshot
+
+
+def systemd_exec_argument(value: str) -> str:
+    if not value or any(ord(char) < 0x20 or ord(char) == 0x7f for char in value):
+        raise ValueError("systemd ExecStart arguments must be nonempty and contain no control characters")
+    escaped = value.replace("%", "%%")
+    if any(char.isspace() for char in escaped) or any(char in escaped for char in '\\"'):
+        return '"' + escaped.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return escaped
+
+
+def write_systemd_release_dropin(path: Path, node_bin: str, release: Path, sha: str) -> None:
+    if not re.fullmatch(r"[a-f0-9]{40}", sha):
+        raise ValueError("release SHA must be a full Git commit")
+    if not Path(node_bin).is_absolute():
+        raise ValueError("nodeBin must be an absolute path")
+    entrypoint = (release.expanduser().resolve() / "dist" / "index.js").as_posix()
+    content = (
+        f"# Agent Herder immutable release {sha}\n"
+        "[Service]\n"
+        "ExecStart=\n"
+        f"ExecStart={systemd_exec_argument(node_bin)} {systemd_exec_argument(entrypoint)}\n"
+    ).encode()
+    mode = stat.S_IMODE(path.stat().st_mode) if path.is_file() and not path.is_symlink() else 0o644
+    atomic_write(path, content, mode)
+
+
+def restore_systemd_release_dropin(path: Path, snapshot: Path, sha: str) -> None:
+    document = json.loads(snapshot.read_text())
+    if document.get("schemaVersion") != 1 or document.get("sourceSha") != sha:
+        raise RuntimeError("release drop-in rollback snapshot identity mismatch")
+    if document.get("existed") is True:
+        raw = base64.b64decode(document["contentBase64"], validate=True)
+        mode = document.get("mode")
+        if not isinstance(mode, int) or mode < 0 or mode > 0o7777:
+            raise RuntimeError("release drop-in rollback mode is invalid")
+        atomic_write(path, raw, mode)
+    elif document.get("existed") is False:
+        if path.is_symlink():
+            raise RuntimeError("refusing to remove a release drop-in symlink")
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        if path.parent.exists():
+            directory_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+    else:
+        raise RuntimeError("release drop-in rollback snapshot is malformed")
 
 
 def disarm_state(fleet: Path, state_dir: str = "") -> str:
@@ -248,10 +407,43 @@ def package_tree_digest(root: Path) -> tuple[str, int]:
 
 
 def archived_runtime_lines(package: Path) -> int:
+    """A diagnostic only: the lines of the client that hold the word "archived".
+
+    The word belongs to the archived sessions of the harness, so the number
+    says nothing about the origin of a package: it is an accident of the
+    content of the file. The published package of another version had none of
+    them, the package of the repo has nine, and the next publish of the
+    package moves the number. It is printed as a fact of the two packages and
+    it is not a condition of the acceptance.
+    """
     source = package / "dist" / "harness" / "opencode" / "client.js"
     if not source.is_file():
         return -1
     return sum("archived" in line for line in source.read_text(errors="replace").splitlines())
+
+
+def root_store_offers_release_copy(store_package: Path, expected_digest: str) -> dict:
+    """Does the root store of the area offer the package of the release as a copy?
+
+    The import of the workspace package must come from the release. The
+    resolver of Node looks for a directory named node_modules in every parent
+    of the file it resolves, so a copy of the package that lies in the root
+    store of the area is reachable, and the runtime can import that copy
+    instead of the package of the release.
+
+    The root store of the area is the shared store of the area since the
+    takeover of the root, and the shared store does not carry the workspace
+    package at all: it is a link into the release. The legacy layout of the
+    root store carried the published package of another version. Neither of
+    them is a copy of the package of the release, and neither of them is a
+    source the import can come from. A copy of the package of the release in
+    the root store is the archived copy the resolver could reach, and it is
+    refused.
+    """
+    if not store_package.exists():
+        return {"state": "absent", "copy": False, "sha256": ""}
+    digest, _ = package_tree_digest(store_package)
+    return {"state": "present", "copy": digest == expected_digest, "sha256": digest}
 
 
 def verify_agent_resume_layout(fleet: Path, sha: str) -> bool:
@@ -275,6 +467,7 @@ def verify_agent_resume_layout(fleet: Path, sha: str) -> bool:
         store_package = Path(os.path.realpath(fleet / "node_modules" / "agent-resume-mcp"))
         imported_archived = archived_runtime_lines(imported_package)
         store_archived = archived_runtime_lines(store_package)
+        root_store = root_store_offers_release_copy(store_package, expected_digest)
         print("agent-resume:", json.dumps({
             "imported_entry": str(imported_entry),
             "imported_package_sha256": imported_digest,
@@ -283,106 +476,179 @@ def verify_agent_resume_layout(fleet: Path, sha: str) -> bool:
             "release_files": expected_files,
             "imported_archived_lines": imported_archived,
             "root_store_archived_lines": store_archived,
+            "root_store": root_store,
         }))
         within_release = os.path.commonpath([str(imported_package), str(release.resolve())]) == str(release.resolve())
+        # The import must be the package of the release: the same path, the
+        # same bytes, the same number of files. The root store of the area
+        # must not offer that package as a copy - the resolver of Node can
+        # reach it, and the import could come from that copy instead.
         return (within_release and imported_package == expected_package.resolve(strict=True)
                 and imported_digest == expected_digest and imported_files == expected_files
-                and imported_archived == 9 and store_archived == 0)
+                and not root_store["copy"])
     except (KeyError, OSError, ValueError, subprocess.SubprocessError, json.JSONDecodeError):
         print("agent-resume: verification failed")
         return False
 
 
+def own_tool_caches(source: Path, target: Path) -> list:
+    """The release owns the bytes of its tool caches; the packages stay links.
+
+    The tool caches are rewritten in place by the tools of the runtime. A hard
+    link to one of them would make the bytes of this release change under a
+    running service, and the release would not own its own cache. The caches
+    are copied, the packages stay links of the shared store.
+    """
+    return release_rules.own_tool_caches(source, target)
+
 def prepare_packages(fleet: Path, sha: str, previous_sha: str,
                      release_local_packages: bool = False) -> str:
     """Give the new release the packages of the node.
 
-    The dependency set did not change between the releases (package.json and
-    the lock file are identical), so the packages of the previous release are
-    exactly the ones this release needs. How they are carried differs per node:
-    some keep the packages inside the release, others use a shared store. The
-    new release mirrors the way of the node it replaces.
+    The packages live in the shared store of the node: one directory per
+    dependency set, named by the hash of the lock file of the release. The
+    release links them, and the bytes of the packages are hard links of the
+    store of the node, so the shared store costs no new disk. The workspace
+    package stays a link into the release, so the import from the release is
+    never lost.
+
+    A node whose store is absent is refused with a clear reason: the release
+    is never given a link that points nowhere.
     """
-    target = fleet / "releases" / sha / "node_modules"
-    source = fleet / "releases" / previous_sha / "node_modules"
+    release = fleet / "releases" / sha
+    target = release / "node_modules"
+    previous = fleet / "releases" / previous_sha
+    store = fleet / "node_modules"
     if release_local_packages:
-        store = fleet / "node_modules"
-        candidate_package = fleet / "releases" / sha / "packages" / "agent-resume"
-        package_json = candidate_package / "package.json"
-        if not store.is_dir() or store.is_symlink():
-            raise RuntimeError("release-local package mode requires the root node_modules store")
-        if not candidate_package.is_dir() or not package_json.is_file():
-            raise RuntimeError("candidate release is missing packages/agent-resume")
-        metadata = json.loads(package_json.read_text())
-        if metadata.get("name") != "agent-resume-mcp":
-            raise RuntimeError("candidate packages/agent-resume is not agent-resume-mcp")
-        if target.exists() or target.is_symlink():
-            # Only the symlink to the store may be replaced: a symlink carries
-            # no bytes, and the store itself stays untouched, because the
-            # rollback release still resolves its package through it.
-            link_target = os.path.realpath(target.parent / os.readlink(target)) if target.is_symlink() else ""
-            if link_target != os.path.realpath(store):
-                raise RuntimeError("release-local node_modules must be absent before package preparation")
-            target.unlink()
-        previous_resolution = package_resolution(fleet / "releases" / previous_sha)
-        target.mkdir(parents=True)
-        # Hard links: the release gets its own tree that shares the bytes of
-        # the store. The store element agent-resume-mcp is left out on purpose,
-        # because the release must use its own package, not the one of the
-        # store. The store element may be a symlink or a real directory; in
-        # both cases it stays exactly as it is.
-        children = [child for child in sorted(store.iterdir()) if child.name != "agent-resume-mcp"]
-        if children:
-            subprocess.run(["cp", "-al"] + [str(child) for child in children] + [str(target)], check=True)
-        resume = target / "agent-resume-mcp"
-        if resume.exists() or resume.is_symlink():
-            raise RuntimeError("release-local node_modules already carries agent-resume-mcp")
-        os.symlink("../packages/agent-resume", resume)
-        candidate_resolution = package_resolution(fleet / "releases" / sha)
-        if candidate_resolution != str(candidate_package.resolve(strict=True)):
-            raise RuntimeError("candidate agent-resume-mcp does not resolve inside the new release")
-        if previous_resolution and package_resolution(fleet / "releases" / previous_sha) != previous_resolution:
-            raise RuntimeError("previous release package resolution changed during preparation")
-        return f"release-local hard-link copy of {store}; agent-resume-mcp -> {candidate_resolution}; rollback resolves to {previous_resolution or 'UNRESOLVED'}"
-    if target.is_symlink() and not target.exists():
+        source = store
+    else:
+        source = previous / "node_modules"
+        if source.is_symlink() or not source.is_dir():
+            source = store
+    # The root of the area can be the link to the shared store of the
+    # dependency set (ensure_area_package_root): a link carries no packages of
+    # its own, so the store it names is the source of the packages.
+    materialization_source = source
+    if materialization_source.is_symlink():
+        resolved = materialization_source.resolve()
+        if resolved.is_dir():
+            materialization_source = resolved
+    if materialization_source.is_symlink() or not materialization_source.is_dir():
+        raise RuntimeError(
+            f"the shared package store of the node is absent: {store}")
+    identity = release_rules.dependency_identity(release, previous, materialization_source)
+    store_dir = release_rules.shared_store_dir(fleet, identity)
+    if store_dir.is_dir():
+        release_rules.verify_shared_store(store_dir, identity)
+        created = False
+    else:
+        release_rules.materialize_shared_store(materialization_source, store_dir, identity)
+        created = True
+    # The store must offer its packages to the resolver of Node under the
+    # name the resolver looks for. The store is named
+    # shared-node-modules/<identity>, so the resolver of a package of the
+    # store walks out of it and reaches the area of the node - and there the
+    # legacy root store of the node holds the resolution.
+    store_root = release_rules.ensure_store_package_root(store_dir)
+    # The release that is the point of rollback must stay resolvable: its
+    # store offers its own packages, so the resolver of that release stays
+    # inside the store it was verified against.
+    rollback_store_root = {"state": "absent"}
+    try:
+        previous_store = release_rules.shared_store_dir(
+            fleet, release_rules.dependency_identity(previous))
+    except RuntimeError:
+        previous_store = None
+    if previous_store is not None and previous_store.is_dir():
+        rollback_store_root = release_rules.ensure_store_package_root(previous_store)
+    if target.is_symlink() or target.is_file():
         target.unlink()
-    if target.exists() or target.is_symlink():
-        return "already present"
-    if not source.exists() and not source.is_symlink():
-        return "no source"
-    if source.is_symlink():
-        os.symlink(os.readlink(source), target)
-        return "symlink -> " + os.readlink(source)
-    subprocess.run(["cp", "-al", str(source), str(target)], check=True)
-    return "copied from the previous release (hard links)"
+    elif target.is_dir():
+        if not release_rules.is_package_farm(target):
+            raise RuntimeError(
+                f"the release already carries a package tree of its own: {target}")
+        shutil.rmtree(target)
+    linked = release_rules.link_release_packages(release, store_dir)
+    caches = release_rules.own_tool_caches(source, target)
+    candidate_package = release / "packages" / "agent-resume"
+    if not candidate_package.is_dir():
+        raise RuntimeError("candidate release is missing packages/agent-resume")
+    candidate_resolution = package_resolution(release)
+    if candidate_resolution != str(candidate_package.resolve(strict=True)):
+        raise RuntimeError("candidate agent-resume-mcp does not resolve inside the new release")
+    previous_resolution = package_resolution(previous)
+    if previous_resolution and package_resolution(previous) != previous_resolution:
+        raise RuntimeError("previous release package resolution changed during preparation")
+    # The resolver of Node walks up the real path of a package of the store and
+    # looks for a directory named "node_modules" in every parent. The area must
+    # offer the store under that name, or the runtime does not start at all.
+    # The root of the area must offer the store to the resolver of Node. A
+    # legacy root store of the node holds the resolution there, so it moves
+    # aside before the root is taken: its bytes stay, and the owner decides
+    # about them.
+    takeover = release_rules.take_over_area_package_root(fleet, store_dir)
+    area_root = release_rules.ensure_area_package_root(fleet, store_dir)
+    moved = takeover.get("moved")
+    return (f"shared store {store_dir} (created={created}); {linked}; "
+            f"{len(caches)} tool caches owned by the release; "
+            f"agent-resume-mcp -> {candidate_resolution}; "
+            f"store package root {store_root['path']} state={store_root['state']}; "
+            f"rollback store package root state={rollback_store_root['state']}; "
+            f"area package root {area_root['path']} state={area_root['state']}"
+            + (f"; the legacy root store moved aside: {moved}" if moved else ""))
+
+def linux_release_bytes(release: Path) -> int:
+    """Count allocated blocks introduced by this release, once per inode.
+
+    The installer hard-links packages from the rollback release. Those blocks
+    already exist on disk and must not be charged as new candidate allocation.
+    """
+    paths = (release, *release.rglob("*"))
+    inodes: dict[tuple[int, int], tuple[os.stat_result, int, Path]] = {}
+    for path in paths:
+        info = path.lstat()
+        identity = (info.st_dev, info.st_ino)
+        previous = inodes.get(identity)
+        inodes[identity] = (info, 1 if previous is None else previous[1] + 1,
+                            path if previous is None else previous[2])
+
+    total = 0
+    for info, candidate_links, path in inodes.values():
+        # A link count larger than the number of candidate paths means this
+        # inode is shared with an already-existing release or package store.
+        if stat.S_ISREG(info.st_mode) and info.st_nlink > candidate_links:
+            continue
+        blocks = getattr(info, "st_blocks", None)
+        if not isinstance(blocks, int) or blocks < 0:
+            raise RuntimeError(f"release inode physical allocation is unavailable: {path}")
+        total += blocks * 512
+    return total
 
 
-def release_budget(fleet: Path) -> tuple[int, int]:
+def release_budget(fleet: Path, candidate_sha: str) -> tuple[int, int]:
     releases = [p for p in (fleet / "releases").iterdir() if p.is_dir() and not p.is_symlink()]
+    candidate = fleet / "releases" / candidate_sha
+    if candidate not in releases:
+        raise RuntimeError("candidate release is absent from the release catalog")
     if sys.platform == "darwin":
-        # Use the same bounded physical-tree census as the managed watchdog.
-        # Native packages are hard linked, so apparent bytes duplicate them.
+        # Census only the candidate: the previous release remains for rollback
+        # and must not be charged against the candidate's own 512 MiB budget.
         probe = fleet / "mac-artifact-probe"
         config = json.loads((fleet / "node-config.json").read_text())
         expected = config.get("launcherHashes", {}).get("mac-artifact-probe")
         if not isinstance(expected, str) or not re.fullmatch(r"[a-f0-9]{64}", expected) or sha256(probe) != expected:
             raise RuntimeError("release_budget_probe_identity_mismatch")
         result = subprocess.run([str(probe), str(512 * 1024**2), "30001"],
-                                cwd=fleet / "releases", capture_output=True, text=True, timeout=15)
+                                cwd=candidate, capture_output=True, text=True, timeout=15)
         match = re.fullmatch(r"BYTES ([0-9]+) ENTRIES ([0-9]+)\n", result.stdout)
         if result.returncode != 0 or not match:
             raise RuntimeError("release_budget_census_failed")
         return len(releases), int(match[1])
-    total = 0
-    for release in releases:
-        for path in release.rglob("*"):
-            if path.is_file() and not path.is_symlink():
-                total += path.stat().st_size
-    return len(releases), total
+    return len(releases), linux_release_bytes(candidate)
 
 
 def release_budget_admitted(count: int, size: int) -> bool:
-    return count <= (3 if sys.platform == "darwin" else 2) and size <= 512 * 1024**2
+    return count <= 2 and size <= 512 * 1024**2
 
 
 def wait_codex_socket(config: dict, attempts: int = 30) -> bool:
@@ -414,6 +680,10 @@ def main() -> int:
                         help="copy the root package store into this release and bind agent-resume-mcp to this release's packages/agent-resume")
     parser.add_argument("--unit", default="agent-herder-fleet.service",
                         help="the user unit of the node, used to read its live environment")
+    parser.add_argument("--kind", required=True, choices=["owner", "fleet"],
+                        help="owner: the unit runs the release itself, a release drop-in names it; "
+                             "fleet: the unit starts the node through bootstrap.py, the release is "
+                             "selected by the current symlink and no release drop-in is written")
     parser.add_argument("--state-dir", default="",
                         help="the runtime state directory of the node; read from the live process when empty")
     parser.add_argument("--pause-unit", default="noticeplace-ai-pause.service",
@@ -451,7 +721,7 @@ def main() -> int:
         print("imported agent-resume is not the exact package inside this release; nothing was switched")
         return 1
 
-    release_count, release_bytes = release_budget(fleet)
+    release_count, release_bytes = release_budget(fleet, arguments.sha)
     print(f"release budget: directories={release_count} bytes={release_bytes}")
     if not release_budget_admitted(release_count, release_bytes):
         print("release budget exceeded; nothing was switched")
@@ -465,28 +735,75 @@ def main() -> int:
     if not wait_codex_socket(config):
         print("the managed Codex socket is not there; nothing was switched")
         return 1
+    previous_sha = config.get("sourceSha")
+    if previous_sha != arguments.previous_sha or not re.fullmatch(r"[a-f0-9]{40}", str(previous_sha or "")):
+        print("node-config sourceSha does not match the declared rollback release; nothing was switched")
+        return 1
     backup = fleet / f"node-config-before-{arguments.sha[:8]}.json"
     if backup.exists():
         # An earlier record of this release must not be overwritten: it holds
         # the configuration of the node from before that release was installed.
         backup = fleet / (f"node-config-before-{arguments.sha[:8]}."
-                          f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json")
-    shutil.copy2(config_path, backup)
-    previous_sha = config.get("sourceSha")
+                          f"{time.strftime('%Y%m%dT%H%M%S', time.gmtime())}-{time.time_ns() % 1_000_000_000:09d}.json")
+    try:
+        atomic_copy(config_path, backup)
+    except OSError as error:
+        print("node-config rollback snapshot failed:", error)
+        return 1
+
+    dropin_path: Path | None = None
+    dropin_snapshot: Path | None = None
+    if arguments.kind == "fleet":
+        # A fleet node is started through its bootstrap: the release is chosen
+        # by the current symlink and the sourceSha of the node config. A
+        # release drop-in would replace the bootstrap with the release itself,
+        # and the node would lose the port of its own config: it would take
+        # the port of the unit, which another service may own.
+        entrypoint = unit_entrypoint(arguments.unit)
+        if "bootstrap.py" not in entrypoint:
+            print("the fleet unit does not start the node through bootstrap.py; nothing was switched:",
+                  entrypoint[:160])
+            return 1
+        print("fleet node: the release is selected by the current symlink; no release drop-in is written")
+    elif sys.platform.startswith("linux"):
+        try:
+            dropin_path = systemd_release_dropin_path(arguments.unit)
+            dropin_snapshot = preserve_systemd_release_dropin(dropin_path, arguments.sha)
+            write_systemd_release_dropin(dropin_path, config["nodeBin"], release, arguments.sha)
+        except (KeyError, OSError, RuntimeError, ValueError) as error:
+            print("systemd release drop-in update failed:", error)
+            if dropin_snapshot:
+                try:
+                    restore_systemd_release_dropin(dropin_path, dropin_snapshot, arguments.sha)
+                except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as rollback_error:
+                    print("systemd release drop-in restore failed:", rollback_error)
+            return 1
+
     config["sourceSha"] = arguments.sha
-    temporary = config_path.with_suffix(".json.new")
-    temporary.write_text(json.dumps(config, indent=1) + "\n")
-    os.chmod(temporary, 0o600)
-    os.replace(temporary, config_path)
-    switch_current(fleet, arguments.sha)
+    config_mode = stat.S_IMODE(config_path.stat().st_mode)
+    try:
+        atomic_write(config_path, (json.dumps(config, indent=1) + "\n").encode(), config_mode)
+        switch_current(fleet, arguments.sha)
+        if dropin_path and not systemd_daemon_reload():
+            raise RuntimeError("systemd daemon-reload failed")
+    except (OSError, RuntimeError, ValueError) as error:
+        print("release configuration switch failed:", error)
+        try:
+            restore_install(fleet, config_path, backup, arguments.sha, previous_sha,
+                            dropin_path, dropin_snapshot, arguments.restart_cmd.split())
+        except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as rollback_error:
+            print("rollback configuration restore failed:", rollback_error)
+        return 1
     print(f"switched: current -> releases/{arguments.sha}")
 
-    restart(arguments.restart_cmd.split())
+    restart_result = restart(arguments.restart_cmd.split())
+    if restart_result.returncode != 0:
+        print("release restart command failed:", restart_result.returncode)
     if not wait_port(arguments.port):
         print("the node did not come back on its port")
     time.sleep(3)
 
-    live_sha = running_release(arguments.launchd_label)
+    live_sha = running_release(fleet, arguments.launchd_label)
     sessions = http_status(f"http://127.0.0.1:{arguments.port}/api/sessions")
     policy = http_status(f"http://127.0.0.1:{arguments.port}/api/automation/launch-policy")
     mcp = mcp_status(arguments.port)
@@ -505,11 +822,14 @@ def main() -> int:
 
     if failed:
         print("rolling back to", previous_sha)
-        shutil.copy2(backup, config_path)
-        switch_current(fleet, previous_sha)
-        restart(arguments.restart_cmd.split())
+        try:
+            restore_install(fleet, config_path, backup, arguments.sha, previous_sha,
+                            dropin_path, dropin_snapshot, arguments.restart_cmd.split())
+        except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
+            print("rollback configuration restore failed:", error)
+            return 1
         wait_port(arguments.port)
-        rollback_live = running_release(arguments.launchd_label)
+        rollback_live = running_release(fleet, arguments.launchd_label)
         rollback_sessions = http_status(f"http://127.0.0.1:{arguments.port}/api/sessions")
         rollback_policy = http_status(f"http://127.0.0.1:{arguments.port}/api/automation/launch-policy")
         rollback_mcp = mcp_status(arguments.port)

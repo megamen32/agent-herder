@@ -1,0 +1,71 @@
+{
+  "label": "Завершить Codex-like composer и безопасный voice input",
+  "status": "running",
+  "description": "Сделать ввод и отправку похожими на Codex: Enter переносит строку, Meta+Enter на Mac и Ctrl+Enter в других системах отправляют; plus icon остаётся доступным; удержание send открывает Steer/Queue; browser mic передаёт локальную запись same-origin backend транскрибации и только вставляет текст в composer.",
+  "acceptance": "Клавиатура, обычный click, long-press и выбор Steer/Queue проверены на реальном UI без случайной отправки; voice permission/error, запись, backend transcription, ручная остановка и вставка текста проверены; транскрипт никогда не отправляется автоматически, timeout/ошибка не вызывают retry, аудио не уходит в браузерный secret/provider. Независимый review принят до общего install.",
+  "affected_files": [
+    "src/web-ui/main.tsx",
+    "src/web-ui/styles.css",
+    "src/web-ui/codex-theme.css",
+    "tests/web-ui-controls.test.ts",
+    "src/web/server.ts"
+  ],
+  "owner": "permission_mode_ui",
+  "depends_on": [],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 45
+  },
+  "started_at": "2026-10-25T20:42:00+03:00",
+  "note": "UI source commit 609c784 и mic permission-race fix 2dda29d проверены; local preview/browser доказал клавиатуру, long-press, queue menu и late getUserMedia cleanup. Fake media transcription подтверждает только UI insertion без autosend; backend contract/source 1a3d948 проверены отдельно. Hardware mic, установленный same-origin Whisper route, joined-source review/install остаются pending; no final runtime PASS.",
+  "wait_reason": "Backend route readiness and common reviewed source join are required for end-to-end acceptance.",
+  "id": "L21",
+  "harness": "codex",
+  "updated_at": "2026-10-25T22:03:23+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-25T20:48:54+03:00",
+      "note": "Added per owner request; implementation begun, runtime and review acceptance remain pending.",
+      "changes": {
+        "label": "Завершить Codex-like composer и безопасный voice input",
+        "status": "running",
+        "description": "Сделать ввод и отправку похожими на Codex: Enter переносит строку, Meta+Enter на Mac и Ctrl+Enter в других системах отправляют; plus icon остаётся доступным; удержание send открывает Steer/Queue; browser mic передаёт локальную запись same-origin backend транскрибации и только вставляет текст в composer.",
+        "acceptance": "Клавиатура, обычный click, long-press и выбор Steer/Queue проверены на реальном UI без случайной отправки; voice permission/error, запись, backend transcription, ручная остановка и вставка текста проверены; транскрипт никогда не отправляется автоматически, timeout/ошибка не вызывают retry, аудио не уходит в браузерный secret/provider. Независимый review принят до общего install.",
+        "affected_files": [
+          "src/web-ui/main.tsx",
+          "src/web-ui/styles.css",
+          "src/web-ui/codex-theme.css",
+          "tests/web-ui-controls.test.ts",
+          "src/web/server.ts"
+        ],
+        "owner": "permission_mode_ui",
+        "depends_on": [],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 45
+        },
+        "started_at": "2026-10-25T20:42:00+03:00",
+        "note": "Source implementation in progress. UI uses POST /api/composer/transcription with multipart audio and {text}; bridge owns backend. Focused web-ui-controls tests 30/30 and full TypeScript check pass at current WIP. Real local/browser and backend consumer checks are still pending; no install/PASS claimed.",
+        "wait_reason": "Backend route readiness and common reviewed source join are required for end-to-end acceptance."
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T20:49:43+03:00",
+      "note": "Добавлено объяснение согласованной оценки выше обычного 15-минутного предела.",
+      "changes": {
+        "estimate_over_limit_reason": "Одна пользовательская проверка должна связать клавиатуру/long-press и микрофон с тем же composer, backend transcription и no-autosend поведением; только source или mock не доказывает цель."
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T22:03:23+03:00",
+      "note": "Factual source/runtime/consumer boundary update; prior acceptance unchanged.",
+      "changes": {
+        "note": "UI source commit 609c784 и mic permission-race fix 2dda29d проверены; local preview/browser доказал клавиатуру, long-press, queue menu и late getUserMedia cleanup. Fake media transcription подтверждает только UI insertion без autosend; backend contract/source 1a3d948 проверены отдельно. Hardware mic, установленный same-origin Whisper route, joined-source review/install остаются pending; no final runtime PASS."
+      },
+      "harness": "codex"
+    }
+  ],
+  "estimate_over_limit_reason": "Одна пользовательская проверка должна связать клавиатуру/long-press и микрофон с тем же composer, backend transcription и no-autosend поведением; только source или mock не доказывает цель."
+}

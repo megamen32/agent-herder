@@ -9,17 +9,22 @@ export interface DependencySnapshot {
   turnId?: string;
   completion?: { at: string; outcome: string };
 }
+export type ResumeAfterTrigger = { kind: "delay"; delayMs: number } | { kind: "at"; at: string };
 export interface ResumeAfterRequest {
   owner: SessionRef;
-  dependencies: SessionRef[];
+  dependencies?: SessionRef[];
   message?: string;
   /** Reuse on retry; use a new id for a later wait on the same sessions. */
   requestId?: string;
+  /** One-shot scheduling trigger; mutually exclusive with dependency joins. */
+  trigger?: ResumeAfterTrigger;
 }
 export interface ResumeAfterWait {
   id: string;
   owner: SessionRef;
   dependencies: SessionRef[];
+  trigger?: ResumeAfterTrigger;
+  scheduledAt?: string;
   message: string;
   createdAt: string;
   state: "waiting" | "dispatching" | "resumed" | "cancelled" | "delivery_unknown" | "delivery_failed" | "delivery_blocked";
@@ -44,6 +49,7 @@ export interface ResumeAfterOptions {
   validateRef?: (ref: SessionRef) => Promise<void>;
   /** Extra dependency-only checks, e.g. a harness without a native event stream can never prove completion. */
   validateDependency?: (ref: SessionRef) => Promise<void>;
+  now?: () => number;
 }
 const key = (ref: SessionRef): string => JSON.stringify([ref.harness, ref.sessionId]);
 const terminal = new Set(["turn.completed", "turn.failed", "session.deleted"]);
@@ -102,17 +108,40 @@ export class ResumeAfterService {
   register(input: ResumeAfterRequest): Promise<ResumeAfterWait> {
     return this.serialized(async()=>{
       const valid=(ref:SessionRef)=>ref && typeof ref.harness==="string" && ref.harness.trim() && typeof ref.sessionId==="string" && ref.sessionId.trim() && ref.sessionId.length<=512;
-      if(!valid(input.owner) || !Array.isArray(input.dependencies) || !input.dependencies.length || input.dependencies.length>32 || !input.dependencies.every(valid)) throw new Error("An exact owner and 1..32 session dependencies are required");
-      const dependencies=[...new Map(input.dependencies.map(ref=>[key(ref),{...ref}])).values()].sort((a,b)=>key(a).localeCompare(key(b)));
+      if(!valid(input.owner))throw new Error("An exact owner session is required");
+      const requestedDependencies=input.dependencies??[];
+      if(!Array.isArray(requestedDependencies) || requestedDependencies.length>32 || !requestedDependencies.every(valid)) throw new Error("Dependencies must contain at most 32 exact sessions");
+      if(input.trigger && requestedDependencies.length)throw new Error("A scheduled resume cannot also wait for session dependencies");
+      if(!input.trigger && !requestedDependencies.length)throw new Error("Provide a schedule trigger or 1..32 session dependencies");
+      const dependencies=[...new Map(requestedDependencies.map(ref=>[key(ref),{...ref}])).values()].sort((a,b)=>key(a).localeCompare(key(b)));
       if(dependencies.some(ref=>key(ref)===key(input.owner))) throw new Error("A session cannot wait for itself");
       const message=input.message ?? defaultMessage;
       if(!message.trim() || message.length>16000) throw new Error("A nonempty continuation up to 16000 characters is required");
-      const fingerprint=JSON.stringify({owner:input.owner,dependencies,message});
+      if(input.trigger && (!input.requestId?.trim() || input.requestId.length>256))throw new Error("A scheduled resume requires a stable requestId up to 256 characters");
+      if(input.trigger && !input.message?.trim())throw new Error("A scheduled resume requires an explicit message");
+      const fingerprint=JSON.stringify({owner:input.owner,dependencies,message,...(input.trigger?{trigger:input.trigger}:{})});
       const id="wait_"+createHash("sha256").update(JSON.stringify([key(input.owner),input.requestId ?? fingerprint])).digest("hex").slice(0,32);
       const existing=await this.get(id);
       if(existing){
-        if(JSON.stringify({owner:existing.owner,dependencies:existing.dependencies,message:existing.message})!==fingerprint) throw new Error("Retry id belongs to a different wait");
+        const existingFingerprint=JSON.stringify({owner:existing.owner,dependencies:existing.dependencies,message:existing.message,...(existing.trigger?{trigger:existing.trigger}:{})});
+        if(existingFingerprint!==fingerprint) throw new Error("Retry id belongs to a different wait");
         return existing;
+      }
+      let scheduledAt:string|undefined;
+      if(input.trigger){
+        const now=this.options.now?.()??Date.now();
+        let due:number;
+        if(input.trigger.kind==="delay"){
+          if(!Number.isSafeInteger(input.trigger.delayMs) || input.trigger.delayMs<=0 || now+input.trigger.delayMs>Number.MAX_SAFE_INTEGER)
+            throw new Error("delayMs must be a positive safe integer");
+          due=now+input.trigger.delayMs;
+        }else{
+          if(!validRfc3339Instant(input.trigger.at))throw new Error("at must be a timezone-qualified RFC3339 instant");
+          due=Date.parse(input.trigger.at);
+        }
+        const date=new Date(due);
+        if(!Number.isFinite(date.getTime()) || due<=now)throw new Error("A scheduled resume time must be a valid future instant");
+        scheduledAt=date.toISOString();
       }
       const pending=(await this.list()).filter(w=>w.state==="waiting" || w.state==="dispatching");
       const graph=new Map<string,string[]>();
@@ -127,7 +156,7 @@ export class ResumeAfterService {
       // dependency happens to be inspected first. Validate every dependency
       // before HumanStop handling or a terminal runtime snapshot can short-circuit.
       for(const ref of dependencies) await this.options.validateDependency?.(ref);
-      const wait:ResumeAfterWait={id,owner:{...input.owner},dependencies,message,createdAt:new Date().toISOString(),state:"waiting",completed:{}};
+      const wait:ResumeAfterWait={id,owner:{...input.owner},dependencies,message,...(input.trigger?{trigger:{...input.trigger},scheduledAt}:{}),createdAt:new Date(this.options.now?.()??Date.now()).toISOString(),state:"waiting",completed:{}};
       if(await this.options.isHeld(wait.owner)){
         wait.state="cancelled";wait.reason="requester was stopped";
       } else for(const ref of dependencies) {
@@ -251,6 +280,7 @@ export class ResumeAfterService {
       }
       if(JSON.stringify(wait)!==before)await this.save(wait);
       if(wait.state!=="waiting" || !wait.dependencies.every(ref=>Boolean(wait.completed[key(ref)])))continue;
+      if(wait.scheduledAt && (this.options.now?.()??Date.now())<Date.parse(wait.scheduledAt))continue;
       if(await this.options.isBusy(wait.owner))continue;
       if(busy)continue;
       wait.state="dispatching";await this.save(wait);
@@ -263,4 +293,16 @@ export class ResumeAfterService {
       await this.save(wait);
     }
   }
+}
+
+function validRfc3339Instant(value:string):boolean{
+  const match=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-](\d{2}):(\d{2}))$/.exec(value);
+  if(!match)return false;
+  const [,year,month,day,hour,minute,second,zone,offsetHour,offsetMinute]=match;
+  if(zone==="-00:00")return false;
+  const y=Number(year),m=Number(month),d=Number(day),h=Number(hour),min=Number(minute),s=Number(second);
+  const check=new Date(0);check.setUTCFullYear(y,m-1,d);check.setUTCHours(h,min,s,0);
+  if(check.getUTCFullYear()!==y||check.getUTCMonth()!==m-1||check.getUTCDate()!==d||h>23||min>59||s>59)return false;
+  if(zone!=="Z"&&(Number(offsetHour)>23||Number(offsetMinute)>59))return false;
+  return Number.isFinite(Date.parse(value));
 }

@@ -61,22 +61,73 @@ async function* minimax(options:Options):AsyncGenerator<SearchSourceSession>{
   }catch(error){check(options.signal);options.onIssue?.('native_session_metadata_unavailable');}
  }
 }
+/** Column names of a native table; an absent table simply has no columns. */
+function columnsOf(db:DatabaseSync,table:string):Set<string>{
+ try{const rows=db.prepare(`PRAGMA table_info(${JSON.stringify(table)})`).all() as Iterable<any>;return new Set(Array.from(rows,row=>str(row.name)).filter(Boolean));}catch{return new Set();}
+}
+/** Columns of an index that starts with session_id; undefined means no such index. */
+function sessionIndexOf(db:DatabaseSync,table:string):string[]|undefined{
+ try{
+  const list=db.prepare(`PRAGMA index_list(${JSON.stringify(table)})`).all() as Iterable<any>;
+  for(const item of list){const name=str(item.name);if(!name)continue;
+   const info=db.prepare(`PRAGMA index_info(${JSON.stringify(name)})`).all() as Iterable<any>;
+   const columns=Array.from(info,entry=>str(entry.name)).filter(Boolean);
+   if(columns[0]==='session_id')return columns;}
+ }catch{}
+ return undefined;
+}
+interface DigestCache{entries:Map<string,{envelope:string;digest:string}>;scans:number}
+/** Per native source: the last content digest and the cheap key it was taken under. */
+const digestCaches=new Map<string,DigestCache>();
+/** A periodic full rehash bounds how long an unnoticed in-place edit may stay. */
+function resyncScans():number{const value=Number(process.env.AGENT_HERDER_SESSION_SEARCH_RESYNC_SCANS);return Number.isInteger(value)&&value>0?value:60;}
 async function* sqliteSessions(harness:'opencode'|'zcode'|'hermes',path:string,options:Options):AsyncGenerator<SearchSourceSession>{
  await stat(path);const sourceRevision=await dbStamp(path);const db=new DatabaseSync(path,{readOnly:true});
  try{
   db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=1000');
-  const hermes=harness==='hermes';const sessions=db.prepare(hermes?'SELECT id,title,cwd FROM sessions ORDER BY id':'SELECT id,title,directory AS cwd FROM session ORDER BY id');
+  const hermes=harness==='hermes';
+  const sessionTable=hermes?'sessions':'session',messageTable=hermes?'messages':'message';
+  const sessionColumns=columnsOf(db,sessionTable);
+  const sessionKey=hermes?null:(['time_updated','updated_at'].find(column=>sessionColumns.has(column))??null);
+  const sessions=db.prepare(hermes?'SELECT id,title,cwd FROM sessions ORDER BY id':sessionKey?`SELECT id,title,directory AS cwd,${sessionKey} FROM session ORDER BY id`:'SELECT id,title,directory AS cwd FROM session ORDER BY id');
   const messages=db.prepare(hermes?'SELECT id,content FROM messages WHERE session_id=? ORDER BY timestamp,id':'SELECT id,data FROM message WHERE session_id=? ORDER BY time_created,id');
   const parts=hermes?null:db.prepare('SELECT id,data FROM part WHERE session_id=? AND message_id=? ORDER BY time_created,id');
+  // A source that publishes its own change key may skip the content hash.
+  // Hermes publishes none: its rows carry creation time only, so the hash stays.
+  const messageIndex=sessionIndexOf(db,messageTable);
+  const partIndex=hermes?undefined:sessionIndexOf(db,'part');
+  const incremental=!hermes&&!!sessionKey&&!!messageIndex;
+  const messageEnvelope=incremental?db.prepare(messageIndex!.includes('time_created')&&messageIndex!.includes('id')?'SELECT count(*) c,max(time_created) t,max(id) i FROM message WHERE session_id=?':'SELECT count(*) c FROM message WHERE session_id=?'):null;
+  const partEnvelope=incremental&&partIndex?db.prepare('SELECT count(*) c FROM part WHERE session_id=?'):null;
+  const identity=(await stamp(path)).split(':').slice(0,2).join(':');
+  const cacheKey=`${harness}|${path}|${identity}`;
+  const cache=digestCaches.get(cacheKey)??{entries:new Map<string,{envelope:string;digest:string}>(),scans:0};
+  cache.scans++;
+  const resync=cache.scans%resyncScans()===0;
+  const seen=new Set<string>();
   for(const row of sessions.iterate() as Iterable<any>){check(options.signal);const id=str(row.id);if(!id)continue;
-   // Native schemas do not all advance a content update timestamp (Hermes
-   // messages use creation time). Hash persisted content to detect same-size edits.
-   const digest=createHash('sha256').update(JSON.stringify(row));
-   let hashedRows=0;for(const message of messages.iterate(id) as Iterable<any>){check(options.signal);digest.update(JSON.stringify(message));if(++hashedRows%128===0)await yieldEventLoop();if(parts)for(const part of parts.iterate(id,message.id) as Iterable<any>){check(options.signal);digest.update(JSON.stringify(part));if(++hashedRows%128===0)await yieldEventLoop();}}
-   const revision=digest.digest('hex');
+   seen.add(id);
+   const digestOf=async():Promise<string>=>{
+    // Native schemas do not all advance a content update timestamp (Hermes
+    // messages use creation time). Hash persisted content to detect same-size edits.
+    const digest=createHash('sha256').update(JSON.stringify({id:row.id,title:row.title,cwd:row.cwd}));
+    let hashedRows=0;for(const message of messages.iterate(id) as Iterable<any>){check(options.signal);digest.update(JSON.stringify(message));if(++hashedRows%128===0)await yieldEventLoop();if(parts)for(const part of parts.iterate(id,message.id) as Iterable<any>){check(options.signal);digest.update(JSON.stringify(part));if(++hashedRows%128===0)await yieldEventLoop();}}
+    return digest.digest('hex');
+   };
+   let revision:string;
+   if(incremental){
+    // Cheap key: the session row the harness maintains, plus index-only counts.
+    const message=messageEnvelope!.get(id) as any;const part=partEnvelope?.get(id) as any;
+    const envelope=`${String((row as any)[sessionKey!]??'')}|${message?.c??0}|${message?.t??''}|${message?.i??''}|${part?.c??0}`;
+    const cached=cache.entries.get(id);
+    if(cached&&!resync&&cached.envelope===envelope)revision=cached.digest;
+    else{revision=await digestOf();cache.entries.set(id,{envelope,digest:revision});}
+   }else revision=await digestOf();
    const chunks=async function*(){for(const m of messages.iterate(id) as Iterable<any>){check(options.signal);if(hermes){let value=m.content;try{value=JSON.parse(value);}catch{/* Native plain-text content is valid. */}const body=text(value);if(body)yield {id:String(m.id),text:body};}else{JSON.parse(str(m.data));for(const part of parts!.iterate(id,m.id) as Iterable<any>){const data=JSON.parse(str(part.data));const body=str(data.text);if(body)yield {id:String(part.id),text:body};}}}};
    yield {harness,nativeSessionId:id,title:str(row.title)||id,cwd:str(row.cwd),revision:`${revision}:${str(row.title)}:${str(row.cwd)}`,chunks:chunks()};
   }
+  for(const key of Array.from(cache.entries.keys()))if(!seen.has(key))cache.entries.delete(key);
+  digestCaches.set(cacheKey,cache);
  }finally{db.close();}
  if(await dbStamp(path)!==sourceRevision)throw new Error('native_source_changed_during_scan');
 }

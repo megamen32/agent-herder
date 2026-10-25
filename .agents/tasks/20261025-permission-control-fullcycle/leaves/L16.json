@@ -1,7 +1,7 @@
 {
   "id": "L16",
   "label": "Доставлять сообщение в idle MiniMax desktop без повтора",
-  "status": "queued",
+  "status": "done",
   "description": "Проследить и исправить bounded route, по которому OpenCode передаёт сообщение в idle MiniMax desktop session. Сохранить exact native host/session identity и штатную очередь; accepted/UNKNOWN input не replay-ить и не превращать в новую сессию.",
   "acceptance": "Focused regression доказывает доставку одного нового сообщения в точную idle MiniMax session штатным механизмом; отсутствие capability/неизвестный результат видны явно. Ранее accepted/queued сообщения не переотправляются, никакая новая native session не создаётся.",
   "affected_files": [],
@@ -14,7 +14,20 @@
     "maximum": 35
   },
   "estimate_over_limit_reason": "Одна bounded cross-harness delivery route; exact root cause сейчас read-only трассируется, путь/consumer proof будут уточнены до исходного патча.",
-  "note": "Earlier read-only trace and exact constraints remain: source fix not started, no accepted/queued input replayed. Deferred behind the new user search defect by Lead priority; existing estimate retained.",
-  "updated_at": "2026-10-25T16:13:00+03:00",
-  "wait_reason": "Lead reprioritized the newly reported catalog text-search zero-result defect (L18) after immutable 49b release capture. Resume this bounded idle MiniMax delivery investigation after L18; never replay accepted/UNKNOWN queued messages."
+  "note": "Определённая исходная приёмка остаётся accepted: installed release 00fe2e3692d5dae7e3bd5e5f2cfda77d3c26c1ec, durable public MCP job и exact same-session readback подтвердили одну доставку user/assistant в idle MiniMax desktop с теми же provider/model; прежний timeout UNKNOWN не replay-или. Это доказывает human→desktop outcome данного leaf, не inter-agent idle-wake. Отдельный MiniMax inter-agent live canary не запускался: на последнем чтении 2026-10-25 19:47 UTC квота была 0%; новых отправок и replay не было.",
+  "updated_at": "2026-10-25T23:59:29+03:00",
+  "wait_reason": "",
+  "session": "unknown",
+  "harness": "codex",
+  "progress_events": [
+    {
+      "at": "2026-10-25T23:59:29+03:00",
+      "note": "Определённая исходная приёмка остаётся accepted: installed release 00fe2e3692d5dae7e3bd5e5f2cfda77d3c26c1ec, durable public MCP job и exact same-session readback подтвердили одну доставку user/assistant в idle MiniMax desktop с теми же provider/model; прежний timeout UNKNOWN не replay-или. Это доказывает human→desktop outcome данного leaf, не inter-agent idle-wake. Отдельный MiniMax inter-agent live canary не запускался: на последнем чтении 2026-10-25 19:47 UTC квота была 0%; новых отправок и replay не было.",
+      "changes": {
+        "note": "Определённая исходная приёмка остаётся accepted: installed release 00fe2e3692d5dae7e3bd5e5f2cfda77d3c26c1ec, durable public MCP job и exact same-session readback подтвердили одну доставку user/assistant в idle MiniMax desktop с теми же provider/model; прежний timeout UNKNOWN не replay-или. Это доказывает human→desktop outcome данного leaf, не inter-agent idle-wake. Отдельный MiniMax inter-agent live canary не запускался: на последнем чтении 2026-10-25 19:47 UTC квота была 0%; новых отправок и replay не было."
+      },
+      "session": "unknown",
+      "harness": "codex"
+    }
+  ]
 }

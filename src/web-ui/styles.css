@@ -200,11 +200,36 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .composer textarea { min-height: 28px; max-height: 160px; flex: 1; resize: none; border: 0; background: transparent; color: var(--text); font-size: var(--text-md); line-height: 1.5; } .composer textarea::placeholder { color: var(--muted); }
 .composer-plus { width: 28px; height: 28px; border-radius: var(--radius-s); background: transparent; color: var(--muted); font-size: 20px; } .composer-plus:hover { background: var(--surface-hover); }
 .composer-readonly { min-width: 0; flex: 1; display: grid; gap: 2px; padding: 2px 3px; } .composer-readonly strong { font-size: var(--text-sm); font-weight: 600; } .composer-readonly span { overflow: hidden; color: var(--muted); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
-.composer-hint { position: static; order: 9; flex: 0 0 auto; width: calc(100% - 40px); margin: var(--space-1) 0 0 40px; color: var(--muted); font-size: var(--text-xs); }
+.remote-chat-pane .composer { grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "text text text text" "plus model voice send"; }
 .send-button { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; border: 1px solid var(--border-2); border-radius: var(--radius-m); background: var(--surface-2); color: var(--muted); font-weight: 700; }
 .send-button:not(:disabled) { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .send-button:not(:disabled):hover { background: color-mix(in srgb, var(--accent) 88%, var(--on-accent)); }
 .send-button:disabled { opacity: .45; cursor: not-allowed; }
+.send-open-icon { width: 16px; height: 16px; }
+.composer-voice-actions { display: flex; grid-area: voice; align-items: center; gap: 4px; min-width: 0; }
+.composer-voice-button { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; border: 1px solid var(--border-2); border-radius: var(--radius-m); background: var(--surface-2); color: var(--text-2); }
+.composer-voice-button svg { width: 18px; height: 18px; }
+.composer-voice-button:hover:not(:disabled) { background: var(--surface-hover); }
+.composer-voice-button.recording { border-color: var(--status-error); background: color-mix(in srgb, var(--status-error) 16%, var(--surface-2)); color: var(--status-error); }
+.composer-voice-button:disabled { opacity: .5; cursor: not-allowed; }
+.composer-voice-cancel { width: 24px; height: 24px; flex: 0 0 auto; border: 1px solid var(--border); border-radius: 50%; background: transparent; color: var(--muted); }
+.composer-voice-cancel:hover { background: var(--surface-hover); color: var(--text); }
+.composer-voice-status, .composer-voice-error { flex: 1 0 100%; min-width: 0; padding: 1px 5px; color: var(--muted); font-size: var(--text-xs); overflow-wrap: anywhere; }
+.composer-voice-error { color: var(--status-error); }
+.queue-processing-control { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-1); }
+.queue-processing-copy { display: grid; gap: 2px; min-width: 0; flex: 1 1 240px; color: var(--text-2); font-size: var(--text-xs); }
+.queue-processing-copy strong { color: var(--text); font-size: var(--text-sm); }
+.queue-processing-copy small, .queue-processing-actions small { overflow-wrap: anywhere; }
+.queue-processing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.queue-processing-enabled { color: var(--status-done); font-size: var(--text-xs); font-weight: 600; }
+.voice-loading { animation: pulse 1s ease-in-out infinite; }
+.composer-send-mode-menu { position: absolute; right: 8px; bottom: calc(100% + 8px); z-index: 42; display: grid; gap: 4px; width: min(270px, calc(100vw - 24px)); padding: 8px; border: 1px solid var(--border-2); border-radius: var(--radius-m); background: var(--surface-2); box-shadow: 0 14px 36px var(--shadow-menu); }
+.composer-send-mode-menu > strong { padding: 4px 7px; font-size: var(--text-sm); }
+.composer-send-mode-menu > button { display: grid; gap: 2px; min-width: 0; padding: 8px; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--text); text-align: left; }
+.composer-send-mode-menu > button:hover:not(:disabled), .composer-send-mode-menu > button:focus-visible { background: var(--surface-hover); }
+.composer-send-mode-menu > button:disabled { opacity: .5; }
+.composer-send-mode-menu small { color: var(--muted); font-size: var(--text-xs); }
+.composer-send-mode-menu .composer-send-mode-cancel { color: var(--muted); }
 .composer-plus.active { background: var(--accent-soft); color: var(--accent); }
 .composer-create-panel { position: absolute; left: 0; right: 0; bottom: calc(100% + 9px); z-index: 12; padding: 10px; border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border)); border-radius: var(--radius-m); background: var(--surface-2); box-shadow: 0 16px 42px var(--shadow-menu); }
 .composer-create-row { display: grid; grid-template-columns: 120px minmax(180px, 1.4fr) minmax(160px, 1fr) auto; align-items: end; gap: var(--space-2); }
@@ -224,6 +249,10 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 /* ---------- 10. Инспектор ---------- */
 .inspector-pane { overflow-y: auto; border-left: 1px solid var(--border); padding: 19px var(--space-4); } .inspector-heading { margin-bottom: 27px; } .inspector-title { font-size: 14px; font-weight: 600; line-height: 1.35; } .inspector-status { display: flex; align-items: center; gap: 7px; margin-top: 14px; color: var(--muted); font-size: var(--text-sm); }
 .inspector-pane dl { margin: 25px 0; } .inspector-pane dt { margin-top: 14px; color: var(--muted); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .08em; } .inspector-pane dd { margin: var(--space-1) 0 0; overflow-wrap: anywhere; color: var(--text); font-size: var(--text-sm); line-height: 1.4; } .inspector-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); } .settings-block { display: grid; gap: 10px; margin-top: 30px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--muted); font-size: var(--text-sm); } .settings-block input { accent-color: var(--accent); }
+.permission-mode-facts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: baseline; column-gap: var(--space-3); row-gap: var(--space-1); }
+.permission-mode-facts > * { min-width: 0; overflow-wrap: anywhere; }
+.permission-mode-facts > span { color: var(--muted); }
+.permission-mode-facts > strong { text-align: right; }
 .inspector-empty-metrics { margin: var(--space-1) 0 var(--space-4); padding: 10px 11px; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-2); color: var(--muted); font-size: var(--text-xs); line-height: 1.45; }
 .autopilot-control { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: 20px; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-2); }
 .autopilot-control > div { min-width: 0; } .autopilot-control strong, .autopilot-control small { display: block; } .autopilot-control strong { margin-top: 5px; font-size: var(--text-md); } .autopilot-control small { margin-top: 3px; color: var(--muted); font-size: var(--text-xs); }
@@ -464,7 +493,7 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
   .icon-button { width: 44px; height: 44px; }
   .quiet-button { padding: 12px 14px; }
   .message-column { padding: 22px max(15px, env(safe-area-inset-right)) 22px max(15px, env(safe-area-inset-left)); } .message { margin-bottom: 20px; } .message.user { max-width: 92%; } .message p { margin-bottom: 14px; font-size: var(--text-lg); line-height: 1.7; }
-  .composer-stack { width: calc(100% - 18px); margin: 0 auto; padding-bottom: max(9px, env(safe-area-inset-bottom)); }.composer { padding: 9px; } .composer-hint { display: none; } .composer textarea { font-size: var(--text-lg); }
+  .composer-stack { width: calc(100% - 18px); margin: 0 auto; padding-bottom: max(9px, env(safe-area-inset-bottom)); }.composer { padding: 9px; } .composer textarea { font-size: var(--text-lg); }
   .chat-menu { top: calc(var(--header-h) - 4px); right: 9px; } .scroll-latest { right: 12px; bottom: 96px; } .scroll-latest span { display: none; }
   .autopilot-settings-overlay { inset: var(--header-h) 0 0; padding: 10px; }.global-autopilot-card { padding: 18px 14px; border-radius: var(--radius-m); }.global-autopilot-head { padding-right: 34px; }.harness-grid, .launch-runtime-list { grid-template-columns: 1fr; }.launch-policy-field { grid-template-columns: 1fr; gap: var(--space-2); }
   .global-autopilot-head p, .autopilot-state-banner span, .harness-option small, .settings-help, .timeout-setting small, .runtime-settings-grid label small, .autopilot-control small, .settings-save-row > span { color: var(--text-2); font-size: var(--text-sm); line-height: 1.5; }

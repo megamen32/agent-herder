@@ -78,7 +78,11 @@ function v2Fixture(state: {
         const [, id, rest] = sessionMatch;
         const session = state.sessions[id];
         if (!session) return json(response, { _tag: "SessionNotFoundError", sessionID: id, message: "session not found" });
-        if (!rest) return json(response, { data: session });
+        if (!rest && request.method === "PATCH") {
+          session.permissions = JSON.parse(body || "{}").permissions;
+          return json(response, { data: session });
+        }
+        if (!rest) return json(response, { data: session.readbackId ? { ...session, id: session.readbackId } : session });
         if (rest === "message" && request.method === "GET") {
           if (url.searchParams.has("cursor") && session.emptyCursorTail === true) {
             return json(response, {data:[],cursor:{previous:null,next:null},...session.tailEnvelope});
@@ -183,6 +187,71 @@ it("detects the v2 protocol and never treats the SPA shell as JSON", async () =>
     expect(sessions.find((session) => session.id === "ses_idle")!.status).toBe("error");
   } finally {
     server.close();
+  }
+});
+
+it("rejects unknown V2 permission modes without writing an allow rule", async () => {
+  const state = sessionFixture();
+  const server = v2Fixture(state);
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  try {
+    await adapter.init();
+    const before = state.calls.length;
+    const result = await adapter.setPermissions("ses_running", { mode: "mystery" });
+    expect(result.ok).toBe(false);
+    expect(state.calls.slice(before).some((call) => call.method === "PATCH" && call.path === "/api/session/ses_running")).toBe(false);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+it("sets V2 Full Access on the selected session and confirms native readback", async () => {
+  const state = sessionFixture();
+  const server = v2Fixture(state);
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  try {
+    await adapter.init();
+    expect(await adapter.setPermissions("ses_running", { mode: "fullAuto" })).toEqual({ ok: true });
+    expect(state.sessions.ses_running.permissions).toEqual([{ action: "*", resource: "*", effect: "allow" }]);
+    expect(state.calls.some((call) => call.method === "PATCH" && call.path === "/api/session/ses_running")).toBe(true);
+    expect(state.calls.some((call) => call.method === "GET" && call.path === "/api/session/ses_running")).toBe(true);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+it("rejects a Full Access readback returned for a different native session", async () => {
+  const state = sessionFixture();
+  state.sessions.ses_running.readbackId = "ses_other";
+  const server = v2Fixture(state);
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  try {
+    await adapter.init();
+    expect(await adapter.setPermissions("ses_running", { mode: "fullAuto" })).toMatchObject({ ok: false, error: expect.stringContaining("different or missing session id") });
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+it("reads the selected V2 session mode and only its exact pending requests", async () => {
+  const state = sessionFixture();
+  state.sessions.ses_running.permissions = [{ action: "*", resource: "*", effect: "allow" }];
+  state.permissions = [
+    { id: "perm_selected", sessionID: "ses_running", action: "bash", resources: ["pwd"], message: "Run command" },
+    { id: "perm_other", sessionID: "ses_idle", action: "write", resources: ["file"] },
+  ];
+  const server = v2Fixture(state);
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  try {
+    await adapter.init();
+    expect(await adapter.getPermissionState("ses_running")).toMatchObject({
+      target: { harness: "opencode", sessionId: "ses_running" },
+      currentMode: "allow",
+      scope: "session",
+      pendingRequests: [{ id: "perm_selected", toolName: "bash", command: "pwd", reason: "Run command" }],
+    });
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
 

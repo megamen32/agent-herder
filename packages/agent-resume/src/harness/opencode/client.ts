@@ -9,6 +9,13 @@ import type {
   HarnessSendResult,
   HarnessSessionSummary,
 } from "../client.js";
+import {
+  LEAF_LAUNCH_REFUSAL_MESSAGES,
+  isClosedProviderLeaf,
+  leafLaunchVerdict,
+  type LeafLaunchVerdict,
+  type ProviderLeaf,
+} from "./leaf-launch-policy.generated.js";
 
 /**
  * OpenCode protocol client.
@@ -29,6 +36,7 @@ interface OpenCodeSessionPayload {
   location?: { directory?: string };
   time?: { created?: number; updated?: number; archived?: number | boolean };
   model?: string | { providerID?: string; id?: string };
+  permissions?: Array<{ action?: string; resource?: string; effect?: string }>;
   cost?: number;
   parentID?: string;
   metadata?: Record<string, unknown>;
@@ -182,7 +190,7 @@ export interface OpenCodeStatusSnapshot {
 }
 
 /** Last resort catalog: what a caller can still try when no catalog endpoint answered. */
-const defaultModels = [
+const defaultModelRoutes = [
   "openai/gpt-4o",
   "openai/gpt-4o-mini",
   "anthropic/claude-sonnet-4-20250514",
@@ -190,11 +198,26 @@ const defaultModels = [
   "deepseek/deepseek-chat",
 ];
 
+/**
+ * The routes of the last resort catalog the rule of the owner does not close.
+ *
+ * A provider the owner closed can never run, so the client does not offer it
+ * even when no catalog endpoint answered: the catalog must not promise what
+ * the guard of the OpenCode integration revokes. The routes the rule only
+ * refuses while the prohibitions are on stay in the catalog — the switch of
+ * the owner is known to the guard, not to the catalog, and
+ * `openCodeRouteVerdict` answers what the rule allows.
+ */
+const defaultModels = defaultModelRoutes.filter((route) => {
+  const leaf = openCodeRouteLeaf(route);
+  return leaf !== undefined && !isClosedProviderLeaf(leaf);
+});
+
 const textLimit = 16_384;
 const thinkingLimit = 2_048;
 const toolOutputLimit = 4_096;
 const toolInputLimit = 4_096;
-const restrictedModelRequestFailureMessage = "Agent Herder blocked this model request: the complete native provider route is forbidden or could not be verified for this project.";
+const restrictedModelRequestFailureMessage = LEAF_LAUNCH_REFUSAL_MESSAGES.modelRequest.routeForbidden;
 
 function boundedText(value: unknown, limit: number): string | undefined {
   return typeof value === "string" && value.length > 0 ? value.slice(0, limit) : undefined;
@@ -222,6 +245,42 @@ function safeEventError(value: unknown): string | undefined {
     .replace(/((?:api[_-]?key|token|password|secret)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;}]+)/gi, "$1[redacted]")
     .replace(/[\u0000-\u001f\u007f]+/g, " ")
     .slice(0, 384);
+}
+
+/**
+ * The leaf of one route of the model catalog.
+ *
+ * The catalog names a route as `provider/model`, and the rule of the owner
+ * reads the provider and the provider-facing model id.
+ */
+export function openCodeRouteLeaf(route: string): ProviderLeaf | undefined {
+  const value = route.trim();
+  const separator = value.indexOf("/");
+  if (separator <= 0 || separator === value.length - 1) return undefined;
+  return { providerId: value.slice(0, separator), modelId: value.slice(separator + 1) };
+}
+
+/**
+ * The verdict of the rule of the owner about one leaf of a route.
+ *
+ * The same rule the launcher and the guard of the OpenCode integration use:
+ * the provider the owner closed is refused always, a leaf of an allowed family
+ * is allowed, and every other leaf follows the switch of the owner.
+ */
+export function openCodeLeafLaunchVerdict(leaf: ProviderLeaf, options: { prohibitionsEnabled: boolean }): LeafLaunchVerdict {
+  return leafLaunchVerdict(leaf, options);
+}
+
+/**
+ * The verdict of the rule of the owner about one route of the model catalog.
+ *
+ * The resume asks this before it offers a route, so the resume never promises
+ * a route the guard of the OpenCode integration would revoke.
+ */
+export function openCodeRouteVerdict(route: string, options: { prohibitionsEnabled: boolean }): LeafLaunchVerdict {
+  const leaf = openCodeRouteLeaf(route);
+  if (!leaf) return "denied";
+  return leafLaunchVerdict(leaf, options);
 }
 
 export function unwrapEnvelope<T>(value: unknown): T {
@@ -544,6 +603,43 @@ export class OpenCodeClient implements HarnessClient {
     }
     const statuses = await this.readStatuses(this.directoryOf(session));
     return this.toSummary(session, statuses[id]);
+  }
+
+  async getPermissionState(id: string): Promise<{
+    currentMode?: string;
+    scope: "session" | "workspace";
+    supportedModes: string[];
+    canSetMode: boolean;
+    pendingRequests: Array<{ id: string; toolName?: string; command?: string; reason?: string; canRespond: boolean; nativeMethod: string }>;
+    observedAt: string;
+  } | null> {
+    await this.probeProtocol();
+    try {
+      if (!this.isV2) return { scope: "workspace", supportedModes: [], canSetMode: false, pendingRequests: [], observedAt: new Date().toISOString() };
+      const [session, requests] = await Promise.all([
+        this.fetchJson<OpenCodeSessionPayload>(this.api(`/session/${encodeURIComponent(id)}`)),
+        this.fetchJson<OpenCodePermissionRequest[]>(this.api("/permission/request")),
+      ]);
+      if (session?.id !== id || !Array.isArray(requests)) return null;
+      const wildcard = session.permissions?.find((rule) => rule.action === "*" && rule.resource === "*");
+      return {
+        ...(wildcard?.effect ? { currentMode: wildcard.effect } : {}),
+        scope: "session",
+        supportedModes: ["default", "plan", "fullAuto"],
+        canSetMode: true,
+        pendingRequests: requests.filter((request) => request?.sessionID === id).map((request) => ({
+          id: request.id,
+          ...(request.action ? { toolName: request.action } : {}),
+          ...(request.resources?.length ? { command: request.resources.join(", ") } : {}),
+          ...(request.message ? { reason: request.message } : {}),
+          canRespond: true,
+          nativeMethod: this.isV2 ? "POST /api/session/:id/permission/:requestId/reply" : "POST /session/:id/permissions/:requestId",
+        })),
+        observedAt: new Date().toISOString(),
+      };
+    } catch {
+      return null;
+    }
   }
 
   async createSession(request: OpenCodeCreateRequest): Promise<HarnessSessionSummary> {
@@ -1099,6 +1195,11 @@ export class OpenCodeClient implements HarnessClient {
     return abort.ok ? { ok: true } : { ok: false, error: `HTTP ${abort.status}` };
   }
 
+  /** The verdict of the rule of the owner about one route of a model. */
+  modelRouteVerdict(route: string, options: { prohibitionsEnabled: boolean }): LeafLaunchVerdict {
+    return openCodeRouteVerdict(route, options);
+  }
+
   async listModels(): Promise<string[]> {
     await this.probeProtocol();
     if (this.isV2) {
@@ -1204,6 +1305,13 @@ export class OpenCodeClient implements HarnessClient {
   }
 
   async setPermissions(sessionId: string, options: { allowedTools?: string; mode?: string }): Promise<{ ok: boolean; error?: string }> {
+    const modeEffect = options.mode === undefined ? undefined
+      : options.mode === "default" || options.mode === "plan" ? "ask"
+      : options.mode === "fullAuto" ? "allow"
+      : undefined;
+    if (options.mode !== undefined && modeEffect === undefined) {
+      return { ok: false, error: `Unsupported OpenCode permission mode: ${options.mode}` };
+    }
     await this.probeProtocol();
     if (this.isV2) {
       const rules: Array<{ action: string; resource: string; effect: "allow" | "deny" | "ask" }> = [];
@@ -1212,17 +1320,26 @@ export class OpenCodeClient implements HarnessClient {
           rules.push({ action: tool, resource: "*", effect: "allow" });
         }
       }
-      if (options.mode) rules.push({ action: "*", resource: "*", effect: options.mode === "plan" || options.mode === "default" ? "ask" : "allow" });
+      if (modeEffect) rules.push({ action: "*", resource: "*", effect: modeEffect });
       if (rules.length === 0) return { ok: true };
       const res = await this.fetch(this.api(`/session/${encodeURIComponent(sessionId)}`), {
         method: "PATCH",
         body: JSON.stringify({ permissions: rules }),
       });
-      return { ok: res.ok, error: res.ok ? undefined : `HTTP ${res.status}${await this.errorHint(res)}` };
+      if (!res.ok) return { ok: false, error: `HTTP ${res.status}${await this.errorHint(res)}` };
+      if (modeEffect) {
+        const readback = await this.fetchJson<OpenCodeSessionPayload>(this.api(`/session/${encodeURIComponent(sessionId)}`));
+        if (readback?.id !== sessionId) return { ok: false, error: "OpenCode permission readback returned a different or missing session id" };
+        const permissions = readback?.permissions;
+        const confirmed = Array.isArray(permissions) && permissions.some((rule) => rule?.action === "*"
+          && rule?.resource === "*" && rule?.effect === modeEffect);
+        if (!confirmed) return { ok: false, error: "OpenCode did not confirm the requested session permission mode" };
+      }
+      return { ok: true };
     }
+    if (options.mode !== undefined) return { ok: false, error: "Legacy OpenCode permission mode is directory-scoped and cannot be changed for one session" };
     const updates: Record<string, unknown> = {};
     if (options.allowedTools) updates.allowedTools = options.allowedTools.split(",").map((value) => value.trim());
-    if (options.mode) updates.permissionMode = options.mode;
     const directory = await this.resolveDirectory(sessionId);
     const query = directory ? `?${new URLSearchParams({ directory })}` : "";
     const res = await this.fetch(`/config${query}`, { method: "PATCH", body: JSON.stringify(updates) });

@@ -40,9 +40,11 @@ import {
   isCommonSettingId,
   readCommonSettingsFleet,
   redactCommonDocument,
+  redactCommonSettingsConflicts,
   type CommonSettingsApplyResult,
   type CommonSettingsDocument,
   type CommonSettingsNodeState,
+  type CommonSettingsNodeStatus,
   type CommonSettingsRole,
   type CommonSettingsTransport,
 } from "../common-settings/index.js";
@@ -343,6 +345,28 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
    * With `distribute` the nodes that hold another revision are told that the
    * document moved: they take it and apply it by themselves.
    */
+  /**
+   * The state of a node in an answer of the panel, with the values of the
+   * secrets closed.
+   *
+   * The value of a secret is never in an answer: the answer names the fact that
+   * the setting holds a secret and gives its fingerprint.
+   */
+  const redactCommonNodeStatus = (
+    status: CommonSettingsNodeStatus | null,
+  ): CommonSettingsNodeStatus | null =>
+    status ? { ...status, conflicts: redactCommonSettingsConflicts(status.conflicts) } : status;
+
+  /**
+   * The outcome of an application in an answer of the panel, with the values of
+   * the secrets closed.
+   */
+  const redactCommonApplyResult = (result: CommonSettingsApplyResult): Record<string, unknown> => ({
+    ...result,
+    conflicts: redactCommonSettingsConflicts(result.conflicts),
+    ...(result.document ? { document: redactCommonDocument(result.document) } : {}),
+  });
+
   const readCommonView = async (input: { distribute?: boolean } = {}): Promise<Record<string, unknown>> => {
     const checkedAt = new Date().toISOString();
     const common = options.commonSettings;
@@ -360,6 +384,7 @@ export function createSettingsApi(options: SettingsApiOptions): (request: Incomi
         confirmed: 0,
         total: 0,
         unconfirmed: [],
+        unreachable: [],
         checkedAt,
         error: "Общие настройки флота не настроены на этой ноде.",
       };
@@ -824,7 +849,7 @@ const CONNECTION_TOKEN_KEY = "NOTIFY_CENTER_TOKEN";
           }
           try {
             const status = await common.transport.setOptIn(peer.target, body.enabled);
-            respond(response, 200, { ...await readCommonView(), node: status });
+            respond(response, 200, { ...await readCommonView(), node: redactCommonNodeStatus(status) });
           } catch (error) {
             respond(response, 502, { ok: false, error: `Нода ${target} не ответила: ${(error as Error).message}` });
           }
@@ -861,7 +886,7 @@ const CONNECTION_TOKEN_KEY = "NOTIFY_CENTER_TOKEN";
           }
           try {
             const status = await common.transport.restore(peer.target);
-            respond(response, 200, { ...await readCommonView(), node: status });
+            respond(response, 200, { ...await readCommonView(), node: redactCommonNodeStatus(status) });
           } catch (error) {
             respond(response, 502, { ok: false, error: `Нода ${target} не ответила: ${(error as Error).message}` });
           }
@@ -872,7 +897,7 @@ const CONNECTION_TOKEN_KEY = "NOTIFY_CENTER_TOKEN";
           return true;
         }
         const result = await common.restoreLocal();
-        respond(response, 200, { ...await readCommonView(), restored: result });
+        respond(response, 200, { ...await readCommonView(), restored: redactCommonApplyResult(result) });
         return true;
       }
       if (request.method === "GET" && url.pathname === "/api/settings/audit") {

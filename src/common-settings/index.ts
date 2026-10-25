@@ -22,11 +22,13 @@ export {
   COMMON_SETTINGS_SCOPE,
   CommonSettingsMachineFieldError,
   commonEnvironmentKeys,
+  holdsSecretSetting,
   isCommonSettingId,
   isSecretSettingId,
   MACHINE_SETTINGS_SCOPE,
   machineFieldsOfDocument,
   machineSettingIds,
+  purposeOfSettingId,
   scopeOfSettingId,
   unclassifiedCatalogSettings,
   type CommonSettingScope,
@@ -54,11 +56,21 @@ export {
   CommonSettingsStateStore,
   COMMON_SETTINGS_STATE_FILE,
   emptyCommonSettingsState,
+  redactCommonSettingsConflicts,
   type CommonSettingsConflict,
+  type CommonSettingsConflictView,
   type CommonSettingsNodeState,
   type CommonSettingsNodeStatus,
   type CommonSettingsRole,
 } from "./node-state.js";
+
+export {
+  CommonSettingsPeerCache,
+  COMMON_SETTINGS_PEER_BUDGET_MS,
+  COMMON_SETTINGS_PEER_FRESH_TTL_MS,
+  unansweredPeerEntry,
+  type CommonSettingsPeerEntry,
+} from "./peer-status-cache.js";
 
 export {
   applyCommonSettingsDocument,
@@ -84,6 +96,7 @@ export {
   readCommonSettingsFleet,
   restoreLocalCommonSettings,
   type CommonSettingsFleetView,
+  type CommonSettingsNodeFact,
   type CommonSettingsNodeView,
 } from "./service.js";
 

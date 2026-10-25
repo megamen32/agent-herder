@@ -140,9 +140,10 @@ export class GptAdminMesh {
         // One call only: a timeout or lost admission response is UNKNOWN, never replayed.
         const message=await this.prepareMessage(request,route);
         const reply=unwrapResult(await this.bounded(this.hub.call(route.target,"mesh_deliver",{...request,message},createHash("sha256").update(key).digest("hex"))));
-        if(reply.inputId!==request.inputId||!["admitted","not_attempted","unknown"].includes(String(reply.state)))return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});
+        if(reply.inputId!==request.inputId||!["queued","admitted","not_attempted","unknown"].includes(String(reply.state)))return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});
         if(reply.state==="admitted"&&typeof reply.turnId!=="string")return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});
-        return JSON.stringify({state:reply.state,...(reply.state==="not_attempted"&&reply.retryable===true?{delivery:"not_attempted"}:{}),inputId:request.inputId,...(typeof reply.turnId==="string"?{turnId:reply.turnId}:{}),retryable:reply.state==="not_attempted"&&reply.retryable===true,...(typeof reply.reason==="string"?{reason:reply.reason}:{}),...(typeof reply.retryAfterMs==="number"?{retryAfterMs:reply.retryAfterMs}:{})});
+        if(reply.state==="queued"&&typeof reply.jobId!=="string")return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});
+        return JSON.stringify({state:reply.state,...(reply.state==="not_attempted"&&reply.retryable===true?{delivery:"not_attempted"}:{}),inputId:request.inputId,...(typeof reply.jobId==="string"?{jobId:reply.jobId}:{}),...(typeof reply.turnId==="string"?{turnId:reply.turnId}:{}),retryable:reply.state==="not_attempted"&&reply.retryable===true,...(typeof reply.reason==="string"?{reason:reply.reason}:{}),...(typeof reply.retryAfterMs==="number"?{retryAfterMs:reply.retryAfterMs}:{})});
       }catch{return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});}
     }).then(text=>{const r=JSON.parse(text);return r.state?r:{state:"not_attempted",inputId:request.inputId,retryable:true,reason:r.delivery};});
     this.inputs.set(key,{digest,result});
@@ -189,7 +190,7 @@ export class GptAdminMesh {
    if(!cwd)return request.message;
    const session={id:request.target.nativeSessionId,harness:request.target.harness,cwd,hostId:request.target.hostId};
    const injected=await coordinationNotes.inject(session,request.message);
-   return compactAutomaticMessage(injected,1200,request.message);
+   return compactAutomaticMessage(injected,request.message);
   }
   /**
    * The per-project model gate of one delivery to another machine.

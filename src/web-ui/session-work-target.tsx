@@ -23,6 +23,72 @@ export type WorkTargetHost = { hostId: string; label: string };
 /** The live session whose work place is shown. */
 export type WorkTargetSession = { id: string; harness: string; cwd: string; hostId?: string };
 
+/** One file the agent changed, as the server proves it. */
+export type SessionFileFact = { path: string; operation: string };
+
+/** One child session, as the owner reads it. */
+export type SessionSubagentFact = { id: string; name: string; named: boolean; role?: string; status: string };
+
+/** What the session inspector knows for certain about the session. */
+export type SessionInspectFacts = {
+  model: { native?: string };
+  lastAction: { label: string; tool?: string; at?: string } | null;
+  files: SessionFileFact[];
+  worktreeFiles: string[];
+  subagents: { count: number; items: SessionSubagentFact[] };
+  history: { source: string; complete: boolean };
+};
+
+/**
+ * The machine labels the owner already knows. A raw host id says nothing about
+ * which machine it is, so the fleet names them in words.
+ */
+const MACHINE_LABELS: Record<string, string> = {
+  "roomhacker-server-100": "Сервер 100",
+  "server-100": "Сервер 100",
+  "roomhacker-server-88": "Сервер 88",
+  "server-88": "Сервер 88",
+  "roomhacker-server-44": "Сервер 44",
+  "server-44": "Сервер 44",
+  "roomhacker-mac-mini": "Mac Mini",
+  "mac-mini": "Mac Mini",
+  "roomhacker-mac-m1": "Mac M1",
+  "mac-m1": "Mac M1",
+};
+
+/** The machine a session works on, named in the owner's words. */
+export function machineLabel(hostId: string | undefined, hostLabel?: string): string {
+  if (!hostId) return hostLabel || "Машина не подтверждена";
+  const known = MACHINE_LABELS[hostId.toLowerCase()];
+  if (known) return known;
+  return hostLabel || hostId;
+}
+
+/** The status of a child session, in the owner's words. */
+export function subagentStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    running: "Работает",
+    idle: "Ожидает запуска",
+    needs_input: "Ждёт ответа",
+    stopped: "Остановлена",
+    completed: "Завершена",
+    error: "Ошибка",
+  };
+  return labels[status] || status;
+}
+
+/**
+ * The one model line the owner reads. A pending next-answer model is not the
+ * same fact as the model the session runs on now, so it is marked apart.
+ */
+export function modelRows(native: string | undefined, pending: string | undefined): { label: string; value: string; pending?: boolean }[] {
+  const current = native?.trim() || "";
+  const next = pending?.trim() || "";
+  const rows: { label: string; value: string; pending?: boolean }[] = [{ label: "Модель", value: current || "не подтверждена" }];
+  if (next && next !== current) rows.push({ label: "Следующий ответ", value: next, pending: true });
+  return rows;
+}
+
 /**
  * Human-facing result of one operation. An unreachable machine never reads as
  * success: it says the machine is unreachable and why.
@@ -99,16 +165,179 @@ export async function applyWorkTarget(
 /** Value of the machine select that asks for a machine outside the known fleet. */
 const CUSTOM_HOST = "__custom__";
 
+/** What a conversion of a working session into OpenCode actually achieved. */
+export type SessionConvertOutcome = {
+  ok: boolean;
+  /** The conversation was carried over: how many messages, and where. */
+  transferred: { messageCount?: number; targetSessionId?: string; targetPath?: string };
+  /** Whether the running OpenCode server serves that new session. */
+  visibleInOpenCode: boolean;
+  /** Which refusal it was, when the new session is not visible. */
+  visibilityCause?: string;
+  /** Why the new session is or is not visible, in the owner's words. */
+  visibilityNote: string;
+  /** The original session stays exactly where it was. */
+  stayed: { sessionId: string; harness: string; path?: string };
+  error?: string;
+};
+
+/**
+ * What the owner reads after a conversion.
+ *
+ * A conversion that the running OpenCode server does not serve is never read
+ * as a success: the text says the conversation was carried over, then says
+ * that the owner will not see it and why.
+ */
+export function convertOutcomeText(outcome: SessionConvertOutcome): string {
+  if (!outcome.ok) return outcome.error || "Перевод не удался.";
+  const count = outcome.transferred.messageCount;
+  const where = outcome.transferred.targetPath ? ` в ${outcome.transferred.targetPath}` : "";
+  const carried = count !== undefined ? `Перенесено сообщений: ${count}${where}.` : `Перевод выполнен${where}.`;
+  if (outcome.visibleInOpenCode) return `${carried} Новая сессия видна в работающем OpenCode. Исходная сессия Codex осталась на месте.`;
+  const cause = outcome.visibilityNote || "причина не названа";
+  return `${carried} Переведено, но живой OpenCode её не показывает — причина: ${cause}. Исходная сессия Codex осталась на месте.`;
+}
+
+/** The owner sees what the action changes before pressing it. */
+export function convertActionHint(): string {
+  return "Переносит переписку этой сессии Codex в новую сессию OpenCode. Исходная сессия Codex остаётся на месте.";
+}
+
+/**
+ * Converts a working session into OpenCode through the mechanism Herder
+ * already has. The answer the owner gets says what was carried over and
+ * whether the new session is visible — never more than was proven.
+ */
+export async function convertSessionToOpenCode(session: { id: string; harness: string }): Promise<SessionConvertOutcome> {
+  try {
+    const response = await fetch(`/api/sessions/${encodeURIComponent(session.harness)}/${encodeURIComponent(session.id)}/convert`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ to: "opencode" }),
+    });
+    const body = await response.json().catch(() => undefined) as Partial<SessionConvertOutcome> | undefined;
+    if (!response.ok || !body) {
+      return {
+        ok: false,
+        transferred: {},
+        visibleInOpenCode: false,
+        visibilityNote: "",
+        stayed: { sessionId: session.id, harness: session.harness },
+        error: body?.error || `Сервер ответил ошибкой ${response.status}.`,
+      };
+    }
+    return {
+      ok: true,
+      transferred: body.transferred || {},
+      visibleInOpenCode: body.visibleInOpenCode === true,
+      visibilityCause: body.visibilityCause,
+      visibilityNote: body.visibilityNote || "",
+      stayed: body.stayed || { sessionId: session.id, harness: session.harness },
+      error: body.error,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      transferred: {},
+      visibleInOpenCode: false,
+      visibilityNote: "",
+      stayed: { sessionId: session.id, harness: session.harness },
+      error: `Перевод не удался: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+/** Reads what the session inspector can prove about this session. */
+export async function readSessionInspectFacts(session: { id: string; harness: string }): Promise<SessionInspectFacts | undefined> {
+  try {
+    const query = new URLSearchParams({ sessionId: session.id, harness: session.harness });
+    const response = await fetch(`/api/sessions/${encodeURIComponent(session.harness)}/${encodeURIComponent(session.id)}/inspect`, { headers: { accept: "application/json" }, cache: "no-store" });
+    if (!response.ok) return undefined;
+    const body = await response.json().catch(() => undefined) as SessionInspectFacts | undefined;
+    return body && typeof body === "object" ? body : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The block that answers "what is the agent doing now", "which files did it
+ * change" and "who are the subagents". What the server cannot prove is said
+ * plainly instead of being invented.
+ *
+ * The block lives in the inspector of the right panel: the chat itself keeps
+ * its height for the conversation. Every long list is folded behind its own
+ * summary, so the panel shows the count first and the details on demand.
+ */
+export function SessionInspectBlock({ facts, pendingModel }: { facts?: SessionInspectFacts; pendingModel?: string; loading?: boolean }) {
+  if (!facts) {
+    return <section className="inspector-facts" aria-label="Работа по сессии">
+      <span className="eyebrow">РАБОТА ПО СЕССИИ</span>
+      <p className="inspector-facts-empty">Данных о работе сессии пока нет — обновите сессию.</p>
+    </section>;
+  }
+  const rows = modelRows(facts.model.native, pendingModel);
+  const files = facts.files.length ? facts.files : facts.worktreeFiles.map((path) => ({ path, operation: "Изменение файлов" }));
+  const shown = files.slice(0, 200);
+  return <section className="inspector-facts" aria-label="Работа по сессии">
+    <span className="eyebrow">РАБОТА ПО СЕССИИ</span>
+    <dl>
+      {rows.map((row) => <React.Fragment key={row.label}>
+        <dt>{row.label}</dt>
+        <dd className={row.pending ? "inspector-facts-pending" : undefined}>{row.value}</dd>
+      </React.Fragment>)}
+      <dt>Сейчас</dt>
+      <dd>{facts.lastAction ? `${facts.lastAction.label}${facts.lastAction.tool ? ` · ${facts.lastAction.tool}` : ""}` : "действий пока нет"}</dd>
+    </dl>
+    <details className="inspector-fold" open>
+      <summary>Файлы <span>{files.length}</span></summary>
+      {files.length
+        ? <ul className="inspector-facts-files">{shown.map((file) => <li key={file.path} title={file.path}>{file.path}</li>)}</ul>
+        : <p className="inspector-facts-empty">изменённых файлов не зафиксировано</p>}
+      {files.length > shown.length && <small className="settings-hint">Показаны первые {shown.length} из {files.length}.</small>}
+    </details>
+    <details className="inspector-fold">
+      <summary>Субагенты <span>{facts.subagents.count}</span></summary>
+      {facts.subagents.count
+        ? <ul className="inspector-facts-subagents">{facts.subagents.items.map((child) => <li key={child.id}>
+          <strong>{child.name}</strong>
+          <small>{[child.role, subagentStatusLabel(child.status)].filter(Boolean).join(" · ")}</small>
+        </li>)}</ul>
+        : <p className="inspector-facts-empty">дочерних сессий нет</p>}
+    </details>
+  </section>;
+}
+
+/** Фокус наш, если он внутри поповера или на самой шестерёнке. */
+function focusIsOurs(popover: HTMLElement | null, gear: HTMLElement | null): boolean {
+  const active = document.activeElement;
+  if (!active) return false;
+  return Boolean(popover?.contains(active) || gear?.contains(active));
+}
+
+/** Может ли элемент принять фокус — чтобы не отнимать его у того, куда кликнули. */
+function canTakeFocus(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  return target.matches("a[href], button, input, select, textarea, [tabindex]");
+}
+
 /**
  * The work target of one live session: the machine it works on and the
  * directory it works in. The server owns the truth — this block shows it and
  * asks for a change, and it never presents an unreachable machine as done.
  */
-export function SessionWorkTarget({ session, hosts, localHostId, onApplied }: {
+export function SessionWorkTarget({ session, hosts, localHostId, onApplied, showConvert = true, expanded = false, onExpandedChange, settingsMenu }: {
   session: WorkTargetSession;
   hosts: WorkTargetHost[];
   localHostId?: string;
   onApplied?: (receipt: SessionTargetReceipt) => void;
+  showConvert?: boolean;
+  /** The header of the chat is folded by default; the owner unfolds it when the work place matters. */
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
+  /** The menu of every setting of the panel; the small gear of the header opens it. */
+  settingsMenu?: React.ReactNode;
 }) {
   const [current, setCurrent] = React.useState({ hostId: session.hostId ?? localHostId ?? "", cwd: session.cwd });
   const [hostId, setHostId] = React.useState(current.hostId);
@@ -118,6 +347,24 @@ export function SessionWorkTarget({ session, hosts, localHostId, onApplied }: {
   const [outcome, setOutcome] = React.useState<SessionTargetOutcome>();
   const [error, setError] = React.useState<string>();
   const [pending, setPending] = React.useState(false);
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [converting, setConverting] = React.useState(false);
+  const [convertResult, setConvertResult] = React.useState<string>();
+  const gearRef = React.useRef<HTMLButtonElement>(null);
+  const popoverRef = React.useRef<HTMLDivElement>(null);
+  // Фокус вернётся на шестерёнку, только если он был наш и его не забрал другой элемент.
+  const restoreFocusRef = React.useRef(false);
+
+  const convert = async () => {
+    setConverting(true);
+    setConvertResult(undefined);
+    try {
+      const outcome = await convertSessionToOpenCode({ id: session.id, harness: session.harness });
+      setConvertResult(convertOutcomeText(outcome));
+    } finally {
+      setConverting(false);
+    }
+  };
 
   // The declared work target is the truth; the session row only knows where it started.
   React.useEffect(() => {
@@ -138,6 +385,54 @@ export function SessionWorkTarget({ session, hosts, localHostId, onApplied }: {
     });
     return () => { live = false; };
   }, [session.id, session.harness]);
+
+  // Пока поповер открыт, Escape закрывает его, а клик мимо — тоже.
+  React.useEffect(() => {
+    if (!settingsOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      // Фокус возвращается на шестерёнку, только если он ещё наш.
+      restoreFocusRef.current = focusIsOurs(popoverRef.current, gearRef.current);
+      setSettingsOpen(false);
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (popoverRef.current?.contains(target)) return;
+      if (gearRef.current?.contains(target)) return;
+      // Клик мимо: закрываем. Фокус отдаём тому, куда кликнули, если он его умеет принять.
+      restoreFocusRef.current = !canTakeFocus(target) && focusIsOurs(popoverRef.current, gearRef.current);
+      setSettingsOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [settingsOpen]);
+
+  // Фокус живёт в поповере, пока поповер открыт, и возвращается на шестерёнку, когда его закрывают.
+  React.useEffect(() => {
+    if (settingsOpen) {
+      const popover = popoverRef.current;
+      // Поповер мог не отрисоваться вовсе (нет меню) — тогда фокус трогать нечего.
+      if (!popover) return;
+      const first = popover.querySelector<HTMLElement>("button, input, select, [tabindex]");
+      first?.focus();
+      return;
+    }
+    // Закрытие: фокус возвращается на шестерёнку, только если он был наш.
+    const active = document.activeElement;
+    // Фокус потерян вместе с удалённым поповером — значит вернуть его надо.
+    const lost = !active || active === document.body;
+    if (restoreFocusRef.current && (focusIsOurs(popoverRef.current, gearRef.current) || lost)) {
+      gearRef.current?.focus();
+    }
+    restoreFocusRef.current = false;
+  }, [settingsOpen]);
+
+  // The facts of the session live in the inspector of the right panel, not here.
 
   const knownHosts = hosts.slice();
   if (current.hostId && !knownHosts.some((host) => host.hostId.toLowerCase() === current.hostId.toLowerCase())) {
@@ -167,37 +462,80 @@ export function SessionWorkTarget({ session, hosts, localHostId, onApplied }: {
     onApplied?.(receipt);
   };
 
-  return <section className="work-target" aria-label="Рабочая машина">
-    <div className="work-target-current">
-      <span className="eyebrow">РАБОЧАЯ МАШИНА</span>
-      <strong>{workTargetHostLabel(hosts, current.hostId)}</strong>
-      <code title={current.hostId}>{current.hostId || "машина не подтверждена"}</code>
-      <small>Каталог: <code title={current.cwd}>{current.cwd || "не задан"}</code></small>
-    </div>
-    <div className="work-target-form">
-      <label>Машина
-        <select aria-label="Рабочая машина" value={custom ? CUSTOM_HOST : hostId} onChange={(event) => {
-          const value = event.target.value;
-          if (value === CUSTOM_HOST) { setCustom(true); return; }
-          setCustom(false);
-          setHostId(value);
-        }}>
-          {knownHosts.map((host) => <option key={host.hostId} value={host.hostId}>{host.label} · {host.hostId}</option>)}
-          <option value={CUSTOM_HOST}>Другая машина…</option>
-        </select>
-      </label>
-      {custom && <label>Машина (hostId)
-        <input aria-label="Идентификатор рабочей машины" value={customHostId} placeholder="например, server-44"
-          onChange={(event) => setCustomHostId(event.target.value)} />
-      </label>}
-      <label>Каталог
-        <input aria-label="Рабочий каталог" value={cwd} onChange={(event) => setCwd(event.target.value)} />
-      </label>
-      <button type="button" className="quiet-button" disabled={pending} onClick={() => void apply()}>
-        {pending ? "Применяем…" : "Применить"}
+  return <section className={`work-target ${expanded ? "work-target-open" : "work-target-closed"}`} aria-label="Рабочая машина">
+    <div className="work-target-bar">
+      <button type="button" className="work-target-caret-button" aria-expanded={expanded}
+        aria-label={expanded ? "Свернуть рабочую машину" : "Развернуть рабочую машину"}
+        title={expanded ? "Свернуть рабочую машину" : "Развернуть рабочую машину"}
+        onClick={() => onExpandedChange?.(!expanded)}>
+        <svg className="work-target-caret" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 5l7 7-7 7" />
+        </svg>
       </button>
+      <button type="button" className="work-target-summary" aria-expanded={expanded} onClick={() => onExpandedChange?.(!expanded)}
+        title={expanded ? "Свернуть рабочую машину" : "Развернуть рабочую машину"}>
+        <span className="work-target-label">Рабочая машина</span>
+        <strong>{machineLabel(current.hostId, workTargetHostLabel(hosts, current.hostId))}</strong>
+        <code title={current.cwd || "каталог не задан"}>{current.cwd || "каталог не задан"}</code>
+      </button>
+      <div className="work-target-bar-actions">
+        <button type="button" className="icon-button work-target-settings" aria-label="Настройки" title="Настройки панели"
+          aria-haspopup="true" ref={gearRef}
+          aria-expanded={settingsOpen} onClick={() => {
+            // Закрываем через шестерёнку — фокус возвращается на неё.
+            restoreFocusRef.current = settingsOpen;
+            setSettingsOpen((value) => !value);
+          }}>
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <path d="M4 7h10M18 7h2M4 12h4M12 12h8M4 17h12M20 17h0" />
+            <circle cx="16" cy="7" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="18" cy="17" r="2" />
+          </svg>
+        </button>
+      </div>
+      {settingsOpen && settingsMenu && <div className="work-target-popover" role="group" aria-label="Настройки панели"
+        ref={popoverRef}>{settingsMenu}</div>}
     </div>
-    {outcome && <p className={`work-target-result work-target-${outcome.tone}`} role="status">{outcome.message}</p>}
-    {error && <p className="work-target-result work-target-error" role="alert">{error}</p>}
+    {expanded && <div className="work-target-details">
+      <div className="work-target-current">
+        <span className="eyebrow">РАБОЧАЯ МАШИНА</span>
+        <strong>{machineLabel(current.hostId, workTargetHostLabel(hosts, current.hostId))}</strong>
+        <code title={current.hostId}>{current.hostId || "машина не подтверждена"}</code>
+        <small>Каталог: <code title={current.cwd}>{current.cwd || "не задан"}</code></small>
+        <p className="work-target-hint">Рабочий каталог агента на этой машине. Папка проекта сессии — «Папка» в панели сессии; это другая величина.</p>
+      </div>
+      <div className="work-target-form">
+        <label>Машина
+          <select aria-label="Рабочая машина" value={custom ? CUSTOM_HOST : hostId} onChange={(event) => {
+            const value = event.target.value;
+            if (value === CUSTOM_HOST) { setCustom(true); return; }
+            setCustom(false);
+            setHostId(value);
+          }}>
+            {knownHosts.map((host) => <option key={host.hostId} value={host.hostId}>{host.label} · {host.hostId}</option>)}
+            <option value={CUSTOM_HOST}>Другая машина…</option>
+          </select>
+        </label>
+        {custom && <label>Машина (hostId)
+          <input aria-label="Идентификатор рабочей машины" value={customHostId} placeholder="например, server-44"
+            onChange={(event) => setCustomHostId(event.target.value)} />
+        </label>}
+        <label>Рабочий каталог агента
+          <input aria-label="Рабочий каталог" value={cwd} onChange={(event) => setCwd(event.target.value)} />
+        </label>
+        <button type="button" className="quiet-button" disabled={pending} onClick={() => void apply()}>
+          {pending ? "Применяем…" : "Применить"}
+        </button>
+      </div>
+      {outcome && <p className={`work-target-result work-target-${outcome.tone}`} role="status">{outcome.message}</p>}
+      {error && <p className="work-target-result work-target-error" role="alert">{error}</p>}
+      {showConvert && session.harness === "codex" && <div className="work-target-convert">
+        <span className="eyebrow">ПЕРЕВОД В OPENCODE</span>
+        <p className="work-target-hint">{convertActionHint()}</p>
+        <button type="button" className="quiet-button" disabled={converting} onClick={() => void convert()}>
+          {converting ? "Переводим…" : "Перевести сессию в OpenCode"}
+        </button>
+        {convertResult && <p className="work-target-result" role="status">{convertResult}</p>}
+      </div>}
+    </div>}
   </section>;
 }

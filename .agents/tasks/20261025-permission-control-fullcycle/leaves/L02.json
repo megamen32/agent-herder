@@ -60,7 +60,6 @@
     }
   ],
   "started_at": "2026-10-25T14:51:11+03:00",
-  "session": "",
   "harness": "codex",
   "note": "Безопасный exact identity/reply guard независимым review оценён SHIP; focused regression RED 5 → GREEN 7, TypeScript compile GREEN. Production reply и live browser/native acceptance остаются невыполненными в будущих leaves.",
   "finished_at": "2026-10-25T15:10:00+03:00"

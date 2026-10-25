@@ -1,89 +1,256 @@
-import {describe,expect,it,vi} from "vitest";
-import {mkdtemp,rm} from "node:fs/promises";
+import {access,mkdir,mkdtemp,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {afterEach,describe,expect,it,vi} from "vitest";
 import {LocalHarnessMesh} from "../src/mesh/local.js";
-import {CoordinationNoteStore} from "../src/coordination-notes.js";
+import {registerHarnessMeshTools} from "../src/mesh/register-tools.js";
+import type {McpServer} from "@modelcontextprotocol/server";
 import {HerderEventBus} from "../src/herder-events.js";
+import {HerderJobRegistry} from "../src/herder-jobs.js";
+import {UserMessageDelivery} from "../src/user-message-delivery.js";
+import {MinimaxExecPolicyStore} from "../src/permission-control/minimax-exec-policy.js";
+import {checkDeliveryModel} from "../src/project-model-delivery-gate.js";
+import {holdManualStop} from "../src/human-stop-actions.js";
+import {getHumanStopStore} from "../src/human-stop-store.js";
+import {TRUSTED_MESH_MCP_CLIENT_ID,TRUSTED_MESH_MCP_SCOPE,trustedMeshIngressFromMcpAuthInfo} from "../src/mesh/authenticated-ingress.js";
+import type {HarnessAdapter,SendMessageResult} from "../src/types/index.js";
+
+afterEach(()=>vi.unstubAllEnvs());
 
 const nativeSession={id:"mvs_native",harness:"minimax-code",status:"idle",title:"t",cwd:"/work",hostId:"h",lastActivity:new Date().toISOString(),needsPermission:false};
-const request={target:{hostId:"h",harness:"minimax-code",nativeSessionId:"mvs_native"},sender:{hostId:"src",harness:"codex",nativeSessionId:"s"},inputId:"i-1",message:"delta"};
+const request={target:{hostId:"h",harness:"minimax-code",nativeSessionId:"mvs_native"},sender:{hostId:"src",harness:"opencode",nativeSessionId:"s"},inputId:"i-1",message:"delta"};
+function setup(dir:string,options:{status?:string;nativeStatus?:string;nativeRead?:boolean;steer?:boolean;result?:SendMessageResult;notes?:(message:string)=>Promise<string>}={}){
+ const session={...nativeSession,status:options.status??"idle"};
+ const sendMessage=vi.fn(async(_id:string,sendOptions:any)=>options.result??({ok:true,admitted:true,turnId:"item-1",inputId:sendOptions.inputId}));
+ const adapter={type:"minimax-code",getSession:vi.fn(async()=>session),sendMessage,isReady:()=>true,controlCapabilities:{steer:options.steer??false}} as unknown as HarnessAdapter;
+ const jobs=new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(dir,"jobs.json")});
+ const delivery=new UserMessageDelivery(new Map([["minimax-code",adapter]]),{sendMessage:async(_harness,id,sendOptions)=>sendMessage(id,sendOptions)},jobs,{pollMs:1,maxWaitMs:2_000,maxPending:4},new MinimaxExecPolicyStore(join(dir,"policies")));
+ const ledgerPath=join(dir,"mesh-ledger.json");
+ const mesh=new LocalHarnessMesh({hostId:"h",adapters:new Map([["minimax-code",adapter]]),ledgerPath,userMessageDelivery:delivery,
+  supervisor:{sendMessage:async(_harness,id,sendOptions)=>sendMessage(id,sendOptions)},
+  ...(options.nativeRead===false?{nativeObserve:async()=>null}:{nativeObserve:async(_h,id)=>({nativeSessionId:id,status:options.nativeStatus??session.status,cwd:"/work"})}),
+  notes:async(_session,message)=>options.notes?options.notes(message):message});
+ const ingress=trustedMeshIngressFromMcpAuthInfo({token:"test-transport-token",clientId:TRUSTED_MESH_MCP_CLIENT_ID,scopes:[TRUSTED_MESH_MCP_SCOPE]})!;
+ return {mesh,deliver:(value=request)=>mesh.deliver(value,ingress),ingress,delivery,jobs,sendMessage,adapter,ledgerPath,session};
+}
+const waitJob=async(f:ReturnType<typeof setup>)=>await vi.waitFor(()=>{
+ const row=f.jobs.list(10).find(j=>j.ownerSessionId==="mvs_native");expect(row?.state).toBe("completed");return row;
+});
+async function cleanup(dir:string,f:ReturnType<typeof setup>){
+ f.delivery.close();await f.delivery.getMinimaxExecPolicy({hostId:"h",harness:"minimax-code",sessionId:"mvs_native"});
+ await f.delivery.getMinimaxExecPolicy({hostId:"h",harness:"minimax-code",sessionId:"mvs_native"});
+ await rm(dir,{recursive:true,force:true});
+}
 
-describe("native MiniMax Code delivery (focused integration; expected 5s, maximum 30s)",()=>{
- it("admits a native session with a proof and never sends one intent twice",async()=>{
-  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-delivery-"));try{
-   const sendMessage=vi.fn(async(_id:string,options:any)=>({ok:true,admitted:true,turnId:"item-1",inputId:options.inputId}));
-   const adapter={type:"minimax-code",getSession:vi.fn(async()=>nativeSession),sendMessage,isReady:()=>true};
-   const mesh=new LocalHarnessMesh({hostId:"h",adapters:new Map([["minimax-code",adapter]]) as any,ledgerPath:join(dir,"ledger.json"),nativeObserve:async(harness,id)=>harness==="minimax-code"&&id==="mvs_native"?{nativeSessionId:id,status:"idle",cwd:"/work"}:null});
-   const receipt=await mesh.deliver(request);
-   expect(receipt.state).toBe("admitted");
-   expect(receipt.turnId).toBe("item-1");
-   expect(sendMessage).toHaveBeenCalledTimes(1);
-   expect(sendMessage.mock.calls[0]?.[1]).toMatchObject({queue:true,inputId:"i-1"});
-   // The same intent is never executed twice.
-   expect((await mesh.deliver(request)).state).toBe("admitted");
-   expect(sendMessage).toHaveBeenCalledTimes(1);
-  }finally{await rm(dir,{recursive:true,force:true});}
+describe("native MiniMax Code common delivery core",()=>{
+ it("does not treat a caller-supplied sender address as an authenticated agent ingress",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-forged-sender-"));const f=setup(dir);
+  try{
+   const receipt=await f.mesh.deliver({...request,sender:{hostId:"claimed-source",harness:"opencode",nativeSessionId:"claimed-session"}});
+   expect(receipt).toMatchObject({state:"not_attempted",retryable:false,reason:"authenticated_mesh_ingress_required"});
+   expect(f.sendMessage).not.toHaveBeenCalled();
+   expect(f.jobs.list(10)).toHaveLength(0);
+  }finally{await cleanup(dir,f);}
  });
- it("steers the current running native session instead of leaving a new directive queued",async()=>{
-  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-steer-"));try{
-   const sendMessage=vi.fn(async(_id:string,options:any)=>({ok:true,admitted:true,turnId:"current-turn",inputId:options.inputId}));
-   const adapter={type:"minimax-code",getSession:vi.fn(async()=>({...nativeSession,status:"running"})),sendMessage,isReady:()=>true};
-   const mesh=new LocalHarnessMesh({hostId:"h",adapters:new Map([["minimax-code",adapter]]) as any,ledgerPath:join(dir,"ledger.json"),nativeObserve:async(_h,id)=>({nativeSessionId:id,status:"running",cwd:"/work"})});
-   expect((await mesh.deliver(request)).state).toBe("admitted");
-   expect(sendMessage.mock.calls[0]?.[1]).toMatchObject({steer:true,inputId:"i-1"});
-   await mesh.deliver(request);expect(sendMessage).toHaveBeenCalledTimes(1);
-  }finally{await rm(dir,{recursive:true,force:true});}
+
+ it("binds authenticated principal per MCP request and does not leak it to a later unauthenticated request",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-auth-context-"));const f=setup(dir);
+  const handlers:Record<string,(args:any,extra:any)=>Promise<any>>={};
+  const server={registerTool:(name:string,_config:unknown,handler:(args:any,extra:any)=>Promise<any>)=>{handlers[name]=handler;}} as unknown as McpServer;
+  try{
+   const invalidIngress=trustedMeshIngressFromMcpAuthInfo({token:"x",clientId:"other",scopes:[TRUSTED_MESH_MCP_SCOPE]});
+   expect(invalidIngress).toBeUndefined();
+   registerHarnessMeshTools(server,{hostId:"h",adapters:new Map([["minimax-code",f.adapter]]),ledgerPath:join(dir,"registered-mesh-ledger.json"),userMessageDelivery:f.delivery,
+    supervisor:{sendMessage:async(_harness,id,opts)=>f.sendMessage(id,opts)},nativeObserve:async(_harness,id)=>({nativeSessionId:id,status:"idle",cwd:"/work"}),trustedIngress:f.ingress});
+   const bound=handlers.mesh_deliver!;
+   const valid=await bound({...request,sender:{hostId:"caller-chosen",harness:"opencode",nativeSessionId:"arbitrary"}},{authInfo:{token:"not-used-at-dispatch",clientId:"other",scopes:[]}});
+   expect(JSON.parse(valid.content[0].text).state).toBe("queued");
+   await waitJob(f);
+   const claim=f.sendMessage.mock.calls[0]?.[1]?.durableUserDelivery;
+   expect(claim?.actor).toMatchObject({kind:"agent",principal:TRUSTED_MESH_MCP_CLIENT_ID,senderVerified:false,senderAssertion:{hostId:"caller-chosen",harness:"opencode",nativeSessionId:"arbitrary"}});
+   expect(f.sendMessage).toHaveBeenCalledOnce();
+   const unauthenticatedHandlers:Record<string,(args:any,extra:any)=>Promise<any>>={};
+   const unauthenticatedServer={registerTool:(name:string,_config:unknown,handler:(args:any,extra:any)=>Promise<any>)=>{unauthenticatedHandlers[name]=handler;}} as unknown as McpServer;
+   registerHarnessMeshTools(unauthenticatedServer,{hostId:"h",adapters:new Map([["minimax-code",f.adapter]]),ledgerPath:join(dir,"registered-mesh-ledger.json"),userMessageDelivery:f.delivery,
+    supervisor:{sendMessage:async(_harness,id,opts)=>f.sendMessage(id,opts)},nativeObserve:async(_harness,id)=>({nativeSessionId:id,status:"idle",cwd:"/work"})});
+   const later=await unauthenticatedHandlers.mesh_deliver!({...request,inputId:"after-unauthenticated-request"},{authInfo:{token:"forged",clientId:TRUSTED_MESH_MCP_CLIENT_ID,scopes:[TRUSTED_MESH_MCP_SCOPE]}});
+   expect(JSON.parse(later.content[0].text)).toMatchObject({state:"not_attempted",retryable:false,reason:"authenticated_mesh_ingress_required"});
+   expect(f.sendMessage).toHaveBeenCalledOnce();
+   expect(f.jobs.list(10)).toHaveLength(1);
+  }finally{await cleanup(dir,f);}
  });
- it("refuses another host and an unknown native session before the writer",async()=>{
-  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-delivery-"));try{
-   const sendMessage=vi.fn();
-   const adapter={type:"minimax-code",getSession:vi.fn(async()=>nativeSession),sendMessage,isReady:()=>true};
-   const mesh=new LocalHarnessMesh({hostId:"h",adapters:new Map([["minimax-code",adapter]]) as any,ledgerPath:join(dir,"ledger.json"),nativeObserve:async()=>null});
-   const foreign=await mesh.deliver({...request,target:{...request.target,hostId:"mac"}});
-   expect(foreign.state).toBe("not_attempted");
-   expect(foreign.reason).toBe("native_host_identity_mismatch");
-   const unknown=await mesh.deliver(request);
-   expect(unknown.state).toBe("not_attempted");
-   expect(unknown.reason).toBe("independent_native_identity_unknown");
-   expect(sendMessage).not.toHaveBeenCalled();
-  }finally{await rm(dir,{recursive:true,force:true});}
+
+ it("rechecks HumanStop after queued waiting and blocks the native write without replay",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-stop-before-dispatch-"));
+  vi.stubEnv("AGENT_HERDER_HUMAN_STOP_STORE",join(dir,"stops.json"));
+  const f=setup(dir,{status:"running"});
+  try{
+   const queued=await f.deliver({...request,inputId:"stop-while-queued"});
+   expect(queued.state).toBe("queued");
+   await vi.waitFor(()=>expect(f.adapter.getSession.mock.calls.length).toBeGreaterThan(1));
+   await holdManualStop(f.session as any);
+   f.session.status="idle";
+   const job=await waitJob(f);
+   expect(job?.result).toMatchObject({ok:false,notSubmitted:true,nonRetryable:true,inputId:"stop-while-queued"});
+   expect(f.sendMessage).not.toHaveBeenCalled();
+   expect(await f.deliver({...request,inputId:"stop-while-queued"})).toMatchObject({state:"not_attempted",retryable:false});
+   expect(f.sendMessage).not.toHaveBeenCalled();
+  }finally{await cleanup(dir,f);}
  });
- it("never replays an unproven admission",async()=>{
-  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-delivery-"));try{
-   const sendMessage=vi.fn(async()=>{throw new Error("the runtime did not answer");});
-   const adapter={type:"minimax-code",getSession:vi.fn(async()=>nativeSession),sendMessage,isReady:()=>true};
-   const mesh=new LocalHarnessMesh({hostId:"h",adapters:new Map([["minimax-code",adapter]]) as any,ledgerPath:join(dir,"ledger.json"),nativeObserve:async(_h,id)=>({nativeSessionId:id,status:"idle",cwd:"/work"})});
-   const receipt=await mesh.deliver(request);
-   expect(receipt.state).toBe("unknown");
-   expect(receipt.retryable).toBe(false);
-   expect((await mesh.deliver(request)).state).toBe("unknown");
-   expect(sendMessage).toHaveBeenCalledTimes(1);
-  }finally{await rm(dir,{recursive:true,force:true});}
+
+ it("serializes a stop racing the final native admission and does not hold the stop lock through the reply",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-stop-admission-race-"));
+  vi.stubEnv("AGENT_HERDER_HUMAN_STOP_STORE",join(dir,"stops.json"));
+  const f=setup(dir);
+  const store=getHumanStopStore();
+  const original=store.withSourcesUnheld.bind(store);
+  let reachedFinalGate!:()=>void;
+  let releaseFinalGate!:()=>void;
+  const finalGateReached=new Promise<void>(resolve=>{reachedFinalGate=resolve;});
+  const finalGate=new Promise<void>(resolve=>{releaseFinalGate=resolve;});
+  const guardSpy=vi.spyOn(store,"withSourcesUnheld").mockImplementation(async(sources,operation)=>{
+   reachedFinalGate();
+   await finalGate;
+   return original(sources,operation);
+  });
+  try{
+   const first=await f.deliver({...request,inputId:"stop-at-final-gate"});
+   expect(["queued","admitted"]).toContain(first.state);
+   await finalGateReached;
+   await holdManualStop(f.session as any);
+   releaseFinalGate();
+   await vi.waitFor(()=>expect(f.jobs.list(10).find(row=>row.ownerSessionId==="mvs_native")?.state).toBe("completed"));
+   expect(f.jobs.list(10).find(row=>row.ownerSessionId==="mvs_native")?.result).toMatchObject({ok:false,notSubmitted:true,nonRetryable:true,inputId:"stop-at-final-gate"});
+   expect(f.sendMessage).not.toHaveBeenCalled();
+   expect(guardSpy).toHaveBeenCalledOnce();
+  }finally{releaseFinalGate();guardSpy.mockRestore();await cleanup(dir,f);}
+
+  const targetDir=await mkdtemp(join(tmpdir(),"herder-minimax-target-change-at-admission-"));
+  vi.stubEnv("AGENT_HERDER_HUMAN_STOP_STORE",join(targetDir,"stops.json"));
+  const targetFixture=setup(targetDir);
+  const targetStore=getHumanStopStore();
+  const targetOriginal=targetStore.withSourcesUnheld.bind(targetStore);
+  let targetGateReached!:()=>void;
+  let releaseTargetGate!:()=>void;
+  const targetWaiting=new Promise<void>(resolve=>{targetGateReached=resolve;});
+  const targetGate=new Promise<void>(resolve=>{releaseTargetGate=resolve;});
+  const targetGuard=vi.spyOn(targetStore,"withSourcesUnheld").mockImplementation(async(sources,operation)=>{
+   targetGateReached();
+   await targetGate;
+   return targetOriginal(sources,operation);
+  });
+  try{
+   const first=await targetFixture.deliver({...request,inputId:"target-change-at-admission"});
+   expect(["queued","admitted"]).toContain(first.state);
+   await targetWaiting;
+   targetFixture.session.hostId="changed-host";
+   releaseTargetGate();
+   await vi.waitFor(()=>expect(targetFixture.jobs.list(10).find(row=>row.ownerSessionId==="mvs_native")?.state).toBe("completed"));
+   expect(targetFixture.jobs.list(10).find(row=>row.ownerSessionId==="mvs_native")?.result).toMatchObject({ok:false,notSubmitted:true,nonRetryable:true,inputId:"target-change-at-admission"});
+   expect(targetFixture.sendMessage).not.toHaveBeenCalled();
+   expect(targetFixture.adapter.getSession.mock.calls.length).toBeGreaterThanOrEqual(2);
+  }finally{releaseTargetGate();targetGuard.mockRestore();await cleanup(targetDir,targetFixture);}
+
+  const responseDir=await mkdtemp(join(tmpdir(),"herder-minimax-stop-after-admission-"));
+  vi.stubEnv("AGENT_HERDER_HUMAN_STOP_STORE",join(responseDir,"stops.json"));
+  const responseFixture=setup(responseDir);
+  let nativeStarted!:()=>void;
+  let finishNative!: (value:SendMessageResult)=>void;
+  const started=new Promise<void>(resolve=>{nativeStarted=resolve;});
+  const nativeResult=new Promise<SendMessageResult>(resolve=>{finishNative=resolve;});
+  responseFixture.sendMessage.mockImplementation(async(_id,options)=>{
+   nativeStarted();
+   return nativeResult;
+  });
+  try{
+   const first=await responseFixture.deliver({...request,inputId:"stop-after-admission"});
+   expect(["queued","admitted"]).toContain(first.state);
+   await started;
+   let stopCompleted=false;
+   await holdManualStop(responseFixture.session as any).then(()=>{stopCompleted=true;});
+   expect(stopCompleted).toBe(true);
+   finishNative({ok:true,admitted:true,turnId:"native-turn",inputId:"stop-after-admission"});
+   await vi.waitFor(()=>expect(responseFixture.jobs.list(10).find(row=>row.ownerSessionId==="mvs_native")?.state).toBe("completed"));
+   expect(responseFixture.sendMessage).toHaveBeenCalledOnce();
+  }finally{await cleanup(responseDir,responseFixture);}
  });
- it("carries the active coordination notes into the native session",async()=>{
-  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-delivery-"));try{
-   const store=new CoordinationNoteStore(join(dir,"notes.json"),new HerderEventBus());
-   await store.create({authorSessionId:"other",kind:"avoid",cwd:"/work",hostId:"h",message:"src/a.ts is mine",paths:["src/a.ts"]});
-   const sendMessage=vi.fn(async(_id:string,options:any)=>({ok:true,admitted:true,turnId:"item-1",inputId:options.inputId}));
-   const adapter={type:"minimax-code",getSession:vi.fn(async()=>nativeSession),sendMessage,isReady:()=>true};
-   const mesh=new LocalHarnessMesh({hostId:"h",adapters:new Map([["minimax-code",adapter]]) as any,ledgerPath:join(dir,"ledger.json"),nativeObserve:async(_h,id)=>({nativeSessionId:id,status:"idle",cwd:"/work"}),notes:(session,message)=>store.inject(session,message)});
-   await mesh.deliver(request);
-   const delivered=String(sendMessage.mock.calls[0]?.[1]?.message??"");
-   expect(delivered).toContain("src/a.ts");
-   expect(delivered).toContain("delta");
-  }finally{await rm(dir,{recursive:true,force:true});}
+
+ it("routes idle agent work through one durable job/claim and never records a separate mesh outcome",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-shared-core-"));const f=setup(dir,{notes:async message=>`visible note\n${message}`});
+  try{
+   const first=await f.deliver(request);
+   expect(["queued","admitted"]).toContain(first.state);
+   const row=await waitJob(f);
+   expect(row?.requestFingerprint).toMatch(/^[a-f0-9]{64}$/);
+   const delivered=await f.deliver(request);
+   expect(delivered).toMatchObject({state:"admitted",turnId:"item-1",retryable:false});
+   expect(f.sendMessage).toHaveBeenCalledOnce();
+   expect(f.sendMessage.mock.calls[0]?.[1]).toMatchObject({origin:"automation",steer:false,inputId:request.inputId});
+   expect(f.sendMessage.mock.calls[0]?.[1]?.humanRequestedAt).toBeUndefined();
+   expect(f.sendMessage.mock.calls[0]?.[1]?.message).toContain("visible note");
+   await expect(access(f.ledgerPath)).rejects.toThrow();
+  }finally{await cleanup(dir,f);}
  });
- it("keeps the native address of a remote session apart from a local session of the same id",async()=>{
-  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-delivery-"));try{
-   const sendMessage=vi.fn(async(_id:string,options:any)=>({ok:true,admitted:true,turnId:"item-1",inputId:options.inputId}));
-   const adapter={type:"minimax-code",getSession:vi.fn(async()=>nativeSession),sendMessage,isReady:()=>true};
-   const mesh=new LocalHarnessMesh({hostId:"h",adapters:new Map([["minimax-code",adapter]]) as any,ledgerPath:join(dir,"ledger.json"),nativeObserve:async(_h,id)=>({nativeSessionId:id,status:"idle",cwd:"/work"})});
-   const remote=await mesh.deliver({...request,inputId:"i-remote",target:{hostId:"mac",harness:"minimax-code",nativeSessionId:"mvs_native"}});
-   expect(remote.state).toBe("not_attempted");
-   expect(remote.reason).toBe("native_host_identity_mismatch");
-   // The same native id on this host is a different address and stays deliverable.
-   expect((await mesh.deliver({...request,inputId:"i-local"})).state).toBe("admitted");
-  }finally{await rm(dir,{recursive:true,force:true});}
+
+ it("uses the existing current-turn path for an active native session when steer is supported",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-steer-"));const f=setup(dir,{status:"running",nativeStatus:"running",steer:true});
+  try{
+   const receipt=await f.deliver(request);
+   expect(["queued","admitted"]).toContain(receipt.state);
+   await waitJob(f);
+   expect((await f.deliver(request)).state).toBe("admitted");
+   expect(f.sendMessage.mock.calls[0]?.[1]).toMatchObject({steer:true,inputId:request.inputId,origin:"automation"});
+   expect(f.sendMessage).toHaveBeenCalledOnce();
+  }finally{await cleanup(dir,f);}
+ });
+
+ it("fails closed when the exact native observation or shared durable core is missing",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-unavailable-"));const f=setup(dir,{nativeRead:false});
+  try{
+   const receipt=await f.deliver(request);
+   expect(receipt).toMatchObject({state:"not_attempted",reason:"independent_native_identity_unknown"});
+   expect(f.sendMessage).not.toHaveBeenCalled();
+   const noCore=new LocalHarnessMesh({hostId:"h",adapters:new Map([["minimax-code",f.adapter]]),ledgerPath:f.ledgerPath,nativeObserve:async(_h,id)=>({nativeSessionId:id,status:"idle"})});
+   expect(await noCore.deliver({...request,inputId:"without-core"},f.ingress)).toMatchObject({state:"not_attempted",reason:"shared_durable_delivery_core_unavailable"});
+   expect(f.sendMessage).not.toHaveBeenCalled();
+  }finally{await cleanup(dir,f);}
+ });
+
+ it("keeps ambiguous native admission terminal and does not replay it",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-unknown-"));const f=setup(dir,{result:{ok:false,admissionUnknown:true,nonRetryable:true,error:"lost native receipt"}});
+  try{
+   await f.deliver(request);await waitJob(f);
+   expect(await f.deliver(request)).toMatchObject({state:"unknown",retryable:false});
+   expect(f.sendMessage).toHaveBeenCalledOnce();
+  }finally{await cleanup(dir,f);}
+ });
+
+ it("rejects another host before common admission",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-remote-"));const f=setup(dir);
+  try{
+   expect(await f.mesh.deliver({...request,target:{...request.target,hostId:"mac"}})).toMatchObject({state:"not_attempted",reason:"native_host_identity_mismatch"});
+   expect(f.sendMessage).not.toHaveBeenCalled();
+  }finally{await cleanup(dir,f);}
+ });
+
+ it("uses the exact native DB workspace instead of the runtime-wide pseudo cwd for project policy",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"herder-minimax-project-workspace-"));const f=setup(dir);
+  try{
+   const work=join(dir,"native-project");await mkdir(work);
+   const adapter=f.adapter as HarnessAdapter&{getNativeWorkspaceDirectory:()=>Promise<any>};
+   adapter.getNativeWorkspaceDirectory=vi.fn(async()=>({hostId:"h",harness:"minimax-code",sessionId:request.target.nativeSessionId,cwd:work}));
+   (adapter.getSession as any)=vi.fn(async()=>({...nativeSession,cwd:"/home/agent/.minimax",meta:{workDirectory:"pseudo"}}));
+   const policy={kind:"valid" as const,policy:{models:{"minimax-code":"model-b"},projectRoutes:{[work]:{deniedModels:["model-b"]}}}};
+   expect(()=>checkDeliveryModel(policy,{directory:work,harness:"minimax-code"})).toThrow(/model_not_permitted_for_project/);
+   const policyProvider=vi.fn(async()=>policy);
+   const mesh=new LocalHarnessMesh({hostId:"h",adapters:new Map([["minimax-code",adapter]]),deliveryPolicy:policyProvider,userMessageDelivery:f.delivery,
+    nativeObserve:async(_h,id)=>({nativeSessionId:id,status:"idle",cwd:work})});
+   const receipt=await mesh.deliver({...request,inputId:"native-workspace-gate"},f.ingress);
+   expect(policyProvider).toHaveBeenCalledOnce();
+   expect(adapter.getNativeWorkspaceDirectory).toHaveBeenCalledWith(request.target.nativeSessionId);
+   expect(receipt.reason).toContain(work);
+   expect(receipt.reason).not.toContain("working directory of the session is unknown");
+   expect(f.sendMessage).not.toHaveBeenCalled();
+  }finally{await cleanup(dir,f);}
  });
 });

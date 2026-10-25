@@ -11,7 +11,7 @@ export const MAX_HEALTH_MODEL_LENGTH = 256;
 
 /** The OmniRoute gateway prefix of every approved health route. */
 const OMNIROUTE_ROUTE_PREFIX = "omniroute/";
-/** The MiniMax subscription provider: allowed, but never the first choice. */
+/** The MiniMax route: allowed, but never the first choice. */
 const MINIMAX_SUBSCRIPTION_ROUTE_PREFIX = "minimax-coding-plan/";
 
 /**
@@ -19,7 +19,7 @@ const MINIMAX_SUBSCRIPTION_ROUTE_PREFIX = "minimax-coding-plan/";
  *
  * The route is a fully qualified OmniRoute gateway route. The owner picks it
  * by hand, so the check is not a closed list: every gateway route is
- * approved, and the MiniMax subscription route is approved too, as a fallback
+ * approved, and the MiniMax route is approved too, as a fallback
  * of the gateway route. Every other provider is refused.
  */
 export function isApprovedHealthRoute(value: unknown): value is string {
@@ -61,8 +61,8 @@ function bounded(value: unknown, field: string, limit = 64): string {
  * Validate the model route of an OpenCode health execution.
  *
  * The model is picked by hand, so it is not pinned to one id: it is a bounded
- * route string of the OmniRoute gateway, or of the MiniMax subscription
- * provider as a fallback. Any other provider is a substitution and refused.
+ * route string of the OmniRoute gateway, or of the MiniMax route as a
+ * fallback. Any other provider is a substitution and refused.
  */
 function incidentModelRoute(value: unknown): string {
   const model = bounded(value, "model", MAX_HEALTH_MODEL_LENGTH);
@@ -70,7 +70,7 @@ function incidentModelRoute(value: unknown): string {
     throw new Error("health execution model must not contain control characters");
   }
   if (model.includes("/") && !isApprovedHealthRoute(model)) {
-    throw new Error("health execution model must be an OmniRoute gateway route or the MiniMax subscription route");
+    throw new Error("health execution model must be an OmniRoute gateway route or the MiniMax route");
   }
   return model;
 }

@@ -1,7 +1,7 @@
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createAgentHerderMcpServer } from "../src/index.js";
 import { createResumeAfterRuntime, parseResumeAfterStartupHold } from "../src/resume-after-runtime.js";
 import { SessionSupervisor } from "../src/session-supervisor.js";
@@ -315,6 +315,103 @@ describe("exact native turn registration",()=>{
     const restored=f.makeRuntime();await restored.service.sweep();
     expect((await restored.service.register(f.request)).state).toBe("delivery_blocked");
     expect(f.sent).toHaveLength(0);
+  });
+});
+
+describe("one-shot scheduled resume over the existing MCP service",()=>{
+  async function clientFor(f:Awaited<ReturnType<typeof nativeFixture>>){
+    const server=createAgentHerderMcpServer(undefined,{resumeAfter:f.runtime.service});
+    const client=new Client({name:"scheduled-resume-test",version:"1"},{versionNegotiation:{mode:"auto"}});
+    const [clientTransport,serverTransport]=InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);await client.connect(clientTransport);
+    cleanup.push(async()=>{await client.close();await server.close();});
+    return client;
+  }
+
+  it("schedules a relative delay durably, deduplicates it, and delivers exactly once when due",async()=>{
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-24T09:00:00.000Z"));
+    try{
+      const f=await nativeFixture(),client=await clientFor(f);
+      const tool=(await client.listTools()).tools.find(item=>item.name==="resume_after");
+      expect(tool?.inputSchema).toHaveProperty("anyOf");
+      const request={owner:ref("owner"),message:"continue once after the delay",requestId:"delay-one",trigger:{kind:"delay",delayMs:3_600_000}};
+      const first=await client.callTool({name:"resume_after",arguments:request});
+      expect(first.isError).not.toBe(true);
+      const wait=(first.structuredContent as any).wait;
+      expect((first.structuredContent as any)).toMatchObject({jobId:wait.id,scheduledAt:"2026-10-24T10:00:00.000Z"});
+      expect(wait).toMatchObject({state:"waiting",scheduledAt:"2026-10-24T10:00:00.000Z",trigger:request.trigger});
+      expect(f.sent).toHaveLength(0);
+
+      const afterRestart=f.makeRuntime();
+      expect(await afterRestart.service.get(wait.id)).toMatchObject({state:"waiting",scheduledAt:wait.scheduledAt});
+      const retry=await client.callTool({name:"resume_after",arguments:request});
+      expect((retry.structuredContent as any).wait).toMatchObject({id:wait.id,scheduledAt:wait.scheduledAt});
+      const conflict=await client.callTool({name:"resume_after",arguments:{...request,message:"different message"}});
+      expect(conflict.isError).toBe(true);
+      expect(f.sent).toHaveLength(0);
+
+      await vi.advanceTimersByTimeAsync(3_600_000);
+      await afterRestart.service.sweep();
+      expect(f.sent).toEqual([{id:"owner",inputId:"resume-after:"+wait.id}]);
+      await f.makeRuntime().service.sweep();
+      expect(f.sent).toHaveLength(1);
+    }finally{vi.useRealTimers();}
+  });
+
+  it("accepts one timezone-qualified absolute instant and rejects a conflicting requestId without replay",async()=>{
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-24T09:00:00.000Z"));
+    try{
+      const f=await nativeFixture(),client=await clientFor(f);
+      const request={owner:ref("owner"),message:"resume at the chosen instant",requestId:"absolute-one",trigger:{kind:"at",at:"2026-10-24T12:30:00+03:00"}};
+      const first=await client.callTool({name:"resume_after",arguments:request});
+      expect(first.isError).not.toBe(true);
+      const wait=(first.structuredContent as any).wait;
+      expect(wait).toMatchObject({state:"waiting",scheduledAt:"2026-10-24T09:30:00.000Z",trigger:request.trigger});
+      expect(f.sent).toHaveLength(0);
+      const conflict=await client.callTool({name:"resume_after",arguments:{...request,trigger:{kind:"at",at:"2026-10-24T12:31:00+03:00"}}});
+      expect(conflict.isError).toBe(true);
+      await vi.advanceTimersByTimeAsync(30*60_000);
+      await f.makeRuntime().service.sweep();
+      expect(f.sent).toEqual([{id:"owner",inputId:"resume-after:"+wait.id}]);
+      await f.makeRuntime().service.sweep();
+      expect(f.sent).toHaveLength(1);
+    }finally{vi.useRealTimers();}
+  });
+
+  it("does not admit a scheduled resume for a HumanStop-held exact session",async()=>{
+    const f=await nativeFixture();f.hold();const client=await clientFor(f);
+    const call=await client.callTool({name:"resume_after",arguments:{owner:ref("owner"),message:"must stay stopped",requestId:"held-schedule",trigger:{kind:"delay",delayMs:60_000}}});
+    expect(call.isError).not.toBe(true);
+    expect((call.structuredContent as any).wait).toMatchObject({state:"cancelled",reason:"requester was stopped"});
+    expect(f.sent).toHaveLength(0);
+  });
+
+  it("rejects missing, mixed, or timezone-ambiguous trigger requests before persistence",async()=>{
+    const f=await nativeFixture(),client=await clientFor(f);
+    const base={owner:ref("owner"),message:"valid scheduled message",requestId:"invalid-trigger"};
+    expect((await client.callTool({name:"resume_after",arguments:base})).isError).toBe(true);
+    expect((await client.callTool({name:"resume_after",arguments:{...base,dependencies:[ref("a")],trigger:{kind:"delay",delayMs:1000}}})).isError).toBe(true);
+    expect((await client.callTool({name:"resume_after",arguments:{...base,trigger:{kind:"at",at:"2026-10-24T12:00:00"}}})).isError).toBe(true);
+    expect(await f.runtime.service.list()).toHaveLength(0);
+    expect(f.sent).toHaveLength(0);
+  });
+
+  it("keeps an uncertain scheduled native admission non-replayable across restart",async()=>{
+    vi.useFakeTimers();vi.setSystemTime(new Date("2026-10-24T09:00:00.000Z"));
+    try{
+      const f=await nativeFixture();f.setDelivery({ok:false,admissionUnknown:true,nonRetryable:true,error:"receipt unknown"});
+      const request={owner:ref("owner"),message:"one possibly admitted message",requestId:"unknown-scheduled",trigger:{kind:"delay",delayMs:1}};
+      const wait=await f.runtime.service.register(request);
+      await vi.advanceTimersByTimeAsync(1);
+      await f.runtime.service.sweep();
+      expect((await f.runtime.service.get(wait.id))?.state).toBe("delivery_unknown");
+      expect(f.sent).toHaveLength(1);
+      const restored=f.makeRuntime();await restored.service.sweep();await restored.service.sweep();
+      expect((await restored.service.register(request)).state).toBe("delivery_unknown");
+      expect(f.sent).toHaveLength(1);
+    }finally{vi.useRealTimers();}
   });
 });
 

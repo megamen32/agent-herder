@@ -13,6 +13,13 @@ try { input = JSON.parse(raw || "{}"); } catch { /* autopilot hook reports inval
 const sessionId = typeof input.session_id === "string" ? input.session_id : "";
 const cwd = typeof input.cwd === "string" && input.cwd ? input.cwd : process.cwd();
 const endpoint = process.env.AGENT_HERDER_URL || "http://127.0.0.1:18787";
+// The harness of the session. The plugin of MiniMax Code names itself in the
+// command of its own manifest (AGENT_HERDER_HARNESS=minimax-code), and the
+// variable wins over everything else. The fallback follows the runtime that
+// asks: the sessions of MiniMax Code are the sessions of minimax-code, and a
+// codex plugin runtime keeps its own name.
+const harness = process.env.AGENT_HERDER_HARNESS
+  || (process.env.MINIMAX_PLUGIN_ROOT ? "minimax-code" : "codex");
 const pluginRoot = process.env.PLUGIN_ROOT?.trim()
   ? resolve(process.env.PLUGIN_ROOT)
   : resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -27,7 +34,7 @@ if (!sessionId) {
 // When they are off — or when the state of the lever cannot be read at all —
 // the hook stays quiet: it never holds the stop of a session.
 const prohibition = await readProhibitions("Stop");
-await reportActivity("Stop", { outcome: "fired", sessionId, harness: "codex" });
+await reportActivity("Stop", { outcome: "fired", sessionId, harness });
 if (!prohibition.enabled) {
   await journal("Stop", { event: "prohibitions-off", sessionId, known: prohibition.known });
   process.stdout.write("{}");
@@ -35,7 +42,7 @@ if (!prohibition.enabled) {
 }
 
 async function readContext(consume) {
-  const query = new URLSearchParams({ harness: "codex", sessionId, cwd, consume: consume ? "1" : "0" });
+  const query = new URLSearchParams({ harness, sessionId, cwd, consume: consume ? "1" : "0" });
   const response = await fetch(`${endpoint}/api/coordination/context?${query}`, { signal: AbortSignal.timeout(1500) });
   if (!response.ok) throw new Error(`human-stop status unavailable (${response.status})`);
   const context = await response.json();
@@ -48,11 +55,39 @@ async function humanStopHeld() {
   return context.humanStopHeld === true;
 }
 
+/**
+ * Remember the prompt that the hook is about to hand to the session.
+ *
+ * The store of the fence lives on the panel, not on the node of the session:
+ * the panel owns the human-stop store, and the session of MiniMax Code may
+ * run on another machine (the panel of 100 is reached from a Mac session
+ * through the tunnel). The packaged plugin of MiniMax Code carries no
+ * dist/ at all, so the old local import could never work there — the digest
+ * was lost, and the hook refused to continue the turn every time.
+ *
+ * So the digest is written by the panel, over the same channel the hook
+ * already uses. When the panel does not know the route yet, the digest
+ * cannot be written; the hook then falls back to the local module when the
+ * package carries one (the layout of Codex), and reports the refusal when
+ * there is none — the turn is never continued on a fence the hook could not
+ * record.
+ */
 async function rememberGeneratedPrompt(text) {
+  try {
+    const response = await fetch(`${endpoint}/api/human-stop/generated-prompt`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ harness, sessionId, text }),
+      signal: AbortSignal.timeout(1200),
+    });
+    if (response.ok) return true;
+  } catch {
+    // The panel is unreachable or does not know the route yet.
+  }
   try {
     const moduleUrl = pathToFileURL(resolve(pluginRoot, "dist/human-stop-store.js")).href;
     const { getHumanStopStore } = await import(moduleUrl);
-    await getHumanStopStore().rememberGeneratedPrompt("codex", sessionId, text);
+    await getHumanStopStore().rememberGeneratedPrompt(harness, sessionId, text);
     return true;
   } catch {
     return false;
@@ -80,7 +115,7 @@ if (sessionId) {
         outcome: "refused",
         reason: "сессия не остановлена: хук продолжил ход по входящему сообщению",
         sessionId,
-        harness: "codex",
+        harness,
       });
       process.stdout.write(JSON.stringify({ decision: "block", reason: payload.inboxContext }));
       if (payload.inboxIds?.length) await fetch(`${endpoint}/api/coordination/inbox-ack`, {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId,ids:payload.inboxIds}),signal:AbortSignal.timeout(1200)}).catch(()=>{});
@@ -94,7 +129,7 @@ if (sessionId) {
 
 try {
   const { notifyAutopilotStop } = await import(pathToFileURL(resolve(pluginRoot, "dist/autopilot/stop-notify.js")).href);
-  await notifyAutopilotStop({ command: "stop", harness: "codex", sessionId, cwd,
+  await notifyAutopilotStop({ command: "stop", harness, sessionId, cwd,
     turnId: input.turn_id, lastUserMessage: input.last_user_message,
     lastAssistantMessage: input.last_assistant_message ?? null, transcriptPath: input.transcript_path ?? null });
 } catch { /* Unavailable Herder never holds the native Stop or runs a local model. */ }

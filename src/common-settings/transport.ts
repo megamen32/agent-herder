@@ -8,12 +8,20 @@
  *
  * The document itself travels from the owner to the node in the answer of the
  * owner, not in the request: a request of the fleet transport is small, and
- * the document of the common settings is not.
+ * the document of the common settings is not. The document travels as it is:
+ * the revision of the owner, the time of its assembly and the content travel
+ * together, so the node that takes it keeps the identity of the owner and
+ * never a revision of its own files.
  */
 
 import { FleetDirectTransport } from "../mesh/fleet-direct-transport.js";
 import { parseCommonSettingsDocument, type CommonSettingsDocument } from "./document.js";
-import type { CommonSettingsConflict, CommonSettingsNodeStatus } from "./node-state.js";
+import {
+  redactCommonSettingsConflicts,
+  type CommonSettingsConflict,
+  type CommonSettingsNodeStatus,
+} from "./node-state.js";
+import { CommonSettingsPeerCache } from "./peer-status-cache.js";
 
 /** The tools of the common settings on a node of the fleet. */
 export const COMMON_SETTINGS_TOOLS = [
@@ -26,16 +34,38 @@ export const COMMON_SETTINGS_TOOLS = [
 
 /** The transport that carries the common settings to the nodes of the fleet. */
 export interface CommonSettingsTransport {
-  /** The document the node holds. */
+  /**
+   * The document the node holds.
+   *
+   * The owner answers with the document it owns — the revision, the time of
+   * its assembly and the content together. A member answers with the document
+   * it took from the owner.
+   */
   read(target: string): Promise<CommonSettingsDocument | null>;
   /** The state of the node: opt-in, applied revision and deviations. */
   status(target: string): Promise<CommonSettingsNodeStatus | null>;
-  /** Tell the node that the document moved: it takes the document and applies it. */
+  /**
+   * Tell the node that the document moved: it takes the document of the owner
+   * and applies it.
+   *
+   * The revision that travels in the signal is the revision of the owner: the
+   * node answers with the revision it holds after the application, and the
+   * owner compares the two.
+   */
   notify(target: string, revision: string): Promise<CommonSettingsNodeStatus | null>;
   /** Set the opt-in flag of the node. */
   setOptIn(target: string, enabled: boolean): Promise<CommonSettingsNodeStatus | null>;
   /** Put the local values of the node back. */
   restore(target: string): Promise<CommonSettingsNodeStatus | null>;
+  /**
+   * The memory of the owner about the nodes, when the transport keeps one.
+   *
+   * The owner asks the nodes what they hold on every answer of the panel, and
+   * a node that is down costs its full timeout every time. The transport that
+   * keeps the memory of the last answers serves them while they are fresh, and
+   * it asks the nodes again in the background.
+   */
+  readonly cache?: CommonSettingsPeerCache;
 }
 
 /**
@@ -46,6 +76,15 @@ export interface CommonSettingsTransport {
  * agreement.
  */
 export class DirectCommonSettingsTransport implements CommonSettingsTransport {
+  /**
+   * The memory of the owner about the nodes.
+   *
+   * One transport serves one owner for the whole life of the process, so the
+   * memory lives with it: the panel asks the fleet many times a minute, and
+   * the state of a node does not move that fast.
+   */
+  readonly cache = new CommonSettingsPeerCache();
+
   constructor(private readonly transport: FleetDirectTransport = new FleetDirectTransport()) {}
 
   /** The document the node holds. */
@@ -94,8 +133,11 @@ export class DirectCommonSettingsTransport implements CommonSettingsTransport {
 
 /** The state of a node, as the tool of the node answered it. */
 export function readStatus(payload: Record<string, unknown>): CommonSettingsNodeStatus {
+  // The node answers with the deviations it holds. A node that runs an older
+  // build answers with the values of the secrets in them, and they are closed
+  // here: the value of a secret never reaches the owner.
   const conflicts = Array.isArray(payload.conflicts)
-    ? payload.conflicts.filter((item): item is CommonSettingsConflict => Boolean(item) && typeof item === "object")
+    ? redactCommonSettingsConflicts(payload.conflicts.filter((item): item is CommonSettingsConflict => Boolean(item) && typeof item === "object"))
     : [];
   return {
     hostId: typeof payload.hostId === "string" ? payload.hostId : "",

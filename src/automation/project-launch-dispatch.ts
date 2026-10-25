@@ -111,7 +111,7 @@ export type ProjectLaunchRunner = (request: {
   fallbackModels?: string[];
   /** Stable per operation and harness, so a repeat attempt is deduplicated natively. */
   inputId: string;
-  /** Only an explicit project route may authorize subscription quota fallback. */
+  /** Only an explicit project route may authorize the route quota fallback. */
   configuredRoute?: boolean;
   sourceSessions?: ProjectLaunchSourceSession[];
   requireSourceHostId?: boolean;
@@ -652,7 +652,7 @@ export function namedSessionRunner(adapters: Map<string, HarnessAdapter>, name: 
       return {
         ok: false, created: false, harness: request.harness, name, cwd: request.cwd, model: request.model,
         inputId: request.inputId, delivery: "not_attempted", failureCode: "quota_exhausted", nonRetryable: true,
-        error: "Квота подписки MiniMax исчерпана (4292056). Бизнес-задача не отправлена; используется следующая среда маршрута.",
+        error: "Лимит маршрута MiniMax исчерпан (4292056). Бизнес-задача не отправлена; используется следующая среда маршрута.",
       };
     }
     return await newOrResumeNamedSession(adapters, {

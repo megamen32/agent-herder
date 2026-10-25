@@ -35,6 +35,42 @@ const HOOK_SCRIPTS = [
 /** The directories the package carries as they are. */
 const PACKAGE_DIRECTORIES = ["skills"];
 
+/** The harness the sessions of MiniMax Code are attributed to. */
+const MINIMAX_HARNESS = "minimax-code";
+
+/**
+ * The timeout of the Stop hook of the package.
+ *
+ * The runtime of MiniMax Code cuts a timeout down to ten seconds anyway, so a
+ * manifest that promises more only lies: the build says what the runtime
+ * really keeps.
+ */
+const STOP_TIMEOUT_SECONDS = 10;
+
+/**
+ * The manifest of the hooks of the package of MiniMax Code.
+ *
+ * The manifest of the repository is shared with the format of Codex, so the
+ * package of MiniMax Code gets its own: every command names the harness of
+ * the sessions (the panel attributes the activity by it), and the timeout of
+ * the Stop hook is the one the runtime really keeps.
+ */
+function minimaxHooksManifest(source) {
+  const manifest = JSON.parse(source);
+  for (const [event, entries] of Object.entries(manifest.hooks ?? {})) {
+    for (const entry of entries ?? []) {
+      for (const hook of entry?.hooks ?? []) {
+        const command = String(hook?.command ?? "");
+        if (command && !command.includes("AGENT_HERDER_HARNESS=")) {
+          hook.command = `AGENT_HERDER_HARNESS=${MINIMAX_HARNESS} ${command}`;
+        }
+        if (event === "Stop") hook.timeout = STOP_TIMEOUT_SECONDS;
+      }
+    }
+  }
+  return manifest;
+}
+
 /** The colour of the placeholder icon of the package. */
 const PLACEHOLDER_ICON = [32, 58, 92];
 /** The colour of the placeholder icon of the dark theme. */
@@ -176,8 +212,12 @@ async function main() {
   await mkdir(join(options.out, "scripts"), { recursive: true });
   await mkdir(join(options.out, ".minimax-plugin"), { recursive: true });
 
-  // The manifest of the hooks of the plugin of Codex and MiniMax Code.
-  await cp(join(repoRoot, "com.openai", "hooks", "hooks.json"), join(options.out, "hooks", "hooks.json"));
+  // The manifest of the hooks of the plugin of Codex and MiniMax Code. The
+  // package of MiniMax Code takes its own: the commands of MiniMax Code name
+  // its harness, and the timeout of the Stop hook is the one the runtime
+  // really keeps.
+  const hooksSource = await readFile(join(repoRoot, "com.openai", "hooks", "hooks.json"), "utf8");
+  await writeFile(join(options.out, "hooks", "hooks.json"), `${JSON.stringify(minimaxHooksManifest(hooksSource), null, 2)}\n`, "utf8");
 
   // The scripts of the hooks: the part the installed plugin lost.
   for (const script of HOOK_SCRIPTS) {

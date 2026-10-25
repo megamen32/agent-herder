@@ -1,10 +1,16 @@
 import {readMinimaxNativeSession} from './minimax-code-native-session.js';
-import { open, readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { open, readdir, realpath, stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { createHash } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
+import { homedir } from "node:os";
 import { readMinimaxActiveSessions, type MinimaxActiveReceipt } from "./minimax-code-active.js";
+import { minimaxRuntimeStatePath, readMinimaxRuntimeActiveSessions } from "./minimax-code-runtime-activity.js";
 import { MinimaxCodeControl } from "./minimax-code-control.js";
 import { MINIMAX_CODE_HARNESS_CWD, MINIMAX_CODE_SESSION_STORE } from "./minimax-code-store.js";
+import { verifyDurableUserDeliveryClaim } from "../user-message-delivery.js";
+import type { MinimaxExecPolicyTarget } from "../permission-control/minimax-exec-policy.js";
 import type {
   AgentSession,
   ControlResult,
@@ -42,6 +48,8 @@ const MAX_TITLE_LENGTH = 120;
 const MAX_LAST_MESSAGE_LENGTH = 400;
 /** The session index is re-read at most this often. */
 const INDEX_TTL_MS = 10_000;
+/** The live proof of the runtime is kept for as long as it stays valid. */
+const LIVE_PROOF_TTL_MS = 15_000;
 /** Bound metadata enumeration independently from the displayed session window. */
 const MAX_ENUMERATED_DIRECTORIES = 4096;
 
@@ -54,6 +62,10 @@ export interface MinimaxCodeAdapterOptions {
   maxSessions?: number;
   /** Live control transport published by the desktop app. */
   control?: MinimaxCodeControl;
+  /** State file of the local MiniMax Code runtime, where the turns live. */
+  runtimeDb?: string;
+  /** Official MCode v2 data directory that owns runtimeDb. */
+  runtimeDataDir?: string;
 }
 
 interface MinimaxManifest {
@@ -270,6 +282,22 @@ async function collectSessionDirectories(root: string, limit: number): Promise<s
 }
 
 /**
+ * The later of two times of the last activity of one session.
+ *
+ * The store knows when the transcript was written last, and the runtime knows
+ * when it updated the session last. Both are facts about the same session, so
+ * the last activity of the session is the later of the two. A time that cannot
+ * be read is not a time: the readable one wins.
+ */
+function latestActivity(left: string | undefined, right: string | undefined): string {
+  const leftTime = Date.parse(String(left ?? ""));
+  const rightTime = Date.parse(String(right ?? ""));
+  if (!Number.isFinite(leftTime)) return right ?? left ?? "";
+  if (!Number.isFinite(rightTime)) return left ?? "";
+  return rightTime > leftTime ? right! : left!;
+}
+
+/**
  * Read-only MiniMax Code harness.
  *
  * MiniMax Code sessions live in the desktop local runtime store
@@ -298,11 +326,15 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
   private readonly cwd: string;
   private readonly maxSessions: number;
   private readonly control: MinimaxCodeControl;
+  private readonly runtimeDb: string;
+  private readonly runtimeDataDir: string;
   private indexCache: { at: number; entries: MinimaxStoredSession[] } | null = null;
   private contentCache = new Map<string, { stamp: string; session: AgentSession }>();
   private liveControlAvailable = false;
   private activeReceipt: MinimaxActiveReceipt | null = null;
   private activeRefreshProgress: {stage:string;stageStartedAt:string}|null = null;
+  /** Live proof of the runtime, shared by the list and the active inventory. */
+  private liveProofCache: { at: number; sessions: AgentSession[] } | null = null;
   getActiveSessionRefreshProgress(){return this.activeRefreshProgress;}
 
   getActiveSessionSnapshotReceipt(): MinimaxActiveReceipt | null { return this.activeReceipt; }
@@ -310,9 +342,75 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
   /** Full native metadata inventory; never hydrates historical transcripts. */
   async listActiveSessions(): Promise<AgentSession[]> {
     this.activeReceipt = null;
-    const result = await readMinimaxActiveSessions(this.control,{onProgress:stage=>{this.activeRefreshProgress={stage,stageStartedAt:new Date().toISOString()};}});
+    // The runtime state is the fallback proof of activity: a host that runs
+    // the runtime without the desktop transport still owns the truth about
+    // its own turns.
+    const result = await readMinimaxActiveSessions(this.control,{onProgress:stage=>{this.activeRefreshProgress={stage,stageStartedAt:new Date().toISOString()};},readRuntimeActivity:()=>readMinimaxRuntimeActiveSessions()});
     this.activeReceipt = result.receipt;
+    this.liveProofCache = { at: Date.now(), sessions: result.sessions };
     return result.sessions;
+  }
+
+  /**
+   * The live sessions of the local runtime, proved by the runtime itself.
+   *
+   * The proof is the same one the active inventory uses: the runtime holds a
+   * lease of the turn it executes and releases it when the turn ends. A host
+   * without that runtime has no proof, and then the answer is an empty list,
+   * not a refusal and not an invented session.
+   *
+   * The proof is kept for the time it stays valid. The list is refreshed every
+   * few seconds, and the proof of a running turn does not get more true by
+   * being read again within the same second.
+   */
+  private async readLiveProof(): Promise<AgentSession[]> {
+    const cached = this.liveProofCache;
+    if (cached && Date.now() - cached.at < LIVE_PROOF_TTL_MS) return cached.sessions;
+    try {
+      const proof = await readMinimaxRuntimeActiveSessions(this.runtimeDb);
+      this.liveProofCache = { at: Date.now(), sessions: proof.sessions };
+      return proof.sessions;
+    } catch {
+      // No runtime state on this host: the stored status of the sessions stays
+      // what it is, and the last known proof is not invented anew.
+      this.liveProofCache = { at: Date.now(), sessions: cached?.sessions ?? [] };
+      return this.liveProofCache.sessions;
+    }
+  }
+
+  /**
+   * The stored sessions with the live proof of the runtime laid over them.
+   *
+   * The store knows which sessions exist; the runtime knows which of them work
+   * right now. The list says both honestly: a session the runtime proves live
+   * is `running`, and its time of the last activity is the time the runtime
+   * reports. A proven live session that the store has not listed yet is added
+   * to the list, because it is a real session of this host.
+   */
+  private async withLiveProof(sessions: AgentSession[]): Promise<AgentSession[]> {
+    const live = await this.readLiveProof();
+    if (!live.length) return sessions;
+    const merged = [...sessions];
+    const positions = new Map(sessions.map((session, index) => [session.id, index]));
+    for (const proven of live) {
+      const position = positions.get(proven.id);
+      if (position === undefined) {
+        // The work directory of a session is only known once the session
+        // declares it, so the harness reports its pseudo project and keeps the
+        // real place in the metadata.
+        merged.push({ ...proven, cwd: this.cwd, meta: { ...proven.meta, nativeWorkspaceDir: proven.cwd || undefined } });
+        continue;
+      }
+      const stored = merged[position];
+      merged[position] = {
+        ...stored,
+        status: proven.status,
+        lastActivity: latestActivity(stored.lastActivity, proven.lastActivity),
+        title: stored.title || proven.title,
+        meta: { ...stored.meta, ...proven.meta, nativeWorkspaceDir: proven.cwd || stored.meta?.nativeWorkspaceDir },
+      };
+    }
+    return merged;
   }
 
   constructor(options: MinimaxCodeAdapterOptions = {}) {
@@ -320,6 +418,8 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     this.cwd = options.cwd || MINIMAX_CODE_HARNESS_CWD;
     this.maxSessions = options.maxSessions || 500;
     this.control = options.control || new MinimaxCodeControl();
+    this.runtimeDb = options.runtimeDb || minimaxRuntimeStatePath();
+    this.runtimeDataDir = resolve(options.runtimeDataDir || process.env.MINIMAX_DATA_DIR?.trim() || process.env.MAVIS_DATA_DIR?.trim() || join(homedir(), ".minimax"));
   }
 
   /**
@@ -365,7 +465,7 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     const limited = stored.slice(0, Math.min(options.limit ?? this.maxSessions, this.maxSessions));
     const sessions: AgentSession[] = [];
     for (const entry of limited) sessions.push(await this.toSession(entry));
-    return sessions;
+    return this.withLiveProof(sessions);
   }
 
   async findNamedSessions(name: string, cwd: string): Promise<AgentSession[]> {
@@ -381,6 +481,57 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     const stored = await this.readStoredSessions();
     const entry = stored.find((candidate) => candidate.id === id);
     return entry ? this.toSession(entry) : null;
+  }
+
+  /** Exact native work directory from the same MiniMax v2 runtime database used by idle CLI admission. */
+  async getNativeWorkspaceDirectory(id: string): Promise<{hostId:string;harness:string;sessionId:string;cwd:string}|null> {
+    if(!id||id.length>512||/[\x00-\x1f\x7f]/.test(id))return null;
+    let db:DatabaseSync|undefined;
+    try{
+      const dataDir=await realpath(this.runtimeDataDir);
+      const expectedDb=join(dataDir,"v2","sqlite","runtime-state.sqlite");
+      const [actualDb,canonicalDb]=await Promise.all([realpath(this.runtimeDb).catch(()=>null),realpath(expectedDb).catch(()=>null)]);
+      if(!actualDb||actualDb!==canonicalDb)return null;
+      db=new DatabaseSync(actualDb,{readOnly:true});db.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=1000; BEGIN");
+      const row=db.prepare("SELECT session_id,runtime,workspace_dir,archived FROM local_runtime_sessions WHERE session_id=?").get(id) as
+        {session_id:string;runtime:string;workspace_dir:string|null;archived:number}|undefined;
+      db.exec("COMMIT");
+      if(!row||row.session_id!==id||row.runtime!=="pi-agent"||row.archived!==0||typeof row.workspace_dir!=="string"||!row.workspace_dir.startsWith("/")||/[\x00-\x1f\x7f]/.test(row.workspace_dir))return null;
+      const cwd=await realpath(row.workspace_dir);
+      if(!(await stat(cwd)).isDirectory())return null;
+      return {hostId:localSessionHostId(),harness:"minimax-code",sessionId:id,cwd};
+    }catch{
+      try{db?.exec("ROLLBACK")}catch{/* read-only snapshot cleanup */}
+      return null;
+    }finally{db?.close();}
+  }
+
+  async getNativeIdleAdmissionProof(target: MinimaxExecPolicyTarget): Promise<{ hostId: string; harness: string; sessionId: string; idle: boolean; reason?: string }> {
+    const base = { hostId: localSessionHostId(), harness: "minimax-code", sessionId: target.sessionId };
+    if (target.harness !== "minimax-code" || target.hostId !== base.hostId || !target.sessionId) {
+      return { ...base, idle: false, reason: "MiniMax policy target does not match this native host." };
+    }
+    let db: DatabaseSync | undefined;
+    try {
+      const dataDir = await realpath(this.runtimeDataDir);
+      const expectedDb = join(dataDir, "v2", "sqlite", "runtime-state.sqlite");
+      const [actualDb, canonicalDb] = await Promise.all([realpath(this.runtimeDb), realpath(expectedDb)]);
+      if (actualDb !== canonicalDb) return { ...base, idle: false, reason: "MiniMax runtime database does not match the inspected data directory." };
+      db = new DatabaseSync(actualDb, { readOnly: true });
+      db.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=1000; BEGIN");
+      const session = db.prepare("SELECT session_id,runtime,status,archived FROM local_runtime_sessions WHERE session_id=?").get(target.sessionId) as
+        { session_id: string; runtime: string; status: string; archived: number } | undefined;
+      const lease = db.prepare("SELECT 1 AS active FROM local_runtime_session_locks WHERE session_id=? AND owner_kind='turn' AND expires_at_ms>? LIMIT 1").get(target.sessionId, Date.now());
+      db.exec("COMMIT");
+      if (!session || session.session_id !== target.sessionId || session.runtime !== "pi-agent" || session.archived !== 0) {
+        return { ...base, idle: false, reason: "Exact MiniMax native session identity could not be confirmed." };
+      }
+      if (session.status !== "idle" || lease) return { ...base, idle: false, reason: "MiniMax session has a live turn or native lease." };
+      return { ...base, idle: true };
+    } catch {
+      try { db?.exec("ROLLBACK"); } catch { /* read-only snapshot cleanup */ }
+      return { ...base, idle: false, reason: "Exact MiniMax native idle/lease state is unavailable." };
+    } finally { db?.close(); }
   }
 
   async getTranscript(id: string): Promise<string | null> {
@@ -456,35 +607,144 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
     const control = await this.liveControl();
     if (!control) {
-      return {
-        ok: false,
-        error: "MiniMax Code desktop sessions are owned by the local runtime; publish the desktop control transport to deliver messages",
-      };
+      return this.sendIdleSessionViaCli(id, options);
+    }
+    if (options.durableUserDelivery?.minimaxExecPolicy && options.durableUserDelivery.minimaxExecPolicy.mode !== "unset") {
+      return { ok: false, notSubmitted: true, inputId: options.inputId, error: "The configured Herder execution policy applies only to the MiniMax CLI fallback; the Desktop route was not used." };
     }
     if (options.steer === true) {
       const result = await control.steer(id, options.message);
-      if (!result.ok) return { ok: false, error: result.error };
+      if (!result.ok) return { ok: false, ...(result.notSubmitted?{notSubmitted:true}:{}), ...(result.admissionUnknown?{admissionUnknown:true,nonRetryable:true}:{}), inputId: options.inputId, error: result.error };
       const body = (result.body ?? {}) as { success?: boolean; turn_id?: string; item_id?: string };
-      return { ok: true, admitted: true, turnId: body.turn_id ?? body.item_id, ...(options.inputId ? { inputId: options.inputId } : {}) };
+      const turnId = body.turn_id ?? body.item_id;
+      if (!turnId) return { ok: false, admissionUnknown: true, nonRetryable: true, inputId: options.inputId, error: "MiniMax Code steer receipt lacked an exact native turn ID; do not retry" };
+      return { ok: true, admitted: true, turnId, ...(options.inputId ? { inputId: options.inputId } : {}) };
     }
     if (options.queue === true) {
       const result = await control.enqueue(id, options.message);
-      if (!result.ok) return { ok: false, error: result.error };
-      const body = (result.body ?? {}) as { item_id?: string; status?: string };
+      if (!result.ok) return { ok: false, ...(result.notSubmitted?{notSubmitted:true}:{}), ...(result.admissionUnknown?{admissionUnknown:true,nonRetryable:true}:{}), inputId: options.inputId, error: result.error };
+      const body = (result.body ?? {}) as { item_id?: unknown; status?: unknown };
+      if (typeof body.item_id !== "string" || !body.item_id.trim()
+        || (body.status !== undefined && body.status !== "pending" && body.status !== "queued")) {
+        return { ok: false, admissionUnknown: true, nonRetryable: true, inputId: options.inputId, error: "MiniMax Code queue response lacked a valid native item receipt; do not retry" };
+      }
       return { ok: true, admitted: true, turnId: body.item_id, ...(options.inputId ? { inputId: options.inputId } : {}) };
     }
     const result = await control.sendMessage(id, options.message);
     if (!result.ok) {
       // A running turn owns the session: the desktop app queues such a message
       // instead of failing the delivery.
-      if (!/busy|active turn/i.test(result.error ?? "")) return { ok: false, error: result.error };
+      if (!/busy|active turn/i.test(result.error ?? "")) return { ok: false, ...(result.notSubmitted?{notSubmitted:true}:{}), ...(result.admissionUnknown?{admissionUnknown:true,nonRetryable:true}:{}), inputId: options.inputId, error: result.error };
       const queued = await control.enqueue(id, options.message);
-      if (!queued.ok) return { ok: false, error: queued.error };
-      const body = (queued.body ?? {}) as { item_id?: string };
+      if (!queued.ok) return { ok: false, ...(queued.notSubmitted?{notSubmitted:true}:{}), ...(queued.admissionUnknown?{admissionUnknown:true,nonRetryable:true}:{}), inputId: options.inputId, error: queued.error };
+      const body = (queued.body ?? {}) as { item_id?: unknown; status?: unknown };
+      if (typeof body.item_id !== "string" || !body.item_id.trim()
+        || (body.status !== undefined && body.status !== "pending" && body.status !== "queued")) {
+        return { ok: false, admissionUnknown: true, nonRetryable: true, inputId: options.inputId, error: "MiniMax Code queue response lacked a valid native item receipt; do not retry" };
+      }
       return { ok: true, admitted: true, turnId: body.item_id, ...(options.inputId ? { inputId: options.inputId } : {}) };
     }
     const body = (result.body ?? {}) as { turn_id?: string; id?: string };
-    return { ok: true, admitted: true, turnId: body.turn_id ?? body.id, ...(options.inputId ? { inputId: options.inputId } : {}) };
+    const turnId = body.turn_id ?? body.id;
+    if (!turnId) return { ok: false, admissionUnknown: true, nonRetryable: true, inputId: options.inputId, error: "MiniMax Code message receipt lacked an exact native turn ID; do not retry" };
+    return { ok: true, admitted: true, turnId, ...(options.inputId ? { inputId: options.inputId } : {}) };
+  }
+
+  /** Exact-ID CLI fallback for an idle native session when Desktop published no control transport. */
+  private async sendIdleSessionViaCli(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
+    const claim = options.durableUserDelivery;
+    if (!claim) {
+      return { ok: false, notSubmitted: true, error: "MiniMax Code local runtime requires a durable human queue claim for CLI delivery" };
+    }
+    const expectedJob = options.inputId
+      ? `job_${createHash("sha256").update(`user-message\0minimax-code\0${id}\0${options.inputId}`).digest("hex")}`
+      : "";
+    const policy = claim?.minimaxExecPolicy;
+    const validPolicy = policy === undefined || (Number.isSafeInteger(policy.revision) && policy.revision >= 0
+      && ["unset", "smart", "full", "off"].includes(policy.mode));
+    const actor=claim?.actor;
+    const actorMatchesOrigin=actor?.kind==="human"?options.origin==="human"
+      :actor?.kind==="agent"&&actor.principal==="agent-herder-owner-mcp"&&actor.senderVerified===false?options.origin==="automation":false;
+    const expectedClaim = { jobId: expectedJob, inputId: options.inputId ?? "", requestFingerprint: claim?.requestFingerprint ?? "",
+      harness: "minimax-code", sessionId: id, targetHostId: localSessionHostId(), mode: "queue" as const,
+      actor,
+      ...(policy ? { minimaxExecPolicy: policy } : {}) };
+    if (!actorMatchesOrigin || options.steer === true || options.activeTurnOnly === true || options.images?.length
+      || !options.inputId || !claim || claim.inputId !== options.inputId || claim.jobId !== expectedJob
+      || !validPolicy || !/^[a-f0-9]{64}$/.test(claim.requestFingerprint) || !verifyDurableUserDeliveryClaim(claim, expectedClaim, options.message, options.images)
+      || (options.model && options.model !== "minimax/MiniMax-M3.1-Flash")) {
+      return { ok: false, notSubmitted: true, error: "MiniMax Code idle delivery requires an exact durable queue claim" };
+    }
+
+    let db: DatabaseSync | undefined;
+    let row: { session_id: string; runtime: string; status: string; workspace_dir: string; archived: number } | undefined;
+    try {
+      db = new DatabaseSync(this.runtimeDb, { readOnly: true });
+      db.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=1000");
+      row = db.prepare("SELECT session_id,runtime,status,workspace_dir,archived FROM local_runtime_sessions WHERE session_id=?").get(id) as typeof row;
+      const lease = db.prepare("SELECT 1 AS active FROM local_runtime_session_locks WHERE session_id=? AND owner_kind='turn' AND expires_at_ms>? LIMIT 1").get(id, Date.now());
+      if (!row || lease) return { ok: false, notSubmitted: true, error: lease ? "MiniMax Code session is busy" : "MiniMax Code native session identity is unavailable" };
+    } catch {
+      return { ok: false, notSubmitted: true, error: "MiniMax Code native idle state is unavailable" };
+    } finally { db?.close(); }
+
+    const workspace = row.workspace_dir;
+    if (row.session_id !== id || row.runtime !== "pi-agent" || row.status !== "idle" || row.archived !== 0
+      || !workspace || !workspace.startsWith("/") || !(await stat(workspace).then((s) => s.isDirectory()).catch(() => false))) {
+      return { ok: false, notSubmitted: true, error: "MiniMax Code native session is not an exact idle target" };
+    }
+    const dataDir = await realpath(this.runtimeDataDir).catch(() => null);
+    const expectedRuntimeDb = dataDir ? join(dataDir, "v2", "sqlite", "runtime-state.sqlite") : "";
+    const expectedSessionStore = dataDir ? join(dataDir, "v2", "sessions") : "";
+    const sameNativeDomain = expectedRuntimeDb
+      ? await Promise.all([
+        realpath(this.runtimeDb).catch(() => null), realpath(expectedRuntimeDb).catch(() => null),
+        realpath(this.sessionStore).catch(() => null), realpath(expectedSessionStore).catch(() => null),
+      ])
+      : [null, null, null, null];
+    if (!sameNativeDomain[0] || sameNativeDomain[0] !== sameNativeDomain[1]
+      || !sameNativeDomain[2] || sameNativeDomain[2] !== sameNativeDomain[3]) {
+      return { ok: false, notSubmitted: true, error: "MiniMax Code CLI data directory does not own the inspected session and runtime state" };
+    }
+    const stored = await this.readStoredSessions();
+    const entry = stored.find((candidate) => candidate.id === id);
+    if (!entry) return { ok: false, notSubmitted: true, error: "MiniMax Code session is not present in the local session store" };
+    const native = await this.toSession(entry);
+    if (native.id !== id || native.hostId !== localSessionHostId() || native.harness !== "minimax-code"
+      || native.model !== "minimax/MiniMax-M3.1-Flash") {
+      return { ok: false, notSubmitted: true, error: "MiniMax Code native target identity or persisted model changed" };
+    }
+    // Recheck the exact target and lease after slower local-store reads, just
+    // before invoking the native CLI.
+    try {
+      db = new DatabaseSync(this.runtimeDb, { readOnly: true });
+      db.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=1000");
+      const fresh = db.prepare("SELECT session_id,runtime,status,workspace_dir,archived FROM local_runtime_sessions WHERE session_id=?").get(id) as typeof row;
+      const freshLease = db.prepare("SELECT 1 AS active FROM local_runtime_session_locks WHERE session_id=? AND owner_kind='turn' AND expires_at_ms>? LIMIT 1").get(id, Date.now());
+      if (!fresh || fresh.session_id !== id || fresh.runtime !== "pi-agent" || fresh.status !== "idle" || fresh.archived !== 0
+        || fresh.workspace_dir !== workspace || freshLease) {
+        return { ok: false, notSubmitted: true, error: freshLease ? "MiniMax Code session is busy" : "MiniMax Code native target changed before delivery" };
+      }
+    } catch {
+      return { ok: false, notSubmitted: true, error: "MiniMax Code native idle state is unavailable" };
+    } finally { db?.close(); db = undefined; }
+    const permissionPolicy = policy && policy.mode !== "unset" ? policy.mode : undefined;
+    const result = await this.control.runSession(id, workspace, dataDir!, options.message, permissionPolicy);
+    if (!result.ok) {
+      if (result.error === "session_busy") return { ok: false, notSubmitted: true, error: "MiniMax Code session is busy" };
+      if ((result.body as { started?: boolean } | null)?.started === false) return { ok: false, notSubmitted: true, inputId: options.inputId, error: "MiniMax Code CLI was unavailable before delivery" };
+      return { ok: false, admissionUnknown: true, nonRetryable: true, inputId: options.inputId, error: "MiniMax Code CLI outcome is unknown; do not retry this input" };
+    }
+    const body = result.body as { sessionId?: string; turnId?: string; status?: string; model?: { providerId?: string; modelId?: string; providerKind?: string } };
+    if (body.sessionId !== id || !body.turnId || body.status !== "succeeded"
+      || body.model?.providerId !== "minimax" || body.model.modelId !== "MiniMax-M3.1-Flash" || body.model.providerKind !== "minimax-managed") {
+      return { ok: false, admissionUnknown: true, nonRetryable: true, inputId: options.inputId, error: "MiniMax Code CLI receipt did not prove the exact native session and model; do not retry" };
+    }
+    return { ok: true, admitted: true, admission: "accepted", turnId: body.turnId, inputId: options.inputId };
+  }
+
+  async sendActiveMessage(id: string, options: SendMessageOptions): Promise<ControlResult> {
+    return this.sendMessage(id, { ...options, activeTurnOnly: true, steer: true });
   }
 
   async stopSession(id: string): Promise<ControlResult> {

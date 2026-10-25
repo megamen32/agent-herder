@@ -1,9 +1,10 @@
 import {AUTOCONTINUE_HARNESS_IDS,loadAutocontinueHarnesses,saveAutocontinueHarness,type AutocontinueHarness,type WebSessionAutostartHarness} from "./autocontinue-harnesses.js";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
+import {ComposerSendControl,QueueProcessingControl,VoiceComposerControl,isComposerSubmitShortcut} from "./composer-controls.js";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { SESSION_LIST_REFRESH_MS, sessionListRefreshDelay, sampleSessionActivity, filterAndArrangeSessions, matchesSessionQuery, projectFor, sessionKey, sessionTurnLinkFromHash, selectionAfterSessionRefresh, type SessionListEntry, type SessionListSession, type SessionListSettings, type SessionListSort } from "./session-list.js";
+import { SESSION_LIST_REFRESH_MS, sessionListRefreshDelay, sampleSessionActivity, filterAndArrangeSessions, matchesSessionQuery, pluralRu, projectFor, sessionKey, sessionTurnLinkFromHash, selectionAfterSessionRefresh, sessionListCounts, sessionListCounterRu, sessionListEmptyReason, summarizeSessionSample, type SessionListEntry, type SessionListSession, type SessionListSettings, type SessionListSort, type SessionSampleCounts } from "./session-list.js";
 import { CodexQuotaSettings } from "./codex-quota-settings.js";
 import { QuotaPanel } from "./quota-panel.js";
 import { QuotaRecoveryControls } from "./quota-recovery-controls.js";
@@ -11,6 +12,10 @@ import { AutoCompactSettingsPanel } from "./auto-compact-settings.js";
 import { LaunchPolicySettings } from "./launch-policy-settings.js";
 import { FallbackModelsSettings } from "./fallback-models-controls.js";
 import { SettingsScreen } from "./settings/settings-screen.js";
+import { SessionMetadata } from "./session-metadata.js";
+import { NativePermissionStrip } from "./native-permission.js";
+import { ComposerQueue,canEditQueuedEntry } from "./composer-queue.js";
+import { emptyInspectorText, sessionDetailsErrorText } from "./session-error-text.js";
 import { HarnessAutomationSettings, withAutopilotHarness } from "./harness-automation-settings.js";
 import "./styles.css";
 import "./codex-theme.css";
@@ -20,9 +25,16 @@ import "./interface-polish.css";
 import "./projects-screen.css";
 import { CodexNavigation } from "./codex-navigation.js";
 import {useFleetDirectory} from './fleet/use-directory.js';
-import {SessionWorkTarget} from './session-work-target.js';
+import {mergeActiveActivity} from './active-activity.js';
+import {useActiveActivity} from './use-active-activity.js';
+import {SessionWorkTarget, SessionInspectBlock, type SessionInspectFacts} from './session-work-target.js';
+import {SessionQuickFilters, type SessionStatusFilter, type SessionQuickFilterCounts} from './session-list-quick-filters.js';
+import { mergeScopeAnswers, sessionScopeQuery, sliceScopeQueries, statusInSlice, useSessionScope } from './session-list-scope.js';
+import {useSessionFacts} from './use-session-facts.js';
+import {SessionActivityPanel} from './session-activity-panel.js';
+import {readPanelLayout, writePanelLayout, type PanelLayout} from './ui-layout.js';
 import {directorySession} from './fleet/session-directory.js';
-import {RemoteSessionView,TranscriptRequestOwner,fetchIntegratorTranscriptPage,firstEventIndexForTurn,integratorEventDisplay,localTranscriptAddressFor,mergeTranscriptPageIfCurrent,transcriptForAddress,transcriptValueIfCurrent,type TranscriptView} from './fleet/RemoteSessionView.js';
+import {RemoteSessionView,TranscriptRequestOwner,fetchIntegratorTranscriptPage,firstEventIndexForTurn,integratorEventDisplay,localTranscriptAddressFor,mergeTranscriptPageIfCurrent,readSessionQueueProcessing,submitSessionQueueProcessing,transcriptForAddress,transcriptValueIfCurrent,type TranscriptView} from './fleet/RemoteSessionView.js';
 import {SessionViewCache,indexedViewCacheStore,readViewCacheSettings,writeViewCacheSettings,type ViewCacheSettings} from './fleet/view-cache.js';
 import type {MeshAddress} from '../mesh/protocol.js';
 import { FleetCabinet } from "./fleet/FleetCabinet.js";
@@ -40,21 +52,73 @@ import { applyTheme, readTheme, writeTheme, type HerderTheme } from "./theme.js"
 import { readSessionSearchPreferences, writeSessionSearchPreferences } from "./search-preferences.js";
 import { readDisplayPreference, writeDisplayPreference, REASONING_DISPLAY_STORAGE_KEY, TOOLS_DISPLAY_STORAGE_KEY } from "./display-preferences.js";
 import { currentModelOption, modelSwitchSupported, requestModelChange, shortModelLabel, modelOptionLabel, modelSourceLabel } from "./model-chip.js";
-import { readSessionListSettings, writeSessionListSettings } from "./session-list-preferences.js";
+import { readSessionListSettings, writeSessionListSettings, SESSION_LIST_SHOW_COMPLETED_ARIA, SESSION_LIST_SHOW_COMPLETED_HINT, SESSION_LIST_SHOW_COMPLETED_LABEL } from "./session-list-preferences.js";
 import { readModelTimeline, writeModelTimeline, recordModelAt, modelAt, latestModel, type ModelTimelineEntry } from "./session-model-timeline.js";
 import type { UploadedImage } from "../session-images.js";
-import type { SessionMessageView } from "../types/index.js";
+import type { HarnessPermissionState, SessionMessageView } from "../types/index.js";
 
 type HerderSession = SessionListSession & {
   lastMessage?: string;
   model?: string;
   needsPermission?: boolean;
+  permissionDetails?: {id:string;type:string;toolName?:string;description:string;details?:string};
   messageCount?: number;
   durationSec?: number;
+  /** Траты сессии в долларах, если их сообщила среда. */
   costUsd?: number;
 };
 type SessionMessage = SessionMessageView;
 type SessionDetails = { session: HerderSession; lineage?: { kind?: string; parentId?: string; role?: string; task?: string }; children?: HerderSession[]; messages: SessionMessage[] };
+type PermissionModeRead = { available: boolean; permissionState?: HarnessPermissionState; reason?: string };
+type PermissionModeAttempt = { inputId: string; expectedCurrentMode: string; mode: string; status: "unknown" | "accepted"; at: string };
+type MinimaxExecPolicyMode = "unset" | "smart" | "full" | "off";
+type MinimaxExecPolicy = { target: { hostId: string; harness: "minimax-code"; sessionId: string }; scope: "next_herder_cli_exec"; mode: MinimaxExecPolicyMode; revision: number; updatedAt: string };
+type MinimaxExecPolicyRead = { available: boolean; policy?: MinimaxExecPolicy; nativeMode?: { state: "unknown"; reason: string }; error?: string };
+function MinimaxExecPolicyPanel({ session }: { session: { hostId?: string; harness: string; id: string } }) {
+  const [read, setRead] = React.useState<MinimaxExecPolicyRead>();
+  const [choice, setChoice] = React.useState<MinimaxExecPolicyMode>("unset");
+  const [loading, setLoading] = React.useState(true);
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState("");
+  const refresh = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/sessions/minimax-code/${encodeURIComponent(session.id)}/herder-exec-policy`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
+      const next = await response.json().catch(() => undefined) as MinimaxExecPolicyRead | undefined;
+      if (!response.ok || !next?.available || !next.policy) throw new Error(next?.error || "Настройка политики недоступна.");
+      setRead(next);
+      setChoice(next.policy.mode);
+      setError("");
+    } catch (cause) { setRead(undefined); setError(cause instanceof Error ? cause.message : "Настройка политики недоступна."); }
+    finally { setLoading(false); }
+  }, [session.id]);
+  React.useEffect(() => { void refresh(); }, [refresh, session.hostId]);
+  const save = React.useCallback(async () => {
+    if (!session.hostId || !read?.policy || saving) return;
+    setSaving(true); setError("");
+    try {
+      const response = await fetch(`/api/sessions/minimax-code/${encodeURIComponent(session.id)}/herder-exec-policy`, {
+        method: "PUT", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(10_000),
+        body: JSON.stringify({ hostId: session.hostId, expectedRevision: read.policy.revision, mode: choice }),
+      });
+      const receipt = await response.json().catch(() => undefined) as { state?: string; policy?: MinimaxExecPolicy; error?: string } | undefined;
+      if (!response.ok || receipt?.state !== "configured" || !receipt.policy) throw new Error(receipt?.error || "Настройка не сохранена.");
+      setRead((current) => current ? { ...current, policy: receipt.policy } : current);
+      setChoice(receipt.policy.mode);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Настройка не сохранена.");
+      await refresh();
+    } finally { setSaving(false); }
+  }, [session.hostId, session.id, read?.policy, choice, saving, refresh]);
+  const label = (mode: MinimaxExecPolicyMode) => mode === "unset" ? "Как сейчас (без override)" : mode === "full" ? "Полный доступ" : mode === "off" ? "Без инструментов" : "Smart";
+  return <section className="permission-mode-control" aria-label="Политика запусков MiniMax через Herder">
+    <div className="permission-mode-heading"><span className="eyebrow">ЗАПУСКИ ЧЕРЕЗ HERDER</span><button className="quiet-button" disabled={loading || saving} onClick={() => void refresh()}>{loading ? "Читаю…" : "Обновить"}</button></div>
+    <div className="permission-mode-facts"><span>Текущий native режим</span><strong>неизвестен</strong><span>Для новых запусков через Herder</span><strong>{read?.policy ? label(read.policy.mode) : "не загружено"}</strong></div>
+    <small>Политика применяется только к точному MiniMax CLI fallback. Если доступен Desktop путь, отправка с ненулевой политикой будет остановлена; Herder не переключает транспорт молча. Native режим сессии это не меняет.</small>
+    {read?.policy && <div className="permission-mode-editor"><label>Политика следующих запусков<select aria-label="Политика запусков MiniMax через Herder" value={choice} onChange={(event) => setChoice(event.target.value as MinimaxExecPolicyMode)} disabled={saving || loading}><option value="unset">{label("unset")}</option><option value="smart">{label("smart")}</option><option value="full">{label("full")}</option><option value="off">{label("off")}</option></select></label><button className="quiet-button" disabled={saving || loading || choice === read.policy.mode} onClick={() => void save()}>{saving ? "Сохраняю…" : "Сохранить для Herder"}</button><small>Версия настройки: {read.policy.revision}. Изменение блокируется, пока отправка в эту сессию уже принята.</small></div>}
+    {error && <small className="permission-mode-error">{error}</small>}
+  </section>;
+}
 type StatisticsDistribution = { count: number; percentilesSec: { p50: number; p75: number; p90: number; p95: number; p99: number }; coverage: Array<{ seconds: number; count: number; percent: number }>; histogram: Array<{ label: string; minSec: number; maxSec?: number; count: number; percent: number }> };
 type NumericSummary = { count: number; mean: number; median: number; p75: number; p90: number; p95: number; p99: number; min: number; max: number };
 type RankedCount = { name: string; count: number; percent: number };
@@ -117,6 +181,22 @@ const readSessionFromHash = (): string | undefined => {
   return sessionTurnLinkFromHash(window.location.hash)?.sessionKey;
 };
 const readTurnFromHash = (): string | undefined => sessionTurnLinkFromHash(window.location.hash)?.turnId;
+const permissionModeAttemptsStorageKey = (hostId: string, harness: string, sessionId: string): string =>
+  `agent-herder.permission-mode-attempts:${JSON.stringify([hostId, harness, sessionId])}`;
+const readPermissionModeAttempts = (hostId: string, harness: string, sessionId: string): PermissionModeAttempt[] => {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(permissionModeAttemptsStorageKey(hostId, harness, sessionId)) || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is PermissionModeAttempt => Boolean(entry && typeof entry === "object"
+      && typeof entry.inputId === "string" && typeof entry.expectedCurrentMode === "string"
+      && typeof entry.mode === "string" && (entry.status === "unknown" || entry.status === "accepted")
+      && typeof entry.at === "string"));
+  } catch { return []; }
+};
+const writePermissionModeAttempts = (hostId: string, harness: string, sessionId: string, attempts: PermissionModeAttempt[]): void => {
+  try { window.localStorage.setItem(permissionModeAttemptsStorageKey(hostId, harness, sessionId), JSON.stringify(attempts.slice(-20))); }
+  catch { /* The server ledger remains authoritative if browser storage is unavailable. */ }
+};
 const writeSessionToHash = (key?: string) => {
   const linked=sessionTurnLinkFromHash(window.location.hash);
   const focus=key&&linked?.sessionKey===key&&linked.turnId?`?turn=${encodeURIComponent(linked.turnId)}`:"";
@@ -623,7 +703,7 @@ function AutomationSettings({ section, state, draft, saving, error, saved, conti
   </section>;
 }
 
-function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, loading, refreshing, settings, settingsOpen, searchOpen, searchQuery, options, choicesBySession, choosingRequestId, choiceError, collapsedChildren, onSearchChange, onSearchToggle, onSettingsChange, onSettingsToggle, onToggleChildren, onSelect, onChoose, onNewSession, onMachines, onAdvancedSearch, cacheSettings, onCacheSettings, onCacheClear, directoryStatus, onLoadMore, onAutomationSettings, shownCount, total, onLoadMoreSessions, }: {
+function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, loading, refreshing, settings, settingsOpen, searchOpen, searchQuery, options, choicesBySession, choosingRequestId, choiceError, collapsedChildren, onSearchChange, onSearchToggle, onSettingsChange, onSettingsToggle, onToggleChildren, onSelect, onChoose, onNewSession, onMachines, onAdvancedSearch, cacheSettings, onCacheSettings, onCacheClear, directoryStatus, onLoadMore, onAutomationSettings, loadedCount, total, sample, onLoadMoreSessions, onCollapse, quickCounts, quickStatus, onQuickStatusChange, }: {
   entries: SessionListEntry[];
   pins:readonly string[]; pinScope:string; onPin:(key:string)=>void; pinError:string;
   activeKey?: string;
@@ -650,24 +730,39 @@ function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, load
   onMachines: () => void;
   onAdvancedSearch: (query: string) => void;
   onAutomationSettings: (section: "autocontinue" | "autopilot" | "launch-policy") => void;
-  /** How many sessions the panel holds and how many the mesh has. */
-  shownCount: number;
+  /** How many sessions the local server window holds. */
+  loadedCount: number;
   total?: number;
+  /** Сводка загруженной выборки — нужна, чтобы объяснить пустой список. */
+  sample: SessionSampleCounts;
   onLoadMoreSessions?: () => void;
+  /** Свернуть список чатов: колонка слева уходит, чат остаётся во всю ширину. */
+  onCollapse?: () => void;
+  /** Быстрые фильтры: работают / ждут задачи / среда. */
+  quickCounts?: SessionQuickFilterCounts;
+  quickStatus?: SessionStatusFilter;
+  onQuickStatusChange?: (status: SessionStatusFilter) => void;
 }) {
   const [windowSize,setWindowSize]=React.useState(150);
   React.useEffect(()=>setWindowSize(150),[settings.hostId,settings.harness,settings.cwd,settings.project,settings.sort,settings.showAll,searchQuery]);
+  // Счётчик и пустой список говорят ровно о том, что на экране.
+  const counts=sessionListCounts(entries.length,windowSize,total);
+  const counter=sessionListCounterRu(counts,searchQuery);
+  const empty=sessionListEmptyReason({query:searchQuery,settings,sample,hostLabel:options.hosts.find((host)=>host.hostId===settings.hostId)?.label});
   return <nav className="sessions-pane" aria-label="Сессии">
-    <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Чаты {refreshing && <span className="inline-loading-dot" role="status" aria-label="Обновление сессий" />}</h1>{total!==undefined&&<small className="directory-status" role="status">показано {shownCount} из {total}</small>}</div><div className="sessions-heading-actions"><button type="button" className="quiet-button sessions-machines-button" onClick={onMachines}>Машины</button><button type="button" className="icon-button" aria-label="Новая сессия" title="Новая сессия" onClick={onNewSession}>+</button><button className={`icon-button ${searchOpen ? "selected-icon" : ""}`} aria-label="Поиск сессий" aria-expanded={searchOpen} onClick={onSearchToggle}>⌕</button><button className={`icon-button ${settingsOpen ? "selected-icon" : ""}`} aria-label="Настройки списка" title="Фильтры и сортировка списка сессий" aria-expanded={settingsOpen} onClick={onSettingsToggle}>≡</button></div></div>
+    <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Чаты {refreshing && <span className="inline-loading-dot" role="status" aria-label="Обновление сессий" />}</h1><button type="button" className="directory-status sessions-counter-button" title={searchQuery ? "Сбросить поиск" : "Показать все сессии"} onClick={() => { if (searchQuery) onSearchChange(""); else onQuickStatusChange?.("all"); }}>{counter}</button></div><div className="sessions-heading-actions"><button type="button" className="quiet-button sessions-machines-button" onClick={onMachines}>Машины</button><button type="button" className="icon-button" aria-label="Новая сессия" title="Новая сессия" onClick={onNewSession}>+</button><button className={`icon-button ${searchOpen ? "selected-icon" : ""}`} aria-label="Поиск сессий" aria-expanded={searchOpen} onClick={onSearchToggle}>⌕</button><button className={`icon-button ${settingsOpen ? "selected-icon" : ""}`} aria-label="Настройки списка" title="Фильтры и сортировка списка сессий" aria-expanded={settingsOpen} onClick={onSettingsToggle}>≡</button>{onCollapse && <button type="button" className="icon-button sessions-collapse-button" aria-label="Скрыть список чатов" title="Скрыть список чатов" onClick={onCollapse}><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>}</div></div>
     <div className="session-automation-links" aria-label="Общие настройки автоматизации"><button className="quiet-button" onClick={() => onAutomationSettings("autopilot")}>Автопилот</button><button className="quiet-button" onClick={() => onAutomationSettings("autocontinue")}>Автопродолжение</button><button className="quiet-button" onClick={() => onAutomationSettings("launch-policy")}>Запуск сессий</button></div>
-    {searchOpen && <div className="session-search"><input autoFocus value={searchQuery} onChange={(event) => onSearchChange(event.target.value)} placeholder="Название, агент, папка или текст…" aria-label="Поиск по сессиям" /><button type="button" className="rag-advanced-link" onClick={() => onAdvancedSearch(searchQuery)}>Расширенный поиск →</button></div>}
+    {searchQuery && <div className="session-search-chip"><span>Запрос: <b>{searchQuery}</b></span><button type="button" className="quiet-button" aria-label="Сбросить запрос поиска" onClick={() => onSearchChange("")}>✕</button></div>}
+    {searchOpen && <div className="session-search"><input autoFocus value={searchQuery} onChange={(event) => onSearchChange(event.target.value)} placeholder="Название, агент, папка или текст…" aria-label="Поиск по сессиям" /><button type="button" className="rag-advanced-link" onClick={() => onAdvancedSearch(searchQuery)}>Расширенный поиск →</button><small>Поиск идёт по загруженному списку: {sample.total} {pluralRu(sample.total, "сессия", "сессии", "сессий")}. Поиск смотрит все статусы выбранной среды.</small></div>}
+    {quickCounts && onQuickStatusChange && <SessionQuickFilters counts={quickCounts} status={quickStatus || "all"}
+      onStatusChange={onQuickStatusChange} harness={settings.harness} onHarnessChange={(harness) => onSettingsChange({ harness })} />}
     {settings.harness && <small className="directory-status">Фильтр среды: {settings.harness}</small>}{settingsOpen && <div className="session-settings" aria-label="Настройки списка сессий">
       <small>Папка — текущий каталог сессии. Проект — каталог её родительской сессии, если она есть.</small><label>Папка<select value={settings.cwd} onChange={(event) => onSettingsChange({ cwd: event.target.value })}><option value="">Все папки</option>{options.cwds.map((cwd) => <option value={cwd} key={cwd}>{cwd}</option>)}</select></label>
       <label>Проект<select value={settings.project} onChange={(event) => onSettingsChange({ project: event.target.value })}><option value="">Все проекты</option>{options.projects.map((project) => <option value={project} key={project}>{project}</option>)}</select></label>
       <label>Машина<select aria-label="Машина" value={settings.hostId??""} onChange={event=>onSettingsChange({hostId:event.target.value})}><option value="">Все машины</option>{options.hosts.map(host=><option key={host.hostId} value={host.hostId}>{host.label}</option>)}</select></label>
       <label>Агент<select value={settings.harness} onChange={(event) => onSettingsChange({ harness: event.target.value })}><option value="">Все агенты</option>{options.harnesses.map((harness) => <option value={harness} key={harness}>{harness}</option>)}</select></label>
       <label>Сортировка<select value={settings.sort} onChange={(event) => onSettingsChange({ sort: event.target.value as SessionListSort })}><option value="created">По дате создания</option><option value="activity">По активности · раз в 30 с</option><option value="status">По статусу</option><option value="harness">По агенту</option><option value="title">По названию</option><option value="cwd">По папке</option></select></label>
-      <label className="session-toggle"><input type="checkbox" aria-label="Показывать все сессии" checked={settings.showAll} onChange={(event) => onSettingsChange({ showAll: event.target.checked })} /> Показывать завершённые сессии</label>
+      <label className="session-toggle"><input type="checkbox" aria-label={SESSION_LIST_SHOW_COMPLETED_ARIA} checked={settings.showAll} onChange={(event) => { const next = event.target.checked; if (onQuickStatusChange) onQuickStatusChange(next ? "all" : "working"); else onSettingsChange({ showAll: next }); }} /> {SESSION_LIST_SHOW_COMPLETED_LABEL}</label><small>{SESSION_LIST_SHOW_COMPLETED_HINT}</small>
     </div>}
     {settingsOpen&&<details className="session-cache-settings"><summary>Быстрое открытие сессий</summary><label>Хранить просмотр в этом браузере<select aria-label="Срок кэша сессий" value={cacheSettings.hours} onChange={e=>onCacheSettings({...cacheSettings,hours:Number(e.target.value)})}><option value={0}>Выключено</option><option value={24}>Сутки</option><option value={72}>3 дня</option><option value={168}>Неделя</option></select></label><label>Размер кэша<select aria-label="Размер кэша сессий" value={cacheSettings.maxMiB} onChange={e=>onCacheSettings({...cacheSettings,maxMiB:Number(e.target.value)})}>{[16,32,64].map(size=><option key={size} value={size}>{size} МБ</option>)}</select></label><small>Только открытые сессии. История остальных остаётся на их машине. При открытии сохранённый просмотр обновляется.</small><button className="quiet-button" onClick={onCacheClear}>Очистить сохранённый просмотр</button></details>}
     {directoryStatus&&<details className="directory-status"><summary>Подключение машин</summary><small role="status">{directoryStatus}</small>{onLoadMore&&<button className="quiet-button" onClick={onLoadMore}>Показать ещё сессии</button>}</details>}
@@ -695,9 +790,9 @@ function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, load
         </div>;
       })}
       {entries.length>windowSize&&<button className="quiet-button" onClick={()=>setWindowSize(n=>n+150)}>Показать ещё · всего {entries.length}</button>}
-      {total!==undefined&&total>shownCount&&<button className="quiet-button" onClick={()=>onLoadMoreSessions?.()}>Догрузить ещё с сервера · всего {total}</button>}
+      {total!==undefined&&total>loadedCount&&<button className="quiet-button" onClick={()=>{setWindowSize(n=>n+150);onLoadMoreSessions?.();}}>Догрузить ещё с сервера · всего {total}</button>}
       {loading && entries.length === 0 && <div className="session-skeletons" aria-label="Загрузка сессий">{Array.from({ length: 8 }, (_, index) => <div className="session-skeleton" key={index}><span /><div><b /><i /><i /></div></div>)}</div>}
-      {!loading && entries.length === 0 && <div className="empty-list">Нет сессий по этим настройкам.</div>}
+      {!loading && entries.length === 0 && <div className="empty-list"><strong>{empty.title}</strong>{empty.hint&&<small>{empty.hint}</small>}{empty.showCompleted&&<button type="button" className="quiet-button" onClick={()=>{ if (onQuickStatusChange) onQuickStatusChange("all"); else onSettingsChange({ showAll: true }); }}>Показать завершённые сессии</button>}</div>}
     </div>
   </nav>;
 }
@@ -705,7 +800,14 @@ function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, load
 function App() {
   const [listSettings, setListSettings] = React.useState<SessionListSettings>(() => readSessionListSettings(window.localStorage));
   React.useEffect(() => { writeSessionListSettings(window.localStorage, listSettings); }, [listSettings]);
+  // Срез и среда живут в раскладке панели и в настройках списка. Здесь они
+  // переносятся в ссылки, по которым сервер отбирает сессии: выбор владельца
+  // должен менять запрос, а не только подсветку чипа.
+  React.useEffect(() => { listHarnessRef.current = listSettings.harness; }, [listSettings.harness]);
   const directory=useFleetDirectory(listSettings.hostId);
+  // The catalog of the sessions says which sessions exist; the inventory of the
+  // activity says which of them are working right now.
+  const activity=useActiveActivity();
   const sessionPins = useSessionPins(directory.scope);
   const [remoteSelection,setRemoteSelection]=React.useState<MeshAddress>();
   const [viewCacheSettings,setViewCacheSettings]=React.useState(()=>readViewCacheSettings(window.localStorage));
@@ -721,6 +823,10 @@ function App() {
   const [sessions, setSessions] = React.useState<HerderSession[]>([]);
   /** The window the panel asks the server for; the counter of the whole list. */
   const sessionLimitRef = React.useRef(SESSION_LIST_WINDOW);
+  /** Срез статуса и среда, по которым сервер отбирает сессии для списка. */
+  const listSliceRef = React.useRef<SessionStatusFilter>("working");
+  const listHarnessRef = React.useRef("");
+  const listSearchRef = React.useRef("");
   const [sessionsTotal, setSessionsTotal] = React.useState<number>();
   const [activeKey, setActiveKey] = React.useState<string | undefined>(() => readSessionFromHash() ?? window.localStorage.getItem("agent-herder.active-session") ?? undefined);
   const [linkedTurnId, setLinkedTurnId] = React.useState<string | undefined>(() => readTurnFromHash());
@@ -740,6 +846,17 @@ function App() {
   const [detailsError, setDetailsError] = React.useState<string>();
   const detailsReadGateRef = React.useRef(new DetailsReadGate());
   const [mobileView, setMobileView] = React.useState<"sessions" | "chat">(() => readSessionFromHash() ? "chat" : "sessions");
+  // На телефоне панель открывается тем, чем владелец закончил: открытая
+  // сессия — это чат, а не список, который пришлось бы искать заново.
+  const mobileStartRef = React.useRef(false);
+  React.useEffect(() => {
+    if (mobileStartRef.current) return;
+    mobileStartRef.current = true;
+    if (mobileView === "chat") return;
+    if (!window.localStorage.getItem("agent-herder.active-session")) return;
+    if (!window.matchMedia("(max-width: 900px)").matches) return;
+    setMobileView("chat");
+  }, [mobileView]);
   const [showReasoning, setShowReasoning] = React.useState(() => readDisplayPreference(window.localStorage, REASONING_DISPLAY_STORAGE_KEY));
   const [showTools, setShowTools] = React.useState(() => readDisplayPreference(window.localStorage, TOOLS_DISPLAY_STORAGE_KEY));
   React.useEffect(() => { writeDisplayPreference(window.localStorage, REASONING_DISPLAY_STORAGE_KEY, showReasoning); }, [showReasoning]);
@@ -753,7 +870,23 @@ function App() {
   // выбор режима отправки запоминается сам по себе, отдельной галочки нет
   const [deliveryMode, setDeliveryMode] = React.useState<DeliveryMode>(() => readDefaultDeliveryMode(window.localStorage));
   const [deliveryModePinned, setDeliveryModePinned] = React.useState(() => readDeliveryModePinned(window.localStorage));
-  const [showInspector, setShowInspector] = React.useState(() => window.innerWidth > 1180);
+  // Раскладка панели: список чатов, шапка сессии и правая панель. Владелец
+  // выбирает, что он видит, и выбор переживает перезагрузку страницы.
+  const [layout, setLayout] = React.useState(() => readPanelLayout());
+  const showInspector = layout.inspectorOpen;
+  const setShowInspector = React.useCallback((next: boolean | ((current: boolean) => boolean)) => {
+    setLayout((current) => ({ ...current, inspectorOpen: typeof next === "function" ? next(current.inspectorOpen) : next }));
+  }, []);
+  const setLayoutField = React.useCallback(<K extends keyof PanelLayout>(key: K, value: PanelLayout[K]) => {
+    setLayout((current) => ({ ...current, [key]: value }));
+  }, []);
+  // Быстрый срез списка: работают / ждут задачи / все. По умолчанию список
+  // показывает ровно то, о чём говорит счётчик, — работающие сессии; выбор
+  // владельца помнится вместе с раскладкой панели.
+  const listStatusFilter = layout.listFilter;
+  const setListStatusFilter = (status: SessionStatusFilter) => setLayoutField("listFilter", status);
+  React.useEffect(() => { listSliceRef.current = listStatusFilter; }, [listStatusFilter]);
+  React.useEffect(() => { writePanelLayout(layout); }, [layout]);
   const [sessionSettingsReturn, setSessionSettingsReturn] = React.useState<"autocontinue" | "autopilot">();
   const automationDialogRef = React.useRef<HTMLDivElement>(null);
   const [showStatistics, setShowStatistics] = React.useState(false);
@@ -764,7 +897,7 @@ function App() {
   // The screen of the settings has two tabs: the settings of the herder
   // and the models of the projects. The second tab belongs to the
   // Projects contour; the herder only gives it a place.
-  const [settingsTab, setSettingsTab] = React.useState<"herder" | "projects" | "hooks">("projects");
+  const [settingsTab, setSettingsTab] = React.useState<"settings" | "projects" | "hooks">("settings");
   const [advancedSearchQuery, setAdvancedSearchQuery] = React.useState<string>();
   const consumeAdvancedSearchInitialQuery = React.useCallback(() => setAdvancedSearchQuery(undefined), []);
   const [showFleet, setShowFleet] = React.useState(false);
@@ -781,6 +914,7 @@ function App() {
   const [showSessionSettings, setShowSessionSettings] = React.useState(false);
   const [showSessionSearch, setShowSessionSearch] = React.useState(false);
   const [sessionSearch, setSessionSearch] = React.useState(() => readSessionSearchPreferences(window.localStorage).query);
+  React.useEffect(() => { listSearchRef.current = sessionSearch; }, [sessionSearch]);
   React.useEffect(() => { writeSessionSearchPreferences(window.localStorage, { query: sessionSearch }); }, [sessionSearch]);
   const [autopilotChoices, setAutopilotChoices] = React.useState<WebAutopilotChoiceCard[]>([]);
   const [choosingRequestId, setChoosingRequestId] = React.useState<string>();
@@ -791,6 +925,13 @@ function App() {
   const [sessionAutostart, setSessionAutostart] = React.useState<WebSessionAutostart>();
   const [sessionAutostartSaving, setSessionAutostartSaving] = React.useState(false);
   const [sessionAutostartError, setSessionAutostartError] = React.useState<string>();
+  const [permissionModeRead, setPermissionModeRead] = React.useState<PermissionModeRead>();
+  const [permissionModeLoading, setPermissionModeLoading] = React.useState(false);
+  const [permissionModeChoice, setPermissionModeChoice] = React.useState("");
+  const [permissionModeSaving, setPermissionModeSaving] = React.useState(false);
+  const [permissionModeError, setPermissionModeError] = React.useState<string>();
+  const [permissionModeAttempts, setPermissionModeAttempts] = React.useState<PermissionModeAttempt[]>([]);
+  const permissionModeReadOwner = React.useRef<string | undefined>(undefined);
   const [continuationHarnesses, setContinuationHarnesses] = React.useState<Partial<Record<AutocontinueHarness, WebSessionAutostartHarness>>>({});
   const [continuationHarnessSaving, setContinuationHarnessSaving] = React.useState<AutocontinueHarness>();
   const [continuationHarnessError, setContinuationHarnessError] = React.useState<string>();
@@ -811,10 +952,19 @@ function App() {
   const foldedInitialized = React.useRef(false);
   const [composer, setComposer] = React.useState("");
   const [composerImages, setComposerImages] = React.useState<UploadedImage[]>([]);
+  const [queueEdit,setQueueEdit]=React.useState<{inputId:string;sessionKey:string;expectedText:string;draft:string;images:UploadedImage[];unknown?:boolean}>();
+  const [queueEditError,setQueueEditError]=React.useState('');
+  const [queueEditSaving,setQueueEditSaving]=React.useState(false);
+  React.useEffect(()=>{
+    if(queueEdit&&queueEdit.sessionKey!==activeKey){
+      setComposer(queueEdit.draft);setQueueEdit(undefined);setQueueEditError('');
+    }
+  },[activeKey]);
   const [deliveryMenuOpen, setDeliveryMenuOpen] = React.useState(false);
   const [imageUploading, setImageUploading] = React.useState(false);
   const [imageError, setImageError] = React.useState<string>();
   const imageInputRef = React.useRef<HTMLInputElement>(null);
+  const composerTextareaRef = React.useRef<HTMLTextAreaElement>(null);
   React.useEffect(() => { setComposerImages([]); setImageError(undefined); }, [activeKey]);
   const [loading, setLoading] = React.useState(true);
   const [sessionsRefreshing, setSessionsRefreshing] = React.useState(false);
@@ -945,10 +1095,19 @@ function App() {
     const read = (async () => {
     setSessionsRefreshing(true);
     try {
-    const [result, choiceResult] = await Promise.all([
-      api<{ sessions: HerderSession[]; warming?: boolean; total?: number }>(`/api/sessions?quick=1&limit=${sessionLimitRef.current}`),
+    // Срез и среда выбираются на сервере: окно ответа тогда описывает ровно
+    // то, что владелец просит увидеть, а не «всё, что попалось в первые 100».
+    const slice = listSliceRef.current;
+    const harness = listHarnessRef.current;
+    const searching = listSearchRef.current.trim().length > 0;
+    const limit = searching ? Math.max(sessionLimitRef.current, 500) : sessionLimitRef.current;
+    const queries = sliceScopeQueries(slice, harness, searching);
+    const [answers, choiceResult] = await Promise.all([
+      Promise.all(queries.map((query) => api<{ sessions: HerderSession[]; warming?: boolean; total?: number }>(sessionScopeQuery(query, limit)))),
       api<{ choices: WebAutopilotChoiceCard[] }>("/api/autopilot/choices?status=pending").catch(() => ({ choices: [] })),
     ]);
+    const merged = mergeScopeAnswers(answers, keyOf);
+    const result = { sessions: merged.sessions, total: merged.total, warming: answers.every((answer) => answer.warming) };
     const sessionKeys = new Set(result.sessions.map(keyOf));
     const decisionSessions: HerderSession[] = choiceResult.choices
       .filter((choice) => !sessionKeys.has(`${choice.harness}:${choice.sessionId}`))
@@ -1005,6 +1164,19 @@ function App() {
     const timer = window.setInterval(() => { if (!document.hidden && sessionListRefreshDelay(sessionsLastReadRef.current, Date.now()) === 0) void loadSessions().catch(() => {}); }, SESSION_LIST_REFRESH_MS);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [loadSessions]);
+  // Смена среза, среды или запроса — это новый вопрос к серверу: список
+  // перечитывается по новым фильтрам, а не остаётся прежним окном.
+  const listFilterReadyRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!listFilterReadyRef.current) { listFilterReadyRef.current = true; return; }
+    const timer = window.setTimeout(() => {
+      // Текущее чтение относится к прежним фильтрам — оно не отвечает на
+      // новый вопрос, поэтому следующее чтение начинается заново.
+      sessionsReadRef.current = undefined;
+      void loadSessions().catch(() => false);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [listStatusFilter, listSettings.harness, sessionSearch, loadSessions]);
   /** The load of a wider window of the list: the owner asks for more. */
   const loadMoreSessions = React.useCallback(async () => {
     sessionLimitRef.current = Math.min(sessionLimitRef.current + SESSION_LIST_WINDOW, 500);
@@ -1195,7 +1367,90 @@ function App() {
     return () => { cancelAnimationFrame(frame); if (secondFrame) cancelAnimationFrame(secondFrame); };
   }, [activeKey, details?.messages.length, details?.children?.length, outbox, showReasoning, showTools, jsonRendering]);
 
-  const activeSession = details?.session && keyOf(details.session) === activeKey ? details.session : sessions.find((session) => keyOf(session) === activeKey);
+  const activeSessionBase = details?.session && keyOf(details.session) === activeKey ? details.session : sessions.find((session) => keyOf(session) === activeKey);
+  // The header of the chat shows the activity the inventory proves, not the
+  // status of the catalog, so a working session is not read as idle.
+  const activeSession = React.useMemo(()=>{
+    if(!activeSessionBase) return activeSessionBase;
+    const merged=mergeActiveActivity([activeSessionBase],activity.snapshot.confirmed,{hostId:directory.localHostId,goals:activity.goals})[0];
+    return (merged??activeSessionBase) as HerderSession;
+  },[activeSessionBase,activity.snapshot.confirmed,activity.goals,directory.localHostId]);
+  const refreshPermissionModeState = React.useCallback(async () => {
+    const session = activeSession;
+    if (!showInspector || !session?.hostId) {
+      permissionModeReadOwner.current = undefined;
+      setPermissionModeRead(undefined);
+      setPermissionModeAttempts([]);
+      setPermissionModeChoice("");
+      return;
+    }
+    const owner = JSON.stringify([session.hostId, session.harness, session.id]);
+    permissionModeReadOwner.current = owner;
+    setPermissionModeRead(undefined);
+    setPermissionModeChoice("");
+    setPermissionModeLoading(true);
+    setPermissionModeError(undefined);
+    setPermissionModeAttempts(readPermissionModeAttempts(session.hostId, session.harness, session.id));
+    try {
+      const result = await api<PermissionModeRead>(`/api/sessions/${encodeURIComponent(session.harness)}/${encodeURIComponent(session.id)}/permissions?hostId=${encodeURIComponent(session.hostId)}`);
+      if (permissionModeReadOwner.current !== owner) return;
+      if (result.available && result.permissionState
+        && (result.permissionState.target.hostId !== session.hostId || result.permissionState.target.harness !== session.harness || result.permissionState.target.sessionId !== session.id)) {
+        throw new Error("Состояние разрешений относится к другой сессии.");
+      }
+      setPermissionModeRead(result);
+      setPermissionModeChoice(result.permissionState?.currentMode || "");
+    } catch (error) {
+      if (permissionModeReadOwner.current !== owner) return;
+      setPermissionModeRead({ available: false, reason: (error as Error).message });
+    } finally {
+      if (permissionModeReadOwner.current === owner) setPermissionModeLoading(false);
+    }
+  }, [activeSession?.hostId, activeSession?.harness, activeSession?.id, showInspector]);
+  React.useEffect(() => { void refreshPermissionModeState(); }, [refreshPermissionModeState]);
+  const applyPermissionMode = React.useCallback(async () => {
+    const session = activeSession;
+    const state = permissionModeRead?.permissionState;
+    const mode = permissionModeChoice;
+    if (!session?.hostId || !state || !state.canSetMode || state.scope !== "session"
+      || !state.supportedModes?.includes(mode) || state.pendingRequests.length > 0
+      || !state.currentMode || mode === state.currentMode || permissionModeSaving) return;
+    const prior = permissionModeAttempts.find((attempt) => attempt.status === "unknown"
+      && attempt.mode === mode && attempt.expectedCurrentMode === state.currentMode);
+    const attempt: PermissionModeAttempt = prior || { inputId: newInputId(), expectedCurrentMode: state.currentMode, mode, status: "unknown", at: new Date().toISOString() };
+    const prepared = [...permissionModeAttempts.filter((item) => item.inputId !== attempt.inputId), attempt];
+    setPermissionModeAttempts(prepared);
+    writePermissionModeAttempts(session.hostId, session.harness, session.id, prepared);
+    setPermissionModeSaving(true);
+    setPermissionModeError(undefined);
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(session.harness)}/${encodeURIComponent(session.id)}/permissions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        signal: AbortSignal.timeout(15_000),
+        body: JSON.stringify({ hostId: session.hostId, inputId: attempt.inputId, expectedCurrentMode: attempt.expectedCurrentMode, mode: attempt.mode }),
+      });
+      const receipt = await response.json().catch(() => undefined) as { ok?: boolean; state?: "accepted" | "unknown" | "not_attempted"; error?: string } | undefined;
+      if (receipt?.ok && receipt.state === "accepted") {
+        const completed = prepared.map((item) => item.inputId === attempt.inputId ? { ...item, status: "accepted" as const } : item);
+        setPermissionModeAttempts(completed);
+        writePermissionModeAttempts(session.hostId, session.harness, session.id, completed);
+        await refreshPermissionModeState();
+      } else if (receipt?.state === "not_attempted") {
+        const remaining = prepared.filter((item) => item.inputId !== attempt.inputId);
+        setPermissionModeAttempts(remaining);
+        writePermissionModeAttempts(session.hostId, session.harness, session.id, remaining);
+        setPermissionModeError(receipt.error || "Режим не изменён.");
+        await refreshPermissionModeState();
+      } else {
+        setPermissionModeError(receipt?.error || "Исход смены режима неизвестен. Идентификатор попытки сохранён; автоматического повтора не будет.");
+      }
+    } catch (error) {
+      setPermissionModeError(`Исход смены режима неизвестен. Идентификатор попытки сохранён: ${(error as Error).message}`);
+    } finally { setPermissionModeSaving(false); }
+  }, [activeSession?.hostId, activeSession?.harness, activeSession?.id, permissionModeRead?.permissionState, permissionModeChoice, permissionModeAttempts, permissionModeSaving, refreshPermissionModeState]);
+  // Факты работы сессии нужны только правой панели: пока её нет, панель их не читает.
+  const sessionFacts = useSessionFacts(activeSession, showInspector, details?.messages.length ?? 0);
   // Машины флота для блока рабочего места: подпись машины и её точный идентификатор.
   const workTargetHosts = React.useMemo(() => directory.hosts.map((host) => ({ hostId: host.hostId, label: host.label })), [directory.hosts]);
   // Модель, с которой уйдёт следующий ответ: выбранная пользователем иначе
@@ -1287,8 +1542,11 @@ function App() {
   const displaySessions=React.useMemo(()=>{
     const local=sessions.map(s=>({...s,hostId:directory.localHostId,hostLabel:directory.hosts.find(h=>h.hostId===directory.localHostId)?.label}));
     const keys=new Set(local.map(keyOf));
-    return [...local,...directory.rows.flatMap(row=>{const host=directory.hosts.find(h=>h.hostId===row.address.hostId);if(!host)return [];const s=directorySession(row,host,directory.localHostId);return keys.has(keyOf(s))?[]:[s];})];
-  },[sessions,directory.rows,directory.hosts,directory.localHostId]);
+    const rows=[...local,...directory.rows.flatMap(row=>{const host=directory.hosts.find(h=>h.hostId===row.address.hostId);if(!host)return [];const s=directorySession(row,host,directory.localHostId);return keys.has(keyOf(s))?[]:[s];})];
+    // The panel draws the work the inventory proves, not the status the catalog
+    // guesses. A session the inventory does not mention keeps the catalog status.
+    return mergeActiveActivity(rows,activity.snapshot.confirmed,{hostId:directory.localHostId,goals:activity.goals});
+  },[sessions,directory.rows,directory.hosts,directory.localHostId,activity.snapshot.confirmed,activity.goals]);
   const activitySessionsRef = React.useRef(displaySessions);
   activitySessionsRef.current = displaySessions;
   const [activityOrder, setActivityOrder] = React.useState<ReadonlyMap<string,string>>(() => new Map());
@@ -1300,12 +1558,21 @@ function App() {
     return () => window.clearInterval(timer);
   }, [listSettings.sort]);
   const sessionMap = React.useMemo(() => new Map(displaySessions.map((session) => [keyOf(session), session])), [displaySessions]);
+  // Среды, которые панель знает: список не должен зависеть от того, какие
+  // сессии попали в окно, — иначе среду нельзя выбрать, когда её сессий
+  // в окне нет.
+  const scopeHarnesses = React.useMemo(() => {
+    const known = new Set<string>();
+    for (const adapter of harnessAdapters) if (adapter.id) known.add(adapter.id);
+    for (const session of displaySessions) if (session.harness) known.add(session.harness);
+    return [...known].sort();
+  }, [harnessAdapters, displaySessions]);
   const listOptions = React.useMemo(() => ({
     hosts:directory.hosts,
     cwds: [...new Set(displaySessions.map((session) => session.cwd).filter(Boolean))].sort(),
     projects: [...new Set(displaySessions.map((session) => projectFor(session, sessionMap)).filter(Boolean))].sort(),
-    harnesses: [...new Set(displaySessions.map((session) => session.harness).filter(Boolean))].sort(),
-  }), [displaySessions, sessionMap, directory.hosts]);
+    harnesses: scopeHarnesses,
+  }), [displaySessions, sessionMap, directory.hosts, scopeHarnesses]);
   const choicesBySession = React.useMemo(() => {
     const result = new Map<string, WebAutopilotChoiceCard>();
     for (const choice of autopilotChoices) {
@@ -1315,7 +1582,50 @@ function App() {
     return result;
   }, [autopilotChoices]);
   const choiceSessionKeys = React.useMemo(() => new Set(choicesBySession.keys()), [choicesBySession]);
-  const visibleSessionEntries = React.useMemo(() => sidebarEntries(displaySessions, listSettings, collapsedChildren, choiceSessionKeys, sessionSearch, sessionPins.pins, activityOrder), [displaySessions, listSettings, collapsedChildren, choiceSessionKeys, sessionSearch, sessionPins.pins, activityOrder]);
+  // Быстрый фильтр режет список до того, как он устроен в дерево: иначе
+  // родитель без детей остался бы с пустым заголовком.
+  const quickFilteredSessions = React.useMemo(
+    () => displaySessions.filter((session) => statusInSlice(session.status, listStatusFilter)),
+    [displaySessions, listStatusFilter],
+  );
+  // Числа на чипах считает сервер по всей флоте: чип «Работают 4» и список
+  // из четырёх работающих сессий говорят одно и то же. Пересчёт по
+  // загруженному окну давал бы другое число и тот самый «мега-баг».
+  const scopeCounts = useSessionScope({ slice: listStatusFilter, harness: listSettings.harness, harnesses: scopeHarnesses });
+  // «Показывать завершённые» и чип «Все» — это один и тот же переключатель:
+  // два источника правды расходились, и владелец не понимал, что нажал.
+  const effectiveListSettings = React.useMemo<SessionListSettings>(
+    () => ({ ...listSettings, showAll: listStatusFilter === "all" }),
+    [listSettings, listStatusFilter],
+  );
+  const visibleSessionEntries = React.useMemo(() => sidebarEntries(quickFilteredSessions, effectiveListSettings, collapsedChildren, choiceSessionKeys, sessionSearch, sessionPins.pins, activityOrder), [quickFilteredSessions, effectiveListSettings, collapsedChildren, choiceSessionKeys, sessionSearch, sessionPins.pins, activityOrder]);
+  // Число на чипе — это то, о чём говорит список. Сервер знает больше, чем его
+  // окно, а меш знает свежее каталога: поэтому берётся большее из двух — и
+  // чип, и список называют одно и то же множество.
+  const shownByHarness = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of visibleSessionEntries) {
+      counts.set(entry.session.harness, (counts.get(entry.session.harness) ?? 0) + 1);
+    }
+    return counts;
+  }, [visibleSessionEntries]);
+  const quickFilterCounts = React.useMemo<SessionQuickFilterCounts>(() => {
+    // Считаются только те строки, которые список показывает: строки меша о
+    // других статусов в список не попадают и в чипах считаться не должны.
+    const serverWorking = (scopeCounts.byStatus.running ?? 0) + (scopeCounts.byStatus.needs_input ?? 0);
+    const serverWaiting = scopeCounts.byStatus.idle ?? 0;
+    const shown = visibleSessionEntries.length;
+    return {
+      working: listStatusFilter === "working" ? Math.max(serverWorking, shown) : serverWorking,
+      waiting: listStatusFilter === "waiting" ? Math.max(serverWaiting, shown) : serverWaiting,
+      total: Math.max(scopeCounts.total, listStatusFilter === "all" ? shown : 0),
+      byHarness: scopeCounts.byHarness.map((entry) => ({
+        harness: entry.harness,
+        count: Math.max(entry.count, shownByHarness.get(entry.harness) ?? 0),
+      })),
+    };
+  }, [scopeCounts, visibleSessionEntries, shownByHarness, listStatusFilter]);
+  const sessionSample = React.useMemo(() => summarizeSessionSample(displaySessions), [displaySessions]);
   React.useEffect(() => {
     if (activeKey && (activeKey === deepLinkKey || visibleSessionEntries.some(({ session }) => keyOf(session) === activeKey))) return;
     const first=visibleSessionEntries.find(e=>!e.session.remote);selectSession(first ? keyOf(first.session) : undefined);
@@ -1768,6 +2078,8 @@ function App() {
     }
     shouldFollowRef.current = true; setShowScrollToLatest(false);
     await messageDispatcherRef.current.run(sessionKey, async () => {
+    const latestEntry=outboxRef.current.find(item=>item.inputId===inputId);
+    if(latestEntry){text=latestEntry.text;images=latestEntry.images;}
     const attempted = beginOutboxAttempt(window.localStorage, outboxRef.current, inputId);
     if (!attempted) {
       setOutbox((current) => updateOutboxEntry(current, inputId, { status: "ready", note: "Не удалось сохранить состояние отправки. Сообщение не отправлено; повторите после освобождения места." }));
@@ -1790,8 +2102,9 @@ function App() {
     if (responded && activeKeyRef.current === sessionKey) void loadDetails(sessionKey).catch(() => undefined);
     }, { inputId, onCancelled: () => setOutbox((current) => updateOutboxEntry(current, inputId, { status: "ready", note: "Чат остановлен. Это сообщение не отправлено; отправьте его явно, если хотите продолжить." })) });
   };
-  const sendMessage = async () => {
+  const sendMessage = async (mode: DeliveryMode = effectiveDeliveryMode) => {
     if (!activeKey || readOnlySession || imageUploading || (!composer.trim() && !composerImages.length)) return;
+    if(queueEdit){await saveQueueEdit();return;}
     const draft = composer;
     const text = draft.trim() || "Посмотрите прикреплённое изображение.";
     const images = composerImages; setComposerImages([]);
@@ -1801,7 +2114,25 @@ function App() {
     // того, как быстро сессия обновит свою модель.
     const sendingModel = selectedModel ?? currentModelOption(activeSession?.model, modelOptions) ?? activeSession?.model;
     if (sendingModel) recordSessionModel(sendingModel);
-    await submitOutboxEntry(activeKey, text, effectiveDeliveryMode, newInputId(), images);
+    await submitOutboxEntry(activeKey, text, mode, newInputId(), images);
+  };
+  const appendVoiceTranscript = (transcript: string, targetKey: string) => {
+    if (activeKeyRef.current !== targetKey) return;
+    setComposer((current) => current ? `${current}${current.endsWith("\n") ? "" : "\n"}${transcript}` : transcript);
+    window.requestAnimationFrame(() => {
+      const input = composerTextareaRef.current;
+      if (input && activeKeyRef.current === targetKey) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+    });
+  };
+  const canOfferSendMode = !queueEdit && !isResumeMode && Boolean(activeKey) && !readOnlySession && !imageUploading && Boolean(composer.trim() || composerImages.length);
+  const chooseSendMode = (mode: DeliveryMode) => {
+    selectDeliveryMode(mode);
+    void sendMessage(mode);
+  };
+  const clickSendButton = (mode?: DeliveryMode) => {
+    if (isResumeMode && !queueEdit) void runAction("resume");
+    else if (mode) chooseSendMode(mode);
+    else void sendMessage();
   };
   const retryOutboxEntry = async (inputId: string) => {
     const entry = outbox.find((item) => item.inputId === inputId);
@@ -1809,6 +2140,55 @@ function App() {
     await submitOutboxEntry(entry.sessionKey, entry.text, entry.mode, entry.inputId, entry.images);
   };
   const dismissOutboxEntry = (inputId: string) => setOutbox((current) => removeOutboxEntry(current, inputId));
+  const cancelQueueEdit=()=>{
+    if(!queueEdit||queueEditSaving)return;
+    setComposer(queueEdit.draft);setComposerImages(queueEdit.images);setQueueEdit(undefined);setQueueEditError('');
+  };
+  const editOutboxEntry=async(inputId:string)=>{
+    const entry=outboxRef.current.find(item=>item.inputId===inputId);
+    if(!entry||!canEditQueuedEntry(entry)||queueEditSaving)return;
+    setQueueEditError('');
+    let text=entry.text;
+    if(entry.jobId){
+      try{const {harness,id}=splitKey(entry.sessionKey);const value=await api<{inputId:string;message:string;editable:boolean}>(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message-queue/${encodeURIComponent(inputId)}`);
+        if(!value.editable||value.inputId!==inputId)throw Error('Сообщение уже передаётся агенту — изменить его нельзя');text=value.message;
+      }catch(error){setQueueEditError(error instanceof Error?error.message:'Не удалось прочитать очередь');return;}
+    }
+    if(activeKeyRef.current!==entry.sessionKey)return;
+    const prior=queueEdit;
+    setQueueEdit({inputId,sessionKey:entry.sessionKey,expectedText:text,draft:prior?.draft??composer,images:prior?.images??composerImages});
+    setComposer(text);setComposerImages(entry.images??[]);
+  };
+  const saveQueueEdit=async()=>{
+    const edit=queueEdit,entry=edit&&outboxRef.current.find(item=>item.inputId===edit.inputId);
+    if(!edit||!entry||queueEditSaving||edit.unknown||edit.sessionKey!==activeKey||!composer.trim())return;
+    if(!canEditQueuedEntry(entry)){setQueueEditError('Сообщение уже передаётся агенту — изменить его нельзя');return;}
+    const text=composer.trim();setQueueEditSaving(true);setQueueEditError('');
+    try{
+      if(entry.jobId){
+        const {harness,id}=splitKey(entry.sessionKey);
+        let response:Response;
+        try{response=await fetch(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message-queue/${encodeURIComponent(entry.inputId)}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({expectedMessage:edit.expectedText,message:text}),signal:AbortSignal.timeout(15000)});}
+        catch{setQueueEdit(current=>current?{...current,unknown:true}:current);throw Error('Ответ на изменение не получен. Нажмите «Проверить», повторной отправки не будет');}
+        let result:{ok:boolean;inputId?:string;message?:string;error?:string};
+        try{result=await response.json();}catch{setQueueEdit(current=>current?{...current,unknown:true}:current);throw Error('Ответ на изменение не удалось прочитать. Нажмите «Проверить»');}
+        if(!response.ok||!result.ok||result.inputId!==entry.inputId||result.message!==text)throw Error(result.error||'Не удалось подтвердить изменение очереди');
+      }else if(entry.status!=='ready'){throw Error('Состояние очереди изменилось; проверьте доставку');}
+      setOutbox(current=>current.map(item=>item.inputId===entry.inputId?{...item,text}:item));
+      setComposer(edit.draft);setComposerImages(edit.images);setQueueEdit(undefined);
+      if(!entry.jobId&&!messageDispatcherRef.current.hasPending(entry.inputId))void retryOutboxEntry(entry.inputId);
+    }catch(error){setQueueEditError(error instanceof Error?error.message:'Изменение очереди не подтверждено');}
+    finally{setQueueEditSaving(false);}
+  };
+  const checkQueueEdit=async()=>{
+    if(!queueEdit)return;const edit=queueEdit,{harness,id}=splitKey(edit.sessionKey);
+    try{const value=await api<{inputId:string;message:string;editable:boolean}>(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message-queue/${encodeURIComponent(edit.inputId)}`);
+      if(value.inputId!==edit.inputId)throw Error('Не подтверждена запись очереди');
+      setOutbox(current=>current.map(item=>item.inputId===edit.inputId?{...item,text:value.message}:item));
+      if(value.message===composer.trim()){setComposer(edit.draft);setComposerImages(edit.images);setQueueEdit(undefined);setQueueEditError('');}
+      else{setQueueEditError('В очереди пока другой текст. Черновик сохранён; автоматического повтора нет');}
+    }catch(error){setQueueEditError(error instanceof Error?error.message:'Не удалось проверить очередь');}
+  };
   // jobId строки достаётся и из ответа POST, и из message-status: после перезагрузки отмена
   // работает без повторной отправки сообщения.
   const resolveOutboxJobId = async (entry: OutboxEntry): Promise<string | undefined> => {
@@ -1860,7 +2240,10 @@ function App() {
     messageDispatcherRef.current.cancelInput(entry.sessionKey, inputId);
     try {
       const outcome = await cancelQueuedDelivery(entry);
-      if (outcome === "cancelled" || (outcome === "no-job" && entry.status === "ready")) dismissOutboxEntry(inputId);
+      if (outcome === "cancelled" || (outcome === "no-job" && entry.status === "ready")) {
+        dismissOutboxEntry(inputId);
+        if(queueEdit?.inputId===inputId)cancelQueueEdit();
+      }
       else if (outcome === "delivered") setOutbox((current) => updateOutboxEntry(current, inputId, { status: "delivered", note: "Сообщение уже доставлено агенту — удалить его нельзя." }));
       else if (outcome === "no-job") setOutbox((current) => updateOutboxEntry(current, inputId, { status: "failed", error: "Задача доставки не найдена на сервере. Сообщение не отправлено." }));
       else setOutbox((current) => updateOutboxEntry(current, inputId, { status: entry.status, note: "Не удалось отменить доставку. Сообщение осталось в очереди." }));
@@ -1917,26 +2300,28 @@ function App() {
     setShowScrollToLatest(!following && element.scrollHeight > element.clientHeight);
   };
   React.useEffect(() => {
-    if (!chatMenuOpen) return;
+    // Escape закрывает самый верхний открытый слой: меню чата, диалог
+    // настроек, поиск, инспектор. Раньше слой слышал Escape только пока был
+    // открыт меню чата — шторку инспектора было не закрыть с клавиатуры.
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      // Закрывается самый верхний открытый слой: меню чата, диалог настроек, поиск, инспектор.
       if (chatMenuOpen) { setChatMenuOpen(false); return; }
       if (automationSettings !== undefined) { setAutomationSettings(undefined); setShowQuota(false); return; }
       if (showSessionSearch) { setShowSessionSearch(false); return; }
       if (showInspector) closeSessionInspector();
     };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [chatMenuOpen, automationSettings, showSessionSearch, showInspector]);
+  React.useEffect(() => {
+    if (!chatMenuOpen) return;
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as HTMLElement | null;
       if (!target) return;
       if (!target.closest(".chat-menu") && !target.closest(".desktop-chat-menu") && !target.closest(".mobile-automation-button")) setChatMenuOpen(false);
     };
-    window.addEventListener("keydown", onKeyDown);
     window.addEventListener("pointerdown", onPointerDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("pointerdown", onPointerDown);
-    };
+    return () => window.removeEventListener("pointerdown", onPointerDown);
   }, [chatMenuOpen]);
 
   React.useEffect(() => {
@@ -1990,25 +2375,43 @@ function App() {
     ? (sessionAutostart?.enabled ?? false)
     : Boolean(runtimeSettingsDraft?.enabled);
 
-  return <main className={`oc-app ${mobileView === "chat" ? "mobile-chat-active" : "mobile-sessions-active"} ${(!showInspector || showStatistics || showJobs || showQuota || showSearch || showProjects || automationSettings || remoteSelection || showFleet || showCreateSession) ? "no-inspector" : ""}`}>
-    <CodexNavigation onMachines={() => { setShowSearch(false); setFleetCreationMode(false);setShowFleet(true); setAutomationSettings(undefined); setShowProjects(false); }} onSearch={() => { setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowSessionSearch(false); setShowSearch(true); setShowProjects(false); setMobileView("chat"); }} active={showSearch ? "search" : showProjects ? "projects" : showFleet ? "machines" : showJobs ? "jobs" : showStatistics ? "statistics" : "chat"} onChat={() => { setShowSearch(false); setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(false); }} onNew={() => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(false); void openCreateSession(); }} onJobs={() => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(true); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(false); }} onStatistics={() => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(false); openStatistics(); }} onProjects={() => { setShowSearch(false); setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(true); setMobileView("chat"); }} />
-    <SessionList pins={sessionPins.pins} pinScope={directory.scope} onPin={sessionPins.toggle} pinError={sessionPins.error} onAdvancedSearch={(query) => { setAdvancedSearchQuery(query || undefined); setShowSessionSearch(false); setShowSearch(true); setMobileView("chat"); }} onMachines={() => { setShowSearch(false); setFleetCreationMode(false); setShowFleet(true); setAutomationSettings(undefined); }} onAutomationSettings={(section) => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(section); }} cacheSettings={viewCacheSettings} onCacheSettings={changeCacheSettings} onCacheClear={()=>{void viewCache.clear();if(cachedDetails)setDetails(null);setCacheEpoch(n=>n+1);}} directoryStatus={directory.error||(directory.pending?"Обновляются названия сессий…":directory.partial?"Часть машин ещё не передала полный список.":"")} onLoadMore={directory.more&&!directory.pending?()=>void directory.load(true):undefined} onNewSession={openCreateSession} entries={visibleSessionEntries} activeKey={remoteSelection?`mesh:${JSON.stringify([remoteSelection.hostId,remoteSelection.harness,remoteSelection.nativeSessionId])}`:activeKey} loading={loading} refreshing={sessionsRefreshing && !loading} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} shownCount={sessions.length} total={sessionsTotal} onLoadMoreSessions={() => { void loadMoreSessions(); }} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { setShowSearch(false); setShowFleet(false); const selected=displaySessions.find(s=>keyOf(s)===key);if(selected?.remote&&selected.hostId){setRemoteSelection({hostId:selected.hostId,harness:selected.harness,nativeSessionId:selected.id});setMobileView("chat");return;}setRemoteSelection(undefined);shouldFollowRef.current = true; setShowScrollToLatest(false); setShowStatistics(false); setShowJobs(false); selectSession(key); setMobileView("chat"); }} />
+  // Один список настроек на весь экран: и меню чата, и шестерёнка в шапке
+  // открывают один и тот же набор настроек.
+  const chatMenuContent = (
+    <>
+      <span className="chat-menu-section">Автоматизация</span><button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings("autocontinue"); setChatMenuOpen(false); }}>{`Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})`}</button><button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings("autopilot"); setChatMenuOpen(false); }}>{`Автопилот · общие настройки (в этом чате ${activeAutopilotEnabled ? "включён" : "выключен"})`}</button><span className="chat-menu-section">Вид переписки</span><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Размышления</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Инструменты</label><label><input type="checkbox" checked={jsonRendering} onChange={(event) => setJsonRendering(event.target.checked)} /> JSON-ответы как JSON</label><label><input type="checkbox" checked={collapseLongMessages} onChange={(event) => setCollapseLongMessages(event.target.checked)} /> Сворачивать длинные сообщения</label><span className="chat-menu-section">Тема</span><div className="theme-choice" role="group" aria-label="Тема оформления"><button type="button" className={theme === "dark" ? "active" : ""} aria-pressed={theme === "dark"} onClick={() => selectTheme("dark")}>Тёмная</button><button type="button" className={theme === "light" ? "active" : ""} aria-pressed={theme === "light"} onClick={() => selectTheme("light")}>Светлая</button></div><span className="chat-menu-section">Отправка</span>{deliveryModeChoice}<span className="chat-menu-section">Разделы</span><button className="quiet-button" onClick={() => { setShowSearch(false); setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(true); setSettingsTab("settings"); setChatMenuOpen(false); }}>Настройки</button><button className="quiet-button" onClick={() => { setShowSearch(false); setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(true); setSettingsTab("projects"); setChatMenuOpen(false); }}>Проекты</button><button className="quiet-button" onClick={() => { setFleetCreationMode(false);setShowFleet(true); setChatMenuOpen(false); }}>Машины</button><button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings("launch-policy"); setChatMenuOpen(false); }}>Настройки запуска новых сессий</button><button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); openSessionInspector(); }}>Настройки текущей сессии</button><button className="quiet-button" onClick={() => { setShowJobs(true); setShowStatistics(false); setChatMenuOpen(false); }}>Задачи</button><button className="quiet-button" onClick={() => { setShowJobs(false); openStatistics(); }}>Статистика</button><button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setAutomationSettings(undefined); setShowQuota(true); setChatMenuOpen(false); }}>Квота</button>
+    </>
+  );
+
+  return <main className={`oc-app ${mobileView === "chat" ? "mobile-chat-active" : "mobile-sessions-active"} ${(!showInspector || showStatistics || showJobs || showQuota || showSearch || showProjects || automationSettings || remoteSelection || showFleet || showCreateSession) ? "no-inspector" : ""} ${layout.chatListOpen ? "" : "no-sessions"}`}>
+    <CodexNavigation onMachines={() => { setShowSearch(false); setFleetCreationMode(false);setShowFleet(true); setAutomationSettings(undefined); setShowProjects(false); }} onSearch={() => { setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowSessionSearch(false); setShowSearch(true); setShowProjects(false); setMobileView("chat"); }} active={showSearch ? "search" : showProjects ? "projects" : showFleet ? "machines" : showJobs ? "jobs" : showStatistics ? "statistics" : "chat"} onChat={() => { setShowSearch(false); setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(false); }} onNew={() => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(false); void openCreateSession(); }} onJobs={() => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(true); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(false); }} onStatistics={() => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(false); openStatistics(); }} onProjects={() => { setShowSearch(false); setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setSettingsTab("projects"); setShowProjects(true); setMobileView("chat"); }} />
+    <SessionList pins={sessionPins.pins} pinScope={directory.scope} onPin={sessionPins.toggle} pinError={sessionPins.error} onAdvancedSearch={(query) => { setAdvancedSearchQuery(query || undefined); setShowSessionSearch(false); setShowSearch(true); setMobileView("chat"); }} onMachines={() => { setShowSearch(false); setFleetCreationMode(false); setShowFleet(true); setAutomationSettings(undefined); }} onAutomationSettings={(section) => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(section); }} cacheSettings={viewCacheSettings} onCacheSettings={changeCacheSettings} onCacheClear={()=>{void viewCache.clear();if(cachedDetails)setDetails(null);setCacheEpoch(n=>n+1);}} directoryStatus={directory.error||(directory.pending?"Обновляются названия сессий…":directory.partial?"Часть машин ещё не передала полный список.":"")} onLoadMore={directory.more&&!directory.pending?()=>void directory.load(true):undefined} onNewSession={openCreateSession} onCollapse={() => setLayoutField("chatListOpen", false)} entries={visibleSessionEntries} activeKey={remoteSelection?`mesh:${JSON.stringify([remoteSelection.hostId,remoteSelection.harness,remoteSelection.nativeSessionId])}`:activeKey} loading={loading} refreshing={sessionsRefreshing && !loading} settings={effectiveListSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} loadedCount={sessions.length} total={sessionsTotal} sample={sessionSample} onLoadMoreSessions={() => { void loadMoreSessions(); }} quickCounts={quickFilterCounts} quickStatus={listStatusFilter} onQuickStatusChange={setListStatusFilter} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { setShowSearch(false); setShowFleet(false); const selected=displaySessions.find(s=>keyOf(s)===key);if(selected?.remote&&selected.hostId){setRemoteSelection({hostId:selected.hostId,harness:selected.harness,nativeSessionId:selected.id});setMobileView("chat");return;}setRemoteSelection(undefined);shouldFollowRef.current = true; setShowScrollToLatest(false); setShowStatistics(false); setShowJobs(false); selectSession(key); setMobileView("chat"); }} />
     {showProjects && <SettingsScreen tab={settingsTab} onTabChange={setSettingsTab} onOpenLaunchSettings={() => { setShowProjects(false); setAutomationSettings("launch-policy"); }} />}
     {showSearch && <RagSearchView initialQuery={advancedSearchQuery} onInitialQueryApplied={consumeAdvancedSearchInitialQuery} onOpenSession={(harness, id) => { setShowSearch(false); setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); selectSession(`${harness}:${id}`); setMobileView("chat"); }} />}
-{showFleet && <div className="fleet-overlay" role="region" aria-label="Машины флота"><div className="fleet-overlay-panel"><button className="fleet-overlay-close quiet-button" aria-label="Закрыть машины флота" onClick={() => setShowFleet(false)}>Закрыть</button><FleetCabinet creationMode={fleetCreationMode} defaultHostId={selectedCreationHostId} onSelectedHostChange={setSelectedCreationHostId} /></div></div>}
+{showFleet && <div className="fleet-overlay" role="region" aria-label="Машины флота"><div className="fleet-overlay-panel"><button className="fleet-overlay-close quiet-button" aria-label="Закрыть машины флота" onClick={() => setShowFleet(false)}>Закрыть</button><FleetCabinet creationMode={fleetCreationMode} defaultHostId={selectedCreationHostId} onSelectedHostChange={setSelectedCreationHostId} activityRows={activity.snapshot.confirmed} /></div></div>}
     {remoteSelection&&directory.hosts.find(h=>h.hostId===remoteSelection.hostId)&&<RemoteSessionView key={JSON.stringify(remoteSelection)+cacheEpoch} renderMessage={message=>!hasVisibleMessage(message,showReasoning,showTools)?null:serviceNoteLabel(message)?<ServiceNote label={serviceNoteLabel(message)!} message={message}/>:<CollapsibleMessage message={message} showReasoning={showReasoning} showTools={showTools} jsonRendering={jsonRendering} collapseLongMessages={collapseLongMessages}/>} address={remoteSelection} host={directory.hosts.find(h=>h.hostId===remoteSelection.hostId)!} scope={directory.scope} cache={viewCache} onClose={()=>{setRemoteSelection(undefined);setMobileView("sessions");}}/>}
     <section className="chat-pane" style={remoteSelection||showSearch||showProjects?{display:'none'}:undefined}>
       {cachedDetails&&<p className="cached-view-notice" role="status">Сохранённый просмотр. Отправка станет доступна после загрузки свежих данных.</p>}
       <header className="chat-header">
         <button className="mobile-back" onClick={() => setMobileView("sessions")} aria-label="К списку сессий">← <span>Сессии</span></button>
         <div className="chat-heading">{showCreateSession ? <><h2>Новый чат</h2><small>Выберите среду, модель и каталог проекта.</small></> : showJobs ? <><span className="eyebrow">AGENT HERDER</span><h2>Задачи</h2><small>Фоновые задачи и их прогресс</small></> : showStatistics ? <><span className="eyebrow">AGENT HERDER</span><h2>Статистика</h2><small>Реальные паттерны активности недавних сессий</small></> : showQuota ? <><span className="eyebrow">AGENT HERDER</span><h2>Квота</h2><small>Окна Codex, расход моделей, потребители</small></> : <><span className="eyebrow">{activeSession?.harness || "HERDER"}</span><h2 title={activeSession ? `${activeSession.title || activeSession.id}\n${activeSession.cwd || ""}` : undefined}>{activeSession ? (cleanSessionTitle(activeSession.title) || activeSession.id) : loading ? "Загрузка сессий…" : "Выберите сессию"}{(detailsLoading || detailsHydrating) && <span className="inline-loading-dot chat-loading-dot" role="status" aria-label="Загрузка сессии" />}</h2><small className="chat-session-state"><span>{activeSession?.harness || ""}</span>{activeSession && <><span aria-hidden="true"> · </span><span className={`status-label status-${statusClass(activeSession.status)}`}>{statusLabel(activeSession.status)}</span></>}</small>{SHOW_DEBUG_TIMINGS && <div className="load-timings" role="status" aria-label="Тайминги загрузки в браузере"><span title="Страница → список сессий готов">sessions <b>{formatLoadTiming(sessionsTimingMs)}</b></span>{activeKey && <><span title="Запрос свежих ходов">latest <b>{detailsLoading ? "…" : formatLoadTiming(latestTimingMs)}</b></span><span title="Фоновая история и метрики">hydrate <b>{detailsHydrating ? "…" : formatLoadTiming(hydrateTimingMs)}</b></span></>}</div>}</>}</div>
-        <div className="header-actions">{!showStatistics && !showJobs && !showQuota && <button className="icon-button session-inspector-button" aria-label="Настройки сессии" title="Настройки текущей сессии" aria-pressed={showInspector} onClick={() => { setSessionSettingsReturn(undefined); setShowInspector((value) => !value); }}><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="18" r="2"/></svg></button>}<button className={`icon-button desktop-chat-menu ${chatMenuOpen ? "selected-icon" : ""}`} aria-label="Меню чата" aria-expanded={chatMenuOpen} onClick={() => setChatMenuOpen((value) => !value)}>···</button></div>
-        {chatMenuOpen && <div className="chat-menu" aria-label="Меню чата"><span className="chat-menu-section">Автоматизация</span><button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings("autocontinue"); setChatMenuOpen(false); }}>{`Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})`}</button><button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings("autopilot"); setChatMenuOpen(false); }}>{`Автопилот · общие настройки (в этом чате ${activeAutopilotEnabled ? "включён" : "выключен"})`}</button><span className="chat-menu-section">Вид переписки</span><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Размышления</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Инструменты</label><label><input type="checkbox" checked={jsonRendering} onChange={(event) => setJsonRendering(event.target.checked)} /> JSON-ответы как JSON</label><label><input type="checkbox" checked={collapseLongMessages} onChange={(event) => setCollapseLongMessages(event.target.checked)} /> Сворачивать длинные сообщения</label><span className="chat-menu-section">Тема</span><div className="theme-choice" role="group" aria-label="Тема оформления"><button type="button" className={theme === "dark" ? "active" : ""} aria-pressed={theme === "dark"} onClick={() => selectTheme("dark")}>Тёмная</button><button type="button" className={theme === "light" ? "active" : ""} aria-pressed={theme === "light"} onClick={() => selectTheme("light")}>Светлая</button></div><span className="chat-menu-section">Отправка</span>{deliveryModeChoice}<span className="chat-menu-section">Разделы</span><button className="quiet-button" onClick={() => { setShowSearch(false); setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(true); setSettingsTab("herder"); setChatMenuOpen(false); }}>Настройки herder</button><button className="quiet-button" onClick={() => { setShowSearch(false); setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(true); setSettingsTab("projects"); setChatMenuOpen(false); }}>Проекты</button><button className="quiet-button" onClick={() => { setFleetCreationMode(false);setShowFleet(true); setChatMenuOpen(false); }}>Машины</button><button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings("launch-policy"); setChatMenuOpen(false); }}>Настройки запуска новых сессий</button><button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setShowQuota(false); openSessionInspector(); }}>Настройки текущей сессии</button><button className="quiet-button" onClick={() => { setShowJobs(true); setShowStatistics(false); setChatMenuOpen(false); }}>Задачи</button><button className="quiet-button" onClick={() => { setShowJobs(false); openStatistics(); }}>Статистика</button><button className="quiet-button" onClick={() => { setShowJobs(false); setShowStatistics(false); setAutomationSettings(undefined); setShowQuota(true); setChatMenuOpen(false); }}>Квота</button></div>}
+        <div className="header-actions">
+          <button className={`icon-button chat-list-toggle ${layout.chatListOpen ? "selected-icon" : ""}`} aria-label="Список чатов" title={layout.chatListOpen ? "Скрыть список чатов" : "Показать список чатов"} aria-pressed={layout.chatListOpen} onClick={() => setLayoutField("chatListOpen", !layout.chatListOpen)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+          </button>
+          {!showStatistics && !showJobs && !showQuota && <button className={`icon-button session-inspector-button ${showInspector ? "selected-icon" : ""}`} aria-label="Панель сессии" title="Файлы, таймлайн и метаинформация сессии" aria-pressed={showInspector} onClick={() => { setSessionSettingsReturn(undefined); setShowInspector((value) => !value); }}><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="18" r="2"/></svg></button>}
+          <button className={`icon-button desktop-chat-menu ${chatMenuOpen ? "selected-icon" : ""}`} aria-label="Меню чата" aria-expanded={chatMenuOpen} title="Все настройки" onClick={() => setChatMenuOpen((value) => !value)}>···</button>
+        </div>
+        {chatMenuOpen && <div className="chat-menu" aria-label="Меню чата"><button type="button" className="chat-menu-close" aria-label="Закрыть меню чата" title="Закрыть меню чата" onClick={() => setChatMenuOpen(false)}>×</button>{chatMenuContent}</div>}
       </header>
+      {activeSession?.needsPermission && !remoteSelection && !showCreateSession && !showJobs && !showStatistics && !showQuota && <NativePermissionStrip key={`${activeSession.harness}:${activeSession.id}:${activeSession.permissionDetails?.id}`} session={activeSession} onRefresh={()=>{void loadSessions();if(activeKey)void loadDetails(activeKey,false);}}/>}
       {activeSession && !remoteSelection && !showCreateSession && !showJobs && !showStatistics && !showQuota && <SessionWorkTarget
         session={{ id: activeSession.id, harness: activeSession.harness, cwd: activeSession.cwd, hostId: activeSession.hostId }}
         hosts={workTargetHosts}
         localHostId={directory.localHostId}
+        expanded={layout.headerOpen}
+        onExpandedChange={(value) => setLayoutField("headerOpen", value)}
+        settingsMenu={chatMenuContent}
         onApplied={() => { void loadSessions(); if (activeKey) void loadDetails(activeKey); }} />}
       {showJobs && <JobsView jobs={jobs} loading={jobsLoading} error={jobsError} cancellingJobId={cancellingJobId} onRefresh={() => void loadJobs()} onCancel={(jobId) => void cancelJob(jobId)} />}
       {showQuota && <><CodexQuotaSettings /><QuotaPanel /></>}
@@ -2018,7 +2421,9 @@ function App() {
       {!showCreateSession && !showStatistics && !showJobs && !showQuota && <div className="chat-scroll" ref={chatScrollRef} onScroll={handleChatScroll}>
         <div className="message-column" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Переписка">
           {detailsLoading && !details && <div className="session-loading-chat" aria-live="polite"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Загружаю свежие сообщения</strong><small>Начинаем с последних ходов; остальным Agent Herder можно пользоваться дальше.</small></div>}
-          {!detailsLoading && !details && <div className="empty-chat">{detailsError || "Выберите сессию, чтобы открыть переписку."}</div>}
+          {!detailsLoading && !details && <div className="empty-chat">{detailsError
+            ? <><strong>{sessionDetailsErrorText(detailsError)?.reason}</strong><br />{sessionDetailsErrorText(detailsError)?.hint}</>
+            : "Выберите сессию, чтобы открыть переписку."}</div>}
           {detailsHydrating && details && <div className="history-loading-banner"><span className="inline-loading-dot" /> Последние {formatLoadTiming(latestTimingMs)} · подгружаю историю и метрики…</div>}
           {localTranscriptAddress&&<div className="local-transcript-controls"><button type="button" className="quiet-button" disabled={localTranscriptLoading} onClick={()=>void readLocalTranscript(undefined,true)}>Обновить историю</button>{localTranscriptLoading&&<span role="status">Загружаю историю сессии…</span>}</div>}
           {localTranscriptError&&<p role="alert" className="remote-chat-error">{localTranscriptError}</p>}
@@ -2045,25 +2450,11 @@ function App() {
       {!showCreateSession && !showStatistics && !showJobs && !showQuota && showScrollToLatest && <button className="scroll-latest" aria-label="Прокрутить к последним" onClick={scrollToBottom}>↓</button>}
       {!showStatistics && !showJobs && !showQuota && <div className="composer-stack">
       <div className="activity-slot">{!showCreateSession && sessionActivity && <div className={`activity-line activity-${sessionActivity.kind}`} role="status" aria-live="polite"><span className="pulse-dot" aria-hidden="true" />{activeSession?.status === "running" && !sending ? <span><ActivityElapsed sinceMs={runningSince} />{sessionActivity.label ? <em className="activity-detail"> · {sessionActivity.label}</em> : null}</span> : <span>{sessionActivity.label}</span>}</div>}</div>
-      {activeOutbox.length > 0 && <div className="composer-outbox" aria-label="Отправленные сообщения и их состояние">
-        {activeOutbox.map((entry) => <div className={`composer-outbox-entry status-${entry.status}`} key={entry.inputId}>
-          <div className="composer-outbox-meta">
-            <span className="composer-outbox-mode">{deliveryModeLabel(entry.mode)}</span>
-            <span className="composer-outbox-status">{outboxStatusLabel(entry.status)}</span>
-            {entry.status === "unknown" && <button type="button" className="composer-outbox-retry" onClick={() => void checkOutboxEntry(entry)}>Проверить доставку</button>}
-            {entry.status === "ready" && <button type="button" className="composer-outbox-retry" disabled={messageDispatcherRef.current.hasPending(entry.inputId)} onClick={() => void retryOutboxEntry(entry.inputId)}>Отправить</button>}
-            {entry.status === "failed" && entry.nonRetryable !== true && <button type="button" className="composer-outbox-retry" onClick={() => void retryOutboxEntry(entry.inputId)} title="Повторить отправку">Повторить</button>}
-            {entry.images?.map(image => <img className="outbox-image" src={image.url} alt={image.fileName} key={image.id} />)}
-            {canSteerOutboxEntry(entry, splitKey(entry.sessionKey).harness, harnessAdapters.find(adapter => adapter.id === splitKey(entry.sessionKey).harness)?.capabilities?.steer === true) && <button type="button" className="composer-outbox-retry" disabled={cancellingOutbox.has(entry.inputId)} onClick={() => void steerOutboxEntry(entry.inputId)} title="Убрать из очереди и вставить в текущий ход агента">Отправить сейчас</button>}
-            {canDeleteOutboxEntry(entry) && <button type="button" className="composer-outbox-delete" disabled={cancellingOutbox.has(entry.inputId)} aria-label="Удалить сообщение из очереди" title="Снять с очереди до передачи агенту" onClick={() => void deleteOutboxEntry(entry.inputId)}>Удалить</button>}
-            {(entry.status === "delivered" || entry.status === "accepted" || entry.status === "failed" || entry.status === "unknown") && <button type="button" className="composer-outbox-dismiss" aria-label="Убрать сообщение из списка" title="Убрать плашку. Сообщение останется в переписке." onClick={() => dismissOutboxEntry(entry.inputId)}>×</button>}
-          </div>
-          <div className="composer-outbox-text">{entry.text}</div>
-          {entry.error && <div className="composer-outbox-error">Детали: {entry.error}</div>}
-          {entry.note && <div className="composer-outbox-note">{entry.note}</div>}
-        </div>)}
-      </div>}
-      <form className="composer" data-creating={showCreateSession} onSubmit={(event) => { event.preventDefault(); if(showCreateSession){void createNewSession();return;} if (isResumeMode) void runAction("resume"); else void sendMessage(); }}>
+      {!showCreateSession && activeSession?.harness === "zcode" && activeSession.hostId && <QueueProcessingControl target={{hostId:activeSession.hostId,harness:activeSession.harness,sessionId:activeSession.id}} readState={readSessionQueueProcessing} resume={submitSessionQueueProcessing}/>}
+      {activeOutbox.length>0&&<ComposerQueue entries={activeOutbox} busy={cancellingOutbox} pending={id=>messageDispatcherRef.current.hasPending(id)} canSteer={entry=>canSteerOutboxEntry(entry,splitKey(entry.sessionKey).harness,harnessAdapters.find(adapter=>adapter.id===splitKey(entry.sessionKey).harness)?.capabilities?.steer===true)} onSteer={id=>void steerOutboxEntry(id)} onCancel={id=>void deleteOutboxEntry(id)} onEdit={id=>void editOutboxEntry(id)} onCheck={entry=>void checkOutboxEntry(entry)} onRetry={id=>void retryOutboxEntry(id)} onDismiss={dismissOutboxEntry}/>}
+      {queueEdit&&<div className="composer-queue-edit"><span>Редактирование сообщения очереди</span><button type="button" disabled={queueEditSaving} onClick={cancelQueueEdit}>Отмена редактирования</button>{queueEdit.unknown&&<button type="button" onClick={()=>void checkQueueEdit()}>Проверить</button>}</div>}
+      {queueEditError&&<div className="composer-queue-edit-error" role="status">{queueEditError}</div>}
+      <form className="composer" data-creating={showCreateSession} onSubmit={(event) => { event.preventDefault(); if(showCreateSession){void createNewSession();return;} if (isResumeMode && !queueEdit) void runAction("resume"); else void sendMessage(); }}>
         {showCreateSession && <div className="composer-create-panel"><div className="composer-create-machine"><button type="button" className="quiet-button" onClick={() => setShowCreateSession(false)}>Отмена</button><span>Создание на машине: {directory.hosts.find(host => host.hostId === directory.localHostId)?.label || "Текущая машина"}</span><button type="button" className="quiet-button" onClick={() => {setFleetCreationMode(true);setShowFleet(true);}}>Выбрать другую машину</button></div>
           <div className="composer-create-row">
             <label>Агент<select value={createHarness} onChange={(event) => { const harness = event.target.value; setCreateHarness(harness); setCreateModel(""); setCreateModels([]); void loadCreateModels(harness); }}>{(createAdapters.length ? createAdapters : [{ id: "fast-agent", name: "Fast Agent", active: true, ready: true, status: "active" }]).map((adapter) => <option key={adapter.id} value={adapter.id} disabled={!adapter.active}>{adapter.name}{adapter.active ? "" : ` · ${adapter.status}`}</option>)}</select></label>
@@ -2073,12 +2464,15 @@ function App() {
           </div>
           {createSessionError && <div className="create-session-error">{createSessionError}</div>}
         </div>}
-        {!showCreateSession && <><div className="composer-left">{supportsImages && !readOnlySession ? <><input ref={imageInputRef} className="composer-file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple aria-label="Файл изображения" onChange={event => void uploadImages(event.target.files)} /><button type="button" className="composer-plus" aria-label="Прикрепить изображение" title="Прикрепить изображение (до 5 МБ)" disabled={imageUploading || !activeKey} onClick={() => imageInputRef.current?.click()}>+ Фото</button></> : <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="Новая сессия" title="Новая сессия агента" onClick={() => { if (showCreateSession) setShowCreateSession(false); else void openCreateSession(); }}>+</button>}{activeKey && !readOnlySession && <button type="button" className="composer-delivery-mode" aria-label="Режим отправки" aria-expanded={deliveryMenuOpen} onClick={() => setDeliveryMenuOpen(current => !current)}>{deliveryModeLabel(effectiveDeliveryMode)} ▾</button>}</div>
+        {!showCreateSession && <><div className="composer-left">{supportsImages && !readOnlySession ? <><input ref={imageInputRef} className="composer-file-input" type="file" disabled={Boolean(queueEdit)} accept="image/png,image/jpeg,image/webp" multiple aria-label="Файл изображения" onChange={event => void uploadImages(event.target.files)} /><button type="button" className="composer-plus" aria-label="Прикрепить изображение" title="Прикрепить изображение (до 5 МБ)" disabled={imageUploading || !activeKey || Boolean(queueEdit)} onClick={() => imageInputRef.current?.click()}>+</button></> : <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="Новая сессия" title="Новая сессия агента" onClick={() => { if (showCreateSession) setShowCreateSession(false); else void openCreateSession(); }}>+</button>}{activeKey && !readOnlySession && <button type="button" className="composer-delivery-mode" aria-label="Режим отправки" aria-expanded={deliveryMenuOpen} onClick={() => setDeliveryMenuOpen(current => !current)}>{deliveryModeLabel(effectiveDeliveryMode)} ▾</button>}</div>
         {deliveryMenuOpen && <div className="composer-delivery-menu" role="dialog" aria-label="Когда отправлять сообщение">{deliveryModeChoice}</div>}
-        {(composerImages.length > 0 || imageUploading || imageError) && <div className="composer-images">{composerImages.map(image => <div className="composer-image" key={image.id}><img src={image.url} alt={image.fileName} /><button type="button" aria-label={`Убрать ${image.fileName}`} onClick={() => setComposerImages(current => current.filter(item => item.id !== image.id))}>×</button></div>)}{imageUploading && <span>Загружаю изображение…</span>}{imageError && <span role="alert">{imageError}</span>}</div>}
+        {(composerImages.length > 0 || imageUploading || imageError) && <div className="composer-images">{composerImages.map(image => <div className="composer-image" key={image.id}><img src={image.url} alt={image.fileName} /><button type="button" disabled={Boolean(queueEdit)} aria-label={`Убрать ${image.fileName}`} onClick={() => setComposerImages(current => current.filter(item => item.id !== image.id))}>×</button></div>)}{imageUploading && <span>Загружаю изображение…</span>}{imageError && <span role="alert">{imageError}</span>}</div>}
         {readOnlySession ? <div className="composer-readonly"><strong>{archivedSession ? "Архивная сессия" : "Только просмотр"}</strong><span>{archivedSession ? "Сохранённая история сессии доступна для просмотра." : "Эта сессия пока не поддерживает отправку сообщений."}</span></div> : <>
-          <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Продолжите работу…" : activeKey ? "Работайте с агентом" : "Сначала выберите сессию"} disabled={!activeKey || readOnlySession} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && (composer.trim() || composerImages.length > 0)) { event.preventDefault(); void sendMessage(); } }} />
-          <span className="composer-hint">{sending ? "Отправляю сообщения…" : isResumeMode ? "Продолжить" : "Enter — отправить · Shift+Enter — новая строка"}</span>
+          <textarea ref={composerTextareaRef} value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Продолжите работу…" : activeKey ? "Работайте с агентом" : "Сначала выберите сессию"} disabled={!activeKey || readOnlySession} onKeyDown={(event) => {
+            if (!isComposerSubmitShortcut(event)) return;
+            event.preventDefault();
+            if (isResumeMode && !queueEdit) void runAction("resume"); else void sendMessage();
+          }} />
           {modelSwitchHarness && <button type="button" className={`composer-model ${modelMenuOpen ? "open" : ""}`} aria-label="Выбрать модель" aria-expanded={modelMenuOpen} aria-haspopup="listbox" disabled={modelSwitching} onClick={toggleModelMenu}>
             <span className="composer-model-name" title={composerModel ? modelOptionLabel(composerModel) : undefined}>{shortModelLabel(composerModel).replace(/\$(?:max|high|low|enabled)$/, "")}</span>
             {!activeSession?.model && <span className="composer-model-default">по умолчанию</span>}
@@ -2091,12 +2485,13 @@ function App() {
             {!modelOptionsLoading && modelOptionsHarness === modelSwitchHarness && modelOptions.length === 0 && <div className="composer-model-note">Сервер не вернул моделей для {modelSwitchHarness}.</div>}
             {modelOptions.map((model) => <button type="button" role="option" aria-selected={model === currentModelOption(activeSession?.model, modelOptions)} className={model === currentModelOption(activeSession?.model, modelOptions) ? "current" : ""} key={model} onClick={() => void changeSessionModel(model)} title={model}>{modelOptionLabel(model)}{modelOptions.filter(option => shortModelLabel(option) === shortModelLabel(model)).length > 1 && <small className="model-provider">{modelSourceLabel(model)}</small>}</button>)}
           </div>}
-          <button className={`send-button ${isResumeMode ? "resume-button" : ""}`} title={isResumeMode ? "Возобновить работу в той же сессии" : effectiveDeliveryMode === "queue" ? "Отправить после ответа агента" : "Передать в текущий ход агента"} type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || imageUploading || (!isResumeMode && !composer.trim() && !composerImages.length)} aria-label={isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}>{isResumeMode ? "Продолжить ▶" : "↑"}</button>
+          <VoiceComposerControl key={activeKey??"no-session"} sessionKey={activeKey??""} disabled={!activeKey||readOnlySession} onTranscript={appendVoiceTranscript} />
+          <ComposerSendControl className={isResumeMode?"resume-button":""} disabled={queueEditSaving||Boolean(queueEdit?.unknown)||!activeKey||imageUploading||(!isResumeMode&&!composer.trim()&&!composerImages.length)} busy={false} supportsSteer={supportsSteer} allowModeChoice={canOfferSendMode} title={queueEdit?"Сохранить изменения в том же сообщении очереди":isResumeMode?"Возобновить работу в той же сессии":effectiveDeliveryMode==="queue"?"Отправить после ответа агента":"Передать в текущий ход агента"} label={queueEdit?"Сохранить сообщение очереди":isResumeMode?"Продолжить сессию":"Отправить сообщение"} icon={queueEdit?"↑":isResumeMode?<svg className="send-open-icon" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H3v11h11V9M9 3h5v5M14 3 8 9" /></svg>:"↑"} onSend={clickSendButton} />
         </>}
         </>}
       </form></div>}
     </section>
-    {showInspector && !showCreateSession && !showStatistics && !showJobs && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">СЕССИЯ</span><button className={sessionSettingsReturn ? "quiet-button" : "icon-button"} onClick={closeSessionInspector} aria-label={sessionSettingsReturn ? "Вернуться к общим настройкам" : "Закрыть настройки сессии"}>{sessionSettingsReturn ? "← К общим настройкам" : "×"}</button></div>{activeSession ? <><div className="inspector-title">{cleanSessionTitle(activeSession.title) || activeSession.title || activeSession.id}</div><div className="inspector-status"><span className={`status-dot status-${statusClass(activeSession.status)}`} /><span className={`status-label status-${statusClass(activeSession.status)}`}>{activeSession.meta?.humanStopHeld === true ? "Явная остановка — автоматика приостановлена" : statusLabel(activeSession.status)}</span></div>{sessionAutostart && <div className="autopilot-control session-autostart-control"><div><span className="eyebrow">АВТОПРОДОЛЖЕНИЕ</span><strong>{sessionAutostart.enabled ? "Включено" : "Выключено"}</strong><small>{sessionAutostart.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : sessionAutostart.source === "harness" ? `Сейчас наследуется общая настройка для ${activeSession.harness}. Нажатие создаст исключение только для этой сессии и применится сразу.` : sessionAutostart.source === "global" ? "Сейчас наследуется общий переключатель. Нажатие создаст исключение только для этой сессии и применится сразу." : "Используется значение по умолчанию. Нажатие создаст отдельную настройку только для этой сессии и применится сразу."}</small>{sessionAutostart.source === "session" && <button className="inherit-button" disabled={sessionAutostartSaving} onClick={() => void inheritSessionAutostart()}>Использовать общую настройку {activeSession.harness}</button>}</div><button className={`switch-control ${sessionAutostart.enabled ? "enabled" : ""}`} role="switch" aria-checked={sessionAutostart.enabled} aria-label="Автопродолжение для текущей сессии" disabled={sessionAutostartSaving} onClick={() => void toggleSessionAutostart()}><span /></button></div>}{sessionAutostartError && <small className="autopilot-error">{sessionAutostartError}</small>}{["opencode", "zcode"].includes(activeSession.harness) && <QuotaRecoveryControls session={{harness: activeSession.harness, id: activeSession.id, cwd: activeSession.cwd}} />}{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">АВТОПИЛОТ</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : autopilotSession.source === "policy" ? (autopilotPolicyDraft?.enabled && !autopilotPolicyDraft.harnesses.includes(activeSession.harness as AutopilotHarness) ? `${AUTOPILOT_HARNESS_LABELS[activeSession.harness as AutopilotHarness]} выключен в общих настройках сред. Нажатие включит автопилот только для этой сессии и применится сразу.` : "Сейчас наследуется общая настройка автопилота. Нажатие создаст исключение только для этой сессии и применится сразу.") : autopilotSession.source === "plugin-default" ? "Сейчас наследуется настройка среды. Нажатие создаст исключение только для этой сессии и применится сразу." : "По умолчанию выключен. Нажатие включит автопилот только для этой сессии и применится сразу."}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Использовать общую настройку</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label="Автопилот для текущей сессии" disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}{!AUTOCONTINUE_HARNESSES.has(activeSession.harness) && <p className="settings-help">Автопродолжение после сбоя в этой среде пока недоступно. Можно продолжить сессию вручную.</p>}<dl><dt>Агент</dt><dd>{activeSession.harness}</dd><dt>Папка</dt><dd title={activeSession.cwd}>{lastSegment(activeSession.cwd)}</dd>{activeSession.model && <><dt>Модель</dt><dd title={activeSession.model}>{shortModel(activeSession.model)}</dd></>}{selectedModel && selectedModel !== activeSession?.model && <><dt>Следующий ответ</dt><dd title={selectedModel}>{shortModel(selectedModel)}</dd></>}{activeSession.messageCount !== undefined && <><dt>Сообщения</dt><dd>{activeSession.messageCount}</dd></>}{activeSession.durationSec !== undefined && <><dt>Длительность</dt><dd>{formatDuration(activeSession.durationSec)}</dd></>}{activeSession.costUsd !== undefined && <><dt>Стоимость</dt><dd title={activeSession.meta?.pricing_source === "models.dev" ? `Оценка по models.dev · ${String(activeSession.meta?.pricing_provider || "")}/${String(activeSession.meta?.pricing_model || "")}` : undefined}>{`${activeSession.meta?.pricing_kind === "estimate" ? "~" : ""}$${activeSession.costUsd.toFixed(4)}`}</dd></>}{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) !== undefined && <><dt>Токены</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"])}</dd></>}{(details?.children?.length || 0) > 0 && <><dt>Субагенты</dt><dd>{details?.children?.length}</dd></>}</dl>{activeSession.messageCount === 0 && <div className="inspector-empty-metrics">Пока нет сообщений. Отправьте сообщение или продолжите сессию.</div>}<div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer" title="История сообщений и изменений файлов — в новой вкладке">Визуализация ↗</a>}{(activeSession.status === "running" || sending) && <button className="stop-button" onClick={() => void runAction("stop")}>Остановить</button>}{(!sending && activeSession.status !== "running" && (activeSession.status === "stopped" || activeSession.status === "error" || activeSession.meta?.humanStopHeld === true)) && <button className="primary-button" onClick={() => void runAction("resume")}>Возобновить работу</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Восстановить</button>}</div><div className="settings-block"><span className="eyebrow">ВИД</span><small className="settings-hint">Что показывать в переписке</small><label><input type="checkbox" checked={showReasoning} onChange={(event) => setShowReasoning(event.target.checked)} /> Размышления</label><label><input type="checkbox" checked={showTools} onChange={(event) => setShowTools(event.target.checked)} /> Инструменты</label><label><input type="checkbox" checked={jsonRendering} onChange={(event) => setJsonRendering(event.target.checked)} /> JSON-ответы как JSON</label><label><input type="checkbox" checked={collapseLongMessages} onChange={(event) => setCollapseLongMessages(event.target.checked)} /> Сворачивать длинные сообщения</label><span className="eyebrow theme-choice-label">ТЕМА</span><div className="theme-choice" role="group" aria-label="Тема оформления"><button type="button" className={theme === "dark" ? "active" : ""} aria-pressed={theme === "dark"} onClick={() => selectTheme("dark")}>Тёмная</button><button type="button" className={theme === "light" ? "active" : ""} aria-pressed={theme === "light"} onClick={() => selectTheme("light")}>Светлая</button></div><span className="eyebrow theme-choice-label">ОТПРАВКА</span>{deliveryModeChoice}</div></> : <div className="empty-inspector">Сессия не выбрана.</div>}</aside>}
+    {showInspector && !showCreateSession && !showStatistics && !showJobs && <><div className="inspector-scrim" aria-hidden="true" onClick={closeSessionInspector} /><aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">СЕССИЯ</span><button className={sessionSettingsReturn ? "quiet-button" : "icon-button"} onClick={closeSessionInspector} aria-label={sessionSettingsReturn ? "Вернуться к общим настройкам" : "Закрыть настройки сессии"}>{sessionSettingsReturn ? "← К общим настройкам" : "×"}</button></div>{activeSession ? <><div className="inspector-title">{cleanSessionTitle(activeSession.title) || activeSession.title || activeSession.id}</div><div className="inspector-status"><span className={`status-dot status-${statusClass(activeSession.status)}`} /><span className={`status-label status-${statusClass(activeSession.status)}`}>{activeSession.meta?.humanStopHeld === true ? "Явная остановка — автоматика приостановлена" : statusLabel(activeSession.status)}</span></div>{sessionAutostart && <div className="autopilot-control session-autostart-control"><div><span className="eyebrow">АВТОПРОДОЛЖЕНИЕ</span><strong>{sessionAutostart.enabled ? "Включено" : "Выключено"}</strong><small>{sessionAutostart.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : sessionAutostart.source === "harness" ? `Сейчас наследуется общая настройка для ${activeSession.harness}. Нажатие создаст исключение только для этой сессии и применится сразу.` : sessionAutostart.source === "global" ? "Сейчас наследуется общий переключатель. Нажатие создаст исключение только для этой сессии и применится сразу." : "Используется значение по умолчанию. Нажатие создаст отдельную настройку только для этой сессии и применится сразу."}</small>{sessionAutostart.source === "session" && <button className="inherit-button" disabled={sessionAutostartSaving} onClick={() => void inheritSessionAutostart()}>Использовать общую настройку {activeSession.harness}</button>}</div><button className={`switch-control ${sessionAutostart.enabled ? "enabled" : ""}`} role="switch" aria-checked={sessionAutostart.enabled} aria-label="Автопродолжение для текущей сессии" disabled={sessionAutostartSaving} onClick={() => void toggleSessionAutostart()}><span /></button></div>}{sessionAutostartError && <small className="autopilot-error">{sessionAutostartError}</small>}{["opencode", "zcode"].includes(activeSession.harness) && <QuotaRecoveryControls session={{harness: activeSession.harness, id: activeSession.id, cwd: activeSession.cwd}} />}{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">АВТОПИЛОТ</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : autopilotSession.source === "policy" ? (autopilotPolicyDraft?.enabled && !autopilotPolicyDraft.harnesses.includes(activeSession.harness as AutopilotHarness) ? `${AUTOPILOT_HARNESS_LABELS[activeSession.harness as AutopilotHarness]} выключен в общих настройках сред. Нажатие включит автопилот только для этой сессии и применится сразу.` : "Сейчас наследуется общая настройка автопилота. Нажатие создаст исключение только для этой сессии и применится сразу.") : autopilotSession.source === "plugin-default" ? "Сейчас наследуется настройка среды. Нажатие создаст исключение только для этой сессии и применится сразу." : "По умолчанию выключен. Нажатие включит автопилот только для этой сессии и применится сразу."}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Использовать общую настройку</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label="Автопилот для текущей сессии" disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}{!AUTOCONTINUE_HARNESSES.has(activeSession.harness) && <p className="settings-help">Автопродолжение после сбоя в этой среде пока недоступно. Можно продолжить сессию вручную.</p>}<dl><dt>Агент</dt><dd>{activeSession.harness}</dd><dt>Папка</dt><dd title={activeSession.cwd}>{lastSegment(activeSession.cwd)}</dd>{activeSession.messageCount !== undefined && <><dt>Сообщения</dt><dd>{activeSession.messageCount}</dd></>}{activeSession.durationSec !== undefined && <><dt>Длительность</dt><dd>{formatDuration(activeSession.durationSec)}</dd></>}{activeSession.model !== undefined && activeSession.model.includes("/") && <><dt>Источник</dt><dd title={activeSession.model}>{modelSourceLabel(activeSession.model)}</dd></>}{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) !== undefined && <><dt>Токены</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"])}</dd></>}<><dt>Траты</dt><dd>{typeof activeSession.costUsd === "number" ? `$${activeSession.costUsd.toFixed(4)}` : "среда не сообщает"}</dd></></dl><section className="permission-mode-control" aria-label="Режим разрешений сессии"><div className="permission-mode-heading"><span className="eyebrow">РЕЖИМ РАЗРЕШЕНИЙ</span><button className="quiet-button" disabled={permissionModeLoading || permissionModeSaving} onClick={() => void refreshPermissionModeState()}>{permissionModeLoading ? "Читаю…" : "Обновить"}</button></div>{permissionModeLoading && !permissionModeRead ? <small>Читаю состояние выбранной сессии…</small> : permissionModeRead?.available && permissionModeRead.permissionState ? <><div className="permission-mode-facts"><span>Текущий режим</span><strong>{permissionModeRead.permissionState.currentMode || "не сообщён средой"}</strong><span>Область</span><strong>{permissionModeRead.permissionState.scope}</strong><span>Ожидают решения</span><strong>{permissionModeRead.permissionState.pendingRequests.length}</strong></div>{permissionModeRead.permissionState.pendingRequests.map((pending) => <small className="permission-mode-pending-reason" key={pending.id}>{pending.toolName || pending.reason || pending.unsupportedReason || "Ожидает решения"}{pending.canRespond === false ? " — среда не позволяет ответить через этот интерфейс." : ""}</small>)}{permissionModeRead.permissionState.scope === "session" && permissionModeRead.permissionState.canSetMode && (permissionModeRead.permissionState.supportedModes?.length ?? 0) > 0 ? <div className="permission-mode-editor"><label>Выбрать режим<select aria-label="Режим разрешений сессии" value={permissionModeChoice} onChange={(event) => setPermissionModeChoice(event.target.value)} disabled={permissionModeSaving || permissionModeRead.permissionState.pendingRequests.length > 0}><option value="" disabled>Выберите режим</option>{permissionModeRead.permissionState.supportedModes!.map((mode) => <option key={mode} value={mode}>{mode}</option>)}</select></label><button className="quiet-button" disabled={permissionModeSaving || permissionModeLoading || permissionModeRead.permissionState.pendingRequests.length > 0 || !permissionModeRead.permissionState.currentMode || permissionModeChoice === permissionModeRead.permissionState.currentMode} onClick={() => void applyPermissionMode()}>{permissionModeSaving ? "Применяю…" : "Применить к этой сессии"}</button>{permissionModeRead.permissionState.pendingRequests.length > 0 && <small>Сначала обработайте ожидающие запросы разрешений.</small>}</div> : <small>{permissionModeRead.permissionState.scope !== "session" ? `Среда сообщает область «${permissionModeRead.permissionState.scope}»; менять общий режим из панели сессии нельзя.` : permissionModeRead.permissionState.canSetMode ? "Среда не сообщила доступные режимы для этой сессии." : "Нативное управление режимом для этой сессии недоступно."}</small>}</> : <small>{permissionModeRead?.reason || "Нативное состояние режима недоступно для этой среды."}</small>}{permissionModeError && <small className="permission-mode-error">{permissionModeError}</small>}{permissionModeAttempts.some((attempt) => attempt.status === "unknown") && <small>Есть попытка с неизвестным исходом. Её inputId сохранён; автоматического повтора не будет.</small>}</section>{activeSession?.harness === "minimax-code" && activeSession.hostId && <MinimaxExecPolicyPanel key={`${activeSession.hostId}/${activeSession.id}`} session={activeSession} />}<SessionInspectBlock facts={sessionFacts} pendingModel={selectedModel} /><SessionActivityPanel messages={details?.messages} /><SessionMetadata sessionId={activeSession.id} harness={activeSession.harness} />{activeSession.messageCount === 0 && <div className="inspector-empty-metrics">Пока нет сообщений. Отправьте сообщение или продолжите сессию.</div>}<div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer" title="История сообщений и изменений файлов — в новой вкладке">Визуализация ↗</a>}{(activeSession.status === "running" || sending) && <button className="stop-button" onClick={() => void runAction("stop")}>Остановить</button>}{(!sending && activeSession.status !== "running" && (activeSession.status === "stopped" || activeSession.status === "error" || activeSession.meta?.humanStopHeld === true)) && <button className="primary-button" onClick={() => void runAction("resume")}>Возобновить работу</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Восстановить</button>}</div></> : <div className="empty-inspector">{emptyInspectorText(activeKey, detailsError)}</div>}</aside></>}
   </main>;
 }
 

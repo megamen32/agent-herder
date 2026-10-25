@@ -8,17 +8,20 @@
  */
 
 import { hostname } from "node:os";
+import { join } from "node:path";
 
-import { directFleetPeers } from "../mesh/fleet-direct-transport.js";
+import { AutomationLaunchPolicyStore } from "../automation-launch-policy.js";
+import { resolveAutopilotStateDir } from "../autopilot/state-dir.js";
+import { fleetPeers as fleetMembers } from "../mesh/fleet-direct-transport.js";
 import { SettingsStore } from "../web/settings-store.js";
 import { CommonSettingsStateStore, type CommonSettingsRole } from "./node-state.js";
-import { CommonSettingsNodeService } from "./node-service.js";
+import { CommonSettingsNodeService, launchPolicyTarget } from "./node-service.js";
 import { COMMON_SETTINGS_SYNC_INTERVAL_MS, readCommonSettingsConfig } from "./service.js";
 import { DirectCommonSettingsTransport, type CommonSettingsTransport } from "./transport.js";
 
 /** The peers of the fleet: the node and the address of its runtime. */
 function fleetPeers(): { hostId: string; target: string }[] {
-  return directFleetPeers
+  return fleetMembers()
     .filter((peer) => peer.hostId !== "MacBook-Pro-User.local")
     .map((peer) => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` }));
 }
@@ -26,7 +29,7 @@ function fleetPeers(): { hostId: string; target: string }[] {
 /** The address of the node that owns the document. */
 function ownerTarget(ownerHostId: string | null, localHostId: string): string | null {
   if (!ownerHostId || ownerHostId === localHostId) return null;
-  const peer = directFleetPeers.find((candidate) => candidate.hostId === ownerHostId);
+  const peer = fleetMembers().find((candidate) => candidate.hostId === ownerHostId);
   return peer ? `mcp:shell:${peer.hostId}:AgentHerder` : null;
 }
 
@@ -58,6 +61,16 @@ export function commonSettingsService(options: {
   }
   const store = options.store ?? new SettingsStore({ actor: hostId, hostId });
   const transport = options.transport ?? new DirectCommonSettingsTransport();
+  // The document of the owner is one document: the panel of the owner shows the
+  // same revision that the nodes of the fleet take, or the confirmation never
+  // closes. The policy of the launch is a part of the document, so the owner
+  // reads it from the same file the panel reads. A member keeps the
+  // application of its own values as it was: it takes the values of the
+  // document, not the policy of the owner.
+  const launchPolicy = options.launchPolicy
+    ?? (role === "owner"
+      ? launchPolicyTarget(new AutomationLaunchPolicyStore(join(resolveAutopilotStateDir(), "automation-launch-policy.json")))
+      : undefined);
   sharedService = new CommonSettingsNodeService({
     hostId,
     role: role as CommonSettingsRole,
@@ -65,7 +78,7 @@ export function commonSettingsService(options: {
     ownerTarget: ownerTarget(ownerHostId, hostId),
     stateStore: new CommonSettingsStateStore(options.statePath ? { path: options.statePath } : {}),
     target: store,
-    ...(options.launchPolicy ? { launchPolicy: options.launchPolicy } : {}),
+    ...(launchPolicy ? { launchPolicy } : {}),
     ...(options.hooks ? { hooks: options.hooks } : {}),
     transport,
   });

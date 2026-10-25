@@ -15,7 +15,7 @@
     "minimum": 10,
     "maximum": 20
   },
-  "updated_at": "2026-10-25T14:37:48+03:00",
+  "updated_at": "2026-10-25T17:44:23+03:00",
   "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной Codex fixture.",
   "wait_reason": "После L09: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.",
   "progress_events": [
@@ -27,6 +27,14 @@
         "wait_reason": "После L09: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
       },
       "harness": "unknown"
+    },
+    {
+      "at": "2026-10-25T17:44:23+03:00",
+      "note": "Lead-confirmed evidence/status refresh; future consumer checks remain pending.",
+      "changes": {
+        "note": "Codex app-server сообщает canSetMode=false, supportedModes=[] и не подтверждает currentMode; native session-mode change недоступен. Установленный permission roundtrip/consumer proof этой сессии ещё не выполнен. Показать unsupported честно; source tests не являются live PASS."
+      }
     }
-  ]
+  ],
+  "note": "Codex app-server сообщает canSetMode=false, supportedModes=[] и не подтверждает currentMode; native session-mode change недоступен. Установленный permission roundtrip/consumer proof этой сессии ещё не выполнен. Показать unsupported честно; source tests не являются live PASS."
 }

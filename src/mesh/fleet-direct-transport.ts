@@ -5,6 +5,7 @@ import {mkdirSync,lstatSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {hostname,userInfo} from 'node:os';
 import type {GptAdminTransport} from './gptadmin.js';
+import type {DeliveryResponseResourceBinding} from '../mcp/delivery-response-resources.js';
 /** Reuses owner-authorized fleet SSH, transporting HTTP to each existing singleton. Never starts MCP stdio or a native controller. */
 export type DirectPeer={hostId:string;sshHost:string;sshPort?:number;nativeUser:string;port:number;python:string};
 export const directFleetPeers:readonly DirectPeer[]=[
@@ -15,6 +16,30 @@ export const directFleetPeers:readonly DirectPeer[]=[
  // The Mac maintains this authenticated reverse route even when it leaves the LAN.
  {hostId:'MacBook-Pro-User.local',sshHost:'127.0.0.1',sshPort:2222,nativeUser:'user',port:18789,python:'/opt/homebrew/bin/python3'},
 ];
+/** Reads the fleet injected into this process. An unusable value leaves the fleet empty: the process must never fall back to live neighbours. */
+function injectedFleetPeers():readonly DirectPeer[]|undefined{
+ const raw=process.env.AGENT_HERDER_FLEET_PEERS;
+ if(raw===undefined||raw.trim()==="")return undefined;
+ try{
+  const parsed=JSON.parse(raw);
+  if(!Array.isArray(parsed))throw new Error('fleet_peers_not_a_list');
+  return parsed.map((entry:Partial<DirectPeer>)=>{
+   if(typeof entry.hostId!=='string'||!entry.hostId.trim())throw new Error('fleet_peer_host_missing');
+   if(typeof entry.sshHost!=='string'||!entry.sshHost.trim())throw new Error('fleet_peer_ssh_host_missing');
+   if(typeof entry.nativeUser!=='string'||!entry.nativeUser.trim())throw new Error('fleet_peer_native_user_missing');
+   if(!Number.isInteger(entry.port))throw new Error('fleet_peer_port_invalid');
+   return {hostId:entry.hostId.trim(),sshHost:entry.sshHost.trim(),...(entry.sshPort===undefined?{}:{sshPort:entry.sshPort}),nativeUser:entry.nativeUser.trim(),port:entry.port as number,python:typeof entry.python==='string'&&entry.python.trim()?entry.python:'/usr/bin/python3'};
+  });
+ }catch(error){
+  console.error(`[agent-herder] AGENT_HERDER_FLEET_PEERS is unusable (${error instanceof Error?error.message:String(error)}); the fleet stays empty`);
+  return [];
+ }
+}
+/** The fleet this process knows. An injected fleet replaces the installed one, so a unit test states its own topology instead of inheriting the live one. */
+export function fleetPeers():readonly DirectPeer[]{
+ const injected=injectedFleetPeers();
+ return injected??directFleetPeers;
+}
 /** Reuse only authenticated exact-peer connections; idle masters expire in 30s. */
 export function sshMultiplexOptions(peer:DirectPeer):string[]{
  const uid=process.getuid?.();if(uid===undefined)throw new Error('direct_control_owner_unavailable');
@@ -129,11 +154,46 @@ else:
 let sharedFleetTransport:GptAdminTransport|undefined;
 /** The peer transport of the fleet that the native mesh operations work with. */
 export function fleetDirectTransport():GptAdminTransport{
- if(!sharedFleetTransport)sharedFleetTransport=new FleetDirectTransport(directFleetPeers.filter(peer=>peer.hostId!=="MacBook-Pro-User.local"));
+ if(!sharedFleetTransport)sharedFleetTransport=new FleetDirectTransport(fleetPeers().filter(peer=>peer.hostId!=="MacBook-Pro-User.local"));
  return sharedFleetTransport;
 }
+/**
+ * The asks that only read what a node holds.
+ *
+ * A node that is down must not be paid for on every read: the fleet reads it
+ * many times a minute and the read costs its full timeout every time. The
+ * commands of the owner are never paused: a document that has to reach a node
+ * always tries to reach it.
+ */
+const peerPollTools=new Set(['common_settings_read','common_settings_status','list_active_sessions_local','fleet_node_info']);
+/** The first pause of a node that did not answer. */
+const peerPauseBaseMs=15_000;
+/** The longest pause of a node that keeps not answering. */
+const peerPauseMaxMs=300_000;
+type PeerAvailability={until:number;error:string;failures:number};
+const peerAvailability=new Map<string,PeerAvailability>();
+const peerAvailabilityKey=(peer:DirectPeer):string=>[peer.hostId,peer.sshHost,peer.sshPort??22,peer.port].join('|');
+const isLocalPeer=(peer:DirectPeer):boolean=>peer.hostId===hostname()&&peer.nativeUser===userInfo().username;
+/** Remember that the node did not answer, and for how long it is not asked again. */
+function rememberPeerFailure(key:string,error:unknown):void{
+ const message=error instanceof Error?error.message:String(error);
+ // Only the fixed codes of the transport are remembered: the stderr of a peer
+ // may hold private paths, and a pause must not keep them.
+ if(!/^[a-z_]+$/.test(message))return;
+ const previous=peerAvailability.get(key);
+ const failures=(previous?.failures??0)+1;
+ const pause=Math.min(peerPauseBaseMs*2**(failures-1),peerPauseMaxMs);
+ peerAvailability.set(key,{until:Date.now()+pause,error:message,failures});
+}
+/** What is known about the availability of the node: the pause and the reason of the last failure. */
+export function peerAvailabilityOf(hostId:string):{until:number;error:string;failures:number}|undefined{
+ for(const [key,value] of peerAvailability)if(key.startsWith(hostId+'|'))return value;
+ return undefined;
+}
+/** Forget what is known about the availability of the nodes: the pause is a thing of the runtime. */
+export function resetPeerAvailability():void{peerAvailability.clear();}
 export class FleetDirectTransport implements GptAdminTransport {
- constructor(private readonly peers:readonly DirectPeer[]=directFleetPeers,private readonly deadlineMs=10000){
+ constructor(private readonly peers:readonly DirectPeer[]=fleetPeers(),private readonly deadlineMs=10000){
   if(!peers.length||peers.length>5||new Set(peers.map(p=>p.hostId)).size!==peers.length)throw new Error('direct_peer_limit');
  }
  async discover():Promise<unknown>{return {servers:this.peers.flatMap(p=>[{server_id:`shell:${p.hostId}`,kind:'virtual_shell',status:'configured'},{server_id:`mcp:shell:${p.hostId}:AgentHerder`,kind:'child_mcp',status:'configured'}])};}
@@ -161,18 +221,51 @@ export class FleetDirectTransport implements GptAdminTransport {
   if(!['codex','zcode','opencode','minimax-code'].includes(harness)||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))throw new Error('direct_session_invalid');
   return this.rpc(this.peer(target),'session/read',{harness,sessionId},this.deadlineMs);
  }
+ /** Read one exact response resource from the native owner MCP; never use caller-local jobs for a remote binding. */
+ async readDeliveryResponseResource(target:string,binding:DeliveryResponseResourceBinding):Promise<unknown>{
+  const peer=this.peer(target);
+  for(const value of [binding.hostId,binding.harness,binding.sessionId,binding.jobId,binding.inputId]){
+   if(typeof value!=='string'||!value||value.length>512||/[\x00-\x1f\x7f]/.test(value))throw new Error('direct_response_binding_invalid');
+  }
+  if(binding.hostId!==peer.hostId)throw new Error('direct_response_owner_mismatch');
+  const uri=`herder://delivery-responses/${encodeURIComponent(binding.hostId)}/${encodeURIComponent(binding.harness)}/${encodeURIComponent(binding.sessionId)}/${encodeURIComponent(binding.jobId)}/${encodeURIComponent(binding.inputId)}`;
+  return await this.rpc(peer,'resources/read',{uri},Math.max(this.deadlineMs,30_000));
+ }
  readSessionPage(target:string,cursor?:string,limit=100):Promise<unknown>{return this.call(target,'fleet_session_page',{limit,...(cursor?{cursor}:{})});}
  schema(target:string):Promise<unknown>{return this.rpc(this.peer(target),'tools/list',{},this.deadlineMs);}
  async call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
-  if(!['list_active_sessions_local','model_quotas','fleet_node_info','mesh_snapshot','create_session','fleet_session_page','session_search_local','list_agents','send_message','mesh_deliver','mesh_stop','workspace_probe','workspace_reserve','workspace_owners','automation_disarm','common_settings_read','common_settings_status','common_settings_notice','common_settings_opt_in','common_settings_restore'].includes(tool))throw new Error('direct_tool_not_authorized');
+  if(!['list_active_sessions_local','model_quotas','fleet_node_info','mesh_snapshot','create_session','fleet_session_page','session_search_local','list_agents','send_message','mesh_deliver','mesh_stop','mesh_rename_session','workspace_probe','workspace_reserve','workspace_owners','automation_disarm','common_settings_read','common_settings_status','common_settings_notice','common_settings_opt_in','common_settings_restore','session_queue_processing_get','session_queue_processing_resume','job_get'].includes(tool))throw new Error('direct_tool_not_authorized');
   if(tool==='mesh_deliver' && (args.sender as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
   if(tool==='workspace_reserve' && (args.owner as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
   if(tool==='mesh_stop' && (args.target as any)?.hostId!==this.peer(target).hostId)throw new Error('direct_stop_host_mismatch');
-  await assertRemoteCodexAdmission(tool,args,()=>this.rpc(this.peer(target),'tools/call',{name:'model_quotas',arguments:{}},this.deadlineMs));
+  // A rename writes the title of one native session of the peer itself, so
+  // the peer must be the machine the call really reaches.
+  if(tool==='mesh_rename_session' && (args.target as any)?.hostId!==this.peer(target).hostId)throw new Error('direct_rename_host_mismatch');
+  const peer=this.peer(target);
+  const key=peerAvailabilityKey(peer);
+  // A node that is down is not asked again and again: the ask costs its full
+  // timeout every time, and the fleet asks it many times a minute. The pause
+  // grows with every failure and the reason of the last failure is kept, so
+  // the node still fails in the words it failed before.
+  if(peerPollTools.has(tool)&&!isLocalPeer(peer)){
+   const known=peerAvailability.get(key);
+   if(known&&Date.now()<known.until)throw new Error(known.error);
+  }
+  try{
+   const result=await this.dispatch(peer,tool,args,idempotencyKey);
+   peerAvailability.delete(key);
+   return result;
+  }catch(error){
+   rememberPeerFailure(key,error);
+   throw error;
+  }
+ }
+ private async dispatch(peer:DirectPeer,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
+  await assertRemoteCodexAdmission(tool,args,()=>this.rpc(peer,'tools/call',{name:'model_quotas',arguments:{}},this.deadlineMs));
   if(tool==='create_session'){
    if(!idempotencyKey||!/^[a-f0-9]{64}$/.test(idempotencyKey))throw new Error('direct_create_identity_missing');
-   return this.rpc(this.peer(target),'tools/call',{name:'fleet_create_session',arguments:{...args,inputId:idempotencyKey}},30000);
+   return this.rpc(peer,'tools/call',{name:'fleet_create_session',arguments:{...args,inputId:idempotencyKey}},30000);
   }
-  return this.rpc(this.peer(target),'tools/call',{name:tool,arguments:args},tool==='mesh_snapshot'?Math.max(this.deadlineMs,meshDiscoveryTimeoutMs()+5000):this.deadlineMs);
+  return this.rpc(peer,'tools/call',{name:tool,arguments:args},tool==='mesh_snapshot'?Math.max(this.deadlineMs,meshDiscoveryTimeoutMs()+5000):this.deadlineMs);
  }
 }

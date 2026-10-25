@@ -1,5 +1,9 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdirSync, mkdtempSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DEFAULT_ALLOWED_ENV, harnessWorkloadEnv } from "./web/settings-harness-env.js";
 
 export interface DetachedWorkloadOptions extends SpawnOptions {
   /** Short harness/workload label used only for the transient systemd scope name. */
@@ -8,6 +12,21 @@ export interface DetachedWorkloadOptions extends SpawnOptions {
   resourceProperties?: string[];
   /** Mandatory Linux guard for the shared ZCode SDK/native descendant tree. */
   resourceGuard?: "zcode-shared";
+  /**
+   * The names of the variables that a spawned workload is allowed to see.
+   * The default is the allowlist of the product; the secrets of the herder
+   * never pass, whatever this list names.
+   */
+  allowedEnv?: readonly string[];
+  /**
+   * The names of the variables that the caller of the spawn addresses by
+   * name. They reach the workload even when the background of the herder
+   * names the same value: the data home of a project app-server (CODEX_HOME)
+   * is one of them, and the app-server of a project must not fall back to
+   * the home directory of the user. The secrets of the herder never pass,
+   * whatever this list names.
+   */
+  ownedEnv?: readonly string[];
 }
 
 export interface IsolatedWorkloadCommand {
@@ -42,11 +61,92 @@ read -r tasks < "$base/pids.max" || fail
 read -r quota period < "$base/cpu.max" || fail
 [ "$high" = 32212254720 ] && [ "$maximum" = 36507222016 ] &&
 [ "$swap" = 2147483648 ] && [ "$tasks" = 4096 ] || fail
+[ "$period" -gt 0 ] && [ "$quota" -gt 0 ] &&
 case "$quota:$period" in *[!0-9:]*|:*|*:) fail ;; esac
 [ "$period" -gt 0 ] && [ "$quota" -gt 0 ] &&
 [ "$quota" -le "$((period * 16))" ] || fail
 exec "$@"
 `;
+
+/**
+ * The scripts of the runtime state, one kind of script per shape.
+ *
+ * A script is a file of the runtime state of the herder and never a part of
+ * the command line: systemd-run takes the Description of the transient unit
+ * from the command line, and a line break inside it lands in the unit file as
+ * a line of the [Unit] section. systemd then drops such a line ("Missing '='",
+ * "Unknown key name"), and the scope stays in the error state.
+ */
+const RUNTIME_SCRIPTS = {
+  "zcode-resource-guard": { directory: "zcode-resource-guard", prefix: "guard", extension: ".sh" },
+  "fast-agent-create-session": { directory: "fast-agent-scripts", prefix: "create-session", extension: ".py" },
+} as const;
+
+export type RuntimeScriptKind = keyof typeof RUNTIME_SCRIPTS;
+
+/**
+ * The place where a script lives.
+ *
+ * The directory belongs to the user of the herder alone: a place that another
+ * user prepared is not used, and a place that another user may write is not
+ * used.
+ */
+function runtimeScriptDirectory(kind: RuntimeScriptKind): string {
+  const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
+  const bases = process.env.XDG_RUNTIME_DIR ? [join(process.env.XDG_RUNTIME_DIR, "agent-herder")] : [];
+  bases.push(join(tmpdir(), `agent-herder-${uid ?? "unknown"}`));
+  for (const base of bases) {
+    const dir = join(base, RUNTIME_SCRIPTS[kind].directory);
+    try {
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      const state = statSync(dir);
+      if (typeof process.getuid === "function" && state.uid !== process.getuid()) continue;
+      if ((state.mode & 0o022) !== 0) continue;
+      return dir;
+    } catch {
+      // The next place holds the script.
+    }
+  }
+  return mkdtempSync(join(tmpdir(), `agent-herder-${kind}-${uid ?? "unknown"}-`));
+}
+
+const runtimeScriptFiles = new Map<string, string>();
+
+/**
+ * The path of a script of the runtime state, written once for its text.
+ *
+ * The name of the file carries the digest of its text: the herder and another
+ * process of the same user write the same bytes, and the process that reads
+ * the file always reads the reviewed text.
+ */
+export function runtimeScriptPath(kind: RuntimeScriptKind, text: string): string {
+  const shape = RUNTIME_SCRIPTS[kind];
+  const digest = createHash("sha256").update(text).digest("hex").slice(0, 16);
+  const cacheKey = `${kind}:${digest}`;
+  const known = runtimeScriptFiles.get(cacheKey);
+  if (known) return known;
+  const dir = runtimeScriptDirectory(kind);
+  const file = join(dir, `${shape.prefix}-${digest}${shape.extension}`);
+  const temp = join(dir, `.${shape.prefix}-${digest}.${randomUUID().slice(0, 8)}.tmp`);
+  try {
+    writeFileSync(temp, text, { mode: 0o400, flag: "wx" });
+    renameSync(temp, file);
+  } catch (error) {
+    try { unlinkSync(temp); } catch { /* nothing to remove */ }
+    throw error;
+  }
+  runtimeScriptFiles.set(cacheKey, file);
+  return file;
+}
+
+/**
+ * The path of the guard script, written once for the reviewed budget.
+ *
+ * The scope that reads the file always reads the reviewed budget.
+ */
+export function zcodeResourceGuardPath(): string {
+  return runtimeScriptPath("zcode-resource-guard", ZCODE_SHARED_RESOURCE_CHECK);
+}
 
 function runtimeBusEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
@@ -59,6 +159,32 @@ function runtimeBusEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   };
 }
 
+/**
+ * The names that runtimeBusEnv owns: the bus of the user session, through
+ * which a workload talks back to the herder. They pass the filter of the
+ * allowlist, and the rule of the deny still wins over them.
+ */
+const RUNTIME_BUS_ENV_NAMES = ["XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"];
+
+/**
+ * The environment of a spawned workload.
+ *
+ * The background of the herder is filtered by the allowlist of the product,
+ * and the names that the caller of the spawn set on purpose are kept: the
+ * data home of a project app-server (CODEX_HOME) is one of them, and the
+ * project app-server must not fall back to the data home of the herder. A
+ * name that the caller addresses by name is kept even when the background of
+ * the herder names the same value. The secrets of the herder never pass, not
+ * even when the caller named them.
+ */
+function workloadEnv(
+  source: NodeJS.ProcessEnv | undefined,
+  allowed: readonly string[],
+  owned: readonly string[] = [],
+): Record<string, string> {
+  return harnessWorkloadEnv(process.env, source ?? process.env, [...allowed, ...RUNTIME_BUS_ENV_NAMES], owned);
+}
+
 function safeLabel(label: string): string {
   return label.toLowerCase().replace(/[^a-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "workload";
 }
@@ -68,7 +194,7 @@ export function buildDetachedWorkloadCommand(
   args: string[],
   options: DetachedWorkloadOptions,
 ): IsolatedWorkloadCommand {
-  const { label, env, resourceProperties = [], resourceGuard, ...spawnOptions } = options;
+  const { label, env, resourceProperties = [], resourceGuard, allowedEnv = DEFAULT_ALLOWED_ENV, ownedEnv = [], ...spawnOptions } = options;
   const isolationDisabled = process.env.AGENT_HERDER_WORKLOAD_ISOLATION === "off" || process.env.VITEST === "true";
   if (resourceGuard && (isolationDisabled || process.platform !== "linux")) {
     throw new Error("ZCode shared resource guard requires Linux systemd isolation");
@@ -80,12 +206,13 @@ export function buildDetachedWorkloadCommand(
     return {
       command,
       args,
-      options: { ...spawnOptions, env, detached: true, stdio: spawnOptions.stdio ?? "ignore" },
+      options: { ...spawnOptions, env: workloadEnv(env, allowedEnv, ownedEnv), detached: true, stdio: spawnOptions.stdio ?? "ignore" },
       isolated: false,
     };
   }
 
   const unitName = `agent-herder-${safeLabel(label)}-${randomUUID().slice(0, 8)}`;
+  const guardArgs = resourceGuard ? ["/bin/sh", zcodeResourceGuardPath(), command, ...args] : [command, ...args];
   return {
     command: "systemd-run",
     args: [
@@ -94,15 +221,17 @@ export function buildDetachedWorkloadCommand(
       "--quiet",
       "--collect",
       `--unit=${unitName}`,
+      // The Description of the transient unit names the workload, never the
+      // command line: a payload with a line break in it would break the unit
+      // file of the scope.
+      `--description=agent-herder ${safeLabel(label)}`,
       ...(resourceGuard ? ZCODE_SHARED_RESOURCE_PROPERTIES : resourceProperties)
         .flatMap((property) => ["--property", property]),
-      ...(resourceGuard
-        ? ["/bin/sh", "-c", ZCODE_SHARED_RESOURCE_CHECK, "zcode-resource-guard", command, ...args]
-        : [command, ...args]),
+      ...guardArgs,
     ],
     options: {
       ...spawnOptions,
-      env: runtimeBusEnv(env || process.env),
+      env: workloadEnv(runtimeBusEnv(env ?? process.env), allowedEnv, ownedEnv),
       detached: true,
       stdio: spawnOptions.stdio ?? "ignore",
     },

@@ -17,9 +17,19 @@
     "maximum": 20
   },
   "estimate_over_limit_reason": "Изменение native default и focused creation/readback regression — одна bounded ZCode operation; живой acceptance остаётся в ZCode leaf после release.",
-  "wait_reason": "Новосоздаваемая ZCode TEST canary после установки 49b выявила, что native ProjectService требует projectId; Herder createNamedSession/ZcodeAdapter не передали ID проекта из зарегистрированного native catalog. Nativeworker исправляет точный native project mapping по cwd+owner host с fail-closed при missing/ambiguous. Не auto-register, не использовать SSH trust/core patch. Нужны independent review и один combined release.",
-  "updated_at": "2026-10-25T16:37:05+03:00",
-  "note": "Native projectId mapping fix a34a4fee0ddd8e1e31f2911699e170c142226ab7 independently reviewed SHIP; focused ZCode tests 98/98 GREEN. Source pushed to main, official existing-tree candidate passed 14/14, installed host100 and accepted 21/21. Native executor has been signalled for exactly one public new-ZCode default-create canary plus same-session readback. No canary result yet. Five existing sessions remain read-only; no mode writes or approvals.",
+  "wait_reason": "Исторический wait из-за отсутствующего native projectId разрешён reviewed mapping в a34; живой результат canary отражён в L08. Повторная ZCode canary не требуется.",
+  "updated_at": "2026-10-25T17:44:23+03:00",
+  "note": "Native projectId mapping a34 independently reviewed SHIP; focused ZCode tests 98/98, official checks 14/14, installed host100 acceptance 21/21. Оmitted-mode-create canary создала exact новую сессию с native YOLO readback и без pending/turn; cleanup подтверждён. Пять прежних сессий не изменялись. Дополнительных mode writes/approvals не было.",
   "finished_at": "16:37",
-  "result": "Source a34 опубликован fast-forward, native projectId resolver independently SHIP; focused ZCode tests 98/98 GREEN, official build checks 14/14. После установки owner acceptance 21/21 public default-create без mode/fullAccess/model/initialMessage создала exact ZCode session; same-session readback YOLO, pending[], humanMessageCount=0, no active turn. Fixture закрыта официальным closeSession/archiveTask, final idle/nativeLoaded=false; task-delete query unavailable, без replay. Пять existing sessions не тронуты; private native receipt сохранён вне публичного плана."
+  "result": "Source a34 опубликован fast-forward, native projectId resolver independently SHIP; focused ZCode tests 98/98 GREEN, official build checks 14/14. После установки owner acceptance 21/21 public default-create без mode/fullAccess/model/initialMessage создала exact ZCode session; same-session readback YOLO, pending[], humanMessageCount=0, no active turn. Fixture закрыта официальным closeSession/archiveTask, final idle/nativeLoaded=false; task-delete query unavailable, без replay. Пять existing sessions не тронуты; private native receipt сохранён вне публичного плана.",
+  "progress_events": [
+    {
+      "at": "2026-10-25T17:44:23+03:00",
+      "note": "Lead-confirmed evidence/status refresh; future consumer checks remain pending.",
+      "changes": {
+        "note": "Native projectId mapping a34 independently reviewed SHIP; focused ZCode tests 98/98, official checks 14/14, installed host100 acceptance 21/21. Оmitted-mode-create canary создала exact новую сессию с native YOLO readback и без pending/turn; cleanup подтверждён. Пять прежних сессий не изменялись. Дополнительных mode writes/approvals не было.",
+        "wait_reason": "Исторический wait из-за отсутствующего native projectId разрешён reviewed mapping в a34; живой результат canary отражён в L08. Повторная ZCode canary не требуется."
+      }
+    }
+  ]
 }

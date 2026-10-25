@@ -4,6 +4,7 @@ import type {FleetHost} from '../../mesh/fleet-contract.js';
 import type {SessionMessageView} from '../../types/index.js';
 import type {NativeTranscriptEvent} from '../../integrator-transcript.js';
 import {createFleetClient} from './client.js';
+import {ComposerSendControl,QueueProcessingControl,VoiceComposerControl,isComposerSubmitShortcut,type QueueProcessingRead,type QueueProcessingResumeResult,type QueueProcessingState,type QueueProcessingTarget} from '../composer-controls.js';
 import type {SessionViewCache} from './view-cache.js';
 import {fleetSessionLink} from './session-link.js';
 import {remoteSessionStorage} from './session-control.js';
@@ -14,6 +15,70 @@ type View={hostId:string;details:{session:{id:string;harness:string;title?:strin
 export type TranscriptView={scope:{hostId:string;harness:string;nativeSessionId:string};events:NativeTranscriptEvent[];totalEvents:number;nextCursor:string|null;complete:boolean;source:string};
 type TranscriptRouteResponse={session:{id:string;harness:string;status:string;lastActivity:string};transcript:TranscriptView;steerEndpoint:string};
 type DisplayMessage={message:SessionMessageView;attribution:string;visualRole:string};
+type NativeQueueProcessingState={autoDrain:boolean;baseRevision:number;pendingCount:number;oldestQueueItemId:string|null;nativeState:string;loaded:true;capability:'setAutoDrain'};
+type QueueProcessingReadPayload={target:QueueProcessingTarget;state:NativeQueueProcessingState|null;canResume:boolean;humanStopHeld:boolean;error?:string};
+type QueueResumeSubmissionPayload={target:QueueProcessingTarget;inputId:string;state:'queued'|'unknown'|'not_attempted';nonRetryable:boolean;job?:{id:string;state:string;resultRef:string};error?:string};
+type QueueResumeJobResult={ok:boolean;status:'accepted'|'stale-no-write'|'unknown'|'not-submitted';inputId:string;state?:NativeQueueProcessingState;error?:string;nonRetryable?:boolean};
+type QueueJobRead={job:{id:string;state:string;result?:unknown;error?:string}};
+const sameQueueTarget=(left:QueueProcessingTarget|undefined,right:QueueProcessingTarget):boolean=>Boolean(left&&left.hostId===right.hostId&&left.harness===right.harness&&left.sessionId===right.sessionId);
+const queueTargetPath=(target:QueueProcessingTarget):string=>`/api/sessions/zcode/${encodeURIComponent(target.sessionId)}/queue-processing?hostId=${encodeURIComponent(target.hostId)}`;
+const queueStateForUi=(target:QueueProcessingTarget,state:NativeQueueProcessingState,canResume:boolean,error?:string):QueueProcessingState=>({
+ ...target,scope:'session',loaded:state.loaded===true,canResume:canResume&&state.loaded===true,capability:state.capability,
+ revision:state.baseRevision,autoDrain:state.autoDrain,pendingCount:state.pendingCount,oldestQueueItemId:state.oldestQueueItemId,
+ nativeStatus:state.nativeState,...(error?{reason:error}:{})
+});
+export async function readSessionQueueProcessing(target:QueueProcessingTarget,fetcher:typeof fetch=fetch):Promise<QueueProcessingRead>{
+ if(target.harness!=='zcode')return{available:false,reason:'Native queue processing is available only for ZCode sessions.'};
+ const response=await fetcher(queueTargetPath(target),{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(10_000)});
+ const payload=await response.json().catch(()=>undefined) as QueueProcessingReadPayload|{error?:string}|undefined;
+ if(!response.ok)throw new Error((payload as {error?:string}|undefined)?.error||'Состояние native-очереди недоступно.');
+ const value=payload as QueueProcessingReadPayload|undefined;
+ if(!value||!sameQueueTarget(value.target,target))throw new Error('Ответ native-очереди относится к другой сессии или машине.');
+ if(value.humanStopHeld)return{available:false,reason:value.error||'Обработка удерживается HumanStop; команда не отправлена.'};
+ if(!value.state)return{available:false,reason:value.error||'Native-сессия не загружена или очередь недоступна.'};
+ const state=value.state;
+ if(typeof state.autoDrain!=='boolean'||!Number.isSafeInteger(state.baseRevision)||state.baseRevision<0
+  ||!Number.isSafeInteger(state.pendingCount)||state.pendingCount<0||state.loaded!==true||state.capability!=='setAutoDrain')
+  throw new Error('Состояние native-очереди неполное; команда не отправлена.');
+ return{available:true,state:queueStateForUi(target,state,value.canResume===true,value.error)};
+}
+export async function submitSessionQueueProcessing(
+ target:QueueProcessingTarget,
+ request:{inputId:string;expectedRevision:number},
+ options:{fetcher?:typeof fetch;pause?:(ms:number)=>Promise<void>;now?:()=>number;maxWaitMs?:number}={}
+):Promise<QueueProcessingResumeResult>{
+ if(target.harness!=='zcode')throw new Error('Эта среда не поддерживает управление native-очередью.');
+ const fetcher=options.fetcher??fetch,pause=options.pause??(ms=>new Promise(resolve=>setTimeout(resolve,ms))),now=options.now??Date.now,maxWaitMs=options.maxWaitMs??12_000;
+ const post=await fetcher(queueTargetPath(target),{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'content-type':'application/json'},body:JSON.stringify({hostId:target.hostId,inputId:request.inputId,expectedRevision:request.expectedRevision}),signal:AbortSignal.timeout(10_000)});
+ const accepted=await post.json().catch(()=>undefined) as QueueResumeSubmissionPayload|{error?:string}|undefined;
+ if(!accepted||!sameQueueTarget((accepted as QueueResumeSubmissionPayload).target,target)||(accepted as QueueResumeSubmissionPayload).inputId!==request.inputId)
+  throw new Error((accepted as {error?:string}|undefined)?.error||'Результат команды неизвестен; повтор не выполняется.');
+ const submission=accepted as QueueResumeSubmissionPayload;
+ if(post.status===200&&submission.state==='unknown')return{inputId:request.inputId,status:'unknown',reason:submission.error||'Владелец не подтвердил исход; повтор не выполняется.'};
+ if(post.status===200&&submission.state==='not_attempted')return{inputId:request.inputId,status:'unsupported',reason:submission.error||'Native-команда не была отправлена.'};
+ if(post.status!==202||submission.state!=='queued'||typeof submission.job?.id!=='string'||!submission.job.id)
+  throw new Error(submission.error||'Результат команды неизвестен; повтор не выполняется.');
+ const jobId=submission.job.id,deadline=now()+maxWaitMs;
+ for(let attempt=0;attempt<40&&now()<deadline;attempt++){
+  const query=new URLSearchParams({hostId:target.hostId,harness:target.harness,sessionId:target.sessionId,inputId:request.inputId});
+  const response=await fetcher(`/api/jobs/${encodeURIComponent(jobId)}?${query}`,{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(5_000)});
+  const jobPayload=await response.json().catch(()=>undefined) as QueueJobRead|undefined;
+  const job=jobPayload?.job;
+  if(!response.ok||!job||job.id!==jobId)throw new Error('Исход фоновой команды неизвестен; повтор не выполняется.');
+  if(job.state==='completed'){
+   const result=job.result as QueueResumeJobResult|undefined;
+   if(!result||result.inputId!==request.inputId)throw new Error('Квитанция очереди не подтверждает эту команду; повтор не выполняется.');
+   const state=result.state?queueStateForUi(target,result.state,result.state.loaded===true):undefined;
+   if(result.status==='accepted')return{inputId:request.inputId,status:'accepted',state,reason:'Настройка очереди подтверждена; запуск конкретного сообщения ещё не подтверждён.'};
+   if(result.status==='stale-no-write')return{inputId:request.inputId,status:'stale',state,reason:result.error||'Состояние очереди изменилось; обновите очередь перед новым действием.'};
+   if(result.status==='unknown')return{inputId:request.inputId,status:'unknown',state,reason:result.error||'Исход команды неизвестен; повтор не выполняется.'};
+   return{inputId:request.inputId,status:'unsupported',state,reason:result.error||'Native-команда не была отправлена.'};
+  }
+  if(['failed','cancelled','interrupted'].includes(job.state))throw new Error(job.error||'Исход фоновой команды неизвестен; повтор не выполняется.');
+  await pause(300);
+ }
+ throw new Error('Команда всё ещё выполняется или не получила подтверждения. Её inputId сохранён; повтор не выполняется.');
+}
 export function localTranscriptAddressFor(hostId:string|undefined,session:{harness:string;id:string;remote?:boolean}|undefined,remoteSelection?:MeshAddress):MeshAddress|undefined{
  if(!hostId||!session||session.remote||remoteSelection)return undefined;
  return {hostId,harness:session.harness,nativeSessionId:session.id};
@@ -159,9 +224,9 @@ export function RemoteSessionView({address,host,scope,cache,onClose,renderMessag
  useEffect(()=>{scroll.current?.scrollTo({top:scroll.current.scrollHeight});},[displayMessages.length,entries.length]);
  const available=Boolean(currentView&&!cached&&!loading&&(!currentView.details.historyUnavailable||localHostId===captured.hostId&&!!currentTranscript));
  const refresh=()=>{void fresh();if(localHostId===captured.hostId)void readTranscript(undefined,true);};
- const submit=async()=>{
+ const submit=async(nextMode:DeliveryMode=mode)=>{
   if(!available||busy.current||!text.trim())return;
-  const entry:OutboxEntry={inputId:newInputId(),sessionKey:key,text:text.trim(),mode,createdAt:Date.now(),status:'sending'};
+  const entry:OutboxEntry={inputId:newInputId(),sessionKey:key,text:text.trim(),mode:nextMode,createdAt:Date.now(),status:'sending'};
   busy.current=true;setSending(true);
   try{put(appendOutboxEntry(values.current,entry));setText('');
    const response=await client.control!(captured,{operation:'message',inputId:entry.inputId,message:entry.text,mode:entry.mode});
@@ -185,7 +250,7 @@ export function RemoteSessionView({address,host,scope,cache,onClose,renderMessag
   <header className="chat-header"><button className="quiet-button mobile-back" type="button" onClick={onClose}>← Сессии</button><div className="chat-heading"><h2>{session?.title??captured.nativeSessionId}</h2><span className="chat-session-state" title={session?.cwd}>{host.label} · {captured.harness} · {fleetSessionStatus(session?.status??'unknown')} {session?.model?`· ${session.model}`:''}</span></div><div className="header-actions"><button type="button" className="quiet-button" onClick={refresh}>Обновить</button><button type="button" className="quiet-button" disabled={!available||!!action||actionUnknown} onClick={()=>void control('resume')}>{action==='resume'?'Продолжаю…':'Продолжить'}</button><button type="button" className="danger-button" disabled={!available||!!action||actionUnknown} onClick={()=>void control('stop')}>{action==='stop'?'Останавливаю…':'Остановить'}</button>{link&&<details><summary aria-label="Дополнительно">•••</summary><a href={link}>Отдельный кабинет ↗</a></details>}</div></header>
   {cached&&<p className="cached-view-notice" role="status">Сохранённая история · команды доступны после восстановления связи</p>}{error&&<p role="alert" className="remote-chat-error">{error}</p>}{actionUnknown&&<p role="status" className="remote-chat-error">Результат предыдущей команды не подтверждён. Повторные команды управления заблокированы; история и проверка доставки доступны.</p>}
   <div className="chat-scroll" ref={scroll}>{loading&&!currentView&&<p role="status">Загрузка истории…</p>}{displayMessages.length===0&&currentView?.details.historyUnavailable&&<p>История пока недоступна.</p>}{transcriptError&&<p role="alert" className="remote-chat-error">{transcriptError}</p>}{displayMessages.map(({message:m,attribution,visualRole},i)=>{const body=renderMessage?renderMessage(m):<div className="message-body"><pre>{m.text??payloadText(m.parts.map(part=>part.input??part.output).find(value=>value!==undefined)??'')??''}</pre></div>;if(body==null)return null;return <article className={`message ${visualRole}`} key={m.id??i}><div className="message-meta"><strong>{attribution}</strong>{m.timestamp&&<time>{new Date(m.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</time>}</div>{body}</article>;})}{currentTranscript?.nextCursor&&<button type="button" className="quiet-button" disabled={loadingMore} onClick={()=>void readTranscript(currentTranscript.nextCursor??undefined)}>{loadingMore?'Загружаю…':'Загрузить следующую страницу истории'}</button>}</div>
-  <div className="composer-stack">{projection.pending.map(entry=><article className={`composer-outbox-entry status-${entry.status}`} key={entry.inputId}><div className="composer-outbox-meta"><span>{outboxStatusLabel(entry.status)}</span>{entry.status==='unknown'&&<button type="button" onClick={()=>void check(entry)}>Проверить доставку</button>}</div><div className="composer-outbox-text">{entry.text}</div>{entry.error&&<small>{entry.error}</small>}</article>)}
-  <form className="composer" onSubmit={e=>{e.preventDefault();void submit();}}><div className="composer-left"><select aria-label="Режим отправки" value={mode} onChange={e=>setMode(e.target.value as DeliveryMode)}><option value="queue">После ответа</option><option value="steer">В текущий ход</option></select></div><textarea aria-label="Сообщение удалённой сессии" placeholder={available?'Работайте с агентом':'Подключаю выбранную сессию…'} value={text} disabled={!available} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();void submit();}}}/><span className="composer-hint">{sending?'Отправляю…':'Enter — отправить · Shift+Enter — новая строка'}</span><button type="submit" className="send-button" disabled={!available||sending||!text.trim()} aria-label="Отправить сообщение">↑</button></form></div>
+  <div className="composer-stack">{captured.harness==='zcode'&&<QueueProcessingControl target={{hostId:captured.hostId,harness:captured.harness,sessionId:captured.nativeSessionId}} readState={readSessionQueueProcessing} resume={submitSessionQueueProcessing}/>}{projection.pending.map(entry=><article className={`composer-outbox-entry status-${entry.status}`} key={entry.inputId}><div className="composer-outbox-meta"><span>{outboxStatusLabel(entry.status)}</span>{entry.status==='unknown'&&<button type="button" onClick={()=>void check(entry)}>Проверить доставку</button>}</div><div className="composer-outbox-text">{entry.text}</div>{entry.error&&<small>{entry.error}</small>}</article>)}
+  <form className="composer" onSubmit={e=>e.preventDefault()}><div className="composer-left"><select aria-label="Режим отправки" value={mode} onChange={e=>setMode(e.target.value as DeliveryMode)}><option value="queue">После ответа</option><option value="steer">В текущий ход</option></select></div><textarea aria-label="Сообщение удалённой сессии" placeholder={available?'Работайте с агентом':'Подключаю выбранную сессию…'} value={text} disabled={!available} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(isComposerSubmitShortcut(e)){e.preventDefault();void submit();}}}/><VoiceComposerControl key={key} sessionKey={key} disabled={!available||sending} onTranscript={transcript=>setText(current=>current?`${current}${current.endsWith('\n')?'':'\n'}${transcript}`:transcript)}/><ComposerSendControl disabled={!available||!text.trim()} busy={sending} onSend={nextMode=>{if(nextMode)setMode(nextMode);void submit(nextMode??mode);}} title={mode==='queue'?'Отправить после ответа агента':'Передать в текущий ход агента'}/></form></div>
  </section>;
 }

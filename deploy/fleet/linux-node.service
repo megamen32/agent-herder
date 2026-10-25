@@ -15,8 +15,8 @@ Environment=AGENT_HERDER_WEB_HOST=127.0.0.1
 Environment=AGENT_HERDER_WEB_PORT=18789
 Environment=NODE_OPTIONS=--max-old-space-size=512
 Environment=UV_THREADPOOL_SIZE=1
-MemoryHigh=384M
-MemoryMax=768M
+MemoryHigh=1G
+MemoryMax=2G
 MemorySwapMax=0
 CPUQuota=100%
 TasksMax=128

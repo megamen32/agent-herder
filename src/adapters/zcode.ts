@@ -21,9 +21,11 @@ import {
   type SessionMessagePart,
   type SessionMessageView,
   type SetPermissionsOptions,
+  type HarnessPermissionState,
   localSessionHostId,
 } from "../types/index.js";
 import { ZcodeAppServerClient, type ZcodeClientLike } from "./zcode-protocol.js";
+import { openZcodeQueueSnapshot, queueProcessingState, type ZcodeQueueProcessingState, type ZcodeResumeQueueOptions, type ZcodeResumeQueueResult } from './zcode-v4-queue.js';
 import { readZcodeActiveCandidates, zcodeStoredTailCanBeActive } from "./zcode-active.js";
 import {readZcodeOfficialRunning,connectZcodeOfficialWebSocket,type ZcodeOfficialRunning} from "./zcode-server-control.js";
 import { readExistingZcodeRuntimeObservation } from "./zcode-runtime-observation.js";
@@ -1023,6 +1025,22 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly officialWebSocketSelected:boolean;
   private readonly readOfficialRunningTasks?:()=>Promise<ZcodeOfficialRunning>;
   private officialRunning?:ZcodeOfficialRunning;
+  private officialNativeStates = new Map<string,{session:AgentSession;expiresAt:number;pid:number;generation:number}>();
+
+  private async refreshOfficialNativeStates():Promise<void>{
+    const snapshot=this.officialRunning;
+    if(!snapshot||!this.nativeReadWithoutActivation)return;
+    await Promise.all(snapshot.tasks.map(async task=>{
+      const cached=this.officialNativeStates.get(task.sessionId);
+      if(cached&&cached.expiresAt>Date.now()&&cached.pid===snapshot.pid&&cached.generation===snapshot.generation)return;
+      try{await this.getSession(task.sessionId);}
+      catch{
+        const session:AgentSession={id:task.sessionId,harness:'zcode',cwd:resolve(task.workspacePath),hostId:localSessionHostId(),title:task.sessionId,status:'error',needsPermission:false,lastActivity:snapshot.observedAt,
+          meta:{nativeStatus:'unknown',nativeReadError:'Не удалось прочитать текущее состояние существующей ZCode-сессии',activityEvidence:'zcode-native-state-unavailable'}};
+        this.officialNativeStates.set(task.sessionId,{session,expiresAt:Date.parse(snapshot.expiresAt),pid:snapshot.pid,generation:snapshot.generation});
+      }
+    }));
+  }
   get nativeReadWithoutActivation(): boolean { return this.officialWebSocketSelected; }
   private readonly cwd: string;
   private readonly modelIds: string[];
@@ -1139,6 +1157,68 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   getSessionSnapshotReceipt(): SessionSnapshotReceipt {
     return { ...this.sessionSnapshotReceipt };
+  }
+
+  private readonly queueResumeAttempts = new Map<string, Promise<ZcodeResumeQueueResult>>();
+
+  private async openLoadedQueue(id: string) {
+    if (!this.client.callIfReady) throw new Error('Existing native transport unavailable');
+    const workspace=this.sessionWorkspaces.get(id) || this.workspace();
+    const baseline=record(await this.client.callIfReady('zcode-agent','readSession',[{...workspace,sessionId:id,runtimePolicy:'existing-only',messageLimit:1}]));
+    if (record(baseline.session).sessionId !== id) throw new Error('Exact loaded session unavailable');
+    return openZcodeQueueSnapshot(this.client,{...workspace},id);
+  }
+
+  async getQueueProcessingState(id: string): Promise<ZcodeQueueProcessingState> {
+    const subscription=await this.openLoadedQueue(id);
+    try { return queueProcessingState(subscription.snapshot); } finally { await subscription.close(); }
+  }
+
+  /** Explicit user action only. This changes a persistent native session preference;
+   * ordinary sendMessage must never invoke it. Stable IDs may only be queried after uncertainty. */
+  async resumeQueueProcessing(id: string, options: ZcodeResumeQueueOptions): Promise<ZcodeResumeQueueResult> {
+    const key=JSON.stringify([id,options.inputId]);
+    const previous=this.queueResumeAttempts.get(key);
+    if (previous) return previous;
+    const attempt=this.resumeQueueProcessingOnce(id,options);
+    this.queueResumeAttempts.set(key,attempt);
+    return attempt;
+  }
+
+  private async resumeQueueProcessingOnce(id: string, options: ZcodeResumeQueueOptions): Promise<ZcodeResumeQueueResult> {
+    const result=(status:ZcodeResumeQueueResult['status'],error:string,state?:ZcodeQueueProcessingState):ZcodeResumeQueueResult =>
+      ({ok:false,status,inputId:options.inputId,error,...(state?{state}:{}),...(status==='unknown'?{nonRetryable:true}:{})});
+    if (!options.inputId?.trim() || !Number.isSafeInteger(options.expectedRevision) || options.expectedRevision<0)
+      return result('not-submitted','Требуется точный идентификатор действия и V4-ревизия.');
+    let subscription: Awaited<ReturnType<typeof openZcodeQueueSnapshot>> | undefined, attempted=false;
+    try {
+      subscription=await this.openLoadedQueue(id);
+      const baseline=subscription.snapshot, state=queueProcessingState(baseline);
+      if (state.baseRevision!==options.expectedRevision) return result('stale-no-write','Очередь изменилась; обновите состояние.',state);
+      if (!['completedSuccess','completedInterrupted','error'].includes(state.nativeState))
+        return result('not-submitted','Возобновление доступно только для загруженной завершённой сессии.',state);
+      if (!state.pendingCount) return result('not-submitted','Очередь пуста.',state);
+      // Native setAutoDrain(true) always reevaluates the oldest queued item,
+      // including a stalled queue whose persistent preference is already true.
+      const queried=record(await subscription.call('queryConversationCommandsV4',{commands:[{sessionId:id,commandId:options.inputId}]}));
+      const receipt=Array.isArray(queried.results)?queried.results.find((item:any)=>item.key?.sessionId===id&&item.key?.commandId===options.inputId):undefined;
+      if (!receipt) return result('not-submitted','Native не подтвердил проверку идентификатора действия.',state);
+      let ack:Record<string,any>;
+      if (receipt.result==='unknown') {
+        attempted=true;
+        ack=record(await subscription.call('sendConversationCommandV4',{envelope:{commandId:options.inputId,clientId:'agent-herder',sessionId:id,
+          type:'setAutoDrain',payload:{autoDrain:true},baseRevision:baseline.revision,baseLogEpoch:baseline.logEpoch,issuedAt:Date.now()}}));
+      } else ack=record(receipt.result);
+      if (ack.commandId!==options.inputId) return result('unknown','Квитанция относится к другому действию; повтор запрещён.');
+      const fresh=queueProcessingState(await subscription.fresh());
+      if (ack.status==='stale') return result('stale-no-write','Native отклонил устаревшую ревизию без записи.',fresh);
+      if (['accepted','duplicate'].includes(String(ack.status)) && fresh.autoDrain && fresh.baseRevision>=baseline.revision
+        && Number.isSafeInteger(ack.revisionAtDecision) && fresh.baseRevision>=ack.revisionAtDecision)
+        return {ok:true,status:'accepted',inputId:options.inputId,state:fresh};
+      return result('unknown','Обработка очереди не подтверждена свежим native состоянием; повтор запрещён.',fresh);
+    } catch(error) {
+      return result(attempted?'unknown':'not-submitted',error instanceof Error?error.message:String(error));
+    } finally { await subscription?.close(); }
   }
 
   /** Operator-selected exact input only; no native load, provider or send. */
@@ -1393,6 +1473,11 @@ export class ZcodeAdapter implements HarnessAdapter {
           activityEvidence:'zcode-official-supervisor-running-tasks',activityObservedAt:snapshot.observedAt,activityExpiresAt:snapshot.expiresAt,
           nativeRuntimePid:snapshot.pid,nativeRuntimeGeneration:snapshot.generation,...(task.parentSessionId?{parentSessionId:task.parentSessionId}:{}),nativeParentKnown:task.parentKnown??false,
           nativeActivityFresh:Date.parse(snapshot.expiresAt)>Date.now(),nativeExecutor:'official-server',deliveryRoute:this.officialWebSocketSelected?'official-server-ws':'official-server-unverified'}});
+      const native=this.officialNativeStates.get(task.sessionId);
+      if(native&&native.expiresAt>Date.now()&&native.pid===snapshot.pid&&native.generation===snapshot.generation){
+        const row=rows.get(task.sessionId)!;
+        rows.set(task.sessionId,{...row,...native.session,meta:{...row.meta,...native.session.meta}});
+      }
     }
     return [...rows.values()];
   }
@@ -1406,6 +1491,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     const candidates = stored.filter(session => !officialIds.has(session.id)&&(session.status === "running" || session.status === "needs_input"));
     let active:AgentSession[]=[];let candidateUnavailable=false;
     try{active=await readZcodeActiveCandidates(candidates, session => this.observeExistingRuntime(session.id, session.cwd));}catch{candidateUnavailable=true;}
+    await this.refreshOfficialNativeStates();
     const official=this.officialOverlay(stored).filter(row=>officialIds.has(row.id));
     this.activeSessionReceipt = { exhaustive: false, observedAt: new Date().toISOString(),
       source: "zcode-existing-native-runtime+official-supervisor", reason: officialUnavailable?'official_supervisor_unavailable':candidateUnavailable?'existing_runtime_candidates_partial':"known_task_candidates_only_loaded_identity_coverage_unknown" };
@@ -1416,7 +1502,8 @@ export class ZcodeAdapter implements HarnessAdapter {
     await this.observeAcceptedWorkspaceTurns();
     const persisted = await this.listPersistedSessions(options);
     const created = [...this.createdSessions.values()].filter((session) => !options.cwd || session.cwd === resolve(options.cwd));
-    const mergeCreated = (sessions: AgentSession[]): AgentSession[] => {
+    const mergeCreated = async (sessions: AgentSession[]): Promise<AgentSession[]> => {
+      await this.refreshOfficialNativeStates();
       const merged = new Map(sessions.map((session) => [session.id, session]));
       for (const session of created) if (!merged.has(session.id)) merged.set(session.id, session);
       return this.officialOverlay([...merged.values()]).filter(s=>!options.cwd||s.cwd===resolve(options.cwd)).sort((left, right) => Date.parse(right.lastActivity) - Date.parse(left.lastActivity));
@@ -1926,7 +2013,9 @@ export class ZcodeAdapter implements HarnessAdapter {
         const snapshot = await this.readSnapshot(id, this.sessionWorkspaces.get(id)!);
         if (sessionInfoFromPayload(snapshot)?.sessionId !== id) throw new Error("Native session identity mismatch");
         const current = mapSession(snapshot, observed.cwd);
-        return {...observed, ...current, meta:{...observed.meta,...current.meta}};
+        const session={...observed, ...current, meta:{...observed.meta,...current.meta,activityObservedAt:new Date().toISOString(),activityExpiresAt:this.officialRunning.expiresAt,activityEvidence:'zcode-existing-native-snapshot'}};
+        this.officialNativeStates.set(id,{session,expiresAt:Date.parse(this.officialRunning.expiresAt),pid:this.officialRunning.pid,generation:this.officialRunning.generation});
+        return session;
       }
       return observed;
     }
@@ -2094,8 +2183,49 @@ export class ZcodeAdapter implements HarnessAdapter {
     } catch { return undefined; }
   }
 
+  /** Resolve a project only from the current native owner catalog and an exact root match. */
+  private async resolveNativeProjectId(workspacePath: string): Promise<string> {
+    let tree: Record<string, unknown>;
+    try {
+      // Omitting hostId reads the app-server owner's catalog. Its ProjectRepository filters
+      // rows to that native owner; do not substitute Agent Herder's host ID here.
+      tree = record(await this.client.call("project", "readTree", []));
+    } catch (error) {
+      throw new Error(`ZCode native project mapping is unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (!Array.isArray(tree.projects) || tree.projects.length === 0) {
+      throw new Error("ZCode native project mapping has no registered projects for its owner namespace");
+    }
+
+    const projects = tree.projects.map(record);
+    const nativeHosts = projects.map((project) => nonEmptyString(project.hostId));
+    if (nativeHosts.some((hostId) => !hostId) || new Set(nativeHosts).size !== 1) {
+      throw new Error("ZCode native project mapping has a missing or mixed owner host namespace");
+    }
+
+    const matches = projects.filter((project) => {
+      const roots = Array.isArray(project.roots) ? project.roots.map(record) : [];
+      return roots.length === 1 && nonEmptyString(roots[0]?.rootPath) === workspacePath;
+    });
+    if (matches.length !== 1) {
+      throw new Error(`ZCode native project mapping requires one registered project with exact root ${workspacePath}; found ${matches.length}`);
+    }
+    const projectId = nonEmptyString(matches[0]?.id);
+    if (!projectId || nonEmptyString(matches[0]?.hostId) !== nativeHosts[0]) {
+      throw new Error("ZCode native project mapping does not match its verified owner host namespace");
+    }
+    return projectId;
+  }
+
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
+    const requestsYolo = options.mode === "yolo" || options.mode === "fullAuto";
+    if (options.fullAccess !== undefined && options.mode !== undefined
+      && options.fullAccess !== requestsYolo) {
+      throw new Error("Contradictory ZCode session permission options");
+    }
     const workspace = this.workspace(options.cwd);
+    const fullAccess = options.fullAccess ?? (options.mode === undefined || requestsYolo);
+    const nativeProjectId = await this.resolveNativeProjectId(workspace.workspacePath);
     // The installed native bridge does not implicitly import user MCP config.
     // Read through its supported resolver before creating the runtime draft.
     const mcpServers = this.useLocalConfig
@@ -2110,12 +2240,13 @@ export class ZcodeAdapter implements HarnessAdapter {
       : {};
     let snapshot = await this.callAgent("createSession", {
       ...workspace,
+      projectId: nativeProjectId,
       sessionTraceId: randomUUID(),
       // mode must be a concrete session mode ("build"): omitting it or
       // passing non-session values crashes this zcode-server build with an
       // NPE while resolving workspace defaults. Full-access creation is
       // confirmed separately through the native setMode response below.
-      mode: options.fullAccess ? "yolo" : options.mode || "build",
+      mode: fullAccess ? "yolo" : options.mode || "build",
       // Installed V4 persists a deferred draft before admitting its first input.
       // "immediate" skips that initialization and violates session_input's FK.
       persistence: "deferred",
@@ -2126,7 +2257,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     });
     const info = sessionInfoFromPayload(snapshot);
     if (!info) throw new Error("ZCode createSession returned no sessionId");
-    if (options.fullAccess && nativePermissionMode(snapshot) !== "yolo") {
+    if (fullAccess && nativePermissionMode(snapshot) !== "yolo") {
       snapshot = await this.callAgent("setMode", { ...workspace, sessionId: info.sessionId, mode: "yolo" });
       const updatedInfo = sessionInfoFromPayload(snapshot);
       if (updatedInfo?.sessionId !== info.sessionId || nativePermissionMode(snapshot) !== "yolo") {
@@ -2251,17 +2382,29 @@ export class ZcodeAdapter implements HarnessAdapter {
     return { ok: true };
   }
 
-  /** Native V4 owns guide/queue admission and command deduplication. Never
+  /** Native V4 owns start/guide/queue admission and command deduplication. Never
    * replace its receipt with our old RAM queue or retry through session/send. */
   private async sendConversationInput(id: string, options: SendMessageOptions & {workspaceCrashBoundary?:WorkspaceCrash}): Promise<SendMessageResult> {
     const origin = options.origin === "human" ? "human" : "automation";
     const inputId = options.inputId || randomUUID();
     const commandId = zcodeInputId(inputId, origin);
-    const requestedDelivery = options.steer ? "guide" : "queue";
+    const requestedDelivery: "guide" | "queue" = options.steer ? "guide" : "queue";
     let attempted = false;
     try {
       if (await getHumanStopStore().isHeld("zcode", id)) return {ok:false,inputId,error:"Чат явно остановлен; автоматическая отправка запрещена."};
-      const baseline = await this.readConversationBaseline(id);
+      let baseline: ZcodeSnapshot;
+      try {
+        // Delivery must never use plain session/resume as an implicit
+        // activation: that RPC carries no queue revision/IDs, so a zero-row
+        // read cannot protect an accepted input arriving concurrently.
+        baseline = await this.readConversationBaseline(id, false);
+      } catch (error) {
+        if (String(record(error).code) === "ZCODE_SESSION_LOAD_REQUIRES_CAS") {
+          return { ok: false, inputId, admitted: false, notSubmitted: true, nonRetryable: true,
+            error: error instanceof Error ? error.message : String(error) };
+        }
+        throw error;
+      }
       const permissionError = this.pendingPermissionError(baseline);
       if (permissionError) return { ok: false, inputId, error: permissionError };
       const stopStore = getHumanStopStore();
@@ -2288,8 +2431,8 @@ export class ZcodeAdapter implements HarnessAdapter {
       }
       attempted = true;
       // Pinned installed zcode-server.cjs exposes this exact service method.
-      // requestedDelivery=guide injects at the next supported native boundary;
-      // queue remains a native input intent, not a Herder timer/new inputId.
+      // Guide injects at the next supported native boundary; queue remains
+      // a native input intent. Resuming processing is a separate user action.
       const params = {
         ...workspace,
         envelope: {
@@ -2330,9 +2473,9 @@ export class ZcodeAdapter implements HarnessAdapter {
         this.ensureSessionEventSubscription(id, workspace);
         return { ok: true, pending: true, inputId };
       }
-      if (requestedDelivery === "queue" && nativeInput.delivery === "guide") {
+      if (nativeInput.delivery !== requestedDelivery) {
         return { ok: false, admitted: true, inputId, nonRetryable: true,
-          error: `ZCode принял сообщение в другом режиме (${String(nativeInput.delivery)}); повторная отправка запрещена.` };
+          error: `ZCode принял сообщение в другом режиме (${String(nativeInput.delivery)} вместо ${requestedDelivery}); повторная отправка запрещена.` };
       }
       if(origin==='automation'&&requestedDelivery==='queue'&&this.useLocalTurnMetadata){
         const current=this.observedActiveTurns.get(id)??{};
@@ -2347,6 +2490,29 @@ export class ZcodeAdapter implements HarnessAdapter {
     } catch (error) {
       return { ok: false, inputId, ...(attempted ? { admissionUnknown: true, nonRetryable: true } : {}),
         error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  /**
+   * A clean-idle start may bypass native queue admission only when the exact
+   * native DB proves there is no older accepted input to overtake. Missing DB,
+   * table, schema, or unreadable state is UNKNOWN and keeps the caller closed.
+   */
+  private async readPendingNativeInputs(sessionId: string): Promise<boolean | null> {
+    if (!this.useLocalTurnMetadata || !existsSync(this.localDbPath)) return null;
+    try {
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(this.localDbPath, { readOnly: true });
+      try {
+        const table = db.prepare("select 1 from sqlite_master where type = 'table' and name = 'session_input'").get();
+        if (!table) return null;
+        const columns = new Set((db.prepare("pragma table_info(session_input)").all() as Array<{ name?: string }>).map((column) => column.name));
+        if (!columns.has("session_id") || !columns.has("status")) return null;
+        const pending = db.prepare("select 1 from session_input where session_id = ? and status not in ('promoted','cancelled','discarded') limit 1").get(sessionId);
+        return Boolean(pending);
+      } finally { db.close(); }
+    } catch {
+      return null;
     }
   }
 
@@ -2561,8 +2727,62 @@ export class ZcodeAdapter implements HarnessAdapter {
     }
   }
 
-  async setPermissions(_sessionId: string, _options: SetPermissionsOptions): Promise<{ ok: boolean; error?: string }> {
-    return unsupported("permissions");
+  async getPermissionState(sessionId: string): Promise<HarnessPermissionState | null> {
+    try {
+      const workspace = this.sessionWorkspaces.get(sessionId) || this.workspace();
+      const snapshot = await this.readSnapshot(sessionId, workspace, 1);
+      if (sessionInfoFromPayload(snapshot)?.sessionId !== sessionId) return null;
+      const projection = record(record(snapshot).projection);
+      const pending = Array.isArray(projection.pendingPermissions) ? projection.pendingPermissions.map(record) : [];
+      const ids = Array.isArray(snapshot.runtime?.pendingRequestIds) ? snapshot.runtime.pendingRequestIds.map(String) : [];
+      return {
+        target: { hostId: localSessionHostId(), harness: "zcode", sessionId },
+        ...(nativePermissionMode(snapshot) ? { currentMode: nativePermissionMode(snapshot) } : {}),
+        scope: "session",
+        supportedModes: ["yolo"],
+        canSetMode: true,
+        pendingRequests: ids.map((id) => {
+          const request = pending.find((candidate) => String(candidate.requestId) === id);
+          return {
+            id,
+            ...(request && nonEmptyString(request.turnId) ? { turnId: nonEmptyString(request.turnId) } : {}),
+            ...(request && nonEmptyString(request.toolName) ? { toolName: nonEmptyString(request.toolName) } : {}),
+            ...(request && nonEmptyString(request.command) ? { command: nonEmptyString(request.command) } : {}),
+            ...(request && nonEmptyString(request.reason) ? { reason: nonEmptyString(request.reason) } : {}),
+            canRespond: true,
+            nativeMethod: "zcode-agent.respondPermission",
+          };
+        }),
+        observedAt: new Date().toISOString(),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async setPermissions(sessionId: string, options: SetPermissionsOptions): Promise<{ ok: boolean; error?: string }> {
+    if (options.allowedTools) return { ok: false, error: "ZCode exposes native mode switching, not per-tool permission rules" };
+    const requested = options.mode;
+    if (!requested) return { ok: false, error: "A native permission mode is required" };
+    const mode = requested === "fullAuto" || requested === "yolo" ? "yolo" : undefined;
+    if (!mode) return { ok: false, error: `Unsupported ZCode permission mode: ${requested}` };
+    try {
+      const workspace = this.sessionWorkspaces.get(sessionId) || this.workspace();
+      const before = await this.readSnapshot(sessionId, workspace, 1);
+      if (sessionInfoFromPayload(before)?.sessionId !== sessionId) return { ok: false, error: "Native session identity mismatch" };
+      if (before.runtime?.pendingRequestIds?.length) return { ok: false, error: "A native permission request is pending; resolve that exact request separately before changing mode" };
+      const result = await this.callAgent("setMode", { ...workspace, sessionId, mode });
+      if (sessionInfoFromPayload(result)?.sessionId !== sessionId || nativePermissionMode(result) !== mode) {
+        return { ok: false, error: "ZCode did not confirm the requested permission mode for this session" };
+      }
+      const readback = await this.readSnapshot(sessionId, workspace, 1);
+      if (sessionInfoFromPayload(readback)?.sessionId !== sessionId || nativePermissionMode(readback) !== mode) {
+        return { ok: false, error: "ZCode permission mode readback did not match the request" };
+      }
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   private readonly compactingSessions = new Map<string, { inputId: string; turnId?: string; expiresAt: number }>();
@@ -2940,7 +3160,7 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   private conversationLoads = new Map<string, Promise<ZcodeSnapshot>>();
 
-  private async readConversationBaseline(id: string): Promise<ZcodeSnapshot> {
+  private async readConversationBaseline(id: string, allowResume = true): Promise<ZcodeSnapshot> {
     const workspace = this.sessionWorkspaces.get(id) || this.workspace();
     try {
       const snapshot = await this.readSnapshot(id, workspace);
@@ -2948,9 +3168,15 @@ export class ZcodeAdapter implements HarnessAdapter {
       return snapshot;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      // Only explicit absence permits a prompt-free same-ID load. A read
-      // timeout/disconnect is unknown, and must never trigger send/replay.
+      // Only explicit absence can permit a prompt-free same-ID load for
+      // read-only callers. Delivery opts out because session/resume has no
+      // queue CAS; timeout/disconnect is unknown and never triggers replay.
       if (!["proto.sessionNotFound","ZCODE_AGENT_RUNTIME_UNAVAILABLE"].includes(String(record(error).code)) && !/\bSession not found\b|proto\.sessionNotFound|^ZCode Agent runtime is not running\.$/.test(message)) throw error;
+      if (!allowResume) {
+        throw Object.assign(new Error("Существующая ZCode-сессия не загружена; session/resume не имеет CAS для сохранения native queue, сообщение не отправлено."), {
+          code: "ZCODE_SESSION_LOAD_REQUIRES_CAS",
+        });
+      }
       let loading = this.conversationLoads.get(id);
       if (!loading) {
         loading = (async () => {

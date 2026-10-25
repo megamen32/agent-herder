@@ -1,0 +1,135 @@
+{
+  "checkedAt": "2026-10-25T12:23:00Z",
+  "runtimeSha": "478e22b965013faf7d43d30df92f626ab5ceb3df",
+  "runtimePid": 2847808,
+  "publicUiSha": "478e22b965013faf7d43d30df92f626ab5ceb3df",
+  "nginxSourceCommit": "7075e4feca9ac42d200e1ad3e43108b503ce6d16",
+  "acceptance": {
+    "runtimeChecks": "21/21",
+    "focusedTests": "57 passed; tsc and build passed",
+    "publicSSO": "302 to existing auth; authenticated public browser not available; same application verified in isolated loopback browser",
+    "permissionsAnswered": 0,
+    "businessSessionsResumed": 0,
+    "phoneCalls": 0,
+    "permissionUi": {
+      "collapsedHeightPx": 30,
+      "defaultExpanded": false,
+      "expandClickVerified": true,
+      "approvalSourceRegressions": 9,
+      "liveBusinessApprovals": 0
+    },
+    "queue": {
+      "inputId": "329d1871-95ee-489e-a9db-67112ff300f8",
+      "jobId": "job_cc18ca3f823710743c127cf77d99ac0e05d94732572a922e007aca5ceb17c7fc",
+      "sameInputId": true,
+      "sameJobId": true,
+      "sameCreatedAt": true,
+      "browserEditAndSave": true,
+      "cancelled": true,
+      "notSubmitted": true,
+      "outboxAfter": [],
+      "browser": "isolated AgentBrowser, actual installed app via127.0.0.1:18787"
+    },
+    "transientReads": "Airlock first parallel MCP read unavailable, sequential exact retry succeeded. Codex initial history warm-up failed; fresh read and UI re-open succeeded. Errors not represented as empty history or running.",
+    "finalBrowser": {
+      "Herder": "Bash; composer and history present",
+      "Broker": "ctx_execute; 12 messages",
+      "Voice": "ctx_search; 8 messages",
+      "Airlock": "ctx_batch_execute; 7 messages"
+    }
+  },
+  "sessions": [
+    {
+      "hostId": "roomhacker-server-100",
+      "nativeSessionId": "session_169d99b5-60fc-40cc-bd74-c5f17d3a3cf5",
+      "status": "needs_input",
+      "model": "account:zai-individual-coding-plan/GLM-5.3-Flash$high",
+      "permissionDetails": {
+        "id": "perm_a9aa5066-2a63-4252-b114-82d419d849ee",
+        "type": "permission",
+        "toolName": "Bash",
+        "description": "High risk tools require explicit approval",
+        "details": "high"
+      },
+      "historyUnavailable": false,
+      "messages": 3
+    },
+    {
+      "hostId": "roomhacker-server-100",
+      "nativeSessionId": "session_d609b412-12d2-44c0-999e-507aba8daba1",
+      "status": "needs_input",
+      "model": "account:zai-individual-coding-plan/GLM-5.3-Flash$high",
+      "permissionDetails": {
+        "id": "perm_67c91186-223f-4ff5-af8b-02266750504b",
+        "type": "permission",
+        "toolName": "mcp__plugin_context-mode_context-mode__ctx_execute",
+        "description": "High risk tools require explicit approval",
+        "details": "high"
+      },
+      "historyUnavailable": false,
+      "messages": 3
+    },
+    {
+      "hostId": "roomhacker-server-100",
+      "nativeSessionId": "session_4af62dcc-f19a-4e36-b093-7f5835b179d0",
+      "status": "needs_input",
+      "model": "account:zai-individual-coding-plan/GLM-5.3-Flash$high",
+      "permissionDetails": {
+        "id": "perm_c3c6222f-d344-4030-8c6f-f8b052fa44f2",
+        "type": "permission",
+        "toolName": "mcp__plugin_context-mode_context-mode__ctx_search",
+        "description": "Tool has side effects and requires approval",
+        "details": "low"
+      },
+      "historyUnavailable": false,
+      "messages": 3
+    },
+    {
+      "hostId": "roomhacker-server-100",
+      "nativeSessionId": "session_de68d80a-1f26-409b-9ae8-2f61ff0baad9",
+      "status": "needs_input",
+      "model": "account:zai-individual-coding-plan/GLM-5.3-Flash$high",
+      "permissionDetails": {
+        "id": "perm_eef10dd5-5c34-4ca9-b376-e87227960814",
+        "type": "permission",
+        "toolName": "mcp__plugin_context-mode_context-mode__ctx_batch_execute",
+        "description": "High risk tools require explicit approval",
+        "details": "high"
+      },
+      "historyUnavailable": false,
+      "messages": 3
+    }
+  ],
+  "delivery": {
+    "inputId": "herder-repair-20261025-final-release-v3",
+    "turnId": "01a172d4-cd99-7463-8230-1019376fc015",
+    "admitted": true,
+    "nativeReadback": "fleet_session_view confirms message as user item linked herder://m/fce9aa85"
+  },
+  "nginx": {
+    "siteApplied": true,
+    "globalSynchronized": false,
+    "blockers": [
+      "foreign WIP new.auto-gram.ru, lhc.bezrabotnyi.com, generated manifest",
+      "canonical local HEAD diverged: 16 local-only and 537 remote-only commits",
+      "9 managed live drift paths outside Agent Herder"
+    ],
+    "noticeplaceIncident": "inc_55aaf7978b0c40ae8cfa2c496e3dd447",
+    "noticeplaceDelivery": "telegram.main sent; mute list empty for nginx-dev incident"
+  },
+  "previousRelease": {
+    "runtimeSha": "9d2abbe3b8c1f10026f8ebaf5dfed018884a127d",
+    "runtimePid": 2065543,
+    "nginxSourceCommit": "75cf1af297a1dbfc720bfb7c6dc8cdf1731f908f"
+  },
+  "planUrl": "https://lhc.bezrabotnyi.com/agent-herder/plan-20261025-1523-617aa44029ef0090f8e68201/",
+  "runtimeNRestarts": 0,
+  "foreignWipPreserved": [
+    "src/mcp/session-tools.ts",
+    "src/mesh/register-tools.ts",
+    "src/session-labels.ts",
+    "tests/l54-panel-routes.test.ts",
+    "tests/l69-session-label-write.test.ts",
+    "tests/l71-mcp-mesh-label.test.ts"
+  ]
+}

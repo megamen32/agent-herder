@@ -1,9 +1,9 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { MinimaxCodeControl } from "../src/adapters/minimax-code-control.js";
+import { MinimaxCodeControl, minimaxExecArgs } from "../src/adapters/minimax-code-control.js";
 
 interface Recorded {
   method: string;
@@ -55,6 +55,16 @@ async function publishControl(
 }
 
 describe("MinimaxCodeControl", () => {
+  it("binds only an allowlisted invocation policy to the exact exec argv", () => {
+    expect(minimaxExecArgs("mvs_exact", "/work", "full")).toEqual([
+      "exec", "--cwd", "/work", "--session", "mvs_exact", "--permission", "full",
+      "--input", "-", "--input-format", "text", "--output-format", "json",
+    ]);
+    expect(minimaxExecArgs("mvs_exact", "/work")).toEqual([
+      "exec", "--cwd", "/work", "--session", "mvs_exact", "--input", "-", "--input-format", "text", "--output-format", "json",
+    ]);
+  });
+
   it("steers the running turn of a session through its queued item", async () => {
     const { control, recorded } = await publishControl((request, response) => {
       response.writeHead(200, { "content-type": "application/json" });
@@ -156,5 +166,44 @@ describe("MinimaxCodeControl", () => {
     const result = await control.sendMessage("mvs_6", "привет");
     expect(result.ok).toBe(false);
     expect(result.error).toContain("not published");
+    expect(result.notSubmitted).toBe(true);
+  });
+
+  it("keeps a failed request to a stale published transport ambiguous",async()=>{
+    const dir=await mkdtemp(join(tmpdir(),"minimax-code-control-stale-"));created.push(dir);
+    const manifestPath=join(dir,"manifest.json");
+    await writeFile(manifestPath,JSON.stringify({host:"127.0.0.1",port:1,pid:1}));
+    const control=new MinimaxCodeControl({manifestPath,timeoutMs:200});
+    const result=await control.enqueue("mvs_stale","benign");
+    expect(result).toMatchObject({ok:false,admissionUnknown:true});
+    expect(result.notSubmitted).toBeUndefined();
+  });
+
+  it("runs only the exact existing session ID, sends content on stdin, and strips router credentials", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "minimax-code-cli-test-"));
+    created.push(dir);
+    const cli = join(dir, "mcode-fake");
+    await writeFile(cli, `#!/usr/bin/env node
+let input = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => input += chunk);
+process.stdin.on("end", () => {
+  const expected = ["exec", "--cwd", ${JSON.stringify(dir)}, "--session", "mvs_exact", "--input", "-", "--input-format", "text", "--output-format", "json"];
+    const valid = JSON.stringify(process.argv.slice(2)) === JSON.stringify(expected)
+    && process.env.MINIMAX_DATA_DIR === ${JSON.stringify(dir)} && !process.env.MAVIS_DATA_DIR
+    && input === "private-marker-stdin"
+    && !process.env.OPENAI_API_KEY && !process.env.OPENAI_BASE_URL && !process.env.OMNIROUTE_API_KEY && !process.env.OMNIROUTE_BASE_URL;
+  process.stdout.write(JSON.stringify(valid
+    ? { sessionId: "mvs_exact", turnId: "turn_1", status: "succeeded", model: { providerId: "minimax", modelId: "MiniMax-M3.1-Flash", providerKind: "minimax-managed" } }
+    : { error: "fake_cli_contract_failed" }));
+});
+`);
+    await chmod(cli, 0o700);
+    const control = new MinimaxCodeControl({ cliPath: cli, manifestPath: join(dir, "missing.json") });
+
+    const result = await control.runSession("mvs_exact", dir, dir, "private-marker-stdin");
+
+    expect(result).toMatchObject({ ok: true, body: { sessionId: "mvs_exact", turnId: "turn_1", status: "succeeded" } });
+    expect(JSON.stringify(result)).not.toContain("private-marker-stdin");
   });
 });

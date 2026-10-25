@@ -36,6 +36,7 @@ import type {
   HarnessEvent,
   MessageAdmissionResult,
   SendMessageOptions,
+  SessionRenameOutcome,
   SetPermissionsOptions,
   RawTranscriptExport,
   SessionMessageView,
@@ -49,6 +50,16 @@ import type { ProjectExecutionBinding } from "../project-execution-scope.js";
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * The names that the app-server child inherits from the address of the caller.
+ *
+ * The data home of the app instance is one of them: the app-server of a
+ * project must use the home of its instance, and not the home directory of
+ * the user. The seam of the environment keeps an addressed name even when
+ * the background of the herder names the same value.
+ */
+const APP_SERVER_OWNED_ENV: readonly string[] = ["CODEX_HOME"];
+
 interface ProjectScopeDirectoryIdentity {
   path: string;
   device: number;
@@ -60,6 +71,19 @@ interface RpcResponse {
   emittedAtMs?: number;
   result?: unknown;
   error?: { message?: string; code?: number };
+}
+
+interface CodexPendingPermissionRequest {
+  rpcId: number;
+  threadId: string;
+  method: string;
+  turnId?: string;
+  itemId?: string;
+  command?: string;
+  reason?: string;
+  responded: boolean;
+  resolveResponse?: (confirmed: boolean) => void;
+  responseTimer?: NodeJS.Timeout;
 }
 
 class CodexRpcError extends Error {
@@ -76,6 +100,7 @@ interface CodexThread {
   model?: string | null;
   modelProvider?: string;
   status?: string | { type?: string; activeFlags?: string[] };
+  canAcceptDirectInput?: boolean | null;
   createdAt?: string | number;
   updatedAt?: string | number;
 }
@@ -83,8 +108,21 @@ interface CodexThread {
 interface CodexThreadPermissionState {
   approvalPolicy?: unknown;
   sandbox?: { type?: unknown };
+  sandboxPolicy?: { type?: unknown };
   activePermissionProfile?: { id?: unknown } | null;
   runtimeWorkspaceRoots?: unknown;
+}
+
+interface CodexOwnedPermissionState {
+  generation: number;
+  native: CodexThreadPermissionState;
+  observedAt: string;
+}
+
+interface CodexPermissionSettingsWaiter {
+  generation: number;
+  resolve: (state: CodexThreadPermissionState | undefined) => void;
+  timer: NodeJS.Timeout;
 }
 
 /** Native terminal evidence, not a Stop invocation or a business verdict. */
@@ -139,7 +177,15 @@ export interface CodexMaterializationProgress {
 }
 
 function hasCodexFullAccess(state: CodexThreadPermissionState): boolean {
-  return state.approvalPolicy === "never" && state.sandbox?.type === "dangerFullAccess";
+  return state.approvalPolicy === "never" && (state.sandboxPolicy?.type ?? state.sandbox?.type) === "dangerFullAccess";
+}
+
+function codexPermissionMode(state: CodexThreadPermissionState): "default" | "fullAuto" | undefined {
+  if (state.activePermissionProfile !== null) return undefined;
+  const sandboxType = state.sandboxPolicy?.type ?? state.sandbox?.type;
+  if (state.approvalPolicy === "never" && sandboxType === "dangerFullAccess") return "fullAuto";
+  if (state.approvalPolicy === "on-request" && sandboxType === "workspaceWrite") return "default";
+  return undefined;
 }
 
 function withKnownModel(session: AgentSession, model: unknown): AgentSession {
@@ -251,10 +297,16 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private initialization?: Promise<void>;
   private nextRequestId = 1;
   private readonly pending = new Map<number, PendingRequest>();
+  /** Server requests are answered only on the exact RPC connection that received them. */
+  private readonly pendingPermissionRequests = new Map<string, CodexPendingPermissionRequest>();
   private readonly threads = new Map<string, CodexThread>();
+  /** Permission-setting authority exists only for threads started by this live transport owner. */
+  private readonly ownedPermissionThreads = new Map<string, CodexOwnedPermissionState>();
+  private readonly permissionSettingsWaiters = new Map<string, CodexPermissionSettingsWaiter>();
+  private readonly permissionSettingsUpdates = new Set<string>();
+  private transportGeneration = 0;
   private readonly projectLiveMessages = new Map<string, SessionMessageView[]>();
   private readonly projectCommandReceipts = new Map<string, CodexProjectCommandReceipt[]>();
-  private readonly fullAccessThreads = new Set<string>();
   private readonly projectThreadIds = new Set<string>();
   private readonly activeTurns = new Map<string, string>();
   private readonly eventStartedTurns = new Set<string>();
@@ -460,6 +512,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   private async disposeOwned(): Promise<void> {
     this.disposed = true;
+    this.invalidateOwnedPermissionThreads();
     this.lifecycleSignal?.removeEventListener("abort", this.abortListener);
     this.initialized = false;
     const pendingInitialization = this.initialization;
@@ -953,7 +1006,6 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     if (options.fullAccess) {
       if (!hasCodexFullAccess(result)) throw new Error("Codex app-server did not confirm the requested full-access thread settings");
-      this.fullAccessThreads.add(thread.id);
     }
     // Codex ephemeral threads are not persisted and reject all metadata updates.
     // The project-scoped session name is local presentation state only.
@@ -963,6 +1015,14 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     thread.name = options.name;
     thread.cwd = thread.cwd || options.cwd;
     this.threads.set(thread.id, thread);
+    if (!this.projectRuntimePolicy) {
+      this.ownedPermissionThreads.set(thread.id, {
+        generation: this.transportGeneration,
+        native: { approvalPolicy: result.approvalPolicy, sandbox: result.sandbox, sandboxPolicy: result.sandboxPolicy,
+          activePermissionProfile: result.activePermissionProfile },
+        observedAt: new Date().toISOString(),
+      });
+    }
     this.emitEvent({ kind: "session.created", harness: "codex", sessionId: thread.id, status: "idle" });
     return this.toSession(thread);
     } catch (error) {
@@ -1206,9 +1266,20 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
   }
 
+  /**
+   * The environment of the app-server child process.
+   *
+   * The data home of the app instance is named in it: the app-server of a
+   * project must use the home of its instance, and not fall back to the home
+   * directory of the user.
+   */
+  private appServerChildEnvironment(): NodeJS.ProcessEnv {
+    return { ...process.env, CODEX_HOME: this.appServerDataHome };
+  }
+
   private projectChildEnvironment(): NodeJS.ProcessEnv | undefined {
     if (!this.projectRuntimePolicy) return undefined;
-    return { ...process.env, CODEX_HOME: this.appServerDataHome };
+    return this.appServerChildEnvironment();
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<ControlResult> {
@@ -1545,11 +1616,58 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       }
       await this.request("thread/archive", { threadId: id });
       this.threads.delete(id);
+      this.dropOwnedPermissionThread(id);
       this.activeTurns.delete(id);
       this.emitEvent({ kind: "session.updated", harness: "codex", sessionId: id, nativeType: "thread/archive" });
       return { ok: true, sessionId: id };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  /**
+   * Rename one existing native thread in place.
+   *
+   * Only the user-facing title of the same thread changes. The native
+   * `thread/name/set` writes it and the native `thread/read` proves it: no
+   * thread is created, no turn is started, and an active turn keeps running.
+   */
+  async renameSession(id: string, options: { title: string }): Promise<SessionRenameOutcome> {
+    const title = typeof options?.title === "string" ? options.title.trim() : "";
+    if (!title) return { ok: false, nonRetryable: true, error: "A session title is required" };
+    if (this.projectRuntimePolicy) {
+      // A project-scoped thread is ephemeral and keeps its own presentation
+      // name; the native name of such a thread is not Herder's to write.
+      return { ok: false, nonRetryable: true, error: "A project-scoped Codex thread keeps its own name" };
+    }
+    try {
+      await this.ensureReady();
+      this.assertLifecycleActive();
+      const before = await this.request("thread/read", { threadId: id, includeTurns: false }) as { thread?: CodexThread };
+      if (before.thread?.id !== id) {
+        return { ok: false, nonRetryable: true, error: `Codex thread ${id} was not found`, sessionId: id };
+      }
+      const previousTitle = before.thread.name ?? null;
+      await this.request("thread/name/set", { threadId: id, name: title });
+      this.assertLifecycleActive();
+      const after = await this.request("thread/read", { threadId: id, includeTurns: false }) as { thread?: CodexThread };
+      if (after.thread?.id !== id) {
+        return { ok: false, error: `Codex thread ${id} could not be read back after the rename`, sessionId: id };
+      }
+      const nativeTitle = after.thread.name ?? "";
+      if (nativeTitle !== title) {
+        return {
+          ok: false,
+          error: `Codex kept the title "${nativeTitle}" instead of "${title}"`,
+          sessionId: id,
+          previousTitle,
+        };
+      }
+      this.threads.set(id, after.thread);
+      this.emitEvent({ kind: "session.updated", harness: "codex", sessionId: id, nativeType: "thread/name/set" });
+      return { ok: true, sessionId: id, previousTitle, title: nativeTitle };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error), sessionId: id };
     }
   }
 
@@ -1585,16 +1703,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       const result = await this.request("thread/resume", {
         threadId: id,
         ...(this.projectRuntimePolicy ? codexProjectResumeParams(this.projectRuntimePolicy) : {}),
-        ...(this.fullAccessThreads.has(id) ? { approvalPolicy: "never", sandbox: "danger-full-access" } : {}),
       }) as { thread?: CodexThread } & CodexThreadPermissionState;
       if (!result.thread?.id) throw new Error("Codex thread/resume did not return a thread id");
       if (result.thread.id !== id) throw new Error(`Codex thread/resume returned a different thread id (${result.thread.id})`);
       if (this.projectRuntimePolicy && !codexProjectPermissionObserved(result, this.projectRuntimePolicy)) {
         throw new Error("Codex resume did not confirm the project permission profile and exact runtime root");
-      }
-      if (hasCodexFullAccess(result)) this.fullAccessThreads.add(id);
-      if (this.fullAccessThreads.has(id) && !hasCodexFullAccess(result)) {
-        throw new Error("Codex app-server did not preserve the full-access thread settings on resume");
       }
       this.threads.set(id, result.thread);
       return { ok: true };
@@ -1652,14 +1765,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         threadId: sessionId,
         model,
         ...(this.projectRuntimePolicy ? codexProjectResumeParams(this.projectRuntimePolicy) : {}),
-        ...(this.fullAccessThreads.has(sessionId) ? { approvalPolicy: "never", sandbox: "danger-full-access" } : {}),
       }) as { thread?: CodexThread } & CodexThreadPermissionState;
-      if (hasCodexFullAccess(result)) this.fullAccessThreads.add(sessionId);
       if (this.projectRuntimePolicy && !codexProjectPermissionObserved(result, this.projectRuntimePolicy)) {
         throw new Error("Codex model switch did not confirm the project permission profile and exact runtime root");
-      }
-      if (this.fullAccessThreads.has(sessionId) && !hasCodexFullAccess(result)) {
-        throw new Error("Codex app-server did not preserve the full-access thread settings on model switch");
       }
       const thread = result.thread || this.threads.get(sessionId);
       if (thread) {
@@ -1743,16 +1851,183 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async respondPermission(
-    _sessionId: string,
-    _permissionId: string,
-    _response: "allow" | "deny",
+    sessionId: string,
+    permissionId: string,
+    response: "allow" | "deny",
     _remember?: boolean,
   ): Promise<ControlResult> {
-    return { ok: false, error: "Codex app-server permission response is not implemented in this adapter yet" };
+    const request = this.pendingPermissionRequests.get(permissionId);
+    if (!request || request.threadId !== sessionId) return { ok: false, error: "Codex approval is not pending on this exact native RPC connection and thread" };
+    if (request.responded) return { ok: false, error: "Codex approval response was already written on this connection" };
+    if (request.method !== "item/commandExecution/requestApproval" && request.method !== "item/fileChange/requestApproval") {
+      return { ok: false, error: "This Codex approval requires a permission subset unsupported by the allow/deny control" };
+    }
+    if (!this.isTransportWritable()) return { ok: false, error: "The Codex RPC connection that owns this approval is no longer writable" };
+    try {
+      request.responded = true;
+      const confirmation = new Promise<boolean>((resolve) => {
+        request.resolveResponse = resolve;
+        request.responseTimer = setTimeout(() => resolve(false), 5_000);
+        request.responseTimer.unref?.();
+      });
+      this.writeMessage({ id: request.rpcId, result: { decision: response === "allow" ? "accept" : "decline" } });
+      if (!await confirmation) return { ok: false, error: "Codex response was written, but native serverRequest/resolved was not observed; the outcome is unknown and must not be replayed" };
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      if (request.responseTimer) clearTimeout(request.responseTimer);
+      request.responseTimer = undefined;
+      request.resolveResponse = undefined;
+    }
   }
 
-  async setPermissions(_sessionId: string, _options: SetPermissionsOptions): Promise<ControlResult> {
-    return { ok: false, error: "Codex app-server permissions must be configured at thread start" };
+  async getPermissionState(sessionId: string): Promise<import("../types/index.js").HarnessPermissionState | null> {
+    try {
+      await this.ensureReady();
+      const observed = await this.request("thread/read", { threadId: sessionId, includeTurns: false }) as { thread?: CodexThread } & CodexThreadPermissionState;
+      if (observed.thread?.id !== sessionId) return null;
+      this.threads.set(sessionId, observed.thread);
+      const ownerState = this.ownedPermissionThreads.get(sessionId);
+      const owned = !this.projectRuntimePolicy && this.isReady() && ownerState?.generation === this.transportGeneration;
+      const nativeProfileUnambiguous = owned && ownerState?.native.activePermissionProfile === null;
+      const pendingRequests = [...this.pendingPermissionRequests.entries()]
+        .filter(([, request]) => request.threadId === sessionId && !request.responded)
+        .map(([id, request]) => ({ id, ...(request.turnId ? { turnId: request.turnId } : {}),
+          ...(request.itemId ? { itemId: request.itemId } : {}), ...(request.command ? { command: request.command } : {}),
+          ...(request.reason ? { reason: request.reason } : {}), nativeMethod: request.method,
+          canRespond: request.method === "item/commandExecution/requestApproval" || request.method === "item/fileChange/requestApproval",
+          ...(request.method === "item/permissions/requestApproval" ? { unsupportedReason: "Codex requires returning a native permission subset for this request; allow/deny is insufficient" } : {}) }));
+      return {
+        target: { hostId: localSessionHostId(), harness: "codex", sessionId },
+        // This describes execution through this Herder-owned app-server only;
+        // a matching persisted ID in Desktop/TUI is a different controller.
+        scope: "session",
+        // ThreadReadResponse has no profile fields. Report settings only from
+        // this owner’s exact thread/start response or native update event.
+        ...(owned && ownerState && codexPermissionMode(ownerState.native) ? { currentMode: codexPermissionMode(ownerState.native)! } : {}),
+        supportedModes: nativeProfileUnambiguous ? ["default", "fullAuto"] : [],
+        canSetMode: Boolean(nativeProfileUnambiguous && !this.activeTurns.has(sessionId) && pendingRequests.length === 0
+          && observed.thread.canAcceptDirectInput !== false
+          && ["idle", "stopped", "completed", "interrupted"].includes(this.threadStatusTag(observed.thread.status) || "")),
+        pendingRequests,
+        observedAt: owned && ownerState ? ownerState.observedAt : new Date().toISOString(),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async setPermissions(sessionId: string, options: SetPermissionsOptions): Promise<ControlResult> {
+    if (options.allowedTools) return { ok: false, nonRetryable: true, error: "Codex app-server exposes native permission profiles, not per-tool permission rules" };
+    const mode = options.mode;
+    const desired: CodexThreadPermissionState | undefined = mode === "fullAuto"
+      ? { approvalPolicy: "never", sandboxPolicy: { type: "dangerFullAccess" }, activePermissionProfile: null }
+      : mode === "default"
+        ? { approvalPolicy: "on-request", sandboxPolicy: { type: "workspaceWrite" }, activePermissionProfile: null }
+        : undefined;
+    if (!desired) return { ok: false, nonRetryable: true, error: `Unsupported Codex permission mode: ${String(mode)}` };
+    if (this.projectRuntimePolicy) return { ok: false, nonRetryable: true, error: "project-scoped Codex permission settings are owned by the project runtime policy" };
+    if (this.permissionSettingsUpdates.has(sessionId)) return { ok: false, nonRetryable: true, error: "A Codex permission update is already in progress for this thread" };
+
+    let sent = false;
+    let waiter: Promise<CodexThreadPermissionState | undefined> | undefined;
+    try {
+      await this.ensureReady();
+      const ownerState = this.ownedPermissionThreads.get(sessionId);
+      if (!this.isReady() || !ownerState || ownerState.generation !== this.transportGeneration) {
+        return { ok: false, nonRetryable: true, error: "Codex permission mode is available only for a thread created by this live app-server owner" };
+      }
+      if (ownerState.native.activePermissionProfile !== null) {
+        return { ok: false, nonRetryable: true, error: "Codex effective permission-profile provenance is unknown or named; refusing to replace it with a sandbox mode" };
+      }
+      if (this.activeTurns.has(sessionId) || [...this.pendingPermissionRequests.values()].some(request => request.threadId === sessionId && !request.responded)) {
+        return { ok: false, nonRetryable: true, error: "Codex permission mode cannot change while the thread has an active turn or pending approval" };
+      }
+
+      const loaded = await this.request("thread/loaded/list", { limit: 200 }) as { data?: unknown[]; nextCursor?: string | null };
+      if (!Array.isArray(loaded.data) || loaded.data.some(id => typeof id !== "string" || !id || id.length > 512 || /[\x00-\x1f\x7f]/.test(id))) {
+        return { ok: false, nonRetryable: true, error: "Codex app-server did not return a valid loaded-thread identity list" };
+      }
+      if (!loaded.data.includes(sessionId)) return { ok: false, nonRetryable: true, error: "The owned Codex thread is no longer loaded in this app-server" };
+      const read = await this.request("thread/read", { threadId: sessionId, includeTurns: false }) as { thread?: CodexThread };
+      const thread = read.thread;
+      if (thread?.id !== sessionId) return { ok: false, nonRetryable: true, error: "Codex thread identity did not match the requested permission target" };
+      const status = this.threadStatusTag(thread.status);
+      const activeFlags = this.threadActiveFlags(thread.status);
+      if (this.activeTurns.has(sessionId) || thread.canAcceptDirectInput === false
+        || activeFlags.includes("waitingOnApproval") || activeFlags.includes("waitingOnUserInput")
+        || !["idle", "stopped", "completed", "interrupted"].includes(status || "")) {
+        return { ok: false, nonRetryable: true, error: "Codex permission mode cannot change while the native thread is active or awaiting input" };
+      }
+
+      if (this.ownedPermissionThreads.get(sessionId) !== ownerState || ownerState.generation !== this.transportGeneration || !this.isReady()) {
+        return { ok: false, nonRetryable: true, error: "Codex app-server ownership changed during permission preflight" };
+      }
+      if (this.activeTurns.has(sessionId) || [...this.pendingPermissionRequests.values()].some(request => request.threadId === sessionId && !request.responded)) {
+        return { ok: false, nonRetryable: true, error: "Codex thread became active or received a pending approval during permission preflight" };
+      }
+      if (this.permissionSettingsWaiters.has(sessionId)) return { ok: false, nonRetryable: true, error: "A Codex settings observation is already pending for this thread" };
+
+      this.permissionSettingsUpdates.add(sessionId);
+      waiter = this.waitForPermissionSettingsUpdate(sessionId, ownerState.generation);
+      sent = true;
+      await this.request("thread/settings/update", {
+        threadId: sessionId,
+        approvalPolicy: desired.approvalPolicy,
+        sandboxPolicy: desired.sandboxPolicy,
+      });
+      const observed = await waiter;
+      if (!observed || codexPermissionMode(observed) !== mode) {
+        this.dropOwnedPermissionThread(sessionId);
+        return { ok: false, nonRetryable: true, error: "Codex settings/update outcome is unknown; no matching effective settings notification confirmed it, so do not retry" };
+      }
+      return { ok: true, sessionId };
+    } catch (error) {
+      if (sent) this.dropOwnedPermissionThread(sessionId);
+      return { ok: false, nonRetryable: true,
+        error: sent ? `Codex settings/update outcome is unknown; do not retry: ${error instanceof Error ? error.message : String(error)}`
+          : error instanceof Error ? error.message : String(error) };
+    } finally {
+      if (waiter) this.clearPermissionSettingsWaiter(sessionId);
+      this.permissionSettingsUpdates.delete(sessionId);
+    }
+  }
+
+  private waitForPermissionSettingsUpdate(threadId: string, generation: number): Promise<CodexThreadPermissionState | undefined> {
+    return new Promise(resolve => {
+      const timer = setTimeout(() => {
+        const waiter = this.permissionSettingsWaiters.get(threadId);
+        if (waiter?.generation !== generation) return;
+        this.permissionSettingsWaiters.delete(threadId);
+        resolve(undefined);
+      }, this.requestTimeoutMs);
+      timer.unref?.();
+      this.permissionSettingsWaiters.set(threadId, { generation, resolve, timer });
+    });
+  }
+
+  private clearPermissionSettingsWaiter(threadId: string): void {
+    const waiter = this.permissionSettingsWaiters.get(threadId);
+    if (!waiter) return;
+    clearTimeout(waiter.timer);
+    this.permissionSettingsWaiters.delete(threadId);
+  }
+
+  private dropOwnedPermissionThread(threadId: string): void {
+    this.ownedPermissionThreads.delete(threadId);
+    const waiter = this.permissionSettingsWaiters.get(threadId);
+    if (waiter) {
+      clearTimeout(waiter.timer);
+      this.permissionSettingsWaiters.delete(threadId);
+      waiter.resolve(undefined);
+    }
+  }
+
+  private invalidateOwnedPermissionThreads(): void {
+    for (const threadId of this.ownedPermissionThreads.keys()) this.dropOwnedPermissionThread(threadId);
+    for (const threadId of this.permissionSettingsWaiters.keys()) this.dropOwnedPermissionThread(threadId);
+    this.permissionSettingsUpdates.clear();
   }
 
   private async ensureReady(): Promise<void> {
@@ -2028,6 +2303,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private async startSocket(): Promise<void> {
     const socketPath = this.socketPath;
     if (!socketPath) throw new Error("Codex app-server socket path is not configured");
+    this.beginTransportGeneration();
     const socket = new WebSocket(`ws+unix:${socketPath}:/rpc`, {
       perMessageDeflate: false,
       handshakeTimeout: this.requestTimeoutMs,
@@ -2083,11 +2359,13 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private startProcess(): void {
+    this.beginTransportGeneration();
     const child = spawnIsolatedWorkload(this.codexBin, this.processArgs, {
       label: "codex-app-server",
       cwd: this.cwd,
       stdio: ["pipe", "pipe", "pipe"],
-      env: this.projectChildEnvironment(),
+      env: this.appServerChildEnvironment(),
+      ownedEnv: APP_SERVER_OWNED_ENV,
     }) as ChildProcessWithoutNullStreams;
     this.child = child;
     this.stderrTail = "";
@@ -2147,6 +2425,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private clearTransportState(error: Error, data: Record<string, unknown>, failActiveTurns: boolean): void {
+    this.invalidateOwnedPermissionThreads();
     const interruptedSessions = [...this.activeTurns.entries()];
     this.activeTurns.clear();
     this.eventStartedTurns.clear();
@@ -2166,6 +2445,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         });
     }
     this.emitEvent({ kind: "process.disconnected", harness: "codex", data: { transport: "app-server", ...data } });
+  }
+
+  private beginTransportGeneration(): void {
+    this.transportGeneration++;
+    this.invalidateOwnedPermissionThreads();
   }
 
   private notify(method: string, params: unknown): void {
@@ -2269,6 +2553,46 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     if (!message.method || !message.params) return;
     const params = message.params;
+    if (message.method === "thread/settings/updated") {
+      const threadId = typeof params.threadId === "string" ? params.threadId : undefined;
+      if (!threadId) return;
+      const ownerState = this.ownedPermissionThreads.get(threadId);
+      const rawSettings = params.threadSettings;
+      const settings = rawSettings && typeof rawSettings === "object" && !Array.isArray(rawSettings)
+        ? rawSettings as CodexThreadPermissionState
+        : undefined;
+      if (ownerState?.generation === this.transportGeneration) {
+        if (settings) {
+          ownerState.native = settings;
+          ownerState.observedAt = new Date().toISOString();
+        } else {
+          this.ownedPermissionThreads.delete(threadId);
+        }
+      }
+      const waiter = this.permissionSettingsWaiters.get(threadId);
+      if (waiter?.generation === this.transportGeneration) {
+        clearTimeout(waiter.timer);
+        this.permissionSettingsWaiters.delete(threadId);
+        waiter.resolve(settings);
+      }
+      this.emitEvent({ kind: "session.updated", harness: "codex", sessionId: threadId, nativeType: message.method });
+      return;
+    }
+    if (["thread/closed", "thread/archived", "thread/deleted"].includes(message.method)) {
+      const threadId = typeof params.threadId === "string" ? params.threadId : undefined;
+      if (threadId) this.dropOwnedPermissionThread(threadId);
+    }
+    if (message.method === "serverRequest/resolved") {
+      const requestId = typeof params.requestId === "number" || typeof params.requestId === "string" ? String(params.requestId) : undefined;
+      const threadId = typeof params.threadId === "string" ? params.threadId : undefined;
+      const request = requestId ? this.pendingPermissionRequests.get(requestId) : undefined;
+      if (request && request.threadId === threadId) {
+        this.pendingPermissionRequests.delete(requestId!);
+        request.resolveResponse?.(true);
+        this.emitEvent({ kind: "permission.resolved", harness: "codex", sessionId: threadId!, permissionId: requestId!, status: "running" });
+      }
+      return;
+    }
     const threadId = typeof params.threadId === "string" ? params.threadId : undefined;
     if (threadId && typeof params.thread === "object" && params.thread) {
       this.threads.set(threadId, params.thread as CodexThread);
@@ -2373,6 +2697,23 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     const threadId = typeof message.params.threadId === "string" ? message.params.threadId : undefined;
     if (threadId && typeof message.params.thread === "object" && message.params.thread) {
       this.threads.set(threadId, message.params.thread as CodexThread);
+    }
+    const approvalMethods = new Set([
+      "item/commandExecution/requestApproval",
+      "item/fileChange/requestApproval",
+      "item/permissions/requestApproval",
+    ]);
+    if (threadId && typeof message.id === "number" && approvalMethods.has(message.method)) {
+      const requestId = String(message.id);
+      const turnId = typeof message.params.turnId === "string" ? message.params.turnId : undefined;
+      const itemId = typeof message.params.itemId === "string" ? message.params.itemId : undefined;
+      const command = typeof message.params.command === "string" ? message.params.command : undefined;
+      const reason = typeof message.params.reason === "string" ? message.params.reason : undefined;
+      this.pendingPermissionRequests.set(requestId, { rpcId: message.id, threadId, method: message.method, turnId, itemId, command, reason, responded: false });
+      this.emitEvent({ kind: "permission.requested", harness: "codex", sessionId: threadId, permissionId: requestId,
+        status: "needs_input", data: { method: message.method, turnId, itemId, command, reason,
+          canRespond: message.method === "item/commandExecution/requestApproval" || message.method === "item/fileChange/requestApproval",
+          ...(message.method === "item/permissions/requestApproval" ? { unsupportedReason: "Codex requires returning a native permission subset for this request; allow/deny is insufficient" } : {}) } });
     }
   }
 

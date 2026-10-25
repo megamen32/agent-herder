@@ -1,10 +1,15 @@
-import { expect,it } from 'vitest';
+import { afterEach,expect,it,vi } from 'vitest';
 import { createWebServer } from '../src/web/server.js';
 import { coordinationNotes } from '../src/coordination-notes.js';
 import { deferredMessages } from '../src/deferred-messages.js';
 import { listAgentsResult } from '../src/mcp-tools/handlers.js';
+import { turnHooksRuntimeOn } from './helpers/hooks-runtime.js';
+
+// The switch of the hooks lives in an isolated state directory: the test never
+// changes the state of the machine.
+afterEach(()=>{vi.unstubAllEnvs();});
 // Focused integration; actual HTTP flow preserves workspace and inbox until ack. <1s/max5s.
-it('preserves tool workspace across prompt touch and only removes an explicitly acknowledged inbox',async()=>{
+it('preserves tool workspace across prompt touch and only removes an explicitly acknowledged inbox',async()=>{ await turnHooksRuntimeOn();
  const server=createWebServer({adapters:new Map(),converter:{convert:async()=>({})} as any,supervisor:{isAutomationHeld:async()=>false} as any});
  await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
  const base=`http://127.0.0.1:${(server.address() as any).port}`;

@@ -35,6 +35,32 @@ describe('disposable lexical session mirror',()=>{
   index.finishSource({harness:'codex',source:'fixture',state:'complete',sessions:0},'c');
   expect(index.search({query:'preservedword'}).results).toHaveLength(0);
  });
+ it('does not publish completeness or prune sessions when source iteration fails after a partial yield',async()=>{
+  const index=fixture();
+  async function* previous(){
+   yield{...session('preservedaword'),nativeSessionId:'session-a'};
+   yield{...session('preservedbword'),nativeSessionId:'session-b'};
+  }
+  await index.scan(previous(),[{harness:'codex',source:'fixture',state:'complete',sessions:2}]);
+  expect(index.search({query:'preservedbword',harnesses:['codex']}).results).toHaveLength(1);
+
+  async function* partialThenThrow(){
+   yield{...session('updatedaword','2'),nativeSessionId:'session-a'};
+   throw new Error('source_enumeration_failed');
+  }
+  await expect(index.scan(partialThenThrow(),[{harness:'codex',source:'fixture',state:'complete',sessions:1}])).rejects.toThrow('source_enumeration_failed');
+
+  const failed=index.status();
+  expect(failed.run).toMatchObject({status:'error',error:'source_enumeration_failed'});
+  expect(failed.sources.find(source=>source.harness==='codex')).toMatchObject({state:'partial',reason:'source_scan_failed'});
+  expect(index.search({query:'preservedbword',harnesses:['codex']})).toMatchObject({partial:true});
+  expect(index.search({query:'preservedbword',harnesses:['codex']}).results).toHaveLength(1);
+
+  async function* nextComplete(){yield{...session('finalaword','3'),nativeSessionId:'session-a'};}
+  await index.scan(nextComplete(),[{harness:'codex',source:'fixture',state:'complete',sessions:1}]);
+  expect(index.search({query:'preservedbword',harnesses:['codex']}).results).toHaveLength(0);
+  expect(index.search({query:'finalaword',harnesses:['codex']})).toMatchObject({partial:false});
+ });
  it('continues later sessions and harnesses after lazy content failure',async()=>{
   const index=fixture();await index.ingest(session('previousword'),'old');
   async function* broken(){throw new Error('bad_json_after_first_user');yield{id:'x',text:''};}
@@ -42,6 +68,61 @@ describe('disposable lexical session mirror',()=>{
   await index.scan(sources(),[{harness:'codex',source:'fixture',state:'complete',sessions:1},{harness:'zcode',source:'fixture',state:'complete',sessions:1}]);
   expect(index.search({query:'previousword'}).results).toHaveLength(1);expect(index.search({query:'laterword'}).results).toHaveLength(1);
   expect(index.status().sources.find(source=>source.harness==='codex').state).toBe('partial');
+ });
+ it('scopes partial coverage to a completed current harness snapshot',async()=>{
+  const index=fixture();
+  index.finishSource({harness:'codex',source:'fixture',state:'unsupported',sessions:0},'old');
+  const receipts=[] as Parameters<SessionSearchIndex['scan']>[1];
+  let reachedLaterSource!:()=>void,continueScan!:()=>void;
+  const laterSource=new Promise<void>(resolve=>{reachedLaterSource=resolve;});
+  const release=new Promise<void>(resolve=>{continueScan=resolve;});
+  async function* sources(){
+   receipts.push({harness:'opencode',source:'fixture',state:'complete',sessions:1});
+   yield{...session('currentword'),harness:'opencode'};
+   reachedLaterSource();
+   await release;
+   receipts.push({harness:'qoder',source:'fixture',state:'unsupported',sessions:0});
+  }
+  const pending=index.scan(sources(),receipts);
+  await laterSource;
+  expect(index.status()).toMatchObject({indexing:true,chunksIncludeStaging:true});
+  expect(index.search({query:'currentword',harnesses:['opencode']}).partial).toBe(false);
+  expect(index.search({query:'currentword'}).partial).toBe(true);
+  continueScan();await pending;
+  expect(index.search({query:'currentword',harnesses:['opencode']}).partial).toBe(false);
+  expect(index.search({query:'currentword'}).partial).toBe(true);
+ });
+ it('keeps a prior complete snapshot partial while its selected source is pending in a new run',async()=>{
+  const index=fixture();
+  index.finishSource({harness:'opencode',source:'fixture',state:'complete',sessions:1},'previous-scan');
+  const receipts=[] as Parameters<SessionSearchIndex['scan']>[1];
+  let sourceStarted!:()=>void,continueScan!:()=>void;
+  const started=new Promise<void>(resolve=>{sourceStarted=resolve;});
+  const release=new Promise<void>(resolve=>{continueScan=resolve;});
+  async function* sources(){sourceStarted();await release;receipts.push({harness:'opencode',source:'fixture',state:'complete',sessions:1});}
+  const pending=index.scan(sources(),receipts);
+  await started;
+  expect(index.search({query:'anything',harnesses:['opencode']}).partial).toBe(true);
+  continueScan();await pending;
+  expect(index.search({query:'anything',harnesses:['opencode']}).partial).toBe(false);
+ });
+ it('treats missing or incomplete requested snapshots as partial',()=>{
+  const index=fixture();
+  expect(index.search({query:'anything',harnesses:['opencode']}).partial).toBe(true);
+  index.finishSource({harness:'opencode',source:'fixture',state:'partial',sessions:1},'partial-scan');
+  expect(index.search({query:'anything',harnesses:['opencode']}).partial).toBe(true);
+  index.finishSource({harness:'opencode',source:'fixture',state:'unavailable',sessions:0},'unavailable-scan');
+  expect(index.search({query:'anything',harnesses:['opencode']}).partial).toBe(true);
+ });
+ it('reads legacy receipts and migrates run identity before the next scan',async()=>{
+  const index=fixture(),path=index.path;index.close();indexes.splice(indexes.indexOf(index),1);
+  const legacy=new DatabaseSync(path);
+  legacy.exec("ALTER TABLE search_run DROP COLUMN scan_id; INSERT INTO search_run VALUES(1,'complete','2026-01-01T00:00:00.000Z',0,NULL); INSERT INTO sources VALUES('opencode','{\"harness\":\"opencode\",\"source\":\"fixture\",\"state\":\"complete\",\"sessions\":1,\"observedAt\":\"2026-01-01T00:00:00.000Z\"}')");legacy.close();
+  const readOnly=new SessionSearchIndex(path,'host-a',{readOnly:true});
+  expect(readOnly.search({query:'anything',harnesses:['opencode']}).partial).toBe(false);readOnly.close();
+  const migrated=new SessionSearchIndex(path,'host-a');indexes.push(migrated);
+  await migrated.scan((async function*(){})(),[{harness:'opencode',source:'fixture',state:'complete',sessions:1}]);
+  const status=migrated.status();expect(status.run).toMatchObject({status:'complete',scanId:status.sources[0].scanId});
  });
  it('preserves previously indexed content when native content disappears, while updating title',async()=>{
   const index=fixture();await index.ingest(session('preservedhistory'),'a');

@@ -8,7 +8,7 @@ import {setImmediate as yieldToConsumers} from 'node:timers/promises';
 /** A disposable mirror. Never point this at a native harness database. */
 export const SESSION_SEARCH_PATH=process.env.AGENT_HERDER_SESSION_SEARCH_DB??join(homedir(),'.local/state/agent-herder/session-search/index.sqlite');
 export interface SearchSessionInput {harness:string;nativeSessionId:string;title:string;cwd:string;revision:string;chunks:AsyncIterable<{id:string;text:string}>;contentUnavailable?:boolean}
-export interface SearchSourceReceipt {harness:string;source:string;state:'complete'|'partial'|'unavailable'|'unsupported';sessions:number;catalogSessions?:number;textSessions?:number;missingContent?:number;chunks?:number;reason?:string}
+export interface SearchSourceReceipt {harness:string;source:string;state:'complete'|'partial'|'unavailable'|'unsupported';sessions:number;scanId?:string;catalogSessions?:number;textSessions?:number;missingContent?:number;chunks?:number;processedTextSessions?:number;processedChunks?:number;indexedTextSessions?:number;indexedChunks?:number;reason?:string}
 export interface SessionSearchQuery {query:string;harnesses?:string[];limit?:number}
 
 /** Quote user words: the public API accepts words, never raw FTS operators. */
@@ -21,6 +21,7 @@ export function lexicalMatch(query:string):string {
 export class SessionSearchIndex {
  private readonly db:DatabaseSync;
  private ingesting=false;
+ private hasRunScanId=false;
  constructor(readonly path=SESSION_SEARCH_PATH,readonly hostId=hostname(),options:{readOnly?:boolean}={}){
   if(!options.readOnly)mkdirSync(dirname(path),{recursive:true,mode:0o700});
   this.db=new DatabaseSync(path,{readOnly:options.readOnly===true});
@@ -29,6 +30,7 @@ export class SessionSearchIndex {
   if(tables.length&&(this.db.prepare('SELECT version FROM search_schema').get() as {version:number})?.version!==1){this.db.close();throw new Error('search_schema_incompatible');}
   if(options.readOnly){
    if(!tables.length){this.db.close();throw new Error('search_index_not_ready');}
+   this.hasRunScanId=(this.db.prepare('PRAGMA table_info(search_run)').all() as Array<{name:string}>).some(column=>column.name==='scan_id');
    this.db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=100');
    return;
   }
@@ -44,7 +46,7 @@ export class SessionSearchIndex {
    CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN INSERT INTO chunks_fts(chunks_fts,rowid,title,text) VALUES('delete',old.id,old.title,old.text); END;
    CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN INSERT INTO chunks_fts(chunks_fts,rowid,title,text) VALUES('delete',old.id,old.title,old.text); INSERT INTO chunks_fts(rowid,title,text) VALUES(new.id,new.title,new.text); END;
    CREATE TABLE IF NOT EXISTS sources(harness TEXT PRIMARY KEY,receipt TEXT NOT NULL);
-   CREATE TABLE IF NOT EXISTS search_run(id INTEGER PRIMARY KEY CHECK(id=1),status TEXT NOT NULL,updated_at TEXT NOT NULL,processed INTEGER NOT NULL,error TEXT);
+   CREATE TABLE IF NOT EXISTS search_run(id INTEGER PRIMARY KEY CHECK(id=1),status TEXT NOT NULL,updated_at TEXT NOT NULL,processed INTEGER NOT NULL,error TEXT,scan_id TEXT);
    CREATE TABLE IF NOT EXISTS search_owner(id INTEGER PRIMARY KEY CHECK(id=1),pid INTEGER NOT NULL,token TEXT NOT NULL);
    BEGIN IMMEDIATE;
    CREATE TABLE IF NOT EXISTS search_counts(name TEXT PRIMARY KEY,n INTEGER NOT NULL);
@@ -56,6 +58,8 @@ export class SessionSearchIndex {
    CREATE TRIGGER IF NOT EXISTS search_count_c_ad AFTER DELETE ON chunks BEGIN UPDATE search_counts SET n=n-1 WHERE name='chunks'; END;
    COMMIT;
   `);
+  if(!(this.db.prepare('PRAGMA table_info(search_run)').all() as Array<{name:string}>).some(column=>column.name==='scan_id'))this.db.exec('ALTER TABLE search_run ADD COLUMN scan_id TEXT');
+  this.hasRunScanId=true;
   if((this.db.prepare('SELECT version FROM search_schema').get() as {version:number}).version!==1)throw new Error('search_schema_incompatible');
  }
  close(){this.db.close();}
@@ -72,7 +76,7 @@ export class SessionSearchIndex {
  /** Owner-only recovery after an interrupted generation; never a query action. */
  pruneInterruptedGenerations(){this.db.exec('DELETE FROM chunks WHERE NOT EXISTS(SELECT 1 FROM sessions s WHERE s.harness=chunks.harness AND s.native_id=chunks.native_id AND s.generation=chunks.generation)');}
  status(){
-  const run=this.db.prepare('SELECT status,updated_at AS updatedAt,processed,error FROM search_run WHERE id=1').get();
+  const run=this.db.prepare(`SELECT status,updated_at AS updatedAt,processed,error${this.hasRunScanId?',scan_id AS scanId':''} FROM search_run WHERE id=1`).get();
   const counts=Object.fromEntries(this.db.prepare('SELECT name,n FROM search_counts').all().map(row=>[String(row.name),Number(row.n)]));
   const indexing=this.ingesting||run?.status==='running';
   return {hostId:this.hostId,sessions:counts.sessions??0,chunks:counts.chunks??0,chunksIncludeStaging:indexing,indexing,run:run??null,sources:this.db.prepare('SELECT receipt FROM sources ORDER BY harness').all().map(row=>JSON.parse(String(row.receipt)))};
@@ -106,35 +110,46 @@ export class SessionSearchIndex {
   }catch(error){this.db.prepare('DELETE FROM chunks WHERE harness=? AND native_id=? AND generation=?').run(session.harness,session.nativeSessionId,generation);throw error;}
  }
  /** Only successful exhaustive sources may remove missing sessions. */
- finishSource(receipt:SearchSourceReceipt,scan:string){
+ finishSource(receipt:SearchSourceReceipt,scan:string,options:{pruneComplete?:boolean}={}){
   this.db.exec('BEGIN IMMEDIATE');
   try{
-   if(receipt.state==='complete'){
+   if(receipt.state==='complete'&&options.pruneComplete!==false){
     this.db.prepare('DELETE FROM chunks WHERE harness=? AND native_id IN (SELECT native_id FROM sessions WHERE harness=? AND scan<>?)').run(receipt.harness,receipt.harness,scan);
     this.db.prepare('DELETE FROM sessions WHERE harness=? AND scan<>?').run(receipt.harness,scan);
    }
-   this.db.prepare('INSERT INTO sources VALUES(?,?) ON CONFLICT(harness) DO UPDATE SET receipt=excluded.receipt').run(receipt.harness,JSON.stringify({...receipt,observedAt:new Date().toISOString()}));
+   const indexed=this.db.prepare("SELECT count(DISTINCT native_id) AS textSessions,count(*) AS chunks FROM chunks WHERE harness=? AND length(text)>0").get(receipt.harness) as {textSessions:number;chunks:number};
+   const recorded={...receipt,scanId:scan,processedTextSessions:receipt.textSessions??0,processedChunks:receipt.chunks??0,indexedTextSessions:Number(indexed?.textSessions??0),indexedChunks:Number(indexed?.chunks??0),observedAt:new Date().toISOString()};
+   this.db.prepare('INSERT INTO sources VALUES(?,?) ON CONFLICT(harness) DO UPDATE SET receipt=excluded.receipt').run(receipt.harness,JSON.stringify(recorded));
    this.db.exec('COMMIT');
   }catch(error){this.db.exec('ROLLBACK');throw error;}
  }
  async scan(sessions:AsyncIterable<SearchSessionInput>,receipts:SearchSourceReceipt[]):Promise<void>{
   if(this.ingesting)throw new Error('search_indexing_busy');
   this.ingesting=true;const scan=randomUUID();let processed=0;
-  const record=(status:string,error:string|null=null)=>this.db.prepare('INSERT INTO search_run VALUES(1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,updated_at=excluded.updated_at,processed=excluded.processed,error=excluded.error').run(status,new Date().toISOString(),processed,error);
+  const record=(status:string,error:string|null=null)=>this.db.prepare('INSERT INTO search_run(id,status,updated_at,processed,error,scan_id) VALUES(1,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,updated_at=excluded.updated_at,processed=excluded.processed,error=excluded.error,scan_id=excluded.scan_id').run(status,new Date().toISOString(),processed,error,scan);
   record('running');
   try{
    const failures=new Map<string,number>();
    let recorded=0;
-   const flushReceipts=()=>{for(;recorded<receipts.length;recorded++){const receipt=receipts[recorded];this.finishSource(failures.has(receipt.harness)?{...receipt,state:'partial',reason:`session_content_read_failed:${failures.get(receipt.harness)}`} : receipt,scan);}};
-   try{
+   const withIngestFailures=(receipt:SearchSourceReceipt)=>failures.has(receipt.harness)?{...receipt,state:'partial' as const,reason:`session_content_read_failed:${failures.get(receipt.harness)}`} : receipt;
+   const publishAvailableReceipts=()=>{for(;recorded<receipts.length;recorded++)this.finishSource(withIngestFailures(receipts[recorded]),scan,{pruneComplete:false});};
    for await(const session of sessions){
     try{await this.ingest(session,scan);}catch{failures.set(session.harness,(failures.get(session.harness)??0)+1);}
-    processed++;record('running');flushReceipts();if(processed%16===0)await yieldToConsumers();
+    processed++;record('running');publishAvailableReceipts();if(processed%16===0)await yieldToConsumers();
    }
-   }finally{flushReceipts();}
+   // Only normal iterator exhaustion proves a complete source snapshot safe to prune.
+   for(const receipt of receipts)this.finishSource(withIngestFailures(receipt),scan,{pruneComplete:true});
    record('complete');
   }
-  catch(error){record('error',error instanceof Error?error.message.slice(0,160):'source_scan_failed');throw error;}
+  catch(error){
+   // A source iterator can fail outside the per-session catch. Keep its prior
+   // indexed rows and make any provisional complete receipt explicitly partial.
+   for(const receipt of receipts){
+    const failed:SearchSourceReceipt=receipt.state==='complete'?{...receipt,state:'partial',reason:'source_scan_failed'}:receipt;
+    this.finishSource(failed,scan,{pruneComplete:false});
+   }
+   record('error',error instanceof Error?error.message.slice(0,160):'source_scan_failed');throw error;
+  }
   finally{this.ingesting=false;}
  }
  search(input:SessionSearchQuery){
@@ -149,6 +164,17 @@ export class SessionSearchIndex {
   const results=[];const seen=new Set<string>();
   for(const row of rows){const key=JSON.stringify([row.harness,row.native_id]);if(seen.has(key))continue;seen.add(key);results.push({hostId:this.hostId,harness:row.harness,nativeSessionId:row.native_id,title:row.title,cwd:row.cwd,revision:row.revision,chunkId:row.chunk_id,snippet:snippet.get(row.id,match)?.snippet??'',rank:row.rank});if(results.length>=limit)break;}
   const status=this.status();
-  return {hostId:this.hostId,results,index:status,partial:status.sources.length===0||status.indexing||status.run?.status==='error'||status.sources.some((source:SearchSourceReceipt)=>source.state!=='complete'),elapsedMs:Math.round((performance.now()-started)*100)/100};
+  const sources=new Map(status.sources.map((source:SearchSourceReceipt)=>[source.harness,source]));
+  const requested=harnesses.length?[...new Set(harnesses)]:[...sources.keys()];
+  const runScanId=typeof status.run?.scanId==='string'?status.run.scanId:undefined;
+  const partial=requested.length===0||requested.some(harness=>{
+   const source=sources.get(harness);
+   if(!source||source.state!=='complete')return true;
+   // A receipt from an older snapshot cannot certify a selected source while
+   // a new run is pending, nor after a run with an identifiable scan completes.
+   if((status.run?.status==='running'||status.run?.status==='error')&&!runScanId)return true;
+   return Boolean(runScanId&&source.scanId!==runScanId);
+  });
+  return {hostId:this.hostId,results,index:status,partial,elapsedMs:Math.round((performance.now()-started)*100)/100};
  }
 }
