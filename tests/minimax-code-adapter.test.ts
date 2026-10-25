@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, mkdir, rm, writeFile, utimes } from "node:fs/promises";
+import { appendFile, chmod, mkdtemp, mkdir, rm, writeFile, utimes } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -274,13 +274,14 @@ describe("MinimaxCodeAdapter", () => {
     const sessionStore = await nativeSessionStore(root);
     const workspace = join(root, "workspace");
     await mkdir(workspace);
-    await writeSession(sessionStore, sessionId, { model: "MiniMax-M3.1-Flash" });
+    const sessionDir = await writeSession(sessionStore, sessionId, { model: "MiniMax-M3.1-Flash" });
     const runtimeDb = await runtimeStateForSession(root, sessionId, workspace);
     const control = new MinimaxCodeControl({ manifestPath: join(root, "offline-manifest.json") });
-    const runSession = vi.fn(async () => ({
-      ok: true, status: 0,
-      body: { sessionId, turnId: "turn-mcp-exact", status: "succeeded", model: { providerId: "minimax", modelId: "MiniMax-M3.1-Flash", providerKind: "minimax-managed" } },
-    }));
+    const runSession = vi.fn(async () => {
+      await appendFile(join(sessionDir, "messages.jsonl"), `${JSON.stringify({ message_id: "assistant-mcp", turn_id: "turn-mcp-exact", message: { role: "assistant", content: [{ type: "text", text: "fixture visible answer" }] } })}\n`);
+      return { ok: true, status: 0,
+        body: { sessionId, turnId: "turn-mcp-exact", status: "succeeded", model: { providerId: "minimax", modelId: "MiniMax-M3.1-Flash", providerKind: "minimax-managed" } } };
+    });
     (control as unknown as { runSession: typeof runSession }).runSession = runSession;
     const adapter = new MinimaxCodeAdapter({ control, sessionStore, runtimeDb, runtimeDataDir: join(root, ".minimax") });
     const adapters = new Map([["minimax-code", adapter as unknown as HarnessAdapter]]);
@@ -301,11 +302,13 @@ describe("MinimaxCodeAdapter", () => {
       const args = { harness: "minimax-code", sessionId, humanRequested: true, inputId: "public-mcp-idle-canary-input", mode: "queue", message: "benign public MCP delivery fixture" };
       const first = await client.callTool({ name: "send_message", arguments: args });
       expect(first.isError).not.toBe(true);
-      const pending = JSON.parse(first.content[0]?.type === "text" ? first.content[0].text : "{}");
-      expect(pending).toMatchObject({ ok: true, delivery: "durable_pending", nativeAdmission: "pending", inputId: args.inputId });
-      expect(typeof pending.jobId).toBe("string");
-      await vi.waitFor(() => expect(jobs.get(pending.jobId)?.state).toBe("completed"), { interval: 5, timeout: 1_500 });
-      expect(jobs.get(pending.jobId)?.result).toMatchObject({ ok: true, admitted: true, admission: "accepted", turnId: "turn-mcp-exact", inputId: args.inputId });
+      const responseEnvelope = JSON.parse(first.content[0]?.type === "text" ? first.content[0].text : "{}");
+      const deliveryReceipt = JSON.parse(responseEnvelope.delivery);
+      expect(deliveryReceipt).toMatchObject({ ok: true, delivery: "durable_pending", nativeAdmission: "pending", inputId: args.inputId });
+      expect(responseEnvelope.response).toMatchObject({ status: "partial", inputId: args.inputId, text: "fixture visible answer" });
+      expect(typeof deliveryReceipt.jobId).toBe("string");
+      await vi.waitFor(() => expect(jobs.get(deliveryReceipt.jobId)?.state).toBe("completed"), { interval: 5, timeout: 1_500 });
+      expect(jobs.get(deliveryReceipt.jobId)?.result).toMatchObject({ ok: true, admitted: true, admission: "accepted", turnId: "turn-mcp-exact", inputId: args.inputId });
       expect(runSession).toHaveBeenCalledTimes(1);
       expect(runSession).toHaveBeenCalledWith(sessionId, workspace, join(root, ".minimax"), expect.any(String), "full");
 
@@ -345,6 +348,35 @@ describe("MinimaxCodeAdapter", () => {
       expect(runSession).toHaveBeenCalledOnce();
       expect(runSession).toHaveBeenCalledWith(sessionId,workspace,join(root,".minimax"),input.message,undefined);
       expect(delivery.get(input.harness,sessionId,input.inputId)?.job?.requestFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    }finally{delivery.close();await delivery.getMinimaxExecPolicy({hostId:localSessionHostId(),harness:"minimax-code",sessionId});await delivery.getMinimaxExecPolicy({hostId:localSessionHostId(),harness:"minimax-code",sessionId});}
+  });
+
+  it("admits an idle MiniMax sync invocation with its exact signed mode and rejects a mode-tampered reuse",async()=>{
+    const root=await store(),sessionId="mvs_agent_sync_cli",sessionStore=join(root,".minimax","v2","sessions"),workspace=join(root,"workspace");
+    await mkdir(workspace,{recursive:true});await writeSession(sessionStore,sessionId,{model:"MiniMax-M3.1-Flash"});
+    const runtimeDb=await runtimeStateForSession(root,sessionId,workspace);
+    const control=new MinimaxCodeControl({manifestPath:join(root,"offline-manifest.json")});
+    const runSession=vi.fn(async()=>({ok:true,status:200,body:{sessionId,turnId:"agent-sync-turn",status:"succeeded",model:{providerId:"minimax",modelId:"MiniMax-M3.1-Flash",providerKind:"minimax-managed"}}}));
+    (control as unknown as {runSession:typeof runSession}).runSession=runSession;
+    const adapter=new MinimaxCodeAdapter({sessionStore,runtimeDb,runtimeDataDir:join(root,".minimax"),control});
+    const jobs=new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(root,"jobs.json")});
+    let nativeOptions:SendMessageOptions|undefined;
+    const delivery=new UserMessageDelivery(new Map([["minimax-code",adapter as unknown as HarnessAdapter]]),{
+      sendMessage:async(_harness,id,options)=>{nativeOptions=options;return adapter.sendMessage(id,options);},
+    },jobs,{pollMs:1,maxWaitMs:3_000,maxPending:4},new MinimaxExecPolicyStore(join(root,"policy")));
+    const input={harness:"minimax-code",sessionId,inputId:"agent-sync-input",message:"benign synchronous agent delta",mode:"sync" as const};
+    try{
+      const ingress=trustedMeshIngressFromMcpAuthInfo({token:"test-transport-token",clientId:TRUSTED_MESH_MCP_CLIENT_ID,scopes:[TRUSTED_MESH_MCP_SCOPE]})!;
+      const receipt=await delivery.submitAgent(input,{hostId:"source-host",harness:"opencode",nativeSessionId:"source-session"},ingress);
+      await vi.waitFor(()=>expect(delivery.get(input.harness,sessionId,input.inputId)).toMatchObject({ok:true,admitted:true,turnId:"agent-sync-turn"}));
+      expect(receipt.job).toMatchObject({durableOnce:true,requestFingerprint:expect.stringMatching(/^[a-f0-9]{64}$/)});
+      expect(nativeOptions?.durableUserDelivery).toMatchObject({mode:"sync",actor:{kind:"agent",principal:"agent-herder-owner-mcp"}});
+      expect(runSession).toHaveBeenCalledOnce();
+
+      const claim=nativeOptions!.durableUserDelivery!;
+      const tampered=await adapter.sendMessage(sessionId,{...nativeOptions!,durableUserDelivery:{...claim,mode:"queue"}});
+      expect(tampered).toMatchObject({ok:false,notSubmitted:true});
+      expect(runSession).toHaveBeenCalledOnce();
     }finally{delivery.close();await delivery.getMinimaxExecPolicy({hostId:localSessionHostId(),harness:"minimax-code",sessionId});await delivery.getMinimaxExecPolicy({hostId:localSessionHostId(),harness:"minimax-code",sessionId});}
   });
 

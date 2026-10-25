@@ -660,18 +660,20 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
       ? `job_${createHash("sha256").update(`user-message\0minimax-code\0${id}\0${options.inputId}`).digest("hex")}`
       : "";
     const policy = claim?.minimaxExecPolicy;
+    const deliveryMode = claim?.mode;
+    const validDeliveryMode = deliveryMode === "queue" || deliveryMode === "sync";
     const validPolicy = policy === undefined || (Number.isSafeInteger(policy.revision) && policy.revision >= 0
       && ["unset", "smart", "full", "off"].includes(policy.mode));
     const actor=claim?.actor;
     const actorMatchesOrigin=actor?.kind==="human"?options.origin==="human"
       :actor?.kind==="agent"&&actor.principal==="agent-herder-owner-mcp"&&actor.senderVerified===false?options.origin==="automation":false;
     const expectedClaim = { jobId: expectedJob, inputId: options.inputId ?? "", requestFingerprint: claim?.requestFingerprint ?? "",
-      harness: "minimax-code", sessionId: id, targetHostId: localSessionHostId(), mode: "queue" as const,
+      harness: "minimax-code", sessionId: id, targetHostId: localSessionHostId(), mode: validDeliveryMode ? deliveryMode : "queue" as const,
       actor,
       ...(policy ? { minimaxExecPolicy: policy } : {}) };
     if (!actorMatchesOrigin || options.steer === true || options.activeTurnOnly === true || options.images?.length
       || !options.inputId || !claim || claim.inputId !== options.inputId || claim.jobId !== expectedJob
-      || !validPolicy || !/^[a-f0-9]{64}$/.test(claim.requestFingerprint) || !verifyDurableUserDeliveryClaim(claim, expectedClaim, options.message, options.images)
+      || !validDeliveryMode || !validPolicy || !/^[a-f0-9]{64}$/.test(claim.requestFingerprint) || !verifyDurableUserDeliveryClaim(claim, expectedClaim, options.message, options.images)
       || (options.model && options.model !== "minimax/MiniMax-M3.1-Flash")) {
       return { ok: false, notSubmitted: true, error: "MiniMax Code idle delivery requires an exact durable queue claim" };
     }
