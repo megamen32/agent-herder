@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { HerderEventBus } from "../src/herder-events.js";
 import { HerderJobRegistry } from "../src/herder-jobs.js";
 import { UserMessageDelivery, verifyDurableUserDeliveryClaim, type UserMessageInput } from "../src/user-message-delivery.js";
+import { sendCurrentTurnOnly } from "../src/coordination-active-delivery.js";
 import { MinimaxExecPolicyStore } from "../src/permission-control/minimax-exec-policy.js";
 import { MINIMAX_CLI_TIMEOUT_MS } from "../src/adapters/minimax-code-control.js";
 import {TRUSTED_MESH_MCP_CLIENT_ID,TRUSTED_MESH_MCP_SCOPE,trustedMeshIngressFromMcpAuthInfo} from "../src/mesh/authenticated-ingress.js";
@@ -25,7 +26,7 @@ function fixture(options?: { jobs?: HerderJobRegistry; harness?: string; result?
   const adapter = { getSession } as unknown as HarnessAdapter;
   const jobs = options?.jobs || new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(root!,"jobs.json")});
   const delivery = new UserMessageDelivery(new Map([[harness, adapter]]), { sendMessage }, jobs, { pollMs: 5, maxWaitMs: options?.maxWaitMs ?? 1_000, maxPending: 4 });
-  const input = (id: string, mode: "queue" | "steer" = "queue"): UserMessageInput => ({ harness, sessionId: "thread", inputId: id, message: id, mode });
+  const input = (id: string, mode: "queue" | "steer" | "sync" = "queue"): UserMessageInput => ({ harness, sessionId: "thread", inputId: id, message: id, mode });
   return { delivery, jobs, getSession, sendMessage, input, idle: () => { status = "idle"; } };
 }
 
@@ -152,6 +153,65 @@ describe("actual human message queue admission", () => {
       await expect(delivery.submitMinimaxAgent(input,{...sender,nativeSessionId:"forged-source"},ingress)).rejects.toThrow(/другого текста, режима или политики/);
       expect(sendMessage).toHaveBeenCalledOnce();
     }finally{delivery.close();await rm(root,{recursive:true,force:true});}
+  });
+
+  it("uses the same authenticated durable admission for a non-MiniMax agent delivery",async()=>{
+    const root=await mkdtemp(join(tmpdir(),"herder-generic-agent-delivery-"));
+    const jobs=new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(root,"jobs.json")});
+    const session={id:"zcode-agent-target",harness:"zcode",hostId:"host-target",status:"idle",cwd:"/workspace"};
+    const adapter={getSession:vi.fn(async()=>session),getSessionMessages:vi.fn(async()=>[])} as unknown as HarnessAdapter;
+    const sendMessage=vi.fn(async(_harness:string,_sessionId:string,options:any)=>({ok:true,admitted:true,turnId:"native-agent-turn",inputId:options.inputId} as SendMessageResult));
+    const delivery=new UserMessageDelivery(new Map([["zcode",adapter]]),{sendMessage},jobs,{pollMs:1,maxWaitMs:2_000,maxPending:4});
+    const input={harness:"zcode",sessionId:session.id,inputId:"agent-input-zcode",message:"bounded agent delta",mode:"queue" as const};
+    const sender={hostId:"host-source",harness:"opencode",nativeSessionId:"session-source"};
+    try{
+      await expect(delivery.submitAgent(input,sender,undefined)).rejects.toThrow(/Authenticated Agent Herder MCP ingress/);
+      expect(sendMessage).not.toHaveBeenCalled();
+      const first=await delivery.submitAgent(input,sender,trustedMeshIngress());
+      await vi.waitFor(()=>expect(delivery.get(input.harness,input.sessionId,input.inputId)).toMatchObject({ok:true,admitted:true,turnId:"native-agent-turn"}));
+      expect(first.job).toMatchObject({durableOnce:true,ownerSessionId:session.id});
+      expect(sendMessage).toHaveBeenCalledOnce();
+      const options=sendMessage.mock.calls[0]![2];
+      expect(options).toMatchObject({origin:"automation",inputId:input.inputId,queue:true});
+      expect(options.humanRequestedAt).toBeUndefined();
+      const claim=options.durableUserDelivery;
+      const binding={jobId:first.job!.id,inputId:input.inputId,requestFingerprint:first.job!.requestFingerprint,harness:input.harness,sessionId:input.sessionId,targetHostId:"host-target",mode:"queue" as const,actor:{kind:"agent" as const,principal:"agent-herder-owner-mcp" as const,senderAssertion:sender,senderVerified:false as const}};
+      expect(verifyDurableUserDeliveryClaim(claim,binding,input.message)).toBe(true);
+      expect(verifyDurableUserDeliveryClaim(claim,{...binding,actor:{kind:"human"}},input.message)).toBe(false);
+      const replay=await delivery.submitAgent(input,sender,trustedMeshIngress());
+      expect(replay.job?.id).toBe(first.job?.id);
+      expect(sendMessage).toHaveBeenCalledOnce();
+    }finally{delivery.close();await rm(root,{recursive:true,force:true});}
+  });
+
+  it("keeps agent queue mode active-turn-only instead of waiting for idle and starting later",async()=>{
+    const root=await mkdtemp(join(tmpdir(),"herder-agent-active-only-"));
+    const jobs=new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(root,"jobs.json")});
+    const session={id:"zcode-active-target",harness:"zcode",hostId:"host-target",status:"running",cwd:"/workspace"};
+    let sentOptions:any;
+    const adapter={getSession:vi.fn(async()=>session),sendActiveMessage:vi.fn(async(_id:string,options:any)=>{sentOptions=options;return {ok:true,admitted:true,turnId:"active-agent-turn",inputId:options.inputId};})} as unknown as HarnessAdapter;
+    const sendMessage=vi.fn(async()=>{throw new Error("agent queue must not use an idle/new-turn send");});
+    const delivery=new UserMessageDelivery(new Map([["zcode",adapter]]),{sendMessage},jobs,{pollMs:1,maxWaitMs:2_000,maxPending:4});
+    const input={harness:"zcode",sessionId:session.id,inputId:"agent-active-input",message:"bounded active turn delta",mode:"queue" as const};
+    const route={adapter,supervisor:{sendMessage:(_harness:string,id:string,options:any)=>sendCurrentTurnOnly(adapter,id,options)}};
+    try{
+      const receipt=await delivery.submitAgent(input,{hostId:"host-source",harness:"opencode",nativeSessionId:"session-source"},trustedMeshIngress(),route);
+      await vi.waitFor(()=>expect(delivery.get(input.harness,input.sessionId,input.inputId)).toMatchObject({ok:true,admitted:true,turnId:"active-agent-turn"}));
+      expect(receipt.job?.durableOnce).toBe(true);
+      expect(adapter.sendActiveMessage).toHaveBeenCalledOnce();
+      expect(sentOptions).toMatchObject({origin:"automation",queue:true,activeTurnOnly:true,steer:true,inputId:input.inputId});
+      expect(sendMessage).not.toHaveBeenCalled();
+    }finally{delivery.close();await rm(root,{recursive:true,force:true});}
+  });
+
+  it("keeps sync as a direct delivery mode without adding queue or steer flags",async()=>{
+    const f=fixture({harness:"opencode"});
+    try{
+      const receipt=f.delivery.submit(f.input("sync-input","sync"));
+      await vi.waitFor(()=>expect(f.delivery.get("opencode","thread","sync-input")?.job?.state).toBe("completed"));
+      expect(receipt.job?.durableOnce).toBe(true);
+      expect(f.sendMessage.mock.calls[0]![2]).toMatchObject({origin:"human",inputId:"sync-input",queue:false,steer:false});
+    }finally{f.delivery.close();}
   });
 
   it("waits for a native MiniMax CLI turn that completes after thirty seconds", async () => {

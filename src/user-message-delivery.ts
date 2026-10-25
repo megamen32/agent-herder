@@ -12,7 +12,7 @@ import { getHumanStopStore } from "./human-stop-store.js";
 import { isTrustedMeshIngress, type TrustedMeshIngress } from "./mesh/authenticated-ingress.js";
 
 export type UserMessageActor = { kind: "human" } | { kind: "agent"; principal: "agent-herder-owner-mcp"; senderAssertion: { hostId: string; harness: string; nativeSessionId: string }; senderVerified: false };
-export type UserMessageInput = { harness: string; sessionId: string; inputId: string; message: string; mode: "queue" | "steer"; images?: MessageImage[] };
+export type UserMessageInput = { harness: string; sessionId: string; inputId: string; message: string; mode: "queue" | "steer" | "sync"; images?: MessageImage[] };
 export type UserMessageReceipt = SendMessageResult & { delivery?: "deferred"; job?: HerderJob<SendMessageResult> };
 export type UserMessageRoute = { adapter: HarnessAdapter; supervisor: Pick<SessionSupervisor, "sendMessage"> };
 export type UserMessageDeliveryResponseHookInput={jobId:string;inputId:string;target:DeliveryResponseTarget;baseline:DeliveryResponseBaseline;actorKind:"human"|"agent";requestFingerprint:string};
@@ -130,12 +130,28 @@ export class UserMessageDelivery {
     return this.submitMinimaxForActor(input,{kind:"human"},route);
   }
 
-  /** Agent-to-agent MiniMax queueing uses the same durable job and native claim as the human queue.
-   * The asserted sender is bound for attribution/idempotency and never changes human-stop or consent rules. */
+  /** Authenticated agent-to-agent delivery uses the same durable job, native claim,
+   * per-session lane and HumanStop admission as human delivery. Sender fields
+   * remain attribution only; they cannot grant human authority or consent. */
+  async submitAgent(input: UserMessageInput, senderAssertion: { hostId: string; harness: string; nativeSessionId: string }, ingress: TrustedMeshIngress | undefined, route?: UserMessageRoute): Promise<UserMessageReceipt> {
+    if (!isTrustedMeshIngress(ingress)) throw new Error("Authenticated Agent Herder MCP ingress is required for agent delivery.");
+    const actor: UserMessageActor = { kind: "agent", principal: ingress.principal, senderAssertion, senderVerified: ingress.senderVerified };
+    if (input.harness === "minimax-code") return this.submitMinimaxForActor(input, actor, route);
+
+    const adapter = route?.adapter ?? this.adapters.get(input.harness);
+    if (!adapter?.getSession) throw new Error("The exact native session is unavailable for agent delivery.");
+    const session = await adapter.getSession(input.sessionId);
+    if (!session || session.id !== input.sessionId || session.harness !== input.harness || !session.hostId) {
+      throw new Error("The exact native host and session could not be confirmed for agent delivery.");
+    }
+    return this.submitPrepared(input, route, undefined, undefined, actor, session.hostId);
+  }
+
+  /** Backward-compatible MiniMax entrypoint; all authenticated agent sends now
+   * share the generic durable admission implementation. */
   async submitMinimaxAgent(input: UserMessageInput, senderAssertion: { hostId: string; harness: string; nativeSessionId: string }, ingress: TrustedMeshIngress | undefined, route?: UserMessageRoute): Promise<UserMessageReceipt> {
-    if (!isTrustedMeshIngress(ingress)) throw new Error("Authenticated Agent Herder MCP ingress is required for MiniMax agent delivery.");
-    const actor:UserMessageActor={kind:"agent",principal:ingress.principal,senderAssertion,senderVerified:ingress.senderVerified};
-    return this.submitMinimaxForActor(input,actor,route);
+    if (input.harness !== "minimax-code") throw new Error("MiniMax agent delivery requires an exact MiniMax Code session.");
+    return this.submitAgent(input, senderAssertion, ingress, route);
   }
 
   private async submitMinimaxForActor(input: UserMessageInput, actor: UserMessageActor, route?: UserMessageRoute): Promise<UserMessageReceipt> {
@@ -277,14 +293,14 @@ export class UserMessageDelivery {
           let nativeSend: Promise<SendMessageResult> | undefined;
           let responseContext:UserMessageDeliveryResponseHookInput|undefined;
           try {
-            waiting(input.mode === "queue" ? "Ожидает окончания ответа" : "Вставляется в текущий ход");
+            waiting(actor.kind === "human" && input.mode === "queue" ? "Ожидает окончания ответа" : "Вставляется в текущий ход");
             if (previous) await Promise.race([previous, delay(this.options.maxWaitMs, undefined, { signal: combined })]);
             const adapter = targetAdapter;
             while (true) {
               combined.throwIfAborted();
               const session = await this.withSlot(combined, () => adapter.getSession(input.sessionId));
               if (!session) return { ok: false, nonRetryable: true, inputId: input.inputId, error: "Сессия недоступна" };
-              if (input.mode === "queue" && (session.status === "running" || session.status === "needs_input")) {
+              if (actor.kind === "human" && input.mode === "queue" && (session.status === "running" || session.status === "needs_input")) {
                 await delay(this.options.pollMs, undefined, { signal: combined });
                 continue;
               }
@@ -342,7 +358,7 @@ export class UserMessageDelivery {
                   nativeSend = supervisor.sendMessage(input.harness, input.sessionId, {
                     message: input.message, origin: actor.kind==="human"?"human":"automation", inputId: input.inputId, images: input.images,
                     ...(humanRequestedAt!==undefined?{humanRequestedAt}:{}),
-                    steer: input.mode === "steer", queue: ["codex", "opencode", "zcode"].includes(input.harness),
+                    steer: input.mode === "steer", queue: input.mode === "queue" && ["codex", "opencode", "zcode"].includes(input.harness),
                     durableUserDelivery: signDurableDeliveryClaim({ jobId, inputId: input.inputId, requestFingerprint: currentFingerprint,
                       harness: input.harness, sessionId: input.sessionId, ...(boundTargetHostId?{targetHostId:boundTargetHostId}:{}), mode: input.mode,
                       actor,
