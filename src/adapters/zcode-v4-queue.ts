@@ -61,6 +61,7 @@ export async function openZcodeQueueSnapshot(client: ZcodeClientLike, workspace:
           let assembly=assemblies.get(key);
           if(!assembly){if(assemblies.size>=4)throw Error('Too many V4 frame assemblies');assembly={parts:new Map(),count:wire.fragmentCount,bytes:wire.logicalBytes,checksum:wire.checksum.value,received:0};assemblies.set(key,assembly);}
           if(assembly.count!==wire.fragmentCount||assembly.bytes!==wire.logicalBytes||assembly.checksum!==wire.checksum.value)throw Error('Contradictory V4 snapshot fragments');
+          if(wire.dataBase64.length>4*Math.ceil(wire.logicalBytes/3))throw Error('V4 encoded fragment exceeds declared size');
           const part=Buffer.from(wire.dataBase64,'base64');
           if(part.toString('base64')!==wire.dataBase64)throw Error('Invalid V4 snapshot base64');
           const previous=assembly.parts.get(wire.fragmentIndex);

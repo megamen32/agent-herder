@@ -2,11 +2,11 @@ import {crc32} from 'node:zlib';
 import {expect,it,vi} from 'vitest';
 import {ZcodeAdapter} from '../src/adapters/zcode.js';
 
-function fixture(options:{stale?:boolean;reset?:boolean;lost?:boolean;foreign?:boolean;unloaded?:boolean;fragment?:boolean;corrupt?:boolean;enabled?:boolean}={}) {
+function fixture(options:{stale?:boolean;reset?:boolean;lost?:boolean;foreign?:boolean;unloaded?:boolean;fragment?:boolean;corrupt?:boolean;enabled?:boolean;oversized?:boolean}={}) {
  let revision=7, autoDrain=options.enabled??false, listener:(frame:any)=>void=()=>{};
  const calls:any[]=[];
  const frame=()=>({topic:'conversation/owned',subscriptionId:'sub',fromSeq:0,toSeq:revision,payload:{kind:'snapshot',snapshot:{sessionId:'owned',revision,logEpoch:'epoch',seq:revision,control:{phase:'completedSuccess'},queue:{autoDrain,items:[{queueItemId:'oldest'},{queueItemId:'newer'}]}}}});
- const emit=()=>{const wire={wireVersion:3,logicalFrameId:'f-'+revision,logicalFrameOrdinal:revision,topic:'conversation/owned',subscriptionId:'sub'};if(!options.fragment){listener({...wire,kind:'complete',frame:frame()});return;}const bytes=Buffer.from(JSON.stringify(frame())),mid=Math.floor(bytes.length/2);for(const i of [1,0])listener({...wire,kind:'fragment',fragmentCount:2,fragmentIndex:i,logicalBytes:bytes.length,checksum:{algorithm:'crc32',value:options.corrupt?'00000000':crc32(bytes).toString(16).padStart(8,'0')},dataBase64:(i?bytes.subarray(mid):bytes.subarray(0,mid)).toString('base64')});};
+ const emit=()=>{const wire={wireVersion:3,logicalFrameId:'f-'+revision,logicalFrameOrdinal:revision,topic:'conversation/owned',subscriptionId:'sub'};if(!options.fragment){listener({...wire,kind:'complete',frame:frame()});return;}const bytes=Buffer.from(JSON.stringify(frame())),mid=Math.floor(bytes.length/2);for(const i of [1,0])listener({...wire,kind:'fragment',fragmentCount:2,fragmentIndex:i,logicalBytes:options.oversized?1:bytes.length,checksum:{algorithm:'crc32',value:options.corrupt?'00000000':crc32(bytes).toString(16).padStart(8,'0')},dataBase64:options.oversized?'AAAA'.repeat(1024):(i?bytes.subarray(mid):bytes.subarray(0,mid)).toString('base64')});};
  const call=vi.fn(async(_channel:string,method:string,args:any[])=>{
   const p=args[0];calls.push({method,p});
   if(method==='readSession'){if(options.unloaded)throw Object.assign(Error('Session not found'),{code:'proto.sessionNotFound'});return{session:{sessionId:'owned',status:'idle'},runtime:{pendingRequestIds:[]}};}
@@ -61,3 +61,5 @@ it('assembles official out-of-order CRC32 snapshot fragments',async()=>{const{ad
 it('rejects corrupted snapshot fragments before any queue write',async()=>{const{adapter,calls}=fixture({fragment:true,corrupt:true});expect(await adapter.resumeQueueProcessing('owned',{inputId:'resume',expectedRevision:7})).toMatchObject({ok:false,status:'not-submitted',error:expect.stringContaining('checksum')});expect(calls.some(c=>c.method==='sendConversationCommandV4')).toBe(false);});
 
 it('explicitly reevaluates a stalled queue when autoDrain is already true',async()=>{const{adapter,calls}=fixture({enabled:true});expect(await adapter.resumeQueueProcessing('owned',{inputId:'resume',expectedRevision:7})).toMatchObject({ok:true,status:'accepted'});expect(calls.filter(c=>c.method==='sendConversationCommandV4')).toHaveLength(1);});
+
+it('bounds encoded fragment length before allocating decoded bytes',async()=>{const decode=vi.spyOn(Buffer,'from');try{const{adapter,calls}=fixture({fragment:true,oversized:true});expect(await adapter.resumeQueueProcessing('owned',{inputId:'resume',expectedRevision:7})).toMatchObject({ok:false,status:'not-submitted'});expect(decode.mock.calls.some(args=>args[1]==='base64')).toBe(false);expect(calls.some(c=>c.method==='sendConversationCommandV4')).toBe(false);}finally{decode.mockRestore();}});
