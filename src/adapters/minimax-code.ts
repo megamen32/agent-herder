@@ -1,9 +1,10 @@
 import {readMinimaxNativeSession} from './minimax-code-native-session.js';
-import { open, readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { open, readdir, realpath, stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { homedir } from "node:os";
 import { readMinimaxActiveSessions, type MinimaxActiveReceipt } from "./minimax-code-active.js";
 import { minimaxRuntimeStatePath, readMinimaxRuntimeActiveSessions } from "./minimax-code-runtime-activity.js";
 import { MinimaxCodeControl } from "./minimax-code-control.js";
@@ -62,6 +63,8 @@ export interface MinimaxCodeAdapterOptions {
   control?: MinimaxCodeControl;
   /** State file of the local MiniMax Code runtime, where the turns live. */
   runtimeDb?: string;
+  /** Official MCode v2 data directory that owns runtimeDb. */
+  runtimeDataDir?: string;
 }
 
 interface MinimaxManifest {
@@ -323,6 +326,7 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
   private readonly maxSessions: number;
   private readonly control: MinimaxCodeControl;
   private readonly runtimeDb: string;
+  private readonly runtimeDataDir: string;
   private indexCache: { at: number; entries: MinimaxStoredSession[] } | null = null;
   private contentCache = new Map<string, { stamp: string; session: AgentSession }>();
   private liveControlAvailable = false;
@@ -414,6 +418,7 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     this.maxSessions = options.maxSessions || 500;
     this.control = options.control || new MinimaxCodeControl();
     this.runtimeDb = options.runtimeDb || minimaxRuntimeStatePath();
+    this.runtimeDataDir = resolve(options.runtimeDataDir || process.env.MINIMAX_DATA_DIR?.trim() || process.env.MAVIS_DATA_DIR?.trim() || join(homedir(), ".minimax"));
   }
 
   /**
@@ -556,12 +561,18 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
       const result = await control.steer(id, options.message);
       if (!result.ok) return { ok: false, error: result.error };
       const body = (result.body ?? {}) as { success?: boolean; turn_id?: string; item_id?: string };
-      return { ok: true, admitted: true, turnId: body.turn_id ?? body.item_id, ...(options.inputId ? { inputId: options.inputId } : {}) };
+      const turnId = body.turn_id ?? body.item_id;
+      if (!turnId) return { ok: false, admissionUnknown: true, nonRetryable: true, inputId: options.inputId, error: "MiniMax Code steer receipt lacked an exact native turn ID; do not retry" };
+      return { ok: true, admitted: true, turnId, ...(options.inputId ? { inputId: options.inputId } : {}) };
     }
     if (options.queue === true) {
       const result = await control.enqueue(id, options.message);
       if (!result.ok) return { ok: false, error: result.error };
-      const body = (result.body ?? {}) as { item_id?: string; status?: string };
+      const body = (result.body ?? {}) as { item_id?: unknown; status?: unknown };
+      if (typeof body.item_id !== "string" || !body.item_id.trim()
+        || (body.status !== undefined && body.status !== "pending" && body.status !== "queued")) {
+        return { ok: false, admissionUnknown: true, nonRetryable: true, inputId: options.inputId, error: "MiniMax Code queue response lacked a valid native item receipt; do not retry" };
+      }
       return { ok: true, admitted: true, turnId: body.item_id, ...(options.inputId ? { inputId: options.inputId } : {}) };
     }
     const result = await control.sendMessage(id, options.message);
@@ -571,11 +582,17 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
       if (!/busy|active turn/i.test(result.error ?? "")) return { ok: false, error: result.error };
       const queued = await control.enqueue(id, options.message);
       if (!queued.ok) return { ok: false, error: queued.error };
-      const body = (queued.body ?? {}) as { item_id?: string };
+      const body = (queued.body ?? {}) as { item_id?: unknown; status?: unknown };
+      if (typeof body.item_id !== "string" || !body.item_id.trim()
+        || (body.status !== undefined && body.status !== "pending" && body.status !== "queued")) {
+        return { ok: false, admissionUnknown: true, nonRetryable: true, inputId: options.inputId, error: "MiniMax Code queue response lacked a valid native item receipt; do not retry" };
+      }
       return { ok: true, admitted: true, turnId: body.item_id, ...(options.inputId ? { inputId: options.inputId } : {}) };
     }
     const body = (result.body ?? {}) as { turn_id?: string; id?: string };
-    return { ok: true, admitted: true, turnId: body.turn_id ?? body.id, ...(options.inputId ? { inputId: options.inputId } : {}) };
+    const turnId = body.turn_id ?? body.id;
+    if (!turnId) return { ok: false, admissionUnknown: true, nonRetryable: true, inputId: options.inputId, error: "MiniMax Code message receipt lacked an exact native turn ID; do not retry" };
+    return { ok: true, admitted: true, turnId, ...(options.inputId ? { inputId: options.inputId } : {}) };
   }
 
   /** Exact-ID CLI fallback for an idle native session when Desktop published no control transport. */
@@ -613,6 +630,19 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
       || !workspace || !workspace.startsWith("/") || !(await stat(workspace).then((s) => s.isDirectory()).catch(() => false))) {
       return { ok: false, notSubmitted: true, error: "MiniMax Code native session is not an exact idle target" };
     }
+    const dataDir = await realpath(this.runtimeDataDir).catch(() => null);
+    const expectedRuntimeDb = dataDir ? join(dataDir, "v2", "sqlite", "runtime-state.sqlite") : "";
+    const expectedSessionStore = dataDir ? join(dataDir, "v2", "sessions") : "";
+    const sameNativeDomain = expectedRuntimeDb
+      ? await Promise.all([
+        realpath(this.runtimeDb).catch(() => null), realpath(expectedRuntimeDb).catch(() => null),
+        realpath(this.sessionStore).catch(() => null), realpath(expectedSessionStore).catch(() => null),
+      ])
+      : [null, null, null, null];
+    if (!sameNativeDomain[0] || sameNativeDomain[0] !== sameNativeDomain[1]
+      || !sameNativeDomain[2] || sameNativeDomain[2] !== sameNativeDomain[3]) {
+      return { ok: false, notSubmitted: true, error: "MiniMax Code CLI data directory does not own the inspected session and runtime state" };
+    }
     const stored = await this.readStoredSessions();
     const entry = stored.find((candidate) => candidate.id === id);
     if (!entry) return { ok: false, notSubmitted: true, error: "MiniMax Code session is not present in the local session store" };
@@ -635,7 +665,7 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
     } catch {
       return { ok: false, notSubmitted: true, error: "MiniMax Code native idle state is unavailable" };
     } finally { db?.close(); db = undefined; }
-    const result = await this.control.runSession(id, workspace, options.message);
+    const result = await this.control.runSession(id, workspace, dataDir!, options.message);
     if (!result.ok) {
       if (result.error === "session_busy") return { ok: false, notSubmitted: true, error: "MiniMax Code session is busy" };
       if ((result.body as { started?: boolean } | null)?.started === false) return { ok: false, notSubmitted: true, inputId: options.inputId, error: "MiniMax Code CLI was unavailable before delivery" };

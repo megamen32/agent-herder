@@ -33,6 +33,7 @@ import { realpath } from "node:fs/promises";
 import { auditWorktrees } from "../worktree-audit.js";
 import { BrowserWakeService } from "../browser-wake.js";
 import { deliveryBudgetFor } from "../coordination-delivery-budget.js";
+import type { UserMessageDelivery, UserMessageRoute } from "../user-message-delivery.js";
 import { coordinationNotes, normalizeHostId } from "../coordination-notes.js";
 import { withSessionLabelMeta } from "../session-labels.js";
 import { unwrapResult } from "../mesh/protocol.js";
@@ -495,15 +496,15 @@ export async function handleExportTranscript(
   }
 }
 
-export async function handleSendMessage(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
+export async function handleSendMessage(adapters: Map<string, HarnessAdapter>, args: unknown, userMessageDelivery?: UserMessageDelivery): Promise<string> {
   const parsed = SendMessageSchema.parse(args);
   if (parsed.meshSender && parsed.humanRequested) throw new Error("Automatic mesh sender cannot claim humanRequested");
-  if (parsed.humanRequested) return sendMessageOnce(adapters, parsed);
+  if (parsed.humanRequested) return sendMessageOnce(adapters, parsed, userMessageDelivery);
   return deliveryBudgetFor(adapters).run({
     target: `${parsed.harness || "auto"}:${parsed.sessionId}`,
     sender: parsed.meshSender ? `mesh:${JSON.stringify([parsed.meshSender.hostId,parsed.meshSender.harness,parsed.meshSender.nativeSessionId])}` : `${parsed.fromHarness || "auto"}:${parsed.fromSessionId || "unknown"}`,
     inputId: parsed.inputId, message: parsed.message,
-  }, () => sendMessageOnce(adapters, parsed));
+  }, () => sendMessageOnce(adapters, parsed, userMessageDelivery));
 }
 
 export async function handleReadMessage(args: unknown): Promise<string> {
@@ -520,7 +521,8 @@ export async function handleSaveMessageToFile(args: unknown): Promise<{ path: st
 
 async function sendMessageOnce(
   adapters: Map<string, HarnessAdapter>,
-  args: unknown
+  args: unknown,
+  userMessageDelivery?: UserMessageDelivery,
 ): Promise<string> {
   const parsed = SendMessageSchema.parse(args);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
@@ -560,9 +562,24 @@ async function sendMessageOnce(
     queue: parsed.mode === "queue",
     steer: parsed.mode === "steer",
   };
-  const result = parsed.humanRequested
-    ? await found.adapter.sendMessage(parsed.sessionId, options)
-    : await sendCurrentTurnOnly(found.adapter, parsed.sessionId, options);
+  let result;
+  if (parsed.humanRequested && found.session.harness === "minimax-code" && parsed.mode === "queue") {
+    if (!parsed.inputId) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: "MiniMax Code durable delivery requires a stable inputId" });
+    if (!userMessageDelivery) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, inputId: parsed.inputId, error: "Durable human delivery queue is unavailable" });
+    const route: UserMessageRoute = {
+      adapter: found.adapter,
+      supervisor: { sendMessage: (_harness, sessionId, sendOptions) => found.adapter.sendMessage(sessionId, sendOptions) },
+    };
+    const receipt = userMessageDelivery.submit({ harness: found.session.harness, sessionId: parsed.sessionId, inputId: parsed.inputId, message: injectedMessage, mode: "queue" }, route);
+    if (receipt.delivery === "deferred" && receipt.job) {
+      return JSON.stringify({ ok: true, delivery: "durable_pending", nativeAdmission: "pending", inputId: parsed.inputId, jobId: receipt.job.id, jobState: receipt.job.state });
+    }
+    result = receipt;
+  } else {
+    result = parsed.humanRequested
+      ? await found.adapter.sendMessage(parsed.sessionId, options)
+      : await sendCurrentTurnOnly(found.adapter, parsed.sessionId, options);
+  }
   if (result.notSubmitted) return result.error?.startsWith('skipped_inactive') ? skippedCoordination(found.session)
     : JSON.stringify({ok:false,delivery:'not_attempted',activated:false,error:result.error});
 

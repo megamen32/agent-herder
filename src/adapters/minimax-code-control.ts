@@ -149,10 +149,14 @@ export class MinimaxCodeControl {
    * selected session's persisted configuration. Prompt text is sent on stdin,
    * never interpolated into argv or shell text.
    */
-  async runSession(id: string, workspace: string, content: string): Promise<MinimaxControlResult> {
+  async runSession(id: string, workspace: string, dataDir: string, content: string): Promise<MinimaxControlResult> {
     return new Promise((resolve) => {
       const env = { ...process.env };
       for (const key of ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL", "OMNIROUTE_API_KEY", "OMNIROUTE_BASE_URL"]) delete env[key];
+      // Pin the child to the exact MCode runtime/configuration store inspected
+      // by the adapter. This is the CLI's official environment variable.
+      env.MINIMAX_DATA_DIR = dataDir;
+      delete env.MAVIS_DATA_DIR;
       let child;
       try {
         child = spawn(this.cliPath, [

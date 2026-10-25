@@ -5,6 +5,7 @@ import type { HarnessAdapter } from "../types/index.js";
 import { sessionIdentity } from "../session-identity.js";
 import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
+import { UserMessageDelivery } from "../user-message-delivery.js";
 import {
   SendMessageSchema,
   CreateSessionSchema,
@@ -89,8 +90,16 @@ export function registerSessionTools(server: McpServer, deps: {
   launchPolicy?: ProjectModelPolicyProvider;
   /** Reads the current launch policy state for the per-project model gate of a delivery. */
   deliveryPolicy?: ProjectModelPolicyStateProvider;
+  /** Shared durable queue for public human delivery into native sessions. */
+  userMessageDelivery?: UserMessageDelivery;
 }): void {
   const { adapters, jobs, events } = deps;
+  const userMessageDelivery = deps.userMessageDelivery ?? new UserMessageDelivery(adapters, {
+    sendMessage: async (harness, sessionId, options) => {
+      const adapter = adapters.get(harness);
+      return adapter ? adapter.sendMessage(sessionId, options) : { ok: false, notSubmitted: true, error: "Адаптер отправки недоступен" };
+    },
+  }, jobs);
   const coordination = deps.coordination ?? coordinationNotes;
   let peerTransport: GptAdminTransport | undefined = deps.transport;
   /**
@@ -569,7 +578,7 @@ export function registerSessionTools(server: McpServer, deps: {
     if (route.denied) throw new Error("project_session_scope_unavailable");
     if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     await assertDeliveryModelAllowed(route.adapters, { sessionId: args.sessionId, harness: args.harness });
-    const result = await handleSendMessage(route.adapters, route.args); publishSessionsChanged();
+    const result = await handleSendMessage(route.adapters, route.args, userMessageDelivery); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
   server.registerTool("create_session", { description: "Create one named OpenCode, Codex, ZCode, or Fast Agent session in an absolute canonical working directory.", inputSchema: CreateSessionSchema }, async (args) => {

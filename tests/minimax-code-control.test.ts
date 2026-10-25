@@ -168,7 +168,8 @@ process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => input += chunk);
 process.stdin.on("end", () => {
   const expected = ["exec", "--cwd", ${JSON.stringify(dir)}, "--session", "mvs_exact", "--input", "-", "--input-format", "text", "--output-format", "json"];
-  const valid = JSON.stringify(process.argv.slice(2)) === JSON.stringify(expected)
+    const valid = JSON.stringify(process.argv.slice(2)) === JSON.stringify(expected)
+    && process.env.MINIMAX_DATA_DIR === ${JSON.stringify(dir)} && !process.env.MAVIS_DATA_DIR
     && input === "private-marker-stdin"
     && !process.env.OPENAI_API_KEY && !process.env.OPENAI_BASE_URL && !process.env.OMNIROUTE_API_KEY && !process.env.OMNIROUTE_BASE_URL;
   process.stdout.write(JSON.stringify(valid
@@ -179,7 +180,7 @@ process.stdin.on("end", () => {
     await chmod(cli, 0o700);
     const control = new MinimaxCodeControl({ cliPath: cli, manifestPath: join(dir, "missing.json") });
 
-    const result = await control.runSession("mvs_exact", dir, "private-marker-stdin");
+    const result = await control.runSession("mvs_exact", dir, dir, "private-marker-stdin");
 
     expect(result).toMatchObject({ ok: true, body: { sessionId: "mvs_exact", turnId: "turn_1", status: "succeeded" } });
     expect(JSON.stringify(result)).not.toContain("private-marker-stdin");

@@ -27,7 +27,7 @@ afterEach(async () => {
 
 function fixtureSession(id = "sess-1"): AgentSession {
   return {
-    id, harness: "opencode", status: "idle", title: `Session ${id}`, cwd: "/repo",
+    id, harness: "opencode", status: "idle", title: `Session ${id}`, cwd: "/repo", hostId: "session-dto-test-host",
     lastActivity: "2026-09-06T02:00:00.000Z", model: "gpt-test", needsPermission: false,
     messageCount: 3, lastMessage: "done",
   };
@@ -131,6 +131,12 @@ describe("session tool DTOs", () => {
       listSessions: vi.fn(async () => [session]),
       getSession: vi.fn(async (id: string) => id === session.id ? session : null),
       listChildren: vi.fn(async () => children),
+      getPermissionState: vi.fn(async (id: string) => id === session.id ? {
+        target: { hostId: session.hostId, harness: "codex" as const, sessionId: session.id },
+        scope: "session" as const, canSetMode: false,
+        pendingRequests: [{ id: "permission-1", canRespond: true, nativeMethod: "fixture/respondPermission" }],
+        observedAt: new Date().toISOString(),
+      } : null),
       respondPermission: vi.fn(async () => ({ ok: true })),
       setPermissions: vi.fn(async () => ({ ok: false, error: "Codex app-server permissions must be configured at thread start" })),
       changeModel: vi.fn(async (id: string, model: string) => id === session.id && model === "gpt-6-luna"
@@ -172,6 +178,8 @@ describe("session tool DTOs", () => {
       expect((scoped as any).getSession).toHaveBeenCalledTimes(5);
       expect((scoped as any).listChildren).toHaveBeenCalledOnce();
       expect((scoped as any).respondPermission).toHaveBeenCalledOnce();
+      expect((scoped as any).getPermissionState).toHaveBeenCalledWith(scopedSession.id);
+      expect((scoped as any).respondPermission).toHaveBeenCalledWith(scopedSession.id, "permission-1", "deny", false);
       expect((scoped as any).setPermissions).toHaveBeenCalledOnce();
       expect((scoped as any).changeModel).toHaveBeenCalledOnce();
       expect((ordinary as any).getSession).not.toHaveBeenCalled();
