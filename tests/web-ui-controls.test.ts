@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { matchesSessionQuery } from "../src/web-ui/session-list.js";
 import { DEFAULT_THEME, applyTheme, normalizeTheme, readTheme, writeTheme } from "../src/web-ui/theme.js";
 import { currentModelOption, modelSwitchSupported, requestModelChange, shortModelLabel } from "../src/web-ui/model-chip.js";
+import { acquireCurrentVoiceStream } from "../src/web-ui/composer-controls.js";
 
 const main = readFileSync(new URL("../src/web-ui/main.tsx", import.meta.url), "utf8");
 const composerControls = readFileSync(new URL("../src/web-ui/composer-controls.tsx", import.meta.url), "utf8");
@@ -81,6 +82,32 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('Почему нужен выбор');
     for (const harness of ["Codex", "Claude Code", "OpenCode", "Hermes"]) expect(main).toContain(harness);
   });
+
+  for (const invalidation of ["session switch", "view unmount"]) {
+    it(`stops a late microphone permission result after ${invalidation}`, async () => {
+      let resolveRequest!: (stream: MediaStream) => void;
+      let current = true;
+      let stoppedTracks = 0;
+      let recordersCreated = 0;
+      let transcriptionRequests = 0;
+      const stream = { getTracks: () => [{ stop: () => { stoppedTracks += 1; } }] } as unknown as MediaStream;
+      const request = new Promise<MediaStream>((resolve) => { resolveRequest = resolve; });
+      const acquiring = acquireCurrentVoiceStream(() => request, () => current);
+
+      current = false;
+      resolveRequest(stream);
+      const acquired = await acquiring;
+      if (acquired) {
+        recordersCreated += 1;
+        transcriptionRequests += 1;
+      }
+
+      expect(acquired).toBeUndefined();
+      expect(stoppedTracks).toBe(1);
+      expect(recordersCreated).toBe(0);
+      expect(transcriptionRequests).toBe(0);
+    });
+  }
 
   it("keeps composer submission explicit and offers a deliberate send-mode hold menu", () => {
     expect(main).not.toContain("composer-hint");

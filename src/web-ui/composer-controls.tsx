@@ -20,6 +20,16 @@ export function isComposerSubmitShortcut(
   return /mac|iphone|ipad|ipod/i.test(os) ? event.metaKey : event.ctrlKey;
 }
 
+export async function acquireCurrentVoiceStream(
+  request: () => Promise<MediaStream>,
+  isCurrent: () => boolean,
+): Promise<MediaStream | undefined> {
+  const acquired = await request();
+  if (isCurrent()) return acquired;
+  acquired.getTracks().forEach((track) => track.stop());
+  return undefined;
+}
+
 type ComposerSendControlProps = {
   disabled: boolean;
   busy?: boolean;
@@ -143,6 +153,7 @@ type VoiceComposerControlProps = {
 export function VoiceComposerControl({ sessionKey, disabled, onTranscript }: VoiceComposerControlProps) {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
@@ -151,6 +162,24 @@ export function VoiceComposerControl({ sessionKey, disabled, onTranscript }: Voi
   const abort = useRef<AbortController | null>(null);
   const discard = useRef(false);
   const timer = useRef<number | undefined>(undefined);
+  const generation = useRef(0);
+  const mounted = useRef(false);
+  const currentSessionKey = useRef(sessionKey);
+  const currentDisabled = useRef(disabled);
+  const startingGeneration = useRef<number | undefined>(undefined);
+  if (currentSessionKey.current !== sessionKey) {
+    currentSessionKey.current = sessionKey;
+    generation.current += 1;
+  }
+  if (currentDisabled.current !== disabled) {
+    currentDisabled.current = disabled;
+    if (disabled) generation.current += 1;
+  }
+  const isCurrentOperation = (token: number, key: string) =>
+    mounted.current &&
+    generation.current === token &&
+    currentSessionKey.current === key &&
+    !currentDisabled.current;
 
   const stopTracks = () => {
     if (timer.current !== undefined) window.clearTimeout(timer.current);
@@ -158,7 +187,7 @@ export function VoiceComposerControl({ sessionKey, disabled, onTranscript }: Voi
     stream.current?.getTracks().forEach((track) => track.stop());
     stream.current = null;
   };
-  const transcribe = async (blob: Blob, key: string) => {
+  const transcribe = async (blob: Blob, key: string, token: number) => {
     if (!blob.size) {
       setError("Запись не содержит аудио.");
       return;
@@ -195,12 +224,12 @@ export function VoiceComposerControl({ sessionKey, disabled, onTranscript }: Voi
       if (typeof body?.text !== "string" || !body.text.trim()) {
         throw new Error("Сервис распознавания вернул пустой текст.");
       }
-      if (target.current !== key) {
+      if (target.current !== key || !isCurrentOperation(token, key)) {
         throw new Error("Выбранная сессия изменилась во время распознавания. Текст не добавлен.");
       }
       onTranscript(body.text.trim(), key);
     } catch (cause) {
-      if (target.current === key) {
+      if (target.current === key && isCurrentOperation(token, key)) {
         const failure = cause as Error;
         setError(
           failure.name === "AbortError"
@@ -224,7 +253,7 @@ export function VoiceComposerControl({ sessionKey, disabled, onTranscript }: Voi
     }
   };
   const start = async () => {
-    if (disabled || recording || transcribing) return;
+    if (disabled || recording || transcribing || startingGeneration.current === generation.current) return;
     setError("");
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setError("Запись голоса не поддерживается этим браузером.");
@@ -238,24 +267,38 @@ export function VoiceComposerControl({ sessionKey, disabled, onTranscript }: Voi
       return;
     }
 
-    let acquired: MediaStream;
+    const key = sessionKey;
+    const token = generation.current;
+    startingGeneration.current = token;
+    setStarting(true);
+    let acquired: MediaStream | undefined;
     try {
-      acquired = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (cause) {
-      const name = (cause as Error).name;
-      setError(
-        name === "NotAllowedError" || name === "SecurityError"
-          ? "Браузер не разрешил доступ к микрофону."
-          : name === "NotFoundError"
-            ? "Микрофон не найден."
-            : name === "NotReadableError"
-              ? "Микрофон занят или недоступен."
-              : "Не удалось открыть микрофон.",
+      acquired = await acquireCurrentVoiceStream(
+        () => navigator.mediaDevices.getUserMedia({ audio: true }),
+        () => isCurrentOperation(token, key),
       );
+    } catch (cause) {
+      if (isCurrentOperation(token, key)) {
+        const name = (cause as Error).name;
+        setError(
+          name === "NotAllowedError" || name === "SecurityError"
+            ? "Браузер не разрешил доступ к микрофону."
+            : name === "NotFoundError"
+              ? "Микрофон не найден."
+              : name === "NotReadableError"
+                ? "Микрофон занят или недоступен."
+                : "Не удалось открыть микрофон.",
+        );
+      }
       return;
+    } finally {
+      if (startingGeneration.current === token) {
+        startingGeneration.current = undefined;
+        if (isCurrentOperation(token, key)) setStarting(false);
+      }
     }
-    if (disabled) {
-      acquired.getTracks().forEach((track) => track.stop());
+    if (!acquired || !isCurrentOperation(token, key)) {
+      acquired?.getTracks().forEach((track) => track.stop());
       return;
     }
 
@@ -263,7 +306,7 @@ export function VoiceComposerControl({ sessionKey, disabled, onTranscript }: Voi
       const activeRecorder = new MediaRecorder(acquired, { mimeType });
       stream.current = acquired;
       recorder.current = activeRecorder;
-      target.current = sessionKey;
+      target.current = key;
       discard.current = false;
       chunks.current = [];
       activeRecorder.ondataavailable = (event) => {
@@ -281,11 +324,11 @@ export function VoiceComposerControl({ sessionKey, disabled, onTranscript }: Voi
         recorder.current = null;
         stopTracks();
         setRecording(false);
-        if (discard.current || !key) {
+        if (discard.current || !key || !isCurrentOperation(token, key)) {
           discard.current = false;
           return;
         }
-        void transcribe(new Blob(parts, { type: activeRecorder.mimeType || mimeType }), key);
+        void transcribe(new Blob(parts, { type: activeRecorder.mimeType || mimeType }), key, token);
       };
       activeRecorder.start(250);
       setRecording(true);
@@ -301,19 +344,34 @@ export function VoiceComposerControl({ sessionKey, disabled, onTranscript }: Voi
   };
 
   useEffect(() => {
+    if (startingGeneration.current !== undefined && startingGeneration.current !== generation.current) {
+      startingGeneration.current = undefined;
+      setStarting(false);
+    }
+    if (disabled) {
+      discard.current = true;
+      if (recorder.current?.state !== "inactive") recorder.current?.stop();
+      abort.current?.abort();
+    }
     if (target.current && target.current !== sessionKey) {
       discard.current = true;
       if (recorder.current?.state !== "inactive") recorder.current?.stop();
       abort.current?.abort();
       target.current = undefined;
     }
-  }, [sessionKey]);
+  }, [sessionKey, disabled]);
   useEffect(
-    () => () => {
-      discard.current = true;
-      abort.current?.abort();
-      stopTracks();
-      if (recorder.current && recorder.current.state !== "inactive") recorder.current.stop();
+    () => {
+      mounted.current = true;
+      return () => {
+        mounted.current = false;
+        generation.current += 1;
+        startingGeneration.current = undefined;
+        discard.current = true;
+        abort.current?.abort();
+        stopTracks();
+        if (recorder.current && recorder.current.state !== "inactive") recorder.current.stop();
+      };
     },
     [],
   );
@@ -324,12 +382,14 @@ export function VoiceComposerControl({ sessionKey, disabled, onTranscript }: Voi
         <button
           type="button"
           className={`composer-voice-button ${recording ? "recording" : ""}`}
-          aria-label={recording ? "Остановить запись голоса" : transcribing ? "Распознаю голос" : "Записать голосовой ввод"}
-          title={recording ? "Остановить запись голоса" : "Записать голосовой ввод (до 4 минут)"}
-          disabled={disabled || transcribing}
+          aria-label={recording ? "Остановить запись голоса" : starting ? "Открываю микрофон" : transcribing ? "Распознаю голос" : "Записать голосовой ввод"}
+          title={recording ? "Остановить запись голоса" : starting ? "Открываю микрофон" : "Записать голосовой ввод (до 4 минут)"}
+          disabled={disabled || starting || transcribing}
           onClick={() => (recording ? recorder.current?.stop() : void start())}
         >
-          {transcribing ? (
+          {starting ? (
+            <span className="voice-loading" aria-hidden="true">…</span>
+          ) : transcribing ? (
             <span className="voice-loading" aria-hidden="true">…</span>
           ) : (
             <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
