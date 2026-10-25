@@ -2209,7 +2209,7 @@ describe("Codex app-server adapter", () => {
     }
   });
 
-  it("creates and resumes full-access threads with native approval and sandbox settings", async () => {
+  it("creates full-access settings at thread/start and never rewrites them through thread/resume", async () => {
     const codexDir = await mkdtemp(join(tmpdir(), "agent-herder-codex-full-access-"));
     const logPath = join(codexDir, "app-server.jsonl");
     let adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: fixtureArgs({ log: logPath }), codexDir });
@@ -2217,12 +2217,18 @@ describe("Codex app-server adapter", () => {
       await adapter.init();
       const created = await adapter.createSession({ name: "unattended task", cwd: "/tmp/codex-fixture", fullAccess: true });
       expect(await adapter.resumeSession(created.id)).toEqual({ ok: true });
+      const ownedState = await adapter.getPermissionState(created.id);
+      expect(ownedState).toMatchObject({ scope: "session", canSetMode: false, supportedModes: [] });
+      // The fixture omits activePermissionProfile, so the adapter must not
+      // infer permission-profile provenance from the two policy fields alone.
+      expect(ownedState?.currentMode).toBeUndefined();
       await adapter.dispose();
 
       adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, args: fixtureArgs({ log: logPath, "full-access-thread": created.id }), codexDir });
       await adapter.init();
       expect(await adapter.resumeSession(created.id)).toEqual({ ok: true });
       expect(await adapter.resumeSession(created.id)).toEqual({ ok: true });
+      expect((adapter as any).ownedPermissionThreads.has(created.id)).toBe(false);
 
       const requests = (await readFile(logPath, "utf8"))
         .trim()
@@ -2233,16 +2239,8 @@ describe("Codex app-server adapter", () => {
         approvalPolicy: "never",
         sandbox: "danger-full-access",
       });
-      expect(requests.find((entry) => entry.method === "thread/resume")?.params).toMatchObject({
-        threadId: created.id,
-        approvalPolicy: "never",
-        sandbox: "danger-full-access",
-      });
-      expect(requests.filter((entry) => entry.method === "thread/resume").at(-1)?.params).toMatchObject({
-        threadId: created.id,
-        approvalPolicy: "never",
-        sandbox: "danger-full-access",
-      });
+      expect(requests.find((entry) => entry.method === "thread/resume")?.params).toEqual({ threadId: created.id });
+      expect(requests.filter((entry) => entry.method === "thread/resume").at(-1)?.params).toEqual({ threadId: created.id });
     } finally {
       await adapter.dispose();
       await rm(codexDir, { recursive: true, force: true });
