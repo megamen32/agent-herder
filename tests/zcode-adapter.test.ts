@@ -2182,6 +2182,51 @@ describe("ZCode adapter", () => {
     }
   });
 
+  it("does not resume an unloaded stopped session before fresh input without a native CAS load contract", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-unloaded-send-"));
+    const path = join(root, "native.sqlite");
+    const db = new DatabaseSync(path);
+    db.exec("create table session_input (id text primary key, session_id text not null, status text not null)");
+    db.close();
+    const stopped = {
+      ...snapshot,
+      session: { ...session, status: "stopped" },
+      runtime: { eventSeq: 2, stateRevision: 3, pendingRequestIds: [] },
+    };
+    class UnloadedSessionClient extends FakeClient {
+      missing = true;
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (method === "readSession" && this.missing) {
+          this.calls.push({ channel, method, args });
+          this.missing = false;
+          throw Object.assign(new Error("Native session is not loaded"), { code: "proto.sessionNotFound" });
+        }
+        if (method === "resumeSession") {
+          this.calls.push({ channel, method, args });
+          return stopped;
+        }
+        if (method === "readSession") {
+          this.calls.push({ channel, method, args });
+          return stopped;
+        }
+        return super.call(channel, method, args);
+      }
+    }
+    const client = new UnloadedSessionClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client, localDbPath: path });
+    try {
+      const result = await adapter.sendMessage("session-1", {
+        message: "new input to unloaded stopped session", queue: true, origin: "human", inputId: "stopped-start-1",
+      });
+      expect(result).toMatchObject({ ok: false, notSubmitted: true, nonRetryable: true, inputId: "stopped-start-1" });
+      expect(client.calls.some(call => call.method === "resumeSession")).toBe(false);
+      expect(client.calls.some(call => call.method === "sendConversationCommandV4")).toBe(false);
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("guides the native active turn with human identity and no invented new turn", async () => {
     const client = new FakeClient(); const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
     try {

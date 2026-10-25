@@ -2329,7 +2329,19 @@ export class ZcodeAdapter implements HarnessAdapter {
     let attempted = false;
     try {
       if (await getHumanStopStore().isHeld("zcode", id)) return {ok:false,inputId,error:"Чат явно остановлен; автоматическая отправка запрещена."};
-      const baseline = await this.readConversationBaseline(id);
+      let baseline: ZcodeSnapshot;
+      try {
+        // Delivery must never use plain session/resume as an implicit
+        // activation: that RPC carries no queue revision/IDs, so a zero-row
+        // read cannot protect an accepted input arriving concurrently.
+        baseline = await this.readConversationBaseline(id, false);
+      } catch (error) {
+        if (String(record(error).code) === "ZCODE_SESSION_LOAD_REQUIRES_CAS") {
+          return { ok: false, inputId, admitted: false, notSubmitted: true, nonRetryable: true,
+            error: error instanceof Error ? error.message : String(error) };
+        }
+        throw error;
+      }
       const permissionError = this.pendingPermissionError(baseline);
       if (permissionError) return { ok: false, inputId, error: permissionError };
       const nativeSession = record(baseline.session);
@@ -3107,7 +3119,7 @@ export class ZcodeAdapter implements HarnessAdapter {
 
   private conversationLoads = new Map<string, Promise<ZcodeSnapshot>>();
 
-  private async readConversationBaseline(id: string): Promise<ZcodeSnapshot> {
+  private async readConversationBaseline(id: string, allowResume = true): Promise<ZcodeSnapshot> {
     const workspace = this.sessionWorkspaces.get(id) || this.workspace();
     try {
       const snapshot = await this.readSnapshot(id, workspace);
@@ -3115,9 +3127,15 @@ export class ZcodeAdapter implements HarnessAdapter {
       return snapshot;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      // Only explicit absence permits a prompt-free same-ID load. A read
-      // timeout/disconnect is unknown, and must never trigger send/replay.
+      // Only explicit absence can permit a prompt-free same-ID load for
+      // read-only callers. Delivery opts out because session/resume has no
+      // queue CAS; timeout/disconnect is unknown and never triggers replay.
       if (!["proto.sessionNotFound","ZCODE_AGENT_RUNTIME_UNAVAILABLE"].includes(String(record(error).code)) && !/\bSession not found\b|proto\.sessionNotFound|^ZCode Agent runtime is not running\.$/.test(message)) throw error;
+      if (!allowResume) {
+        throw Object.assign(new Error("Существующая ZCode-сессия не загружена; session/resume не имеет CAS для сохранения native queue, сообщение не отправлено."), {
+          code: "ZCODE_SESSION_LOAD_REQUIRES_CAS",
+        });
+      }
       let loading = this.conversationLoads.get(id);
       if (!loading) {
         loading = (async () => {
