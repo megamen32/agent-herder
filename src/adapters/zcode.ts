@@ -1949,7 +1949,7 @@ export class ZcodeAdapter implements HarnessAdapter {
         const snapshot = await this.readSnapshot(id, this.sessionWorkspaces.get(id)!);
         if (sessionInfoFromPayload(snapshot)?.sessionId !== id) throw new Error("Native session identity mismatch");
         const current = mapSession(snapshot, observed.cwd);
-        const session={...observed, ...current, meta:{...observed.meta,...current.meta,activityObservedAt:new Date().toISOString(),activityEvidence:'zcode-existing-native-snapshot'}};
+        const session={...observed, ...current, meta:{...observed.meta,...current.meta,activityObservedAt:new Date().toISOString(),activityExpiresAt:this.officialRunning.expiresAt,activityEvidence:'zcode-existing-native-snapshot'}};
         this.officialNativeStates.set(id,{session,expiresAt:Date.parse(this.officialRunning.expiresAt),pid:this.officialRunning.pid,generation:this.officialRunning.generation});
         return session;
       }

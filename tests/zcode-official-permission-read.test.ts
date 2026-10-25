@@ -20,6 +20,9 @@ it('keeps native permission state in both the active inventory and the sidebar l
  expect(await adapter.listActiveSessions()).toEqual([expect.objectContaining({id:'known',status:'needs_input',needsPermission:true,model:'account:zai/GLM'})]);
  expect(await adapter.listSessions()).toEqual([expect.objectContaining({id:'known',status:'needs_input',needsPermission:true})]);
  expect(call).toHaveBeenCalledTimes(1);
+ official.expiresAt=new Date(Date.now()+30000).toISOString();
+ await adapter.getSession('known');
+ expect((await adapter.listActiveSessions())[0].meta?.activityExpiresAt).toBe(official.expiresAt);
 });
 
 it('reads a pending permission from the existing official owner before reporting running',async()=>{
