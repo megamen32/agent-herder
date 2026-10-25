@@ -36,6 +36,7 @@ describe("MCP2 control-plane surface", () => {
       "herder://adapters/{harness}",
       "herder://presence/{sessionId}",
       "herder://presence/workspaces/{cwd}",
+      "herder://delivery-responses/{hostId}/{harness}/{sessionId}/{jobId}/{inputId}",
     ]));
   });
 

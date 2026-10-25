@@ -62,6 +62,7 @@ import { herderEvents, type HerderEventBus } from "./herder-events.js";
 import { herderJobs, type HerderJobRegistry } from "./herder-jobs.js";
 import { harnessEventHealth } from "./harness-event-health.js";
 import { registerHerderResources } from "./mcp/resources.js";
+import { registerDeliveryResponseResource } from "./mcp/delivery-response-resources.js";
 import { registerControlPlaneTools } from "./mcp/control-plane-tools.js";
 import { registerResumeAfterTools } from "./mcp/resume-after-tools.js";
 import { createResumeAfterRuntime } from "./resume-after-runtime.js";
@@ -87,6 +88,7 @@ import { registerRagTools } from "./mcp/rag-tools.js";
 import { registerActiveSessionTools } from "./mcp/active-session-tools.js";
 import { registerSessionWorkspaceTools } from "./session-workspaces-tools.js";
 import { registerSessionSearchTools } from "./mcp/session-search-tools.js";
+import { waitForDeliveryResponse, type DeliveryResponseTarget } from "./session-delivery-response.js";
 import { loadCdpChatDriver } from "./cdp-chat-mcp.js";
 import type { CdpChatCapabilities, CdpChatDriver } from "./cdp-chat.js";
 import { ALL_CDP_CHAT_CAPABILITIES, CdpChatClient } from "./cdp-chat.js";
@@ -767,6 +769,41 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
   registerHerderResources(server, {
     adapters, coordination: coordinationNotes, humanRequests, jobs, events, eventHealth: harnessEventHealth,
   });
+  registerDeliveryResponseResource(server, async (binding) => {
+    const adapter = adapters.get(binding.harness);
+    if (!adapter?.getSession || !adapter.getSessionMessages) throw new Error("delivery_response_history_unavailable");
+    const current = await adapter.getSession(binding.sessionId);
+    if (!current || current.id !== binding.sessionId || current.harness !== binding.harness || current.hostId !== binding.hostId) {
+      throw new Error("delivery_response_target_changed");
+    }
+    const job = jobs.get(binding.jobId);
+    if (!job || job.id !== binding.jobId || !job.durableOnce || job.ownerSessionId !== binding.sessionId) {
+      throw new Error("delivery_response_job_not_found_or_unbound");
+    }
+    const target: DeliveryResponseTarget = {
+      hostId: binding.hostId,
+      harness: binding.harness,
+      sessionId: binding.sessionId,
+    };
+    const baseline = jobs.readDeliveryResponseBaseline(binding.jobId, { inputId: binding.inputId, target });
+    return waitForDeliveryResponse({
+      jobId: binding.jobId,
+      inputId: binding.inputId,
+      target,
+      baseline,
+      readJob: (jobId) => jobs.get(jobId),
+      readHistory: async (requested, limit) => {
+        const fresh = await adapter.getSession(requested.sessionId);
+        if (!fresh || fresh.id !== requested.sessionId || fresh.harness !== requested.harness || fresh.hostId !== requested.hostId) {
+          return { messages: null };
+        }
+        return { messages: await adapter.getSessionMessages!(requested.sessionId, limit), complete: false };
+      },
+      waitMs: 0,
+      recordResponseReceipt: (jobId, receipt) => jobs.recordDeliveryResponseReceipt(jobId, receipt),
+      returnOnVisibleText: true,
+    });
+  }, events);
   if (options.notifyDomainEvents) {
     const unsubscribe = events.subscribe((event) => { void server.server.sendResourceUpdated({ uri: event.uri }); });
     server.server.onclose = () => { unsubscribe(); };
