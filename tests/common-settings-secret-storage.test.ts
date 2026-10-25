@@ -212,6 +212,33 @@ describe("the file of the product keeps the marker of a secret", () => {
     expect(await readFile(envPath, "utf8")).not.toContain(LOCAL_SECRET);
   });
 
+  it("keeps migrated rollback indexes stable after more than 32 later secret writes", async () => {
+    const envPath = join(configDir, "herder.env");
+    await writeFile(envPath, `NOTIFY_CENTER_TOKEN=${settingsFingerprint(COMMON_SECRET)}\n`, { mode: 0o600 });
+    const store = storeOf();
+    await store.secretStore.writeSecret("NOTIFY_CENTER_TOKEN", COMMON_SECRET);
+    await mkdir(join(stateDir, "settings"), { recursive: true });
+    await writeFile(store.historyPath, `${JSON.stringify([{
+      id: "legacy-secret-history-index-stability",
+      at: "2026-10-25T00:00:00.000Z",
+      actor: "owner",
+      entity: "herder.env",
+      key: "NOTIFY_CENTER_TOKEN",
+      kind: "secret",
+      previousPresent: true,
+      previousValue: LOCAL_SECRET,
+      auditId: "legacy-secret-audit-index-stability",
+    }])}\n`, { mode: 0o600 });
+
+    await loadSecretEnvironment({ store, env: {} });
+    for (let index = 0; index < 34; index += 1) {
+      await store.applyEnvironment({ NOTIFY_CENTER_TOKEN: `post-migration-value-${index}` });
+    }
+
+    await store.rollback({ entity: "herder.env", key: "NOTIFY_CENTER_TOKEN", historyId: "legacy-secret-history-index-stability" });
+    expect(await store.readSecretValue("NOTIFY_CENTER_TOKEN")).toBe(LOCAL_SECRET);
+  });
+
   it("reuses the migrated rollback value when rewriting legacy history is retried", async () => {
     const envPath = join(configDir, "herder.env");
     await writeFile(envPath, `NOTIFY_CENTER_TOKEN=${settingsFingerprint(COMMON_SECRET)}\n`, { mode: 0o600 });

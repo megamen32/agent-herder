@@ -140,7 +140,7 @@ export interface SecretStoreContent {
   version: 1;
   /** The current value of every secret. */
   secrets: Record<string, string>;
-  /** The values the undo stack can put back, the newest last. */
+  /** The values the undo stack can put back, ordered by append-only index. */
   previous: Record<string, string[]>;
   /** The local value the common document of the fleet replaced. */
   local: Record<string, string>;
@@ -208,8 +208,9 @@ export class SecretStore {
     const content = await this.read();
     const stack = content.previous[key] ?? [];
     stack.push(value);
-    // The stack is bounded: the old values of a secret do not pile up forever.
-    content.previous[key] = stack.slice(-32);
+    // History entries persist their numeric index. Trimming this array would
+    // silently retarget every older rollback reference to a different value.
+    content.previous[key] = stack;
     await this.write(content);
     return content.previous[key].length - 1;
   }
