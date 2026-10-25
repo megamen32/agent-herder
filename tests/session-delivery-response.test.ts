@@ -258,4 +258,30 @@ describe("session delivery response observer", () => {
       readReceipt: () => responseReceipts.get("job-a") ?? null,
     })).rejects.toThrow("not bound to a previously returned response");
   });
+
+  it("marks a succeeded turn with an empty assistant final as no visible response", async () => {
+    const baseline = await captureDeliveryResponseBaseline({
+      jobId: "job-a", inputId: "input-a", target: target(),
+      readMessages: async () => ({ messages: [message("user-old", "user", "old prompt")], complete: true }),
+    });
+    const result = await waitForDeliveryResponse({
+      jobId: "job-a", inputId: "input-a", target: target(), baseline,
+      readJob: () => completedJob("job-a", "turn-a"),
+      readHistory: async () => ({
+        messages: [
+          message("user-old", "user", "old prompt"),
+          { ...message("assistant-empty", "assistant", "", "turn-a"), parts: [{ type: "text", text: "" }] },
+        ],
+        turnComplete: true,
+      }),
+      waitMs: 0,
+    });
+    expect(result).toMatchObject({
+      status: "completed",
+      reason: "no_visible_response",
+      text: "",
+      jobRef: "herder://jobs/job-a",
+      responseFetchUri: "herder://delivery-responses/host-a/codex/session-a/job-a/input-a",
+    });
+  });
 });

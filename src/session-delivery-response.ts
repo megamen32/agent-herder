@@ -63,7 +63,7 @@ export type DeliveryResponseResult = {
   baselineCoverage: DeliveryResponseBaseline["coverage"];
   turnId?: string;
   observationCancelled?: boolean;
-  reason?: "baseline_unavailable" | "baseline_gap" | "baseline_prefix_changed" | "job_unavailable" | "job_unknown" | "history_unavailable";
+  reason?: "baseline_unavailable" | "baseline_gap" | "baseline_prefix_changed" | "job_unavailable" | "job_unknown" | "history_unavailable" | "no_visible_response";
 };
 
 export type DeliveryResponsePage = {
@@ -354,6 +354,7 @@ async function toResult(input: {
     ...(delta.integrity === "baseline_prefix_changed" ? { reason: "baseline_prefix_changed" as const } : {}),
     ...(delta.integrity === "baseline_unavailable" ? { reason: "baseline_unavailable" as const } : {}),
     ...(delta.integrity === "history_unavailable" ? { reason: "history_unavailable" as const } : {}),
+    ...(status === "completed" && delta.text.length === 0 ? { reason: "no_visible_response" as const } : {}),
     ...(status === "unknown" && !delta.integrity.startsWith("baseline_") && delta.integrity !== "history_unavailable" ? { reason: "job_unknown" as const } : {}),
   };
 }
