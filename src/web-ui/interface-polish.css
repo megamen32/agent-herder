@@ -191,9 +191,15 @@
    the details. The conversation keeps the height of the screen. */
 .work-target { flex: 0 0 auto; display: grid; gap: 0; padding: 0; border-bottom: 1px solid var(--border); background: var(--surface-1); }
 .work-target-bar { position: relative; display: flex; align-items: center; gap: var(--space-2); min-height: 38px; padding: 5px 14px 5px 22px; }
-.work-target-summary { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 8px; padding: 2px 0; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.work-target-summary { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 8px; padding: 3px 6px; margin-left: -6px; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.work-target-summary:hover { background: var(--surface-hover); }
 .work-target-summary:hover .work-target-label { color: var(--text); }
-.work-target-caret { flex: 0 0 auto; color: var(--muted); font-size: 11px; }
+.work-target-caret-button { flex: 0 0 auto; display: grid; place-items: center; width: 28px; height: 28px; margin-left: -6px; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--muted); cursor: pointer; }
+.work-target-caret-button:hover, .work-target-caret-button:focus-visible { background: var(--surface-hover); color: var(--text); }
+.work-target-caret { width: 14px; height: 14px; transition: transform .12s ease; }
+.work-target-open .work-target-caret { transform: rotate(90deg); }
+.work-target-summary:hover { color: var(--text); }
+.work-target-summary:focus-visible, .work-target-caret-button:focus-visible, .work-target-settings:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .work-target-label { flex: 0 0 auto; color: var(--muted); font-size: var(--text-xs); letter-spacing: .08em; text-transform: uppercase; }
 .work-target-summary strong { flex: 0 0 auto; font-weight: 500; font-size: 13px; }
 .work-target-summary code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
@@ -244,3 +250,71 @@
 .inspector-timeline .timeline-kind-git { border-left-color: #6ea8fe; }
 .inspector-timeline .timeline-kind-test { border-left-color: #7dd3a0; }
 .inspector-timeline .timeline-kind-error { border-left-color: var(--status-error); }
+
+/* Быстрые фильтры списка сессий: работают, ждут задачи, среда. */
+.session-quick-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.session-quick-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--muted); font-size: var(--text-xs); cursor: pointer; }
+.session-quick-chip:hover { background: var(--surface-hover); color: var(--text); }
+.session-quick-chip b { color: var(--text); font-weight: 600; }
+.session-quick-chip.pressed { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text); }
+.session-quick-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Запрос поиска должен быть виден: иначе после перезагрузки список выглядит сломанным. */
+.session-search-chip { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin: 8px 0 4px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-2); color: var(--muted); font-size: var(--text-xs); }
+.session-search-chip b { color: var(--text); font-weight: 500; overflow-wrap: anywhere; }
+.session-search-chip .quiet-button { padding: 2px 6px; }
+.sessions-active-filter { border: 0; background: transparent; color: var(--muted); font-size: var(--text-xs); text-align: left; cursor: pointer; }
+.sessions-active-filter:hover { color: var(--text); text-decoration: underline; }
+
+/* Инспектор-шторка: на узких экранах он перекрывает чат, поэтому чат под ним
+   не должен ловить клики, а на телефоне шапка остаётся поверх шторки. */
+@media (min-width: 901px) and (max-width: 1180px) {
+  .oc-app:not(.no-inspector) .chat-pane { pointer-events: none; }
+}
+@media (max-width: 900px) {
+  .inspector-pane { padding-top: 8px; }
+  .oc-app:not(.no-inspector) .chat-header { position: relative; z-index: 46; background: var(--surface-1); }
+}
+
+/* Текст инспектора не обрезается по правому краю. */
+.inspector-pane, .inspector-pane * { min-width: 0; }
+.inspector-pane p, .inspector-pane small, .inspector-pane dd, .inspector-pane label, .inspector-pane select { overflow-wrap: anywhere; }
+.inspector-pane select { max-width: 100%; width: 100%; }
+
+/* Меню чата не должно обрезаться низом окна и должно иметь видимую кнопку закрытия. */
+.chat-menu { max-height: min(70dvh, calc(100dvh - 80px)); overflow-y: auto; overscroll-behavior: contain; padding-bottom: 44px; }
+.chat-menu-close { position: sticky; top: -10px; float: right; margin: -4px -4px 0 0; width: 32px; height: 32px; border: 1px solid var(--border); border-radius: 50%; background: var(--surface-1); color: var(--text); font-size: 18px; line-height: 1; z-index: 2; }
+
+/* Шестерёнка настроек в шапке сессии не уезжает за правый край на телефоне. */
+@media (max-width: 560px) {
+  .work-target-bar { padding-inline: 8px; gap: 4px; }
+  .work-target-summary { min-width: 0; }
+  .work-target-summary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
+  .work-target-summary code { min-width: 0; flex: 1 1 auto; }
+  .work-target-label { display: none; }
+  .work-target-settings { width: 34px; height: 34px; flex: 0 0 34px; }
+}
+
+/* Счётчики в шапке списка не ломаются на четыре строки. */
+.sessions-heading { flex-wrap: wrap; row-gap: 2px; }
+.sessions-heading > div { min-width: 0; }
+.sessions-heading .directory-status { display: inline-block; max-width: 100%; padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sessions-heading > div > .directory-status { margin-right: 10px; }
+
+/* Настройки списка сессий скроллятся отдельно от самого списка. */
+.session-settings { max-height: min(46dvh, 420px); overflow-y: auto; overscroll-behavior: contain; }
+.session-cache-settings, .directory-status { max-height: 40dvh; overflow-y: auto; }
+
+/* Факты сессии (файлы, таймлайн, MCP) идут выше длинных текстов про квоту
+   и автопродолжение: порядок в разметке менять нельзя, поэтому работает order. */
+.inspector-pane { display: flex; flex-direction: column; }
+.inspector-pane > * { flex: 0 0 auto; }
+.inspector-heading { order: -2; }
+.inspector-facts { order: -1; }
+
+/* Шторка инспектора на узком экране: под ней — затемнение, чтобы было видно,
+   что чат позади, и чтобы шторку можно было закрыть щелчком по фону. */
+.inspector-scrim { display: none; }
+@media (min-width: 901px) and (max-width: 1180px) {
+  .inspector-scrim { display: block; position: fixed; inset: 0; z-index: 44; background: rgb(0 0 0 / 35%); }
+}

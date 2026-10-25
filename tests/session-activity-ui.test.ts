@@ -78,9 +78,15 @@ describe("the panel of the work of the session", () => {
     expect(html).toContain("mcp__agent-herder__send_message");
   });
 
-  it("says plainly when the transcript proves nothing", () => {
+  it("says plainly when the transcript is read and holds no actions", () => {
     const html = renderToStaticMarkup(React.createElement(SessionActivityPanel, { messages: [] }));
-    expect(html).toContain("действий в переписке пока нет");
+    expect(html).toContain("инструменты в переписке не вызывались");
     expect(html).toContain("вызовов MCP не зафиксировано");
+  });
+
+  it("says plainly when the transcript is not read yet", () => {
+    const html = renderToStaticMarkup(React.createElement(SessionActivityPanel, { messages: undefined }));
+    expect(html).toContain("переписка не загружена");
+    expect(html).not.toContain("не вызывались");
   });
 });

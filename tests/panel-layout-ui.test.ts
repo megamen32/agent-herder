@@ -23,8 +23,14 @@ describe("the layout of the panel", () => {
 
   it("remembers the choice of the owner", () => {
     const store = storage();
-    writePanelLayout({ chatListOpen: false, headerOpen: true, inspectorOpen: false }, store);
-    expect(readPanelLayout(store)).toEqual({ chatListOpen: false, headerOpen: true, inspectorOpen: false });
+    writePanelLayout({ chatListOpen: false, headerOpen: true, inspectorOpen: false, listFilter: "all" }, store);
+    expect(readPanelLayout(store)).toEqual({ chatListOpen: false, headerOpen: true, inspectorOpen: false, listFilter: "all" });
+  });
+
+  it("remembers the slice of the list the owner chose", () => {
+    const store = storage();
+    writePanelLayout({ chatListOpen: true, headerOpen: false, inspectorOpen: true, listFilter: "waiting" }, store);
+    expect(readPanelLayout(store).listFilter).toBe("waiting");
   });
 
   it("keeps the layout of the session when the browser stored nothing", () => {

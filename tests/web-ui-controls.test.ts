@@ -98,7 +98,8 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('>Автопродолжение</button>');
     expect(menu).toContain('Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})');
     expect(menu).toContain('Автопилот · общие настройки (в этом чате ${activeAutopilotEnabled ? "включён" : "выключен"})');
-    expect(main).toContain('<div className="chat-menu" aria-label="Меню чата">{chatMenuContent}</div>');
+    expect(main).toContain('<div className="chat-menu" aria-label="Меню чата"><button type="button" className="chat-menu-close"');
+    expect(main).toContain('{chatMenuContent}</div>}');
     expect(main).toContain('settingsMenu={chatMenuContent}');
   });
 

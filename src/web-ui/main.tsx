@@ -25,6 +25,8 @@ import {useFleetDirectory} from './fleet/use-directory.js';
 import {mergeActiveActivity} from './active-activity.js';
 import {useActiveActivity} from './use-active-activity.js';
 import {SessionWorkTarget, SessionInspectBlock, type SessionInspectFacts} from './session-work-target.js';
+import {SessionQuickFilters, type SessionStatusFilter, type SessionQuickFilterCounts} from './session-list-quick-filters.js';
+import { mergeScopeAnswers, sessionScopeQuery, sliceScopeQueries, statusInSlice, useSessionScope } from './session-list-scope.js';
 import {useSessionFacts} from './use-session-facts.js';
 import {SessionActivityPanel} from './session-activity-panel.js';
 import {readPanelLayout, writePanelLayout, type PanelLayout} from './ui-layout.js';
@@ -631,7 +633,7 @@ function AutomationSettings({ section, state, draft, saving, error, saved, conti
   </section>;
 }
 
-function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, loading, refreshing, settings, settingsOpen, searchOpen, searchQuery, options, choicesBySession, choosingRequestId, choiceError, collapsedChildren, onSearchChange, onSearchToggle, onSettingsChange, onSettingsToggle, onToggleChildren, onSelect, onChoose, onNewSession, onMachines, onAdvancedSearch, cacheSettings, onCacheSettings, onCacheClear, directoryStatus, onLoadMore, onAutomationSettings, loadedCount, total, sample, onLoadMoreSessions, activeCount, onCollapse, }: {
+function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, loading, refreshing, settings, settingsOpen, searchOpen, searchQuery, options, choicesBySession, choosingRequestId, choiceError, collapsedChildren, onSearchChange, onSearchToggle, onSettingsChange, onSettingsToggle, onToggleChildren, onSelect, onChoose, onNewSession, onMachines, onAdvancedSearch, cacheSettings, onCacheSettings, onCacheClear, directoryStatus, onLoadMore, onAutomationSettings, loadedCount, total, sample, onLoadMoreSessions, onCollapse, quickCounts, quickStatus, onQuickStatusChange, }: {
   entries: SessionListEntry[];
   pins:readonly string[]; pinScope:string; onPin:(key:string)=>void; pinError:string;
   activeKey?: string;
@@ -663,11 +665,13 @@ function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, load
   total?: number;
   /** Сводка загруженной выборки — нужна, чтобы объяснить пустой список. */
   sample: SessionSampleCounts;
-  /** Сколько сессий инвентарь активности доказывает как работающие. */
-  activeCount: number;
   onLoadMoreSessions?: () => void;
   /** Свернуть список чатов: колонка слева уходит, чат остаётся во всю ширину. */
   onCollapse?: () => void;
+  /** Быстрые фильтры: работают / ждут задачи / среда. */
+  quickCounts?: SessionQuickFilterCounts;
+  quickStatus?: SessionStatusFilter;
+  onQuickStatusChange?: (status: SessionStatusFilter) => void;
 }) {
   const [windowSize,setWindowSize]=React.useState(150);
   React.useEffect(()=>setWindowSize(150),[settings.hostId,settings.harness,settings.cwd,settings.project,settings.sort,settings.showAll,searchQuery]);
@@ -676,16 +680,19 @@ function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, load
   const counter=sessionListCounterRu(counts,searchQuery);
   const empty=sessionListEmptyReason({query:searchQuery,settings,sample,hostLabel:options.hosts.find((host)=>host.hostId===settings.hostId)?.label});
   return <nav className="sessions-pane" aria-label="Сессии">
-    <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Чаты {refreshing && <span className="inline-loading-dot" role="status" aria-label="Обновление сессий" />}</h1><small className="directory-status" role="status">{counter}</small>{activeCount>0&&<small className="directory-status" role="status">Сейчас работают: {activeCount}</small>}</div><div className="sessions-heading-actions"><button type="button" className="quiet-button sessions-machines-button" onClick={onMachines}>Машины</button><button type="button" className="icon-button" aria-label="Новая сессия" title="Новая сессия" onClick={onNewSession}>+</button><button className={`icon-button ${searchOpen ? "selected-icon" : ""}`} aria-label="Поиск сессий" aria-expanded={searchOpen} onClick={onSearchToggle}>⌕</button><button className={`icon-button ${settingsOpen ? "selected-icon" : ""}`} aria-label="Настройки списка" title="Фильтры и сортировка списка сессий" aria-expanded={settingsOpen} onClick={onSettingsToggle}>≡</button>{onCollapse && <button type="button" className="icon-button sessions-collapse-button" aria-label="Скрыть список чатов" title="Скрыть список чатов" onClick={onCollapse}><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>}</div></div>
+    <div className="sessions-heading"><div><span className="eyebrow">AGENT HERDER</span><h1>Чаты {refreshing && <span className="inline-loading-dot" role="status" aria-label="Обновление сессий" />}</h1><button type="button" className="directory-status sessions-counter-button" title={searchQuery ? "Сбросить поиск" : "Показать все сессии"} onClick={() => { if (searchQuery) onSearchChange(""); else onQuickStatusChange?.("all"); }}>{counter}</button></div><div className="sessions-heading-actions"><button type="button" className="quiet-button sessions-machines-button" onClick={onMachines}>Машины</button><button type="button" className="icon-button" aria-label="Новая сессия" title="Новая сессия" onClick={onNewSession}>+</button><button className={`icon-button ${searchOpen ? "selected-icon" : ""}`} aria-label="Поиск сессий" aria-expanded={searchOpen} onClick={onSearchToggle}>⌕</button><button className={`icon-button ${settingsOpen ? "selected-icon" : ""}`} aria-label="Настройки списка" title="Фильтры и сортировка списка сессий" aria-expanded={settingsOpen} onClick={onSettingsToggle}>≡</button>{onCollapse && <button type="button" className="icon-button sessions-collapse-button" aria-label="Скрыть список чатов" title="Скрыть список чатов" onClick={onCollapse}><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>}</div></div>
     <div className="session-automation-links" aria-label="Общие настройки автоматизации"><button className="quiet-button" onClick={() => onAutomationSettings("autopilot")}>Автопилот</button><button className="quiet-button" onClick={() => onAutomationSettings("autocontinue")}>Автопродолжение</button><button className="quiet-button" onClick={() => onAutomationSettings("launch-policy")}>Запуск сессий</button></div>
-    {searchOpen && <div className="session-search"><input autoFocus value={searchQuery} onChange={(event) => onSearchChange(event.target.value)} placeholder="Название, агент, папка или текст…" aria-label="Поиск по сессиям" /><button type="button" className="rag-advanced-link" onClick={() => onAdvancedSearch(searchQuery)}>Расширенный поиск →</button><small>Поиск идёт по загруженному списку: {sample.total} {pluralRu(sample.total, "сессия", "сессии", "сессий")}.</small></div>}
+    {searchQuery && <div className="session-search-chip"><span>Запрос: <b>{searchQuery}</b></span><button type="button" className="quiet-button" aria-label="Сбросить запрос поиска" onClick={() => onSearchChange("")}>✕</button></div>}
+    {searchOpen && <div className="session-search"><input autoFocus value={searchQuery} onChange={(event) => onSearchChange(event.target.value)} placeholder="Название, агент, папка или текст…" aria-label="Поиск по сессиям" /><button type="button" className="rag-advanced-link" onClick={() => onAdvancedSearch(searchQuery)}>Расширенный поиск →</button><small>Поиск идёт по загруженному списку: {sample.total} {pluralRu(sample.total, "сессия", "сессии", "сессий")}. Поиск смотрит все статусы выбранной среды.</small></div>}
+    {quickCounts && onQuickStatusChange && <SessionQuickFilters counts={quickCounts} status={quickStatus || "all"}
+      onStatusChange={onQuickStatusChange} harness={settings.harness} onHarnessChange={(harness) => onSettingsChange({ harness })} />}
     {settings.harness && <small className="directory-status">Фильтр среды: {settings.harness}</small>}{settingsOpen && <div className="session-settings" aria-label="Настройки списка сессий">
       <small>Папка — текущий каталог сессии. Проект — каталог её родительской сессии, если она есть.</small><label>Папка<select value={settings.cwd} onChange={(event) => onSettingsChange({ cwd: event.target.value })}><option value="">Все папки</option>{options.cwds.map((cwd) => <option value={cwd} key={cwd}>{cwd}</option>)}</select></label>
       <label>Проект<select value={settings.project} onChange={(event) => onSettingsChange({ project: event.target.value })}><option value="">Все проекты</option>{options.projects.map((project) => <option value={project} key={project}>{project}</option>)}</select></label>
       <label>Машина<select aria-label="Машина" value={settings.hostId??""} onChange={event=>onSettingsChange({hostId:event.target.value})}><option value="">Все машины</option>{options.hosts.map(host=><option key={host.hostId} value={host.hostId}>{host.label}</option>)}</select></label>
       <label>Агент<select value={settings.harness} onChange={(event) => onSettingsChange({ harness: event.target.value })}><option value="">Все агенты</option>{options.harnesses.map((harness) => <option value={harness} key={harness}>{harness}</option>)}</select></label>
       <label>Сортировка<select value={settings.sort} onChange={(event) => onSettingsChange({ sort: event.target.value as SessionListSort })}><option value="created">По дате создания</option><option value="activity">По активности · раз в 30 с</option><option value="status">По статусу</option><option value="harness">По агенту</option><option value="title">По названию</option><option value="cwd">По папке</option></select></label>
-      <label className="session-toggle"><input type="checkbox" aria-label={SESSION_LIST_SHOW_COMPLETED_ARIA} checked={settings.showAll} onChange={(event) => onSettingsChange({ showAll: event.target.checked })} /> {SESSION_LIST_SHOW_COMPLETED_LABEL}</label><small>{SESSION_LIST_SHOW_COMPLETED_HINT}</small>
+      <label className="session-toggle"><input type="checkbox" aria-label={SESSION_LIST_SHOW_COMPLETED_ARIA} checked={settings.showAll} onChange={(event) => { const next = event.target.checked; if (onQuickStatusChange) onQuickStatusChange(next ? "all" : "working"); else onSettingsChange({ showAll: next }); }} /> {SESSION_LIST_SHOW_COMPLETED_LABEL}</label><small>{SESSION_LIST_SHOW_COMPLETED_HINT}</small>
     </div>}
     {settingsOpen&&<details className="session-cache-settings"><summary>Быстрое открытие сессий</summary><label>Хранить просмотр в этом браузере<select aria-label="Срок кэша сессий" value={cacheSettings.hours} onChange={e=>onCacheSettings({...cacheSettings,hours:Number(e.target.value)})}><option value={0}>Выключено</option><option value={24}>Сутки</option><option value={72}>3 дня</option><option value={168}>Неделя</option></select></label><label>Размер кэша<select aria-label="Размер кэша сессий" value={cacheSettings.maxMiB} onChange={e=>onCacheSettings({...cacheSettings,maxMiB:Number(e.target.value)})}>{[16,32,64].map(size=><option key={size} value={size}>{size} МБ</option>)}</select></label><small>Только открытые сессии. История остальных остаётся на их машине. При открытии сохранённый просмотр обновляется.</small><button className="quiet-button" onClick={onCacheClear}>Очистить сохранённый просмотр</button></details>}
     {directoryStatus&&<details className="directory-status"><summary>Подключение машин</summary><small role="status">{directoryStatus}</small>{onLoadMore&&<button className="quiet-button" onClick={onLoadMore}>Показать ещё сессии</button>}</details>}
@@ -715,7 +722,7 @@ function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, load
       {entries.length>windowSize&&<button className="quiet-button" onClick={()=>setWindowSize(n=>n+150)}>Показать ещё · всего {entries.length}</button>}
       {total!==undefined&&total>loadedCount&&<button className="quiet-button" onClick={()=>{setWindowSize(n=>n+150);onLoadMoreSessions?.();}}>Догрузить ещё с сервера · всего {total}</button>}
       {loading && entries.length === 0 && <div className="session-skeletons" aria-label="Загрузка сессий">{Array.from({ length: 8 }, (_, index) => <div className="session-skeleton" key={index}><span /><div><b /><i /><i /></div></div>)}</div>}
-      {!loading && entries.length === 0 && <div className="empty-list"><strong>{empty.title}</strong>{empty.hint&&<small>{empty.hint}</small>}{empty.showCompleted&&<button type="button" className="quiet-button" onClick={()=>onSettingsChange({ showAll: true })}>Показать завершённые сессии</button>}</div>}
+      {!loading && entries.length === 0 && <div className="empty-list"><strong>{empty.title}</strong>{empty.hint&&<small>{empty.hint}</small>}{empty.showCompleted&&<button type="button" className="quiet-button" onClick={()=>{ if (onQuickStatusChange) onQuickStatusChange("all"); else onSettingsChange({ showAll: true }); }}>Показать завершённые сессии</button>}</div>}
     </div>
   </nav>;
 }
@@ -723,6 +730,10 @@ function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, load
 function App() {
   const [listSettings, setListSettings] = React.useState<SessionListSettings>(() => readSessionListSettings(window.localStorage));
   React.useEffect(() => { writeSessionListSettings(window.localStorage, listSettings); }, [listSettings]);
+  // Срез и среда живут в раскладке панели и в настройках списка. Здесь они
+  // переносятся в ссылки, по которым сервер отбирает сессии: выбор владельца
+  // должен менять запрос, а не только подсветку чипа.
+  React.useEffect(() => { listHarnessRef.current = listSettings.harness; }, [listSettings.harness]);
   const directory=useFleetDirectory(listSettings.hostId);
   // The catalog of the sessions says which sessions exist; the inventory of the
   // activity says which of them are working right now.
@@ -742,6 +753,10 @@ function App() {
   const [sessions, setSessions] = React.useState<HerderSession[]>([]);
   /** The window the panel asks the server for; the counter of the whole list. */
   const sessionLimitRef = React.useRef(SESSION_LIST_WINDOW);
+  /** Срез статуса и среда, по которым сервер отбирает сессии для списка. */
+  const listSliceRef = React.useRef<SessionStatusFilter>("working");
+  const listHarnessRef = React.useRef("");
+  const listSearchRef = React.useRef("");
   const [sessionsTotal, setSessionsTotal] = React.useState<number>();
   const [activeKey, setActiveKey] = React.useState<string | undefined>(() => readSessionFromHash() ?? window.localStorage.getItem("agent-herder.active-session") ?? undefined);
   const [linkedTurnId, setLinkedTurnId] = React.useState<string | undefined>(() => readTurnFromHash());
@@ -761,6 +776,17 @@ function App() {
   const [detailsError, setDetailsError] = React.useState<string>();
   const detailsReadGateRef = React.useRef(new DetailsReadGate());
   const [mobileView, setMobileView] = React.useState<"sessions" | "chat">(() => readSessionFromHash() ? "chat" : "sessions");
+  // На телефоне панель открывается тем, чем владелец закончил: открытая
+  // сессия — это чат, а не список, который пришлось бы искать заново.
+  const mobileStartRef = React.useRef(false);
+  React.useEffect(() => {
+    if (mobileStartRef.current) return;
+    mobileStartRef.current = true;
+    if (mobileView === "chat") return;
+    if (!window.localStorage.getItem("agent-herder.active-session")) return;
+    if (!window.matchMedia("(max-width: 900px)").matches) return;
+    setMobileView("chat");
+  }, [mobileView]);
   const [showReasoning, setShowReasoning] = React.useState(() => readDisplayPreference(window.localStorage, REASONING_DISPLAY_STORAGE_KEY));
   const [showTools, setShowTools] = React.useState(() => readDisplayPreference(window.localStorage, TOOLS_DISPLAY_STORAGE_KEY));
   React.useEffect(() => { writeDisplayPreference(window.localStorage, REASONING_DISPLAY_STORAGE_KEY, showReasoning); }, [showReasoning]);
@@ -784,6 +810,12 @@ function App() {
   const setLayoutField = React.useCallback(<K extends keyof PanelLayout>(key: K, value: PanelLayout[K]) => {
     setLayout((current) => ({ ...current, [key]: value }));
   }, []);
+  // Быстрый срез списка: работают / ждут задачи / все. По умолчанию список
+  // показывает ровно то, о чём говорит счётчик, — работающие сессии; выбор
+  // владельца помнится вместе с раскладкой панели.
+  const listStatusFilter = layout.listFilter;
+  const setListStatusFilter = (status: SessionStatusFilter) => setLayoutField("listFilter", status);
+  React.useEffect(() => { listSliceRef.current = listStatusFilter; }, [listStatusFilter]);
   React.useEffect(() => { writePanelLayout(layout); }, [layout]);
   const [sessionSettingsReturn, setSessionSettingsReturn] = React.useState<"autocontinue" | "autopilot">();
   const automationDialogRef = React.useRef<HTMLDivElement>(null);
@@ -812,6 +844,7 @@ function App() {
   const [showSessionSettings, setShowSessionSettings] = React.useState(false);
   const [showSessionSearch, setShowSessionSearch] = React.useState(false);
   const [sessionSearch, setSessionSearch] = React.useState(() => readSessionSearchPreferences(window.localStorage).query);
+  React.useEffect(() => { listSearchRef.current = sessionSearch; }, [sessionSearch]);
   React.useEffect(() => { writeSessionSearchPreferences(window.localStorage, { query: sessionSearch }); }, [sessionSearch]);
   const [autopilotChoices, setAutopilotChoices] = React.useState<WebAutopilotChoiceCard[]>([]);
   const [choosingRequestId, setChoosingRequestId] = React.useState<string>();
@@ -976,10 +1009,19 @@ function App() {
     const read = (async () => {
     setSessionsRefreshing(true);
     try {
-    const [result, choiceResult] = await Promise.all([
-      api<{ sessions: HerderSession[]; warming?: boolean; total?: number }>(`/api/sessions?quick=1&limit=${sessionLimitRef.current}`),
+    // Срез и среда выбираются на сервере: окно ответа тогда описывает ровно
+    // то, что владелец просит увидеть, а не «всё, что попалось в первые 100».
+    const slice = listSliceRef.current;
+    const harness = listHarnessRef.current;
+    const searching = listSearchRef.current.trim().length > 0;
+    const limit = searching ? Math.max(sessionLimitRef.current, 500) : sessionLimitRef.current;
+    const queries = sliceScopeQueries(slice, harness, searching);
+    const [answers, choiceResult] = await Promise.all([
+      Promise.all(queries.map((query) => api<{ sessions: HerderSession[]; warming?: boolean; total?: number }>(sessionScopeQuery(query, limit)))),
       api<{ choices: WebAutopilotChoiceCard[] }>("/api/autopilot/choices?status=pending").catch(() => ({ choices: [] })),
     ]);
+    const merged = mergeScopeAnswers(answers, keyOf);
+    const result = { sessions: merged.sessions, total: merged.total, warming: answers.every((answer) => answer.warming) };
     const sessionKeys = new Set(result.sessions.map(keyOf));
     const decisionSessions: HerderSession[] = choiceResult.choices
       .filter((choice) => !sessionKeys.has(`${choice.harness}:${choice.sessionId}`))
@@ -1036,6 +1078,19 @@ function App() {
     const timer = window.setInterval(() => { if (!document.hidden && sessionListRefreshDelay(sessionsLastReadRef.current, Date.now()) === 0) void loadSessions().catch(() => {}); }, SESSION_LIST_REFRESH_MS);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [loadSessions]);
+  // Смена среза, среды или запроса — это новый вопрос к серверу: список
+  // перечитывается по новым фильтрам, а не остаётся прежним окном.
+  const listFilterReadyRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!listFilterReadyRef.current) { listFilterReadyRef.current = true; return; }
+    const timer = window.setTimeout(() => {
+      // Текущее чтение относится к прежним фильтрам — оно не отвечает на
+      // новый вопрос, поэтому следующее чтение начинается заново.
+      sessionsReadRef.current = undefined;
+      void loadSessions().catch(() => false);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [listStatusFilter, listSettings.harness, sessionSearch, loadSessions]);
   /** The load of a wider window of the list: the owner asks for more. */
   const loadMoreSessions = React.useCallback(async () => {
     sessionLimitRef.current = Math.min(sessionLimitRef.current + SESSION_LIST_WINDOW, 500);
@@ -1343,12 +1398,21 @@ function App() {
     return () => window.clearInterval(timer);
   }, [listSettings.sort]);
   const sessionMap = React.useMemo(() => new Map(displaySessions.map((session) => [keyOf(session), session])), [displaySessions]);
+  // Среды, которые панель знает: список не должен зависеть от того, какие
+  // сессии попали в окно, — иначе среду нельзя выбрать, когда её сессий
+  // в окне нет.
+  const scopeHarnesses = React.useMemo(() => {
+    const known = new Set<string>();
+    for (const adapter of harnessAdapters) if (adapter.id) known.add(adapter.id);
+    for (const session of displaySessions) if (session.harness) known.add(session.harness);
+    return [...known].sort();
+  }, [harnessAdapters, displaySessions]);
   const listOptions = React.useMemo(() => ({
     hosts:directory.hosts,
     cwds: [...new Set(displaySessions.map((session) => session.cwd).filter(Boolean))].sort(),
     projects: [...new Set(displaySessions.map((session) => projectFor(session, sessionMap)).filter(Boolean))].sort(),
-    harnesses: [...new Set(displaySessions.map((session) => session.harness).filter(Boolean))].sort(),
-  }), [displaySessions, sessionMap, directory.hosts]);
+    harnesses: scopeHarnesses,
+  }), [displaySessions, sessionMap, directory.hosts, scopeHarnesses]);
   const choicesBySession = React.useMemo(() => {
     const result = new Map<string, WebAutopilotChoiceCard>();
     for (const choice of autopilotChoices) {
@@ -1358,7 +1422,49 @@ function App() {
     return result;
   }, [autopilotChoices]);
   const choiceSessionKeys = React.useMemo(() => new Set(choicesBySession.keys()), [choicesBySession]);
-  const visibleSessionEntries = React.useMemo(() => sidebarEntries(displaySessions, listSettings, collapsedChildren, choiceSessionKeys, sessionSearch, sessionPins.pins, activityOrder), [displaySessions, listSettings, collapsedChildren, choiceSessionKeys, sessionSearch, sessionPins.pins, activityOrder]);
+  // Быстрый фильтр режет список до того, как он устроен в дерево: иначе
+  // родитель без детей остался бы с пустым заголовком.
+  const quickFilteredSessions = React.useMemo(
+    () => displaySessions.filter((session) => statusInSlice(session.status, listStatusFilter)),
+    [displaySessions, listStatusFilter],
+  );
+  // Числа на чипах считает сервер по всей флоте: чип «Работают 4» и список
+  // из четырёх работающих сессий говорят одно и то же. Пересчёт по
+  // загруженному окну давал бы другое число и тот самый «мега-баг».
+  const scopeCounts = useSessionScope({ slice: listStatusFilter, harness: listSettings.harness, harnesses: scopeHarnesses });
+  // «Показывать завершённые» и чип «Все» — это один и тот же переключатель:
+  // два источника правды расходились, и владелец не понимал, что нажал.
+  const effectiveListSettings = React.useMemo<SessionListSettings>(
+    () => ({ ...listSettings, showAll: listStatusFilter === "all" }),
+    [listSettings, listStatusFilter],
+  );
+  const visibleSessionEntries = React.useMemo(() => sidebarEntries(quickFilteredSessions, effectiveListSettings, collapsedChildren, choiceSessionKeys, sessionSearch, sessionPins.pins, activityOrder), [quickFilteredSessions, effectiveListSettings, collapsedChildren, choiceSessionKeys, sessionSearch, sessionPins.pins, activityOrder]);
+  // Число на чипе — это то, о чём говорит список. Сервер знает больше, чем его
+  // окно, а меш знает свежее каталога: поэтому берётся большее из двух — и
+  // чип, и список называют одно и то же множество.
+  const shownByHarness = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of visibleSessionEntries) {
+      counts.set(entry.session.harness, (counts.get(entry.session.harness) ?? 0) + 1);
+    }
+    return counts;
+  }, [visibleSessionEntries]);
+  const quickFilterCounts = React.useMemo<SessionQuickFilterCounts>(() => {
+    // Считаются только те строки, которые список показывает: строки меша о
+    // других статусов в список не попадают и в чипах считаться не должны.
+    const serverWorking = (scopeCounts.byStatus.running ?? 0) + (scopeCounts.byStatus.needs_input ?? 0);
+    const serverWaiting = scopeCounts.byStatus.idle ?? 0;
+    const shown = visibleSessionEntries.length;
+    return {
+      working: listStatusFilter === "working" ? Math.max(serverWorking, shown) : serverWorking,
+      waiting: listStatusFilter === "waiting" ? Math.max(serverWaiting, shown) : serverWaiting,
+      total: Math.max(scopeCounts.total, listStatusFilter === "all" ? shown : 0),
+      byHarness: scopeCounts.byHarness.map((entry) => ({
+        harness: entry.harness,
+        count: Math.max(entry.count, shownByHarness.get(entry.harness) ?? 0),
+      })),
+    };
+  }, [scopeCounts, visibleSessionEntries, shownByHarness, listStatusFilter]);
   const sessionSample = React.useMemo(() => summarizeSessionSample(displaySessions), [displaySessions]);
   React.useEffect(() => {
     if (activeKey && (activeKey === deepLinkKey || visibleSessionEntries.some(({ session }) => keyOf(session) === activeKey))) return;
@@ -1961,26 +2067,28 @@ function App() {
     setShowScrollToLatest(!following && element.scrollHeight > element.clientHeight);
   };
   React.useEffect(() => {
-    if (!chatMenuOpen) return;
+    // Escape закрывает самый верхний открытый слой: меню чата, диалог
+    // настроек, поиск, инспектор. Раньше слой слышал Escape только пока был
+    // открыт меню чата — шторку инспектора было не закрыть с клавиатуры.
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      // Закрывается самый верхний открытый слой: меню чата, диалог настроек, поиск, инспектор.
       if (chatMenuOpen) { setChatMenuOpen(false); return; }
       if (automationSettings !== undefined) { setAutomationSettings(undefined); setShowQuota(false); return; }
       if (showSessionSearch) { setShowSessionSearch(false); return; }
       if (showInspector) closeSessionInspector();
     };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [chatMenuOpen, automationSettings, showSessionSearch, showInspector]);
+  React.useEffect(() => {
+    if (!chatMenuOpen) return;
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as HTMLElement | null;
       if (!target) return;
       if (!target.closest(".chat-menu") && !target.closest(".desktop-chat-menu") && !target.closest(".mobile-automation-button")) setChatMenuOpen(false);
     };
-    window.addEventListener("keydown", onKeyDown);
     window.addEventListener("pointerdown", onPointerDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("pointerdown", onPointerDown);
-    };
+    return () => window.removeEventListener("pointerdown", onPointerDown);
   }, [chatMenuOpen]);
 
   React.useEffect(() => {
@@ -2044,7 +2152,7 @@ function App() {
 
   return <main className={`oc-app ${mobileView === "chat" ? "mobile-chat-active" : "mobile-sessions-active"} ${(!showInspector || showStatistics || showJobs || showQuota || showSearch || showProjects || automationSettings || remoteSelection || showFleet || showCreateSession) ? "no-inspector" : ""} ${layout.chatListOpen ? "" : "no-sessions"}`}>
     <CodexNavigation onMachines={() => { setShowSearch(false); setFleetCreationMode(false);setShowFleet(true); setAutomationSettings(undefined); setShowProjects(false); }} onSearch={() => { setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowSessionSearch(false); setShowSearch(true); setShowProjects(false); setMobileView("chat"); }} active={showSearch ? "search" : showProjects ? "projects" : showFleet ? "machines" : showJobs ? "jobs" : showStatistics ? "statistics" : "chat"} onChat={() => { setShowSearch(false); setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(false); }} onNew={() => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(false); void openCreateSession(); }} onJobs={() => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(true); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(false); }} onStatistics={() => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(false); setShowQuota(false); setAutomationSettings(undefined); setShowProjects(false); openStatistics(); }} onProjects={() => { setShowSearch(false); setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(undefined); setSettingsTab("projects"); setShowProjects(true); setMobileView("chat"); }} />
-    <SessionList pins={sessionPins.pins} pinScope={directory.scope} onPin={sessionPins.toggle} pinError={sessionPins.error} onAdvancedSearch={(query) => { setAdvancedSearchQuery(query || undefined); setShowSessionSearch(false); setShowSearch(true); setMobileView("chat"); }} onMachines={() => { setShowSearch(false); setFleetCreationMode(false); setShowFleet(true); setAutomationSettings(undefined); }} onAutomationSettings={(section) => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(section); }} cacheSettings={viewCacheSettings} onCacheSettings={changeCacheSettings} onCacheClear={()=>{void viewCache.clear();if(cachedDetails)setDetails(null);setCacheEpoch(n=>n+1);}} directoryStatus={directory.error||(directory.pending?"Обновляются названия сессий…":directory.partial?"Часть машин ещё не передала полный список.":"")} onLoadMore={directory.more&&!directory.pending?()=>void directory.load(true):undefined} onNewSession={openCreateSession} onCollapse={() => setLayoutField("chatListOpen", false)} entries={visibleSessionEntries} activeKey={remoteSelection?`mesh:${JSON.stringify([remoteSelection.hostId,remoteSelection.harness,remoteSelection.nativeSessionId])}`:activeKey} loading={loading} refreshing={sessionsRefreshing && !loading} settings={listSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} loadedCount={sessions.length} total={sessionsTotal} sample={sessionSample} activeCount={activity.snapshot.activeCount} onLoadMoreSessions={() => { void loadMoreSessions(); }} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { setShowSearch(false); setShowFleet(false); const selected=displaySessions.find(s=>keyOf(s)===key);if(selected?.remote&&selected.hostId){setRemoteSelection({hostId:selected.hostId,harness:selected.harness,nativeSessionId:selected.id});setMobileView("chat");return;}setRemoteSelection(undefined);shouldFollowRef.current = true; setShowScrollToLatest(false); setShowStatistics(false); setShowJobs(false); selectSession(key); setMobileView("chat"); }} />
+    <SessionList pins={sessionPins.pins} pinScope={directory.scope} onPin={sessionPins.toggle} pinError={sessionPins.error} onAdvancedSearch={(query) => { setAdvancedSearchQuery(query || undefined); setShowSessionSearch(false); setShowSearch(true); setMobileView("chat"); }} onMachines={() => { setShowSearch(false); setFleetCreationMode(false); setShowFleet(true); setAutomationSettings(undefined); }} onAutomationSettings={(section) => { setShowSearch(false); setShowFleet(false); setRemoteSelection(undefined); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setAutomationSettings(section); }} cacheSettings={viewCacheSettings} onCacheSettings={changeCacheSettings} onCacheClear={()=>{void viewCache.clear();if(cachedDetails)setDetails(null);setCacheEpoch(n=>n+1);}} directoryStatus={directory.error||(directory.pending?"Обновляются названия сессий…":directory.partial?"Часть машин ещё не передала полный список.":"")} onLoadMore={directory.more&&!directory.pending?()=>void directory.load(true):undefined} onNewSession={openCreateSession} onCollapse={() => setLayoutField("chatListOpen", false)} entries={visibleSessionEntries} activeKey={remoteSelection?`mesh:${JSON.stringify([remoteSelection.hostId,remoteSelection.harness,remoteSelection.nativeSessionId])}`:activeKey} loading={loading} refreshing={sessionsRefreshing && !loading} settings={effectiveListSettings} settingsOpen={showSessionSettings} searchOpen={showSessionSearch} searchQuery={sessionSearch} options={listOptions} choicesBySession={choicesBySession} choosingRequestId={choosingRequestId} choiceError={choiceError} collapsedChildren={collapsedChildren} onSearchChange={setSessionSearch} onSearchToggle={() => setShowSessionSearch((value) => !value)} onSettingsToggle={() => setShowSessionSettings((value) => !value)} onSettingsChange={(patch) => setListSettings((current) => ({ ...current, ...patch }))} onToggleChildren={(key) => setCollapsedChildren((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} loadedCount={sessions.length} total={sessionsTotal} sample={sessionSample} onLoadMoreSessions={() => { void loadMoreSessions(); }} quickCounts={quickFilterCounts} quickStatus={listStatusFilter} onQuickStatusChange={setListStatusFilter} onChoose={(requestId, choiceId) => void chooseAutopilot(requestId, choiceId)} onSelect={(key) => { setShowSearch(false); setShowFleet(false); const selected=displaySessions.find(s=>keyOf(s)===key);if(selected?.remote&&selected.hostId){setRemoteSelection({hostId:selected.hostId,harness:selected.harness,nativeSessionId:selected.id});setMobileView("chat");return;}setRemoteSelection(undefined);shouldFollowRef.current = true; setShowScrollToLatest(false); setShowStatistics(false); setShowJobs(false); selectSession(key); setMobileView("chat"); }} />
     {showProjects && <SettingsScreen tab={settingsTab} onTabChange={setSettingsTab} onOpenLaunchSettings={() => { setShowProjects(false); setAutomationSettings("launch-policy"); }} />}
     {showSearch && <RagSearchView initialQuery={advancedSearchQuery} onInitialQueryApplied={consumeAdvancedSearchInitialQuery} onOpenSession={(harness, id) => { setShowSearch(false); setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); selectSession(`${harness}:${id}`); setMobileView("chat"); }} />}
 {showFleet && <div className="fleet-overlay" role="region" aria-label="Машины флота"><div className="fleet-overlay-panel"><button className="fleet-overlay-close quiet-button" aria-label="Закрыть машины флота" onClick={() => setShowFleet(false)}>Закрыть</button><FleetCabinet creationMode={fleetCreationMode} defaultHostId={selectedCreationHostId} onSelectedHostChange={setSelectedCreationHostId} activityRows={activity.snapshot.confirmed} /></div></div>}
@@ -2061,7 +2169,7 @@ function App() {
           {!showStatistics && !showJobs && !showQuota && <button className={`icon-button session-inspector-button ${showInspector ? "selected-icon" : ""}`} aria-label="Панель сессии" title="Файлы, таймлайн и метаинформация сессии" aria-pressed={showInspector} onClick={() => { setSessionSettingsReturn(undefined); setShowInspector((value) => !value); }}><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="18" r="2"/></svg></button>}
           <button className={`icon-button desktop-chat-menu ${chatMenuOpen ? "selected-icon" : ""}`} aria-label="Меню чата" aria-expanded={chatMenuOpen} title="Все настройки" onClick={() => setChatMenuOpen((value) => !value)}>···</button>
         </div>
-        {chatMenuOpen && <div className="chat-menu" aria-label="Меню чата">{chatMenuContent}</div>}
+        {chatMenuOpen && <div className="chat-menu" aria-label="Меню чата"><button type="button" className="chat-menu-close" aria-label="Закрыть меню чата" title="Закрыть меню чата" onClick={() => setChatMenuOpen(false)}>×</button>{chatMenuContent}</div>}
       </header>
       {activeSession && !remoteSelection && !showCreateSession && !showJobs && !showStatistics && !showQuota && <SessionWorkTarget
         session={{ id: activeSession.id, harness: activeSession.harness, cwd: activeSession.cwd, hostId: activeSession.hostId }}
@@ -2159,7 +2267,7 @@ function App() {
         </>}
       </form></div>}
     </section>
-    {showInspector && !showCreateSession && !showStatistics && !showJobs && <aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">СЕССИЯ</span><button className={sessionSettingsReturn ? "quiet-button" : "icon-button"} onClick={closeSessionInspector} aria-label={sessionSettingsReturn ? "Вернуться к общим настройкам" : "Закрыть настройки сессии"}>{sessionSettingsReturn ? "← К общим настройкам" : "×"}</button></div>{activeSession ? <><div className="inspector-title">{cleanSessionTitle(activeSession.title) || activeSession.title || activeSession.id}</div><div className="inspector-status"><span className={`status-dot status-${statusClass(activeSession.status)}`} /><span className={`status-label status-${statusClass(activeSession.status)}`}>{activeSession.meta?.humanStopHeld === true ? "Явная остановка — автоматика приостановлена" : statusLabel(activeSession.status)}</span></div>{sessionAutostart && <div className="autopilot-control session-autostart-control"><div><span className="eyebrow">АВТОПРОДОЛЖЕНИЕ</span><strong>{sessionAutostart.enabled ? "Включено" : "Выключено"}</strong><small>{sessionAutostart.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : sessionAutostart.source === "harness" ? `Сейчас наследуется общая настройка для ${activeSession.harness}. Нажатие создаст исключение только для этой сессии и применится сразу.` : sessionAutostart.source === "global" ? "Сейчас наследуется общий переключатель. Нажатие создаст исключение только для этой сессии и применится сразу." : "Используется значение по умолчанию. Нажатие создаст отдельную настройку только для этой сессии и применится сразу."}</small>{sessionAutostart.source === "session" && <button className="inherit-button" disabled={sessionAutostartSaving} onClick={() => void inheritSessionAutostart()}>Использовать общую настройку {activeSession.harness}</button>}</div><button className={`switch-control ${sessionAutostart.enabled ? "enabled" : ""}`} role="switch" aria-checked={sessionAutostart.enabled} aria-label="Автопродолжение для текущей сессии" disabled={sessionAutostartSaving} onClick={() => void toggleSessionAutostart()}><span /></button></div>}{sessionAutostartError && <small className="autopilot-error">{sessionAutostartError}</small>}{["opencode", "zcode"].includes(activeSession.harness) && <QuotaRecoveryControls session={{harness: activeSession.harness, id: activeSession.id, cwd: activeSession.cwd}} />}{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">АВТОПИЛОТ</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : autopilotSession.source === "policy" ? (autopilotPolicyDraft?.enabled && !autopilotPolicyDraft.harnesses.includes(activeSession.harness as AutopilotHarness) ? `${AUTOPILOT_HARNESS_LABELS[activeSession.harness as AutopilotHarness]} выключен в общих настройках сред. Нажатие включит автопилот только для этой сессии и применится сразу.` : "Сейчас наследуется общая настройка автопилота. Нажатие создаст исключение только для этой сессии и применится сразу.") : autopilotSession.source === "plugin-default" ? "Сейчас наследуется настройка среды. Нажатие создаст исключение только для этой сессии и применится сразу." : "По умолчанию выключен. Нажатие включит автопилот только для этой сессии и применится сразу."}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Использовать общую настройку</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label="Автопилот для текущей сессии" disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}{!AUTOCONTINUE_HARNESSES.has(activeSession.harness) && <p className="settings-help">Автопродолжение после сбоя в этой среде пока недоступно. Можно продолжить сессию вручную.</p>}<dl><dt>Агент</dt><dd>{activeSession.harness}</dd><dt>Папка</dt><dd title={activeSession.cwd}>{lastSegment(activeSession.cwd)}</dd>{activeSession.messageCount !== undefined && <><dt>Сообщения</dt><dd>{activeSession.messageCount}</dd></>}{activeSession.durationSec !== undefined && <><dt>Длительность</dt><dd>{formatDuration(activeSession.durationSec)}</dd></>}{activeSession.model !== undefined && activeSession.model.includes("/") && <><dt>Источник</dt><dd title={activeSession.model}>{modelSourceLabel(activeSession.model)}</dd></>}{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) !== undefined && <><dt>Токены</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"])}</dd></>}{activeSession.costUsd !== undefined && <><dt>Траты</dt><dd>${activeSession.costUsd.toFixed(4)}</dd></>}</dl><SessionInspectBlock facts={sessionFacts} pendingModel={selectedModel} /><SessionActivityPanel messages={details?.messages} /><SessionMetadata sessionId={activeSession.id} harness={activeSession.harness} />{activeSession.messageCount === 0 && <div className="inspector-empty-metrics">Пока нет сообщений. Отправьте сообщение или продолжите сессию.</div>}<div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer" title="История сообщений и изменений файлов — в новой вкладке">Визуализация ↗</a>}{(activeSession.status === "running" || sending) && <button className="stop-button" onClick={() => void runAction("stop")}>Остановить</button>}{(!sending && activeSession.status !== "running" && (activeSession.status === "stopped" || activeSession.status === "error" || activeSession.meta?.humanStopHeld === true)) && <button className="primary-button" onClick={() => void runAction("resume")}>Возобновить работу</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Восстановить</button>}</div></> : <div className="empty-inspector">{emptyInspectorText(activeKey, detailsError)}</div>}</aside>}
+    {showInspector && !showCreateSession && !showStatistics && !showJobs && <><div className="inspector-scrim" aria-hidden="true" onClick={closeSessionInspector} /><aside className="inspector-pane"><div className="inspector-heading"><span className="eyebrow">СЕССИЯ</span><button className={sessionSettingsReturn ? "quiet-button" : "icon-button"} onClick={closeSessionInspector} aria-label={sessionSettingsReturn ? "Вернуться к общим настройкам" : "Закрыть настройки сессии"}>{sessionSettingsReturn ? "← К общим настройкам" : "×"}</button></div>{activeSession ? <><div className="inspector-title">{cleanSessionTitle(activeSession.title) || activeSession.title || activeSession.id}</div><div className="inspector-status"><span className={`status-dot status-${statusClass(activeSession.status)}`} /><span className={`status-label status-${statusClass(activeSession.status)}`}>{activeSession.meta?.humanStopHeld === true ? "Явная остановка — автоматика приостановлена" : statusLabel(activeSession.status)}</span></div>{sessionAutostart && <div className="autopilot-control session-autostart-control"><div><span className="eyebrow">АВТОПРОДОЛЖЕНИЕ</span><strong>{sessionAutostart.enabled ? "Включено" : "Выключено"}</strong><small>{sessionAutostart.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : sessionAutostart.source === "harness" ? `Сейчас наследуется общая настройка для ${activeSession.harness}. Нажатие создаст исключение только для этой сессии и применится сразу.` : sessionAutostart.source === "global" ? "Сейчас наследуется общий переключатель. Нажатие создаст исключение только для этой сессии и применится сразу." : "Используется значение по умолчанию. Нажатие создаст отдельную настройку только для этой сессии и применится сразу."}</small>{sessionAutostart.source === "session" && <button className="inherit-button" disabled={sessionAutostartSaving} onClick={() => void inheritSessionAutostart()}>Использовать общую настройку {activeSession.harness}</button>}</div><button className={`switch-control ${sessionAutostart.enabled ? "enabled" : ""}`} role="switch" aria-checked={sessionAutostart.enabled} aria-label="Автопродолжение для текущей сессии" disabled={sessionAutostartSaving} onClick={() => void toggleSessionAutostart()}><span /></button></div>}{sessionAutostartError && <small className="autopilot-error">{sessionAutostartError}</small>}{["opencode", "zcode"].includes(activeSession.harness) && <QuotaRecoveryControls session={{harness: activeSession.harness, id: activeSession.id, cwd: activeSession.cwd}} />}{autopilotSession && <div className="autopilot-control"><div><span className="eyebrow">АВТОПИЛОТ</span><strong>{autopilotSession.enabled ? "Включён" : "Выключен"}</strong><small>{autopilotSession.source === "session" ? "Отдельная настройка этой сессии. Переключатель применяется сразу только здесь." : autopilotSession.source === "policy" ? (autopilotPolicyDraft?.enabled && !autopilotPolicyDraft.harnesses.includes(activeSession.harness as AutopilotHarness) ? `${AUTOPILOT_HARNESS_LABELS[activeSession.harness as AutopilotHarness]} выключен в общих настройках сред. Нажатие включит автопилот только для этой сессии и применится сразу.` : "Сейчас наследуется общая настройка автопилота. Нажатие создаст исключение только для этой сессии и применится сразу.") : autopilotSession.source === "plugin-default" ? "Сейчас наследуется настройка среды. Нажатие создаст исключение только для этой сессии и применится сразу." : "По умолчанию выключен. Нажатие включит автопилот только для этой сессии и применится сразу."}</small>{autopilotSession.source === "session" && <button className="inherit-button" disabled={autopilotSessionSaving} onClick={() => void inheritAutopilotSession()}>Использовать общую настройку</button>}</div><button className={`switch-control ${autopilotSession.enabled ? "enabled" : ""}`} role="switch" aria-checked={autopilotSession.enabled} aria-label="Автопилот для текущей сессии" disabled={autopilotSessionSaving} onClick={() => void toggleAutopilotSession()}><span /></button></div>}{autopilotSessionError && <small className="autopilot-error">{autopilotSessionError}</small>}{!AUTOCONTINUE_HARNESSES.has(activeSession.harness) && <p className="settings-help">Автопродолжение после сбоя в этой среде пока недоступно. Можно продолжить сессию вручную.</p>}<dl><dt>Агент</dt><dd>{activeSession.harness}</dd><dt>Папка</dt><dd title={activeSession.cwd}>{lastSegment(activeSession.cwd)}</dd>{activeSession.messageCount !== undefined && <><dt>Сообщения</dt><dd>{activeSession.messageCount}</dd></>}{activeSession.durationSec !== undefined && <><dt>Длительность</dt><dd>{formatDuration(activeSession.durationSec)}</dd></>}{activeSession.model !== undefined && activeSession.model.includes("/") && <><dt>Источник</dt><dd title={activeSession.model}>{modelSourceLabel(activeSession.model)}</dd></>}{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"]) !== undefined && <><dt>Токены</dt><dd>{metaNumber(activeSession, ["total_tokens", "totalTokens", "tokens"])}</dd></>}<><dt>Траты</dt><dd>{typeof activeSession.costUsd === "number" ? `$${activeSession.costUsd.toFixed(4)}` : "среда не сообщает"}</dd></></dl><SessionInspectBlock facts={sessionFacts} pendingModel={selectedModel} /><SessionActivityPanel messages={details?.messages} /><SessionMetadata sessionId={activeSession.id} harness={activeSession.harness} />{activeSession.messageCount === 0 && <div className="inspector-empty-metrics">Пока нет сообщений. Отправьте сообщение или продолжите сессию.</div>}<div className="inspector-actions">{visualizationUrl && <a className="quiet-button" href={visualizationUrl} target="_blank" rel="noreferrer" title="История сообщений и изменений файлов — в новой вкладке">Визуализация ↗</a>}{(activeSession.status === "running" || sending) && <button className="stop-button" onClick={() => void runAction("stop")}>Остановить</button>}{(!sending && activeSession.status !== "running" && (activeSession.status === "stopped" || activeSession.status === "error" || activeSession.meta?.humanStopHeld === true)) && <button className="primary-button" onClick={() => void runAction("resume")}>Возобновить работу</button>}{activeSession.status === "error" && <button className="quiet-button" onClick={() => void runAction("recover")}>Восстановить</button>}</div></> : <div className="empty-inspector">{emptyInspectorText(activeKey, detailsError)}</div>}</aside></>}
   </main>;
 }
 

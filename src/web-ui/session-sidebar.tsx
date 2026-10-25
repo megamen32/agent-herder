@@ -1,6 +1,7 @@
 import * as React from 'react';
 import {createPortal} from 'react-dom';
 import {readSessionPinState, sessionPinStorage, toggleSessionPin, pinStorageKey, sidebarContext, type SidebarSession} from './session-pins.js';
+import {relativeTimeRu} from './session-list.js';
 import './session-sidebar.css';
 
 /**
@@ -54,7 +55,9 @@ export function SessionSidebarRow({session, title, selected, pinned, canPin, sta
   const id = React.useId();
   const context = sidebarContext(session, statusOverride);
   const machine = machineName(session.hostId, session.hostLabel);
-  const subtitle = `${context.harness} · ${machine}`;
+  // Время в строке: три сессии с одинаковым названием без времени неразличимы.
+  const when = relativeTimeRu(session.lastActivity);
+  const subtitle = `${context.harness} · ${machine}${when ? ` · ${when}` : ''}`;
   const show = () => {
     if (!window.matchMedia('(hover: hover) and (min-width: 901px)').matches) return;
     const rect = root.current?.getBoundingClientRect();

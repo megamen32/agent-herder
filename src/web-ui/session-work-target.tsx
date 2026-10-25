@@ -308,6 +308,20 @@ export function SessionInspectBlock({ facts, pendingModel }: { facts?: SessionIn
   </section>;
 }
 
+/** Фокус наш, если он внутри поповера или на самой шестерёнке. */
+function focusIsOurs(popover: HTMLElement | null, gear: HTMLElement | null): boolean {
+  const active = document.activeElement;
+  if (!active) return false;
+  return Boolean(popover?.contains(active) || gear?.contains(active));
+}
+
+/** Может ли элемент принять фокус — чтобы не отнимать его у того, куда кликнули. */
+function canTakeFocus(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  return target.matches("a[href], button, input, select, textarea, [tabindex]");
+}
+
 /**
  * The work target of one live session: the machine it works on and the
  * directory it works in. The server owns the truth — this block shows it and
@@ -336,6 +350,10 @@ export function SessionWorkTarget({ session, hosts, localHostId, onApplied, show
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [converting, setConverting] = React.useState(false);
   const [convertResult, setConvertResult] = React.useState<string>();
+  const gearRef = React.useRef<HTMLButtonElement>(null);
+  const popoverRef = React.useRef<HTMLDivElement>(null);
+  // Фокус вернётся на шестерёнку, только если он был наш и его не забрал другой элемент.
+  const restoreFocusRef = React.useRef(false);
 
   const convert = async () => {
     setConverting(true);
@@ -367,6 +385,52 @@ export function SessionWorkTarget({ session, hosts, localHostId, onApplied, show
     });
     return () => { live = false; };
   }, [session.id, session.harness]);
+
+  // Пока поповер открыт, Escape закрывает его, а клик мимо — тоже.
+  React.useEffect(() => {
+    if (!settingsOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      // Фокус возвращается на шестерёнку, только если он ещё наш.
+      restoreFocusRef.current = focusIsOurs(popoverRef.current, gearRef.current);
+      setSettingsOpen(false);
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (popoverRef.current?.contains(target)) return;
+      if (gearRef.current?.contains(target)) return;
+      // Клик мимо: закрываем. Фокус отдаём тому, куда кликнули, если он его умеет принять.
+      restoreFocusRef.current = !canTakeFocus(target) && focusIsOurs(popoverRef.current, gearRef.current);
+      setSettingsOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [settingsOpen]);
+
+  // Фокус живёт в поповере, пока поповер открыт, и возвращается на шестерёнку, когда его закрывают.
+  React.useEffect(() => {
+    if (settingsOpen) {
+      const popover = popoverRef.current;
+      // Поповер мог не отрисоваться вовсе (нет меню) — тогда фокус трогать нечего.
+      if (!popover) return;
+      const first = popover.querySelector<HTMLElement>("button, input, select, [tabindex]");
+      first?.focus();
+      return;
+    }
+    // Закрытие: фокус возвращается на шестерёнку, только если он был наш.
+    const active = document.activeElement;
+    // Фокус потерян вместе с удалённым поповером — значит вернуть его надо.
+    const lost = !active || active === document.body;
+    if (restoreFocusRef.current && (focusIsOurs(popoverRef.current, gearRef.current) || lost)) {
+      gearRef.current?.focus();
+    }
+    restoreFocusRef.current = false;
+  }, [settingsOpen]);
 
   // The facts of the session live in the inspector of the right panel, not here.
 
@@ -400,23 +464,36 @@ export function SessionWorkTarget({ session, hosts, localHostId, onApplied, show
 
   return <section className={`work-target ${expanded ? "work-target-open" : "work-target-closed"}`} aria-label="Рабочая машина">
     <div className="work-target-bar">
+      <button type="button" className="work-target-caret-button" aria-expanded={expanded}
+        aria-label={expanded ? "Свернуть рабочую машину" : "Развернуть рабочую машину"}
+        title={expanded ? "Свернуть рабочую машину" : "Развернуть рабочую машину"}
+        onClick={() => onExpandedChange?.(!expanded)}>
+        <svg className="work-target-caret" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
       <button type="button" className="work-target-summary" aria-expanded={expanded} onClick={() => onExpandedChange?.(!expanded)}
         title={expanded ? "Свернуть рабочую машину" : "Развернуть рабочую машину"}>
-        <span className="work-target-caret" aria-hidden="true">{expanded ? "▾" : "▸"}</span>
         <span className="work-target-label">Рабочая машина</span>
         <strong>{machineLabel(current.hostId, workTargetHostLabel(hosts, current.hostId))}</strong>
         <code title={current.cwd || "каталог не задан"}>{current.cwd || "каталог не задан"}</code>
       </button>
       <div className="work-target-bar-actions">
         <button type="button" className="icon-button work-target-settings" aria-label="Настройки" title="Настройки панели"
-          aria-expanded={settingsOpen} onClick={() => setSettingsOpen((value) => !value)}>
+          aria-haspopup="true" ref={gearRef}
+          aria-expanded={settingsOpen} onClick={() => {
+            // Закрываем через шестерёнку — фокус возвращается на неё.
+            restoreFocusRef.current = settingsOpen;
+            setSettingsOpen((value) => !value);
+          }}>
           <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6">
             <path d="M4 7h10M18 7h2M4 12h4M12 12h8M4 17h12M20 17h0" />
             <circle cx="16" cy="7" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="18" cy="17" r="2" />
           </svg>
         </button>
       </div>
-      {settingsOpen && settingsMenu && <div className="work-target-popover" role="menu" aria-label="Настройки панели">{settingsMenu}</div>}
+      {settingsOpen && settingsMenu && <div className="work-target-popover" role="group" aria-label="Настройки панели"
+        ref={popoverRef}>{settingsMenu}</div>}
     </div>
     {expanded && <div className="work-target-details">
       <div className="work-target-current">
