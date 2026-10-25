@@ -38,7 +38,8 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain("setSessions(nextSessions);");
     expect(main).toContain('aria-label="Прокрутить к последним"');
     expect(main).toContain('aria-label={queueEdit ? "Сохранить сообщение очереди" : isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}');
-    expect(main).toContain('{queueEdit ? "↑" : isResumeMode ? "Продолжить ▶" : "↑"}');
+    expect(main).toContain('className="send-open-icon"');
+    expect(main).toContain('title={queueEdit ? "Сохранить изменения в том же сообщении очереди" : isResumeMode ? "Возобновить работу в той же сессии"');
     expect(main).toContain("details?.children?.length");
     expect(main).toContain("SESSION_LIST_SHOW_COMPLETED_ARIA");
     expect(main).toContain("SESSION_LIST_SHOW_COMPLETED_LABEL");
@@ -76,6 +77,28 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('Последний ответ агента');
     expect(main).toContain('Почему нужен выбор');
     for (const harness of ["Codex", "Claude Code", "OpenCode", "Hermes"]) expect(main).toContain(harness);
+  });
+
+  it("keeps composer submission explicit and offers a deliberate send-mode hold menu", () => {
+    expect(main).not.toContain("composer-hint");
+    expect(main).not.toContain(">+ Фото</button>");
+    expect(main).toContain('aria-label="Прикрепить изображение"');
+    expect(main).toContain("const submitModifierPressed = /mac|iphone|ipad/.test(platform) ? event.metaKey : event.ctrlKey;");
+    expect(main).toContain("if (event.key !== \"Enter\" || event.shiftKey) return;");
+    expect(main).toContain("}, 550);");
+    expect(main).toContain('role="dialog" aria-label="Выберите режим отправки"');
+    expect(main).toContain('chooseSendMode("steer")');
+    expect(main).toContain('chooseSendMode("queue")');
+    expect(main).toContain("if (sendHoldTriggeredRef.current) {");
+    expect(styles).toContain(".composer-send-mode-menu");
+    expect(main).toContain('form.append("audio", blob, `voice-input.${extension}`)');
+    expect(main).toContain('fetch("/api/composer/transcription"');
+    expect(main).toContain('setComposer((current) => current ? `${current}${current.endsWith("\\n") ? "" : "\\n"}${transcript}` : transcript)');
+    expect(main).not.toContain('sendMessage(transcript)');
+    expect(main).toContain('aria-label={voiceRecording ? "Остановить запись голоса" : voiceTranscribing ? "Распознаю голос" : "Записать голосовой ввод"}');
+    expect(main).toContain('aria-label={voiceRecording ? "Отменить запись голоса" : "Отменить распознавание"}');
+    expect(main).toContain("discardVoiceRef.current = true;");
+    expect(main).toContain('role="alert">{voiceError}</span>');
   });
 
   it("shows every automation control supported by the active harness", () => {

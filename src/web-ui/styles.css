@@ -201,10 +201,30 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .composer-plus { width: 28px; height: 28px; border-radius: var(--radius-s); background: transparent; color: var(--muted); font-size: 20px; } .composer-plus:hover { background: var(--surface-hover); }
 .composer-readonly { min-width: 0; flex: 1; display: grid; gap: 2px; padding: 2px 3px; } .composer-readonly strong { font-size: var(--text-sm); font-weight: 600; } .composer-readonly span { overflow: hidden; color: var(--muted); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
 .composer-hint { position: static; order: 9; flex: 0 0 auto; width: calc(100% - 40px); margin: var(--space-1) 0 0 40px; color: var(--muted); font-size: var(--text-xs); }
+.remote-chat-pane .composer { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "text text text" "plus hint send"; }
 .send-button { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; border: 1px solid var(--border-2); border-radius: var(--radius-m); background: var(--surface-2); color: var(--muted); font-weight: 700; }
 .send-button:not(:disabled) { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .send-button:not(:disabled):hover { background: color-mix(in srgb, var(--accent) 88%, var(--on-accent)); }
 .send-button:disabled { opacity: .45; cursor: not-allowed; }
+.send-open-icon { width: 16px; height: 16px; }
+.composer-voice-actions { display: flex; grid-area: voice; align-items: center; gap: 4px; min-width: 0; }
+.composer-voice-button { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; border: 1px solid var(--border-2); border-radius: var(--radius-m); background: var(--surface-2); color: var(--text-2); }
+.composer-voice-button svg { width: 18px; height: 18px; }
+.composer-voice-button:hover:not(:disabled) { background: var(--surface-hover); }
+.composer-voice-button.recording { border-color: var(--status-error); background: color-mix(in srgb, var(--status-error) 16%, var(--surface-2)); color: var(--status-error); }
+.composer-voice-button:disabled { opacity: .5; cursor: not-allowed; }
+.composer-voice-cancel { width: 24px; height: 24px; flex: 0 0 auto; border: 1px solid var(--border); border-radius: 50%; background: transparent; color: var(--muted); }
+.composer-voice-cancel:hover { background: var(--surface-hover); color: var(--text); }
+.composer-voice-status, .composer-voice-error { flex: 1 0 100%; min-width: 0; padding: 1px 5px; color: var(--muted); font-size: var(--text-xs); overflow-wrap: anywhere; }
+.composer-voice-error { color: var(--status-error); }
+.voice-loading { animation: pulse 1s ease-in-out infinite; }
+.composer-send-mode-menu { position: absolute; right: 8px; bottom: calc(100% + 8px); z-index: 42; display: grid; gap: 4px; width: min(270px, calc(100vw - 24px)); padding: 8px; border: 1px solid var(--border-2); border-radius: var(--radius-m); background: var(--surface-2); box-shadow: 0 14px 36px var(--shadow-menu); }
+.composer-send-mode-menu > strong { padding: 4px 7px; font-size: var(--text-sm); }
+.composer-send-mode-menu > button { display: grid; gap: 2px; min-width: 0; padding: 8px; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--text); text-align: left; }
+.composer-send-mode-menu > button:hover:not(:disabled), .composer-send-mode-menu > button:focus-visible { background: var(--surface-hover); }
+.composer-send-mode-menu > button:disabled { opacity: .5; }
+.composer-send-mode-menu small { color: var(--muted); font-size: var(--text-xs); }
+.composer-send-mode-menu .composer-send-mode-cancel { color: var(--muted); }
 .composer-plus.active { background: var(--accent-soft); color: var(--accent); }
 .composer-create-panel { position: absolute; left: 0; right: 0; bottom: calc(100% + 9px); z-index: 12; padding: 10px; border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border)); border-radius: var(--radius-m); background: var(--surface-2); box-shadow: 0 16px 42px var(--shadow-menu); }
 .composer-create-row { display: grid; grid-template-columns: 120px minmax(180px, 1.4fr) minmax(160px, 1fr) auto; align-items: end; gap: var(--space-2); }
@@ -468,7 +488,7 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
   .icon-button { width: 44px; height: 44px; }
   .quiet-button { padding: 12px 14px; }
   .message-column { padding: 22px max(15px, env(safe-area-inset-right)) 22px max(15px, env(safe-area-inset-left)); } .message { margin-bottom: 20px; } .message.user { max-width: 92%; } .message p { margin-bottom: 14px; font-size: var(--text-lg); line-height: 1.7; }
-  .composer-stack { width: calc(100% - 18px); margin: 0 auto; padding-bottom: max(9px, env(safe-area-inset-bottom)); }.composer { padding: 9px; } .composer-hint { display: none; } .composer textarea { font-size: var(--text-lg); }
+  .composer-stack { width: calc(100% - 18px); margin: 0 auto; padding-bottom: max(9px, env(safe-area-inset-bottom)); }.composer { padding: 9px; } .composer textarea { font-size: var(--text-lg); }
   .chat-menu { top: calc(var(--header-h) - 4px); right: 9px; } .scroll-latest { right: 12px; bottom: 96px; } .scroll-latest span { display: none; }
   .autopilot-settings-overlay { inset: var(--header-h) 0 0; padding: 10px; }.global-autopilot-card { padding: 18px 14px; border-radius: var(--radius-m); }.global-autopilot-head { padding-right: 34px; }.harness-grid, .launch-runtime-list { grid-template-columns: 1fr; }.launch-policy-field { grid-template-columns: 1fr; gap: var(--space-2); }
   .global-autopilot-head p, .autopilot-state-banner span, .harness-option small, .settings-help, .timeout-setting small, .runtime-settings-grid label small, .autopilot-control small, .settings-save-row > span { color: var(--text-2); font-size: var(--text-sm); line-height: 1.5; }
