@@ -189,7 +189,7 @@ export class GptAdminMesh {
    if(!cwd)return request.message;
    const session={id:request.target.nativeSessionId,harness:request.target.harness,cwd,hostId:request.target.hostId};
    const injected=await coordinationNotes.inject(session,request.message);
-   return compactAutomaticMessage(injected,1200,request.message);
+   return compactAutomaticMessage(injected,request.message);
   }
   /**
    * The per-project model gate of one delivery to another machine.

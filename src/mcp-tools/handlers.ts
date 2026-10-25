@@ -563,11 +563,11 @@ async function sendMessageOnce(
     : parsed.meshSender
     ? `🤖 ${parsed.meshSender.harness}@${parsed.meshSender.hostId} ${parsed.meshSender.nativeSessionId}`
     : await buildMessageProvenanceHeader(adapters, parsed, found.session);
-  const deliveredBody = parsed.humanRequested ? parsed.message : await compactAutomaticMessage(parsed.message);
+  const deliveredBody = parsed.message;
   const baseMessage = `${provenanceHeader}\n\n${deliveredBody}`;
   const pending = await withDeferred(parsed.sessionId, baseMessage);
   const injected = await coordinationNotes.inject(found.session, pending.message);
-  const injectedMessage = parsed.humanRequested ? injected : await compactAutomaticMessage(injected, 1200, parsed.message);
+  const injectedMessage = parsed.humanRequested ? injected : await compactAutomaticMessage(injected, parsed.message);
   if (await automaticDeliveryHeld(found.session, false, found.adapter)) return HUMAN_STOP_MESSAGE;
   const options = {
     origin: parsed.humanRequested ? "human" as const : "automation" as const,
@@ -657,7 +657,7 @@ export async function handleDeliver(adapters: Map<string, HarnessAdapter>, args:
 
 async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
   const parsed = DeliverSchema.parse(args);
-  const deliveredMessage = await compactAutomaticMessage(parsed.message);
+  const deliveredMessage = parsed.message;
   if (parsed.sessionId) {
     const found = await findSession(adapters, parsed.sessionId, parsed.harness);
     if (!found) return JSON.stringify({ ok:false, delivery:"not_found", activated:false, error:`Session '${parsed.sessionId}' not found.` });
@@ -669,11 +669,11 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
     if (await automaticDeliveryHeld(fresh, false, found.adapter)) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: HUMAN_STOP_MESSAGE });
     if (activation === "if_running" && !isCoordinationActive(fresh)) return skippedCoordination(fresh);
     if (activation === "defer" && parsed.model && parsed.model !== fresh.model) return JSON.stringify({ok:false,sessionId:fresh.id,delivery:"not_attempted",activated:false,error:"A deferred message cannot preserve a model override; select it explicitly at delivery time"});
-    if (activation === "defer" && fresh.status !== "running") { await deferredMessages.add(fresh.id, deliveredMessage); return JSON.stringify({ ok:true, sessionId:fresh.id, harness:fresh.harness, sessionStatus:fresh.status, delivery:"deferred", activated:false }); }
+    if (activation === "defer" && fresh.status !== "running") { await deferredMessages.add(fresh.id, await compactAutomaticMessage(deliveredMessage)); return JSON.stringify({ ok:true, sessionId:fresh.id, harness:fresh.harness, sessionStatus:fresh.status, delivery:"deferred", activated:false }); }
     const modelError = await selectDeliveryModel(found.adapter,fresh,parsed.model);
     if (modelError) return JSON.stringify({ok:false,sessionId:fresh.id,delivery:"not_attempted",activated:false,error:modelError});
     const pending = await withDeferred(fresh.id, deliveredMessage);
-    const injected = await compactAutomaticMessage(await coordinationNotes.inject(fresh, pending.message), 1200, parsed.message);
+    const injected = await compactAutomaticMessage(await coordinationNotes.inject(fresh, pending.message), parsed.message);
     if (await automaticDeliveryHeld(fresh, false, found.adapter)) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: HUMAN_STOP_MESSAGE });
     const options = {message:injected,model:parsed.model,retainedInboxIds:pending.ids,queue:parsed.mode==="queue",inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),origin:"automation" as const};
     const sent = activation === 'if_running' ? await sendCurrentTurnOnly(found.adapter,fresh.id,options) : await found.adapter.sendMessage(fresh.id,options);
@@ -687,7 +687,7 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
       return JSON.stringify({ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"accepted_failed",activated:false,admitted:true,nonRetryable:true,error:sent.error||"Native turn failed after prompt admission"});
     }
     if (activation !== 'if_running' && !sent.ok && !sent.nonRetryable && isBusyCodexWriter(fresh.harness, sent.error)) {
-      await deferredMessages.add(fresh.id, deliveredMessage);
+      await deferredMessages.add(fresh.id, await compactAutomaticMessage(deliveredMessage));
       return JSON.stringify({ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"deferred",activated:false});
     }
     const receipt = {
@@ -704,7 +704,7 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
         : {ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:parsed.mode==="queue"?"accepted":"completed",activated:activation !== 'if_running'}
       : {ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"failed",activated:false,...(sent.nonRetryable?{nonRetryable:true}:{}),error:sent.error||"Message delivery failed"})});
   }
-  return JSON.stringify(await deliverNamedSession(adapters,{harness:parsed.harness!,name:parsed.name!,cwd:parsed.cwd!,message:deliveredMessage,inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),create:parsed.create,activation:parsed.activation,mode:parsed.mode,model:parsed.model,sourceSessionId:parsed.sourceSessionId,sourceHarness:parsed.sourceHarness,sourceSessions:parsed.sourceSessions}));
+  return JSON.stringify(await deliverNamedSession(adapters,{harness:parsed.harness!,name:parsed.name!,cwd:parsed.cwd!,message:await compactAutomaticMessage(deliveredMessage),inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),create:parsed.create,activation:parsed.activation,mode:parsed.mode,model:parsed.model,sourceSessionId:parsed.sourceSessionId,sourceHarness:parsed.sourceHarness,sourceSessions:parsed.sourceSessions}));
 }
 
 export async function handleStopAgent(
