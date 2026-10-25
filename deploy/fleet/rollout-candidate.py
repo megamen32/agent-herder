@@ -258,6 +258,41 @@ def node_side_fleet(arguments) -> int:
     return result.returncode
 
 
+def prepare_owner_area(catalog: Path, release: Path, working_directory: str) -> str:
+    """The area of the owner must offer the packages to the resolver of Node.
+
+    A release of the owner carries no copy of the packages: they live in the
+    shared store of the area, and the release links them. The area itself must
+    offer that store under the name the resolver of Node looks for
+    ("<area>/node_modules"), or the import of a sibling of a package of the
+    store leaves the store, finds the legacy root store of the area or
+    nothing at all, and the runtime does not start. That is the incident R7,
+    and every new area repeats it as long as nothing ensures the root.
+
+    The packages are materialized from the store of the checkout: the working
+    directory of the owner node stays the checkout, and its store is the place
+    the packages of the area come from. The store of an area that already has
+    one is kept and verified: the releases that run share it.
+    """
+    source = Path(working_directory).expanduser() / "node_modules" if working_directory else None
+    identity = release_rules.dependency_identity(release)
+    store_dir = release_rules.shared_store_dir(catalog, identity)
+    if store_dir.is_dir():
+        release_rules.verify_shared_store(store_dir, identity)
+        created = False
+    else:
+        if source is None or source.is_symlink() or not source.is_dir():
+            raise RuntimeError(f"the store of the checkout is absent: {source}")
+        release_rules.materialize_shared_store(source, store_dir, identity)
+        created = True
+    linked = release_rules.link_release_packages(release, store_dir)
+    if source is not None and not source.is_symlink() and source.is_dir():
+        release_rules.own_tool_caches(source, release / "node_modules")
+    root = release_rules.ensure_area_package_root(catalog, store_dir)
+    return (f"shared store {store_dir} (created={created}); {linked}; "
+            f"area package root {root['path']} state={root['state']}")
+
+
 def node_side_owner(arguments) -> int:
     catalog = Path(arguments.catalog).expanduser()
     sha = arguments.sha
@@ -285,6 +320,16 @@ def node_side_owner(arguments) -> int:
             if line.startswith("ExecStart=") and "dist/index.js" in line:
                 previous = line.split("=", 1)[1].strip()
     unpack_release(Path(arguments.archive), release)
+    # The area must offer the packages to the resolver of Node before the
+    # release goes live: a release whose area cannot resolve the packages of
+    # the store does not start, and the incident repeats itself in every new
+    # area. Nothing of the node is changed when the area cannot be prepared.
+    try:
+        prepared = prepare_owner_area(catalog, release, arguments.working_directory)
+    except (OSError, RuntimeError, ValueError) as error:
+        print("the packages of the area are not ready:", error)
+        return 1
+    print("packages:", prepared)
     # The `current` symlink names the release that is live now. It is moved
     # before the release that was live is sent to rollback/, so the link never
     # names a directory that is gone: after the rollout it names the release

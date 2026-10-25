@@ -12,6 +12,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -60,6 +61,16 @@ class OwnerCurrentTests(unittest.TestCase):
         source = catalog.parent / "source"
         (source / "dist").mkdir(parents=True)
         (source / "dist" / "index.js").write_text("console.log('new');\n")
+        # the lock file names the dependency set of the release: the area
+        # cannot offer the packages without it
+        (source / "package-lock.json").write_text('{"lockfileVersion":3}\n')
+        # the store of the checkout: the area of the owner is materialized
+        # from it
+        work = catalog.parent / "work"
+        (work / "node_modules" / "alpha").mkdir(parents=True)
+        (work / "node_modules" / "alpha" / "index.js").write_text("module.exports = 1;\n")
+        (work / "node_modules" / "alpha" / "package.json").write_text(
+            '{"name":"alpha","version":"1.0.0","main":"index.js"}\n')
         archive = catalog.parent / "release.tar"
         rollout.pack_release(source, archive)
 
@@ -68,6 +79,7 @@ class OwnerCurrentTests(unittest.TestCase):
                 "--catalog", str(catalog), "--previous-sha", OLD_SHA,
                 "--drop-in", str(drop_in), "--web-port", "18787",
                 "--unit", "agent-herder.service",
+                "--working-directory", str(work),
                 "--node-config", json.dumps({
                     "hostId": "roomhacker-server-100",
                     "harnesses": ["codex"],
@@ -76,18 +88,24 @@ class OwnerCurrentTests(unittest.TestCase):
                     "codexSocket": "/tmp/codex.sock",
                     "codexBin": "/usr/bin/codex"})]
         calls = []
+        real_run = subprocess.run
 
         def run(command, *args, **kwargs):
             calls.append(list(command))
-            return MagicMock(returncode=0)
+            # only the systemctl calls of the rollout are captured: the copy
+            # of the packages into the store of the area is a real one
+            if list(command)[:1] == ["systemctl"]:
+                return MagicMock(returncode=0)
+            return real_run(command, *args, **kwargs)
 
         with (patch.object(sys, "argv", argv),
               patch.object(rollout.subprocess, "run", side_effect=run),
               patch("urllib.request.urlopen", return_value=MagicMock())):
             self.assertEqual(rollout.main(), 0)
         # the rollout of the owner restarts its own unit and nothing else
-        self.assertEqual(calls, [["systemctl", "--user", "daemon-reload"],
-                                 ["systemctl", "--user", "restart", "agent-herder.service"]])
+        self.assertEqual([call for call in calls if call[0] == "systemctl"],
+                         [["systemctl", "--user", "daemon-reload"],
+                          ["systemctl", "--user", "restart", "agent-herder.service"]])
         return drop_in
 
     def test_owner_rollout_leaves_current_on_the_new_release(self):

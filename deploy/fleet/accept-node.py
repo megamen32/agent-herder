@@ -344,11 +344,17 @@ def import_check(release: Path, node_bin: str) -> dict:
     except Exception as error:
         return {"ok": False, "error": str(error)[:200]}
     area = {}
+    area_ok = True
     if shared:
         area = release_rules.area_package_root_state(
             release_rules.fleet_root_of(release), Path(shared))
+        # The area must offer the store of the packages under the name the
+        # resolver of Node looks for. A legacy root store of the area offers
+        # its own packages there instead, and the store of the release would
+        # not be the source of the resolution: the acceptance has to see that.
+        area_ok = area.get("state") == "link" and bool(area.get("points_at_store"))
     return {
-        "ok": not data["outside"] and not data["unresolved"],
+        "ok": not data["outside"] and not data["unresolved"] and area_ok,
         "modules": data["modules"],
         "imports": data["imports"],
         "from_release": data["from_release"],
@@ -357,6 +363,7 @@ def import_check(release: Path, node_bin: str) -> dict:
         "unresolved": data["unresolved"],
         "shared_store": shared,
         "area_package_root": area,
+        "area_package_root_ok": area_ok,
     }
 
 def import_check_workspace(release: Path, store_modules: Path, node_bin: str) -> dict:
@@ -989,6 +996,12 @@ def main() -> int:
          f"builtins={imports.get('builtins')} outside={len(imports.get('outside', []))} "
          f"unresolved={len(imports.get('unresolved', []))}"
          + (f" error={imports.get('error')}" if imports.get("error") else "")),
+        ("the area offers the packages of the store to the resolver of Node",
+         imports.get("area_package_root_ok", True),
+         (f"state={(imports.get('area_package_root') or {}).get('state')} "
+          f"points_at_store={(imports.get('area_package_root') or {}).get('points_at_store')}")
+         if imports.get("area_package_root")
+         else "the release carries no shared store: the root of the area is not its source"),
         ("the workspace package is imported from the release", workspace.get("ok", False),
          f"{workspace.get('imported_package')} inside={workspace.get('inside_release')} "
          f"from_store={workspace.get('imports_store_package')} "
