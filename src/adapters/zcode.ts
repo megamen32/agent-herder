@@ -1023,6 +1023,22 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly officialWebSocketSelected:boolean;
   private readonly readOfficialRunningTasks?:()=>Promise<ZcodeOfficialRunning>;
   private officialRunning?:ZcodeOfficialRunning;
+  private officialNativeStates = new Map<string,{session:AgentSession;expiresAt:number;pid:number;generation:number}>();
+
+  private async refreshOfficialNativeStates():Promise<void>{
+    const snapshot=this.officialRunning;
+    if(!snapshot||!this.nativeReadWithoutActivation)return;
+    await Promise.all(snapshot.tasks.map(async task=>{
+      const cached=this.officialNativeStates.get(task.sessionId);
+      if(cached&&cached.expiresAt>Date.now()&&cached.pid===snapshot.pid&&cached.generation===snapshot.generation)return;
+      try{await this.getSession(task.sessionId);}
+      catch{
+        const session:AgentSession={id:task.sessionId,harness:'zcode',cwd:resolve(task.workspacePath),hostId:localSessionHostId(),title:task.sessionId,status:'error',needsPermission:false,lastActivity:snapshot.observedAt,
+          meta:{nativeStatus:'unknown',nativeReadError:'Не удалось прочитать текущее состояние существующей ZCode-сессии',activityEvidence:'zcode-native-state-unavailable'}};
+        this.officialNativeStates.set(task.sessionId,{session,expiresAt:Date.parse(snapshot.expiresAt),pid:snapshot.pid,generation:snapshot.generation});
+      }
+    }));
+  }
   get nativeReadWithoutActivation(): boolean { return this.officialWebSocketSelected; }
   private readonly cwd: string;
   private readonly modelIds: string[];
@@ -1393,6 +1409,11 @@ export class ZcodeAdapter implements HarnessAdapter {
           activityEvidence:'zcode-official-supervisor-running-tasks',activityObservedAt:snapshot.observedAt,activityExpiresAt:snapshot.expiresAt,
           nativeRuntimePid:snapshot.pid,nativeRuntimeGeneration:snapshot.generation,...(task.parentSessionId?{parentSessionId:task.parentSessionId}:{}),nativeParentKnown:task.parentKnown??false,
           nativeActivityFresh:Date.parse(snapshot.expiresAt)>Date.now(),nativeExecutor:'official-server',deliveryRoute:this.officialWebSocketSelected?'official-server-ws':'official-server-unverified'}});
+      const native=this.officialNativeStates.get(task.sessionId);
+      if(native&&native.expiresAt>Date.now()&&native.pid===snapshot.pid&&native.generation===snapshot.generation){
+        const row=rows.get(task.sessionId)!;
+        rows.set(task.sessionId,{...row,...native.session,meta:{...row.meta,...native.session.meta}});
+      }
     }
     return [...rows.values()];
   }
@@ -1406,6 +1427,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     const candidates = stored.filter(session => !officialIds.has(session.id)&&(session.status === "running" || session.status === "needs_input"));
     let active:AgentSession[]=[];let candidateUnavailable=false;
     try{active=await readZcodeActiveCandidates(candidates, session => this.observeExistingRuntime(session.id, session.cwd));}catch{candidateUnavailable=true;}
+    await this.refreshOfficialNativeStates();
     const official=this.officialOverlay(stored).filter(row=>officialIds.has(row.id));
     this.activeSessionReceipt = { exhaustive: false, observedAt: new Date().toISOString(),
       source: "zcode-existing-native-runtime+official-supervisor", reason: officialUnavailable?'official_supervisor_unavailable':candidateUnavailable?'existing_runtime_candidates_partial':"known_task_candidates_only_loaded_identity_coverage_unknown" };
@@ -1416,7 +1438,8 @@ export class ZcodeAdapter implements HarnessAdapter {
     await this.observeAcceptedWorkspaceTurns();
     const persisted = await this.listPersistedSessions(options);
     const created = [...this.createdSessions.values()].filter((session) => !options.cwd || session.cwd === resolve(options.cwd));
-    const mergeCreated = (sessions: AgentSession[]): AgentSession[] => {
+    const mergeCreated = async (sessions: AgentSession[]): Promise<AgentSession[]> => {
+      await this.refreshOfficialNativeStates();
       const merged = new Map(sessions.map((session) => [session.id, session]));
       for (const session of created) if (!merged.has(session.id)) merged.set(session.id, session);
       return this.officialOverlay([...merged.values()]).filter(s=>!options.cwd||s.cwd===resolve(options.cwd)).sort((left, right) => Date.parse(right.lastActivity) - Date.parse(left.lastActivity));
@@ -1926,7 +1949,9 @@ export class ZcodeAdapter implements HarnessAdapter {
         const snapshot = await this.readSnapshot(id, this.sessionWorkspaces.get(id)!);
         if (sessionInfoFromPayload(snapshot)?.sessionId !== id) throw new Error("Native session identity mismatch");
         const current = mapSession(snapshot, observed.cwd);
-        return {...observed, ...current, meta:{...observed.meta,...current.meta}};
+        const session={...observed, ...current, meta:{...observed.meta,...current.meta,activityObservedAt:new Date().toISOString(),activityEvidence:'zcode-existing-native-snapshot'}};
+        this.officialNativeStates.set(id,{session,expiresAt:Date.parse(this.officialRunning.expiresAt),pid:this.officialRunning.pid,generation:this.officialRunning.generation});
+        return session;
       }
       return observed;
     }

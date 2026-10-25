@@ -2,6 +2,17 @@ import {expect,it,vi} from 'vitest';
 import {ZcodeAdapter} from '../src/adapters/zcode.js';
 import {registerFleetNodeTools} from '../src/mesh/fleet-node.js';
 
+it('keeps native permission state in both the active inventory and the sidebar list',async()=>{
+ const snapshot={session:{sessionId:'known',status:'running',workspace:{workspacePath:'/repo'},model:{providerId:'account:zai',modelId:'GLM'}},runtime:{activeTurnId:'turn',pendingRequestIds:['perm']},projection:{pendingPermissions:[{requestId:'perm',toolName:'ctx_execute',reason:'Approval required'}]}};
+ const call=vi.fn(async(_channel:string,method:string)=>{if(method!=='readSession')throw Error('unexpected '+method);return snapshot;});
+ const official={observedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+15000).toISOString(),pid:123,generation:1,tasks:[{sessionId:'known',workspacePath:'/repo'}]};
+ const adapter=new ZcodeAdapter({client:{start:async()=>{},call,close:async()=>{}},localDbPath:'/missing',tasksIndexDbPath:'/missing'});
+ Object.assign(adapter,{officialWebSocketSelected:true,officialRunning:official,readOfficialRunningTasks:async()=>official,listPersistedSessions:async()=>[{id:'known',harness:'zcode',cwd:'/repo',status:'running',needsPermission:false,title:'Task',lastActivity:official.observedAt}],observeAcceptedWorkspaceTurns:async()=>{}});
+ expect(await adapter.listActiveSessions()).toEqual([expect.objectContaining({id:'known',status:'needs_input',needsPermission:true,model:'account:zai/GLM'})]);
+ expect(await adapter.listSessions()).toEqual([expect.objectContaining({id:'known',status:'needs_input',needsPermission:true})]);
+ expect(call).toHaveBeenCalledTimes(1);
+});
+
 it('reads a pending permission from the existing official owner before reporting running',async()=>{
  const call=vi.fn(async(_channel:string,method:string)=>{
   if(method!=='readSession')throw Error('unexpected mutation or lookup: '+method);
