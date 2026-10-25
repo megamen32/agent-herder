@@ -24,6 +24,44 @@ const completed = async (f: ReturnType<typeof fixture>, id: string) => {
 };
 
 describe("actual human message queue admission", () => {
+  it("rejects editing while a native call is still in flight",async()=>{
+    const f=fixture();let release!:(value:SendMessageResult)=>void;
+    f.sendMessage.mockImplementationOnce(()=>new Promise(resolve=>{release=resolve;}));
+    try{
+      f.idle();f.delivery.submit(f.input('in-flight'));
+      await vi.waitFor(()=>expect(f.sendMessage).toHaveBeenCalledTimes(1));
+      expect(()=>f.delivery.editQueuedMessage('codex','thread','in-flight','in-flight','changed')).toThrow(/передаётся/);
+      release({ok:true,admitted:true,turnId:'native-turn'});await completed(f,'in-flight');
+      expect(f.sendMessage.mock.calls[0][2].message).toBe('in-flight');
+      expect(f.sendMessage).toHaveBeenCalledTimes(1);
+    }finally{f.delivery.close();}
+  });
+  it("edits the same waiting item without changing its identity or place in the queue", async () => {
+    const f=fixture();
+    try {
+      const before=f.delivery.submit(f.input('edit-one'));
+      f.delivery.submit(f.input('edit-two'));
+      await vi.waitFor(()=>expect(f.delivery.get('codex','thread','edit-one')?.job?.state).toBe('waiting'));
+      const changed=f.delivery.editQueuedMessage('codex','thread','edit-one','edit-one','changed text');
+      expect(changed).toMatchObject({inputId:'edit-one',message:'changed text',jobId:before.job?.id,createdAt:before.job?.createdAt});
+      expect(()=>f.delivery.editQueuedMessage('codex','thread','edit-one','edit-one','stale edit')).toThrow(/изменён/);
+      f.idle();await completed(f,'edit-one');
+      f.idle();await completed(f,'edit-two');
+      expect(f.sendMessage.mock.calls.map(call=>[call[2].inputId,call[2].message])).toEqual([['edit-one','changed text'],['edit-two','edit-two']]);
+      expect(()=>f.delivery.editQueuedMessage('codex','thread','edit-one','changed text','too late')).toThrow(/передаётся|передано/);
+      expect(f.sendMessage).toHaveBeenCalledTimes(2);
+    } finally {f.delivery.close();}
+  });
+
+  it("refuses an edit once native submission has started, including an unknown outcome",async()=>{
+    const f=fixture({result:{ok:false,admissionUnknown:true,nonRetryable:true,error:'lost reply'}});
+    try {
+      f.idle();f.delivery.submit(f.input('native-unknown'));await completed(f,'native-unknown');
+      expect(()=>f.delivery.editQueuedMessage('codex','thread','native-unknown','native-unknown','replacement')).toThrow(/передаётся|передано/);
+      expect(f.sendMessage).toHaveBeenCalledTimes(1);
+    }finally{f.delivery.close();}
+  });
+
   it("waits for native idle, starts each distinct message in order, and deduplicates a retry", async () => {
     const f = fixture();
     try {

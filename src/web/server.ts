@@ -2849,6 +2849,21 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     });
   }
 
+  const queuedMessageMatch=url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/message-queue\/([^/]+)$/u);
+  if(queuedMessageMatch&&(request.method==='GET'||request.method==='PATCH')){
+    if(!userMessageDelivery)return sendJson(response,503,{ok:false,error:'Очередь сообщений недоступна'});
+    const [,h,s,i]=queuedMessageMatch;
+    const harness=decodeURIComponent(h),sessionId=decodeURIComponent(s),inputId=decodeURIComponent(i);
+    const route=await resolveSessionRoute(harness,sessionId);
+    if(route.kind==='deny')return sendJson(response,409,{ok:false,error:'Не подтверждена область выбранной сессии'});
+    try{
+      if(request.method==='GET')return sendJson(response,200,{ok:true,...userMessageDelivery.queuedMessage(harness,sessionId,inputId)});
+      const body=await readJson(request);
+      if(typeof body.message!=='string'||typeof body.expectedMessage!=='string')return sendJson(response,400,{ok:false,error:'Требуются исходный и новый текст сообщения'});
+      return sendJson(response,200,{ok:true,...userMessageDelivery.editQueuedMessage(harness,sessionId,inputId,body.expectedMessage,body.message)});
+    }catch(error){return sendJson(response,409,{ok:false,error:error instanceof Error?error.message:'Не удалось изменить очередь'});}
+  }
+
   if (request.method === "GET" && url.pathname === "/api/jobs") {
     if (!jobs) return sendJson(response, 503, { error: "Job registry is disabled" });
     const limit = Number(url.searchParams.get("limit") || "100");

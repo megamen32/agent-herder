@@ -8,6 +8,8 @@ import type { ZcodeRetainedInput } from "./adapters/zcode-undelivered.js";
 export type UserMessageInput = { harness: string; sessionId: string; inputId: string; message: string; mode: "queue" | "steer"; images?: MessageImage[] };
 export type UserMessageReceipt = SendMessageResult & { delivery?: "deferred"; job?: HerderJob<SendMessageResult> };
 export type UserMessageRoute = { adapter: HarnessAdapter; supervisor: Pick<SessionSupervisor, "sendMessage"> };
+const messageKey=(harness:string,sessionId:string,inputId:string)=>`${harness}\0${sessionId}\0${inputId}`;
+const messageFingerprint=(input:UserMessageInput)=>createHash('sha256').update(`${input.mode}\0${input.message}\0${JSON.stringify(input.images??[])}`).digest('hex');
 
 /** Process-owned human queue. Coordination continues through its native steer path. */
 export class UserMessageDelivery {
@@ -16,6 +18,7 @@ export class UserMessageDelivery {
   private active = 0;
   private slots = 4;
   private readonly slotWaiters: Array<() => void> = [];
+  private readonly editableMessages=new Map<string,{input:UserMessageInput;jobId:string;controller:AbortController;attempted:boolean}>();
 
   constructor(
     private readonly adapters: Map<string, HarnessAdapter>,
@@ -74,14 +77,15 @@ export class UserMessageDelivery {
   }
 
   submit(input: UserMessageInput, route?: UserMessageRoute): UserMessageReceipt {
+    input={...input,images:input.images?.map(image=>({...image}))};
     if (Buffer.byteLength(input.message, "utf8") > 256 * 1024) throw new Error("Сообщение слишком большое для очереди отправки");
     const targetAdapter = route?.adapter ?? this.adapters.get(input.harness);
     if (input.mode === "steer" && input.harness !== "codex" && targetAdapter?.controlCapabilities?.steer !== true) {
       throw new Error("Вставка в текущий ход для этого агента пока не поддерживается. Выберите «После ответа».");
     }
     if (!targetAdapter) throw new Error("Агент недоступен");
-    const key = `${input.harness}\0${input.sessionId}\0${input.inputId}`;
-    const fingerprint = createHash("sha256").update(`${input.mode}\0${input.message}\0${JSON.stringify(input.images ?? [])}`).digest("hex");
+    const key = messageKey(input.harness,input.sessionId,input.inputId);
+    const fingerprint = messageFingerprint(input);
     const humanRequestedAt = Date.now();
     const jobId = `job_${createHash("sha256").update(`user-message\0${key}`).digest("hex")}`;
     const existing = this.jobs.get<SendMessageResult>(jobId);
@@ -93,6 +97,8 @@ export class UserMessageDelivery {
     const lane = `${input.harness}\0${input.sessionId}`;
     const previous = input.mode === "queue" ? this.tails.get(lane) : undefined;
     const controller = new AbortController();
+    const editable={input,jobId,controller,attempted:false};
+    this.editableMessages.set(key,editable);
     let release!: () => void;
     const admitted = new Promise<void>(resolve => { release = resolve; });
     const tail = (previous ?? Promise.resolve()).then(() => admitted);
@@ -105,6 +111,7 @@ export class UserMessageDelivery {
       controller.abort();
       this.active--;
       this.controllers.delete(controller);
+      this.editableMessages.delete(key);
       if (this.tails.get(lane) === tail) this.tails.delete(lane);
     };
     let job: HerderJob<SendMessageResult>;
@@ -129,6 +136,7 @@ export class UserMessageDelivery {
               }
               combined.throwIfAborted();
               progress(0.5, "Отправляется агенту");
+              editable.attempted=true;
               attempted = true;
               const supervisor = route?.supervisor ?? this.supervisor;
               const result = await this.withSlot(combined, () => supervisor.sendMessage(input.harness, input.sessionId, {
@@ -165,6 +173,25 @@ export class UserMessageDelivery {
       throw error;
     }
     return this.receipt(job, input.inputId);
+  }
+
+  queuedMessage(harness:string,sessionId:string,inputId:string){
+    const queued=this.editableMessages.get(messageKey(harness,sessionId,inputId));
+    const job=queued&&this.jobs.get(queued.jobId);
+    if(!queued||!job)throw new Error('Сообщение уже передано или очередь недоступна; проверьте доставку');
+    return {inputId,message:queued.input.message,jobId:job.id,createdAt:job.createdAt,
+      editable:queued.input.mode==='queue'&&!queued.attempted&&!queued.controller.signal.aborted&&['queued','waiting'].includes(job.state)};
+  }
+
+  editQueuedMessage(harness:string,sessionId:string,inputId:string,expectedMessage:string,message:string){
+    const queued=this.editableMessages.get(messageKey(harness,sessionId,inputId));
+    const current=this.queuedMessage(harness,sessionId,inputId);
+    if(!queued||!current.editable)throw new Error('Сообщение уже передаётся агенту; изменить его нельзя');
+    if(!message.trim()||Buffer.byteLength(message,'utf8')>256*1024)throw new Error('Нужен непустой текст не больше256КиБ');
+    if(current.message!==expectedMessage)throw new Error('Текст сообщения уже изменён; обновите очередь');
+    this.jobs.replaceWaitingFingerprint(queued.jobId,messageFingerprint(queued.input),messageFingerprint({...queued.input,message}));
+    queued.input.message=message;
+    return this.queuedMessage(harness,sessionId,inputId);
   }
 
   private receipt(job: HerderJob<SendMessageResult>, inputId: string): UserMessageReceipt {

@@ -13,6 +13,7 @@ import { FallbackModelsSettings } from "./fallback-models-controls.js";
 import { SettingsScreen } from "./settings/settings-screen.js";
 import { SessionMetadata } from "./session-metadata.js";
 import { NativePermissionStrip } from "./native-permission.js";
+import { ComposerQueue,canEditQueuedEntry } from "./composer-queue.js";
 import { emptyInspectorText, sessionDetailsErrorText } from "./session-error-text.js";
 import { HarnessAutomationSettings, withAutopilotHarness } from "./harness-automation-settings.js";
 import "./styles.css";
@@ -877,6 +878,14 @@ function App() {
   const foldedInitialized = React.useRef(false);
   const [composer, setComposer] = React.useState("");
   const [composerImages, setComposerImages] = React.useState<UploadedImage[]>([]);
+  const [queueEdit,setQueueEdit]=React.useState<{inputId:string;sessionKey:string;expectedText:string;draft:string;images:UploadedImage[];unknown?:boolean}>();
+  const [queueEditError,setQueueEditError]=React.useState('');
+  const [queueEditSaving,setQueueEditSaving]=React.useState(false);
+  React.useEffect(()=>{
+    if(queueEdit&&queueEdit.sessionKey!==activeKey){
+      setComposer(queueEdit.draft);setQueueEdit(undefined);setQueueEditError('');
+    }
+  },[activeKey]);
   const [deliveryMenuOpen, setDeliveryMenuOpen] = React.useState(false);
   const [imageUploading, setImageUploading] = React.useState(false);
   const [imageError, setImageError] = React.useState<string>();
@@ -1920,6 +1929,8 @@ function App() {
     }
     shouldFollowRef.current = true; setShowScrollToLatest(false);
     await messageDispatcherRef.current.run(sessionKey, async () => {
+    const latestEntry=outboxRef.current.find(item=>item.inputId===inputId);
+    if(latestEntry){text=latestEntry.text;images=latestEntry.images;}
     const attempted = beginOutboxAttempt(window.localStorage, outboxRef.current, inputId);
     if (!attempted) {
       setOutbox((current) => updateOutboxEntry(current, inputId, { status: "ready", note: "Не удалось сохранить состояние отправки. Сообщение не отправлено; повторите после освобождения места." }));
@@ -1944,6 +1955,7 @@ function App() {
   };
   const sendMessage = async () => {
     if (!activeKey || readOnlySession || imageUploading || (!composer.trim() && !composerImages.length)) return;
+    if(queueEdit){await saveQueueEdit();return;}
     const draft = composer;
     const text = draft.trim() || "Посмотрите прикреплённое изображение.";
     const images = composerImages; setComposerImages([]);
@@ -1961,6 +1973,55 @@ function App() {
     await submitOutboxEntry(entry.sessionKey, entry.text, entry.mode, entry.inputId, entry.images);
   };
   const dismissOutboxEntry = (inputId: string) => setOutbox((current) => removeOutboxEntry(current, inputId));
+  const cancelQueueEdit=()=>{
+    if(!queueEdit||queueEditSaving)return;
+    setComposer(queueEdit.draft);setComposerImages(queueEdit.images);setQueueEdit(undefined);setQueueEditError('');
+  };
+  const editOutboxEntry=async(inputId:string)=>{
+    const entry=outboxRef.current.find(item=>item.inputId===inputId);
+    if(!entry||!canEditQueuedEntry(entry)||queueEditSaving)return;
+    setQueueEditError('');
+    let text=entry.text;
+    if(entry.jobId){
+      try{const {harness,id}=splitKey(entry.sessionKey);const value=await api<{inputId:string;message:string;editable:boolean}>(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message-queue/${encodeURIComponent(inputId)}`);
+        if(!value.editable||value.inputId!==inputId)throw Error('Сообщение уже передаётся агенту — изменить его нельзя');text=value.message;
+      }catch(error){setQueueEditError(error instanceof Error?error.message:'Не удалось прочитать очередь');return;}
+    }
+    if(activeKeyRef.current!==entry.sessionKey)return;
+    const prior=queueEdit;
+    setQueueEdit({inputId,sessionKey:entry.sessionKey,expectedText:text,draft:prior?.draft??composer,images:prior?.images??composerImages});
+    setComposer(text);setComposerImages(entry.images??[]);
+  };
+  const saveQueueEdit=async()=>{
+    const edit=queueEdit,entry=edit&&outboxRef.current.find(item=>item.inputId===edit.inputId);
+    if(!edit||!entry||queueEditSaving||edit.unknown||edit.sessionKey!==activeKey||!composer.trim())return;
+    if(!canEditQueuedEntry(entry)){setQueueEditError('Сообщение уже передаётся агенту — изменить его нельзя');return;}
+    const text=composer.trim();setQueueEditSaving(true);setQueueEditError('');
+    try{
+      if(entry.jobId){
+        const {harness,id}=splitKey(entry.sessionKey);
+        let response:Response;
+        try{response=await fetch(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message-queue/${encodeURIComponent(entry.inputId)}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({expectedMessage:edit.expectedText,message:text}),signal:AbortSignal.timeout(15000)});}
+        catch{setQueueEdit(current=>current?{...current,unknown:true}:current);throw Error('Ответ на изменение не получен. Нажмите «Проверить», повторной отправки не будет');}
+        let result:{ok:boolean;inputId?:string;message?:string;error?:string};
+        try{result=await response.json();}catch{setQueueEdit(current=>current?{...current,unknown:true}:current);throw Error('Ответ на изменение не удалось прочитать. Нажмите «Проверить»');}
+        if(!response.ok||!result.ok||result.inputId!==entry.inputId||result.message!==text)throw Error(result.error||'Не удалось подтвердить изменение очереди');
+      }else if(entry.status!=='ready'){throw Error('Состояние очереди изменилось; проверьте доставку');}
+      setOutbox(current=>current.map(item=>item.inputId===entry.inputId?{...item,text}:item));
+      setComposer(edit.draft);setComposerImages(edit.images);setQueueEdit(undefined);
+      if(!entry.jobId&&!messageDispatcherRef.current.hasPending(entry.inputId))void retryOutboxEntry(entry.inputId);
+    }catch(error){setQueueEditError(error instanceof Error?error.message:'Изменение очереди не подтверждено');}
+    finally{setQueueEditSaving(false);}
+  };
+  const checkQueueEdit=async()=>{
+    if(!queueEdit)return;const edit=queueEdit,{harness,id}=splitKey(edit.sessionKey);
+    try{const value=await api<{inputId:string;message:string;editable:boolean}>(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message-queue/${encodeURIComponent(edit.inputId)}`);
+      if(value.inputId!==edit.inputId)throw Error('Не подтверждена запись очереди');
+      setOutbox(current=>current.map(item=>item.inputId===edit.inputId?{...item,text:value.message}:item));
+      if(value.message===composer.trim()){setComposer(edit.draft);setComposerImages(edit.images);setQueueEdit(undefined);setQueueEditError('');}
+      else{setQueueEditError('В очереди пока другой текст. Черновик сохранён; автоматического повтора нет');}
+    }catch(error){setQueueEditError(error instanceof Error?error.message:'Не удалось проверить очередь');}
+  };
   // jobId строки достаётся и из ответа POST, и из message-status: после перезагрузки отмена
   // работает без повторной отправки сообщения.
   const resolveOutboxJobId = async (entry: OutboxEntry): Promise<string | undefined> => {
@@ -2012,7 +2073,10 @@ function App() {
     messageDispatcherRef.current.cancelInput(entry.sessionKey, inputId);
     try {
       const outcome = await cancelQueuedDelivery(entry);
-      if (outcome === "cancelled" || (outcome === "no-job" && entry.status === "ready")) dismissOutboxEntry(inputId);
+      if (outcome === "cancelled" || (outcome === "no-job" && entry.status === "ready")) {
+        dismissOutboxEntry(inputId);
+        if(queueEdit?.inputId===inputId)cancelQueueEdit();
+      }
       else if (outcome === "delivered") setOutbox((current) => updateOutboxEntry(current, inputId, { status: "delivered", note: "Сообщение уже доставлено агенту — удалить его нельзя." }));
       else if (outcome === "no-job") setOutbox((current) => updateOutboxEntry(current, inputId, { status: "failed", error: "Задача доставки не найдена на сервере. Сообщение не отправлено." }));
       else setOutbox((current) => updateOutboxEntry(current, inputId, { status: entry.status, note: "Не удалось отменить доставку. Сообщение осталось в очереди." }));
@@ -2219,25 +2283,10 @@ function App() {
       {!showCreateSession && !showStatistics && !showJobs && !showQuota && showScrollToLatest && <button className="scroll-latest" aria-label="Прокрутить к последним" onClick={scrollToBottom}>↓</button>}
       {!showStatistics && !showJobs && !showQuota && <div className="composer-stack">
       <div className="activity-slot">{!showCreateSession && sessionActivity && <div className={`activity-line activity-${sessionActivity.kind}`} role="status" aria-live="polite"><span className="pulse-dot" aria-hidden="true" />{activeSession?.status === "running" && !sending ? <span><ActivityElapsed sinceMs={runningSince} />{sessionActivity.label ? <em className="activity-detail"> · {sessionActivity.label}</em> : null}</span> : <span>{sessionActivity.label}</span>}</div>}</div>
-      {activeOutbox.length > 0 && <div className="composer-outbox" aria-label="Отправленные сообщения и их состояние">
-        {activeOutbox.map((entry) => <div className={`composer-outbox-entry status-${entry.status}`} key={entry.inputId}>
-          <div className="composer-outbox-meta">
-            <span className="composer-outbox-mode">{deliveryModeLabel(entry.mode)}</span>
-            <span className="composer-outbox-status">{outboxStatusLabel(entry.status)}</span>
-            {entry.status === "unknown" && <button type="button" className="composer-outbox-retry" onClick={() => void checkOutboxEntry(entry)}>Проверить доставку</button>}
-            {entry.status === "ready" && <button type="button" className="composer-outbox-retry" disabled={messageDispatcherRef.current.hasPending(entry.inputId)} onClick={() => void retryOutboxEntry(entry.inputId)}>Отправить</button>}
-            {entry.status === "failed" && entry.nonRetryable !== true && <button type="button" className="composer-outbox-retry" onClick={() => void retryOutboxEntry(entry.inputId)} title="Повторить отправку">Повторить</button>}
-            {entry.images?.map(image => <img className="outbox-image" src={image.url} alt={image.fileName} key={image.id} />)}
-            {canSteerOutboxEntry(entry, splitKey(entry.sessionKey).harness, harnessAdapters.find(adapter => adapter.id === splitKey(entry.sessionKey).harness)?.capabilities?.steer === true) && <button type="button" className="composer-outbox-retry" disabled={cancellingOutbox.has(entry.inputId)} onClick={() => void steerOutboxEntry(entry.inputId)} title="Убрать из очереди и вставить в текущий ход агента">Отправить сейчас</button>}
-            {canDeleteOutboxEntry(entry) && <button type="button" className="composer-outbox-delete" disabled={cancellingOutbox.has(entry.inputId)} aria-label="Удалить сообщение из очереди" title="Снять с очереди до передачи агенту" onClick={() => void deleteOutboxEntry(entry.inputId)}>Удалить</button>}
-            {(entry.status === "delivered" || entry.status === "accepted" || entry.status === "failed" || entry.status === "unknown") && <button type="button" className="composer-outbox-dismiss" aria-label="Убрать сообщение из списка" title="Убрать плашку. Сообщение останется в переписке." onClick={() => dismissOutboxEntry(entry.inputId)}>×</button>}
-          </div>
-          <div className="composer-outbox-text">{entry.text}</div>
-          {entry.error && <div className="composer-outbox-error">Детали: {entry.error}</div>}
-          {entry.note && <div className="composer-outbox-note">{entry.note}</div>}
-        </div>)}
-      </div>}
-      <form className="composer" data-creating={showCreateSession} onSubmit={(event) => { event.preventDefault(); if(showCreateSession){void createNewSession();return;} if (isResumeMode) void runAction("resume"); else void sendMessage(); }}>
+      {activeOutbox.length>0&&<ComposerQueue entries={activeOutbox} busy={cancellingOutbox} pending={id=>messageDispatcherRef.current.hasPending(id)} canSteer={entry=>canSteerOutboxEntry(entry,splitKey(entry.sessionKey).harness,harnessAdapters.find(adapter=>adapter.id===splitKey(entry.sessionKey).harness)?.capabilities?.steer===true)} onSteer={id=>void steerOutboxEntry(id)} onCancel={id=>void deleteOutboxEntry(id)} onEdit={id=>void editOutboxEntry(id)} onCheck={entry=>void checkOutboxEntry(entry)} onRetry={id=>void retryOutboxEntry(id)} onDismiss={dismissOutboxEntry}/>}
+      {queueEdit&&<div className="composer-queue-edit"><span>Редактирование сообщения очереди</span><button type="button" disabled={queueEditSaving} onClick={cancelQueueEdit}>Отмена редактирования</button>{queueEdit.unknown&&<button type="button" onClick={()=>void checkQueueEdit()}>Проверить</button>}</div>}
+      {queueEditError&&<div className="composer-queue-edit-error" role="status">{queueEditError}</div>}
+      <form className="composer" data-creating={showCreateSession} onSubmit={(event) => { event.preventDefault(); if(showCreateSession){void createNewSession();return;} if (isResumeMode && !queueEdit) void runAction("resume"); else void sendMessage(); }}>
         {showCreateSession && <div className="composer-create-panel"><div className="composer-create-machine"><button type="button" className="quiet-button" onClick={() => setShowCreateSession(false)}>Отмена</button><span>Создание на машине: {directory.hosts.find(host => host.hostId === directory.localHostId)?.label || "Текущая машина"}</span><button type="button" className="quiet-button" onClick={() => {setFleetCreationMode(true);setShowFleet(true);}}>Выбрать другую машину</button></div>
           <div className="composer-create-row">
             <label>Агент<select value={createHarness} onChange={(event) => { const harness = event.target.value; setCreateHarness(harness); setCreateModel(""); setCreateModels([]); void loadCreateModels(harness); }}>{(createAdapters.length ? createAdapters : [{ id: "fast-agent", name: "Fast Agent", active: true, ready: true, status: "active" }]).map((adapter) => <option key={adapter.id} value={adapter.id} disabled={!adapter.active}>{adapter.name}{adapter.active ? "" : ` · ${adapter.status}`}</option>)}</select></label>
@@ -2247,9 +2296,9 @@ function App() {
           </div>
           {createSessionError && <div className="create-session-error">{createSessionError}</div>}
         </div>}
-        {!showCreateSession && <><div className="composer-left">{supportsImages && !readOnlySession ? <><input ref={imageInputRef} className="composer-file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple aria-label="Файл изображения" onChange={event => void uploadImages(event.target.files)} /><button type="button" className="composer-plus" aria-label="Прикрепить изображение" title="Прикрепить изображение (до 5 МБ)" disabled={imageUploading || !activeKey} onClick={() => imageInputRef.current?.click()}>+ Фото</button></> : <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="Новая сессия" title="Новая сессия агента" onClick={() => { if (showCreateSession) setShowCreateSession(false); else void openCreateSession(); }}>+</button>}{activeKey && !readOnlySession && <button type="button" className="composer-delivery-mode" aria-label="Режим отправки" aria-expanded={deliveryMenuOpen} onClick={() => setDeliveryMenuOpen(current => !current)}>{deliveryModeLabel(effectiveDeliveryMode)} ▾</button>}</div>
+        {!showCreateSession && <><div className="composer-left">{supportsImages && !readOnlySession ? <><input ref={imageInputRef} className="composer-file-input" type="file" disabled={Boolean(queueEdit)} accept="image/png,image/jpeg,image/webp" multiple aria-label="Файл изображения" onChange={event => void uploadImages(event.target.files)} /><button type="button" className="composer-plus" aria-label="Прикрепить изображение" title="Прикрепить изображение (до 5 МБ)" disabled={imageUploading || !activeKey || Boolean(queueEdit)} onClick={() => imageInputRef.current?.click()}>+ Фото</button></> : <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="Новая сессия" title="Новая сессия агента" onClick={() => { if (showCreateSession) setShowCreateSession(false); else void openCreateSession(); }}>+</button>}{activeKey && !readOnlySession && <button type="button" className="composer-delivery-mode" aria-label="Режим отправки" aria-expanded={deliveryMenuOpen} onClick={() => setDeliveryMenuOpen(current => !current)}>{deliveryModeLabel(effectiveDeliveryMode)} ▾</button>}</div>
         {deliveryMenuOpen && <div className="composer-delivery-menu" role="dialog" aria-label="Когда отправлять сообщение">{deliveryModeChoice}</div>}
-        {(composerImages.length > 0 || imageUploading || imageError) && <div className="composer-images">{composerImages.map(image => <div className="composer-image" key={image.id}><img src={image.url} alt={image.fileName} /><button type="button" aria-label={`Убрать ${image.fileName}`} onClick={() => setComposerImages(current => current.filter(item => item.id !== image.id))}>×</button></div>)}{imageUploading && <span>Загружаю изображение…</span>}{imageError && <span role="alert">{imageError}</span>}</div>}
+        {(composerImages.length > 0 || imageUploading || imageError) && <div className="composer-images">{composerImages.map(image => <div className="composer-image" key={image.id}><img src={image.url} alt={image.fileName} /><button type="button" disabled={Boolean(queueEdit)} aria-label={`Убрать ${image.fileName}`} onClick={() => setComposerImages(current => current.filter(item => item.id !== image.id))}>×</button></div>)}{imageUploading && <span>Загружаю изображение…</span>}{imageError && <span role="alert">{imageError}</span>}</div>}
         {readOnlySession ? <div className="composer-readonly"><strong>{archivedSession ? "Архивная сессия" : "Только просмотр"}</strong><span>{archivedSession ? "Сохранённая история сессии доступна для просмотра." : "Эта сессия пока не поддерживает отправку сообщений."}</span></div> : <>
           <textarea value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Продолжите работу…" : activeKey ? "Работайте с агентом" : "Сначала выберите сессию"} disabled={!activeKey || readOnlySession} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && (composer.trim() || composerImages.length > 0)) { event.preventDefault(); void sendMessage(); } }} />
           <span className="composer-hint">{sending ? "Отправляю сообщения…" : isResumeMode ? "Продолжить" : "Enter — отправить · Shift+Enter — новая строка"}</span>
@@ -2265,7 +2314,7 @@ function App() {
             {!modelOptionsLoading && modelOptionsHarness === modelSwitchHarness && modelOptions.length === 0 && <div className="composer-model-note">Сервер не вернул моделей для {modelSwitchHarness}.</div>}
             {modelOptions.map((model) => <button type="button" role="option" aria-selected={model === currentModelOption(activeSession?.model, modelOptions)} className={model === currentModelOption(activeSession?.model, modelOptions) ? "current" : ""} key={model} onClick={() => void changeSessionModel(model)} title={model}>{modelOptionLabel(model)}{modelOptions.filter(option => shortModelLabel(option) === shortModelLabel(model)).length > 1 && <small className="model-provider">{modelSourceLabel(model)}</small>}</button>)}
           </div>}
-          <button className={`send-button ${isResumeMode ? "resume-button" : ""}`} title={isResumeMode ? "Возобновить работу в той же сессии" : effectiveDeliveryMode === "queue" ? "Отправить после ответа агента" : "Передать в текущий ход агента"} type={isResumeMode ? "button" : "submit"} onClick={isResumeMode ? () => void runAction("resume") : undefined} disabled={!activeKey || imageUploading || (!isResumeMode && !composer.trim() && !composerImages.length)} aria-label={isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}>{isResumeMode ? "Продолжить ▶" : "↑"}</button>
+          <button className={`send-button ${isResumeMode ? "resume-button" : ""}`} title={queueEdit ? "Сохранить изменения в том же сообщении очереди" : isResumeMode ? "Возобновить работу в той же сессии" : effectiveDeliveryMode === "queue" ? "Отправить после ответа агента" : "Передать в текущий ход агента"} type={isResumeMode && !queueEdit ? "button" : "submit"} onClick={isResumeMode && !queueEdit ? () => void runAction("resume") : undefined} disabled={queueEditSaving || Boolean(queueEdit?.unknown) || !activeKey || imageUploading || (!isResumeMode && !composer.trim() && !composerImages.length)} aria-label={queueEdit ? "Сохранить сообщение очереди" : isResumeMode ? "Продолжить сессию" : "Отправить сообщение"}>{queueEdit ? "↑" : isResumeMode ? "Продолжить ▶" : "↑"}</button>
         </>}
         </>}
       </form></div>}

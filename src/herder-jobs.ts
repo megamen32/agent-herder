@@ -98,6 +98,16 @@ export class HerderJobRegistry {
     return job ? publicJob(job.record as HerderJob<T>) : null;
   }
 
+  /** Keep an edited, not-yet-submitted human message bound to its original job. */
+  replaceWaitingFingerprint(id:string,expected:string,replacement:string):void {
+    const job=this.jobs.get(id);
+    if(!job||job.controller.signal.aborted||!["queued","waiting"].includes(job.record.state))throw new Error('Сообщение уже передаётся агенту; изменить его нельзя');
+    if(job.record.requestFingerprint!==expected)throw new Error('Текст сообщения уже изменён; обновите очередь');
+    job.record.requestFingerprint=replacement;
+    try{this.persist(true);}catch(error){job.record.requestFingerprint=expected;throw error;}
+    this.publish(job.record,'updated');
+  }
+
   /** First-upgrade compatible: this method's JS body is self-contained and may
    * run bound to the exact existing live registry. Never use a second writer.
    * It does not start a job runner or invoke an adapter/native command. */
