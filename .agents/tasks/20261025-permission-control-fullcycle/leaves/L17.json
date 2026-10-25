@@ -1,0 +1,21 @@
+{
+  "id": "L17",
+  "label": "Исправить заголовки задач в Herder и проверить восемь сессий",
+  "status": "done",
+  "description": "Переставить генерируемый заголовок в формат задача | короткое canonical имя проекта; исключить статус и full path, сохранять цель целиком. Перенести только существующие автосгенерированные названия по подтверждённому списку.",
+  "acceptance": "Scoped source commit 9238bf9: focused 28/28 и TypeScript GREEN; формат поддерживает POSIX/Mac/Windows/worktree пути, не угадывает/не режет задачу. Независимый native app readback подтверждает 8/8 точных названий после rename; это пользовательский app proof, отдельно от установленного генератора.",
+  "affected_files": [
+    "src/session-labels.ts",
+    "src/mcp/session-tools.ts",
+    "src/mesh/register-tools.ts",
+    "tests/l69-session-label-write.test.ts",
+    "tests/l71-mcp-mesh-label.test.ts",
+    "tests/l54-panel-routes.test.ts"
+  ],
+  "owner": "workspace_activity",
+  "depends_on": [
+    "L01"
+  ],
+  "note": "Source composer commit 9238bf9 is installed in public backend release 49b2c13. Focused source 28/28 + tsc GREEN; native app readback of the eight renamed sessions was 8/8 before install. Installed generator and app rename proof are separate evidence layers.",
+  "updated_at": "2026-10-25T16:13:00+03:00"
+}

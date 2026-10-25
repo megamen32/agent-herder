@@ -10,6 +10,7 @@ import { createFleetRecoveryAdmissionGate } from "./autopilot/recovery-admission
 import { createMiniMaxQuotaPreflight } from "./automation/minimax-quota-preflight.js";
 
 import { startSelectedStdio } from "./mcp/transport-selection.js";
+import { withCatalogProjection } from "./mcp/catalog-projection.js";
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { homedir, hostname } from "node:os";
@@ -754,7 +755,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     server.server.onclose = () => { unsubscribe(); };
   }
 
-  registerTools(
+  withCatalogProjection(server, () => registerTools(
     server,
     cdpChatDriver ? new CdpChatClient(cdpChatDriver, { mediaRoot: process.env.CDP_CHAT_MEDIA_ROOT }) : undefined,
     cdpChatDriver?.capabilities ?? (cdpChatDriver ? ALL_CDP_CHAT_CAPABILITIES : undefined),
@@ -770,7 +771,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     options.inventorySupervisor,
     options.resumeAfter,
     options.cadence,
-  );
+  ));
   return server;
 }
 

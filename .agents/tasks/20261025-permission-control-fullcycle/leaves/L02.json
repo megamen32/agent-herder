@@ -1,0 +1,67 @@
+{
+  "id": "L02",
+  "label": "Определить единый контракт режима и точного разрешения",
+  "status": "done",
+  "description": "Нормализовать возможности каждой среды, readback режима, host/session/request identity, устаревание и ровно одно применение ответа. Отсутствующая native функция показывается явно.",
+  "acceptance": "Контракт сохраняет native security boundary, unknown/accepted не повторяются, подмена host/session/request и устаревший ответ отвергаются focused тестами.",
+  "affected_files": [
+    "src/permission-control/contract.ts",
+    "tests/permission-control-contract.test.ts"
+  ],
+  "owner": "permission_reply_bridge",
+  "depends_on": [
+    "L01"
+  ],
+  "estimate_minutes": {
+    "minimum": 20,
+    "maximum": 30
+  },
+  "updated_at": "2026-10-25T16:23:50+03:00",
+  "estimate_over_limit_reason": "Один атомарный контракт identity/ответа/readback с focused проверками; деление оставит несовместимые части.",
+  "wait_reason": "После L01: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.",
+  "progress_events": [
+    {
+      "at": "2026-10-25T14:37:48+03:00",
+      "note": "",
+      "changes": {
+        "estimate_over_limit_reason": "Один атомарный контракт identity/ответа/readback с focused проверками; деление оставит несовместимые части.",
+        "wait_reason": "После L01: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+      },
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-10-25T14:52:01+03:00",
+      "note": "В выбранном worktree начинается общий контракт native modes, scopes и bound approval. Существующая генерация уведомлений resume не подменяет ответ native request.",
+      "changes": {
+        "status": "running",
+        "started_at": "2026-10-25T14:51:11+03:00"
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T15:02:00+03:00",
+      "note": "Lead подтвердил новую декомпозицию и владельца/зависимости.",
+      "changes": {
+        "owner": "permission_reply_bridge",
+        "status": "running",
+        "depends_on": [
+          "L01"
+        ]
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T15:10:00+03:00",
+      "note": "Lead подтвердил source SHIP после независимого review; live приёмка не подменяется source доказательством.",
+      "changes": {
+        "status": "done"
+      },
+      "harness": "codex"
+    }
+  ],
+  "started_at": "2026-10-25T14:51:11+03:00",
+  "session": "",
+  "harness": "codex",
+  "note": "Безопасный exact identity/reply guard независимым review оценён SHIP; focused regression RED 5 → GREEN 7, TypeScript compile GREEN. Production reply и live browser/native acceptance остаются невыполненными в будущих leaves.",
+  "finished_at": "2026-10-25T15:10:00+03:00"
+}

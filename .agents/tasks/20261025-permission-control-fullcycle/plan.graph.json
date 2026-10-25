@@ -1,0 +1,791 @@
+{
+  "schema_version": 2,
+  "title": "ZCode Full Access по умолчанию, режимы и разрешения в четырёх средах",
+  "goal": "Новые ZCode-сессии стартуют в native YOLO/Full Access; пользователь меняет подтверждённые режимы выбранных существующих сессий и отвечает на конкретный native permission request. OpenCode также доставляет новое сообщение в точную idle MiniMax desktop session штатным путем; проверяются четыре среды.",
+  "business_result": "Установленный combined backend host100 — immutable release a34a4fee0ddd8e1e31f2911699e170c142226ab7; owner acceptance 21/21. Новая публичная ZCode canary без явных mode/fullAccess/model/initialMessage создана в native YOLO, same-session readback показал pending пусто/no active turn; fixture закрыта официальным способом, пять существующих сессий не тронуты. Frontend pin 57d2adee применён timer, managed nginx drift=0. Полный четырёх-harness цикл остаётся открытым.",
+  "business_results": [
+    "Установленный combined backend host100 — immutable release a34a4fee0ddd8e1e31f2911699e170c142226ab7; owner acceptance 21/21. Новая публичная ZCode canary без явных mode/fullAccess/model/initialMessage создана в native YOLO, same-session readback показал pending пусто/no active turn; fixture закрыта официальным способом, пять существующих сессий не тронуты. Frontend pin 57d2adee применён timer, managed nginx drift=0. Полный четырёх-harness цикл остаётся открытым."
+  ],
+  "current_progress": "Source a34a4fee0ddd8e1e31f2911699e170c142226ab7 опубликован fast-forward; ZCode native project mapping independently SHIP, focused tests 98/98 GREEN, official artifact checks 14/14. Host100 install accepted 21/21. Однократный public ZCode default create без explicit mode/fullAccess/model/initialMessage дал same-session native YOLO readback, pending=[], humanMessageCount=0, нет active turn; собственная fixture закрыта через closeSession/archiveTask, final idle/nativeLoaded=false, root нетронут. Пять существующих sessions без writes. Frontend static copy matched live release tree digest, pin commit 57d2adee deployed existing timer, managed nginx drift 0; unauth public request redirects to auth, browser-content proof ещё ожидается. Search metrics installed but not query proof; exact user query needs fresh source receipt + same-snapshot readonly COUNT and matching message/snippet. Broad Codex/MiniMax/NoticePlace/UI acceptance remains open.",
+  "external_waits": "UI/browser owner: read back authenticated local Agent Herder UI after pin a34 and verify host100 plus TelegramAuto workspace filter. Search owner: reproduce exact user query and compare fresh same-version/source receipt with read-only COUNT in identical host+harness scope; report partial/stale explicitly and capture exact matching message/snippet. Remaining four-harness consumer acceptance: Codex mode support is disabled, MiniMax mode/delivery, Notice Place permission observer/response, and idle MiniMax delivery remain open.",
+  "slots": 3,
+  "updated_at": "2026-10-25T16:37:05+03:00",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "Проверить нативные возможности и безопасные тестовые сессии",
+      "status": "done",
+      "description": "Проследить текущие native APIs четырёх адаптеров, смену режима существующей сессии, получение запроса и ответ; установить исходные состояния и разрешённые тестовые identity без запуска новых агентов.",
+      "acceptance": "Матрица четырёх сред с проверенными методами, scope и ограничениями; определены доступные контроллеры, source ownership и правила безопасной приёмки. Конкретные тестовые identity закрепляются перед соответствующими L08–L11 и не заменяются product-сессиями.",
+      "owner": "Исполнитель текущего чата",
+      "harness": "codex",
+      "note": "Исследование зафиксировано в capabilities.md: Codex local schema сгенерирована; MiniMax native request routes найдены, default desktop manifest отсутствует; source worktree явно разрешён и создан, initial интегратор освободил пути. Live приёмка нового цикла не выполнена.",
+      "estimate_unknown_reason": "Поддержка изменения активного режима и native approval в Codex/MiniMax ещё не доказана; внешний запрет не подменяется обходом.",
+      "estimate_over_limit_reason": "Одна согласованная матрица четырёх API и тестовых identities нужна до выбора общего контракта; разбиение на четыре исследования увеличит передачи при одном исполнителе.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-25T14:37:48+03:00",
+          "note": "",
+          "changes": {
+            "estimate_over_limit_reason": "Одна согласованная матрица четырёх API и тестовых identities нужна до выбора общего контракта; разбиение на четыре исследования увеличит передачи при одном исполнителе."
+          },
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-25T14:46:56+03:00",
+          "note": "Матрица native API исследована; ожидается ответ на конкретный вопрос об изоляции чужого WIP. Режимы и реальные разрешения не менялись.",
+          "changes": {
+            "status": "blocked",
+            "blocker": "Ожидается решение пользователя по exact worktree нового цикла; canonical checkout содержит чужой WIP в нужных адаптерах и entrypoint. Прежний прямой запрет не снят."
+          },
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-25T14:48:08+03:00",
+          "note": "Пользователь явно разрешил один exact worktree и branch; дерево создано от origin/main. Чужой canonical WIP сохранён. Продолжается проверка native capabilities.",
+          "changes": {
+            "status": "running",
+            "blocker": ""
+          },
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-25T14:51:58+03:00",
+          "note": "",
+          "changes": {
+            "acceptance": "Матрица четырёх сред с проверенными методами, scope и ограничениями; определены доступные контроллеры, source ownership и правила безопасной приёмки. Конкретные тестовые identity закрепляются перед соответствующими L08–L11 и не заменяются product-сессиями.",
+            "status": "done",
+            "finished_at": "2026-10-25T14:51:11+03:00",
+            "note": "Исследование зафиксировано в capabilities.md: Codex local schema сгенерирована; MiniMax native request routes найдены, default desktop manifest отсутствует; source worktree явно разрешён и создан, initial интегратор освободил пути. Live приёмка нового цикла не выполнена."
+          },
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        ".agents/tasks/20261025-permission-control-fullcycle/capabilities.md"
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 25.0
+      },
+      "started_at": "2026-10-25T14:33:23+03:00",
+      "finished_at": "2026-10-25T14:51:11+03:00"
+    },
+    {
+      "id": "L18",
+      "label": "Исправить нулевые текстовые результаты поиска по каталогу",
+      "status": "running",
+      "description": "Проверить сообщение пользователя: при большом каталоге около 3200 записей текстовый поиск Herder возвращает ноль результатов. Найти точную причину в поиске/индексе и исправить только подтверждённый слой.",
+      "acceptance": "RED воспроизводит нулевой результат на запросе с известным совпадением в контролируемом каталоге. GREEN возвращает точное совпадение с корректным host/harness scope; неполный или недоступный индекс явно отличается от полного нуля. Нет transcript export, Telegram API, native writes или повторной доставки.",
+      "owner": "permission_reply_bridge",
+      "note": "Metrics delta 6099a19 is installed in combined a34; independent review SHIP for durable-vs-processed accounting; focused 7/7 and tsc GREEN. MCP receipt directly separates processed* (current scan) and indexed* (durable host+harness data). Required next proof: capture a fresh source-versioned receipt and read-only COUNT on the same snapshot/scope; compare dynamic counts without hardcoding; run the exact real query and preserve matching message/snippet, with partial/stale explicit. No root-cause claim for the user's query yet; bridgeworker owns reproduction.",
+      "estimate_over_limit_reason": "Одна bounded search/index цепочка с узкой регрессией. Приёмка отдельно покажет полноту данных; не расширять до общего перестроения индекса.",
+      "origin": "",
+      "supersedes": [],
+      "affected_files": [
+        "src/session-search.ts",
+        "tests/l72-session-search-incremental.test.ts"
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 25.0
+      }
+    },
+    {
+      "id": "L02",
+      "label": "Определить единый контракт режима и точного разрешения",
+      "status": "done",
+      "description": "Нормализовать возможности каждой среды, readback режима, host/session/request identity, устаревание и ровно одно применение ответа. Отсутствующая native функция показывается явно.",
+      "acceptance": "Контракт сохраняет native security boundary, unknown/accepted не повторяются, подмена host/session/request и устаревший ответ отвергаются focused тестами.",
+      "owner": "permission_reply_bridge",
+      "harness": "codex",
+      "note": "Безопасный exact identity/reply guard независимым review оценён SHIP; focused regression RED 5 → GREEN 7, TypeScript compile GREEN. Production reply и live browser/native acceptance остаются невыполненными в будущих leaves.",
+      "estimate_over_limit_reason": "Один атомарный контракт identity/ответа/readback с focused проверками; деление оставит несовместимые части.",
+      "wait_reason": "После L01: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-25T14:37:48+03:00",
+          "note": "",
+          "changes": {
+            "estimate_over_limit_reason": "Один атомарный контракт identity/ответа/readback с focused проверками; деление оставит несовместимые части.",
+            "wait_reason": "После L01: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+          },
+          "harness": "unknown"
+        },
+        {
+          "at": "2026-10-25T14:52:01+03:00",
+          "note": "В выбранном worktree начинается общий контракт native modes, scopes и bound approval. Существующая генерация уведомлений resume не подменяет ответ native request.",
+          "changes": {
+            "status": "running",
+            "started_at": "2026-10-25T14:51:11+03:00"
+          },
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-25T15:02:00+03:00",
+          "note": "Lead подтвердил новую декомпозицию и владельца/зависимости.",
+          "changes": {
+            "owner": "permission_reply_bridge",
+            "status": "running",
+            "depends_on": [
+              "L01"
+            ]
+          },
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-25T15:10:00+03:00",
+          "note": "Lead подтвердил source SHIP после независимого review; live приёмка не подменяется source доказательством.",
+          "changes": {
+            "status": "done"
+          },
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/permission-control/contract.ts",
+        "tests/permission-control-contract.test.ts"
+      ],
+      "depends_on": [
+        "L01"
+      ],
+      "estimate_minutes": {
+        "minimum": 20.0,
+        "maximum": 30.0
+      },
+      "started_at": "2026-10-25T14:51:11+03:00",
+      "finished_at": "2026-10-25T15:10:00+03:00"
+    },
+    {
+      "id": "L03",
+      "label": "Подключить смену режима в четырёх адаптерах",
+      "status": "running",
+      "description": "Подключить поддерживаемые native операции для выбранной существующей сессии, включая Full Access; возвращать подтверждённый режим. Не перезапускать сессию, не менять модель и не разрешать накопленные запросы автоматически.",
+      "acceptance": "У каждого адаптера проверены mapping, native ответ и независимый readback; ошибки и неподдерживаемые переходы не возвращают успех. Все четыре среды остаются обязательной приёмкой.",
+      "owner": "permission_native",
+      "note": "Source commits 5354887/4214d47/2a137f3/6dadd73 integrated in public commit 49b2c13; the contradictory fullAccess/mode inputs now fail closed before native create. Independent review SHIP; merged focused suite 170/170 and production build GREEN. Native default create canary is separate L15/L08. Four-harness mode consumer acceptance remains open.",
+      "estimate_over_limit_reason": "Четыре нативных mapping выполняются одним владельцем общего интерфейса; промежуточный checkpoint через20мин, оценка включает проверки каждого.",
+      "wait_reason": "Контракт L02 синхронизируется с worker 1; текущая ветка использует согласованный контракт после синхронизации.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-25T14:37:48+03:00",
+          "note": "",
+          "changes": {
+            "estimate_over_limit_reason": "Четыре нативных mapping выполняются одним владельцем общего интерфейса; промежуточный checkpoint через20мин, оценка включает проверки каждого.",
+            "wait_reason": "После L02: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+          },
+          "harness": "unknown"
+        },
+        {
+          "at": "2026-10-25T15:02:00+03:00",
+          "note": "Lead подтвердил новую декомпозицию и владельца/зависимости.",
+          "changes": {
+            "owner": "permission_native",
+            "status": "running",
+            "depends_on": [
+              "L01"
+            ]
+          },
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-25T15:15:00+03:00",
+          "note": "Independent source review обнаружил нерешённые пункты: OpenCode setPermissions принимает mode readback без проверки session id; Codex getPermissionState сообщает свежее fullAccess по in-memory cache, а DTO не маркирует неподдерживаемую item/permissions approval как non-actionable; Codex itemId назван toolName. Findings переданы permission_native; исправление ожидается. Source SHIP/live PASS не заявляются.",
+          "changes": {},
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/adapters/zcode.ts",
+        "src/adapters/opencode.ts",
+        "src/adapters/codex-app-server.ts",
+        "src/adapters/minimax-code.ts",
+        "src/adapters/minimax-code-control.ts",
+        "tests/permission-control-modes.test.ts"
+      ],
+      "depends_on": [
+        "L01"
+      ],
+      "estimate_minutes": {
+        "minimum": 25.0,
+        "maximum": 45.0
+      }
+    },
+    {
+      "id": "L13",
+      "label": "Восстановить рабочие папки MiniMax в Herder",
+      "status": "done",
+      "description": "Проследить native session identity до workspace metadata и фильтрации Herder; исправить потерю рабочего каталога без угадывания по title или launchCwd. Разделять runtime/GUI host и work-computer path.",
+      "acceptance": "Exact native runtime/session cwd либо явная декларация проходит reliable roundtrip до Herder; фильтр TelegramAuto видит workspace только по проверенным данным. Нет title guess. Focused regression и readback на той же native identity.",
+      "result": "Verified native workspace_dir из active MiniMax session/turn теперь записывается в ledger как observed native_session_cwd только для точной native activity identity. Focused regression и isolated exact-identity host-filter canary зелёные. Runtime install/deployment остаются в L07.",
+      "owner": "workspace_activity",
+      "harness": "codex",
+      "note": "Source commit 57e18c8 is installed inside release 49b2c13; RED→GREEN focused regression 17 tests. Post-install Herder MCP list_active_sessions filter (harness=minimax-code, hostId=100, runtimeHostId=100) returned six active rows with partial metadata enumeration, including the exact active root whose observed native cwd is TelegramAuto. Exact session_workspaces_get for that same identity returned host100 and /home/roomhacker/PycharmProjects/TelegramAuto with source=observed, evidence=native_session_cwd:native_runtime_turn_lease. No title guess, Telegram API or native write.",
+      "estimate_over_limit_reason": "Одна цепочка metadata: native identity/cwd или declaration → workspace persistence/filter → focused regression и exact readback. Для L14 требуется отдельная consumer проверка после L13.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-25T15:03:00+03:00",
+          "note": "Старт по прямому назначению Lead.",
+          "changes": {
+            "status": "running"
+          },
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-25T15:10:00+03:00",
+          "note": "Focused RED→GREEN и isolated exact-identity source canary завершены; installed readback не заявлен.",
+          "changes": {
+            "status": "running"
+          },
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-25T15:12:00+03:00",
+          "note": "Verified native workspace_dir из active MiniMax session/turn теперь записывается в ledger как observed native_session_cwd только для точной native activity identity. Focused regression и isolated exact-identity host-filter canary зелёные. Runtime install/deployment остаются в L07.",
+          "changes": {
+            "status": "done"
+          },
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/session-workspaces.ts",
+        "src/session-workspaces-tools.ts",
+        "src/session-workspaces-backfill.ts",
+        "src/adapters/minimax-code-active.ts",
+        "src/adapters/minimax-code-runtime-activity.ts",
+        "src/adapters/minimax-code-native-session.ts",
+        "src/mesh/native-minimax-code.ts",
+        "tests/minimax-active-runtime.test.ts",
+        "tests/session-workspaces-backfill.test.ts"
+      ],
+      "depends_on": [
+        "L01"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 25.0
+      },
+      "started_at": "2026-10-25T15:03:00+03:00",
+      "finished_at": "2026-10-25T15:12:00+03:00"
+    },
+    {
+      "id": "L16",
+      "label": "Доставлять сообщение в idle MiniMax desktop без повтора",
+      "status": "queued",
+      "description": "Проследить и исправить bounded route, по которому OpenCode передаёт сообщение в idle MiniMax desktop session. Сохранить exact native host/session identity и штатную очередь; accepted/UNKNOWN input не replay-ить и не превращать в новую сессию.",
+      "acceptance": "Focused regression доказывает доставку одного нового сообщения в точную idle MiniMax session штатным механизмом; отсутствие capability/неизвестный результат видны явно. Ранее accepted/queued сообщения не переотправляются, никакая новая native session не создаётся.",
+      "owner": "permission_reply_bridge",
+      "note": "Earlier read-only trace and exact constraints remain: source fix not started, no accepted/queued input replayed. Deferred behind the new user search defect by Lead priority; existing estimate retained.",
+      "estimate_over_limit_reason": "Одна bounded cross-harness delivery route; exact root cause сейчас read-only трассируется, путь/consumer proof будут уточнены до исходного патча.",
+      "wait_reason": "Lead reprioritized the newly reported catalog text-search zero-result defect (L18) after immutable 49b release capture. Resume this bounded idle MiniMax delivery investigation after L18; never replay accepted/UNKNOWN queued messages.",
+      "origin": "",
+      "supersedes": [],
+      "depends_on": [
+        "L01"
+      ],
+      "estimate_minutes": {
+        "minimum": 20.0,
+        "maximum": 35.0
+      }
+    },
+    {
+      "id": "L17",
+      "label": "Исправить заголовки задач в Herder и проверить восемь сессий",
+      "status": "done",
+      "description": "Переставить генерируемый заголовок в формат задача | короткое canonical имя проекта; исключить статус и full path, сохранять цель целиком. Перенести только существующие автосгенерированные названия по подтверждённому списку.",
+      "acceptance": "Scoped source commit 9238bf9: focused 28/28 и TypeScript GREEN; формат поддерживает POSIX/Mac/Windows/worktree пути, не угадывает/не режет задачу. Независимый native app readback подтверждает 8/8 точных названий после rename; это пользовательский app proof, отдельно от установленного генератора.",
+      "owner": "workspace_activity",
+      "note": "Source composer commit 9238bf9 is installed in public backend release 49b2c13. Focused source 28/28 + tsc GREEN; native app readback of the eight renamed sessions was 8/8 before install. Installed generator and app rename proof are separate evidence layers.",
+      "origin": "",
+      "supersedes": [],
+      "affected_files": [
+        "src/session-labels.ts",
+        "src/mcp/session-tools.ts",
+        "src/mesh/register-tools.ts",
+        "tests/l69-session-label-write.test.ts",
+        "tests/l71-mcp-mesh-label.test.ts",
+        "tests/l54-panel-routes.test.ts"
+      ],
+      "depends_on": [
+        "L01"
+      ]
+    },
+    {
+      "id": "L04",
+      "label": "Собирать запросы и возвращать точный ответ в нативную среду",
+      "status": "queued",
+      "description": "Подключить native permission events/readback и response для четырёх сред. Сохранять pending при неизвестном результате; ответ не становится новой командой агенту.",
+      "acceptance": "Разрешение/отказ применяются только к актуальному native request, повтор callback не исполняет команду вновь, чужой и закрытый запрос не принимаются.",
+      "owner": "permission_native",
+      "note": "Lead подтвердил native readback по четырём exact ZCode sessions на host100: mode=yolo, pendingRequests=[]; исходные четыре durable pending approvals исполнены единственный раз native executor. Отдельный Airlock list_pages request также отвечен один раз по отдельному подтверждению Lead. Это current native business evidence, но не source/runtime causality и не приёмка четырёх harness; не re-approve и не менять mode повторно.",
+      "estimate_over_limit_reason": "Одна связная цепочка native request/response и защита от повторов для четырёх адаптеров; checkpoint через20мин.",
+      "wait_reason": "Запускается после завершения L03.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-25T14:37:48+03:00",
+          "note": "",
+          "changes": {
+            "estimate_over_limit_reason": "Одна связная цепочка native request/response и защита от повторов для четырёх адаптеров; checkpoint через20мин.",
+            "wait_reason": "После L03: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+          },
+          "harness": "unknown"
+        },
+        {
+          "at": "2026-10-25T15:02:00+03:00",
+          "note": "Lead подтвердил новую декомпозицию и владельца/зависимости.",
+          "changes": {
+            "owner": "permission_native",
+            "status": "queued",
+            "depends_on": [
+              "L03"
+            ]
+          },
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-25T15:15:00+03:00",
+          "note": "Independent review выявил Codex permission-subset request, который виден как обычный pending request, но respondPermission безопасно отказывает; общий DTO пока не кодирует допустимость ответа. Finding передан permission_native. Leaf остаётся queued до завершения L03; source/live PASS не заявляется.",
+          "changes": {},
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/permission-control/native-requests.ts",
+        "src/adapters/zcode.ts",
+        "src/adapters/opencode.ts",
+        "src/adapters/codex-app-server.ts",
+        "src/adapters/minimax-code-control.ts",
+        "tests/permission-control-native-requests.test.ts"
+      ],
+      "depends_on": [
+        "L03"
+      ],
+      "estimate_minutes": {
+        "minimum": 25.0,
+        "maximum": 45.0
+      }
+    },
+    {
+      "id": "L14",
+      "label": "Проверить активность агента в TelegramAuto",
+      "status": "done",
+      "description": "Проверить на реальной поверхности Herder, что фильтр TelegramAuto и activity indicator показывают реально работающего MiniMax агента с точной workspace и host identity.",
+      "acceptance": "Herder UI/MCP фильтр для exact host и native identity показывает актуальную activity/workspace; собственный browser fixture допускается только для отдельной собственной сессии, screenshot обязателен при ошибке до retry. Без Telegram API.",
+      "result": "На момент проверки точная activity identity, workspace и host filter показывают две TelegramAuto session как active. Consumer proof — только текущий MCP readback; он не доказывает установку commit 57e18c8. Без Telegram API и без изменения чужих сессий.",
+      "owner": "workspace_activity",
+      "note": "Текущий live Herder MCP host filter показывает активного MiniMax агента и child в TelegramAuto на server100; декларации совпадают с точными workspace_dir из native runtime. В live data у других сессий остаются неизвестные workspace; source фиксация и причинность этого readback не заявляются.",
+      "estimate_over_limit_reason": "Одна цепочка metadata: native identity/cwd или declaration → workspace persistence/filter → focused regression и exact readback. Для L14 требуется отдельная consumer проверка после L13.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-25T15:10:00+03:00",
+          "note": "Live activity/workspace readback зафиксирован; source-install causality остаётся открытой до L13/L07.",
+          "changes": {
+            "status": "queued"
+          },
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-25T15:12:00+03:00",
+          "note": "На момент проверки точная activity identity, workspace и host filter показывают две TelegramAuto session как active. Consumer proof — только текущий MCP readback; он не доказывает установку commit 57e18c8. Без Telegram API и без изменения чужих сессий.",
+          "changes": {
+            "status": "done"
+          },
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "workspace/activity acceptance evidence"
+      ],
+      "depends_on": [
+        "L13"
+      ],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 20.0
+      },
+      "finished_at": "2026-10-25T15:12:00+03:00"
+    },
+    {
+      "id": "L15",
+      "label": "Установить Full Access по умолчанию для новых ZCode-сессий",
+      "status": "done",
+      "description": "Добавить требуемый владельцем безопасный default: новая ZCode-сессия создаётся в native YOLO/Full Access. Существующие сессии меняются отдельной явной операцией; ожидающие permission requests отвечаются только native approval executor.",
+      "acceptance": "Focused source test доказывает default YOLO при создании новой ZCode-сессии и точный native readback того же sessionId; отсутствующий/другой mode не считается успехом. Живой readback выполняется после установки на разрешённой fixture; чужие sessions и запросы не трогаются.",
+      "result": "Source a34 опубликован fast-forward, native projectId resolver independently SHIP; focused ZCode tests 98/98 GREEN, official build checks 14/14. После установки owner acceptance 21/21 public default-create без mode/fullAccess/model/initialMessage создала exact ZCode session; same-session readback YOLO, pending[], humanMessageCount=0, no active turn. Fixture закрыта официальным closeSession/archiveTask, final idle/nativeLoaded=false; task-delete query unavailable, без replay. Пять existing sessions не тронуты; private native receipt сохранён вне публичного плана.",
+      "owner": "permission_native",
+      "note": "Native projectId mapping fix a34a4fee0ddd8e1e31f2911699e170c142226ab7 independently reviewed SHIP; focused ZCode tests 98/98 GREEN. Source pushed to main, official existing-tree candidate passed 14/14, installed host100 and accepted 21/21. Native executor has been signalled for exactly one public new-ZCode default-create canary plus same-session readback. No canary result yet. Five existing sessions remain read-only; no mode writes or approvals.",
+      "estimate_over_limit_reason": "Изменение native default и focused creation/readback regression — одна bounded ZCode operation; живой acceptance остаётся в ZCode leaf после release.",
+      "wait_reason": "Новосоздаваемая ZCode TEST canary после установки 49b выявила, что native ProjectService требует projectId; Herder createNamedSession/ZcodeAdapter не передали ID проекта из зарегистрированного native catalog. Nativeworker исправляет точный native project mapping по cwd+owner host с fail-closed при missing/ambiguous. Не auto-register, не использовать SSH trust/core patch. Нужны independent review и один combined release.",
+      "origin": "",
+      "supersedes": [],
+      "affected_files": [
+        "src/adapters/zcode.ts",
+        "tests/zcode-adapter.test.ts"
+      ],
+      "depends_on": [
+        "L03"
+      ],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 20.0
+      },
+      "finished_at": "16:37"
+    },
+    {
+      "id": "L05",
+      "label": "Доставлять карточку с контекстом через Notice Place",
+      "status": "queued",
+      "description": "Использовать существующий API Notice Place и его маршрут UserIO: точная ссылка на сессию, текущая команда, предыдущее сообщение агента и последнее сообщение человека; удалять секреты. Ответ связан с host/session/request и сохраняет однократность.",
+      "acceptance": "Одна карточка на native request, подтверждённая доставка и возврат ответа; однократное разрешение и отказ; секреты не уходят в карточку; недоступный контекст помечается явно, а не выдумывается.",
+      "owner": "permission_reply_bridge",
+      "note": "Bridge commit b9aea61 исправляет generic native permission resume и focused проверки по сообщению Lead; native delta-review ещё ожидается. Observer и автоматическая доставка permission.requested через Notice Place в source/runtime не подключены: Leaf остаётся queued, delivery/feature-complete не заявляются.",
+      "estimate_over_limit_reason": "Один полный путь карточка/контекст/ответ/дедупликация; отдельные неполные части не проверяют возврат ответа.",
+      "wait_reason": "Нужны готовые reply contract L02 и native adapters L04.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-25T14:37:48+03:00",
+          "note": "",
+          "changes": {
+            "estimate_over_limit_reason": "Один полный путь карточка/контекст/ответ/дедупликация; отдельные неполные части не проверяют возврат ответа.",
+            "wait_reason": "После L04: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+          },
+          "harness": "unknown"
+        },
+        {
+          "at": "2026-10-25T15:02:00+03:00",
+          "note": "Lead подтвердил новую декомпозицию и владельца/зависимости.",
+          "changes": {
+            "owner": "permission_reply_bridge",
+            "status": "queued",
+            "depends_on": [
+              "L02",
+              "L04"
+            ]
+          },
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/permission-control/noticeplace-bridge.ts",
+        "src/permission-control/context.ts",
+        "tests/permission-control-noticeplace.test.ts"
+      ],
+      "depends_on": [
+        "L02",
+        "L04"
+      ],
+      "estimate_minutes": {
+        "minimum": 25.0,
+        "maximum": 40.0
+      }
+    },
+    {
+      "id": "L06",
+      "label": "Показать управление режимами и разрешениями в Herder",
+      "status": "queued",
+      "description": "В выбранной сессии показать реальный режим, допустимые переходы, текущий запрос и результат решения. Использовать существующий UI/MCP; избегать неподтверждённых универсальных кнопок.",
+      "acceptance": "UI и MCP показывают одинаковый readback; поддержка каждой среды видна пользователю; ссылка карточки открывает ту же сессию; ошибки не маскируются под успех.",
+      "owner": "интегратор 01a172c2",
+      "note": "Существующий установленный compact one-time Allow и queue edit подтверждены Lead, но mode controller отсутствует в принятом UI release. Mode UI отложен до source join/ownership check. Нужны capability-driven state/readback, видимый scope, unknown как unknown и disabled unsupported; не часть настоящей source ветки.",
+      "estimate_over_limit_reason": "Согласованное отображение одного состояния в UI и MCP; оценка включает браузерное действие/readback.",
+      "wait_reason": "Нужны режимы и карточка ответа. Интегратор отдельно владеет compact Allow UI и queue edit; его исходники не подменяются.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-25T14:37:48+03:00",
+          "note": "",
+          "changes": {
+            "estimate_over_limit_reason": "Согласованное отображение одного состояния в UI и MCP; оценка включает браузерное действие/readback.",
+            "wait_reason": "После L05: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+          },
+          "harness": "unknown"
+        },
+        {
+          "at": "2026-10-25T15:02:00+03:00",
+          "note": "Lead подтвердил новую декомпозицию и владельца/зависимости.",
+          "changes": {
+            "owner": "интегратор 01a172c2",
+            "status": "queued",
+            "depends_on": [
+              "L03",
+              "L05"
+            ]
+          },
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/web-ui/main.tsx",
+        "src/web/server.ts",
+        "src/mcp-tools/definitions.ts",
+        "src/mcp-tools/handlers.ts",
+        "tests/permission-control-ui.test.ts"
+      ],
+      "depends_on": [
+        "L03",
+        "L05"
+      ],
+      "estimate_minutes": {
+        "minimum": 20.0,
+        "maximum": 30.0
+      }
+    },
+    {
+      "id": "L07",
+      "label": "Опубликовать и установить согласованный выпуск",
+      "status": "done",
+      "description": "После focused проверок и source review опубликовать только owned изменения в main и установить штатным маршрутом единственного владельца; сохранить чужой WIP и rollback.",
+      "acceptance": "Remote main содержит owned delta; установленный source/artifact и живой PID совпадают; существующие sessions/history сохранены. Нет новой копии, ветки или worktree без отдельного разрешения.",
+      "result": "Отдельно: baseline release 49b2c13 установлен и принят 21/21; frontend pin для baseline зафиксирован 313ec897. Затем combined hotfix a34a4fee0ddd8e1e31f2911699e170c142226ab7 (включая 6099 search metrics и reviewed native projectId mapping) установлен и принят 21/21. Для a34 опубликован frontend pin commit 57d2adee и применён штатным timer; managed nginx drift=0. Runtime/UI release proof зафиксирован; это не закрывает общий четырёх-harness цикл.",
+      "owner": "исполнитель текущего чата",
+      "note": "Current immutable backend release a34a4fee0ddd8e1e31f2911699e170c142226ab7 is installed on host100; node acceptance 21/21 via exact reachable peer 88. Previous rollback release preserved. UI frontend copied from the verified live release dist/web-static; exact static tree digest matched source, modes 755/644. Scoped ServersAdministartion commit 57d2adee updates exactly the 3 existing pin/header occurrences; nginx-dev timer applied it, deployed-git-sha=57d2adee, and sudo nginxctl diff reports no managed drift. Public page remains behind auth (unauthenticated GET redirects to auth). This does not claim successful new ZCode session creation or full four-harness acceptance.",
+      "estimate_over_limit_reason": "Штатная сборка, переключение и проверка реально установленного процесса — одна транзакция с rollback.",
+      "wait_reason": "Backend 49b2c13 принят 21/21, но public ZCode create canary выявила missing native projectId, поэтому 6099a19 search-only candidate не активировать. Дождаться bounded ZCode projectId fix и independent review; затем один combined candidate из существующего authorized worktree, одна установка/readback. UI pin должен target только финальный combined SHA, не 49b2c13.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-25T14:37:48+03:00",
+          "note": "",
+          "changes": {
+            "estimate_over_limit_reason": "Штатная сборка, переключение и проверка реально установленного процесса — одна транзакция с rollback.",
+            "wait_reason": "После L06: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+          },
+          "harness": "unknown"
+        },
+        {
+          "at": "2026-10-25T15:02:00+03:00",
+          "note": "Lead подтвердил новую декомпозицию и владельца/зависимости.",
+          "changes": {
+            "owner": "исполнитель текущего чата",
+            "status": "queued",
+            "depends_on": [
+              "L06",
+              "L14"
+            ]
+          },
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        ".agents/tasks/20261025-permission-control-fullcycle/release.md"
+      ],
+      "depends_on": [
+        "L06",
+        "L14",
+        "L15",
+        "L17"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 25.0
+      },
+      "finished_at": "16:23"
+    },
+    {
+      "id": "L08",
+      "label": "Проверить живой путь ZCode",
+      "status": "done",
+      "description": "В согласованной тестовой сессии проверить смену режима/readback и контролируемый permission→карточка→ответ→единственное завершение без новых product writes.",
+      "acceptance": "После установки на разрешённой ZCode fixture доказаны: native режим существующей сессии и exact readback; новый ZCode session по умолчанию создаётся в YOLO/Full Access с readback того же sessionId; текущий exact pending request отвечает единственный native approval executor с независимым receipt. Записаны installed SHA и свежие identity; без product writes и без повтора UNKNOWN.",
+      "result": "На installed a34 публичная новая ZCode сессия создана без mode/fullAccess/model/initialMessage; exact same-session native readback подтвердил YOLO, pending пусто, humanMessageCount=0, активного turn нет. Nativeworker использовал официальное закрытие session+archive task; final readback idle/nativeLoaded=false, root не затронуты; удаление task недоступно через query, повторов не было. Частный receipt хранит точный ID. Пять прежних ZCode sessions не изменялись. Это ZCode canary, не общий full-cycle.",
+      "owner": "Исполнитель текущего чата",
+      "note": "Current combined SHA a34a4fee0ddd8e1e31f2911699e170c142226ab7 is installed and accepted 21/21. The bounded new public default-create canary was signalled to the sole native executor after install; waiting for exact created session and same-session mode/pending readback. Prior 49b canary failed closed three times with created=false, no session; cause was missing native projectId. Do not repeat it or act on the five existing ZCode sessions.",
+      "estimate_over_limit_reason": "Непрерывный живой roundtrip от native запроса до подтверждённого ответа и cleanup одной ZCode fixture.",
+      "wait_reason": "Первый post-install default create canary выявил конкретный native requirement projectId; session creation вернул created=false, session не возникла. Nativeworker исправляет точный lookup/mapping до native create. Повторная canary только после combined source fix/review/install; никаких попыток на существующих product sessions.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-25T14:37:48+03:00",
+          "note": "",
+          "changes": {
+            "estimate_over_limit_reason": "Непрерывный живой roundtrip от native запроса до подтверждённого ответа и cleanup одной ZCode fixture.",
+            "wait_reason": "После L07: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+          },
+          "harness": "unknown"
+        }
+      ],
+      "affected_files": [
+        ".agents/tasks/20261025-permission-control-fullcycle/acceptance/zcode.json"
+      ],
+      "depends_on": [
+        "L07"
+      ],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 20.0
+      },
+      "finished_at": "16:37"
+    },
+    {
+      "id": "L09",
+      "label": "Проверить живой путь OpenCode",
+      "status": "queued",
+      "description": "Повторить полный потребительский сценарий на существующей разрешённой OpenCode fixture без подмены провайдера или модели.",
+      "acceptance": "Подтверждены режим, карточка, точная привязка ответа и отсутствие повторного выполнения; отдельно проверен отказ.",
+      "owner": "Исполнитель текущего чата",
+      "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной OpenCode fixture.",
+      "wait_reason": "После L08: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-25T14:37:48+03:00",
+          "note": "",
+          "changes": {
+            "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной OpenCode fixture.",
+            "wait_reason": "После L08: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+          },
+          "harness": "unknown"
+        }
+      ],
+      "affected_files": [
+        ".agents/tasks/20261025-permission-control-fullcycle/acceptance/opencode.json"
+      ],
+      "depends_on": [
+        "L08"
+      ],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 20.0
+      }
+    },
+    {
+      "id": "L10",
+      "label": "Проверить живой путь Codex",
+      "status": "queued",
+      "description": "Проверить native app-server approval и режим существующего thread через штатную capability, сохраняя HumanStop и текущий turn.",
+      "acceptance": "Native ответы и readback доказывают смену режима и permission roundtrip; одна source регрессия не заменяет установленную приёмку.",
+      "owner": "Исполнитель текущего чата",
+      "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной Codex fixture.",
+      "wait_reason": "После L09: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-25T14:37:48+03:00",
+          "note": "",
+          "changes": {
+            "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной Codex fixture.",
+            "wait_reason": "После L09: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+          },
+          "harness": "unknown"
+        }
+      ],
+      "affected_files": [
+        ".agents/tasks/20261025-permission-control-fullcycle/acceptance/codex.json"
+      ],
+      "depends_on": [
+        "L09"
+      ],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 20.0
+      }
+    },
+    {
+      "id": "L11",
+      "label": "Проверить живой путь MiniMax Code",
+      "status": "queued",
+      "description": "Проверить существующую MiniMax fixture через её реальный native controller; не подменять MiniMax маршрутом OpenCode и не использовать платный fallback.",
+      "acceptance": "Тот же полный сценарий с exact native request и receipt; idle MiniMax desktop принимает одно новое OpenCode-сообщение в exact session через штатную queue/wake route. Предыдущие accepted/UNKNOWN input не replay-ятся. Неподдерживаемый permission-mode transition остаётся незавершённым требованием, а не PASS.",
+      "owner": "Исполнитель текущего чата",
+      "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной MiniMax fixture.",
+      "wait_reason": "После L10: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-25T14:37:49+03:00",
+          "note": "",
+          "changes": {
+            "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной MiniMax fixture.",
+            "wait_reason": "После L10: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+          },
+          "harness": "unknown"
+        }
+      ],
+      "affected_files": [
+        ".agents/tasks/20261025-permission-control-fullcycle/acceptance/minimax-code.json"
+      ],
+      "depends_on": [
+        "L10",
+        "L16"
+      ],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 20.0
+      }
+    },
+    {
+      "id": "L12",
+      "label": "Закрыть полный цикл по пользовательскому результату",
+      "status": "queued",
+      "description": "Проверить согласованность четырёх сценариев, UI, ошибок, секретов, повторов и итогов выпуска; исправить найденные дефекты и повторить только затронутую приёмку. Независимая проверка существующим исполнителем без создания нового агента, если его участие разрешено.",
+      "acceptance": "Все четыре среды имеют реальную consumer evidence и понятную инструкцию; нет pending обязательных ветвей, чужих изменений, повторных UNKNOWN действий и тестовых звонков человеку; план и отчёт согласованы.",
+      "owner": "исполнитель текущего чата",
+      "note": "Full four-harness/user cycle не закрыт до consumer acceptance ZCode/OpenCode/Codex/MiniMax, подтверждённой Notice Place delivery и idle MiniMax delivery. Codex/MiniMax ещё blocked/unproved; Notice Place delivery не поставлена. Title composer source tests and existing 8/8 app rename proof are complete, but the new composer is not installed until L07.",
+      "estimate_over_limit_reason": "Проверка сквозных инвариантов четырёх сред и итогового consumer доказательства, без нового аудита или полной suite.",
+      "wait_reason": "Финальная проверка включает обязательное доказательство activity ветки MiniMax.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-25T14:37:49+03:00",
+          "note": "",
+          "changes": {
+            "estimate_over_limit_reason": "Проверка сквозных инвариантов четырёх сред и итогового consumer доказательства, без нового аудита или полной suite.",
+            "wait_reason": "После L11: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+          },
+          "harness": "unknown"
+        },
+        {
+          "at": "2026-10-25T15:02:00+03:00",
+          "note": "Lead подтвердил новую декомпозицию и владельца/зависимости.",
+          "changes": {
+            "owner": "исполнитель текущего чата",
+            "status": "queued",
+            "depends_on": [
+              "L11",
+              "L14"
+            ]
+          },
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        ".agents/tasks/20261025-permission-control-fullcycle/result.md"
+      ],
+      "depends_on": [
+        "L11",
+        "L14",
+        "L16",
+        "L17"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 25.0
+      }
+    }
+  ],
+  "leaf_count": 18
+}

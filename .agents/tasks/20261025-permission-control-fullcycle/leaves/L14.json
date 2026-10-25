@@ -1,0 +1,41 @@
+{
+  "id": "L14",
+  "label": "Проверить активность агента в TelegramAuto",
+  "status": "done",
+  "description": "Проверить на реальной поверхности Herder, что фильтр TelegramAuto и activity indicator показывают реально работающего MiniMax агента с точной workspace и host identity.",
+  "acceptance": "Herder UI/MCP фильтр для exact host и native identity показывает актуальную activity/workspace; собственный browser fixture допускается только для отдельной собственной сессии, screenshot обязателен при ошибке до retry. Без Telegram API.",
+  "affected_files": [
+    "workspace/activity acceptance evidence"
+  ],
+  "owner": "workspace_activity",
+  "depends_on": [
+    "L13"
+  ],
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 20
+  },
+  "estimate_over_limit_reason": "Одна цепочка metadata: native identity/cwd или declaration → workspace persistence/filter → focused regression и exact readback. Для L14 требуется отдельная consumer проверка после L13.",
+  "updated_at": "2026-10-25T15:12:00+03:00",
+  "note": "Текущий live Herder MCP host filter показывает активного MiniMax агента и child в TelegramAuto на server100; декларации совпадают с точными workspace_dir из native runtime. В live data у других сессий остаются неизвестные workspace; source фиксация и причинность этого readback не заявляются.",
+  "progress_events": [
+    {
+      "at": "2026-10-25T15:10:00+03:00",
+      "note": "Live activity/workspace readback зафиксирован; source-install causality остаётся открытой до L13/L07.",
+      "changes": {
+        "status": "queued"
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T15:12:00+03:00",
+      "note": "На момент проверки точная activity identity, workspace и host filter показывают две TelegramAuto session как active. Consumer proof — только текущий MCP readback; он не доказывает установку commit 57e18c8. Без Telegram API и без изменения чужих сессий.",
+      "changes": {
+        "status": "done"
+      },
+      "harness": "codex"
+    }
+  ],
+  "result": "На момент проверки точная activity identity, workspace и host filter показывают две TelegramAuto session как active. Consumer proof — только текущий MCP readback; он не доказывает установку commit 57e18c8. Без Telegram API и без изменения чужих сессий.",
+  "finished_at": "2026-10-25T15:12:00+03:00"
+}

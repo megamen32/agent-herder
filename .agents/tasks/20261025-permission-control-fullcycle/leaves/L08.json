@@ -1,0 +1,35 @@
+{
+  "id": "L08",
+  "label": "Проверить живой путь ZCode",
+  "status": "done",
+  "description": "В согласованной тестовой сессии проверить смену режима/readback и контролируемый permission→карточка→ответ→единственное завершение без новых product writes.",
+  "acceptance": "После установки на разрешённой ZCode fixture доказаны: native режим существующей сессии и exact readback; новый ZCode session по умолчанию создаётся в YOLO/Full Access с readback того же sessionId; текущий exact pending request отвечает единственный native approval executor с независимым receipt. Записаны installed SHA и свежие identity; без product writes и без повтора UNKNOWN.",
+  "affected_files": [
+    ".agents/tasks/20261025-permission-control-fullcycle/acceptance/zcode.json"
+  ],
+  "owner": "Исполнитель текущего чата",
+  "depends_on": [
+    "L07"
+  ],
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 20
+  },
+  "updated_at": "2026-10-25T16:37:05+03:00",
+  "estimate_over_limit_reason": "Непрерывный живой roundtrip от native запроса до подтверждённого ответа и cleanup одной ZCode fixture.",
+  "wait_reason": "Первый post-install default create canary выявил конкретный native requirement projectId; session creation вернул created=false, session не возникла. Nativeworker исправляет точный lookup/mapping до native create. Повторная canary только после combined source fix/review/install; никаких попыток на существующих product sessions.",
+  "progress_events": [
+    {
+      "at": "2026-10-25T14:37:48+03:00",
+      "note": "",
+      "changes": {
+        "estimate_over_limit_reason": "Непрерывный живой roundtrip от native запроса до подтверждённого ответа и cleanup одной ZCode fixture.",
+        "wait_reason": "После L07: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один."
+      },
+      "harness": "unknown"
+    }
+  ],
+  "note": "Current combined SHA a34a4fee0ddd8e1e31f2911699e170c142226ab7 is installed and accepted 21/21. The bounded new public default-create canary was signalled to the sole native executor after install; waiting for exact created session and same-session mode/pending readback. Prior 49b canary failed closed three times with created=false, no session; cause was missing native projectId. Do not repeat it or act on the five existing ZCode sessions.",
+  "finished_at": "16:37",
+  "result": "На installed a34 публичная новая ZCode сессия создана без mode/fullAccess/model/initialMessage; exact same-session native readback подтвердил YOLO, pending пусто, humanMessageCount=0, активного turn нет. Nativeworker использовал официальное закрытие session+archive task; final readback idle/nativeLoaded=false, root не затронуты; удаление task недоступно через query, повторов не было. Частный receipt хранит точный ID. Пять прежних ZCode sessions не изменялись. Это ZCode canary, не общий full-cycle."
+}

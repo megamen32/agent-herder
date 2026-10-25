@@ -1,0 +1,64 @@
+{
+  "id": "L01",
+  "label": "Проверить нативные возможности и безопасные тестовые сессии",
+  "status": "done",
+  "description": "Проследить текущие native APIs четырёх адаптеров, смену режима существующей сессии, получение запроса и ответ; установить исходные состояния и разрешённые тестовые identity без запуска новых агентов.",
+  "acceptance": "Матрица четырёх сред с проверенными методами, scope и ограничениями; определены доступные контроллеры, source ownership и правила безопасной приёмки. Конкретные тестовые identity закрепляются перед соответствующими L08–L11 и не заменяются product-сессиями.",
+  "affected_files": [
+    ".agents/tasks/20261025-permission-control-fullcycle/capabilities.md"
+  ],
+  "owner": "Исполнитель текущего чата",
+  "session": "",
+  "harness": "codex",
+  "depends_on": [],
+  "estimate_minutes": {
+    "minimum": 15,
+    "maximum": 25
+  },
+  "estimate_unknown_reason": "Поддержка изменения активного режима и native approval в Codex/MiniMax ещё не доказана; внешний запрет не подменяется обходом.",
+  "started_at": "2026-10-25T14:33:23+03:00",
+  "updated_at": "2026-10-25T16:23:50+03:00",
+  "estimate_over_limit_reason": "Одна согласованная матрица четырёх API и тестовых identities нужна до выбора общего контракта; разбиение на четыре исследования увеличит передачи при одном исполнителе.",
+  "progress_events": [
+    {
+      "at": "2026-10-25T14:37:48+03:00",
+      "note": "",
+      "changes": {
+        "estimate_over_limit_reason": "Одна согласованная матрица четырёх API и тестовых identities нужна до выбора общего контракта; разбиение на четыре исследования увеличит передачи при одном исполнителе."
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T14:46:56+03:00",
+      "note": "Матрица native API исследована; ожидается ответ на конкретный вопрос об изоляции чужого WIP. Режимы и реальные разрешения не менялись.",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Ожидается решение пользователя по exact worktree нового цикла; canonical checkout содержит чужой WIP в нужных адаптерах и entrypoint. Прежний прямой запрет не снят."
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T14:48:08+03:00",
+      "note": "Пользователь явно разрешил один exact worktree и branch; дерево создано от origin/main. Чужой canonical WIP сохранён. Продолжается проверка native capabilities.",
+      "changes": {
+        "status": "running",
+        "blocker": ""
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-25T14:51:58+03:00",
+      "note": "",
+      "changes": {
+        "acceptance": "Матрица четырёх сред с проверенными методами, scope и ограничениями; определены доступные контроллеры, source ownership и правила безопасной приёмки. Конкретные тестовые identity закрепляются перед соответствующими L08–L11 и не заменяются product-сессиями.",
+        "status": "done",
+        "finished_at": "2026-10-25T14:51:11+03:00",
+        "note": "Исследование зафиксировано в capabilities.md: Codex local schema сгенерирована; MiniMax native request routes найдены, default desktop manifest отсутствует; source worktree явно разрешён и создан, initial интегратор освободил пути. Live приёмка нового цикла не выполнена."
+      },
+      "harness": "codex"
+    }
+  ],
+  "blocker": "",
+  "finished_at": "2026-10-25T14:51:11+03:00",
+  "note": "Исследование зафиксировано в capabilities.md: Codex local schema сгенерирована; MiniMax native request routes найдены, default desktop manifest отсутствует; source worktree явно разрешён и создан, initial интегратор освободил пути. Live приёмка нового цикла не выполнена."
+}
