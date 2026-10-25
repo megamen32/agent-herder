@@ -26,26 +26,26 @@ Canonical checkout остаётся на main, чужой WIP сохраняет
 
 ## Plan
 Цель: Доставить полный цикл управления native permissions и режимами для ZCode, OpenCode, Codex и MiniMax Code, плюс исправить обнаруженные workspace, activity, titles и session-search дефекты в Agent Herder; без Telegram API, runtime forks и replay accepted/UNKNOWN.
-Бизнес-результат: Установленный combined backend release a34a4fee0ddd8e1e31f2911699e170c142226ab7 на host100 принят 21/21. На нём одна публичная новая ZCode-сессия без параметров режима прочитана как native YOLO без pending/active turn, fixture официально закрыта, пять прежних сессий не изменялись. Frontend pin 57d2adee применён штатно, managed nginx drift 0. Это подтверждённый предыдущий выпуск; полный четырёх-harness цикл и новый combined release остаются открытыми.
+Бизнес-результат: Установленный combined release 00fe2e3692d5dae7e3bd5e5f2cfda77d3c26c1ec принят: official checks 14/14 и host acceptance 21/21. OpenCode filtered query дал 10 реальных совпадений при текущем partial coverage 3189/3200; исходный полный поиск остаётся UNKNOWN. Read-only browser inspector прошёл на 287px и frontend pin применён штатным timer без managed drift. Native mode write и authenticated public content не подтверждены; полный четырёх-harness цикл остаётся открытым.
 Декомпозиция: 19 листьев · 3 параллельно · 11 волн · слотов: 3
 
-**Подтверждено:** source и installed a34 отдельно приняты; focused ZCode tests 98/98, official checks 14/14, host100 PID/readback и owner acceptance 21/21. Для a34 frontend pin 57d2adee применён штатным timer, `nginxctl diff` сообщает no managed drift. Эти факты относятся только к предыдущему выпуску.
+**Подтверждено:** финальный immutable release 00fe2e3692d5dae7e3bd5e5f2cfda77d3c26c1ec установлен; official checks 14/14 и owner acceptance 21/21. Read-only browser inspector прошёл на 287px; frontend pin применён штатным timer, managed nginx drift отсутствует. HTTPS root возвращает SSO 302, поэтому authenticated public content не подтверждён.
 
 **ZCode default create:** Первая ограниченная canary на 49b завершилась `created=false` из-за отсутствующего native `projectId`; повторять её не стали. Reviewed mapping вошёл в a34. Одна новая публичная ZCode-сессия после установки создана без mode/fullAccess/model/initialMessage; exact same-session readback подтвердил YOLO, pending пусто, humanMessageCount=0, active turn отсутствует. Fixture официально закрыта; пять прежних сессий прочитаны как YOLO и не изменялись. Это принятая ZCode canary, не полный цикл.
 
-**Source/review:** UI/API `509f2b8` и UI↔MCP source join получили independent SHIP; focused UI/permission tests 44/44 и TypeScript GREEN. MiniMax durable source `5f3d3a9`, consumer WIP и same-DB atomic proof имеют ранее подтверждённые 52 tests + TypeScript; review correction `7643500` получила independent SHIP. Search fixes `3380e8a` и `896a38be` получили independent SHIP, focused 15/15. Ни один из этих fixes не входит в установленный a34; build/install и live consumer checks остаются в L19.
+**Source/review:** UI/API `509f2b8` и UI↔MCP source join получили independent SHIP; focused UI/permission tests 44/44 и TypeScript GREEN. MiniMax durable source `5f3d3a9` и correction `7643500` получили independent SHIP; prior focused checks 52 + TypeScript и same-DB atomic proof остаются source evidence. Search fixes `3380e8a` и `896a38be` получили independent SHIP, focused 15/15. Эти fixes входят в установленный release 00fe2e36; install/build и ограниченные consumer критерии L19 приняты.
 
-**Открыто:** Codex и MiniMax не поддерживают session-mode change; UI должен показывать это честно. Browser inspector readback ещё не выполнялся, production mode writes не делались. Для MiniMax pending exact-fixture consumer proof; для OpenCode — filtered native query/readback. Automatic Notice permission trigger и реальный Notice consumer proof отсутствуют. L19 ждёт reviewed source join и затем докажет install/consumer слой. Полный четырёх-harness результат остаётся открытым; незапущенные проверки не считаются PASS.
+**Открыто:** L06 остаётся в работе: read-only inspector подтверждает mode/scope/unsupported label, но реальный native mode write и exact post-write readback не выполнялись. L18 остаётся в работе: OpenCode вернул 10 совпадений при partial coverage 3189/3200, а исходный exact query остаётся UNKNOWN. Codex и MiniMax session-mode change unsupported; automatic Notice permission trigger и реальный consumer proof отсутствуют. Полный четырёх-harness результат остаётся открытым; неисполненные критерии не считаются PASS.
 
 **Листья по порядку графа:**
 
 ✅ L01 — Проверить нативные возможности и безопасные тестовые сессии.
 🔄 L18 — Исправить нулевые текстовые результаты поиска по каталогу.
-⏳ L19 — Установить и проверить объединённые исправления.
+✅ L19 — Установить и проверить объединённые исправления.
 ✅ L02 — Определить единый контракт режима и точного разрешения; зависит: L01.
 🔄 L03 — Подключить смену режима в четырёх адаптерах; зависит: L01.
 ✅ L13 — Восстановить рабочие папки MiniMax в Herder; зависит: L01.
-⏳ L16 — Доставлять сообщение в idle MiniMax desktop без повтора; зависит: L01.
+✅ L16 — Доставлять сообщение в idle MiniMax desktop без повтора; зависит: L01.
 ✅ L17 — Исправить заголовки задач в Herder и проверить восемь сессий; зависит: L01.
 ⏳ L04 — Собирать запросы и возвращать точный ответ в нативную среду; зависит: L03.
 ✅ L14 — Проверить активность агента в TelegramAuto; зависит: L13.

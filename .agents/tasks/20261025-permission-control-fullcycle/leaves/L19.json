@@ -1,6 +1,6 @@
 {
   "label": "Установить и проверить объединённые исправления",
-  "status": "queued",
+  "status": "done",
   "description": "После безопасного source/review gate установить объединённые исправления и проверить их на разрешённых consumer surfaces, сохраняя раздельные source, install и live evidence.",
   "acceptance": "До установки подтверждены точные source inputs и независимый review. После штатной установки immutable source/install SHA совпадают, official contract checks 14/14 и host acceptance 21/21; isolated MiniMax fixture показывает один durable native permission result/readback без replay; filtered OpenCode query возвращает точное native совпадение в правильном scope; реальный Herder inspector показывает текущие mode, scope, supported/unsupported reason. Browser inspection не делает production mode writes или provider actions. Automatic Notice permission trigger и real Notice consumer остаются отдельными открытыми критериями полного цикла.",
   "affected_files": [
@@ -12,10 +12,10 @@
     "minimum": 15,
     "maximum": 30
   },
-  "wait_reason": "Source/review gate пройден: UI/API source 509f2b8 и search sources получили independent SHIP; MiniMax bridge correction 7643500 прошла independent SHIP. Теперь можно собрать только reviewed source join. Installed release a34 этих fixes не содержит, поэтому L19 остаётся queued до штатной install и consumer acceptance; dependency на полное live завершение L03/L06/L18 не ставится, чтобы не создать цикл.",
-  "note": "Source inputs прошли independent review: UI/API 509f2b8; MiniMax durable 5f3d3a9 с исправлением 7643500; search 3380e8a/896a38be. Текущий installed release a34 не содержит эти изменения. Source join ready; install/browser/consumer canaries ещё не выполнялись.",
+  "wait_reason": "",
+  "note": "Установленный immutable combined release 00fe2e3692d5dae7e3bd5e5f2cfda77d3c26c1ec принят: официальный build 14/14 и owner acceptance 21/21. Consumer evidence: OpenCode filtered native query вернул 10 реальных совпадений; текущий индекс частичный — 3189/3200, поэтому исходный полный поиск остаётся UNKNOWN. Финальный read-only browser inspector прошёл на ширине 287px; native session mode и scope показаны, реальные mode writes не выполнялись. Frontend pin подтверждён commit 0ceeccbcfd46b3a9d33d4d8f24f67e836ade8f46 и штатным timer без managed drift. HTTPS root отвечает SSO 302, authenticated public content не подтверждён. L19 закрыт только по заданным критериям; полный четырёх-harness цикл остаётся открытым.",
   "id": "L19",
-  "updated_at": "2026-10-25T17:45:26+03:00",
+  "updated_at": "2026-10-25T18:32:35+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T17:44:23+03:00",
@@ -54,5 +54,6 @@
       }
     }
   ],
-  "estimate_over_limit_reason": "Leaf объединяет одну транзакцию установки и несколько точных потребительских readback; разделение размыло бы source/install/consumer identity и не уменьшило согласованную оценку 15–30 минут."
+  "estimate_over_limit_reason": "Leaf объединяет одну транзакцию установки и несколько точных потребительских readback; разделение размыло бы source/install/consumer identity и не уменьшило согласованную оценку 15–30 минут.",
+  "finished_at": "18:32"
 }

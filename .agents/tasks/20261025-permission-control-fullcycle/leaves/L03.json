@@ -20,7 +20,7 @@
     "minimum": 25,
     "maximum": 45
   },
-  "updated_at": "2026-10-25T17:45:26+03:00",
+  "updated_at": "2026-10-25T18:32:35+03:00",
   "estimate_over_limit_reason": "Четыре нативных mapping выполняются одним владельцем общего интерфейса; промежуточный checkpoint через20мин, оценка включает проверки каждого.",
   "wait_reason": "Контракт L02 синхронизируется с worker 1; текущая ветка использует согласованный контракт после синхронизации.",
   "progress_events": [
@@ -66,5 +66,5 @@
       }
     }
   ],
-  "note": "MiniMax Code: source 5f3d3a9 и consumer WIP; ранее подтверждены 52 tests + tsc и native same-DB atomic proof. Ошибка, из-за которой Desktop 2xx без item_id ошибочно принимался как accepted, исправлена в 7643500; независимое review теперь SHIP. Live consumer proof остаётся pending. У Codex и MiniMax session mode не поддержан. Leaf остаётся running, поскольку installed/full consumer acceptance ещё не завершены."
+  "note": "MiniMax source join включая false-success fix 7643500 получил independent SHIP; ранее подтверждены 52 focused checks + TypeScript и same-DB atomic proof. Финальный combined release установлен и принят 14/14 + 21/21; public MiniMax MCP delivery завершилась accepted с exact same-session single user/assistant/provider/model/idle readback. Codex и MiniMax session-mode capability остаётся unsupported; автоматический permission Notice trigger/consumer и полный четырёх-harness acceptance не доказаны, поэтому исходная acceptance листа остаётся открытой."
 }

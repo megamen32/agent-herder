@@ -1,10 +1,10 @@
 Граф задач: ZCode Full Access по умолчанию, режимы и разрешения в четырёх средах
-Ревизия плана: 704045ebf535
+Ревизия плана: 0b7af76c1de2
 Это снимок плана, а не панель управления: фактическое состояние работы приходит из API владельцев, а не из пересказа агента в графе.
 Цель: Новые ZCode-сессии стартуют в native YOLO/Full Access; пользователь меняет подтверждённые режимы выбранных существующих сессий и отвечает на конкретный native permission request. OpenCode также доставляет новое сообщение в точную idle MiniMax desktop session штатным путем; проверяются четыре среды.
-Бизнес-результат: Установленный combined backend host100 — immutable release a34a4fee0ddd8e1e31f2911699e170c142226ab7; owner acceptance 21/21. Новая публичная ZCode canary без явных mode/fullAccess/model/initialMessage создана в native YOLO, same-session readback показал pending пусто/no active turn; fixture закрыта официальным способом, пять существующих сессий не тронуты. Frontend pin 57d2adee применён timer, managed nginx drift=0. Полный четырёх-harness цикл остаётся открытым.
+Бизнес-результат: Установленный combined release 00fe2e3692d5dae7e3bd5e5f2cfda77d3c26c1ec принят: official checks 14/14 и host acceptance 21/21. OpenCode filtered query дал 10 реальных совпадений при текущем partial coverage 3189/3200; исходный полный поиск остаётся UNKNOWN. Read-only browser inspector прошёл на 287px и frontend pin применён штатным timer без managed drift. Native mode write и authenticated public content не подтверждены; полный четырёх-harness цикл остаётся открытым.
 Декомпозиция: 19 листьев · 3 параллельно · 11 волн · слотов: 3
-Прогресс (по листьям графа): 8/19 готово (42.1%) · в работе 3 · заблокировано 0 · ждёт листа 6 · ждёт исполнителя 1 · осталось 11
+Прогресс (по листьям графа): 10/19 готово (52.6%) · в работе 3 · заблокировано 0 · ждёт листа 5 · ждёт исполнителя 0 · осталось 9
 Смета плана: нет посчитанных денег — 19 листьев без цены
 доля frontier не вычисляется: нет посчитанных денег
 остатку к запуску: нет посчитанных денег
@@ -12,8 +12,8 @@
 без цены 19: L01, L18, L19, L02, L03, L13, L16, L17, L04, L14, L15, L05, L06, L07, L08, L09, L10, L11, L12
 Листьев в графе: 19 · слотов: 3 · волн: 11
 Параллельность: сейчас 3 из 3 слотов, пик по плану неизвестен
-Исполнители: занято 3 из 3 слотов · ждёт листа: 6 (L04, L05, L09, L10, …) · ждёт исполнителя: 1 (L16) · готово к запуску: 1 (L19)
-Прогноз: осталось 4 ч 05 мин (от 2 ч 20 мин), финиш 18:57–20:42. отсчёт от последнего события 16:37 · простой 1 ч 10 мин · неточно: срок внешнего ожидания не подтверждён
+Исполнители: занято 3 из 3 слотов · ждёт листа: 5 (L04, L05, L10, L11, …) · ждёт исполнителя: 0 · готово к запуску: 1 (L09)
+Прогноз: осталось 4 ч 05 мин (от 2 ч 20 мин), финиш 20:52–22:37. отсчёт от последнего события 18:32 · простой 4 мин · неточно: срок внешнего ожидания не подтверждён
 Критический путь: неизвестен — оценки длительности не заданы
 Листья плана (19):
   - L01 · ✅ Готово · (Проверить нативные возможности и безопасные тестовые сессии) · оценка 15 мин–25 мин · усилие не измерено · по часам 17 мин · волна 1 · зависит: — · стоимость — модель не выбрана · лист не назвал ни модель, ни класс
@@ -24,7 +24,7 @@
       Описание задачи: Проверить сообщение пользователя: при большом каталоге около 3200 записей текстовый поиск Herder возвращает ноль результатов. Найти точную причину в поиске/индексе и исправить только подтверждённый слой.
       Приёмка: RED воспроизводит нулевой результат на запросе с известным совпадением в контролируемом каталоге. GREEN возвращает точное совпадение с корректным host/harness scope; неполный или недоступный индекс явно отличается от полного нуля. Нет transcript export, Telegram API, native writes или повторной доставки.
       Затрагиваемые файлы: `src/session-search.ts`, `tests/l72-session-search-incremental.test.ts`
-  - L19 · ⋯ В очереди · (Установить и проверить объединённые исправления) · оценка 15 мин–30 мин · усилие не измерено · ждёт: Source/review gate пройден: UI/API source 509f2b8 и search sources получили independent SHIP; MiniMax bridge correction 7643500 прошла independent SHIP. Теперь можно собрать только reviewed source join. Installed release a34 этих fixes не содержит, поэтому L19 остаётся queued до штатной install и consumer acceptance; dependency на полное live завершение L03/L06/L18 не ставится, чтобы не создать цикл. · волна 1 · зависит: — · стоимость — модель не выбрана · лист не назвал ни модель, ни класс
+  - L19 · ✅ Готово · (Установить и проверить объединённые исправления) · оценка 15 мин–30 мин · усилие не измерено · волна 1 · зависит: — · стоимость — модель не выбрана · лист не назвал ни модель, ни класс
       Описание задачи: После безопасного source/review gate установить объединённые исправления и проверить их на разрешённых consumer surfaces, сохраняя раздельные source, install и live evidence.
       Приёмка: До установки подтверждены точные source inputs и независимый review. После штатной установки immutable source/install SHA совпадают, official contract checks 14/14 и host acceptance 21/21; isolated MiniMax fixture показывает один durable native permission result/readback без replay; filtered OpenCode query возвращает точное native совпадение в правильном scope; реальный Herder inspector показывает текущие mode, scope, supported/unsupported reason. Browser inspection не делает production mode writes или provider actions. Automatic Notice permission trigger и real Notice consumer остаются отдельными открытыми критериями полного цикла.
       Затрагиваемые файлы: `.agents/tasks/20261025-permission-control-fullcycle/release.md`
@@ -41,7 +41,7 @@
       Приёмка: Exact native runtime/session cwd либо явная декларация проходит reliable roundtrip до Herder; фильтр TelegramAuto видит workspace только по проверенным данным. Нет title guess. Focused regression и readback на той же native identity.
       Затрагиваемые файлы: `src/session-workspaces.ts`, `src/session-workspaces-tools.ts`, `src/session-workspaces-backfill.ts`, `src/adapters/minimax-code-active.ts`, `src/adapters/minimax-code-runtime-activity.ts`, `src/adapters/minimax-code-native-session.ts`, `src/mesh/native-minimax-code.ts`, `tests/minimax-active-runtime.test.ts`, `tests/session-workspaces-backfill.test.ts`
       Результат: Verified native workspace_dir из active MiniMax session/turn теперь записывается в ledger как observed native_session_cwd только для точной native activity identity. Focused regression и isolated exact-identity host-filter canary зелёные. Runtime install/deployment остаются в L07.
-  - L16 · ⋯ В очереди · (Доставлять сообщение в idle MiniMax desktop без повтора) · оценка 20 мин–35 мин · усилие не измерено · ждёт: Lead reprioritized the newly reported catalog text-search zero-result defect (L18) after immutable 49b release capture. Resume this bounded idle MiniMax delivery investigation after L18; never replay accepted/UNKNOWN queued messages. · волна 2 · зависит: L01 · стоимость — модель не выбрана · лист не назвал ни модель, ни класс
+  - L16 · ✅ Готово · (Доставлять сообщение в idle MiniMax desktop без повтора) · оценка 20 мин–35 мин · усилие не измерено · волна 2 · зависит: L01 · стоимость — модель не выбрана · лист не назвал ни модель, ни класс
       Описание задачи: Проследить и исправить bounded route, по которому OpenCode передаёт сообщение в idle MiniMax desktop session. Сохранить exact native host/session identity и штатную очередь; accepted/UNKNOWN input не replay-ить и не превращать в новую сессию.
       Приёмка: Focused regression доказывает доставку одного нового сообщения в точную idle MiniMax session штатным механизмом; отсутствие capability/неизвестный результат видны явно. Ранее accepted/queued сообщения не переотправляются, никакая новая native session не создаётся.
   - L17 · ✅ Готово · (Исправить заголовки задач в Herder и проверить восемь сессий) · оценка — · усилие не измерено · волна 2 · зависит: L01 · стоимость — модель не выбрана · лист не назвал ни модель, ни класс

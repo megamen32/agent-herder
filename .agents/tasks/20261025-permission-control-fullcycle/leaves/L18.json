@@ -15,8 +15,8 @@
     "maximum": 25
   },
   "estimate_over_limit_reason": "Одна bounded search/index цепочка с узкой регрессией. Приёмка отдельно покажет полноту данных; не расширять до общего перестроения индекса.",
-  "note": "Search source fixes 3380e8a/896a38be получили independent SHIP; focused 15/15. Installed a34 содержит предыдущие 6099 metrics, но не эти fixes. Свежий source-versioned receipt и read-only COUNT на одном snapshot/scope, затем exact real query/matching snippet ещё pending; leaf остаётся running до consumer proof.",
-  "updated_at": "2026-10-25T17:44:23+03:00",
+  "note": "Source fixes 3380e8a и 896a38be имеют independent SHIP; на финальном установленном release OpenCode filtered native query вернул 10 реальных совпадений. Одновременный текущий индекс — partial 3189/3200; исходное точное пользовательское query acceptance не закрыто и остаётся UNKNOWN. Полный coverage/readback ещё требуется; не считать частичную выдачу PASS.",
+  "updated_at": "2026-10-25T18:32:35+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T17:44:23+03:00",
