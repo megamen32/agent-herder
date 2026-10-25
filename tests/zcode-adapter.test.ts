@@ -2051,6 +2051,137 @@ describe("ZCode adapter", () => {
     } finally { await adapter.dispose(); vi.useRealTimers(); }
   });
 
+  it("atomically starts a fresh input on an idle native session when its durable queue is empty", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-idle-start-now-"));
+    const path = join(root, "native.sqlite");
+    const db = new DatabaseSync(path);
+    db.exec("create table session_input (id text primary key, session_id text not null, status text not null)");
+    db.close();
+    const client = new FakeClient();
+    client.currentSnapshot = {
+      ...snapshot,
+      session: { ...session, status: "idle" },
+      runtime: { eventSeq: 2, stateRevision: 3, pendingRequestIds: [] },
+    };
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client, localDbPath: path });
+    try {
+      const result = await adapter.sendMessage("session-1", {
+        message: "fresh idle input", queue: true, origin: "human", inputId: "idle-start-now-1",
+      });
+      expect(result).toMatchObject({ ok: true, admitted: true, inputId: "idle-start-now-1" });
+      expect(client.calls.find(call => call.method === "sendConversationCommandV4")?.args[0]).toMatchObject({
+        envelope: { commandId: "idle-start-now-1", payload: { text: "fresh idle input", requestedDelivery: "startNow" } },
+      });
+      expect(client.calls.some(call => call.method === "resumeSession")).toBe(false);
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not add a new native input to an idle session with an already-admitted queue row", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-idle-existing-input-"));
+    const path = join(root, "native.sqlite");
+    const db = new DatabaseSync(path);
+    db.exec("create table session_input (id text primary key, session_id text not null, status text not null)");
+    db.prepare("insert into session_input values (?, ?, ?)").run("queue-existing-1", "session-1", "admitted");
+    db.close();
+    const client = new FakeClient();
+    client.currentSnapshot = {
+      ...snapshot,
+      session: { ...session, status: "idle" },
+      runtime: { eventSeq: 2, stateRevision: 3, pendingRequestIds: [] },
+    };
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client, localDbPath: path });
+    try {
+      const result = await adapter.sendMessage("session-1", {
+        message: "do not overtake old queue", queue: true, origin: "human", inputId: "new-after-existing-1",
+      });
+      expect(result).toMatchObject({ ok: false, admitted: false, notSubmitted: true, nonRetryable: true });
+      expect(client.calls.some(call => call.method === "sendConversationCommandV4")).toBe(false);
+      expect(client.calls.some(call => call.method === "resumeSession")).toBe(false);
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves an admitted-but-mismatched startNow receipt without replay", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-start-now-mismatch-"));
+    const path = join(root, "native.sqlite");
+    const db = new DatabaseSync(path);
+    db.exec("create table session_input (id text primary key, session_id text not null, status text not null)");
+    db.close();
+    class QueueInsteadClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]) {
+        if (method === "sendConversationCommandV4") {
+          this.calls.push({ channel, method, args });
+          const { envelope } = args[0] as { envelope: { commandId: string } };
+          return { commandId: envelope.commandId, status: "accepted", revisionAtDecision: 3,
+            result: { type: "inputAccepted", inputId: "native-queued-start", delivery: "queue" } };
+        }
+        return super.call(channel, method, args);
+      }
+    }
+    const client = new QueueInsteadClient();
+    client.currentSnapshot = {
+      ...snapshot,
+      session: { ...session, status: "idle" },
+      runtime: { eventSeq: 2, stateRevision: 3, pendingRequestIds: [] },
+    };
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client, localDbPath: path });
+    try {
+      const result = await adapter.sendMessage("session-1", {
+        message: "start receipt mismatch", queue: true, origin: "human", inputId: "idle-start-mismatch-1",
+      });
+      expect(result).toMatchObject({ ok: false, admitted: true, nonRetryable: true, inputId: "idle-start-mismatch-1" });
+      expect(client.calls.filter(call => call.method === "sendConversationCommandV4")).toHaveLength(1);
+      expect(client.calls.some(call => ["sendPrompt", "resumeSession"].includes(call.method))).toBe(false);
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("treats a native startNow busy race as a terminal exact refusal without fallback", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-start-now-busy-"));
+    const path = join(root, "native.sqlite");
+    const db = new DatabaseSync(path);
+    db.exec("create table session_input (id text primary key, session_id text not null, status text not null)");
+    db.close();
+    class BusyStartClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]) {
+        if (method === "sendConversationCommandV4") {
+          this.calls.push({ channel, method, args });
+          const { envelope } = args[0] as { envelope: { commandId: string } };
+          return { commandId: envelope.commandId, status: "rejected", reasonCode: "session_busy", revisionAtDecision: 4 };
+        }
+        return super.call(channel, method, args);
+      }
+    }
+    const client = new BusyStartClient();
+    client.currentSnapshot = {
+      ...snapshot,
+      session: { ...session, status: "idle" },
+      runtime: { eventSeq: 2, stateRevision: 3, pendingRequestIds: [] },
+    };
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client, localDbPath: path });
+    try {
+      const result = await adapter.sendMessage("session-1", {
+        message: "exact busy-race refusal", queue: true, origin: "human", inputId: "idle-start-busy-1",
+      });
+      expect(result).toMatchObject({ ok: false, notSubmitted: true, admission: "not_submitted", nonRetryable: true, inputId: "idle-start-busy-1" });
+      expect(client.calls.filter(call => call.method === "sendConversationCommandV4")).toHaveLength(1);
+      expect(client.calls.find(call => call.method === "sendConversationCommandV4")?.args[0]).toMatchObject({
+        envelope: { payload: { requestedDelivery: "startNow" } },
+      });
+      expect(client.calls.some(call => ["sendPrompt", "resumeSession"].includes(call.method))).toBe(false);
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("guides the native active turn with human identity and no invented new turn", async () => {
     const client = new FakeClient(); const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
     try {

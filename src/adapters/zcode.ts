@@ -2319,19 +2319,40 @@ export class ZcodeAdapter implements HarnessAdapter {
     return { ok: true };
   }
 
-  /** Native V4 owns guide/queue admission and command deduplication. Never
+  /** Native V4 owns start/guide/queue admission and command deduplication. Never
    * replace its receipt with our old RAM queue or retry through session/send. */
   private async sendConversationInput(id: string, options: SendMessageOptions & {workspaceCrashBoundary?:WorkspaceCrash}): Promise<SendMessageResult> {
     const origin = options.origin === "human" ? "human" : "automation";
     const inputId = options.inputId || randomUUID();
     const commandId = zcodeInputId(inputId, origin);
-    const requestedDelivery = options.steer ? "guide" : "queue";
+    let requestedDelivery: "guide" | "queue" | "startNow" = options.steer ? "guide" : "queue";
     let attempted = false;
     try {
       if (await getHumanStopStore().isHeld("zcode", id)) return {ok:false,inputId,error:"Чат явно остановлен; автоматическая отправка запрещена."};
       const baseline = await this.readConversationBaseline(id);
       const permissionError = this.pendingPermissionError(baseline);
       if (permissionError) return { ok: false, inputId, error: permissionError };
+      const nativeSession = record(baseline.session);
+      const nativeRuntime = record(baseline.runtime);
+      if (!options.steer && nativeSession.status === "idle") {
+        // The common delivery core already observed this session idle. For a
+        // clean native idle state, V4 startNow atomically claims the turn;
+        // queue would only persist an input that no active turn can drain.
+        if (nonEmptyString(nativeRuntime.activeTurnId) || nonEmptyString(nativeRuntime.activeTurnKind)) {
+          return { ok: false, inputId, admitted: false, notSubmitted: true, nonRetryable: true,
+            error: "Состояние ZCode противоречиво: сессия idle, но native turn ещё активен; сообщение не отправлено." };
+        }
+        const pendingInputs = await this.readPendingNativeInputs(id);
+        if (pendingInputs === null) {
+          return { ok: false, inputId, admitted: false, notSubmitted: true, nonRetryable: true,
+            error: "Не удалось подтвердить отсутствие уже принятого native ввода; новое сообщение не отправлено." };
+        }
+        if (pendingInputs) {
+          return { ok: false, inputId, admitted: false, notSubmitted: true, nonRetryable: true,
+            error: "В idle-сессии уже есть принятый native ввод. Он сохранён; новое сообщение не отправлено и сессия не возобновлялась." };
+        }
+        requestedDelivery = "startNow";
+      }
       const stopStore = getHumanStopStore();
       if (await stopStore.isHeld("zcode", id)) return { ok: false, inputId, error: "Чат явно остановлен; автоматическая отправка запрещена." };
       if (origin !== "human") await stopStore.rememberGeneratedPrompt("zcode", id, options.message);
@@ -2356,8 +2377,9 @@ export class ZcodeAdapter implements HarnessAdapter {
       }
       attempted = true;
       // Pinned installed zcode-server.cjs exposes this exact service method.
-      // requestedDelivery=guide injects at the next supported native boundary;
-      // queue remains a native input intent, not a Herder timer/new inputId.
+      // startNow atomically claims a clean idle turn; guide injects at the next
+      // supported native boundary; queue remains a native input intent, not a
+      // Herder timer/new inputId.
       const params = {
         ...workspace,
         envelope: {
@@ -2398,9 +2420,9 @@ export class ZcodeAdapter implements HarnessAdapter {
         this.ensureSessionEventSubscription(id, workspace);
         return { ok: true, pending: true, inputId };
       }
-      if (requestedDelivery === "queue" && nativeInput.delivery === "guide") {
+      if (nativeInput.delivery !== requestedDelivery) {
         return { ok: false, admitted: true, inputId, nonRetryable: true,
-          error: `ZCode принял сообщение в другом режиме (${String(nativeInput.delivery)}); повторная отправка запрещена.` };
+          error: `ZCode принял сообщение в другом режиме (${String(nativeInput.delivery)} вместо ${requestedDelivery}); повторная отправка запрещена.` };
       }
       if(origin==='automation'&&requestedDelivery==='queue'&&this.useLocalTurnMetadata){
         const current=this.observedActiveTurns.get(id)??{};
@@ -2415,6 +2437,29 @@ export class ZcodeAdapter implements HarnessAdapter {
     } catch (error) {
       return { ok: false, inputId, ...(attempted ? { admissionUnknown: true, nonRetryable: true } : {}),
         error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  /**
+   * A clean-idle start may bypass native queue admission only when the exact
+   * native DB proves there is no older accepted input to overtake. Missing DB,
+   * table, schema, or unreadable state is UNKNOWN and keeps the caller closed.
+   */
+  private async readPendingNativeInputs(sessionId: string): Promise<boolean | null> {
+    if (!this.useLocalTurnMetadata || !existsSync(this.localDbPath)) return null;
+    try {
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(this.localDbPath, { readOnly: true });
+      try {
+        const table = db.prepare("select 1 from sqlite_master where type = 'table' and name = 'session_input'").get();
+        if (!table) return null;
+        const columns = new Set((db.prepare("pragma table_info(session_input)").all() as Array<{ name?: string }>).map((column) => column.name));
+        if (!columns.has("session_id") || !columns.has("status")) return null;
+        const pending = db.prepare("select 1 from session_input where session_id = ? and status not in ('promoted','cancelled','discarded') limit 1").get(sessionId);
+        return Boolean(pending);
+      } finally { db.close(); }
+    } catch {
+      return null;
     }
   }
 
