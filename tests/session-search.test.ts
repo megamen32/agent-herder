@@ -43,6 +43,61 @@ describe('disposable lexical session mirror',()=>{
   expect(index.search({query:'previousword'}).results).toHaveLength(1);expect(index.search({query:'laterword'}).results).toHaveLength(1);
   expect(index.status().sources.find(source=>source.harness==='codex').state).toBe('partial');
  });
+ it('scopes partial coverage to a completed current harness snapshot',async()=>{
+  const index=fixture();
+  index.finishSource({harness:'codex',source:'fixture',state:'unsupported',sessions:0},'old');
+  const receipts=[] as Parameters<SessionSearchIndex['scan']>[1];
+  let reachedLaterSource!:()=>void,continueScan!:()=>void;
+  const laterSource=new Promise<void>(resolve=>{reachedLaterSource=resolve;});
+  const release=new Promise<void>(resolve=>{continueScan=resolve;});
+  async function* sources(){
+   receipts.push({harness:'opencode',source:'fixture',state:'complete',sessions:1});
+   yield{...session('currentword'),harness:'opencode'};
+   reachedLaterSource();
+   await release;
+   receipts.push({harness:'qoder',source:'fixture',state:'unsupported',sessions:0});
+  }
+  const pending=index.scan(sources(),receipts);
+  await laterSource;
+  expect(index.status()).toMatchObject({indexing:true,chunksIncludeStaging:true});
+  expect(index.search({query:'currentword',harnesses:['opencode']}).partial).toBe(false);
+  expect(index.search({query:'currentword'}).partial).toBe(true);
+  continueScan();await pending;
+  expect(index.search({query:'currentword',harnesses:['opencode']}).partial).toBe(false);
+  expect(index.search({query:'currentword'}).partial).toBe(true);
+ });
+ it('keeps a prior complete snapshot partial while its selected source is pending in a new run',async()=>{
+  const index=fixture();
+  index.finishSource({harness:'opencode',source:'fixture',state:'complete',sessions:1},'previous-scan');
+  const receipts=[] as Parameters<SessionSearchIndex['scan']>[1];
+  let sourceStarted!:()=>void,continueScan!:()=>void;
+  const started=new Promise<void>(resolve=>{sourceStarted=resolve;});
+  const release=new Promise<void>(resolve=>{continueScan=resolve;});
+  async function* sources(){sourceStarted();await release;receipts.push({harness:'opencode',source:'fixture',state:'complete',sessions:1});}
+  const pending=index.scan(sources(),receipts);
+  await started;
+  expect(index.search({query:'anything',harnesses:['opencode']}).partial).toBe(true);
+  continueScan();await pending;
+  expect(index.search({query:'anything',harnesses:['opencode']}).partial).toBe(false);
+ });
+ it('treats missing or incomplete requested snapshots as partial',()=>{
+  const index=fixture();
+  expect(index.search({query:'anything',harnesses:['opencode']}).partial).toBe(true);
+  index.finishSource({harness:'opencode',source:'fixture',state:'partial',sessions:1},'partial-scan');
+  expect(index.search({query:'anything',harnesses:['opencode']}).partial).toBe(true);
+  index.finishSource({harness:'opencode',source:'fixture',state:'unavailable',sessions:0},'unavailable-scan');
+  expect(index.search({query:'anything',harnesses:['opencode']}).partial).toBe(true);
+ });
+ it('reads legacy receipts and migrates run identity before the next scan',async()=>{
+  const index=fixture(),path=index.path;index.close();indexes.splice(indexes.indexOf(index),1);
+  const legacy=new DatabaseSync(path);
+  legacy.exec("ALTER TABLE search_run DROP COLUMN scan_id; INSERT INTO search_run VALUES(1,'complete','2026-01-01T00:00:00.000Z',0,NULL); INSERT INTO sources VALUES('opencode','{\"harness\":\"opencode\",\"source\":\"fixture\",\"state\":\"complete\",\"sessions\":1,\"observedAt\":\"2026-01-01T00:00:00.000Z\"}')");legacy.close();
+  const readOnly=new SessionSearchIndex(path,'host-a',{readOnly:true});
+  expect(readOnly.search({query:'anything',harnesses:['opencode']}).partial).toBe(false);readOnly.close();
+  const migrated=new SessionSearchIndex(path,'host-a');indexes.push(migrated);
+  await migrated.scan((async function*(){})(),[{harness:'opencode',source:'fixture',state:'complete',sessions:1}]);
+  const status=migrated.status();expect(status.run).toMatchObject({status:'complete',scanId:status.sources[0].scanId});
+ });
  it('preserves previously indexed content when native content disappears, while updating title',async()=>{
   const index=fixture();await index.ingest(session('preservedhistory'),'a');
   await index.ingest({...session('','missing'),title:'Новый заголовок',contentUnavailable:true},'b');
