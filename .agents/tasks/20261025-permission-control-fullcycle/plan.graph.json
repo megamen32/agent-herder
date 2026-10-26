@@ -19,7 +19,7 @@
   "current_progress": "4750249 установлен, runtime21/21, self-identity через настоящий подключённый MCP подтверждена. Новое поручение на полный остаток: три параллельных Worker направления на canonical main. UI ведёт L20/L21, Delivery ведёт L18/L25/L26/L28, Permissions ведёт L03/L04/L05/L06/L09/L10/L11. Найден новый конкретный UI defect: разрешение предлагается при native canRespond=false; исправляется владельцем. Минимальный native/consumer proof сначала переиспользует существующие квитанции; прошлые действия не повторяются. Общий review, единая установка и два независимых consumer tester выполняются после join. Прогноз текущего остатка110–205 активных минут, зависит от native fixtures/Notice test route и реального Whisper.",
   "external_waits": "Проверяется изолированный Notice Place test route; остальные направления выполняются независимо.",
   "slots": 3,
-  "updated_at": "2026-10-26T06:52:51+03:00",
+  "updated_at": "2026-10-26T12:47:10+03:00",
   "tasks": [
     {
       "id": "L01",
@@ -420,13 +420,13 @@
     {
       "id": "L09",
       "label": "Проверить живой путь OpenCode",
-      "status": "queued",
+      "status": "done",
       "description": "Повторить полный потребительский сценарий на существующей разрешённой OpenCode fixture без подмены провайдера или модели.",
       "acceptance": "Подтверждены режим, карточка, точная привязка ответа и отсутствие повторного выполнения; отдельно проверен отказ.",
       "owner": "Permission worker",
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex",
-      "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: OpenCode permission consumer proof. Исторические accepted/UNKNOWN не повторять.",
+      "note": "Installed Herder c9e2ae4; fresh QA card f9bf2764-2403-4fe6-a8c6-8c4da4282c8f clicked once by UserIO action_79746085a3c5d09baa81ad43344eb4700801251528d8b42263f327b43c43f372, Notice completion sent attempts1, Herder permission-reply:allow, same OpenCode session printed HF26_USERIO_BUTTON_QA. No human step or replay. Evidence installed-permission-card-c9e2ae4.md.",
       "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной OpenCode fixture.",
       "origin": "",
       "supersedes": [],
@@ -466,6 +466,27 @@
             "wait_reason": "",
             "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: OpenCode permission consumer proof. Исторические accepted/UNKNOWN не повторять.",
             "depends_on": []
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T12:10:09+03:00",
+          "note": "Installed c9e2ae4 OpenCode QA session has a genuine native pending shell permission per_17773a4d0001xC2jgEVvOjMHAB. Herder automatically created Human Request 7d8bf5b8-e85b-4b19-b595-47921e142d37; Notice returned HTTP201/sent and UserIO readback found Telegram QA chat message 3 with exact native session link and command. Awaiting the human's Allow/Deny click and exact native continuation. Earlier diagnostic manual request was undelivered/cancelled, not replayed. Evidence installed-permission-card-c9e2ae4.md.",
+          "changes": {
+            "status": "running",
+            "wait_reason": "The real QA permission card is delivered. Awaiting the operator's choice in qa deusexcode; then verify same native request reply and turn continuation without replay."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T12:46:58+03:00",
+          "note": "2026-10-26: подтверждён реальный безучастный QA путь: UserIO button_click на новой карточке id4, Notice response allow и completion sent за одну попытку, Herder resumed exact native permission, та же сессия OpenCode вывела HF26_USERIO_BUTTON_QA. Старую карточку id3 не повторяли. Evidence installed-permission-card-c9e2ae4.md.",
+          "changes": {
+            "status": "done",
+            "wait_reason": "",
+            "note": "Installed Herder c9e2ae4; fresh QA card f9bf2764-2403-4fe6-a8c6-8c4da4282c8f clicked once by UserIO action_79746085a3c5d09baa81ad43344eb4700801251528d8b42263f327b43c43f372, Notice completion sent attempts1, Herder permission-reply:allow, same OpenCode session printed HF26_USERIO_BUTTON_QA. No human step or replay. Evidence installed-permission-card-c9e2ae4.md."
           },
           "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
           "harness": "codex"
@@ -594,15 +615,14 @@
     {
       "id": "L18",
       "label": "Исправить нулевые текстовые результаты поиска по каталогу",
-      "status": "running",
+      "status": "done",
       "description": "Проверить сообщение пользователя: при большом каталоге около 3200 записей текстовый поиск Herder возвращает ноль результатов. Найти точную причину в поиске/индексе и исправить только подтверждённый слой.",
       "acceptance": "RED воспроизводит нулевой результат на запросе с известным совпадением в контролируемом каталоге. GREEN возвращает точное совпадение с корректным host/harness scope; неполный или недоступный индекс явно отличается от полного нуля. Нет transcript export, Telegram API, native writes или повторной доставки.",
-      "owner": "Delivery worker",
+      "owner": "Root",
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex",
-      "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: полнота поиска исходного запроса по native каталогу. Исторические accepted/UNKNOWN не повторять.",
+      "note": "Installed683localRAGmodeexactreturnsnativecanonicalCodexID, exact291ms/total291ms,noembedding,explicitlocal-index/fleetCompletefalse;client2.735s. ActualMacsession_search «Почасовая проверка» matchedexact01a134e4-c26e-7ae0-900c-f9be106dbc98,hostsearch153.68ms/client4.423s,explicitpartialtrue. Actualinstalledfleet_session_view exactMacsessionhistoryavailable5.554s,independentworkeralsosucceeded; priortransientlistenerunavailablepreservedinevidence. Evidence/backend-installed-683456d.md. Catalog/nativeIDmigrationandmappingincludedinrelease.",
       "estimate_over_limit_reason": "Одна bounded search/index цепочка с узкой регрессией. Приёмка отдельно покажет полноту данных; не расширять до общего перестроения индекса.",
-      "wait_reason": "Exact native Mac hit found; exact host/not-found diagnostic fixed in source. Installed MCP search rerun awaits root release SHA; Mac index coverage is partial, so only the positive hit is conclusive.",
       "origin": "",
       "supersedes": [],
       "progress_events": [
@@ -640,6 +660,18 @@
             "wait_reason": "Exact native Mac hit found; exact host/not-found diagnostic fixed in source. Installed MCP search rerun awaits root release SHA; Mac index coverage is partial, so only the positive hit is conclusive.",
             "note": "Exact Codex thread and matching message found on Mac; source diagnostic fix reviewed. Installed search consumer proof remains pending release."
           }
+        },
+        {
+          "at": "2026-10-26T10:25:16+03:00",
+          "note": "InstalledMCP exactsearch и realMacdirectread подтверждены после683install; partialcoverageне скрывается.",
+          "changes": {
+            "status": "done",
+            "owner": "Root",
+            "note": "Installed683localRAGmodeexactreturnsnativecanonicalCodexID, exact291ms/total291ms,noembedding,explicitlocal-index/fleetCompletefalse;client2.735s. ActualMacsession_search «Почасовая проверка» matchedexact01a134e4-c26e-7ae0-900c-f9be106dbc98,hostsearch153.68ms/client4.423s,explicitpartialtrue. Actualinstalledfleet_session_view exactMacsessionhistoryavailable5.554s,independentworkeralsosucceeded; priortransientlistenerunavailablepreservedinevidence. Evidence/backend-installed-683456d.md. Catalog/nativeIDmigrationandmappingincludedinrelease.",
+            "wait_reason": ""
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
         }
       ],
       "affected_files": [
@@ -988,15 +1020,14 @@
     {
       "id": "L25",
       "label": "Свести доставку человека и агента к единому delivery core",
-      "status": "running",
+      "status": "done",
       "description": "Объединить пути отправки человека, агента и сайта вокруг одного durable delivery core с точными target/host/session/input/job метаданными и единой admission/readback семантикой.",
       "acceptance": "Все входные поверхности проходят общий durable job и сохраняют точную native identity и receipt; accepted/UNKNOWN не повторяются. Отдельные source review и реальные пути подтверждают, что idle wake и завершённая ZCode очередь не получают ложный ok:true без фактического native результата.",
-      "owner": "Delivery worker",
+      "owner": "Delivery worker + Root",
       "session": "unknown",
       "harness": "codex",
-      "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: реальная доставка agent→MiniMax без повторения прошлых inputs. Исторические accepted/UNKNOWN не повторять.",
+      "note": "Installed 683456d MCode response resource read twice with identical completed response: input hf26-mcode-agent-delivery-01, exact turn turn_mvonxe4e_27y3pb, reply_to, HF26_MCODE_AGENT_OK (19 chars), SHA-256 6fbd547e…; baselineCoverage=partial retained. Installed agent_info independently returns nativeLastTurn completed at 2026-10-26T02:54:30.803Z. No replay. Evidence in delivery-finish.md and installed-readback receipt.",
       "estimate_unknown_reason": "Исправление двух наблюдавшихся consumer дефектов и объединение уже существующих WIP; оставшийся объём зависит от native adapter результата и обязательной повторной приёмки.",
-      "wait_reason": "OpenCode MiniMax-provider canary is accepted once; exact native response is evidenced. This is not native minimax-code. Read-only response_fetch consumer check awaits root release SHA; no resend.",
       "origin": "",
       "supersedes": [],
       "progress_events": [
@@ -1050,6 +1081,29 @@
             "wait_reason": "OpenCode MiniMax-provider canary is accepted once; exact native response is evidenced. This is not native minimax-code. Read-only response_fetch consumer check awaits root release SHA; no resend.",
             "note": "One OpenCode/MiniMax-provider input produced HF26_MINIMAX_OK; native minimax-code acceptance is not established. Observer source reviewed; installed MCP response read pending."
           }
+        },
+        {
+          "at": "2026-10-26T10:19:48+03:00",
+          "note": "УстановленныйconsumerMCode дваждывернулexact completed безповтораотправки;OpenCodeacceptedresponseбылподтверждёнранее.",
+          "changes": {
+            "status": "done",
+            "owner": "Delivery worker + Root",
+            "note": "Installed683MCode existingacceptedinputhf26-mcode-agent-delivery-01 responseURIreadtwice: completed exactturnturn_mvonxe4e_27y3pb,reply_to,HF26_MCODE_AGENT_OK19chars,stableSHA6fbd547e...;baselineCoveragepartialpreserved. EarlierinstalledOpenCodeactualnativeinput responsecompletedHF26_MINIMAX_OK15chars. No replay/native resend. 175durablerecordspreservedoninstall. Evidence/backend-installed-683456d.md and delivery-finish.md.",
+            "wait_reason": ""
+          },
+          "session": "unknown",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T10:20:31+03:00",
+          "note": "Post-install exact response URI read twice plus native session metadata readback; same completed native turn. No send or replay.",
+          "changes": {
+            "status": "done",
+            "note": "Installed 683456d MCode response resource read twice with identical completed response: input hf26-mcode-agent-delivery-01, exact turn turn_mvonxe4e_27y3pb, reply_to, HF26_MCODE_AGENT_OK (19 chars), SHA-256 6fbd547e…; baselineCoverage=partial retained. Installed agent_info independently returns nativeLastTurn completed at 2026-10-26T02:54:30.803Z. No replay. Evidence in delivery-finish.md and installed-readback receipt.",
+            "wait_reason": ""
+          },
+          "session": "unknown",
+          "harness": "codex"
         }
       ],
       "affected_files": [
@@ -1070,9 +1124,9 @@
       "owner": "Delivery worker",
       "session": "unknown",
       "harness": "codex",
-      "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: ZCode queue recovery до конечного native ответа. Исторические accepted/UNKNOWN не повторять.",
+      "note": "Installed canary on fresh fixture session_529567ea-c12d-457c-97df-846229bf96e4 did not meet acceptance. Native SessionStart/UserPromptSubmit hooks block on missing /tools/lhc_time_guard.py, leaving model_request_count=0. After official autoDrain=false setup, the correctly formed Herder requestedDelivery=queue canary was admitted as native startNow; post-readback inputRouting is startNow and queue is empty. See delivery-finish.md and exact receipts under .tmp/hf-delivery26/installed-readback/.",
       "estimate_unknown_reason": "Native API для загруженной сессии подтверждён на уровне дизайна; состояние unloaded runtime и завершённая consumer приёмка пока неизвестны.",
-      "wait_reason": "No final ZCode native answer is proven. A new isolated fixture could not be created because ZCode requires an exact registered project mapping for its CWD; do not retry or register as a convenience. Historical admitted queue input remains no-replay.",
+      "wait_reason": "Native ZCode V4 did not honor an exact enqueue admission even while the active tool was running. No queued item exists to resume. Installed API seam is exhausted; native source-policy decision or upstream repair is needed before queue-to-final acceptance.",
       "origin": "",
       "supersedes": [],
       "progress_events": [
@@ -1117,6 +1171,37 @@
             "wait_reason": "No final ZCode native answer is proven. A new isolated fixture could not be created because ZCode requires an exact registered project mapping for its CWD; do not retry or register as a convenience. Historical admitted queue input remains no-replay.",
             "note": "Exact current blocker: isolated ZCode session creation requires a registered project/CWD mapping. Existing historical native start ended with provider/network failure and retry, not final output."
           }
+        },
+        {
+          "at": "2026-10-26T10:20:31+03:00",
+          "note": "After install, created one distinct empty ZCode fixture in the exact registered project and read its native queue state. Draft+autoDrain=true+pending0 makes the explicit resume route unavailable; no send, toggle, or replay was attempted.",
+          "changes": {
+            "status": "running",
+            "note": "Installed queue capability check on new fixture session_529567ea-c12d-457c-97df-846229bf96e4 (registered herder project, exact host/cwd/default model): idle, nativeLoaded, zero human messages. session_queue_processing_get: revision0, nativeState=draft, autoDrain=true, pendingCount0, loaded=true, canResume=false, HumanStop=false. No message or resume action submitted. See delivery-finish.md and unused stable IDs in zcode-queue-intent.json.",
+            "wait_reason": "New isolated fixture creation succeeded, but its exact native queue state is draft, autoDrain=true, pendingCount=0, canResume=false. Installed Herder route only exposes guarded setAutoDrain(true) for completed phases; no safe pause-before-enqueue route exists. Do not send while autoDrain is true. Queue-to-final canary remains unsupported on this fresh session; old accepted/UNKNOWN inputs remain no-replay."
+          },
+          "session": "session_529567ea-c12d-457c-97df-846229bf96e4",
+          "harness": "zcode"
+        },
+        {
+          "at": "2026-10-26T10:47:00+03:00",
+          "note": "Read-only diagnostics found the seed's SessionStart/UserPromptSubmit hooks blocked by missing /tools/lhc_time_guard.py. Native V4 snapshot after queue canary reports inputRouting=startNow and exact persisted requested/admitted delivery=startNow; no queue item/resume exists. No replay or resume was issued.",
+          "changes": {
+            "status": "running",
+            "note": "Installed canary on fresh fixture session_529567ea-c12d-457c-97df-846229bf96e4 did not meet acceptance. Native SessionStart/UserPromptSubmit hooks block on missing /tools/lhc_time_guard.py, leaving model_request_count=0. After official autoDrain=false setup, the correctly formed Herder requestedDelivery=queue canary was admitted as native startNow; post-readback inputRouting is startNow and queue is empty. See delivery-finish.md and exact receipts under .tmp/hf-delivery26/installed-readback/.",
+            "wait_reason": "Queue-to-final acceptance remains unproven for two independently evidenced reasons: fresh-turn hooks block before model generation because /tools/lhc_time_guard.py is missing; native V4 routes this completedSuccess+empty-queue+autoDrain=false state as inputRouting.mode=startNow and persists requested/admitted delivery as startNow despite the correct Herder queue request. No pending item exists, so resume was not called. Both exact input IDs are no-replay. The exact pre-dispatch inputRouting snapshot was not captured, and installed package exposes the contract/snapshot but not the native implementation branch."
+          },
+          "session": "session_529567ea-c12d-457c-97df-846229bf96e4",
+          "harness": "zcode"
+        },
+        {
+          "at": "2026-10-26T12:10:19+03:00",
+          "note": "The selected ZCode native LHC loader was repaired through plugin manager: fresh ordinary GLM turn completed LHC_ZCODE_HOOK_MODEL_OK and SessionStart/UserPromptSubmit hooks succeeded. A decisive independent queue fixture captured native inputRouting=enqueue, autoDrain=false and Bash tool running before one requested queue input, but native persisted requested/admittedDelivery=startNow. Herder returned admitted=true,ok=false,nonRetryable=true. Native pending0/canResume=false; resume was not called. No accepted or UNKNOWN input replay. Evidence zcode-queue-decisive-20261026.md.",
+          "changes": {
+            "wait_reason": "Native ZCode V4 did not honor an exact enqueue admission even while the active tool was running. No queued item exists to resume. Installed API seam is exhausted; native source-policy decision or upstream repair is needed before queue-to-final acceptance."
+          },
+          "session": "unknown",
+          "harness": "codex"
         }
       ],
       "affected_files": [
@@ -1941,9 +2026,9 @@
       "owner": "Root",
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex",
-      "note": "main/origin683456d built14/14; independentreview0findings. Compatiblepublicfrontend683 published viaAdmin18c122ca scopednginxapply, realQA browser13Server100labels/0unconfirmedsidebarlabels. Backendstill16f73; automaticguardedinstallmonitorrunsfor30min max and has not attempted install. Newforeignqueueddeliveriesarrivedduringwait (4→5), all same active np_l01_glmflash owner. Exact four-questioncohort separately verified viaexistingmessage-queueGET editable=true/sameJob=true; no nativeadmission/no cancellation. Human decision requested to wait orcancelonlythatexactcohort. No reply yet, preserve queue.",
+      "note": "Herder main/runtime c9e2ae4 build14/14+accept21/21; UI pinned same SHA and public browser path confirmed. Notice release3c5353b and narrow nginx callback1759560f installed; UID995 AI pause preserved. UserIO release92f98df installed; new QA card id4 clicked autonomously once; Notice completion sent attempts1, Herder resumed, same OpenCode session output HF26_USERIO_BUTTON_QA. ZCode queue-to-final remains blocked per L26. See evidence/installed-permission-card-c9e2ae4.md and zcode-queue-decisive-20261026.md.",
       "estimate_over_limit_reason": "Единая immutable установка и связанные реальные consumer проверки должны использовать один exact SHA; разделение создаёт промежуточные релизы и повторную путаницу identity.",
-      "wait_reason": "Не перезапускать backend с принятой чужой очередью. Автоматический монитор ждёт нуля; для отмены запрошено явное решение пользователя. После install нужныMCode sameURIreadbacks, distinctZCodequeuefixture и одна QApermissioncard/nativeanswer.",
+      "wait_reason": "OpenCode permission, Notice callback, UserIO button, public Herder UI and same-session command are accepted on installed runtimes. Four-harness full PASS remains blocked by ZCode native V4 enqueue→startNow admission mismatch; no queued item exists to resume. Native source-policy decision or upstream repair is required.",
       "origin": "",
       "supersedes": [],
       "progress_events": [
@@ -2005,6 +2090,44 @@
           "changes": {
             "note": "main/origin683456d built14/14; independentreview0findings. Compatiblepublicfrontend683 published viaAdmin18c122ca scopednginxapply, realQA browser13Server100labels/0unconfirmedsidebarlabels. Backendstill16f73; automaticguardedinstallmonitorrunsfor30min max and has not attempted install. Newforeignqueueddeliveriesarrivedduringwait (4→5), all same active np_l01_glmflash owner. Exact four-questioncohort separately verified viaexistingmessage-queueGET editable=true/sameJob=true; no nativeadmission/no cancellation. Human decision requested to wait orcancelonlythatexactcohort. No reply yet, preserve queue.",
             "wait_reason": "Не перезапускать backend с принятой чужой очередью. Автоматический монитор ждёт нуля; для отмены запрошено явное решение пользователя. После install нужныMCode sameURIreadbacks, distinctZCodequeuefixture и одна QApermissioncard/nativeanswer."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T10:19:44+03:00",
+          "note": "Backend683 установлен однократно; очередь закончилась сама, отмена не понадобилась.21/21 installedacceptancePASS.",
+          "changes": {
+            "note": "Installed683456df67b67c939b37ff9fab4fdf76c3f430df at10:15MSK via canonicalinstaller;175priorDurableJobsUnchanged=true. Rootaccept-node21/21passed;publicUI/backendboth683;8187c75ancestorconfirmed. ActualconnectedMCPremote-localguardreturnsremote_target_requires_mesh_route. ExistingMCode response twicecompleted exactnative turn noresend. Maccurrentlydirect_native_listener_unavailable, restorationassigned. DistinctZCodequeueandQApermissioncanariescontinue. Evidence/backend-installed-683456d.md.",
+            "wait_reason": "Backendinstallationcomplete. Remainingfullcycleacceptance: liveMacrestore/read, nativeZCodequeue-resume-to-final and actualQAcardanswer→nativecontinuation."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T11:05:44+03:00",
+          "note": "Backend683 installation completed, 21/21 accepted and175 prior durable records unchanged. Subsequent installed exact Mac read succeeded independently in5554ms without Mac restart; source-scoped search found exact requested native session with explicit partial coverage. Public UI/backend both683 verified in own browser. Remaining consumer work: OpenCode genuine pending permission is invisible to global-list reader (scoped source repair in progress), native QA card answer and ZCode active-state queue canary. ZCode LHC native loader corrected through supported manager; new ordinary turn completed with exact LHC_ZCODE_HOOK_MODEL_OK and success hook receipts.",
+          "changes": {
+            "wait_reason": "Backend installation and Mac exact consumer read complete. Remaining: joined repair of OpenCode per-session pending visibility, actual QA card answer→same native continuation, and ZCode active-state queue→final proof."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T12:10:29+03:00",
+          "note": "Joined immutable backend c9e2ae4e6b9facd29cc50237d155611dfb69ab5b installed after 14/14 build checks; 200 prior durable records unchanged and accept-node 21/21 passed. Scoped public UI pin shares same SHA; authenticated browser GET page+sessions HTTP200, direct QA session link shows pending permission. Exact OpenCode QA Notice card accepted/sent and UserIO confirmed Telegram message 3. Awaiting operator choice to prove answer→same native continuation. ZCode queue-to-final remains blocked by native startNow despite enqueue snapshot; no replay. Evidence installed-permission-card-c9e2ae4.md.",
+          "changes": {
+            "wait_reason": "Backend/UI and real QA card delivery accepted. Awaiting human click for native continuation. ZCode native queue-to-final remains unproven due enqueue→startNow admission mismatch; an upstream/native source-policy decision is needed."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T12:47:10+03:00",
+          "note": "2026-10-26: итоговая installed permission/Notice/UserIO QA приёмка пройдена без оператора на новой карточке id4. Остаток общего четырёх-harness PASS — ZCode native enqueue→startNow; см. L26 и evidence/installed-permission-card-c9e2ae4.md.",
+          "changes": {
+            "wait_reason": "OpenCode permission, Notice callback, UserIO button, public Herder UI and same-session command are accepted on installed runtimes. Four-harness full PASS remains blocked by ZCode native V4 enqueue→startNow admission mismatch; no queued item exists to resume. Native source-policy decision or upstream repair is required.",
+            "note": "Herder main/runtime c9e2ae4 build14/14+accept21/21; UI pinned same SHA and public browser path confirmed. Notice release3c5353b and narrow nginx callback1759560f installed; UID995 AI pause preserved. UserIO release92f98df installed; new QA card id4 clicked autonomously once; Notice completion sent attempts1, Herder resumed, same OpenCode session output HF26_USERIO_BUTTON_QA. ZCode queue-to-final remains blocked per L26. See evidence/installed-permission-card-c9e2ae4.md and zcode-queue-decisive-20261026.md."
           },
           "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
           "harness": "codex"

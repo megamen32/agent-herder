@@ -1,7 +1,7 @@
 {
   "id": "L25",
   "label": "Свести доставку человека и агента к единому delivery core",
-  "status": "running",
+  "status": "done",
   "description": "Объединить пути отправки человека, агента и сайта вокруг одного durable delivery core с точными target/host/session/input/job метаданными и единой admission/readback семантикой.",
   "acceptance": "Все входные поверхности проходят общий durable job и сохраняют точную native identity и receipt; accepted/UNKNOWN не повторяются. Отдельные source review и реальные пути подтверждают, что idle wake и завершённая ZCode очередь не получают ложный ok:true без фактического native результата.",
   "affected_files": [
@@ -11,12 +11,12 @@
     "src/web/server.ts",
     "src/adapters/"
   ],
-  "owner": "Delivery worker",
+  "owner": "Delivery worker + Root",
   "depends_on": [],
   "estimate_unknown_reason": "Исправление двух наблюдавшихся consumer дефектов и объединение уже существующих WIP; оставшийся объём зависит от native adapter результата и обязательной повторной приёмки.",
-  "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: реальная доставка agent→MiniMax без повторения прошлых inputs. Исторические accepted/UNKNOWN не повторять.",
-  "wait_reason": "OpenCode MiniMax-provider canary is accepted once; exact native response is evidenced. This is not native minimax-code. Read-only response_fetch consumer check awaits root release SHA; no resend.",
-  "updated_at": "2026-10-26T05:02:12+03:00",
+  "note": "Installed 683456d MCode response resource read twice with identical completed response: input hf26-mcode-agent-delivery-01, exact turn turn_mvonxe4e_27y3pb, reply_to, HF26_MCODE_AGENT_OK (19 chars), SHA-256 6fbd547e…; baselineCoverage=partial retained. Installed agent_info independently returns nativeLastTurn completed at 2026-10-26T02:54:30.803Z. No replay. Evidence in delivery-finish.md and installed-readback receipt.",
+  "wait_reason": "",
+  "updated_at": "2026-10-26T10:20:31+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T22:40:52+03:00",
@@ -68,6 +68,29 @@
         "wait_reason": "OpenCode MiniMax-provider canary is accepted once; exact native response is evidenced. This is not native minimax-code. Read-only response_fetch consumer check awaits root release SHA; no resend.",
         "note": "One OpenCode/MiniMax-provider input produced HF26_MINIMAX_OK; native minimax-code acceptance is not established. Observer source reviewed; installed MCP response read pending."
       }
+    },
+    {
+      "at": "2026-10-26T10:19:48+03:00",
+      "note": "УстановленныйconsumerMCode дваждывернулexact completed безповтораотправки;OpenCodeacceptedresponseбылподтверждёнранее.",
+      "changes": {
+        "status": "done",
+        "owner": "Delivery worker + Root",
+        "note": "Installed683MCode existingacceptedinputhf26-mcode-agent-delivery-01 responseURIreadtwice: completed exactturnturn_mvonxe4e_27y3pb,reply_to,HF26_MCODE_AGENT_OK19chars,stableSHA6fbd547e...;baselineCoveragepartialpreserved. EarlierinstalledOpenCodeactualnativeinput responsecompletedHF26_MINIMAX_OK15chars. No replay/native resend. 175durablerecordspreservedoninstall. Evidence/backend-installed-683456d.md and delivery-finish.md.",
+        "wait_reason": ""
+      },
+      "session": "unknown",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T10:20:31+03:00",
+      "note": "Post-install exact response URI read twice plus native session metadata readback; same completed native turn. No send or replay.",
+      "changes": {
+        "status": "done",
+        "note": "Installed 683456d MCode response resource read twice with identical completed response: input hf26-mcode-agent-delivery-01, exact turn turn_mvonxe4e_27y3pb, reply_to, HF26_MCODE_AGENT_OK (19 chars), SHA-256 6fbd547e…; baselineCoverage=partial retained. Installed agent_info independently returns nativeLastTurn completed at 2026-10-26T02:54:30.803Z. No replay. Evidence in delivery-finish.md and installed-readback receipt.",
+        "wait_reason": ""
+      },
+      "session": "unknown",
+      "harness": "codex"
     }
   ],
   "session": "unknown",

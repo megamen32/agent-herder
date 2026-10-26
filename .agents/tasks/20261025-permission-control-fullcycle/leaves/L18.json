@@ -1,22 +1,22 @@
 {
   "id": "L18",
   "label": "Исправить нулевые текстовые результаты поиска по каталогу",
-  "status": "running",
+  "status": "done",
   "description": "Проверить сообщение пользователя: при большом каталоге около 3200 записей текстовый поиск Herder возвращает ноль результатов. Найти точную причину в поиске/индексе и исправить только подтверждённый слой.",
   "acceptance": "RED воспроизводит нулевой результат на запросе с известным совпадением в контролируемом каталоге. GREEN возвращает точное совпадение с корректным host/harness scope; неполный или недоступный индекс явно отличается от полного нуля. Нет transcript export, Telegram API, native writes или повторной доставки.",
   "affected_files": [
     "src/session-search.ts",
     "tests/l72-session-search-incremental.test.ts"
   ],
-  "owner": "Delivery worker",
+  "owner": "Root",
   "depends_on": [],
   "estimate_minutes": {
     "minimum": 15,
     "maximum": 25
   },
   "estimate_over_limit_reason": "Одна bounded search/index цепочка с узкой регрессией. Приёмка отдельно покажет полноту данных; не расширять до общего перестроения индекса.",
-  "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: полнота поиска исходного запроса по native каталогу. Исторические accepted/UNKNOWN не повторять.",
-  "updated_at": "2026-10-26T05:02:12+03:00",
+  "note": "Installed683localRAGmodeexactreturnsnativecanonicalCodexID, exact291ms/total291ms,noembedding,explicitlocal-index/fleetCompletefalse;client2.735s. ActualMacsession_search «Почасовая проверка» matchedexact01a134e4-c26e-7ae0-900c-f9be106dbc98,hostsearch153.68ms/client4.423s,explicitpartialtrue. Actualinstalledfleet_session_view exactMacsessionhistoryavailable5.554s,independentworkeralsosucceeded; priortransientlistenerunavailablepreservedinevidence. Evidence/backend-installed-683456d.md. Catalog/nativeIDmigrationandmappingincludedinrelease.",
+  "updated_at": "2026-10-26T10:25:16+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T17:44:23+03:00",
@@ -52,9 +52,21 @@
         "wait_reason": "Exact native Mac hit found; exact host/not-found diagnostic fixed in source. Installed MCP search rerun awaits root release SHA; Mac index coverage is partial, so only the positive hit is conclusive.",
         "note": "Exact Codex thread and matching message found on Mac; source diagnostic fix reviewed. Installed search consumer proof remains pending release."
       }
+    },
+    {
+      "at": "2026-10-26T10:25:16+03:00",
+      "note": "InstalledMCP exactsearch и realMacdirectread подтверждены после683install; partialcoverageне скрывается.",
+      "changes": {
+        "status": "done",
+        "owner": "Root",
+        "note": "Installed683localRAGmodeexactreturnsnativecanonicalCodexID, exact291ms/total291ms,noembedding,explicitlocal-index/fleetCompletefalse;client2.735s. ActualMacsession_search «Почасовая проверка» matchedexact01a134e4-c26e-7ae0-900c-f9be106dbc98,hostsearch153.68ms/client4.423s,explicitpartialtrue. Actualinstalledfleet_session_view exactMacsessionhistoryavailable5.554s,independentworkeralsosucceeded; priortransientlistenerunavailablepreservedinevidence. Evidence/backend-installed-683456d.md. Catalog/nativeIDmigrationandmappingincludedinrelease.",
+        "wait_reason": ""
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
     }
   ],
   "harness": "codex",
-  "wait_reason": "Exact native Mac hit found; exact host/not-found diagnostic fixed in source. Installed MCP search rerun awaits root release SHA; Mac index coverage is partial, so only the positive hit is conclusive.",
+  "wait_reason": "",
   "session": "01a1754f-0228-7553-bea6-cc89e40b5187"
 }

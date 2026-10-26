@@ -12,11 +12,11 @@
     "minimum": 30,
     "maximum": 60
   },
-  "note": "main/origin683456d built14/14; independentreview0findings. Compatiblepublicfrontend683 published viaAdmin18c122ca scopednginxapply, realQA browser13Server100labels/0unconfirmedsidebarlabels. Backendstill16f73; automaticguardedinstallmonitorrunsfor30min max and has not attempted install. Newforeignqueueddeliveriesarrivedduringwait (4→5), all same active np_l01_glmflash owner. Exact four-questioncohort separately verified viaexistingmessage-queueGET editable=true/sameJob=true; no nativeadmission/no cancellation. Human decision requested to wait orcancelonlythatexactcohort. No reply yet, preserve queue.",
-  "wait_reason": "Не перезапускать backend с принятой чужой очередью. Автоматический монитор ждёт нуля; для отмены запрошено явное решение пользователя. После install нужныMCode sameURIreadbacks, distinctZCodequeuefixture и одна QApermissioncard/nativeanswer.",
+  "note": "Herder main/runtime c9e2ae4 build14/14+accept21/21; UI pinned same SHA and public browser path confirmed. Notice release3c5353b and narrow nginx callback1759560f installed; UID995 AI pause preserved. UserIO release92f98df installed; new QA card id4 clicked autonomously once; Notice completion sent attempts1, Herder resumed, same OpenCode session output HF26_USERIO_BUTTON_QA. ZCode queue-to-final remains blocked per L26. See evidence/installed-permission-card-c9e2ae4.md and zcode-queue-decisive-20261026.md.",
+  "wait_reason": "OpenCode permission, Notice callback, UserIO button, public Herder UI and same-session command are accepted on installed runtimes. Four-harness full PASS remains blocked by ZCode native V4 enqueue→startNow admission mismatch; no queued item exists to resume. Native source-policy decision or upstream repair is required.",
   "id": "L24",
   "harness": "codex",
-  "updated_at": "2026-10-26T06:52:51+03:00",
+  "updated_at": "2026-10-26T12:47:10+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T20:48:55+03:00",
@@ -76,6 +76,44 @@
       "changes": {
         "note": "main/origin683456d built14/14; independentreview0findings. Compatiblepublicfrontend683 published viaAdmin18c122ca scopednginxapply, realQA browser13Server100labels/0unconfirmedsidebarlabels. Backendstill16f73; automaticguardedinstallmonitorrunsfor30min max and has not attempted install. Newforeignqueueddeliveriesarrivedduringwait (4→5), all same active np_l01_glmflash owner. Exact four-questioncohort separately verified viaexistingmessage-queueGET editable=true/sameJob=true; no nativeadmission/no cancellation. Human decision requested to wait orcancelonlythatexactcohort. No reply yet, preserve queue.",
         "wait_reason": "Не перезапускать backend с принятой чужой очередью. Автоматический монитор ждёт нуля; для отмены запрошено явное решение пользователя. После install нужныMCode sameURIreadbacks, distinctZCodequeuefixture и одна QApermissioncard/nativeanswer."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T10:19:44+03:00",
+      "note": "Backend683 установлен однократно; очередь закончилась сама, отмена не понадобилась.21/21 installedacceptancePASS.",
+      "changes": {
+        "note": "Installed683456df67b67c939b37ff9fab4fdf76c3f430df at10:15MSK via canonicalinstaller;175priorDurableJobsUnchanged=true. Rootaccept-node21/21passed;publicUI/backendboth683;8187c75ancestorconfirmed. ActualconnectedMCPremote-localguardreturnsremote_target_requires_mesh_route. ExistingMCode response twicecompleted exactnative turn noresend. Maccurrentlydirect_native_listener_unavailable, restorationassigned. DistinctZCodequeueandQApermissioncanariescontinue. Evidence/backend-installed-683456d.md.",
+        "wait_reason": "Backendinstallationcomplete. Remainingfullcycleacceptance: liveMacrestore/read, nativeZCodequeue-resume-to-final and actualQAcardanswer→nativecontinuation."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T11:05:44+03:00",
+      "note": "Backend683 installation completed, 21/21 accepted and175 prior durable records unchanged. Subsequent installed exact Mac read succeeded independently in5554ms without Mac restart; source-scoped search found exact requested native session with explicit partial coverage. Public UI/backend both683 verified in own browser. Remaining consumer work: OpenCode genuine pending permission is invisible to global-list reader (scoped source repair in progress), native QA card answer and ZCode active-state queue canary. ZCode LHC native loader corrected through supported manager; new ordinary turn completed with exact LHC_ZCODE_HOOK_MODEL_OK and success hook receipts.",
+      "changes": {
+        "wait_reason": "Backend installation and Mac exact consumer read complete. Remaining: joined repair of OpenCode per-session pending visibility, actual QA card answer→same native continuation, and ZCode active-state queue→final proof."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T12:10:29+03:00",
+      "note": "Joined immutable backend c9e2ae4e6b9facd29cc50237d155611dfb69ab5b installed after 14/14 build checks; 200 prior durable records unchanged and accept-node 21/21 passed. Scoped public UI pin shares same SHA; authenticated browser GET page+sessions HTTP200, direct QA session link shows pending permission. Exact OpenCode QA Notice card accepted/sent and UserIO confirmed Telegram message 3. Awaiting operator choice to prove answer→same native continuation. ZCode queue-to-final remains blocked by native startNow despite enqueue snapshot; no replay. Evidence installed-permission-card-c9e2ae4.md.",
+      "changes": {
+        "wait_reason": "Backend/UI and real QA card delivery accepted. Awaiting human click for native continuation. ZCode native queue-to-final remains unproven due enqueue→startNow admission mismatch; an upstream/native source-policy decision is needed."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T12:47:10+03:00",
+      "note": "2026-10-26: итоговая installed permission/Notice/UserIO QA приёмка пройдена без оператора на новой карточке id4. Остаток общего четырёх-harness PASS — ZCode native enqueue→startNow; см. L26 и evidence/installed-permission-card-c9e2ae4.md.",
+      "changes": {
+        "wait_reason": "OpenCode permission, Notice callback, UserIO button, public Herder UI and same-session command are accepted on installed runtimes. Four-harness full PASS remains blocked by ZCode native V4 enqueue→startNow admission mismatch; no queued item exists to resume. Native source-policy decision or upstream repair is required.",
+        "note": "Herder main/runtime c9e2ae4 build14/14+accept21/21; UI pinned same SHA and public browser path confirmed. Notice release3c5353b and narrow nginx callback1759560f installed; UID995 AI pause preserved. UserIO release92f98df installed; new QA card id4 clicked autonomously once; Notice completion sent attempts1, Herder resumed, same OpenCode session output HF26_USERIO_BUTTON_QA. ZCode queue-to-final remains blocked per L26. See evidence/installed-permission-card-c9e2ae4.md and zcode-queue-decisive-20261026.md."
       },
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex"

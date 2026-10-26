@@ -15,9 +15,9 @@
   "owner": "Delivery worker",
   "depends_on": [],
   "estimate_unknown_reason": "Native API для загруженной сессии подтверждён на уровне дизайна; состояние unloaded runtime и завершённая consumer приёмка пока неизвестны.",
-  "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: ZCode queue recovery до конечного native ответа. Исторические accepted/UNKNOWN не повторять.",
-  "wait_reason": "No final ZCode native answer is proven. A new isolated fixture could not be created because ZCode requires an exact registered project mapping for its CWD; do not retry or register as a convenience. Historical admitted queue input remains no-replay.",
-  "updated_at": "2026-10-26T05:02:12+03:00",
+  "note": "Installed canary on fresh fixture session_529567ea-c12d-457c-97df-846229bf96e4 did not meet acceptance. Native SessionStart/UserPromptSubmit hooks block on missing /tools/lhc_time_guard.py, leaving model_request_count=0. After official autoDrain=false setup, the correctly formed Herder requestedDelivery=queue canary was admitted as native startNow; post-readback inputRouting is startNow and queue is empty. See delivery-finish.md and exact receipts under .tmp/hf-delivery26/installed-readback/.",
+  "wait_reason": "Native ZCode V4 did not honor an exact enqueue admission even while the active tool was running. No queued item exists to resume. Installed API seam is exhausted; native source-policy decision or upstream repair is needed before queue-to-final acceptance.",
+  "updated_at": "2026-10-26T12:10:19+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T22:40:56+03:00",
@@ -60,6 +60,37 @@
         "wait_reason": "No final ZCode native answer is proven. A new isolated fixture could not be created because ZCode requires an exact registered project mapping for its CWD; do not retry or register as a convenience. Historical admitted queue input remains no-replay.",
         "note": "Exact current blocker: isolated ZCode session creation requires a registered project/CWD mapping. Existing historical native start ended with provider/network failure and retry, not final output."
       }
+    },
+    {
+      "at": "2026-10-26T10:20:31+03:00",
+      "note": "After install, created one distinct empty ZCode fixture in the exact registered project and read its native queue state. Draft+autoDrain=true+pending0 makes the explicit resume route unavailable; no send, toggle, or replay was attempted.",
+      "changes": {
+        "status": "running",
+        "note": "Installed queue capability check on new fixture session_529567ea-c12d-457c-97df-846229bf96e4 (registered herder project, exact host/cwd/default model): idle, nativeLoaded, zero human messages. session_queue_processing_get: revision0, nativeState=draft, autoDrain=true, pendingCount0, loaded=true, canResume=false, HumanStop=false. No message or resume action submitted. See delivery-finish.md and unused stable IDs in zcode-queue-intent.json.",
+        "wait_reason": "New isolated fixture creation succeeded, but its exact native queue state is draft, autoDrain=true, pendingCount=0, canResume=false. Installed Herder route only exposes guarded setAutoDrain(true) for completed phases; no safe pause-before-enqueue route exists. Do not send while autoDrain is true. Queue-to-final canary remains unsupported on this fresh session; old accepted/UNKNOWN inputs remain no-replay."
+      },
+      "session": "session_529567ea-c12d-457c-97df-846229bf96e4",
+      "harness": "zcode"
+    },
+    {
+      "at": "2026-10-26T10:47:00+03:00",
+      "note": "Read-only diagnostics found the seed's SessionStart/UserPromptSubmit hooks blocked by missing /tools/lhc_time_guard.py. Native V4 snapshot after queue canary reports inputRouting=startNow and exact persisted requested/admitted delivery=startNow; no queue item/resume exists. No replay or resume was issued.",
+      "changes": {
+        "status": "running",
+        "note": "Installed canary on fresh fixture session_529567ea-c12d-457c-97df-846229bf96e4 did not meet acceptance. Native SessionStart/UserPromptSubmit hooks block on missing /tools/lhc_time_guard.py, leaving model_request_count=0. After official autoDrain=false setup, the correctly formed Herder requestedDelivery=queue canary was admitted as native startNow; post-readback inputRouting is startNow and queue is empty. See delivery-finish.md and exact receipts under .tmp/hf-delivery26/installed-readback/.",
+        "wait_reason": "Queue-to-final acceptance remains unproven for two independently evidenced reasons: fresh-turn hooks block before model generation because /tools/lhc_time_guard.py is missing; native V4 routes this completedSuccess+empty-queue+autoDrain=false state as inputRouting.mode=startNow and persists requested/admitted delivery as startNow despite the correct Herder queue request. No pending item exists, so resume was not called. Both exact input IDs are no-replay. The exact pre-dispatch inputRouting snapshot was not captured, and installed package exposes the contract/snapshot but not the native implementation branch."
+      },
+      "session": "session_529567ea-c12d-457c-97df-846229bf96e4",
+      "harness": "zcode"
+    },
+    {
+      "at": "2026-10-26T12:10:19+03:00",
+      "note": "The selected ZCode native LHC loader was repaired through plugin manager: fresh ordinary GLM turn completed LHC_ZCODE_HOOK_MODEL_OK and SessionStart/UserPromptSubmit hooks succeeded. A decisive independent queue fixture captured native inputRouting=enqueue, autoDrain=false and Bash tool running before one requested queue input, but native persisted requested/admittedDelivery=startNow. Herder returned admitted=true,ok=false,nonRetryable=true. Native pending0/canResume=false; resume was not called. No accepted or UNKNOWN input replay. Evidence zcode-queue-decisive-20261026.md.",
+      "changes": {
+        "wait_reason": "Native ZCode V4 did not honor an exact enqueue admission even while the active tool was running. No queued item exists to resume. Installed API seam is exhausted; native source-policy decision or upstream repair is needed before queue-to-final acceptance."
+      },
+      "session": "unknown",
+      "harness": "codex"
     }
   ],
   "session": "unknown",

@@ -1,0 +1,19 @@
+# Backend installation — 2026-10-26 10:15 MSK
+
+The human explicitly authorized cancellation of the four discussed queued messages and immediate backend installation. Fresh readback found all four already completed with ok=true/admitted=true, and no active durable jobs. No cancellation or delivery replay was performed.
+
+Canonical installer ran once and returned zero. Installed immutable release: `683456df67b67c939b37ff9fab4fdf76c3f430df`. All 175 prior durable records were unchanged. Receipt: `.tmp/release-8187c75/routing-20261026/install-receipt.json`; install-started receipt prevents replay. Previous 16f73e1 is retained in rollback.
+
+Root ran accept-node with the exact source, entrypoint, owner host, working directory, store and peer44: **21/21 accepted**. Running PID2534220 came from the immutable683 release; service active; payload1710 files recomputed with zero mismatch; bundle fingerprint `3d48577947e5f32368cfa38501c3513c045ef05c1cd79a2bfcac774b837fffa5`; management APIs and MCP answered. Git ancestry independently confirms original requested8187c75 is included. Public frontend was already pinned to the same683 source.
+
+Actual connected MCP remote-target call to local mesh_deliver returned not_attempted, reason `remote_target_requires_mesh_route`, suggestedTool `mesh_route`. No remote message was sent. This independently proves the new installed refusal rather than merely its source test.
+
+Delivery worker independently read the existing MiniMax response URI twice, with no resend: completed, exact turn `turn_mvonxe4e_27y3pb`, correlation reply_to, exact `HF26_MCODE_AGENT_OK`, SHA256 `6fbd547ec372fe5f5416faac6e307fbeb8974d031d979647a690e720dce1d96c`. BaselineCoverage remains partial and is not relabelled complete. Receipt: `.tmp/hf-delivery26/installed-readback/mcode-response-receipt.json`.
+
+An actual post-install Mac session read returned `direct_native_listener_unavailable` in551ms. This is a new live Mac availability state hours after the earlier successful built-candidate read. Mac restoration is separately assigned; it is not counted as a successful post-install remote session read. Distinct ZCode queue and QA permission-card acceptance continue separately; backend installation itself is completed.
+
+Subsequent fresh Mac verification recovered without intervention: the Mac worker verified canonical reverse SSH, native hostname, listening18789 and running fleet-node LaunchAgent, and the installed exact MCP read succeeded. Root independently repeated the installed MCP read in5,554ms: host `MacBook-Pro-User.local`, native session `01a134e4-c26e-7ae0-900c-f9be106dbc98`, harness codex, historyUnavailable=false. No Mac service/controller restart or source/config change occurred. The earlier listener refusal remains recorded as a transient failure, not erased by the later success.
+
+Installed local RAG MCP exact mode returned one indexed hit for the task marker, timings exactMs=291,totalMs=291, with no semantic phase and explicit scope local-index/fleetComplete=false. Client call elapsed2,735ms. Installed host-scoped session_search for “Почасовая проверка” returned the exact requested Mac native session; Mac search elapsed153.68ms, client call4,423ms, partial=true and explicit source coverage. Partial index coverage is preserved and is not a claim of fleet completeness or absence of other sessions.
+
+Root also opened the public UI after backend installation in isolated QA SSO browser `hfa26/a26`. Actual public header source683 matched the installed backend; `/api/sessions?quick=1` returnedHTTP200 with the exact local host for the current task; rootChildren1, composer and voice control present, zero unconfirmed-machine sidebar labels. Screenshot `/tmp/hfa26-backend683-public.png` was captured and inspected. No send/control action occurred; the owned browser session was closed after inspection.

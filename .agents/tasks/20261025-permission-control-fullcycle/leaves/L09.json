@@ -1,7 +1,7 @@
 {
   "id": "L09",
   "label": "Проверить живой путь OpenCode",
-  "status": "queued",
+  "status": "done",
   "description": "Повторить полный потребительский сценарий на существующей разрешённой OpenCode fixture без подмены провайдера или модели.",
   "acceptance": "Подтверждены режим, карточка, точная привязка ответа и отсутствие повторного выполнения; отдельно проверен отказ.",
   "affected_files": [
@@ -13,7 +13,7 @@
     "minimum": 10,
     "maximum": 20
   },
-  "updated_at": "2026-10-26T04:14:15+03:00",
+  "updated_at": "2026-10-26T12:46:58+03:00",
   "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной OpenCode fixture.",
   "wait_reason": "",
   "progress_events": [
@@ -55,9 +55,30 @@
       },
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T12:10:09+03:00",
+      "note": "Installed c9e2ae4 OpenCode QA session has a genuine native pending shell permission per_17773a4d0001xC2jgEVvOjMHAB. Herder automatically created Human Request 7d8bf5b8-e85b-4b19-b595-47921e142d37; Notice returned HTTP201/sent and UserIO readback found Telegram QA chat message 3 with exact native session link and command. Awaiting the human's Allow/Deny click and exact native continuation. Earlier diagnostic manual request was undelivered/cancelled, not replayed. Evidence installed-permission-card-c9e2ae4.md.",
+      "changes": {
+        "status": "running",
+        "wait_reason": "The real QA permission card is delivered. Awaiting the operator's choice in qa deusexcode; then verify same native request reply and turn continuation without replay."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T12:46:58+03:00",
+      "note": "2026-10-26: подтверждён реальный безучастный QA путь: UserIO button_click на новой карточке id4, Notice response allow и completion sent за одну попытку, Herder resumed exact native permission, та же сессия OpenCode вывела HF26_USERIO_BUTTON_QA. Старую карточку id3 не повторяли. Evidence installed-permission-card-c9e2ae4.md.",
+      "changes": {
+        "status": "done",
+        "wait_reason": "",
+        "note": "Installed Herder c9e2ae4; fresh QA card f9bf2764-2403-4fe6-a8c6-8c4da4282c8f clicked once by UserIO action_79746085a3c5d09baa81ad43344eb4700801251528d8b42263f327b43c43f372, Notice completion sent attempts1, Herder permission-reply:allow, same OpenCode session printed HF26_USERIO_BUTTON_QA. No human step or replay. Evidence installed-permission-card-c9e2ae4.md."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
     }
   ],
-  "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: OpenCode permission consumer proof. Исторические accepted/UNKNOWN не повторять.",
+  "note": "Installed Herder c9e2ae4; fresh QA card f9bf2764-2403-4fe6-a8c6-8c4da4282c8f clicked once by UserIO action_79746085a3c5d09baa81ad43344eb4700801251528d8b42263f327b43c43f372, Notice completion sent attempts1, Herder permission-reply:allow, same OpenCode session printed HF26_USERIO_BUTTON_QA. No human step or replay. Evidence installed-permission-card-c9e2ae4.md.",
   "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
   "harness": "codex"
 }
