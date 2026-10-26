@@ -2303,6 +2303,15 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   async sendMessage(id: string, options: SendMessageOptions & {workspaceCrashBoundary?:WorkspaceCrash}): Promise<SendMessageResult> {
+    // The installed V4 writer can turn a requested queue admission into
+    // startNow even after its read-only inputRouting says enqueue. A durable
+    // user "After response" command must fail before any native write until
+    // ZCode exposes an atomic deferred-only admission contract.
+    if (options.queue && options.durableUserDelivery?.mode === "queue") {
+      return { ok: false, admitted: false, notSubmitted: true, nonRetryable: true,
+        ...(options.inputId ? { inputId: options.inputId } : {}),
+        error: "ZCode не подтверждает отложенную очередь: команда «После ответа» не отправлена, чтобы не запустить её сразу." };
+    }
     if (options.steer || options.queue || options.images?.length) return normalizeSendAdmission(await this.sendConversationInput(id, options));
     const origin = options.origin === "human" ? "human" : "automation";
     const send = async (): Promise<{

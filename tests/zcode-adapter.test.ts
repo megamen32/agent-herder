@@ -2142,6 +2142,26 @@ describe("ZCode adapter", () => {
 
   // Native command admission fast unit: expected2s/max20s. Detects obsolete
   // sendPrompt/timer fallback, mode mismatch, missing/lost receipt and preflight bypass.
+  it("refuses durable After response before ZCode can start a native turn", async () => {
+    const client = new FakeClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    try {
+      await adapter.init();
+      const callsBefore = client.calls.length;
+      const result = await adapter.sendMessage("session-1", {
+        message: "must remain deferred", queue: true, origin: "human", inputId: "ui-deferred-1",
+        durableUserDelivery: {
+          jobId: "job-ui-deferred-1", inputId: "ui-deferred-1", requestFingerprint: "fixture",
+          harness: "zcode", sessionId: "session-1", mode: "queue", actor: { kind: "human" },
+          nonce: "fixture", signature: "fixture",
+        },
+      });
+      expect(result).toMatchObject({ ok: false, admitted: false, notSubmitted: true,
+        nonRetryable: true, inputId: "ui-deferred-1", error: expect.stringContaining("не отправлена") });
+      expect(client.calls).toHaveLength(callsBefore);
+    } finally { await adapter.dispose(); }
+  });
+
   it("queues into the existing native turn without completion wait or legacy replay", async () => {
     vi.useFakeTimers();
     const client = new FakeClient(); const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
