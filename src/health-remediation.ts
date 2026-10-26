@@ -97,6 +97,9 @@ export function normalizeHealthExecution(value: unknown): HealthExecutionProfile
   if (profile.runtime !== "zcode" && profile.runtime !== "hermes" && profile.runtime !== "fast-agent" && profile.runtime !== "opencode") {
     throw new Error("health execution runtime must be opencode, zcode, hermes, or fast-agent");
   }
+  if (profile.runtime === "opencode" && profile.provider === "minimax-coding-plan") {
+    return normalizeIncidentExecution(profile);
+  }
   const canonical = CANONICAL_PROFILES[profile.runtime];
   for (const field of ["provider", "reasoning", "topic"] as const) {
     if (profile[field] !== canonical[field]) {
