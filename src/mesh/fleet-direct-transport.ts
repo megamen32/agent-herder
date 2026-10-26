@@ -57,14 +57,19 @@ const peerFailure=(stderr:string):string=>{
  if(/ssh: connect to host .*Connection refused/.test(stderr))return 'direct_ssh_refused';
  if(/Connection timed out|Operation timed out/.test(stderr))return 'direct_ssh_connect_timeout';
  if(/ConnectionRefusedError|URLError.*Connection refused/.test(stderr))return 'direct_native_listener_unavailable';
+ if(/TimeoutError: direct_deadline|RuntimeError: direct_deadline/.test(stderr))return 'direct_deadline';
  return 'direct_peer_unavailable';
 };
+const macSessionReadTimeoutMs=20_000;
+const macSessionReadTools=new Set(['fleet_node_info','fleet_session_view']);
 const bridge=String.raw`import sys,json,socket,pwd,os,time,urllib.request,urllib.parse,urllib.error,uuid,signal
 body=sys.stdin.buffer.read(16385)
 if len(body)>16384:raise RuntimeError('request_limit')
 r=json.loads(body)
 if socket.gethostname()!=r['hostId'] or pwd.getpwuid(os.getuid()).pw_name!=r['nativeUser']:raise RuntimeError('native_owner_identity_mismatch')
 deadline=time.monotonic()+r['timeoutMs']/1000
+def deadline_expired(signum,frame):raise TimeoutError('direct_deadline')
+signal.signal(signal.SIGALRM,deadline_expired)
 signal.setitimer(signal.ITIMER_REAL,r['timeoutMs']/1000)
 class NoRedirect(urllib.request.HTTPRedirectHandler):
  def redirect_request(self,*args,**kwargs):return None
@@ -196,6 +201,12 @@ export class FleetDirectTransport implements GptAdminTransport {
  constructor(private readonly peers:readonly DirectPeer[]=fleetPeers(),private readonly deadlineMs=10000){
   if(!peers.length||peers.length>5||new Set(peers.map(p=>p.hostId)).size!==peers.length)throw new Error('direct_peer_limit');
  }
+ private readDeadline(peer:DirectPeer,operation:'schema'|'probe'|'session'|'tool',tool?:string):number{
+  const macRead=peer.hostId==='MacBook-Pro-User.local'&&(
+   operation==='schema'||operation==='probe'||operation==='session'||(operation==='tool'&&macSessionReadTools.has(tool??''))
+  );
+  return macRead?Math.max(this.deadlineMs,macSessionReadTimeoutMs):this.deadlineMs;
+ }
  async discover():Promise<unknown>{return {servers:this.peers.flatMap(p=>[{server_id:`shell:${p.hostId}`,kind:'virtual_shell',status:'configured'},{server_id:`mcp:shell:${p.hostId}:AgentHerder`,kind:'child_mcp',status:'configured'}])};}
  private peer(target:string){const p=this.peers.find(p=>target===`mcp:shell:${p.hostId}:AgentHerder`);if(!p)throw new Error('direct_target_not_authorized');return p;}
  private rpc(peer:DirectPeer,method:string,params:Record<string,unknown>,timeoutMs:number):Promise<unknown>{
@@ -209,17 +220,19 @@ export class FleetDirectTransport implements GptAdminTransport {
    const timer=setTimeout(()=>{failure=new Error('direct_deadline');child.kill('SIGKILL');},timeoutMs+500);
    child.stdout.on('data',(data:Buffer)=>{size+=data.length;if(size>1048576){failure=new Error('direct_response_limit');child.kill('SIGKILL');}else chunks.push(data);});
    child.stderr.on('data',(data:Buffer)=>{if(stderr.length<8192)stderr+=data.toString('utf8').slice(0,8192-stderr.length);});child.stdin.on('error',()=>{});child.on('error',()=>{clearTimeout(timer);reject(new Error('direct_peer_unavailable'));});
-   child.on('close',code=>{clearTimeout(timer);if(failure||code!==0)return reject(failure??new Error(peerFailure(stderr)));try{resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));}catch{reject(new Error('direct_response_invalid'));}});
+   child.on('close',(code,signal)=>{clearTimeout(timer);if(failure||code!==0)return reject(failure??new Error(signal==='SIGALRM'?'direct_deadline':peerFailure(stderr)));try{resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));}catch{reject(new Error('direct_response_invalid'));}});
    child.stdin.end(request);
   });
  }
  /** Ask a node whether it runs a herder runtime, and whether it has the owner lever tool. */
  async probeRuntime(target:string):Promise<{hasRuntime:boolean;hasDisarmTool?:boolean;reason?:string;tools?:string[]}>{
-  return this.rpc(this.peer(target),'herder_runtime_probe',{},this.deadlineMs) as Promise<{hasRuntime:boolean;hasDisarmTool?:boolean;reason?:string;tools?:string[]}>;
+  const peer=this.peer(target);
+  return this.rpc(peer,'herder_runtime_probe',{},this.readDeadline(peer,'probe')) as Promise<{hasRuntime:boolean;hasDisarmTool?:boolean;reason?:string;tools?:string[]}>;
  }
  readSession(target:string,harness:string,sessionId:string):Promise<unknown>{
   if(!['codex','zcode','opencode','minimax-code'].includes(harness)||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))throw new Error('direct_session_invalid');
-  return this.rpc(this.peer(target),'session/read',{harness,sessionId},this.deadlineMs);
+  const peer=this.peer(target);
+  return this.rpc(peer,'session/read',{harness,sessionId},this.readDeadline(peer,'session'));
  }
  /** Read one exact response resource from the native owner MCP; never use caller-local jobs for a remote binding. */
  async readDeliveryResponseResource(target:string,binding:DeliveryResponseResourceBinding):Promise<unknown>{
@@ -232,7 +245,7 @@ export class FleetDirectTransport implements GptAdminTransport {
   return await this.rpc(peer,'resources/read',{uri},Math.max(this.deadlineMs,30_000));
  }
  readSessionPage(target:string,cursor?:string,limit=100):Promise<unknown>{return this.call(target,'fleet_session_page',{limit,...(cursor?{cursor}:{})});}
- schema(target:string):Promise<unknown>{return this.rpc(this.peer(target),'tools/list',{},this.deadlineMs);}
+ schema(target:string):Promise<unknown>{const peer=this.peer(target);return this.rpc(peer,'tools/list',{},this.readDeadline(peer,'schema'));}
  async call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
   if(!['list_active_sessions_local','model_quotas','fleet_node_info','mesh_snapshot','create_session','fleet_session_page','fleet_session_view','session_search_local','list_agents','send_message','mesh_deliver','mesh_stop','mesh_rename_session','workspace_probe','workspace_reserve','workspace_owners','automation_disarm','common_settings_read','common_settings_status','common_settings_notice','common_settings_opt_in','common_settings_restore','session_queue_processing_get','session_queue_processing_resume','job_get'].includes(tool))throw new Error('direct_tool_not_authorized');
   if(tool==='mesh_deliver' && (args.sender as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
@@ -266,6 +279,7 @@ export class FleetDirectTransport implements GptAdminTransport {
    if(!idempotencyKey||!/^[a-f0-9]{64}$/.test(idempotencyKey))throw new Error('direct_create_identity_missing');
    return this.rpc(peer,'tools/call',{name:'fleet_create_session',arguments:{...args,inputId:idempotencyKey}},30000);
   }
-  return this.rpc(peer,'tools/call',{name:tool,arguments:args},tool==='mesh_snapshot'?Math.max(this.deadlineMs,meshDiscoveryTimeoutMs()+5000):this.deadlineMs);
+  const readDeadline=this.readDeadline(peer,'tool',tool);
+  return this.rpc(peer,'tools/call',{name:tool,arguments:args},tool==='mesh_snapshot'?Math.max(this.deadlineMs,meshDiscoveryTimeoutMs()+5000):readDeadline);
  }
 }

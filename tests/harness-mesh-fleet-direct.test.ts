@@ -4,13 +4,13 @@ import {EventEmitter} from 'node:events';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import type {IncomingMessage} from 'node:http';
-const state=vi.hoisted(()=>({home:'',spawns:[] as any[],reply:{tools:[]},mode:'ok',auth:false,host:'server-44',stderr:''}));
+const state=vi.hoisted(()=>({home:'',spawns:[] as any[],reply:{tools:[]},mode:'ok',auth:false,host:'server-44',stderr:'',exitCode:255,exitSignal:undefined as string|undefined}));
 vi.mock('../src/web/fleet-owner-auth.js',()=>({verifyFleetOwnerCookie:vi.fn(async()=>state.auth)}));
 vi.mock('node:os',()=>({hostname:()=> state.host,userInfo:()=>({username:'roomhacker'}),homedir:()=>state.home,platform:()=> 'linux'}));
 vi.mock('node:child_process',()=>({spawn:(bin:string,args:string[])=>{
  const child=new EventEmitter() as any;
- child.stdout=new EventEmitter();child.stderr=new EventEmitter();child.kill=vi.fn(()=>queueMicrotask(()=>child.emit('close',137)));
- child.stdin=new EventEmitter();child.stdin.end=(body:string)=>{const parsed=JSON.parse(body);state.spawns.push({bin,args,body:parsed,child});queueMicrotask(()=>{if(state.mode==='exit'){child.stderr.emit('data',Buffer.from(state.stderr));return child.emit('close',255);}if(state.mode==='huge')child.stdout.emit('data',Buffer.alloc(1048577));else child.stdout.emit('data',Buffer.from(JSON.stringify(parsed.params?.name==='model_quotas'?{structuredContent:{checkedAt:new Date().toISOString(),providers:[{provider:'codex',state:'reported',checkedAt:new Date().toISOString(),details:{primary_used:10,secondary_used:10,allowed:true,limit_reached:false}}]}}:state.reply)));child.emit('close',0);});};
+ child.stdout=new EventEmitter();child.stderr=new EventEmitter();child.kill=vi.fn(()=>queueMicrotask(()=>child.emit('close',137,'SIGKILL')));
+ child.stdin=new EventEmitter();child.stdin.end=(body:string)=>{const parsed=JSON.parse(body);state.spawns.push({bin,args,body:parsed,child});queueMicrotask(()=>{if(state.mode==='exit'){state.stderr&&child.stderr.emit('data',Buffer.from(state.stderr));return child.emit('close',state.exitCode,state.exitSignal);}if(state.mode==='huge')child.stdout.emit('data',Buffer.alloc(1048577));else child.stdout.emit('data',Buffer.from(JSON.stringify(parsed.params?.name==='model_quotas'?{structuredContent:{checkedAt:new Date().toISOString(),providers:[{provider:'codex',state:'reported',checkedAt:new Date().toISOString(),details:{primary_used:10,secondary_used:10,allowed:true,limit_reached:false}}]}}:state.reply)));child.emit('close',0);});};
  return child;
 }}));
 import {FleetDirectTransport} from '../src/mesh/fleet-direct-transport.js';
@@ -22,7 +22,7 @@ const peer={hostId:'roomhacker-server-88',sshHost:'192.168.2.75',nativeUser:'roo
 const macPeer={hostId:'MacBook-Pro-User.local',sshHost:'127.0.0.1',sshPort:2222,nativeUser:'user',port:18789,python:'/opt/homebrew/bin/python3'};
 // An empty state dir means the default quota policy: enabled, reserve 20%.
 const POLICY_DIR='/tmp/herder-quota-policy-none';
-beforeEach(async()=>{const {tmpdir}=await vi.importActual<typeof import('node:os')>('node:os');state.home=await mkdtemp(join(tmpdir(),'direct-'));state.spawns=[];state.reply={tools:[]};state.mode='ok';state.auth=false;state.host='server-44';state.stderr='';vi.stubEnv('AGENT_HERDER_AUTOPILOT_STATE_DIR',POLICY_DIR);});
+beforeEach(async()=>{const {tmpdir}=await vi.importActual<typeof import('node:os')>('node:os');state.home=await mkdtemp(join(tmpdir(),'direct-'));state.spawns=[];state.reply={tools:[]};state.mode='ok';state.auth=false;state.host='server-44';state.stderr='';state.exitCode=255;state.exitSignal=undefined;vi.stubEnv('AGENT_HERDER_AUTOPILOT_STATE_DIR',POLICY_DIR);});
 afterEach(async()=>{await rm(state.home,{recursive:true,force:true});vi.useRealTimers();vi.unstubAllEnvs();});
 describe('owner direct route local logic only',()=>{
  it('keeps personal Mac in native discovery while workspace mutation scope stays separate',()=>{
@@ -89,6 +89,28 @@ describe('owner direct route local logic only',()=>{
   await expect(t.call('mcp:shell:MacBook-Pro-User.local:AgentHerder','shell_exec',{})).rejects.toThrow('direct_tool_not_authorized');
   expect(state.spawns).toHaveLength(1);
  });
+ it('uses a bounded twenty-second read deadline only for Mac native session reads and their identity/schema preflight',async()=>{
+  const target='mcp:shell:MacBook-Pro-User.local:AgentHerder';const t=new FleetDirectTransport([macPeer]);
+  await t.schema(target);
+  await t.call(target,'fleet_node_info',{});
+  await t.call(target,'fleet_session_view',{harness:'codex',sessionId:'native-exact'});
+  await t.readSession(target,'codex','native-exact');
+  expect(state.spawns.map(s=>s.body.timeoutMs)).toEqual([20000,20000,20000,20000]);
+  const other=new FleetDirectTransport([peer]);
+  await other.call('mcp:shell:roomhacker-server-88:AgentHerder','fleet_session_view',{harness:'codex',sessionId:'native-exact'});
+  await other.readSession('mcp:shell:roomhacker-server-88:AgentHerder','codex','native-exact');
+  expect(state.spawns.slice(4).map(s=>s.body.timeoutMs)).toEqual([10000,10000]);
+ });
+ it('does not reduce an explicitly configured longer Mac read deadline',async()=>{
+  const t=new FleetDirectTransport([macPeer],35000);
+  await t.readSession('mcp:shell:MacBook-Pro-User.local:AgentHerder','codex','native-exact');
+  expect(state.spawns[0].body.timeoutMs).toBe(35000);
+ });
+ it('reports the bounded Python SIGALRM deadline with a stable diagnostic',async()=>{
+  state.mode='exit';state.stderr='';state.exitSignal='SIGALRM';
+  await expect(new FleetDirectTransport([macPeer]).call('mcp:shell:MacBook-Pro-User.local:AgentHerder','fleet_session_view',{harness:'codex',sessionId:'native-exact'})).rejects.toThrow('direct_deadline');
+  expect(state.spawns).toHaveLength(1);
+ });
  it('mutation requires exact durable receiver intent and never forwards retryable raw create_session',async()=>{
   const t=new FleetDirectTransport([peer]);await expect(t.call('mcp:shell:roomhacker-server-88:AgentHerder','create_session',{})).rejects.toThrow('direct_create_identity');
   await t.call('mcp:shell:roomhacker-server-88:AgentHerder','create_session',{harness:'codex',name:'empty',cwd:'/home/roomhacker'},'a'.repeat(64));
@@ -106,6 +128,7 @@ describe('owner direct route local logic only',()=>{
   ['ssh: connect to host 127.0.0.1 port 2222: Operation timed out','direct_ssh_connect_timeout'],
   ['Host key verification failed.','direct_ssh_host_key_unverified'],
   ['urllib.error.URLError: <urlopen error [Errno 61] Connection refused>','direct_native_listener_unavailable'],
+  ['TimeoutError: direct_deadline','direct_deadline'],
   ['RuntimeError: native_owner_identity_mismatch','native_owner_identity_mismatch'],
   ['private opaque provider details','direct_peer_unavailable'],
  ])('classifies %s without exposing stderr',async(stderr,reason)=>{
