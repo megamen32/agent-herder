@@ -12,6 +12,7 @@ import {
   validateDeliveryResponseBaseline,
   visibleHistoryText,
   waitForDeliveryResponse,
+  nativeDeliveryResponseComplete,
   type DeliveryResponseBaseline,
   type DeliveryResponseHistory,
   type DeliveryResponseTarget,
@@ -52,6 +53,26 @@ afterAll(() => {
 });
 
 describe("session delivery response observer", () => {
+  it("uses an exact native completed turn to finish an empty response without a resend", async () => {
+    const job = completedJob("job-a", "turn-a");
+    const session = { ...target(), id: "session-a", status: "idle", needsPermission: false,
+      meta: { nativeLastTurn: { turnId: "turn-a", status: "completed", completedAt: "2026-10-25T00:00:01Z" } } };
+    const baseline = await captureDeliveryResponseBaseline({
+      jobId: "job-a", inputId: "input-a", target: target(),
+      readMessages: async () => ({ messages: [message("user-old", "user", "old prompt")], complete: true }),
+    });
+    const result = await waitForDeliveryResponse({
+      jobId: "job-a", inputId: "input-a", target: target(), baseline,
+      readJob: () => job, waitMs: 0,
+      readHistory: async () => ({ messages: [message("user-old", "user", "old prompt"), message("empty", "assistant", "", "turn-a")],
+        turnComplete: nativeDeliveryResponseComplete(session as any, job) }),
+    });
+    expect(result).toMatchObject({ status: "completed", reason: "no_visible_response", text: "" });
+    expect(nativeDeliveryResponseComplete({ ...session, meta: { nativeLastTurn: { ...session.meta.nativeLastTurn, turnId: "other-turn" } } } as any, job)).toBe(false);
+    expect(nativeDeliveryResponseComplete({ ...session, status: "running" } as any, job)).toBe(false);
+    expect(nativeDeliveryResponseComplete({ ...session, meta: {} } as any, job)).toBe(false);
+    expect(nativeDeliveryResponseComplete(session as any, completedJob("job-a"))).toBe(false);
+  });
   it.each([
     ["codex", { id: "c-assistant", role: "assistant", text: "visible Codex answer", parts: [{ type: "text", text: "visible Codex answer" }] }],
     ["zcode", { id: "z-assistant", role: "assistant", text: "private reasoning\nvisible ZCode answer", parts: [{ type: "thinking", text: "private reasoning" }, { type: "text", text: "visible ZCode answer" }] }],

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { compactAutomaticMessage, readLongMessage } from "./long-messages.js";
 import type { HerderJob } from "./herder-jobs.js";
-import type { HarnessType, SendMessageResult, SessionMessageView } from "./types/index.js";
+import type { AgentSession, HarnessType, SendMessageResult, SessionMessageView } from "./types/index.js";
 
 export const DELIVERY_RESPONSE_MAX_WAIT_MS = 30_000;
 export const DELIVERY_RESPONSE_MAX_TEXT_CHARS = 8_000;
@@ -91,6 +91,19 @@ export type DeliveryResponseSnapshotReader = (
 
 export type DeliveryResponseJobReader = (jobId: string, signal?: AbortSignal) => HerderJob<SendMessageResult> | null | Promise<HerderJob<SendMessageResult> | null>;
 export type DeliveryResponseBaselineReader = (jobId: string) => DeliveryResponseBaseline | null | Promise<DeliveryResponseBaseline | null>;
+
+/** Admission and idle alone do not prove completion of the delivered input. */
+export function nativeDeliveryResponseComplete(
+  session: Pick<AgentSession, "id" | "status" | "needsPermission" | "meta">,
+  job: HerderJob<SendMessageResult> | null,
+): boolean {
+  if (!job || job.state !== "completed" || !job.result?.ok || job.result.admissionUnknown
+    || job.ownerSessionId !== session.id || session.status !== "idle" || session.needsPermission) return false;
+  const turnId = job.result.turnId;
+  const native = session.meta?.nativeLastTurn as { turnId?: unknown; status?: unknown } | undefined;
+  return typeof turnId === "string" && turnId.length > 0
+    && native?.turnId === turnId && native.status === "completed";
+}
 
 const sha256 = (value: string): string => createHash("sha256").update(value, "utf8").digest("hex");
 const emptyTextSha256 = sha256("");

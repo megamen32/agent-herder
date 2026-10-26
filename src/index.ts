@@ -17,7 +17,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
 
-import { HarnessAdapter } from "./types/index.js";
+import { HarnessAdapter, type SendMessageResult } from "./types/index.js";
 import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter, ChatGptAdapter, MinimaxCodeAdapter } from "./adapters/index.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
@@ -90,7 +90,7 @@ import { registerRagTools } from "./mcp/rag-tools.js";
 import { registerActiveSessionTools } from "./mcp/active-session-tools.js";
 import { registerSessionWorkspaceTools } from "./session-workspaces-tools.js";
 import { registerSessionSearchTools } from "./mcp/session-search-tools.js";
-import { waitForDeliveryResponse, type DeliveryResponseTarget } from "./session-delivery-response.js";
+import { nativeDeliveryResponseComplete, waitForDeliveryResponse, type DeliveryResponseTarget } from "./session-delivery-response.js";
 import { loadCdpChatDriver } from "./cdp-chat-mcp.js";
 import type { CdpChatCapabilities, CdpChatDriver } from "./cdp-chat.js";
 import { ALL_CDP_CHAT_CAPABILITIES, CdpChatClient } from "./cdp-chat.js";
@@ -799,7 +799,11 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
         if (!fresh || fresh.id !== requested.sessionId || fresh.harness !== requested.harness || fresh.hostId !== requested.hostId) {
           return { messages: null };
         }
-        return { messages: await adapter.getSessionMessages!(requested.sessionId, limit), complete: false };
+        const messages = await adapter.getSessionMessages!(requested.sessionId, limit);
+        const afterHistory = await adapter.getSession(requested.sessionId);
+        if (!afterHistory || afterHistory.id !== requested.sessionId || afterHistory.harness !== requested.harness || afterHistory.hostId !== requested.hostId) return { messages: null };
+        const latestJob = jobs.get<SendMessageResult>(binding.jobId);
+        return { messages, complete: false, turnComplete: nativeDeliveryResponseComplete(fresh, latestJob) && nativeDeliveryResponseComplete(afterHistory, latestJob) };
       },
       waitMs: 0,
       recordResponseReceipt: (jobId, receipt) => jobs.recordDeliveryResponseReceipt(jobId, receipt),

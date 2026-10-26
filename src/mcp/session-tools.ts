@@ -7,7 +7,7 @@ import { sessionIdentity } from "../session-identity.js";
 import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import { UserMessageDelivery } from "../user-message-delivery.js";
-import { waitForDeliveryResponse, type DeliveryResponseBaseline, type DeliveryResponseResult, type DeliveryResponseTarget } from "../session-delivery-response.js";
+import { nativeDeliveryResponseComplete, waitForDeliveryResponse, type DeliveryResponseBaseline, type DeliveryResponseResult, type DeliveryResponseTarget } from "../session-delivery-response.js";
 import type { SendMessageResult } from "../types/index.js";
 import { trustedMeshIngressFromMcpAuthInfo } from "../mesh/authenticated-ingress.js";
 import {
@@ -150,7 +150,11 @@ export function registerSessionTools(server: McpServer, deps: {
         if (!adapter.getSessionMessages) return { messages: null };
         const current = await adapter.getSession(requested.sessionId);
         if (!current || current.id !== requested.sessionId || current.harness !== requested.harness || current.hostId !== requested.hostId) return { messages: null };
-        return { messages: await adapter.getSessionMessages(requested.sessionId, limit), complete: false };
+        const messages = await adapter.getSessionMessages(requested.sessionId, limit);
+        const fresh = await adapter.getSession(requested.sessionId);
+        if (!fresh || fresh.id !== requested.sessionId || fresh.harness !== requested.harness || fresh.hostId !== requested.hostId) return { messages: null };
+        const latestJob = jobs.get<SendMessageResult>(job.id);
+        return { messages, complete: false, turnComplete: nativeDeliveryResponseComplete(current, latestJob) && nativeDeliveryResponseComplete(fresh, latestJob) };
       },
       recordResponseReceipt: (id, value) => jobs.recordDeliveryResponseReceipt(id, value),
       waitMs: Math.max(0, deadline - Date.now()),

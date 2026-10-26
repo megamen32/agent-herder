@@ -26,7 +26,7 @@ describe("MCP send response join", () => {
     expect(new HerderJobRegistry(events, { persistencePath: join(root, "jobs.json") }).supportsDurableOnce()).toBe(true);
   });
 
-  it("sends once, returns only new visible assistant text and a stable read-only fetch URI", async () => {
+  it.each([false, true])("sends once and observes the native response (empty=%s)", async (empty) => {
     root = await mkdtemp(join(tmpdir(), "herder-mcp-response-"));
     const target: AgentSession = {
       id: "target-response", harness: "codex", hostId: "host-a", status: "running",
@@ -42,7 +42,12 @@ describe("MCP send response join", () => {
       async sendActiveMessage(id) {
         expect(id).toBe(target.id);
         sends++;
-        messages.push({ id: "new-assistant", role: "assistant", text: "new visible answer", parts: [{ type: "text", text: "new visible answer" }] });
+        const text = empty ? "" : "new visible answer";
+        messages.push({ id: "new-assistant", role: "assistant", text, parts: [{ type: "text", text }] });
+        if (empty) {
+          target.status = "idle";
+          target.meta = { nativeLastTurn: { turnId: "turn-1", status: "completed" } };
+        }
         return { ok: true, admitted: true, inputId: "sync-response-1", turnId: "turn-1" };
       },
       async sendMessage(id, options) { return this.sendActiveMessage!(id, options); },
@@ -67,9 +72,10 @@ describe("MCP send response join", () => {
     const payload = JSON.parse(first.content[0]?.text ?? "{}");
     expect(sends).toBe(1);
     expect(payload.response).toMatchObject({
-      status: "partial", text: "new visible answer", jobRef: expect.stringMatching(/^herder:\/\/jobs\/job_/),
+      status: empty ? "completed" : "partial", text: empty ? "" : "new visible answer", jobRef: expect.stringMatching(/^herder:\/\/jobs\/job_/),
       responseFetchUri: expect.stringMatching(/^herder:\/\/delivery-responses\/host-a\/codex\/target-response\/job_/),
     });
+    if (empty) expect(payload.response.reason).toBe("no_visible_response");
 
     const second = await call();
     expect(second.content[0]?.text).toContain("Message sent to");
