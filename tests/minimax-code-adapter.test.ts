@@ -747,4 +747,68 @@ describe("MinimaxCodeAdapter with the published desktop transport", () => {
     expect(sessions[0]?.status).toBe("idle");
     expect(sessions[0]?.meta?.liveStatus).toBe("unknown");
   });
+
+  it("публикует nativeLastTurn только при согласованном успешном terminal proof", async () => {
+    const root = await store();
+    const id = "mvs_0000000000000000000000000000c006";
+    const turnId = "turn-terminal-proof";
+    await writeSession(root, id);
+    const runtimeDb = join(root, "runtime-state.sqlite");
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(runtimeDb);
+    db.exec(`create table local_runtime_sessions(session_id text primary key,runtime text,status text,archived integer);
+      create table local_runtime_turn_ingress(turn_id text,session_id text,status text,completed_at_ms integer,accepted_at_ms integer,accepted_sequence integer);
+      create table local_runtime_session_agent_state(session_id text,turn_id text,turn_sequence integer,terminal_outcome text,updated_at_ms integer);
+      create table local_runtime_message_rows(id integer primary key,session_id text,role text,turn_id text,created_at_ms integer,data_json text);
+      create table local_runtime_session_locks(session_id text,owner_id text,owner_kind text,expires_at_ms integer);`);
+    const completedAt = Date.now() - 100;
+    db.prepare("insert into local_runtime_sessions values(?,?,?,0)").run(id, "pi-agent", "idle");
+    db.prepare("insert into local_runtime_turn_ingress values(?,?,?,?,?,?)").run(turnId, id, "completed", completedAt, completedAt - 1000, 1);
+    db.prepare("insert into local_runtime_session_agent_state values(?,?,?,?,?)").run(id, turnId, 1, "completed", completedAt);
+    db.prepare("insert into local_runtime_message_rows values(?,?,?,?,?,?)").run(1, id, "user", turnId, completedAt - 500, JSON.stringify({ msg_id: "input", turn_id: turnId, role: "user", msg_content: "benign fixture" }));
+    db.prepare("insert into local_runtime_message_rows values(?,?,?,?,?,?)").run(2, id, "assistant", turnId, completedAt - 10, JSON.stringify({ msg_id: "answer", turn_id: turnId, role: "assistant", msg_content: "ok", finish_reason: "stop" }));
+    const adapter = new MinimaxCodeAdapter({ sessionStore: root, runtimeDb });
+
+    expect((await adapter.getSession(id))?.meta?.nativeLastTurn).toEqual({
+      turnId,
+      status: "completed",
+      completedAt: new Date(completedAt).toISOString(),
+      source: "native_runtime_terminal_turn",
+    });
+
+    // Any later admitted ingress, even before a response exists, invalidates
+    // the previous terminal proof and must also invalidate the session cache.
+    db.prepare("insert into local_runtime_turn_ingress values(?,?,?,?,?,?)").run("turn-later", id, "accepted", null, Date.now(), 2);
+    expect((await adapter.getSession(id))?.meta?.nativeLastTurn).toBeUndefined();
+    db.close();
+  });
+
+  it.each([
+    ["interrupted ingress", "interrupted", "interrupted", "stop"],
+    ["nonterminal agent state", "completed", null, "stop"],
+    ["assistant did not stop", "completed", "completed", "length"],
+  ])("fails closed when %s", async (_label, ingressStatus, terminalOutcome, finishReason) => {
+    const root = await store();
+    const id = "mvs_0000000000000000000000000000c007";
+    const turnId = "turn-unproven";
+    await writeSession(root, id);
+    const runtimeDb = join(root, "runtime-state.sqlite");
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(runtimeDb);
+    db.exec(`create table local_runtime_sessions(session_id text,runtime text,status text,archived integer);
+      create table local_runtime_turn_ingress(turn_id text,session_id text,status text,completed_at_ms integer,accepted_at_ms integer,accepted_sequence integer);
+      create table local_runtime_session_agent_state(session_id text,turn_id text,turn_sequence integer,terminal_outcome text,updated_at_ms integer);
+      create table local_runtime_message_rows(id integer primary key,session_id text,role text,turn_id text,created_at_ms integer,data_json text);
+      create table local_runtime_session_locks(session_id text,owner_id text,owner_kind text,expires_at_ms integer);`);
+    const now = Date.now();
+    db.prepare("insert into local_runtime_sessions values(?,?,?,0)").run(id, "pi-agent", "idle");
+    db.prepare("insert into local_runtime_turn_ingress values(?,?,?,?,?,?)").run(turnId, id, ingressStatus, ingressStatus === "completed" ? now : null, now - 100, 1);
+    db.prepare("insert into local_runtime_session_agent_state values(?,?,?,?,?)").run(id, turnId, 1, terminalOutcome, now);
+    db.prepare("insert into local_runtime_message_rows values(?,?,?,?,?,?)").run(1, id, "user", turnId, now - 50, JSON.stringify({ turn_id: turnId, role: "user", msg_content: "fixture" }));
+    db.prepare("insert into local_runtime_message_rows values(?,?,?,?,?,?)").run(2, id, "assistant", turnId, now, JSON.stringify({ turn_id: turnId, role: "assistant", msg_content: "fixture", finish_reason: finishReason }));
+    const adapter = new MinimaxCodeAdapter({ sessionStore: root, runtimeDb });
+
+    expect((await adapter.getSession(id))?.meta?.nativeLastTurn).toBeUndefined();
+    db.close();
+  });
 });

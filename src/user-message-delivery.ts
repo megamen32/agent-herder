@@ -313,7 +313,13 @@ export class UserMessageDelivery {
               if(exactTargetHostId){
                 const target:DeliveryResponseTarget={hostId:exactTargetHostId,harness:input.harness as DeliveryResponseTarget["harness"],sessionId:input.sessionId};
                 const baseline=await this.withSlot(combined,()=>captureDeliveryResponseBaseline({jobId,inputId:input.inputId,target,readMessages:async(requested,limit)=>{
-                  if(requested.hostId!==target.hostId||requested.harness!==target.harness||requested.sessionId!==target.sessionId||!adapter.getSessionMessages)return {messages:null};
+                  if(requested.hostId!==target.hostId||requested.harness!==target.harness||requested.sessionId!==target.sessionId)return {messages:null};
+                  if(adapter.getSessionMessagesPage){
+                    const page=await adapter.getSessionMessagesPage(requested.sessionId,limit);
+                    if(!page||page.sessionId!==requested.sessionId||page.source!=="native-db")return {messages:null,complete:false};
+                    return {messages:page.messages,complete:page.complete};
+                  }
+                  if(!adapter.getSessionMessages)return {messages:null};
                   const messages=await adapter.getSessionMessages(requested.sessionId,limit);
                   return {messages,complete:false};
                 }}));

@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import lockfile from "proper-lockfile";
 import { buildAskHumanRequest, deliverNoticeQuestion, type DeliverableHumanQuestion } from "../human-request/notice-question.js";
 import { nativeTarget, type HumanQuestionBinding } from "../human-request/question-binding.js";
-import { loadAskHumanProducer, type AskHumanProducer } from "../human-request/ask-human-producer.js";
+import { loadAskHumanProducerForTarget, type AskHumanProducer, type NoticeProducerTarget } from "../human-request/ask-human-producer.js";
 import type { HumanRequestRecord, HumanRequestRegistry } from "../human-request/registry.js";
 import type { AgentSession, HarnessAdapter, HarnessEvent, HarnessPermissionState, SessionMessageView } from "../types/index.js";
 
@@ -38,6 +38,7 @@ export interface PermissionNoticeObserver {
 
 export interface PermissionNoticeObserverDependencies {
   loadProducer?: () => Promise<AskHumanProducer | undefined>;
+  loadProducerForTarget?: (target: NoticeProducerTarget) => Promise<AskHumanProducer | undefined>;
   fetchImpl?: typeof fetch;
 }
 
@@ -65,7 +66,9 @@ export async function createPermissionHumanQuestion(
     || (requestedSession?.cwd !== undefined && requestedSession.cwd !== prepared.sessionCwd)) {
     throw new Error("native permission session identity is incomplete or changed");
   }
-  const producer = await (dependencies.loadProducer ?? (() => loadAskHumanProducer()))();
+  const producer = dependencies.loadProducerForTarget
+    ? await dependencies.loadProducerForTarget(prepared.target)
+    : await (dependencies.loadProducer ?? (() => loadAskHumanProducerForTarget(prepared.target)))();
   if (!producer) throw new Error("Notice question producer is not configured");
   if (expectedRouting && (producer.project !== expectedRouting.project || producer.recipient !== expectedRouting.recipient)) {
     throw new Error("Notice routing does not match the configured recipient policy");
@@ -291,12 +294,13 @@ export function hasPermissionReplyContextRef(value: string | undefined): boolean
 export async function readCanonicalNoticePermissionAnswer(
   request: HumanRequestRecord,
   fetchImpl: typeof fetch = fetch,
+  loadProducerForTarget: (target: NoticeProducerTarget) => Promise<AskHumanProducer | undefined> = loadAskHumanProducerForTarget,
 ): Promise<CanonicalNoticeAnswer> {
   const target = parsePermissionReplyContextRef(request.contextRef);
   if (!target || request.kind !== "user") throw new Error("request is not a typed native permission reply");
   const agent = request.target.agent ?? request.target.harness;
   if (agent !== target.harness || request.target.sessionId !== target.sessionId) throw new Error("permission reply target mismatch");
-  const producer = await loadAskHumanProducer();
+  const producer = await loadProducerForTarget(target);
   if (!producer || (request.notify && (producer.project !== request.notify.project || producer.recipient !== request.notify.recipient))) {
     throw new Error("authorized Notice project credentials are unavailable for this recipient");
   }

@@ -79,6 +79,33 @@ describe("actual human message queue admission", () => {
     }finally{delivery.close();await delivery.getMinimaxExecPolicy({hostId:"target-host",harness:"minimax-code",sessionId:session.id});await delivery.getMinimaxExecPolicy({hostId:"target-host",harness:"minimax-code",sessionId:session.id});await rm(root,{recursive:true,force:true});}
   });
 
+  it("uses the native ZCode history page's explicit complete-empty proof before sending",async()=>{
+    const root=await mkdtemp(join(tmpdir(),"herder-zcode-empty-baseline-"));
+    const jobs=new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(root,"jobs.json")});
+    const session={id:"empty-zcode-session",harness:"zcode",hostId:"target-host",status:"idle",cwd:"/workspace"};
+    const getSessionMessages=vi.fn(async()=>{throw new Error("legacy history projection must not replace its native page proof");});
+    const adapter={
+      getSession:vi.fn(async()=>session),
+      getSessionMessages,
+      getSessionMessagesPage:vi.fn(async(id:string)=>({sessionId:id,source:"native-db" as const,messages:[],complete:true})),
+    } as unknown as HarnessAdapter;
+    const sender=vi.fn(async(_harness:string,sessionId:string,options:any)=>{
+      const baseline=jobs.readDeliveryResponseBaseline(options.durableUserDelivery.jobId,{inputId:options.inputId,target:{hostId:"target-host",harness:"zcode",sessionId}});
+      expect(baseline).toMatchObject({coverage:"complete",messageCount:0,messages:[]});
+      return {ok:true,admitted:true,turnId:"zcode-empty-turn",inputId:options.inputId};
+    });
+    const delivery=new UserMessageDelivery(new Map([["zcode",adapter]]),{sendMessage:sender},jobs,{pollMs:1,maxWaitMs:2_000,maxPending:4});
+    try{
+      const receipt=await delivery.submit({harness:"zcode",sessionId:session.id,inputId:"zcode-empty-page-input",message:"single benign fixture input",mode:"sync"});
+      expect(receipt.job?.durableOnce).toBe(true);
+      await vi.waitFor(()=>expect(sender).toHaveBeenCalledOnce(),{interval:5,timeout:500});
+      await vi.waitFor(()=>expect(jobs.get(receipt.job!.id)?.state).toBe("completed"),{interval:5,timeout:500});
+      expect(adapter.getSessionMessagesPage).toHaveBeenCalledOnce();
+      expect(getSessionMessages).not.toHaveBeenCalled();
+      expect(sender).toHaveBeenCalledOnce();
+    }finally{delivery.close();await rm(root,{recursive:true,force:true});}
+  });
+
   it("keeps queue edit CAS target and policy bindings in the same job before native admission",async()=>{
     const root=await mkdtemp(join(tmpdir(),"herder-minimax-edit-cas-"));
     const target={hostId:"target-host",harness:"minimax-code" as const,sessionId:"mvs-edit-target"};

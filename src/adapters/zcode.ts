@@ -18,6 +18,7 @@ import {
   type SendMessageOptions,
   type MessageAdmissionResult,
   type SessionSnapshotReceipt,
+  type SessionMessageHistoryPage,
   type SessionMessagePart,
   type SessionMessageView,
   type SetPermissionsOptions,
@@ -1046,6 +1047,7 @@ export class ZcodeAdapter implements HarnessAdapter {
   private readonly modelIds: string[];
   private readonly client: ZcodeClientLike;
   private readonly useLocalConfig: boolean;
+  private readonly allowLocalSessionHistory: boolean;
   private readonly localDbPath: string;
   private readonly useLocalTurnMetadata: boolean;
   private readonly tasksIndexDbPath?: string;
@@ -1087,6 +1089,7 @@ export class ZcodeAdapter implements HarnessAdapter {
     this.cwd = resolve(options.cwd || process.env.ZCODE_CWD || process.cwd());
     this.modelIds = options.modelIds ?? [];
     this.useLocalConfig = !options.client;
+    this.allowLocalSessionHistory = this.useLocalConfig || options.localDbPath !== undefined;
     this.officialWebSocketSelected=this.useLocalConfig&&!options.command&&!process.env.ZCODE_SERVER_NODE&&existsSync(join(homedir(),".zcode/server/run/control.sock"));
     this.readOfficialRunningTasks=options.readOfficialRunningTasks??(this.useLocalConfig?()=>readZcodeOfficialRunning():undefined);
     this.useLocalTurnMetadata = this.useLocalConfig || options.localDbPath !== undefined;
@@ -2205,7 +2208,9 @@ export class ZcodeAdapter implements HarnessAdapter {
 
     const matches = projects.filter((project) => {
       const roots = Array.isArray(project.roots) ? project.roots.map(record) : [];
-      return roots.length === 1 && nonEmptyString(roots[0]?.rootPath) === workspacePath;
+      const rootPath = nonEmptyString(roots[0]?.rootPath);
+      const comparableRoot = rootPath && rootPath !== "/" ? rootPath.replace(/\/+$/, "") : rootPath;
+      return roots.length === 1 && comparableRoot === workspacePath;
     });
     if (matches.length !== 1) {
       throw new Error(`ZCode native project mapping requires one registered project with exact root ${workspacePath}; found ${matches.length}`);
@@ -2907,6 +2912,10 @@ export class ZcodeAdapter implements HarnessAdapter {
     return this.readLocalSessionMessages(id, limit);
   }
 
+  async getSessionMessagesPage(id: string, limit = 100): Promise<SessionMessageHistoryPage | null> {
+    return this.readLocalSessionMessagePage(id, limit);
+  }
+
   async getFirstUserMessage(id: string): Promise<SessionMessageView | null> {
     if (this.useLocalConfig) {
       const local = await this.readLocalFirstUserMessage(id);
@@ -2958,43 +2967,68 @@ export class ZcodeAdapter implements HarnessAdapter {
   }
 
   private async readLocalSessionMessages(id: string, limit: number): Promise<SessionMessageView[] | null> {
-    if (!this.useLocalConfig || !existsSync(this.localDbPath)) return null;
+    return (await this.readLocalSessionMessagePage(id, limit))?.messages ?? null;
+  }
+
+  private async readLocalSessionMessagePage(id: string, limit: number): Promise<SessionMessageHistoryPage | null> {
+    if (!this.allowLocalSessionHistory || !existsSync(this.localDbPath)) return null;
     try {
       const { DatabaseSync } = await import("node:sqlite");
       const db = new DatabaseSync(this.localDbPath, { readOnly: true });
+      let transactionOpen = false;
       try {
-        const bounded = Math.max(1, Math.min(limit, 200));
+        db.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=1000; BEGIN");
+        transactionOpen = true;
+        const bounded = Math.max(1, Math.min(Number.isFinite(limit) ? Math.floor(limit) : 100, 200));
+        const sessionRow = db.prepare("select id from session where id = ?").get(id) as { id?: string } | undefined;
+        if (!sessionRow || sessionRow.id !== id) return null;
         const rows = db.prepare(`
           select id, data
           from message indexed by message_session_sequence_idx
           where session_id = ?
           order by sequence desc, time_created desc, id desc
           limit ?
-        `).all(id, bounded) as Array<{ id: string; data: string }>;
-        if (rows.length === 0) return null;
-        rows.reverse();
+        `).all(id, bounded + 1) as Array<{ id: string; data: string }>;
+        const complete = rows.length <= bounded;
+        const pageRows = rows.slice(0, bounded).reverse();
         const messages = new Map<string, ZcodeMessage>();
-        for (const row of rows) {
+        for (const row of pageRows) {
           const data = JSON.parse(row.data) as Record<string, unknown>;
           messages.set(row.id, {
             info: { ...data, messageId: row.id } as ZcodeMessage["info"],
             parts: [],
           });
         }
-        const placeholders = rows.map(() => "?").join(",");
+        if (pageRows.length === 0) {
+          db.exec("COMMIT");
+          transactionOpen = false;
+          return { sessionId: id, source: "native-db", messages: [], complete: true };
+        }
+        const placeholders = pageRows.map(() => "?").join(",");
         const partRows = db.prepare(`
           select message_id as messageId, data
           from part
           where session_id = ? and message_id in (${placeholders})
           order by message_id, sequence, time_created, id
-        `).all(id, ...rows.map((row) => row.id)) as Array<{ messageId: string; data: string }>;
+        `).all(id, ...pageRows.map((row) => row.id)) as Array<{ messageId: string; data: string }>;
         for (const row of partRows) {
           const message = messages.get(row.messageId);
           if (!message) continue;
           message.parts!.push(JSON.parse(row.data) as Record<string, unknown>);
         }
-        return rows.map((row, index) => mapMessage(messages.get(row.id)!, index));
+        const page = {
+          sessionId: id,
+          source: "native-db" as const,
+          messages: pageRows.map((row, index) => mapMessage(messages.get(row.id)!, index)),
+          complete,
+        };
+        db.exec("COMMIT");
+        transactionOpen = false;
+        return page;
       } finally {
+        if (transactionOpen) {
+          try { db.exec("ROLLBACK"); } catch { /* the read failed; no partial page is returned */ }
+        }
         db.close();
       }
     } catch {

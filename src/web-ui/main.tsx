@@ -43,7 +43,7 @@ import { creationModels } from "./creation-models.js";
 import { isLongVisibleMessage, readCollapseLongMessages, writeCollapseLongMessages } from "./message-collapse.js";
 import { groupSessionMessages } from "./message-groups.js";
 import { projectDeliveredChat, resolveDeliveredImages } from "./delivered-chat.js";
-import {sidebarEntries, sessionPinKey} from './session-pins.js';
+import {sidebarEntries, sessionPinKey, projectLocalSessionHost} from './session-pins.js';
 import {SessionSidebarRow, useSessionPins} from './session-sidebar.js';
 import { DetailsReadGate } from "./details-read-gate.js";
 import { MessageAdmissionDispatcher, appendOutboxEntry, beginOutboxAttempt, canDeleteOutboxEntry, canSteerOutboxEntry, cancelOutcomeOfJob, classifyMessageDelivery, deliveryConnectionFailure, deliveryModeLabel, isOutboxUnfinished, isTerminalJobState, newInputId, outboxStatusLabel, planContinuation, readDefaultDeliveryMode, readDeliveryModePinned, readOutboxJobId, readStoredOutbox, reconcileMessageStatus, removeOutboxEntry, updateOutboxEntry, withOutboxJobId, writeDefaultDeliveryMode, writeDeliveryModePinned, writeStoredOutbox, type CancelOutcome, type DeliveryMode, type OutboxEntry } from "./composer-delivery.js";
@@ -1540,7 +1540,7 @@ function App() {
     return () => { cancelled = true; };
   }, [activeSession?.harness, activeSession?.id]);
   const displaySessions=React.useMemo(()=>{
-    const local=sessions.map(s=>({...s,hostId:directory.localHostId,hostLabel:directory.hosts.find(h=>h.hostId===directory.localHostId)?.label}));
+    const local=sessions.map(s=>projectLocalSessionHost(s,directory.localHostId,directory.hosts));
     const keys=new Set(local.map(keyOf));
     const rows=[...local,...directory.rows.flatMap(row=>{const host=directory.hosts.find(h=>h.hostId===row.address.hostId);if(!host)return [];const s=directorySession(row,host,directory.localHostId);return keys.has(keyOf(s))?[]:[s];})];
     // The panel draws the work the inventory proves, not the status the catalog

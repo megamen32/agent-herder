@@ -17,6 +17,7 @@ export {
   type SessionLineage,
   type SessionMessagePart,
   type SessionMessageView,
+  type SessionMessageHistoryPage,
   type SessionHistorySource,
   type SessionHistoryInfo,
   type SessionDetails,

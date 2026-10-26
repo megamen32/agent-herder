@@ -1,5 +1,5 @@
 import {describe, it, expect} from 'vitest';
-import {readSessionPins, readSessionPinState, sessionPinStorage, toggleSessionPin, sessionPinKey, sidebarEntries, sidebarContext} from '../src/web-ui/session-pins.js';
+import {readSessionPins, readSessionPinState, sessionPinStorage, toggleSessionPin, sessionPinKey, sidebarEntries, sidebarContext, projectLocalSessionHost} from '../src/web-ui/session-pins.js';
 import type {SessionListSession} from '../src/web-ui/session-list.js';
 import {directorySession} from '../src/web-ui/fleet/session-directory.js';
 
@@ -8,6 +8,31 @@ const settings = {hostId:'', cwd:'', project:'', harness:'', sort:'activity' as 
 const storage = () => {const values = new Map<string,string>();return {getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>{values.set(key,value);}};};
 
 describe('personal session pins (fast unit; expected2s/max20s)', () => {
+ it('preserves native local host identity while the fleet directory is empty or disagrees', () => {
+  const native = row('native-session',{hostId:'roomhacker-server-100',hostLabel:'Сервер 100'});
+  const waiting = projectLocalSessionHost(native,'',[ ]);
+  expect(waiting.hostId).toBe('roomhacker-server-100');
+  expect(waiting.hostLabel).toBe('Сервер 100');
+  expect(sessionPinKey(waiting)).toBeDefined();
+
+  const matched = projectLocalSessionHost(row('fallback',{hostId:undefined}), 'server-100', [
+   {hostId:'server-100',label:'Сервер 100'},
+   {hostId:'MacBook-Pro-User.local',label:'Mac M1'},
+  ]);
+  expect(matched.hostId).toBe('server-100');
+  expect(matched.hostLabel).toBe('Сервер 100');
+
+  const conflicting = projectLocalSessionHost(row('remote-native',{hostId:'MacBook-Pro-User.local',hostLabel:'Mac M1',remote:true}), 'server-100', [
+   {hostId:'server-100',label:'Сервер 100'},
+   {hostId:'MacBook-Pro-User.local',label:'Mac M1'},
+  ]);
+  expect(conflicting.hostId).toBe('MacBook-Pro-User.local');
+  expect(conflicting.hostLabel).toBe('Mac M1');
+
+  const unknown = projectLocalSessionHost(row('unknown',{hostId:undefined}), undefined, []);
+  expect(unknown.hostId).toBeUndefined();
+  expect(sessionPinKey(unknown)).toBeUndefined();
+ });
  it('persists through reload and does not cross account scopes', () => {
   const s=storage(),key=sessionPinKey(row('one'))!;
   expect(toggleSessionPin(s,'owner-A',key)).toEqual([key]);

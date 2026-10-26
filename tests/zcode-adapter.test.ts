@@ -415,6 +415,48 @@ class LongTranscriptClient extends FakeClient {
 }
 
 describe("ZCode adapter", () => {
+  it("distinguishes a complete empty native history from an unavailable read", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-empty-history-page-"));
+    const path = join(root, "native.sqlite");
+    const db = new DatabaseSync(path);
+    db.exec(`create table session (id text primary key);
+      create table message (id text primary key, session_id text, data text, sequence integer, time_created integer);
+      create index message_session_sequence_idx on message(session_id, sequence);
+      create table part (id text primary key, session_id text, message_id text, data text, sequence integer, time_created integer);`);
+    db.prepare("insert into session(id) values (?)").run("empty-session");
+    db.close();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client: new FakeClient(), localDbPath: path });
+    await adapter.init();
+    try {
+      const reader = adapter as unknown as { getSessionMessagesPage?: (id: string, limit: number) => Promise<unknown> };
+      await expect(reader.getSessionMessagesPage?.("empty-session", 200)).resolves.toEqual({
+        sessionId: "empty-session", source: "native-db", messages: [], complete: true,
+      });
+      await expect(reader.getSessionMessagesPage?.("missing-session", 200)).resolves.toBeNull();
+      const invalidPath = join(root, "invalid.sqlite");
+      const invalid = new DatabaseSync(invalidPath);
+      invalid.exec("create table session(id text primary key); insert into session values('empty-session')");
+      invalid.close();
+      const invalidAdapter = new ZcodeAdapter({ cwd: "/workspace", client: new FakeClient(), localDbPath: invalidPath });
+      await invalidAdapter.init();
+      try {
+        const invalidReader = invalidAdapter as unknown as { getSessionMessagesPage?: (id: string, limit: number) => Promise<unknown> };
+        await expect(invalidReader.getSessionMessagesPage?.("empty-session", 200)).resolves.toBeNull();
+      } finally { await invalidAdapter.dispose(); }
+      const writer = new DatabaseSync(path);
+      writer.prepare("insert into message(id,session_id,data,sequence,time_created) values (?,?,?,?,?)").run("native-message-1", "empty-session", JSON.stringify({ role: "user" }), 1, 1);
+      writer.prepare("insert into message(id,session_id,data,sequence,time_created) values (?,?,?,?,?)").run("native-message-2", "empty-session", JSON.stringify({ role: "assistant" }), 2, 2);
+      writer.close();
+      await expect(reader.getSessionMessagesPage?.("empty-session", 1)).resolves.toMatchObject({
+        sessionId: "empty-session", source: "native-db", complete: false,
+        messages: [{ id: "native-message-2", role: "assistant" }],
+      });
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("persists native pinned state in the cross-workspace task index", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-zcode-pin-"));
     const dbPath = join(root, "tasks-index.sqlite");
@@ -1277,6 +1319,18 @@ describe("ZCode adapter", () => {
     expect(createArgs).toMatchObject({ workspacePath: "/workspace", projectId: "native-project-1", mode: "yolo" });
     expect(createArgs).not.toHaveProperty("hostId");
     expect(client.calls.some((call) => call.channel === "project" && call.method === "readTree" && call.args.length === 0)).toBe(true);
+    await adapter.dispose();
+  });
+
+  it("matches a native registered project root with a trailing separator", async () => {
+    const client = new FakeClient();
+    client.nativeProjectTree = { projects: [{ id: "native-project-trailing-root", hostId: "remote:server:fixture", roots: [{ rootPath: "/workspace/", isPrimary: true }] }] };
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+
+    await adapter.createSession({ name: "registered-project-trailing-root", cwd: "/workspace" });
+    expect(client.calls.find((call) => call.channel === "zcode-agent" && call.method === "createSession")?.args[0])
+      .toMatchObject({ workspacePath: "/workspace", projectId: "native-project-trailing-root" });
     await adapter.dispose();
   });
 

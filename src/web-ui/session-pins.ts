@@ -4,6 +4,23 @@ import {projectObservation, type ProjectObservation} from '../mesh/protocol.js';
 type StorageAccess = Pick<Storage, 'getItem' | 'setItem'>;
 export const pinStorageKey = (scope: string) => `agent-herder.session-pins:${scope}`;
 
+/** Preserve the identity stamped by the local harness; directory identity is only a fallback. */
+export function projectLocalSessionHost<T extends SessionListSession>(
+  session: T,
+  localHostId: string | undefined,
+  hosts: readonly { hostId: string; label?: string }[],
+): T {
+  const nativeHostId = typeof session.hostId === 'string' && session.hostId.trim() ? session.hostId : undefined;
+  const fallbackHostId = typeof localHostId === 'string' && localHostId.trim() ? localHostId : undefined;
+  const hostId = nativeHostId ?? fallbackHostId;
+  const hostLabel = (hostId ? hosts.find((host) => host.hostId === hostId)?.label : undefined) || session.hostLabel;
+  return {
+    ...session,
+    ...(hostId ? { hostId } : { hostId: undefined }),
+    ...(hostLabel ? { hostLabel } : { hostLabel: undefined }),
+  };
+}
+
 /** Native identity only; working directories, titles and local selection aliases can change. */
 export function sessionPinKey(session: SessionListSession): string | undefined {
   const nativeId = !session.remote && typeof session.meta?.nativeSessionId === 'string' ? session.meta.nativeSessionId : session.id;

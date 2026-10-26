@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +17,7 @@ const connected: Array<{ client: Client; server: McpServer }> = [];
 const servers: Server[] = [];
 const roots: string[] = [];
 const oldAskHumanEnvFile = process.env.ASK_HUMAN_ENV_FILE;
+const oldNoticeProducerBindingsFile = process.env.AGENT_HERDER_NOTICE_PRODUCER_BINDINGS_FILE;
 
 function nativePermissionReceipt(requestId: string, session: AgentSession, overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -36,13 +37,21 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
   if (oldAskHumanEnvFile === undefined) delete process.env.ASK_HUMAN_ENV_FILE;
   else process.env.ASK_HUMAN_ENV_FILE = oldAskHumanEnvFile;
+  if (oldNoticeProducerBindingsFile === undefined) delete process.env.AGENT_HERDER_NOTICE_PRODUCER_BINDINGS_FILE;
+  else process.env.AGENT_HERDER_NOTICE_PRODUCER_BINDINGS_FILE = oldNoticeProducerBindingsFile;
 });
 
 it("creates one exact, redacted Notice binding per pending native permission", async () => {
   const root = await mkdtemp(join(tmpdir(), "agent-herder-permission-notice-")); roots.push(root);
-  const envFile = join(root, "ask-human.env");
-  await writeFile(envFile, "ASK_HUMAN_URL=https://notice.test/v1/human-requests\nNOTIFY_CENTER_TOKEN=test-token\nNOTIFY_CENTER_PROJECT=test-project\nNOTIFY_CENTER_RECIPIENT=test-recipient\n");
-  process.env.ASK_HUMAN_ENV_FILE = envFile;
+  const envFile = join(root, "qa-ask-human.env");
+  const productionEnvFile = join(root, "production-ask-human.env");
+  const bindingsFile = join(root, "producer-bindings.json");
+  await writeFile(envFile, "ASK_HUMAN_URL=https://notice.test/v1/human-requests\nNOTIFY_CENTER_TOKEN=qa-fixture-token\nNOTIFY_CENTER_PROJECT=test-project\nNOTIFY_CENTER_RECIPIENT=test-recipient\nASK_HUMAN_ALLOWED_ACTORS=telegram:540308572\n", { mode: 0o600 });
+  await writeFile(productionEnvFile, "ASK_HUMAN_URL=https://notice.test/v1/human-requests\nNOTIFY_CENTER_TOKEN=production-fixture-token\nNOTIFY_CENTER_PROJECT=agent-herder\nNOTIFY_CENTER_RECIPIENT=me\nASK_HUMAN_ALLOWED_ACTORS=telegram:540308572\n", { mode: 0o600 });
+  await writeFile(bindingsFile, JSON.stringify({ version: 1, bindings: [{ target: { hostId: "host-test", harness: "opencode", sessionId: "s-1" }, askHumanEnvFile: envFile }] }), { mode: 0o600 });
+  await chmod(envFile, 0o600); await chmod(bindingsFile, 0o600);
+  process.env.ASK_HUMAN_ENV_FILE = productionEnvFile;
+  process.env.AGENT_HERDER_NOTICE_PRODUCER_BINDINGS_FILE = bindingsFile;
   const session: AgentSession = { id: "s-1", harness: "opencode", hostId: "host-test", cwd: root, title: "Fixture", status: "needs_input", needsPermission: true, lastActivity: new Date().toISOString() };
   const permission: HarnessPermissionState = { target: { hostId: "host-test", harness: "opencode", sessionId: "s-1" }, scope: "session", canSetMode: false, supportedModes: [], pendingRequests: [{ id: "p-1", canRespond: true, nativeMethod: "permission.respond", command: "cat token=shh", reason: "read requested file" }], observedAt: new Date().toISOString() };
   const messages: SessionMessageView[] = [
@@ -74,6 +83,7 @@ it("creates one exact, redacted Notice binding per pending native permission", a
   expect(first.isError, JSON.stringify(first)).not.toBe(true); expect(again.isError, JSON.stringify(again)).not.toBe(true);
   const a = first.structuredContent as any; const b = again.structuredContent as any;
   expect(a.request.requestId).toBe(b.request.requestId);
+  expect(a.request.notify).toMatchObject({ project: "test-project", recipient: "test-recipient" });
   expect(a.binding.question.choices).toEqual([{ choice_id: "allow", label: "Разрешить" }, { choice_id: "deny", label: "Запретить" }]);
   expect(a.binding.question.message).toContain("Последнее сообщение пользователя: Run the check");
   expect(a.binding.question.message).toContain("Последний видимый ответ агента: Visible explanation");
@@ -82,6 +92,42 @@ it("creates one exact, redacted Notice binding per pending native permission", a
   expect(a.binding.question.message).not.toContain("should-not-leak");
   const records = await registry.list();
   expect(records).toHaveLength(1);
+});
+
+it("delivers the automatic permission question with the exact target's QA producer", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-herder-permission-qa-observer-")); roots.push(root);
+  const qaFile = join(root, "qa-ask-human.env");
+  const productionEnvFile = join(root, "production-ask-human.env");
+  const bindingsFile = join(root, "producer-bindings.json");
+  await writeFile(qaFile, "ASK_HUMAN_URL=https://notice.test/v1/human-requests\nNOTIFY_CENTER_TOKEN=qa-fixture-token\nNOTIFY_CENTER_PROJECT=test-project\nNOTIFY_CENTER_RECIPIENT=test-recipient\nASK_HUMAN_ALLOWED_ACTORS=telegram:540308572\n", { mode: 0o600 });
+  await writeFile(productionEnvFile, "ASK_HUMAN_URL=https://notice.test/v1/human-requests\nNOTIFY_CENTER_TOKEN=production-fixture-token\nNOTIFY_CENTER_PROJECT=agent-herder\nNOTIFY_CENTER_RECIPIENT=me\nASK_HUMAN_ALLOWED_ACTORS=telegram:540308572\n", { mode: 0o600 });
+  await writeFile(bindingsFile, JSON.stringify({ version: 1, bindings: [{ target: { hostId: "host-test", harness: "opencode", sessionId: "s-qa-auto" }, askHumanEnvFile: qaFile }] }), { mode: 0o600 });
+  await chmod(qaFile, 0o600); await chmod(bindingsFile, 0o600);
+  process.env.ASK_HUMAN_ENV_FILE = productionEnvFile;
+  process.env.AGENT_HERDER_NOTICE_PRODUCER_BINDINGS_FILE = bindingsFile;
+
+  const session: AgentSession = { id: "s-qa-auto", harness: "opencode", hostId: "host-test", cwd: root, title: "QA permission", status: "needs_input", needsPermission: true, lastActivity: new Date().toISOString() };
+  const state: HarnessPermissionState = { target: { hostId: "host-test", harness: "opencode", sessionId: session.id }, scope: "session", currentMode: "ask", canSetMode: true, supportedModes: ["default"], pendingRequests: [{ id: "p-qa-auto", canRespond: true, nativeMethod: "permission.request", command: "echo QA marker" }], observedAt: new Date().toISOString() };
+  const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
+  let authorization: string | null = null;
+  let postedBody: Record<string, unknown> | undefined;
+  const observer = createPermissionNoticeObserver(registry, { fetchImpl: async (_input, init) => {
+    authorization = new Headers(init?.headers).get("authorization");
+    postedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return new Response(JSON.stringify(nativePermissionReceipt(String(postedBody.request_id), session)), { status: 201 });
+  } });
+  const adapter: HarnessAdapter = {
+    type: "opencode", name: "qa-fixture", async init() {},
+    async getPermissionState() { return state; }, async getSession() { return session; }, async getSessionMessages() { return []; },
+    async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
+    async stopSession() { return { ok: true }; }, async sendMessage() { return { ok: true }; },
+  };
+
+  await observer.onEvent(adapter, { kind: "permission.requested", harness: "opencode", sessionId: session.id, permissionId: "p-qa-auto" });
+
+  expect(authorization).toBe("Bearer qa-fixture-token");
+  expect(postedBody).toMatchObject({ project: "test-project", recipient: "test-recipient", allowed_actors: ["telegram:540308572"] });
+  expect((await registry.list())[0]?.notify).toMatchObject({ project: "test-project", recipient: "test-recipient" });
 });
 
 it("joins an exact permission event and initial pending snapshot to one durable Notice delivery", async () => {
@@ -325,9 +371,15 @@ it("uses the visible context from the exact under-lock permission recheck", asyn
 
 it("dispatches the canonical Notice answer to the exact native permission once", async () => {
   const root = await mkdtemp(join(tmpdir(), "agent-herder-permission-callback-")); roots.push(root);
-  const envFile = join(root, "ask-human.env");
-  await writeFile(envFile, "ASK_HUMAN_URL=https://notice.test/v1/human-requests\nNOTIFY_CENTER_TOKEN=test-token\nNOTIFY_CENTER_PROJECT=test-project\nNOTIFY_CENTER_RECIPIENT=test-recipient\n");
-  process.env.ASK_HUMAN_ENV_FILE = envFile;
+  const envFile = join(root, "qa-ask-human.env");
+  const productionEnvFile = join(root, "production-ask-human.env");
+  const bindingsFile = join(root, "producer-bindings.json");
+  await writeFile(envFile, "ASK_HUMAN_URL=https://notice.test/v1/human-requests\nNOTIFY_CENTER_TOKEN=qa-fixture-token\nNOTIFY_CENTER_PROJECT=qa-project\nNOTIFY_CENTER_RECIPIENT=qa-recipient\nASK_HUMAN_ALLOWED_ACTORS=telegram:540308572\n", { mode: 0o600 });
+  await writeFile(productionEnvFile, "ASK_HUMAN_URL=https://notice.test/v1/human-requests\nNOTIFY_CENTER_TOKEN=production-fixture-token\nNOTIFY_CENTER_PROJECT=agent-herder\nNOTIFY_CENTER_RECIPIENT=me\nASK_HUMAN_ALLOWED_ACTORS=telegram:540308572\n", { mode: 0o600 });
+  await writeFile(bindingsFile, JSON.stringify({ version: 1, bindings: [{ target: { hostId: "host-test", harness: "opencode", sessionId: "s-2" }, askHumanEnvFile: envFile }] }), { mode: 0o600 });
+  await chmod(envFile, 0o600); await chmod(bindingsFile, 0o600);
+  process.env.ASK_HUMAN_ENV_FILE = productionEnvFile;
+  process.env.AGENT_HERDER_NOTICE_PRODUCER_BINDINGS_FILE = bindingsFile;
   const session: AgentSession = { id: "s-2", harness: "opencode", hostId: "host-test", cwd: root, title: "Fixture", status: "needs_input", needsPermission: true, lastActivity: new Date().toISOString() };
   let pending = true;
   const permission: HarnessPermissionState = { target: { hostId: "host-test", harness: "opencode", sessionId: "s-2" }, scope: "session", canSetMode: false, supportedModes: [], pendingRequests: [], observedAt: new Date().toISOString() };
@@ -343,11 +395,11 @@ it("dispatches the canonical Notice answer to the exact native permission once",
   const request = await humanRequests.create({
     kind: "user", answerSource: "notice_question", target: { harness: "opencode", sessionId: session.id, cwd: root },
     contextRef: permissionReplyContextRef({ hostId: "host-test", harness: "opencode", sessionId: session.id, permissionRequestId: "native-p-2" }),
-    notify: { project: "test-project", recipient: "test-recipient", kind: "human_request", severity: "important", title: "Permission" },
+    notify: { project: "qa-project", recipient: "qa-recipient", kind: "human_request", severity: "important", title: "Permission" },
   });
   const noticeAnswerFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     expect(String(input)).toBe(`https://notice.test/v1/human-requests/${request.requestId}/result`);
-    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-token");
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer qa-fixture-token");
     return new Response(JSON.stringify({ schema: "ask_human.result.v1", request_id: request.requestId, state: "resolved", kind: "user", result_ref: randomUUID(), answer: "allow", native: { harness: "opencode", session_id: session.id, cwd: root } }), { status: 200 });
   });
   await expect(readCanonicalNoticePermissionAnswer(request, noticeAnswerFetch)).resolves.toMatchObject({ answer: "allow", requestId: request.requestId });

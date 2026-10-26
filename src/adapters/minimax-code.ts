@@ -814,8 +814,10 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
 
   private async toSession(entry: MinimaxStoredSession): Promise<AgentSession> {
     const stamp = await this.transcriptStamp(entry);
+    const nativeLastTurn = this.readNativeLastTurn(entry.id);
     const cached = this.contentCache.get(entry.id);
-    if (cached && cached.stamp === stamp) return cached.session;
+    if (cached && cached.stamp === stamp
+      && JSON.stringify(cached.session.meta?.nativeLastTurn) === JSON.stringify(nativeLastTurn)) return cached.session;
     const [title, lastMessage, model] = await Promise.all([
       this.readTitle(entry),
       this.readLastMessage(entry),
@@ -843,10 +845,85 @@ export class MinimaxCodeAdapter implements HarnessAdapter {
         layout: entry.manifest.layout,
         source: entry.manifest.source,
         sessionDir: entry.dir,
+        ...(nativeLastTurn ? { nativeLastTurn } : {}),
       },
     };
     this.contentCache.set(entry.id, { stamp, session });
     return session;
+  }
+
+  /**
+   * Prove that the latest native turn finished successfully. Idle session
+   * metadata and an admitted CLI receipt are insufficient: the ingress,
+   * terminal agent state and final assistant row must all name one turn.
+   */
+  private readNativeLastTurn(sessionId: string): Record<string, unknown> | undefined {
+    let db: DatabaseSync | undefined;
+    try {
+      db = new DatabaseSync(this.runtimeDb, { readOnly: true });
+      db.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=1000; BEGIN");
+      const session = db.prepare(
+        "SELECT session_id,runtime,status,archived FROM local_runtime_sessions WHERE session_id=?",
+      ).get(sessionId) as { session_id?: string; runtime?: string; status?: string; archived?: number } | undefined;
+      if (session?.session_id !== sessionId || session.runtime !== "pi-agent" || session.status !== "idle" || session.archived !== 0) {
+        db.exec("ROLLBACK");
+        return undefined;
+      }
+      const ingress = db.prepare(
+        `SELECT turn_id,status,completed_at_ms FROM local_runtime_turn_ingress
+          WHERE session_id=? ORDER BY accepted_sequence DESC,accepted_at_ms DESC,rowid DESC LIMIT 1`,
+      ).get(sessionId) as { turn_id?: string; status?: string; completed_at_ms?: number | null } | undefined;
+      if (!ingress?.turn_id || ingress.status !== "completed" || !Number.isFinite(ingress.completed_at_ms) || Number(ingress.completed_at_ms) <= 0) {
+        db.exec("ROLLBACK");
+        return undefined;
+      }
+      const state = db.prepare(
+        "SELECT turn_id,terminal_outcome,updated_at_ms FROM local_runtime_session_agent_state WHERE session_id=? ORDER BY turn_sequence DESC,rowid DESC LIMIT 1",
+      ).get(sessionId) as { turn_id?: string; terminal_outcome?: string | null; updated_at_ms?: number | null } | undefined;
+      if (state?.turn_id !== ingress.turn_id || state.terminal_outcome !== "completed") {
+        db.exec("ROLLBACK");
+        return undefined;
+      }
+      const latestUser = db.prepare(
+        "SELECT id,turn_id,created_at_ms FROM local_runtime_message_rows WHERE session_id=? AND role='user' ORDER BY id DESC LIMIT 1",
+      ).get(sessionId) as { id?: number; turn_id?: string; created_at_ms?: number } | undefined;
+      if (latestUser?.turn_id !== ingress.turn_id || typeof latestUser.id !== "number" || !Number.isSafeInteger(latestUser.id)) {
+        db.exec("ROLLBACK");
+        return undefined;
+      }
+      const latestAssistant = db.prepare(
+        "SELECT id,turn_id,data_json FROM local_runtime_message_rows WHERE session_id=? AND role='assistant' AND turn_id=? ORDER BY id DESC LIMIT 1",
+      ).get(sessionId, ingress.turn_id) as { id?: number; turn_id?: string; data_json?: string } | undefined;
+      if (!latestAssistant || latestAssistant.turn_id !== ingress.turn_id || typeof latestAssistant.id !== "number" || !Number.isSafeInteger(latestAssistant.id)
+        || latestAssistant.id <= latestUser.id) {
+        db.exec("ROLLBACK");
+        return undefined;
+      }
+      const assistant = JSON.parse(latestAssistant.data_json || "null") as { finish_reason?: unknown; turn_id?: unknown } | null;
+      if (assistant?.finish_reason !== "stop" || assistant.turn_id !== ingress.turn_id) {
+        db.exec("ROLLBACK");
+        return undefined;
+      }
+      const activeLease = db.prepare(
+        "SELECT 1 AS found FROM local_runtime_session_locks WHERE session_id=? AND owner_kind='turn' AND expires_at_ms>? LIMIT 1",
+      ).get(sessionId, Date.now());
+      if (activeLease) {
+        db.exec("ROLLBACK");
+        return undefined;
+      }
+      db.exec("COMMIT");
+      return {
+        turnId: ingress.turn_id,
+        status: "completed",
+        completedAt: new Date(Number(ingress.completed_at_ms)).toISOString(),
+        source: "native_runtime_terminal_turn",
+      };
+    } catch {
+      try { db?.exec("ROLLBACK"); } catch { /* read-only proof fails closed */ }
+      return undefined;
+    } finally {
+      db?.close();
+    }
   }
 
   /** Fingerprint of the files a rendered session is derived from. */

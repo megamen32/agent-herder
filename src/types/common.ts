@@ -44,6 +44,14 @@ export interface SessionMessageView {
   parts: SessionMessagePart[];
 }
 
+/** A native history page whose completeness is backed by its owner store. */
+export interface SessionMessageHistoryPage {
+  sessionId: string;
+  source: "native-db";
+  messages: SessionMessageView[];
+  complete: boolean;
+}
+
 export type SessionHistorySource = "acp-load" | "observed-cli-output" | "session-convert" | "live-cache" | "unavailable";
 
 export type AgentControlOperation =
@@ -460,6 +468,9 @@ export interface HarnessAdapter {
 
   /** Get structured recent messages from the adapter-owned transport, when available. */
   getSessionMessages?(id: string, limit?: number): Promise<SessionMessageView[] | null>;
+
+  /** Read a native owner-store page with explicit completeness; null means unavailable. */
+  getSessionMessagesPage?(id: string, limit?: number): Promise<SessionMessageHistoryPage | null>;
 
   /** Get the earliest user-authored message without relying on a bounded transcript tail. */
   getFirstUserMessage?(id: string): Promise<SessionMessageView | null>;

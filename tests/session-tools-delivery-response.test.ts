@@ -117,6 +117,37 @@ describe("MCP send response join", () => {
     expect(payload.response).toMatchObject({status:"completed",correlation:"reply_to",text:"HF26_OK",baselineCoverage:"unavailable"});
   });
 
+  it("uses a complete-empty ZCode native baseline and returns its exact turn response",async()=>{
+    root=await mkdtemp(join(tmpdir(),"herder-mcp-zcode-empty-baseline-"));
+    const target:AgentSession={id:"target-zcode-empty",harness:"zcode",hostId:"host-a",status:"idle",title:"empty history fixture",cwd:"/tmp",lastActivity:new Date().toISOString(),needsPermission:false};
+    const messages:SessionMessageView[]=[];let nativeWrites=0;
+    const adapter:HarnessAdapter={
+      type:"zcode",name:"empty history fixture",async init(){},
+      async listSessions(){return [target]},
+      async getSession(id){return id===target.id?target:null},
+      async getSessionMessages(){throw new Error("must use explicit native page coverage")},
+      async getSessionMessagesPage(id){return id===target.id?{sessionId:id,source:"native-db",messages:messages.map(item=>({...item})),complete:true}:null},
+      async sendMessage(id,options){
+        expect(id).toBe(target.id);nativeWrites++;
+        messages.push({id:"msg-zcode-input",role:"user",text:options.message,parts:[{type:"text",text:options.message}]});
+        messages.push({id:"msg-zcode-answer",role:"assistant",turnId:"turn-zcode-empty",text:"HF26_ZCODE_OK",parts:[{type:"text",text:"HF26_ZCODE_OK"}]});
+        target.status="idle";target.meta={nativeLastTurn:{turnId:"turn-zcode-empty",status:"completed"}};
+        return {ok:true,admitted:true,inputId:options.inputId,turnId:"turn-zcode-empty"};
+      },
+      async stopSession(){return {ok:true}},async respondPermission(){return {ok:true}},async setPermissions(){return {ok:true}},
+    };
+    const events=new HerderEventBus();const server=new McpServer({name:"zcode-empty-response-test",version:"1"});
+    const jobs=new HerderJobRegistry(events,{persistencePath:join(root,"jobs.json")});
+    registerSessionTools(server,{adapters:new Map([["zcode",adapter]]),jobs,events,routingPeers:[]});
+    const [clientTransport,serverTransport]=InMemoryTransport.createLinkedPair();
+    const client=new Client({name:"zcode-empty-response-client",version:"1"},{versionNegotiation:{mode:"auto"}});
+    await server.connect(serverTransport);await client.connect(clientTransport);cleanup.push(async()=>{await client.close();await server.close()});
+    const result=await client.callTool({name:"send_message",arguments:{harness:"zcode",sessionId:target.id,message:"bounded fixture",inputId:"zcode-empty-input",humanRequested:true,mode:"sync"}});
+    const payload=JSON.parse(result.content[0]?.text??"{}");
+    expect(nativeWrites).toBe(1);
+    expect(payload.response).toMatchObject({status:"completed",correlation:"reply_to",text:"HF26_ZCODE_OK",baselineCoverage:"complete",turnId:"turn-zcode-empty"});
+  });
+
   it("keeps response results bound to each concurrent target", async () => {
     root = await mkdtemp(join(tmpdir(), "herder-mcp-response-concurrent-"));
     const sessions = ["target-a", "target-b"].map((id): AgentSession => ({

@@ -1,9 +1,9 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { askHumanEnvPath, describeAskHumanProducer, loadAskHumanProducer, parseEnvFile } from "../src/human-request/ask-human-producer.js";
+import { askHumanEnvPath, describeAskHumanProducer, loadAskHumanProducer, loadAskHumanProducerForTarget, parseEnvFile } from "../src/human-request/ask-human-producer.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -102,5 +102,43 @@ describe("ask human producer configuration", () => {
       ASK_HUMAN_URL: "http://127.0.0.1:8091/v1/human-requests",
     });
     expect(parseEnvFile("export FOO='bar baz'\n\n# comment\nnot a pair\nBAR=1\n")).toEqual({ FOO: "bar baz", BAR: "1" });
+  });
+
+  it("selects the QA producer only for the exact host, harness, and session", async () => {
+    const dir = await home();
+    const qaFile = join(dir, "qa.env");
+    const prodFile = join(dir, "prod.env");
+    const bindingsFile = join(dir, "bindings.json");
+    await writeFile(qaFile, "ASK_HUMAN_URL=http://127.0.0.1:8091/v1/human-requests\nNOTIFY_CENTER_TOKEN=qa-fixture-token\nNOTIFY_CENTER_PROJECT=noticeplace-qa\nNOTIFY_CENTER_RECIPIENT=me\nASK_HUMAN_ALLOWED_ACTORS=telegram:540308572\n", { mode: 0o600 });
+    await writeFile(prodFile, "ASK_HUMAN_URL=http://127.0.0.1:8091/v1/human-requests\nNOTIFY_CENTER_TOKEN=prod-fixture-token\nNOTIFY_CENTER_PROJECT=agent-herder\nASK_HUMAN_ALLOWED_ACTORS=telegram:540308572\n", { mode: 0o600 });
+    const target = { hostId: "host-a", harness: "opencode", sessionId: "session-a" };
+    await writeFile(bindingsFile, JSON.stringify({ version: 1, bindings: [{ target, askHumanEnvFile: qaFile }] }), { mode: 0o600 });
+    const env = { ASK_HUMAN_ENV_FILE: prodFile, AGENT_HERDER_NOTICE_PRODUCER_BINDINGS_FILE: bindingsFile } as NodeJS.ProcessEnv;
+
+    const selected = await loadAskHumanProducerForTarget(target, env, dir);
+    const neighbor = await loadAskHumanProducerForTarget({ ...target, hostId: "host-b" }, env, dir);
+
+    expect(selected).toMatchObject({ project: "noticeplace-qa", recipient: "me", allowedActors: ["telegram:540308572"], source: "ask_human_config" });
+    expect(selected?.token).toBe("qa-fixture-token");
+    expect(neighbor).toMatchObject({ project: "agent-herder", source: "ask_human_config" });
+    expect(neighbor?.token).toBe("prod-fixture-token");
+  });
+
+  it("fails closed for a conflicted exact target and insecure matching producer file", async () => {
+    const dir = await home();
+    const qaFile = join(dir, "qa.env");
+    const bindingsFile = join(dir, "bindings.json");
+    const target = { hostId: "host-a", harness: "opencode", sessionId: "session-a" };
+    const env = { NOTIFY_CENTER_TOKEN: "prod-fixture-token", NOTIFY_CENTER_PROJECT: "agent-herder", NOTIFY_CENTER_EVENT_URL: "http://127.0.0.1:8091/v1/events", AGENT_HERDER_NOTICE_PRODUCER_BINDINGS_FILE: bindingsFile } as NodeJS.ProcessEnv;
+    const binding = { target, askHumanEnvFile: qaFile };
+    await writeFile(qaFile, "ASK_HUMAN_URL=http://127.0.0.1:8091/v1/human-requests\nNOTIFY_CENTER_TOKEN=qa-fixture-token\nNOTIFY_CENTER_PROJECT=noticeplace-qa\nASK_HUMAN_ALLOWED_ACTORS=telegram:540308572\n", { mode: 0o600 });
+    await writeFile(bindingsFile, JSON.stringify({ version: 1, bindings: [binding, binding] }), { mode: 0o600 });
+
+    await expect(loadAskHumanProducerForTarget(target, env, dir)).rejects.toThrow(/conflicted native target/);
+
+    await writeFile(bindingsFile, JSON.stringify({ version: 1, bindings: [binding] }), { mode: 0o600 });
+    await chmod(qaFile, 0o644);
+    await expect(loadAskHumanProducerForTarget(target, env, dir)).rejects.toThrow(/0600 file/);
+    await expect(loadAskHumanProducerForTarget({ ...target, hostId: "host-b" }, { ...env, AGENT_HERDER_NOTICE_PRODUCER_BINDINGS_FILE: join(dir, "missing.json") } as NodeJS.ProcessEnv, dir)).rejects.toThrow();
   });
 });

@@ -143,10 +143,14 @@ export function registerSessionTools(server: McpServer, deps: {
       jobId: job.id, inputId, target, baseline,
       readJob: (id) => jobs.get<SendMessageResult>(id),
       readHistory: async (requested, limit) => {
-        if (!adapter.getSessionMessages) return { messages: null };
         const current = await adapter.getSession(requested.sessionId);
         if (!current || current.id !== requested.sessionId || current.harness !== requested.harness || current.hostId !== requested.hostId) return { messages: null };
-        const messages = await adapter.getSessionMessages(requested.sessionId, limit);
+        const page = adapter.getSessionMessagesPage
+          ? await adapter.getSessionMessagesPage(requested.sessionId, limit)
+          : undefined;
+        if (adapter.getSessionMessagesPage && (!page || page.sessionId !== requested.sessionId || page.source !== "native-db")) return { messages: null };
+        if (!adapter.getSessionMessagesPage && !adapter.getSessionMessages) return { messages: null };
+        const messages = page?.messages ?? (page === undefined ? await adapter.getSessionMessages!(requested.sessionId, limit) : null);
         if (!messages) return { messages: null };
         const fresh = await adapter.getSession(requested.sessionId);
         if (!fresh || fresh.id !== requested.sessionId || fresh.harness !== requested.harness || fresh.hostId !== requested.hostId) return { messages: null };
@@ -154,7 +158,7 @@ export function registerSessionTools(server: McpServer, deps: {
         const nativeInputMessageId=latestJob?.result?.nativeInputMessageId;
         const inputTailComplete=requested.harness==='opencode'&&typeof nativeInputMessageId==='string'
           &&messages.filter(message=>message.id===nativeInputMessageId&&message.role==='user').length===1;
-        const history={messages,complete:false,inputTailComplete};
+        const history={messages,complete:page?.complete===true,inputTailComplete};
         const exactCompletion=nativeDeliveryResponseCompleteByInput({target:requested,inputId,job:latestJob,before:current,after:fresh,history});
         return { ...history, turnComplete: (nativeDeliveryResponseComplete(current, latestJob) && nativeDeliveryResponseComplete(fresh, latestJob))||exactCompletion };
       },
