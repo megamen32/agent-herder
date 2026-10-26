@@ -8,6 +8,7 @@ import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import { UserMessageDelivery } from "../user-message-delivery.js";
 import { nativeDeliveryResponseComplete, waitForDeliveryResponse, type DeliveryResponseBaseline, type DeliveryResponseResult, type DeliveryResponseTarget } from "../session-delivery-response.js";
+import { callerSessionFromMcpContext } from "./caller-session.js";
 import type { SendMessageResult } from "../types/index.js";
 import { trustedMeshIngressFromMcpAuthInfo } from "../mesh/authenticated-ingress.js";
 import {
@@ -436,10 +437,11 @@ export function registerSessionTools(server: McpServer, deps: {
   });
   server.registerTool("session_identity", {
     description:
-      "Read the identity of a session (its name, native id, harness and workspace). " +
+      "Read your own session identity (name, native id, harness and workspace) when sessionId is omitted, using native caller metadata supplied by the MCP client. " +
+      "Pass sessionId explicitly to inspect another session. Never guess your own ID from a session list. If native caller metadata is absent, an explicit sessionId is required. " +
       "With announce=true the identity is published into the session's own instructions so an OpenCode 2 agent can answer 'who am I' from its next turn.",
     inputSchema: z.object({
-      sessionId: z.string().trim().min(1),
+      sessionId: z.string().trim().min(1).optional(),
       harness: harnessSchema.optional(),
       name: z.string().trim().min(1).max(128).optional().describe("Name to publish; defaults to the native title."),
       announce: z.boolean().optional().default(false).describe("Publish the identity into the session itself."),
@@ -448,7 +450,11 @@ export function registerSessionTools(server: McpServer, deps: {
       sessionId: z.string(), harness: z.string(), name: z.string(), cwd: z.string(),
       status: z.string().optional(), announced: z.boolean().optional(), reason: z.string().optional(),
     }).nullable(),
-  }, async (args) => {
+  }, async (rawArgs, ctx) => {
+    const caller = rawArgs.sessionId ? null : callerSessionFromMcpContext(ctx);
+    if (!rawArgs.sessionId && !caller) throw new Error("caller_session_unavailable: MCP не передал ID текущей сессии; укажите подтверждённый sessionId явно.");
+    if (!rawArgs.sessionId && rawArgs.harness && rawArgs.harness !== caller!.harness) throw new Error("caller_session_harness_mismatch");
+    const args = { ...rawArgs, sessionId: rawArgs.sessionId ?? caller!.sessionId, harness: rawArgs.harness ?? caller?.harness };
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
     if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
