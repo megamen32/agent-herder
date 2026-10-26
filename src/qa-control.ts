@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -39,6 +39,7 @@ export class QaControlBackend {
   constructor(path = join(homedir(), ".local/state/agent-herder/qa-control/scenarios.sqlite")) {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(path);
+    chmodSync(path, 0o600);
     this.db.exec("CREATE TABLE IF NOT EXISTS scenarios (id TEXT PRIMARY KEY, state TEXT NOT NULL)");
     this.db.exec("CREATE TABLE IF NOT EXISTS operations (scenario_id TEXT NOT NULL, operation_id TEXT NOT NULL, fingerprint TEXT NOT NULL, result TEXT NOT NULL, PRIMARY KEY (scenario_id, operation_id))");
   }

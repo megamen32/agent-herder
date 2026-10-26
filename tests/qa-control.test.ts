@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -10,6 +10,7 @@ describe("isolated QA control backend", () => {
     const backend = new QaControlBackend(join(directory, "state.sqlite"));
     const scenarioId = "qa-herder-20261026-001";
     try {
+      expect((await stat(join(directory, "state.sqlite"))).mode & 0o777).toBe(0o600);
       const begin = backend.run({ action: "begin", scenarioId, operationId: "qa-begin-0001" });
       expect(begin).toMatchObject({ ok: true, productionEffects: [], state: { project: QA_CONTROL_PROJECT, actor: QA_CONTROL_ACTOR, simulation: true, revision: 0 } });
       expect(begin.state?.fixtures.opencode.nativeReference).toBe(QA_CONTROL_REFERENCES.opencode);
