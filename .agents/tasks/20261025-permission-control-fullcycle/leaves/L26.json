@@ -15,9 +15,9 @@
   "owner": "Delivery worker",
   "depends_on": [],
   "estimate_unknown_reason": "Native API для загруженной сессии подтверждён на уровне дизайна; состояние unloaded runtime и завершённая consumer приёмка пока неизвестны.",
-  "note": "Installed canary on fresh fixture session_529567ea-c12d-457c-97df-846229bf96e4 did not meet acceptance. Native SessionStart/UserPromptSubmit hooks block on missing /tools/lhc_time_guard.py, leaving model_request_count=0. After official autoDrain=false setup, the correctly formed Herder requestedDelivery=queue canary was admitted as native startNow; post-readback inputRouting is startNow and queue is empty. See delivery-finish.md and exact receipts under .tmp/hf-delivery26/installed-readback/.",
-  "wait_reason": "Native ZCode V4 did not honor an exact enqueue admission even while the active tool was running. No queued item exists to resume. Installed API seam is exhausted; native source-policy decision or upstream repair is needed before queue-to-final acceptance.",
-  "updated_at": "2026-10-26T12:10:19+03:00",
+  "note": "Installed safe refusal Herder27cb2f9: one narrow adapter test1/1, tsc PASS, immutable build15/15, owner acceptance20/21 with sole intentional owner automation disarm failure. Real existing-fixture UI/API canary hf26-zcode-ui-deferred-block-20261026-01 returned notSubmitted=true/admitted=false/nonRetryable=true, native input rows unchanged 1 and canary rows0. No new session, no old input replay. Evidence zcode-queue-decisive-20261026.md.",
+  "wait_reason": "User command now fails safely before native ZCode send on installed Herder 27cb2f9; full deferred queue is still unsupported because native V4 can admit requested queue as startNow even after inputRouting=enqueue. Requires native atomic deferred-only admission or upstream repair; prior accepted inputs remain no-replay.",
+  "updated_at": "2026-10-26T22:37:21+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T22:40:56+03:00",
@@ -88,6 +88,16 @@
       "note": "The selected ZCode native LHC loader was repaired through plugin manager: fresh ordinary GLM turn completed LHC_ZCODE_HOOK_MODEL_OK and SessionStart/UserPromptSubmit hooks succeeded. A decisive independent queue fixture captured native inputRouting=enqueue, autoDrain=false and Bash tool running before one requested queue input, but native persisted requested/admittedDelivery=startNow. Herder returned admitted=true,ok=false,nonRetryable=true. Native pending0/canResume=false; resume was not called. No accepted or UNKNOWN input replay. Evidence zcode-queue-decisive-20261026.md.",
       "changes": {
         "wait_reason": "Native ZCode V4 did not honor an exact enqueue admission even while the active tool was running. No queued item exists to resume. Installed API seam is exhausted; native source-policy decision or upstream repair is needed before queue-to-final acceptance."
+      },
+      "session": "unknown",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T22:37:21+03:00",
+      "note": "26.10: установлен Herder 27cb2f9 с безопасным отказом до ZCode writer для пользовательского режима «После ответа». Реальный HTTP/message-status canary на существующей QA-сессии вернул notSubmitted=true, admitted=false, nonRetryable=true; число native session_input осталось 1, для QA input ID строк 0. Полная native queue остаётся внешним блокером. См. zcode-queue-decisive-20261026.md.",
+      "changes": {
+        "wait_reason": "User command now fails safely before native ZCode send on installed Herder 27cb2f9; full deferred queue is still unsupported because native V4 can admit requested queue as startNow even after inputRouting=enqueue. Requires native atomic deferred-only admission or upstream repair; prior accepted inputs remain no-replay.",
+        "note": "Installed safe refusal Herder27cb2f9: one narrow adapter test1/1, tsc PASS, immutable build15/15, owner acceptance20/21 with sole intentional owner automation disarm failure. Real existing-fixture UI/API canary hf26-zcode-ui-deferred-block-20261026-01 returned notSubmitted=true/admitted=false/nonRetryable=true, native input rows unchanged 1 and canary rows0. No new session, no old input replay. Evidence zcode-queue-decisive-20261026.md."
       },
       "session": "unknown",
       "harness": "codex"

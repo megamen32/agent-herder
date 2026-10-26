@@ -12,11 +12,11 @@
     "minimum": 30,
     "maximum": 60
   },
-  "note": "Herder main/runtime c9e2ae4 build14/14+accept21/21; UI pinned same SHA and public browser path confirmed. Notice release3c5353b and narrow nginx callback1759560f installed; UID995 AI pause preserved. UserIO release92f98df installed; new QA card id4 clicked autonomously once; Notice completion sent attempts1, Herder resumed, same OpenCode session output HF26_USERIO_BUTTON_QA. ZCode queue-to-final remains blocked per L26. See evidence/installed-permission-card-c9e2ae4.md and zcode-queue-decisive-20261026.md.",
-  "wait_reason": "OpenCode permission, Notice callback, UserIO button, public Herder UI and same-session command are accepted on installed runtimes. Four-harness full PASS remains blocked by ZCode native V4 enqueue→startNow admission mismatch; no queued item exists to resume. Native source-policy decision or upstream repair is required.",
+  "note": "Current backend/runtime27cb2f9, source main pushed; immutable build15/15, narrow adapter test1/1, tsc PASS. Real user-path ZCode guard canary returned notSubmitted/nonRetryable and native input count unchanged. Owner accept-node20/21 solely due intentional owner automation disarm. Earlier OpenCode/Notice/UserIO canary remains accepted; no replay. See evidence/zcode-queue-decisive-20261026.md.",
+  "wait_reason": "Installed Herder 27cb2f9 blocks unsafe ZCode After response command before native submission; full four-harness queue-to-final PASS still requires a native ZCode atomic deferred-only admission or upstream repair. Owner Notice Place automation pause remains intentionally armed, so owner acceptance is 20/21 with that exact policy check refused.",
   "id": "L24",
   "harness": "codex",
-  "updated_at": "2026-10-26T12:47:10+03:00",
+  "updated_at": "2026-10-26T22:37:29+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T20:48:55+03:00",
@@ -114,6 +114,16 @@
       "changes": {
         "wait_reason": "OpenCode permission, Notice callback, UserIO button, public Herder UI and same-session command are accepted on installed runtimes. Four-harness full PASS remains blocked by ZCode native V4 enqueue→startNow admission mismatch; no queued item exists to resume. Native source-policy decision or upstream repair is required.",
         "note": "Herder main/runtime c9e2ae4 build14/14+accept21/21; UI pinned same SHA and public browser path confirmed. Notice release3c5353b and narrow nginx callback1759560f installed; UID995 AI pause preserved. UserIO release92f98df installed; new QA card id4 clicked autonomously once; Notice completion sent attempts1, Herder resumed, same OpenCode session output HF26_USERIO_BUTTON_QA. ZCode queue-to-final remains blocked per L26. See evidence/installed-permission-card-c9e2ae4.md and zcode-queue-decisive-20261026.md."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T22:37:29+03:00",
+      "note": "26.10: по новому прямому поручению выпущен узкий safety fix Herder27cb2f9. Установленный пользовательский режим ZCode «После ответа» завершает запрос как notSubmitted без нативной отправки. Полный результат по очереди остаётся открытым, см. L26.",
+      "changes": {
+        "wait_reason": "Installed Herder 27cb2f9 blocks unsafe ZCode After response command before native submission; full four-harness queue-to-final PASS still requires a native ZCode atomic deferred-only admission or upstream repair. Owner Notice Place automation pause remains intentionally armed, so owner acceptance is 20/21 with that exact policy check refused.",
+        "note": "Current backend/runtime27cb2f9, source main pushed; immutable build15/15, narrow adapter test1/1, tsc PASS. Real user-path ZCode guard canary returned notSubmitted/nonRetryable and native input count unchanged. Owner accept-node20/21 solely due intentional owner automation disarm. Earlier OpenCode/Notice/UserIO canary remains accepted; no replay. See evidence/zcode-queue-decisive-20261026.md."
       },
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex"

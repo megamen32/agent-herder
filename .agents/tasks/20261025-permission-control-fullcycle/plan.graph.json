@@ -19,7 +19,7 @@
   "current_progress": "4750249 установлен, runtime21/21, self-identity через настоящий подключённый MCP подтверждена. Новое поручение на полный остаток: три параллельных Worker направления на canonical main. UI ведёт L20/L21, Delivery ведёт L18/L25/L26/L28, Permissions ведёт L03/L04/L05/L06/L09/L10/L11. Найден новый конкретный UI defect: разрешение предлагается при native canRespond=false; исправляется владельцем. Минимальный native/consumer proof сначала переиспользует существующие квитанции; прошлые действия не повторяются. Общий review, единая установка и два независимых consumer tester выполняются после join. Прогноз текущего остатка110–205 активных минут, зависит от native fixtures/Notice test route и реального Whisper.",
   "external_waits": "Проверяется изолированный Notice Place test route; остальные направления выполняются независимо.",
   "slots": 3,
-  "updated_at": "2026-10-26T12:47:10+03:00",
+  "updated_at": "2026-10-26T22:37:29+03:00",
   "tasks": [
     {
       "id": "L01",
@@ -1124,9 +1124,9 @@
       "owner": "Delivery worker",
       "session": "unknown",
       "harness": "codex",
-      "note": "Installed canary on fresh fixture session_529567ea-c12d-457c-97df-846229bf96e4 did not meet acceptance. Native SessionStart/UserPromptSubmit hooks block on missing /tools/lhc_time_guard.py, leaving model_request_count=0. After official autoDrain=false setup, the correctly formed Herder requestedDelivery=queue canary was admitted as native startNow; post-readback inputRouting is startNow and queue is empty. See delivery-finish.md and exact receipts under .tmp/hf-delivery26/installed-readback/.",
+      "note": "Installed safe refusal Herder27cb2f9: one narrow adapter test1/1, tsc PASS, immutable build15/15, owner acceptance20/21 with sole intentional owner automation disarm failure. Real existing-fixture UI/API canary hf26-zcode-ui-deferred-block-20261026-01 returned notSubmitted=true/admitted=false/nonRetryable=true, native input rows unchanged 1 and canary rows0. No new session, no old input replay. Evidence zcode-queue-decisive-20261026.md.",
       "estimate_unknown_reason": "Native API для загруженной сессии подтверждён на уровне дизайна; состояние unloaded runtime и завершённая consumer приёмка пока неизвестны.",
-      "wait_reason": "Native ZCode V4 did not honor an exact enqueue admission even while the active tool was running. No queued item exists to resume. Installed API seam is exhausted; native source-policy decision or upstream repair is needed before queue-to-final acceptance.",
+      "wait_reason": "User command now fails safely before native ZCode send on installed Herder 27cb2f9; full deferred queue is still unsupported because native V4 can admit requested queue as startNow even after inputRouting=enqueue. Requires native atomic deferred-only admission or upstream repair; prior accepted inputs remain no-replay.",
       "origin": "",
       "supersedes": [],
       "progress_events": [
@@ -1199,6 +1199,16 @@
           "note": "The selected ZCode native LHC loader was repaired through plugin manager: fresh ordinary GLM turn completed LHC_ZCODE_HOOK_MODEL_OK and SessionStart/UserPromptSubmit hooks succeeded. A decisive independent queue fixture captured native inputRouting=enqueue, autoDrain=false and Bash tool running before one requested queue input, but native persisted requested/admittedDelivery=startNow. Herder returned admitted=true,ok=false,nonRetryable=true. Native pending0/canResume=false; resume was not called. No accepted or UNKNOWN input replay. Evidence zcode-queue-decisive-20261026.md.",
           "changes": {
             "wait_reason": "Native ZCode V4 did not honor an exact enqueue admission even while the active tool was running. No queued item exists to resume. Installed API seam is exhausted; native source-policy decision or upstream repair is needed before queue-to-final acceptance."
+          },
+          "session": "unknown",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T22:37:21+03:00",
+          "note": "26.10: установлен Herder 27cb2f9 с безопасным отказом до ZCode writer для пользовательского режима «После ответа». Реальный HTTP/message-status canary на существующей QA-сессии вернул notSubmitted=true, admitted=false, nonRetryable=true; число native session_input осталось 1, для QA input ID строк 0. Полная native queue остаётся внешним блокером. См. zcode-queue-decisive-20261026.md.",
+          "changes": {
+            "wait_reason": "User command now fails safely before native ZCode send on installed Herder 27cb2f9; full deferred queue is still unsupported because native V4 can admit requested queue as startNow even after inputRouting=enqueue. Requires native atomic deferred-only admission or upstream repair; prior accepted inputs remain no-replay.",
+            "note": "Installed safe refusal Herder27cb2f9: one narrow adapter test1/1, tsc PASS, immutable build15/15, owner acceptance20/21 with sole intentional owner automation disarm failure. Real existing-fixture UI/API canary hf26-zcode-ui-deferred-block-20261026-01 returned notSubmitted=true/admitted=false/nonRetryable=true, native input rows unchanged 1 and canary rows0. No new session, no old input replay. Evidence zcode-queue-decisive-20261026.md."
           },
           "session": "unknown",
           "harness": "codex"
@@ -2026,9 +2036,9 @@
       "owner": "Root",
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex",
-      "note": "Herder main/runtime c9e2ae4 build14/14+accept21/21; UI pinned same SHA and public browser path confirmed. Notice release3c5353b and narrow nginx callback1759560f installed; UID995 AI pause preserved. UserIO release92f98df installed; new QA card id4 clicked autonomously once; Notice completion sent attempts1, Herder resumed, same OpenCode session output HF26_USERIO_BUTTON_QA. ZCode queue-to-final remains blocked per L26. See evidence/installed-permission-card-c9e2ae4.md and zcode-queue-decisive-20261026.md.",
+      "note": "Current backend/runtime27cb2f9, source main pushed; immutable build15/15, narrow adapter test1/1, tsc PASS. Real user-path ZCode guard canary returned notSubmitted/nonRetryable and native input count unchanged. Owner accept-node20/21 solely due intentional owner automation disarm. Earlier OpenCode/Notice/UserIO canary remains accepted; no replay. See evidence/zcode-queue-decisive-20261026.md.",
       "estimate_over_limit_reason": "Единая immutable установка и связанные реальные consumer проверки должны использовать один exact SHA; разделение создаёт промежуточные релизы и повторную путаницу identity.",
-      "wait_reason": "OpenCode permission, Notice callback, UserIO button, public Herder UI and same-session command are accepted on installed runtimes. Four-harness full PASS remains blocked by ZCode native V4 enqueue→startNow admission mismatch; no queued item exists to resume. Native source-policy decision or upstream repair is required.",
+      "wait_reason": "Installed Herder 27cb2f9 blocks unsafe ZCode After response command before native submission; full four-harness queue-to-final PASS still requires a native ZCode atomic deferred-only admission or upstream repair. Owner Notice Place automation pause remains intentionally armed, so owner acceptance is 20/21 with that exact policy check refused.",
       "origin": "",
       "supersedes": [],
       "progress_events": [
@@ -2128,6 +2138,16 @@
           "changes": {
             "wait_reason": "OpenCode permission, Notice callback, UserIO button, public Herder UI and same-session command are accepted on installed runtimes. Four-harness full PASS remains blocked by ZCode native V4 enqueue→startNow admission mismatch; no queued item exists to resume. Native source-policy decision or upstream repair is required.",
             "note": "Herder main/runtime c9e2ae4 build14/14+accept21/21; UI pinned same SHA and public browser path confirmed. Notice release3c5353b and narrow nginx callback1759560f installed; UID995 AI pause preserved. UserIO release92f98df installed; new QA card id4 clicked autonomously once; Notice completion sent attempts1, Herder resumed, same OpenCode session output HF26_USERIO_BUTTON_QA. ZCode queue-to-final remains blocked per L26. See evidence/installed-permission-card-c9e2ae4.md and zcode-queue-decisive-20261026.md."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T22:37:29+03:00",
+          "note": "26.10: по новому прямому поручению выпущен узкий safety fix Herder27cb2f9. Установленный пользовательский режим ZCode «После ответа» завершает запрос как notSubmitted без нативной отправки. Полный результат по очереди остаётся открытым, см. L26.",
+          "changes": {
+            "wait_reason": "Installed Herder 27cb2f9 blocks unsafe ZCode After response command before native submission; full four-harness queue-to-final PASS still requires a native ZCode atomic deferred-only admission or upstream repair. Owner Notice Place automation pause remains intentionally armed, so owner acceptance is 20/21 with that exact policy check refused.",
+            "note": "Current backend/runtime27cb2f9, source main pushed; immutable build15/15, narrow adapter test1/1, tsc PASS. Real user-path ZCode guard canary returned notSubmitted/nonRetryable and native input count unchanged. Owner accept-node20/21 solely due intentional owner automation disarm. Earlier OpenCode/Notice/UserIO canary remains accepted; no replay. See evidence/zcode-queue-decisive-20261026.md."
           },
           "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
           "harness": "codex"
