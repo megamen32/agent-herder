@@ -297,6 +297,8 @@ it("uses the fast OpenCode active snapshot when the full session scan has not re
     pendingRequests: [{ id: "p-active-late", canRespond: true, command: "printf safe" }], observedAt: new Date().toISOString() };
   let activePending = false;
   let posts = 0;
+  let releaseFullScan: (sessions: AgentSession[]) => void = () => undefined;
+  const fullScan = new Promise<AgentSession[]>((resolve) => { releaseFullScan = resolve; });
   const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
   const observer = createPermissionNoticeObserver(registry, {
     loadProducer: async () => ({ endpoint: "https://notice.test/v1/human-requests", token: "fixture-token", project: "test-project", recipient: "test-recipient", source: "ask_human_env" }),
@@ -308,7 +310,7 @@ it("uses the fast OpenCode active snapshot when the full session scan has not re
   });
   const adapter: HarnessAdapter = {
     type: "opencode", name: "active-fixture", async init() {},
-    async listSessions() { return []; }, async listActiveSessions() { return activePending ? [session] : []; },
+    async listSessions() { return fullScan; }, async listActiveSessions() { return activePending ? [session] : []; },
     getSessionSnapshotReceipt() { return { exhaustive: true, observedAt: new Date().toISOString(), source: "fixture" }; },
     async getSession() { return session; }, async getPermissionState() { return state; }, async getSessionMessages() { return []; },
     async sendMessage() { return { ok: true }; }, async stopSession() { return { ok: true }; },
@@ -330,7 +332,7 @@ it("uses the fast OpenCode active snapshot when the full session scan has not re
     expect(record).toMatchObject({ target: { harness: "opencode", sessionId: session.id }, noticeDelivery: { state: "accepted" } });
     await new Promise((resolve) => setTimeout(resolve, 1_050));
     expect(posts).toBe(1);
-  } finally { stop(); }
+  } finally { releaseFullScan([]); stop(); }
 });
 
 it("fails closed on an ID-less permission event and freezes an ambiguous Notice POST as unknown", async () => {

@@ -413,7 +413,9 @@ export class SessionSupervisor {
     for (const key of seen) if (!current.has(key)) seen.delete(key);
     this.permissionNoticeSeen.set(provider, seen);
     const fresh = sessions.filter(session=>session.needsPermission && !seen.has(this.permissionObservationKey(session)));
-    if (!fresh.length || this.permissionSnapshotInFlight.has(provider) || this.permissionNoticePollInFlight.has(provider)) return;
+    // The historical startup scan can remain in flight for minutes. A fresh
+    // native active ID is independently fenced by getPermissionState below.
+    if (!fresh.length || this.permissionNoticePollInFlight.has(provider)) return;
     this.permissionNoticePollInFlight.add(provider);
     void this.permissionNoticeObserver.reconcileInitialSnapshot(adapter,fresh).then(complete=>{
       if (complete !== false) this.rememberObservedPermissions(provider,fresh);
