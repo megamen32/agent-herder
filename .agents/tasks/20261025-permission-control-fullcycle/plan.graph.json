@@ -16,8 +16,8 @@
     "OpenCode empty-success: terminal outcome виден без финального текста и без повторения accepted side effects.",
     "Общий выпуск: один joined source/artifact, публичный SSO UI и независимые пользовательские проверки всех ветвей."
   ],
-  "current_progress": "26.10.2026: опубликован main ec2adca, установлен Herder source 5541688 (immutable build 15/15, owner acceptance 20/21: единственный отказ — намеренный owner disarm). Реальный OpenCode permission -> Notice Place -> UserIO Allow -> та же native-сессия принят; автономный синтетический QA actor/project/RBAC и permission/steer/cancel /stop проверены без production effects. Поиск/прямая ссылка, preview 8000 и composer/Whisper имеют отдельные consumer-квитанции; качество распознавания и все четыре native permission-режима ещё не приняты. ZCode «После ответа» установленно отказывает до записи (notSubmitted=true); настоящая очередь не доказана. Глобальный автозапуск выключен двумя независимыми рычагами. Полный цикл L12/L24 остаётся открыт.",
-  "external_waits": "Полная отложенная очередь ZCode требует нативной атомарной deferred-only записи: V4 сейчас может принять запрос queue как startNow. Общий автозапуск Herder отдельно запрещён устойчивым owner-решением scope=* от 26.10.2026 13:11 МСК; сетевая аварийная пауза Notice Place активна с 22.10. Их снятие зависит от нового решения владельца после проверки безопасного канарейного маршрута. Исторические accepted/UNKNOWN операции не повторять.",
+  "current_progress": "27.10.2026: по прямому решению владельца Herder owner state открыт (forbidden=false, 4 подтверждённых узла), сетевой pause остановлен, отключён, замаскирован, firewall REJECT отсутствует. Панель Notice Place установлена с одним общим рычагом Herder. Все 9 health-scope Notice Place пока имеют automatic_health_diagnosis=false: фактический автоматический job ещё не проверен. Опубликован backend Herder 5541688; реальный OpenCode permission -> Notice Place -> UserIO Allow -> та же native-сессия принят; автономный синтетический QA не затронул production. ZCode «После ответа» отказывает до записи, истинная очередь не доказана. Остальной полный цикл L12/L24 остаётся открыт.",
+  "external_waits": "Полная отложенная очередь ZCode требует нативной атомарной deferred-only записи: V4 может принять запрос queue как startNow. Общие запреты Herder и firewall сняты по прямому решению владельца 27.10; для реального автоматического canary нужно штатно разрешить конкретный тестовый health-scope Notice Place (сейчас 0 из 9). Исторические accepted/UNKNOWN операции не повторять.",
   "slots": 3,
   "updated_at": "2026-10-26T23:31:17+03:00",
   "tasks": [
@@ -1434,13 +1434,12 @@
     {
       "id": "L30",
       "label": "Безопасно вернуть глобальные автозапуски Herder и Notice Place по решению владельца",
-      "status": "blocked",
+      "status": "running",
       "description": "Сверить причину исходной остановки и безопасность действующих автоматических проектов, затем отдельно снять owner disarm Herder scope=* и аварийную сетевую паузу Notice Place. Не возобновлять остановленные задания и не повторять accepted/UNKNOWN ввод. Проверить четыре узла и один изолированный автоматический канарейный запуск с квитанцией.",
       "acceptance": "Владелец прямо отменил прежнее ограничение на глобальную автоматизацию; оба независимых рычага подтверждены readback как открытые, политика Notice Place разрешает нужный тестовый scope, канарейка запускается один раз на точном host/session, четыре узла согласованы, чужие сессии и ранее принятые сообщения не затронуты.",
-      "owner": "Herder release owner; включение только после нового прямого решения владельца",
-      "note": "Start в панели Notice Place открывает только новые операции; старые остановленные сессии не продолжает. Нельзя снимать рычаги ради искусственного acceptance 21/21. Доказательство текущего состояния: live Herder /api/automation/disarm и systemctl readback 26.10.2026.",
-      "blocker": "Действует ранее прямое ограничение владельца «Глобальную автоматизацию не включать». Запрос текущего статуса и плана сам по себе не отменяет его.",
-      "estimate_unknown_reason": "Дата решения владельца и причина отдельной аварийной сетевой паузы не установлены; время на безопасную проверку зависит от текущей политики Notice Place.",
+      "owner": "Herder release owner",
+      "note": "27.10 владелец прямо велел снять оба запрета и оставить один механизм. Herder owner state через Notice Place Start: forbidden=false, readback подтвердил 4 узла. noticeplace-ai-pause.service stopped/disabled/masked, firewall rule отсутствует. Панель установлена без второго gate. Все 9 Notice Place health scopes сейчас automatic_health_diagnosis=false, поэтому автоматический job canary пока не запускался; это отдельная проектная политика, не глобальный рычаг. Остановленные сессии не возобновлялись и accepted ввод не повторялся.",
+      "estimate_unknown_reason": "Фактический автоматический canary зависит от настройки одного изолированного health-scope Notice Place; сейчас все девять рабочих scope выключены своей проектной политикой.",
       "origin": "",
       "supersedes": [],
       "affected_files": [
@@ -1448,11 +1447,7 @@
         "noticeplace-ai-pause.service",
         "Notice Place AI control"
       ],
-      "depends_on": [],
-      "blocker_details": {
-        "owner_disarm": "26.10 13:11 МСК Herder owner state disarmed=true, scope=*; readback подтверждён на server-100, 44, 88 и Mac Mini.",
-        "network_pause": "noticeplace-ai-pause.service active since 22.10 03:50 МСК; это отдельный запрет."
-      }
+      "depends_on": []
     },
     {
       "id": "L31",

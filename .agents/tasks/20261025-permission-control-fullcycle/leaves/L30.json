@@ -1,14 +1,12 @@
 {
   "id": "L30",
   "label": "Безопасно вернуть глобальные автозапуски Herder и Notice Place по решению владельца",
-  "status": "blocked",
+  "status": "running",
   "description": "Сверить причину исходной остановки и безопасность действующих автоматических проектов, затем отдельно снять owner disarm Herder scope=* и аварийную сетевую паузу Notice Place. Не возобновлять остановленные задания и не повторять accepted/UNKNOWN ввод. Проверить четыре узла и один изолированный автоматический канарейный запуск с квитанцией.",
   "acceptance": "Владелец прямо отменил прежнее ограничение на глобальную автоматизацию; оба независимых рычага подтверждены readback как открытые, политика Notice Place разрешает нужный тестовый scope, канарейка запускается один раз на точном host/session, четыре узла согласованы, чужие сессии и ранее принятые сообщения не затронуты.",
   "affected_files": ["automation-disarm owner state", "noticeplace-ai-pause.service", "Notice Place AI control"],
-  "owner": "Herder release owner; включение только после нового прямого решения владельца",
+  "owner": "Herder release owner",
   "depends_on": [],
-  "estimate_unknown_reason": "Дата решения владельца и причина отдельной аварийной сетевой паузы не установлены; время на безопасную проверку зависит от текущей политики Notice Place.",
-  "blocker": "Действует ранее прямое ограничение владельца «Глобальную автоматизацию не включать». Запрос текущего статуса и плана сам по себе не отменяет его.",
-  "blocker_details": {"owner_disarm": "26.10 13:11 МСК Herder owner state disarmed=true, scope=*; readback подтверждён на server-100, 44, 88 и Mac Mini.", "network_pause": "noticeplace-ai-pause.service active since 22.10 03:50 МСК; это отдельный запрет."},
-  "note": "Start в панели Notice Place открывает только новые операции; старые остановленные сессии не продолжает. Нельзя снимать рычаги ради искусственного acceptance 21/21. Доказательство текущего состояния: live Herder /api/automation/disarm и systemctl readback 26.10.2026."
+  "estimate_unknown_reason": "Фактический автоматический canary зависит от настройки одного изолированного health-scope Notice Place; сейчас все девять рабочих scope выключены своей проектной политикой.",
+  "note": "27.10 владелец прямо велел снять оба запрета и оставить один механизм. Herder owner state через Notice Place Start: forbidden=false, readback подтвердил 4 узла. noticeplace-ai-pause.service stopped/disabled/masked, firewall rule отсутствует. Панель установлена без второго gate. Все 9 Notice Place health scopes сейчас automatic_health_diagnosis=false, поэтому автоматический job canary пока не запускался; это отдельная проектная политика, не глобальный рычаг. Остановленные сессии не возобновлялись и accepted ввод не повторялся."
 }
