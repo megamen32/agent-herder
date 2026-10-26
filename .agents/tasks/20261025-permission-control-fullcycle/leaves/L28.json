@@ -11,7 +11,7 @@
     ".agents/tasks/20261025-permission-control-fullcycle"
   ],
   "status": "running",
-  "owner": "Lead текущей сессии",
+  "owner": "Delivery worker",
   "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
   "harness": "codex",
   "depends_on": [],
@@ -20,9 +20,9 @@
     "maximum": 45
   },
   "estimate_unknown_reason": "Сначала нужно прочитать точную пользовательскую native session и установить реальную границу обрыва.",
-  "note": "Установлено941966a; installed empty snapshot и actual MCP visible response доказаны раздельно. Exact native OpenCode empty terminal без replay пока не доказан.",
+  "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: native OpenCode completed без финального текста. Исторические accepted/UNKNOWN не повторять.",
   "created_at": "2026-10-26T02:15:50+03:00",
-  "updated_at": "2026-10-26T03:21:14+03:00",
+  "updated_at": "2026-10-26T05:02:12+03:00",
   "progress_events": [
     {
       "at": "2026-10-26T02:15:50+03:00",
@@ -101,8 +101,30 @@
       },
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:14:14+03:00",
+      "note": "26.10: пользователь поручил завершить весь остаток; три параллельных направления, main checkout, без новых worktrees и без повторных side effects.",
+      "changes": {
+        "status": "queued",
+        "owner": "Delivery worker",
+        "wait_reason": "",
+        "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: native OpenCode completed без финального текста. Исторические accepted/UNKNOWN не повторять."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T05:02:12+03:00",
+      "note": "Delivery worker read-only evidence/status refresh; accepted inputs and external side effects were not replayed.",
+      "changes": {
+        "status": "running",
+        "wait_reason": "Current read-only history for the exact session exposes eight assistant finish=stop records, all nonempty; the alleged original empty terminal is unavailable in the current snapshot. Do not replay accepted side effects or input.",
+        "note": "Exact historical empty terminal is currently unobservable; source handling is reviewed, but installed exact history/resource proof remains unavailable."
+      }
     }
   ],
   "estimate_over_limit_reason": "Связать точную native-сессию, оборванный ход и процесс-исполнитель с минимальной regression и исправлением — один неделимый сценарий этого конкретного дефекта; более короткая оценка может принять соседний timeout/route за доказанную причину.",
-  "result": "Exact native readback завершён: session `idle`, native `outcome=succeeded`; последнее assistant сообщение `finish=stop` пустое. Один запрос получил Notice Place 202 и одна coordination note update была принята; текущий агент ничего не повторял. Пользовательский симптом — молчаливый финал, не доказанная остановка через 20 минут. Source-level no-visible-response handling добавлен в L27; installed user-facing acceptance ещё не выполнена."
+  "result": "Exact native readback завершён: session `idle`, native `outcome=succeeded`; последнее assistant сообщение `finish=stop` пустое. Один запрос получил Notice Place 202 и одна coordination note update была принята; текущий агент ничего не повторял. Пользовательский симптом — молчаливый финал, не доказанная остановка через 20 минут. Source-level no-visible-response handling добавлен в L27; installed user-facing acceptance ещё не выполнена.",
+  "wait_reason": "Current read-only history for the exact session exposes eight assistant finish=stop records, all nonempty; the alleged original empty terminal is unavailable in the current snapshot. Do not replay accepted side effects or input."
 }

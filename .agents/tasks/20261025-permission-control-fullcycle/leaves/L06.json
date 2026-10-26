@@ -1,7 +1,7 @@
 {
   "id": "L06",
   "label": "Показать управление режимами и разрешениями в Herder",
-  "status": "running",
+  "status": "queued",
   "description": "В выбранной сессии показать реальный режим, допустимые переходы, текущий запрос и результат решения. Использовать существующий UI/MCP; избегать неподтверждённых универсальных кнопок.",
   "acceptance": "UI и MCP показывают одинаковый readback; поддержка каждой среды видна пользователю; ссылка карточки открывает ту же сессию; ошибки не маскируются под успех.",
   "affected_files": [
@@ -11,18 +11,15 @@
     "src/mcp-tools/handlers.ts",
     "tests/permission-control-ui.test.ts"
   ],
-  "owner": "интегратор 01a172c2",
-  "depends_on": [
-    "L03",
-    "L05"
-  ],
+  "owner": "Permission worker",
+  "depends_on": [],
   "estimate_minutes": {
     "minimum": 20,
     "maximum": 30
   },
-  "updated_at": "2026-10-25T22:03:20+03:00",
+  "updated_at": "2026-10-26T04:14:15+03:00",
   "estimate_over_limit_reason": "Согласованное отображение одного состояния в UI и MCP; оценка включает браузерное действие/readback.",
-  "wait_reason": "Нужны режимы и карточка ответа. Интегратор отдельно владеет compact Allow UI и queue edit; его исходники не подменяются.",
+  "wait_reason": "",
   "progress_events": [
     {
       "at": "2026-10-25T14:37:48+03:00",
@@ -69,8 +66,22 @@
         "note": "Read-only inspector на installed 8936 принят: Codex fullAuto/session/canSetMode и MiniMax native unsupported с отдельной Herder CLI policy. Mode/policy controls не нажимали. Исторически подтверждены existing compact one-time Allow и queue edit/cancel/collapse с сохранением inputId/jobId; это не доказывает новый queue-resume API. Реальная Notice card и точный native permission response остаются pending."
       },
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:14:15+03:00",
+      "note": "26.10: пользователь поручил завершить весь остаток; три параллельных направления, main checkout, без новых worktrees и без повторных side effects.",
+      "changes": {
+        "status": "queued",
+        "owner": "Permission worker",
+        "wait_reason": "",
+        "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: UI/API readback режима и permission outcome. Исторические accepted/UNKNOWN не повторять.",
+        "depends_on": []
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
     }
   ],
-  "note": "Read-only inspector на installed 8936 принят: Codex fullAuto/session/canSetMode и MiniMax native unsupported с отдельной Herder CLI policy. Mode/policy controls не нажимали. Исторически подтверждены existing compact one-time Allow и queue edit/cancel/collapse с сохранением inputId/jobId; это не доказывает новый queue-resume API. Реальная Notice card и точный native permission response остаются pending.",
-  "harness": "codex"
+  "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: UI/API readback режима и permission outcome. Исторические accepted/UNKNOWN не повторять.",
+  "harness": "codex",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187"
 }

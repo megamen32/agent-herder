@@ -1,23 +1,34 @@
 {
   "label": "Независимо проверить объединённые изменения",
-  "status": "queued",
+  "status": "running",
   "description": "Независимо проверить конкретный joined source diff после bounded implementation, включая безопасность, совместимость, отсутствие replay и соответствие исходным acceptance.",
   "acceptance": "Независимый reviewer изучил exact joined commit and changed paths; все findings исправлены или явно отложены владельцем; final SHIP с точным source SHA получен до main sync/release.",
   "affected_files": [],
-  "owner": "Lead / independent reviewer",
+  "owner": "Lead",
   "depends_on": [
     "L20",
-    "L21"
+    "L21",
+    "L18",
+    "L25",
+    "L26",
+    "L28",
+    "L03",
+    "L04",
+    "L05",
+    "L06",
+    "L09",
+    "L10",
+    "L11"
   ],
   "estimate_minutes": {
     "minimum": 15,
     "maximum": 30
   },
-  "note": "Частичный независимый review завершён только для queue UI/API source: SHIP для 1fb5c77, adc1d6d и dfd1f78; 47 focused UI tests и 65 gateway tests, TypeScript и own mock-browser (один POST, без повторной отправки). Это не review полного joined diff и не installed/live acceptance; полный review остаётся queued до завершения source leaves.",
-  "wait_reason": "Ждёт завершения source leaves L20 и L21.",
+  "note": "Independent worker reviewed7aa34b3+683456d exact-target producer/canonical answers, MCode terminal proof, ZCode history completeness, scoped Mac deadlines; zero material findings. Root185 tests+sessionpins11, workerMac41 allPASS, roottscPASS. Source review separate from installed acceptance.",
+  "wait_reason": "Ожидает install683 и независимых реальных consumer readbacks, QAcard/nativeanswer.",
   "id": "L22",
   "harness": "codex",
-  "updated_at": "2026-10-25T23:59:30+03:00",
+  "updated_at": "2026-10-26T06:38:03+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T20:48:54+03:00",
@@ -55,6 +66,42 @@
       "note": "Частичный независимый review завершён только для queue UI/API source: SHIP для 1fb5c77, adc1d6d и dfd1f78; 47 focused UI tests и 65 gateway tests, TypeScript и own mock-browser (один POST, без повторной отправки). Это не review полного joined diff и не installed/live acceptance; полный review остаётся queued до завершения source leaves.",
       "changes": {
         "note": "Частичный независимый review завершён только для queue UI/API source: SHIP для 1fb5c77, adc1d6d и dfd1f78; 47 focused UI tests и 65 gateway tests, TypeScript и own mock-browser (один POST, без повторной отправки). Это не review полного joined diff и не installed/live acceptance; полный review остаётся queued до завершения source leaves."
+      },
+      "session": "unknown",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:14:16+03:00",
+      "note": "Общий join ведёт текущий Lead; итог принимается после результатов трёх направлений и проверки public UI.",
+      "changes": {
+        "owner": "Lead",
+        "depends_on": [
+          "L20",
+          "L21",
+          "L18",
+          "L25",
+          "L26",
+          "L28",
+          "L03",
+          "L04",
+          "L05",
+          "L06",
+          "L09",
+          "L10",
+          "L11"
+        ],
+        "wait_reason": "Ждёт подтверждённых результатов зависимостей; отдельного разрешения на продолжение не требуется."
+      },
+      "session": "unknown",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T06:38:03+03:00",
+      "note": "Независимое source review объединения выполнено; consumer checks продолжатся после установки.",
+      "changes": {
+        "status": "running",
+        "note": "Independent worker reviewed7aa34b3+683456d exact-target producer/canonical answers, MCode terminal proof, ZCode history completeness, scoped Mac deadlines; zero material findings. Root185 tests+sessionpins11, workerMac41 allPASS, roottscPASS. Source review separate from installed acceptance.",
+        "wait_reason": "Ожидает install683 и независимых реальных consumer readbacks, QAcard/nativeanswer."
       },
       "session": "unknown",
       "harness": "codex"

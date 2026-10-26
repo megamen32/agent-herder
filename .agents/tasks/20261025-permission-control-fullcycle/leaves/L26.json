@@ -12,14 +12,12 @@
     "src/web/server.ts",
     "src/mcp/"
   ],
-  "owner": "permission_native",
-  "depends_on": [
-    "L25"
-  ],
+  "owner": "Delivery worker",
+  "depends_on": [],
   "estimate_unknown_reason": "Native API для загруженной сессии подтверждён на уровне дизайна; состояние unloaded runtime и завершённая consumer приёмка пока неизвестны.",
-  "note": "Queue UI/API source теперь полностью review-SHIP: source commits 1fb5c77 + adc1d6d + dfd1f78; 47 focused UI tests, 65 gateway tests и TypeScript GREEN. Own mock-browser подтвердил точный stalled autoDrain=true control, один POST и отсутствие повторной отправки. Установленный runtime всё ещё 8936deb и не содержит этот объединённый UI/API; публичная установленная same-session acceptance ещё не проведена. Native source recovery 4631e50 доказал только admission/start исходного ZCode head по точному turn-start событию, затем model/network error и запланированный native retry; assistant output/task completion UNKNOWN, дубликат не отправлялся. На последнем inventory хранилось 500 retained jobs и 0 in-flight. Предполагаемый unloaded TelegramAuto head на 1276 сообщений оказался Desktop compact card, не human message; состояние не меняли, история 1445 сообщений сохранена. Исходники самой программы ZCode остаются вне разрешённого изменения.",
-  "wait_reason": "Нужны общий reviewed main source join, финальная установка и read-only consumer proof UI/API. Не возобновлять hold и не приписывать подтверждённый start/output по одному autoDrain/readback.",
-  "updated_at": "2026-10-25T23:59:33+03:00",
+  "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: ZCode queue recovery до конечного native ответа. Исторические accepted/UNKNOWN не повторять.",
+  "wait_reason": "No final ZCode native answer is proven. A new isolated fixture could not be created because ZCode requires an exact registered project mapping for its CWD; do not retry or register as a convenience. Historical admitted queue input remains no-replay.",
+  "updated_at": "2026-10-26T05:02:12+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T22:40:56+03:00",
@@ -40,6 +38,28 @@
       },
       "session": "unknown",
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:14:14+03:00",
+      "note": "26.10: пользователь поручил завершить весь остаток; три параллельных направления, main checkout, без новых worktrees и без повторных side effects.",
+      "changes": {
+        "status": "queued",
+        "owner": "Delivery worker",
+        "wait_reason": "",
+        "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: ZCode queue recovery до конечного native ответа. Исторические accepted/UNKNOWN не повторять.",
+        "depends_on": []
+      },
+      "session": "unknown",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T05:02:12+03:00",
+      "note": "Delivery worker read-only evidence/status refresh; accepted inputs and external side effects were not replayed.",
+      "changes": {
+        "status": "running",
+        "wait_reason": "No final ZCode native answer is proven. A new isolated fixture could not be created because ZCode requires an exact registered project mapping for its CWD; do not retry or register as a convenience. Historical admitted queue input remains no-replay.",
+        "note": "Exact current blocker: isolated ZCode session creation requires a registered project/CWD mapping. Existing historical native start ended with provider/network failure and retry, not final output."
+      }
     }
   ],
   "session": "unknown",

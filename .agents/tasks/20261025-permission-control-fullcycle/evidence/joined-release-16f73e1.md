@@ -1,0 +1,13 @@
+# Установка общего Herder release 16f73e1
+
+- Source/main/origin: `16f73e161ddfaa1ef50b0b5bfaa5f1c4536ebc9e`; 26 scoped source/test paths. Исходные 8187c75 и self-default входят в ancestry.
+- Root review: permission exact host checks; native input boundary, no later user, terminal phase and stable native idle; RAG independent review findings fixed. Focused root suite182 tests + package projection1, core build and TSC passed.
+- Immutable build:14/14 checks, bundle fingerprint `a77e5f55db7f74794ebb3c12f26c0148725f0b7b10b180ea171e41969efdcae4`.
+- Pre-install waiting occurred before any mutation while durable messages were queued behind active native turns. A bounded code monitor observed pending count0, then invoked the installer once. No queued input was cancelled or replayed.
+- Installed owner backend/source:16f73e1; previous4750249 retained for rollback. Installer receipt confirms all108 prior durable delivery records unchanged. `accept-node.py`:21/21 accepted, correct ExecStart, manifest/bundle bytes, workspace dependency and live endpoints.
+- Public pin: ServersAdministartion commit `cde46e30`, only vhost and manifest. nginxctl refresh/check passed; scoped apply found the timer had already applied the same state. `nginxctl diff`:no managed drift.
+- Public staging initially preserved build-mode0600 through cp-a, so nginx returned404; screenshot captured/inspected before retry `/tmp/hfr26-public404.png`. Only new public artifact directory normalized root-owned dirs0755/files0644; www-data readability verified. Canonical UI validation doc now records this prerequisite.
+- Independent authorized SSO browser (own hfr26/r26, no message sends): actual Herder chat and composer rendered, screenshot `/tmp/hfr26-public-ready.png`. Authenticated root request returned200 and `X-Herder-UI-Source=16f73e161ddfaa1ef50b0b5bfaa5f1c4536ebc9e`. A later about:blank was this own browser's 300000ms idle expiry, not an app failure; captured/inspected and own session closed.
+- Installed MCP consumer by delivery worker: exact-only local search514ms, local-index/fleetComplete=false, no embedding wait. Existing accepted OpenCode `hf26-mm-opencode-02` resource read twice:completed, exact15-char `HF26_MINIMAX_OK`, identical binding/text/hash, baselineCoverage=unavailable; no resend.
+
+Remaining current delta: local mesh tool misleading error/description, ZCode root trailing separator and cold empty-history coverage, exact-target QA Notice producer binding. Mac direct listener availability and full native permission/card/answer remain separate checks. This receipt does not claim they are complete.

@@ -13,10 +13,10 @@
     "maximum": 60
   },
   "note": "Канонический preservation commit 1b919b2 содержит 43 проверенных пути; 121 несвязанный untracked/private item сохранён локально и исключён из публикации. Это подтверждает сохранение состояния, но inventory/reconciliation всех WIP, перенос требуемых функций в main и exact remote-main readback ещё не завершены.",
-  "wait_reason": "Ждёт независимого review joined source diff.",
+  "wait_reason": "Ждёт подтверждённых результатов зависимостей; отдельного разрешения на продолжение не требуется.",
   "id": "L23",
   "harness": "codex",
-  "updated_at": "2026-10-25T23:59:31+03:00",
+  "updated_at": "2026-10-26T04:14:16+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T20:48:55+03:00",
@@ -53,6 +53,15 @@
       "note": "Канонический preservation commit 1b919b2 содержит 43 проверенных пути; 121 несвязанный untracked/private item сохранён локально и исключён из публикации. Это подтверждает сохранение состояния, но inventory/reconciliation всех WIP, перенос требуемых функций в main и exact remote-main readback ещё не завершены.",
       "changes": {
         "note": "Канонический preservation commit 1b919b2 содержит 43 проверенных пути; 121 несвязанный untracked/private item сохранён локально и исключён из публикации. Это подтверждает сохранение состояния, но inventory/reconciliation всех WIP, перенос требуемых функций в main и exact remote-main readback ещё не завершены."
+      },
+      "session": "unknown",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:14:16+03:00",
+      "note": "Общий join ведёт текущий Lead; итог принимается после результатов трёх направлений и проверки public UI.",
+      "changes": {
+        "wait_reason": "Ждёт подтверждённых результатов зависимостей; отдельного разрешения на продолжение не требуется."
       },
       "session": "unknown",
       "harness": "codex"

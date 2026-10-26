@@ -11,12 +11,12 @@
     "src/web/server.ts",
     "src/adapters/"
   ],
-  "owner": "permission_reply_bridge",
+  "owner": "Delivery worker",
   "depends_on": [],
   "estimate_unknown_reason": "Исправление двух наблюдавшихся consumer дефектов и объединение уже существующих WIP; оставшийся объём зависит от native adapter результата и обязательной повторной приёмки.",
-  "note": "Единый delivery core остаётся открытым. Общий UMD source 324f65e и durable guard 5cf6c22 получили независимый SHIP; observer 8cc9754 прошёл 55 focused tests + TypeScript и теперь также получил SHIP review. MCP и локальный mesh используют один UMD/durable job без второго sender; inline окно ≤30 секунд и stable fetch ref. Remote response resource reader f47288b получил independent SHIP; это source readiness, не installed consumer proof. Установленный release остаётся 8936deb. MiniMax inter-agent live canary не выполнялся: на последнем чтении 2026-10-25 19:47 UTC квота была 0%; ранее принятый human→MiniMax outcome L16 ограничен своим сценарием. ZCode native source 4631e50 допустил один исходный head и связал его точным turn-start; последующий model/network error поставил native retry, assistant answer/task completion не доказаны и input не дублировался. На installed readback 23:39 UTC было 500 retained jobs и 0 in-flight. Loaded broker queue остаётся на явном hold. Предполагаемые 1276 сообщений unloaded TelegramAuto оказались compact-карточкой Desktop, а не human message; ничего не меняли, история в 1445 сообщений сохранена. Финальный main join/release и consumer acceptance остаются впереди.",
-  "wait_reason": "Ждём завершения bridge integration/reconciliation и joined release перед реальной consumer acceptance. MiniMax live canary не запускался при прочитанной квоте 0%; ZCode native start подтверждён, но итоговый assistant response отсутствует. Не считать source SHIP, retained jobs или human MiniMax proof доказательством inter-agent delivery.",
-  "updated_at": "2026-10-26T00:01:29+03:00",
+  "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: реальная доставка agent→MiniMax без повторения прошлых inputs. Исторические accepted/UNKNOWN не повторять.",
+  "wait_reason": "OpenCode MiniMax-provider canary is accepted once; exact native response is evidenced. This is not native minimax-code. Read-only response_fetch consumer check awaits root release SHA; no resend.",
+  "updated_at": "2026-10-26T05:02:12+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T22:40:52+03:00",
@@ -47,6 +47,27 @@
       },
       "session": "unknown",
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:14:14+03:00",
+      "note": "26.10: пользователь поручил завершить весь остаток; три параллельных направления, main checkout, без новых worktrees и без повторных side effects.",
+      "changes": {
+        "status": "queued",
+        "owner": "Delivery worker",
+        "wait_reason": "",
+        "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: реальная доставка agent→MiniMax без повторения прошлых inputs. Исторические accepted/UNKNOWN не повторять."
+      },
+      "session": "unknown",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T05:02:12+03:00",
+      "note": "Delivery worker read-only evidence/status refresh; accepted inputs and external side effects were not replayed.",
+      "changes": {
+        "status": "running",
+        "wait_reason": "OpenCode MiniMax-provider canary is accepted once; exact native response is evidenced. This is not native minimax-code. Read-only response_fetch consumer check awaits root release SHA; no resend.",
+        "note": "One OpenCode/MiniMax-provider input produced HF26_MINIMAX_OK; native minimax-code acceptance is not established. Observer source reviewed; installed MCP response read pending."
+      }
     }
   ],
   "session": "unknown",

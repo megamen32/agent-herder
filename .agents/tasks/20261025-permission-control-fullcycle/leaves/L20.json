@@ -1,6 +1,6 @@
 {
   "label": "Проверить 8000-символьный preview на реальном consumer пути",
-  "status": "running",
+  "status": "done",
   "description": "Проверить изменение, которое сохраняет preview до 8000 символов при длинной доставке, в установленном MCP/UI consumer пути без утечки лишнего текста.",
   "acceptance": "Reviewed immutable release сохраняет требуемые пользователем 8000 символов preview; реальный consumer получает это значение, а соседние long-message semantics остаются прежними. Зафиксированы exact release SHA и независимый readback; до live проверки результат остаётся source-only.",
   "affected_files": [
@@ -10,17 +10,17 @@
     "src/mesh/gptadmin.ts",
     "tests/long-messages.test.ts"
   ],
-  "owner": "permission_native",
+  "owner": "Root",
   "depends_on": [],
   "estimate_minutes": {
     "minimum": 15,
     "maximum": 30
   },
-  "note": "Использовать точное требование пользователя: 8000 символов, не 8000 токенов. Source fix 2ce5c18 и installed release 8936/frontend pin 76e83d0 не считать live acceptance.",
-  "wait_reason": "Ожидает общего reviewed source join и единого финального release.",
+  "note": "Installed immutable 16f73e1: actual compactAutomaticMessage produced exactly 8000-character prefix for 8001-character Unicode fixture b4fa719e. Connected MCP read_message returned 8000+1 characters and exact full reconstruction; source 7999/8000/8001 regression PASS. Evidence: evidence/preview-installed-16f73e1.md. This is an MCP consumer claim, not browser rendering.",
+  "wait_reason": "",
   "id": "L20",
   "harness": "codex",
-  "updated_at": "2026-10-26T02:49:15+03:00",
+  "updated_at": "2026-10-26T06:23:19+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T20:48:53+03:00",
@@ -91,7 +91,49 @@
       },
       "session": "unknown",
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:14:14+03:00",
+      "note": "26.10: пользователь поручил завершить весь остаток; три параллельных направления, main checkout, без новых worktrees и без повторных side effects.",
+      "changes": {
+        "owner": "UI worker",
+        "wait_reason": "",
+        "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: preview 8000 символов: проверить установленный public UI. Исторические accepted/UNKNOWN не повторять."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:37:43+03:00",
+      "note": "Read-only runtime/source boundary and consumer verification update; no deploy or message send.",
+      "changes": {
+        "note": "Текущий source HEAD 578d89fe06ce и установленный runtime release 4750249bb888074c965bcc56e4e9e28fad2dfdc9 содержат PREVIEW_LENGTH=8000 символов; установленный dist/long-messages.js подтверждён read-only. Source/MCP regression: tests/long-messages.test.ts 6/6 PASS; тестовая фикстура была устаревшей и теперь использует durable delivery service. Публичный SSO UI пока blank после загрузки assets (root без children, API-запросов нет), поэтому реальный UI preview acceptance не заявлен.",
+        "wait_reason": "Root должен проверить pinned public UI asset 0b5cb01a4473afa5b40020a3f04e6c43fa7f482f и первичный render; затем повторить public consumer preview/readback. Не менять release, nginx или повторять отправки ради canary."
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:43:37+03:00",
+      "note": "Correction: fresh public SSO session rendered; initial blank was a transient pre-mount capture. Public assets match installed runtime by SHA256.",
+      "changes": {
+        "note": "Текущий source HEAD 578d89fe06ce и установленный runtime release 4750249bb888074c965bcc56e4e9e28fad2dfdc9 содержат PREVIEW_LENGTH=8000 символов; dist/long-messages.js подтверждён read-only. Source/MCP regression tests/long-messages.test.ts: 6/6 PASS; устаревшая фикстура исправлена через durable delivery service. Public UI после свежего SSO mount отрисовал чат; HTML/JS/CSS public pin совпадают по SHA256 с установленным release. Отдельная реальная preview consumer проверка остаётся не выполнена.",
+        "wait_reason": "Ожидает общего reviewed source join и независимой 8000-character preview проверки через окончательный public consumer. Предыдущий blank снимок был до завершения первого mount; далее он не воспроизвёлся."
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T06:23:19+03:00",
+      "note": "Установленный 16f73e1 и настоящий MCP consumer подтвердили 8000 символов и точное продолжение без отправки сообщений.",
+      "changes": {
+        "status": "done",
+        "owner": "Root",
+        "note": "Installed immutable 16f73e1: actual compactAutomaticMessage produced exactly 8000-character prefix for 8001-character Unicode fixture b4fa719e. Connected MCP read_message returned 8000+1 characters and exact full reconstruction; source 7999/8000/8001 regression PASS. Evidence: evidence/preview-installed-16f73e1.md. This is an MCP consumer claim, not browser rendering.",
+        "wait_reason": ""
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
     }
   ],
-  "estimate_over_limit_reason": "Одна ограниченная consumer-проверка должна связать source fix, immutable installed release и preview с лимитом ровно 8 000 символов (без перевода в токены и пересчёта по модели); отдельные source/live проверки не подменяют реальную приёмку и повышают риск перепутать SHA."
+  "estimate_over_limit_reason": "Одна ограниченная consumer-проверка должна связать source fix, immutable installed release и preview с лимитом ровно 8 000 символов (без перевода в токены и пересчёта по модели); отдельные source/live проверки не подменяют реальную приёмку и повышают риск перепутать SHA.",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187"
 }

@@ -1,10 +1,10 @@
 {
   "label": "Выпустить единый проверенный main и принять реальный результат",
-  "status": "queued",
+  "status": "running",
   "description": "После main sync выполнить один финальный immutable build/deploy и провести разрешённые реальные consumer проверки полного согласованного объёма без дополнительных промежуточных release.",
   "acceptance": "Exact main/source/install SHA совпадают; штатный build/acceptance зелёный; UI preview/composer/voice, permission mode/strip, OpenCode search, MiniMax delivery и разрешённая Notice card/ответ проверены на точных fixtures по исходным критериям. Четырёх-harness полный результат называется PASS только если все исходные обязательные критерии доказаны; UNKNOWN/unsupported остаются явно разделены.",
   "affected_files": [],
-  "owner": "Lead / release executor",
+  "owner": "Root",
   "depends_on": [
     "L23"
   ],
@@ -12,11 +12,11 @@
     "minimum": 30,
     "maximum": 60
   },
-  "note": "До начала consumer checks нужен exact accepted joined main SHA. Не выполнять mode writes, provider canaries или owner notices вне конкретной оставшейся авторизации.",
-  "wait_reason": "Ждёт завершения inventory/reconciliation и main sync.",
+  "note": "main/origin683456d built14/14; independentreview0findings. Compatiblepublicfrontend683 published viaAdmin18c122ca scopednginxapply, realQA browser13Server100labels/0unconfirmedsidebarlabels. Backendstill16f73; automaticguardedinstallmonitorrunsfor30min max and has not attempted install. Newforeignqueueddeliveriesarrivedduringwait (4→5), all same active np_l01_glmflash owner. Exact four-questioncohort separately verified viaexistingmessage-queueGET editable=true/sameJob=true; no nativeadmission/no cancellation. Human decision requested to wait orcancelonlythatexactcohort. No reply yet, preserve queue.",
+  "wait_reason": "Не перезапускать backend с принятой чужой очередью. Автоматический монитор ждёт нуля; для отмены запрошено явное решение пользователя. После install нужныMCode sameURIreadbacks, distinctZCodequeuefixture и одна QApermissioncard/nativeanswer.",
   "id": "L24",
   "harness": "codex",
-  "updated_at": "2026-10-25T20:49:44+03:00",
+  "updated_at": "2026-10-26T06:52:51+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T20:48:55+03:00",
@@ -47,7 +47,40 @@
         "estimate_over_limit_reason": "Единая immutable установка и связанные реальные consumer проверки должны использовать один exact SHA; разделение создаёт промежуточные релизы и повторную путаницу identity."
       },
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:14:16+03:00",
+      "note": "Общий join ведёт текущий Lead; итог принимается после результатов трёх направлений и проверки public UI.",
+      "changes": {
+        "owner": "Lead",
+        "wait_reason": "Ждёт подтверждённых результатов зависимостей; отдельного разрешения на продолжение не требуется."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T06:38:00+03:00",
+      "note": "Опубликован и собран общий source683456d; автоматическая установка ждёт безопасного окончания принятых доставок.",
+      "changes": {
+        "status": "running",
+        "owner": "Root",
+        "note": "main/origin683456df67b67c939b37ff9fab4fdf76c3f430df, build14/14 PASS, native routing/UI/QA isolation/delivery source review0material findings. Publicartifactstaged0755/0644 rootowned, not pinned. Exact Mac candidate read succeeded17.479s; prior read native9s deadline remains explicit. See evidence/routing-release-683456d.md. Automatic guarded installer running, no install-started marker yet; prior durable inputs preserved.",
+        "wait_reason": "3–4 accepted durable waiting deliveries belong to active foreign OpenCode np_l01_glmflash; restart would mark them interrupted and discard runtime closures. Wait automatically for zero; do not cancel/replay or alter the foreign native turn."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T06:52:51+03:00",
+      "note": "Frontend683 уже опубликован и browser-проверен без перезапуска backend; backend guard сохраняет чужую очередь.",
+      "changes": {
+        "note": "main/origin683456d built14/14; independentreview0findings. Compatiblepublicfrontend683 published viaAdmin18c122ca scopednginxapply, realQA browser13Server100labels/0unconfirmedsidebarlabels. Backendstill16f73; automaticguardedinstallmonitorrunsfor30min max and has not attempted install. Newforeignqueueddeliveriesarrivedduringwait (4→5), all same active np_l01_glmflash owner. Exact four-questioncohort separately verified viaexistingmessage-queueGET editable=true/sameJob=true; no nativeadmission/no cancellation. Human decision requested to wait orcancelonlythatexactcohort. No reply yet, preserve queue.",
+        "wait_reason": "Не перезапускать backend с принятой чужой очередью. Автоматический монитор ждёт нуля; для отмены запрошено явное решение пользователя. После install нужныMCode sameURIreadbacks, distinctZCodequeuefixture и одна QApermissioncard/nativeanswer."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
     }
   ],
-  "estimate_over_limit_reason": "Единая immutable установка и связанные реальные consumer проверки должны использовать один exact SHA; разделение создаёт промежуточные релизы и повторную путаницу identity."
+  "estimate_over_limit_reason": "Единая immutable установка и связанные реальные consumer проверки должны использовать один exact SHA; разделение создаёт промежуточные релизы и повторную путаницу identity.",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187"
 }

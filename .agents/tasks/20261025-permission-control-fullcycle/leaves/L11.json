@@ -7,18 +7,15 @@
   "affected_files": [
     ".agents/tasks/20261025-permission-control-fullcycle/acceptance/minimax-code.json"
   ],
-  "owner": "Исполнитель текущего чата",
-  "depends_on": [
-    "L10",
-    "L16"
-  ],
+  "owner": "Permission worker",
+  "depends_on": [],
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 20
   },
-  "updated_at": "2026-10-25T17:45:26+03:00",
+  "updated_at": "2026-10-26T04:14:15+03:00",
   "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной MiniMax fixture.",
-  "wait_reason": "После L10: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.",
+  "wait_reason": "",
   "progress_events": [
     {
       "at": "2026-10-25T14:37:49+03:00",
@@ -42,7 +39,21 @@
       "changes": {
         "note": "MiniMax session-mode unsupported. Durable permission source 5f3d3a9 и consumer WIP: ранее подтверждены 52 tests + tsc и same-DB atomic proof; fix ложного accepted для Desktop 2xx без item_id вошёл в 7643500 и получил independent SHIP. Exact fixture live consumer proof ещё не выполнен; automatic Notice trigger/real consumer proof отсутствуют. No PASS, accepted/UNKNOWN не повторять."
       }
+    },
+    {
+      "at": "2026-10-26T04:14:15+03:00",
+      "note": "26.10: пользователь поручил завершить весь остаток; три параллельных направления, main checkout, без новых worktrees и без повторных side effects.",
+      "changes": {
+        "owner": "Permission worker",
+        "wait_reason": "",
+        "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: MiniMax permission/policy consumer proof. Исторические accepted/UNKNOWN не повторять.",
+        "depends_on": []
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
     }
   ],
-  "note": "MiniMax session-mode unsupported. Durable permission source 5f3d3a9 и consumer WIP: ранее подтверждены 52 tests + tsc и same-DB atomic proof; fix ложного accepted для Desktop 2xx без item_id вошёл в 7643500 и получил independent SHIP. Exact fixture live consumer proof ещё не выполнен; automatic Notice trigger/real consumer proof отсутствуют. No PASS, accepted/UNKNOWN не повторять."
+  "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: MiniMax permission/policy consumer proof. Исторические accepted/UNKNOWN не повторять.",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex"
 }

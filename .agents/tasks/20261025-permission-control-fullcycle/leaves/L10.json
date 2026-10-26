@@ -7,17 +7,15 @@
   "affected_files": [
     ".agents/tasks/20261025-permission-control-fullcycle/acceptance/codex.json"
   ],
-  "owner": "Исполнитель текущего чата",
-  "depends_on": [
-    "L09"
-  ],
+  "owner": "Permission worker",
+  "depends_on": [],
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 20
   },
-  "updated_at": "2026-10-25T17:44:23+03:00",
+  "updated_at": "2026-10-26T04:14:15+03:00",
   "estimate_over_limit_reason": "Непрерывный живой roundtrip и cleanup одной Codex fixture.",
-  "wait_reason": "После L09: предыдущий этап должен подтвердить контракт/установленный путь; исполнитель один.",
+  "wait_reason": "",
   "progress_events": [
     {
       "at": "2026-10-25T14:37:48+03:00",
@@ -34,7 +32,21 @@
       "changes": {
         "note": "Codex app-server сообщает canSetMode=false, supportedModes=[] и не подтверждает currentMode; native session-mode change недоступен. Установленный permission roundtrip/consumer proof этой сессии ещё не выполнен. Показать unsupported честно; source tests не являются live PASS."
       }
+    },
+    {
+      "at": "2026-10-26T04:14:15+03:00",
+      "note": "26.10: пользователь поручил завершить весь остаток; три параллельных направления, main checkout, без новых worktrees и без повторных side effects.",
+      "changes": {
+        "owner": "Permission worker",
+        "wait_reason": "",
+        "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: Codex permission consumer proof. Исторические accepted/UNKNOWN не повторять.",
+        "depends_on": []
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
     }
   ],
-  "note": "Codex app-server сообщает canSetMode=false, supportedModes=[] и не подтверждает currentMode; native session-mode change недоступен. Установленный permission roundtrip/consumer proof этой сессии ещё не выполнен. Показать unsupported честно; source tests не являются live PASS."
+  "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: Codex permission consumer proof. Исторические accepted/UNKNOWN не повторять.",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex"
 }

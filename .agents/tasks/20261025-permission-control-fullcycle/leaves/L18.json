@@ -8,15 +8,15 @@
     "src/session-search.ts",
     "tests/l72-session-search-incremental.test.ts"
   ],
-  "owner": "permission_reply_bridge",
+  "owner": "Delivery worker",
   "depends_on": [],
   "estimate_minutes": {
     "minimum": 15,
     "maximum": 25
   },
   "estimate_over_limit_reason": "Одна bounded search/index цепочка с узкой регрессией. Приёмка отдельно покажет полноту данных; не расширять до общего перестроения индекса.",
-  "note": "Source fixes 3380e8a/896a38be independently reviewed; на установленном release точный filtered OpenCode read вернул 10 совпадений при partial index coverage 3189/3200. Исходный полный query остаётся UNKNOWN; покрытие и точный исходный consumer критерий не закрыты.",
-  "updated_at": "2026-10-25T22:03:22+03:00",
+  "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: полнота поиска исходного запроса по native каталогу. Исторические accepted/UNKNOWN не повторять.",
+  "updated_at": "2026-10-26T05:02:12+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T17:44:23+03:00",
@@ -32,7 +32,29 @@
         "note": "Source fixes 3380e8a/896a38be independently reviewed; на установленном release точный filtered OpenCode read вернул 10 совпадений при partial index coverage 3189/3200. Исходный полный query остаётся UNKNOWN; покрытие и точный исходный consumer критерий не закрыты."
       },
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:14:14+03:00",
+      "note": "26.10: пользователь поручил завершить весь остаток; три параллельных направления, main checkout, без новых worktrees и без повторных side effects.",
+      "changes": {
+        "owner": "Delivery worker",
+        "wait_reason": "",
+        "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: полнота поиска исходного запроса по native каталогу. Исторические accepted/UNKNOWN не повторять."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T05:02:12+03:00",
+      "note": "Delivery worker read-only evidence/status refresh; accepted inputs and external side effects were not replayed.",
+      "changes": {
+        "status": "running",
+        "wait_reason": "Exact native Mac hit found; exact host/not-found diagnostic fixed in source. Installed MCP search rerun awaits root release SHA; Mac index coverage is partial, so only the positive hit is conclusive.",
+        "note": "Exact Codex thread and matching message found on Mac; source diagnostic fix reviewed. Installed search consumer proof remains pending release."
+      }
     }
   ],
-  "harness": "codex"
+  "harness": "codex",
+  "wait_reason": "Exact native Mac hit found; exact host/not-found diagnostic fixed in source. Installed MCP search rerun awaits root release SHA; Mac index coverage is partial, so only the positive hit is conclusive.",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187"
 }

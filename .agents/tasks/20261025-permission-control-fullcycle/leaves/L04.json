@@ -12,17 +12,15 @@
     "src/adapters/minimax-code-control.ts",
     "tests/permission-control-native-requests.test.ts"
   ],
-  "owner": "permission_native",
-  "depends_on": [
-    "L03"
-  ],
+  "owner": "Permission worker",
+  "depends_on": [],
   "estimate_minutes": {
     "minimum": 25,
     "maximum": 45
   },
-  "updated_at": "2026-10-25T15:42:00+03:00",
+  "updated_at": "2026-10-26T04:14:15+03:00",
   "estimate_over_limit_reason": "Одна связная цепочка native request/response и защита от повторов для четырёх адаптеров; checkpoint через20мин.",
-  "wait_reason": "Запускается после завершения L03.",
+  "wait_reason": "",
   "progress_events": [
     {
       "at": "2026-10-25T14:37:48+03:00",
@@ -50,7 +48,21 @@
       "note": "Independent review выявил Codex permission-subset request, который виден как обычный pending request, но respondPermission безопасно отказывает; общий DTO пока не кодирует допустимость ответа. Finding передан permission_native. Leaf остаётся queued до завершения L03; source/live PASS не заявляется.",
       "changes": {},
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:14:15+03:00",
+      "note": "26.10: пользователь поручил завершить весь остаток; три параллельных направления, main checkout, без новых worktrees и без повторных side effects.",
+      "changes": {
+        "owner": "Permission worker",
+        "wait_reason": "",
+        "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: точный permission reply с проверкой native receipt. Исторические accepted/UNKNOWN не повторять.",
+        "depends_on": []
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
     }
   ],
-  "note": "Lead подтвердил native readback по четырём exact ZCode sessions на host100: mode=yolo, pendingRequests=[]; исходные четыре durable pending approvals исполнены единственный раз native executor. Отдельный Airlock list_pages request также отвечен один раз по отдельному подтверждению Lead. Это current native business evidence, но не source/runtime causality и не приёмка четырёх harness; не re-approve и не менять mode повторно."
+  "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: точный permission reply с проверкой native receipt. Исторические accepted/UNKNOWN не повторять.",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex"
 }

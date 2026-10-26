@@ -1,6 +1,6 @@
 {
   "label": "Завершить Codex-like composer и безопасный voice input",
-  "status": "running",
+  "status": "done",
   "description": "Сделать ввод и отправку похожими на Codex: Enter переносит строку, Meta+Enter на Mac и Ctrl+Enter в других системах отправляют; plus icon остаётся доступным; удержание send открывает Steer/Queue; browser mic передаёт локальную запись same-origin backend транскрибации и только вставляет текст в composer.",
   "acceptance": "Клавиатура, обычный click, long-press и выбор Steer/Queue проверены на реальном UI без случайной отправки; voice permission/error, запись, backend transcription, ручная остановка и вставка текста проверены; транскрипт никогда не отправляется автоматически, timeout/ошибка не вызывают retry, аудио не уходит в браузерный secret/provider. Независимый review принят до общего install.",
   "affected_files": [
@@ -10,18 +10,18 @@
     "tests/web-ui-controls.test.ts",
     "src/web/server.ts"
   ],
-  "owner": "permission_mode_ui",
+  "owner": "Root",
   "depends_on": [],
   "estimate_minutes": {
     "minimum": 30,
     "maximum": 45
   },
   "started_at": "2026-10-25T20:42:00+03:00",
-  "note": "UI source commit 609c784 и mic permission-race fix 2dda29d проверены; local preview/browser доказал клавиатуру, long-press, queue menu и late getUserMedia cleanup. Fake media transcription подтверждает только UI insertion без autosend; backend contract/source 1a3d948 проверены отдельно. Hardware mic, установленный same-origin Whisper route, joined-source review/install остаются pending; no final runtime PASS.",
-  "wait_reason": "Backend route readiness and common reviewed source join are required for end-to-end acceptance.",
+  "note": "Actual public16f73e1 UI MediaRecorder→realWhisper200→draft insertion proved with no send/call (synthetic-audio quality not claimed). Composer source unchanged in683456d. Compatible frontend683 independently published via Admin18c122ca scopednginxapply; actualSSObrowserrootChildren1, exactX-Herder-UI-Source683,13confirmedServer100sidebarlabels,0unconfirmedsidebarlabels. Screenshot/evidence in public-composer-16f73e1.md and routing-release-683456d.md. QA login not fleetowner: pins401boundary preserved, no pinclaim.",
+  "wait_reason": "",
   "id": "L21",
   "harness": "codex",
-  "updated_at": "2026-10-25T22:03:23+03:00",
+  "updated_at": "2026-10-26T06:46:34+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T20:48:54+03:00",
@@ -65,7 +65,62 @@
         "note": "UI source commit 609c784 и mic permission-race fix 2dda29d проверены; local preview/browser доказал клавиатуру, long-press, queue menu и late getUserMedia cleanup. Fake media transcription подтверждает только UI insertion без autosend; backend contract/source 1a3d948 проверены отдельно. Hardware mic, установленный same-origin Whisper route, joined-source review/install остаются pending; no final runtime PASS."
       },
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:14:14+03:00",
+      "note": "26.10: пользователь поручил завершить весь остаток; три параллельных направления, main checkout, без новых worktrees и без повторных side effects.",
+      "changes": {
+        "status": "queued",
+        "owner": "UI worker",
+        "wait_reason": "",
+        "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: composer и полный microphone/Whisper путь. Исторические accepted/UNKNOWN не повторять."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:37:43+03:00",
+      "note": "Read-only runtime/source boundary and consumer verification update; no deploy or message send.",
+      "changes": {
+        "status": "running",
+        "note": "Локальный UI release 4750249 показывает composer и voice button. В трёх изолированных browser virtual-mic canaries MediaRecorder отправил по одному POST /api/composer/transcription; ответ 200 от configured Whisper consumer вставлялся в composer, send оставался активным, отправку не нажимал. Синтетический eSpeak текст распознан плохо/с повторами, поэтому это подтверждает путь и no-autosend, но не приемлемое качество речи. Физический микрофон человека не проверялся; телефонных действий ноль. Public SSO login успешен, но UI после загрузки JS/CSS остаётся blank; consumer acceptance ждёт исправления public static pin/render Root.",
+        "wait_reason": "После исправления public static UI Root должен повторить публичный composer render; качество транскрибации с более представительной речью остаётся отдельно непроверенным. Не отправлять composer draft."
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:43:37+03:00",
+      "note": "Correction: fresh public SSO session rendered; initial blank was a transient pre-mount capture. Public assets match installed runtime by SHA256.",
+      "changes": {
+        "status": "running",
+        "note": "Локальный и public UI release 4750249 показывают composer и voice button. В трёх изолированных browser virtual-mic canaries MediaRecorder отправил по одному POST /api/composer/transcription; ответ 200 от configured Whisper consumer вставлялся в composer, send оставался активным, отправку не нажимал. Синтетический eSpeak текст распознан плохо/с повторами, поэтому путь и no-autosend доказаны, качество на естественной речи отдельно не подтверждено. Физический микрофон человека не проверялся; он не является обязательным по уточнённой TEST_ACCESS задаче. Public SSO UI теперь отрисовывается; assets pin и runtime совпадают. Телефонных действий ноль.",
+        "wait_reason": "Ожидает reviewed source join и окончательный release verification Root; при необходимости нужен отдельный более представительный speech fixture для проверки качества. Не отправлять composer draft."
+      },
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T06:23:22+03:00",
+      "note": "Публичный composer на 16f73e1 проверен через real Whisper и вставку черновика; остаётся общий новый release join.",
+      "changes": {
+        "note": "Public isolated QA SSO browser hfr26m/r26m on 16f73e1 rendered composer. Real UI MediaRecorder with a task-owned virtual AudioContext stream issued exactly one POST /api/composer/transcription HTTP200; returned text inserted into draft; no send/call. Synthetic audio quality poor, no natural-speech quality claim. Evidence: evidence/public-composer-16f73e1.md. Native host projection bug found in same consumer and fixed in published source7aa34b3, awaiting install/publicpin.",
+        "wait_reason": "Новый общий release и consumer readback исправленного native host sidebar; предыдущий публичный voice-path canary выполнен."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T06:46:34+03:00",
+      "note": "Публичное отображение683 принято в браузере; voice-path consumer16 доказан и sourcecomposerнеизменён.",
+      "changes": {
+        "status": "done",
+        "owner": "Root",
+        "note": "Actual public16f73e1 UI MediaRecorder→realWhisper200→draft insertion proved with no send/call (synthetic-audio quality not claimed). Composer source unchanged in683456d. Compatible frontend683 independently published via Admin18c122ca scopednginxapply; actualSSObrowserrootChildren1, exactX-Herder-UI-Source683,13confirmedServer100sidebarlabels,0unconfirmedsidebarlabels. Screenshot/evidence in public-composer-16f73e1.md and routing-release-683456d.md. QA login not fleetowner: pins401boundary preserved, no pinclaim.",
+        "wait_reason": ""
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
     }
   ],
-  "estimate_over_limit_reason": "Одна пользовательская проверка должна связать клавиатуру/long-press и микрофон с тем же composer, backend transcription и no-autosend поведением; только source или mock не доказывает цель."
+  "estimate_over_limit_reason": "Одна пользовательская проверка должна связать клавиатуру/long-press и микрофон с тем же composer, backend transcription и no-autosend поведением; только source или mock не доказывает цель.",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187"
 }

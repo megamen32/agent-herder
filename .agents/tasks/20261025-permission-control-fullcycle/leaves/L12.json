@@ -7,20 +7,17 @@
   "affected_files": [
     ".agents/tasks/20261025-permission-control-fullcycle/result.md"
   ],
-  "owner": "исполнитель текущего чата",
+  "owner": "Lead",
   "depends_on": [
-    "L11",
-    "L14",
-    "L16",
-    "L17"
+    "L24"
   ],
   "estimate_minutes": {
     "minimum": 15,
     "maximum": 25
   },
-  "updated_at": "2026-10-25T22:03:21+03:00",
+  "updated_at": "2026-10-26T04:14:16+03:00",
   "estimate_over_limit_reason": "Проверка сквозных инвариантов четырёх сред и итогового consumer доказательства, без нового аудита или полной suite.",
-  "wait_reason": "Финальная проверка включает обязательное доказательство activity ветки MiniMax.",
+  "wait_reason": "Ждёт подтверждённых результатов зависимостей; отдельного разрешения на продолжение не требуется.",
   "progress_events": [
     {
       "at": "2026-10-25T14:37:49+03:00",
@@ -58,8 +55,22 @@
         "note": "Полный четырёх-harness цикл остаётся открытым. Принятые отдельные результаты: MiniMax exact workspace/activity readback (L13/L14), 8/8 title readback (L17; installed generator отделён), ZCode omitted-mode default/YOLO, Codex API mode transitions, MiniMax delivery/policy consumer (L16/L19), read-only inspectors и partial OpenCode query. Сохранены существующие queue edit/cancel/collapse semantics; новые MCode inter-agent wake и ZCode completed/idle queue resume наблюдались сломанными и исправляются. 8000 preview и composer/voice source checked, но не final-installed. Notice binding config-ready, runtime card/answer pending. Review, WIP reconciliation, main sync и одна финальная установка/приёмка впереди; ни один из будущих этапов не PASS."
       },
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:14:16+03:00",
+      "note": "Общий join ведёт текущий Lead; итог принимается после результатов трёх направлений и проверки public UI.",
+      "changes": {
+        "owner": "Lead",
+        "depends_on": [
+          "L24"
+        ],
+        "wait_reason": "Ждёт подтверждённых результатов зависимостей; отдельного разрешения на продолжение не требуется."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
     }
   ],
   "note": "Полный четырёх-harness цикл остаётся открытым. Принятые отдельные результаты: MiniMax exact workspace/activity readback (L13/L14), 8/8 title readback (L17; installed generator отделён), ZCode omitted-mode default/YOLO, Codex API mode transitions, MiniMax delivery/policy consumer (L16/L19), read-only inspectors и partial OpenCode query. Сохранены существующие queue edit/cancel/collapse semantics; новые MCode inter-agent wake и ZCode completed/idle queue resume наблюдались сломанными и исправляются. 8000 preview и composer/voice source checked, но не final-installed. Notice binding config-ready, runtime card/answer pending. Review, WIP reconciliation, main sync и одна финальная установка/приёмка впереди; ни один из будущих этапов не PASS.",
-  "harness": "codex"
+  "harness": "codex",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187"
 }

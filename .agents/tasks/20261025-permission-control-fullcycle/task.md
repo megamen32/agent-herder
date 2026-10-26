@@ -1,3 +1,66 @@
+# Завершить оставшиеся сценарии Agent Herder
+
+## Поручение
+
+26 октября 2026 пользователь поручил построить план и довести до конца весь
+объявленный остаток: разрешения/Notice Place, очередь ZCode, agent→MiniMax,
+preview 8000 символов, composer/voice, полноту поиска, OpenCode без финального
+текста и общий опубликованный пользовательский путь.
+
+Используется существующий fullcycle-план с историей 29 листов.
+Источник состояния — `leaves/*.json`; graph, HTML и Markdown — его проекции.
+
+## Маршрут и распределение
+
+1. UI Worker: L20/L21 — установленный preview и composer/MediaRecorder/Whisper.
+2. Delivery Worker: L18/L25/L26/L28 — поиск, MiniMax, очередь ZCode и пустой финал.
+3. Permission Worker: L03/L04/L05/L06/L09/L10/L11 — native capability/reply и Notice.
+4. Lead: L22/L23/L24/L12 — общий review, main, единый выпуск, независимая приёмка.
+
+Три исполнителя работают параллельно; четвёртый слот — Lead. Canonical main,
+новые worktrees/branches/checkouts не создаются. У исполнителей отдельные mutable
+пути и fixtures; общий server/types и release остаются за интегратором.
+
+Рабочее решение — проверить уже установленное, затем исправить конкретные
+провалы. Идеал — единый правдивый результат во всех native средах. Выбранный
+минимальный полный маршрут использует существующие API, адаптеры и UI: без новых
+сервисов, планировщиков, скрытого fallback и патчей исходников managed runtimes.
+Нативное отсутствие операции отображается как unsupported, а не как успех.
+
+## Оценка текущего цикла
+
+Прогноз активной работы: UI 40–70 минут, Delivery 65–125, Permissions 50–85;
+общий review/install/consumer join 45–80. Суммарное усилие 200–360 минут,
+ожидаемая длительность при трёх исполнителях 110–205 активных минут.
+Это прогноз нового цикла, не изменение прежних оценок листов. Историческое
+активное время неизвестно; из wall-clock оно не выводится.
+
+Неопределённости: нативные capability/receipt, изоляция Notice test recipient,
+полнота исходного поиска и реальный same-origin Whisper. Checkpoint исполнителя
+через 20 активных минут; Lead пересматривает маршрут при наблюдаемом провале.
+
+## Приёмка и сохранность
+
+- Source/tests, установленный artifact, native receipt и consumer outcome разделены.
+- Accepted/UNKNOWN, прежние approvals и старые native inputs не повторяются.
+- Исторические квитанции и native состояния можно читать без повторных действий.
+- Новые конечные canaries используют изолированные benign fixtures и stable IDs.
+- Никаких тестовых звонков людям, owner notifications или production mutations.
+- Один общий review после source join; затем разрешённый выпуск и независимые
+  пользовательские проверки разных ветвей на публичном UI.
+- Ошибка браузера требует screenshot до retry. При сбое MCP browser routing
+  используется собственный изолированный local CLI browser, без чужого Chrome.
+
+Текущий installed baseline — `4750249`, 21/21 runtime checks; все 76 предыдущих
+durable delivery receipts сохранены. Код preview/composer/queue/delivery уже
+включён; старые заметки про runtime 8936 не являются текущим блокером.
+
+## Plan
+
+Канонический отчёт генерируется из соседних leaf files в `plan.md` и `plan.html`.
+
+## Историческая запись перед возобновлением 26 октября
+
 # ZCode Full Access по умолчанию, режимы доступа и запросы разрешений
 
 Прямое поручение пользователя 25.10.2026: полный цикл LHC в ZCode, OpenCode, Codex и MiniMax Code. Дополнительное прямое уточнение владельца: каждая новая ZCode-сессия должна стартовать в native YOLO/Full Access; текущий exact pending request обрабатывает только назначенный native approval executor. «Polaris Human Commit» в контексте текущего разговора трактуется как Last Human Commit.

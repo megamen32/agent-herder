@@ -1,7 +1,7 @@
 {
   "id": "L05",
   "label": "Доставлять карточку с контекстом через Notice Place",
-  "status": "running",
+  "status": "queued",
   "description": "Использовать существующий API Notice Place и его маршрут UserIO: точная ссылка на сессию, текущая команда, предыдущее сообщение агента и последнее сообщение человека; удалять секреты. Ответ связан с host/session/request и сохраняет однократность.",
   "acceptance": "Одна карточка на native request, подтверждённая доставка и возврат ответа; однократное разрешение и отказ; секреты не уходят в карточку; недоступный контекст помечается явно, а не выдумывается.",
   "affected_files": [
@@ -9,18 +9,15 @@
     "src/permission-control/context.ts",
     "tests/permission-control-noticeplace.test.ts"
   ],
-  "owner": "permission_reply_bridge",
-  "depends_on": [
-    "L02",
-    "L04"
-  ],
+  "owner": "Permission worker",
+  "depends_on": [],
   "estimate_minutes": {
     "minimum": 25,
     "maximum": 40
   },
-  "updated_at": "2026-10-25T22:03:19+03:00",
+  "updated_at": "2026-10-26T04:14:15+03:00",
   "estimate_over_limit_reason": "Один полный путь карточка/контекст/ответ/дедупликация; отдельные неполные части не проверяют возврат ответа.",
-  "wait_reason": "После общего source join и установки проверить runtime binding, одну точную project-topic карточку и возврат ответа; до этого не считать consumer приёмку.",
+  "wait_reason": "",
   "progress_events": [
     {
       "at": "2026-10-25T14:37:48+03:00",
@@ -70,10 +67,24 @@
         "note": "Владелец подтвердил существующую project group с темами как намеренный маршрут; ошибочный direct-DM blocker снят. Exact topic binding подготовлен в защищённой конфигурации. Runtime применения, одной permission card и точного native ответа ещё нет; исходные требования контекста, доставки и однократности сохранены."
       },
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:14:15+03:00",
+      "note": "26.10: пользователь поручил завершить весь остаток; три параллельных направления, main checkout, без новых worktrees и без повторных side effects.",
+      "changes": {
+        "status": "queued",
+        "owner": "Permission worker",
+        "wait_reason": "",
+        "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: Notice Place: ровно одна карточка и точный ответ. Исторические accepted/UNKNOWN не повторять.",
+        "depends_on": []
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
     }
   ],
-  "note": "Владелец подтвердил существующую project group с темами как намеренный маршрут; ошибочный direct-DM blocker снят. Exact topic binding подготовлен в защищённой конфигурации. Runtime применения, одной permission card и точного native ответа ещё нет; исходные требования контекста, доставки и однократности сохранены.",
+  "note": "Новый прямой scope: довести оставшийся результат до живой приёмки. Ближайшая проверка: Notice Place: ровно одна карточка и точный ответ. Исторические accepted/UNKNOWN не повторять.",
   "blocker": "",
   "blocker_details": {},
-  "harness": "codex"
+  "harness": "codex",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187"
 }
