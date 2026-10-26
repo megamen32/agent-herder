@@ -53,6 +53,23 @@ afterAll(() => {
 });
 
 describe("session delivery response observer", () => {
+  it("reads one asynchronous resource snapshot without polling or resending", async () => {
+    const baseline = await captureDeliveryResponseBaseline({ jobId: "job-a", inputId: "input-a", target: target(),
+      readMessages: async () => ({ messages: [], complete: true }) });
+    let reads = 0;
+    const result = await waitForDeliveryResponse({ jobId: "job-a", inputId: "input-a", target: target(), baseline,
+      readJob: () => completedJob("job-a", "turn-a"), waitMs: 1_000, snapshotOnly: true,
+      readHistory: async () => {
+        reads++;
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return { messages: [], turnComplete: false };
+      },
+      delay: async () => { throw new Error("snapshot must not poll"); },
+    });
+    expect(result).toMatchObject({ status: "pending" });
+    expect(result.observationCancelled).not.toBe(true);
+    expect(reads).toBe(1);
+  });
   it("uses an exact native completed turn to finish an empty response without a resend", async () => {
     const job = completedJob("job-a", "turn-a");
     const session = { ...target(), id: "session-a", status: "idle", needsPermission: false,

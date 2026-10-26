@@ -805,7 +805,8 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
         const latestJob = jobs.get<SendMessageResult>(binding.jobId);
         return { messages, complete: false, turnComplete: nativeDeliveryResponseComplete(fresh, latestJob) && nativeDeliveryResponseComplete(afterHistory, latestJob) };
       },
-      waitMs: 0,
+      waitMs: 30_000,
+      snapshotOnly: true,
       recordResponseReceipt: (jobId, receipt) => jobs.recordDeliveryResponseReceipt(jobId, receipt),
       returnOnVisibleText: true,
     });

@@ -424,6 +424,8 @@ export async function waitForDeliveryResponse(input: {
   recordResponseReceipt?: (jobId: string, receipt: DeliveryResponseReceipt) => void | Promise<void>;
   /** Return the first verified new visible text as a partial response. */
   returnOnVisibleText?: boolean;
+  /** Read one bounded asynchronous snapshot, without waiting for another change. */
+  snapshotOnly?: boolean;
 }): Promise<DeliveryResponseResult> {
   if (!validateDeliveryResponseBaseline(input.baseline, input)) {
     return toResult({ ...input, job: null, history: { messages: null } });
@@ -467,6 +469,7 @@ export async function waitForDeliveryResponse(input: {
     } else {
       return toResult({ ...input, job: latestJob, history: latestHistory, turnId, observationCancelled: outcome.kind === "aborted" });
     }
+    if (input.snapshotOnly) return toResult({ ...input, job: latestJob, history: latestHistory, turnId });
     const left = deadline - now();
     if (left <= 0) return toResult({ ...input, job: latestJob, history: latestHistory, turnId });
     try {
