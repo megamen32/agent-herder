@@ -14,6 +14,26 @@ The built transport performed a real read over canonical reverse SSH to the exis
 
 Earlier diagnoses based on an old artifact log, Linux /proc on macOS and malformed/unresolved lsof paths were rejected. Native ps/lsof and resolved socket proof confirm the existing Codex daemon works. A full Mac watchdog check passed. No native controller restart is necessary.
 
+## Current installed Mac read — 2026-10-26 07:18 UTC
+
+After an earlier `direct_native_listener_unavailable` result, canonical SSH to
+`127.0.0.1:2222` again verified `MacBook-Pro-User.local`, `MacBook-Pro-User`,
+`MacBookPro18,2` and `arm64`. The existing Mac `18789/mcp` endpoint returned
+HTTP405 to GET in51ms (method not allowed, listener responsive); the loaded
+`com.bezrabotnyi.agent-herder-fleet-node` LaunchAgent reported state `running`,
+PID14519. One fresh installed `fleet_session_view` then succeeded and returned
+the exact host/session/harness plus `historyUnavailable=false`. No transcript
+text is retained in this receipt.
+
+The Mac's current `last-run.json` timestamp was `2026-10-26T07:16:40.860Z`,
+source `b8f8470a69aa46bc0f848b813a17a2b91ee35c18`, reason
+`observation_failed` / `native_observation_failed`, elapsed1096.98s. Its sample
+showed artifact census age0.1s, 312.61MiB artifact bytes, 11 threads, two
+processes and 17.0GiB host-available memory; this does not identify a current
+listener outage. No Mac controller, Codex GUI, launchd job or installed source
+was changed. The documented healer was not run because the live listener
+answered; its contract permits kickstart only when `18789` is unreachable.
+
 ## Installation boundary
 
 The immutable archive is built. The separate exact-fixture QA binding pointer is prepared in `97-notice-qa-binding.conf`; the production AskHuman producer is unchanged. A bounded automatic monitor waits for all active durable deliveries to settle before invoking the canonical installer once. It preserves existing accepted/UNKNOWN inputs, and uses an install-started receipt to prevent replay. Source/build success is not backend installation or permission-card acceptance.
