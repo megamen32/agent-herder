@@ -19,7 +19,7 @@
   "current_progress": "4750249 установлен, runtime21/21, self-identity через настоящий подключённый MCP подтверждена. Новое поручение на полный остаток: три параллельных Worker направления на canonical main. UI ведёт L20/L21, Delivery ведёт L18/L25/L26/L28, Permissions ведёт L03/L04/L05/L06/L09/L10/L11. Найден новый конкретный UI defect: разрешение предлагается при native canRespond=false; исправляется владельцем. Минимальный native/consumer proof сначала переиспользует существующие квитанции; прошлые действия не повторяются. Общий review, единая установка и два независимых consumer tester выполняются после join. Прогноз текущего остатка110–205 активных минут, зависит от native fixtures/Notice test route и реального Whisper.",
   "external_waits": "Проверяется изолированный Notice Place test route; остальные направления выполняются независимо.",
   "slots": 3,
-  "updated_at": "2026-10-26T23:27:23+03:00",
+  "updated_at": "2026-10-26T23:31:17+03:00",
   "tasks": [
     {
       "id": "L01",
@@ -2036,9 +2036,9 @@
       "owner": "Root",
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex",
-      "note": "Current installed Herder6135578 source main; immutable build15/15, focused QA test1/1, MCP HTTP200, owner acceptance20/21 solely intentional owner automation disarm. GPTAdmin profile agent-herder-qa-control-20261026 and client agent-herder-qa-actor-20261026 expose only qa_control; direct production send_message denied. Test actor completed begin/permission/steer/cancel/synthetic /stop with productionEffects=[]; native QA sessions unchanged. Authorization and receipts: evidence/qa-control-installed-20261026.md. No human acceptance claim; native ZCode queue remains blocked.",
+      "note": "Current installed Herder5541688 (main pushed), QA store mode0600/dir0700, focused test1/1, immutable build15/15, owner accept20/21 solely intentional owner automation disarm. GPTAdmin client/profile only qa_control; actor ran begin/permission/steer/cancel/synthetic /stop with productionEffects=[]; production send_message denied; native QA sessions unchanged. No human/native acceptance. Evidence qa-control-installed-20261026.md. Full ZCode deferred queue still external blocker.",
       "estimate_over_limit_reason": "Единая immutable установка и связанные реальные consumer проверки должны использовать один exact SHA; разделение создаёт промежуточные релизы и повторную путаницу identity.",
-      "wait_reason": "Installed QA synthetic control and RBAC actor/project are proven; real native ZCode deferred queue still lacks atomic deferred-only admission. Owner automation disarm remains intentionally enabled; owner accept-node is 20/21 on that policy check.",
+      "wait_reason": "Installed synthetic QA control and RBAC actor/project are proven. Real native ZCode deferred queue remains unavailable without atomic deferred-only admission. Owner automation disarm stays intentionally on; accept-node policy check correctly refuses.",
       "origin": "",
       "supersedes": [],
       "progress_events": [
@@ -2158,6 +2158,16 @@
           "changes": {
             "wait_reason": "Installed QA synthetic control and RBAC actor/project are proven; real native ZCode deferred queue still lacks atomic deferred-only admission. Owner automation disarm remains intentionally enabled; owner accept-node is 20/21 on that policy check.",
             "note": "Current installed Herder6135578 source main; immutable build15/15, focused QA test1/1, MCP HTTP200, owner acceptance20/21 solely intentional owner automation disarm. GPTAdmin profile agent-herder-qa-control-20261026 and client agent-herder-qa-actor-20261026 expose only qa_control; direct production send_message denied. Test actor completed begin/permission/steer/cancel/synthetic /stop with productionEffects=[]; native QA sessions unchanged. Authorization and receipts: evidence/qa-control-installed-20261026.md. No human acceptance claim; native ZCode queue remains blocked."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T23:31:17+03:00",
+          "note": "Финальный QA privacy fix 5541688 установлен: DB 0600, каталог0700; тестовый actor через свой профиль по-прежнему читает сценарий rev4. Focused test1/1, immutable build15/15, owner accept20/21 только из-за преднамеренного owner automation disarm. Evidence/qa-control-installed-20261026.md обновлён.",
+          "changes": {
+            "note": "Current installed Herder5541688 (main pushed), QA store mode0600/dir0700, focused test1/1, immutable build15/15, owner accept20/21 solely intentional owner automation disarm. GPTAdmin client/profile only qa_control; actor ran begin/permission/steer/cancel/synthetic /stop with productionEffects=[]; production send_message denied; native QA sessions unchanged. No human/native acceptance. Evidence qa-control-installed-20261026.md. Full ZCode deferred queue still external blocker.",
+            "wait_reason": "Installed synthetic QA control and RBAC actor/project are proven. Real native ZCode deferred queue remains unavailable without atomic deferred-only admission. Owner automation disarm stays intentionally on; accept-node policy check correctly refuses."
           },
           "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
           "harness": "codex"
