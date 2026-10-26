@@ -16,12 +16,13 @@ const STATE_PATH = process.env.AGENT_HERDER_RAG_STATE || join(homedir(), ".local
 const TOKEN_PATH = process.env.AGENT_HERDER_EMBEDDING_TOKEN_FILE || join(homedir(), ".config/agent-herder/qwen-embedding.env");
 const HARNESS_LABELS = { codex: "Codex", zcode: "ZCode", opencode: "OpenCode" } as const;
 type Harness = keyof typeof HARNESS_LABELS;
+type SearchFilters = { harnesses?: Harness[]; from?: string; to?: string; project?: string; limit?: number; mode?: "hybrid" | "exact" | "semantic" };
 type Options = { enabled: boolean; harnesses: Record<Harness, boolean> };
 type Hit = { id: string; score: number; payload: Record<string, unknown> };
 type SearchProgress =
   | { type: "phase"; stage: "exact" | "semantic" }
   | { type: "results"; source: "exact" | "semantic"; results: Array<Record<string, unknown>>; elapsedMs: number }
-  | { type: "complete"; exactMs: number; semanticMs?: number; totalMs: number }
+  | { type: "complete"; exactMs?: number; semanticMs?: number; totalMs: number }
   | { type: "error"; message: string };
 type Persisted = {
   options: Options;
@@ -33,6 +34,7 @@ const emptyOptions = (): Options => ({ enabled: false, harnesses: { codex: true,
 const emptyState = (): Persisted => ({ options: emptyOptions(), checkpoints: {} });
 const object = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const text = (value: unknown): string => typeof value === "string" ? value : "";
+const searchMode = (value: unknown): SearchFilters["mode"] => value === "exact" || value === "semantic" ? value : "hybrid";
 
 function scrubSecrets(value: string): string {
   return value
@@ -229,7 +231,7 @@ export class AgentHerderRag {
 
   async searchProgressively(
     query: string,
-    filters: { harnesses?: Harness[]; from?: string; to?: string; project?: string; limit?: number } = {},
+    filters: SearchFilters = {},
     onProgress: (progress: SearchProgress) => void | Promise<void> = () => {},
     resolveSession?: (harness: Harness, id: string) => Promise<{ title?: string; cwd?: string } | undefined>,
     listCodexSessions?: () => Promise<Array<{ id: string; title?: string; cwd?: string; lastMessage?: string }>>,
@@ -248,11 +250,12 @@ export class AgentHerderRag {
     const requestedLimit = Math.max(1, Math.min(50, filters.limit ?? 12));
 
     const startedAt = Date.now();
-    await onProgress({ type: "phase", stage: "exact" });
+    if (filters.mode !== "semantic") await onProgress({ type: "phase", stage: "exact" });
     const exactStartedAt = Date.now();
     let searchError: string | undefined;
     let exactData: any;
     try {
+      if (filters.mode !== "semantic") {
       exactData = await requestJson(`${QDRANT}/collections/${COLLECTION}/points/scroll`, {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -261,6 +264,7 @@ export class AgentHerderRag {
           filter: { must: [...must, { key: "text", match: { text: clean } }] },
         }),
       });
+      }
     } catch (error) {
       searchError = error instanceof Error ? error.message : String(error);
     }
@@ -280,17 +284,19 @@ export class AgentHerderRag {
       if (!hit.directory && session?.cwd) hit.directory = session.cwd;
     }));
     const exactMs = Date.now() - exactStartedAt;
-    await onProgress({ type: "results", source: "exact", results: exactResults, elapsedMs: exactMs });
+    if (filters.mode !== "semantic") await onProgress({ type: "results", source: "exact", results: exactResults, elapsedMs: exactMs });
 
-    await onProgress({ type: "phase", stage: "semantic" });
+    if (filters.mode !== "exact") await onProgress({ type: "phase", stage: "semantic" });
     const semanticStartedAt = Date.now();
     let data: any;
     try {
+      if (filters.mode !== "exact") {
       const [vector] = await embed([clean]);
       data = await requestJson(`${QDRANT}/collections/${COLLECTION}/points/search`, {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ vector, limit: Math.min(100, requestedLimit * 10), with_payload: true, ...(must.length ? { filter: { must } } : {}) }),
       });
+      }
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       searchError = searchError ? `${searchError}; ${detail}` : detail;
@@ -310,10 +316,11 @@ export class AgentHerderRag {
       if (!hit.directory && session?.cwd) hit.directory = session.cwd;
     }));
     const semanticMs = Date.now() - semanticStartedAt;
-    await onProgress({ type: "results", source: "semantic", results: semanticResults, elapsedMs: semanticMs });
+    if (filters.mode !== "exact") await onProgress({ type: "results", source: "semantic", results: semanticResults, elapsedMs: semanticMs });
     if (searchError) await onProgress({ type: "error", message: searchError.slice(0, 400) });
-    await onProgress({ type: "complete", exactMs, semanticMs, totalMs: Date.now() - startedAt });
-    const result: Record<string, unknown> = { results: [...exactResults, ...semanticResults], run: state.run ?? null, timings: { exactMs, semanticMs, totalMs: Date.now() - startedAt } };
+    const timings = { ...(filters.mode !== "semantic" ? { exactMs } : {}), ...(filters.mode !== "exact" ? { semanticMs } : {}), totalMs: Date.now() - startedAt };
+    await onProgress({ type: "complete", ...timings });
+    const result: Record<string, unknown> = { results: [...exactResults, ...semanticResults], mode: filters.mode ?? "hybrid", coverage: { scope: "local-index", fleetComplete: false, note: "Only opted-in history indexed on this Herder host is searched; missing results do not prove a session does not exist on other hosts." }, run: state.run ?? null, timings };
     if (searchError) {
       result.searchError = searchError;
       if (listCodexSessions && (!harnesses.length || harnesses.includes("codex"))) {
@@ -335,7 +342,7 @@ export class AgentHerderRag {
     return result;
   }
 
-  async search(query: string, filters: { harnesses?: Harness[]; from?: string; to?: string; project?: string; limit?: number } = {}, resolveSession?: (harness: Harness, id: string) => Promise<{ title?: string; cwd?: string } | undefined>, listCodexSessions?: () => Promise<Array<{ id: string; title?: string; cwd?: string; lastMessage?: string }>>): Promise<Record<string, unknown>> {
+  async search(query: string, filters: SearchFilters = {}, resolveSession?: (harness: Harness, id: string) => Promise<{ title?: string; cwd?: string } | undefined>, listCodexSessions?: () => Promise<Array<{ id: string; title?: string; cwd?: string; lastMessage?: string }>>): Promise<Record<string, unknown>> {
     return this.searchProgressively(query, filters, () => {}, resolveSession, listCodexSessions);
   }
 
@@ -408,10 +415,29 @@ export class AgentHerderRag {
       if (!info) continue;
       const messages: Array<{ id: string; role: string; text: string; timestamp?: number }> = [];
       const fileSessionId = basename(path).replace(/\.jsonl$/, "").match(/[0-9a-f-]{36}$/i)?.[0] || basename(path).replace(/\.jsonl$/, "");
-      if (info.mtimeMs <= (state.checkpoints[`codex:${fileSessionId}`] || 0)) continue;
-      await requestJson(`${QDRANT}/collections/${COLLECTION}/points/delete?wait=true`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ filter: { must: [{ key: "harness", match: { value: "codex" } }, { key: "session_id", match: { value: fileSessionId } }] } }) });
+      const checkpointKey = `codex-native-v2:${fileSessionId}`;
+      if (info.mtimeMs <= (state.checkpoints[checkpointKey] || 0)) continue;
+      let nativeSessionId = fileSessionId;
+      let legacySessionId: string | undefined;
+      const metadataStream = createReadStream(path, { encoding: "utf8" });
+      const metadataInput = createInterface({ input: metadataStream, crlfDelay: Infinity });
+      try {
+        for await (const line of metadataInput) {
+          let record: any;
+          try { record = JSON.parse(line); } catch { continue; }
+          if (record.type !== "session_meta") continue;
+          nativeSessionId = text(record.payload?.id) || text(record.payload?.session_id) || fileSessionId;
+          legacySessionId = text(record.payload?.session_id) || undefined;
+          break;
+        }
+      } finally { metadataInput.close(); metadataStream.destroy(); }
+      const aliases = [...new Set([fileSessionId, nativeSessionId, legacySessionId, basename(path).replace(/\.jsonl$/, "")].filter((id): id is string => Boolean(id)))];
+      // Older versions indexed current Codex rollouts under their full filename.
+      // Invalidate their checkpoint and remove both aliases before native-id upsert.
+      await requestJson(`${QDRANT}/collections/${COLLECTION}/points/delete?wait=true`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ filter: { must: [{ key: "harness", match: { value: "codex" } }, { key: "session_id", match: { any: aliases } }] } }) });
       const input = createInterface({ input: createReadStream(path, { encoding: "utf8" }), crlfDelay: Infinity });
-      let sessionId = basename(path).replace(/\.jsonl$/, "");
+      let sessionId = fileSessionId;
+      let sessionDirectory = "";
       let title = sessionId;
       let index = 0;
       for await (const line of input) {
@@ -420,7 +446,8 @@ export class AgentHerderRag {
         try { record = JSON.parse(line); } catch { continue; }
         const payload = object(record.payload);
         if (record.type === "session_meta") {
-          sessionId = text(payload.session_id) || sessionId;
+          sessionId = text(payload.id) || text(payload.session_id) || sessionId;
+          sessionDirectory = text(payload.cwd);
           title = text(payload.title) || title;
         }
         if (record.type !== "response_item" || payload.type !== "message" || !["user", "assistant"].includes(text(payload.role))) continue;
@@ -430,14 +457,14 @@ export class AgentHerderRag {
         if (title === sessionId && text(payload.role) === "user") title = scrubSecrets(body).replace(/\s+/g, " ").slice(0, 88);
         messages.push({ id: `line-${index++}`, role: text(payload.role), text: body, timestamp: Date.parse(text(record.timestamp)) || info.mtimeMs });
         if (messages.length >= 24) {
-          await this.indexMessages("codex", { id: sessionId, title, directory: "", timestamp: info.mtimeMs }, messages);
+          await this.indexMessages("codex", { id: sessionId, title, directory: sessionDirectory, project: sessionDirectory, timestamp: info.mtimeMs }, messages);
           messages.length = 0;
         }
       }
       if (messages.length) {
-        await this.indexMessages("codex", { id: sessionId, title, directory: "", timestamp: info.mtimeMs }, messages);
+        await this.indexMessages("codex", { id: sessionId, title, directory: sessionDirectory, project: sessionDirectory, timestamp: info.mtimeMs }, messages);
       }
-      state.checkpoints[`codex:${fileSessionId}`] = info.mtimeMs;
+      state.checkpoints[checkpointKey] = info.mtimeMs;
       await this.updateRun({ processed: (this.state?.run?.processed ?? 0) + 1 });
     }
   }
@@ -552,7 +579,7 @@ export class AgentHerderRag {
       if (url.pathname === "/api/rag/search" && request.method === "POST") {
         const body = await readBody(request);
         const harnesses = Array.isArray(body.harnesses) ? body.harnesses.filter((item): item is Harness => typeof item === "string" && item in HARNESS_LABELS) : undefined;
-        return void send(response, 200, await this.search(text(body.query), { harnesses, from: text(body.from), to: text(body.to), project: text(body.project), limit: Number(body.limit) || 12 }, resolveSession)), true;
+        return void send(response, 200, await this.search(text(body.query), { harnesses, from: text(body.from), to: text(body.to), project: text(body.project), limit: Number(body.limit) || 12, mode: searchMode(body.mode) }, resolveSession)), true;
       }
       if (url.pathname === "/api/rag/search/stream" && request.method === "POST") {
         const body = await readBody(request);
@@ -568,7 +595,7 @@ export class AgentHerderRag {
           if (!response.destroyed) response.write(`data: ${JSON.stringify(progress)}\n\n`);
         };
         try {
-          await this.searchProgressively(text(body.query), { harnesses, from: text(body.from), to: text(body.to), project: text(body.project), limit: Number(body.limit) || 12 }, emit, resolveSession);
+          await this.searchProgressively(text(body.query), { harnesses, from: text(body.from), to: text(body.to), project: text(body.project), limit: Number(body.limit) || 12, mode: searchMode(body.mode) }, emit, resolveSession);
         } catch (error) {
           const message = error instanceof Error ? error.message : "search failed";
           emit({ type: "error", message: message.slice(0, 400) });

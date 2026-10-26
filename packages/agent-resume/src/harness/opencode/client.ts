@@ -52,7 +52,7 @@ interface OpenCodeMessagePayload {
   type?: string;
   text?: string;
   time?: { created?: number; completed?: number };
-  info?: { id?: string; parentID?: string; sessionID?: string; role?: string; providerID?: string; modelID?: string; inputId?: string; turnId?: string; metadata?: Record<string, unknown>; error?: OpenCodeMessagePayload["error"]; time?: { created?: number; completed?: number } };
+  info?: { id?: string; parentID?: string; sessionID?: string; role?: string; providerID?: string; modelID?: string; inputId?: string; turnId?: string; finish?: string; metadata?: Record<string, unknown>; error?: OpenCodeMessagePayload["error"]; time?: { created?: number; completed?: number } };
   metadata?: Record<string, unknown>;
   model?: { providerID?: string; id?: string };
   finish?: string;
@@ -711,9 +711,13 @@ export class OpenCodeClient implements HarnessClient {
         const model = message.model?.providerID && message.model?.id
           ? `${message.model.providerID}/${message.model.id}`
           : info.providerID && info.modelID ? `${info.providerID}/${info.modelID}` : undefined;
+        const turnId = typeof message.turnId === "string" ? message.turnId : typeof info.turnId === "string" ? info.turnId : undefined;
+        const phase = typeof message.finish === "string" ? message.finish : typeof info.finish === "string" ? info.finish : undefined;
         return {
           id: message.id || info.id || `${id}:message-${index + 1}`,
           role,
+          ...(turnId ? { turnId } : {}),
+          ...(phase ? { phase } : {}),
           ...(model ? { model } : {}),
           ...(typeof info.time?.created === "number" ? { timestamp: new Date(info.time.created).toISOString() } : {}),
           ...(shownText ? { text: shownText } : {}),

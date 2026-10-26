@@ -32,6 +32,10 @@ export interface HarnessMessagePart {
 export interface HarnessMessage {
   id: string;
   role: "user" | "assistant" | "system" | "tool";
+  /** Native turn identity when the harness includes it in message history. */
+  turnId?: string;
+  /** Native message phase/finish, preserved without reinterpretation. */
+  phase?: string;
   text?: string;
   timestamp?: string;
   model?: string;

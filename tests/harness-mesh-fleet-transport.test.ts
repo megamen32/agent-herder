@@ -51,6 +51,17 @@ describe('GPTAdmin tenant fleet transport (focused integration; expected 2s, max
 });
 
 describe('facade identity/deadline fences (focused integration; expected 1s, maximum 15s)',()=>{
+ it('reports a native session that is absent on the exact owner as not found, not identity mismatch',async()=>{
+  const t=new FleetGptAdminTransport({endpoint:'https://hub.test/mcp',headersProvider:()=>({}),fetch:vi.fn() as any});
+  const call=vi.spyOn(t,'call').mockImplementation(async(_target,tool)=>tool==='fleet_node_info'
+   ?{hostId:'server-44'}
+   :{hostId:'server-44',found:false,reason:'native_session_not_found'});
+  await expect(t.readSession('mcp:shell:server-44:AgentHerder','codex','missing-id')).rejects.toThrow('fleet_session_not_found');
+  call.mockImplementation(async(_target,tool)=>tool==='fleet_node_info'
+   ?{hostId:'server-44'}
+   :{hostId:'server-44',details:{session:{id:'foreign-id',harness:'codex'}}});
+  await expect(t.readSession('mcp:shell:server-44:AgentHerder','codex','requested-id')).rejects.toThrow('fleet_session_identity_mismatch');
+ });
  it('rejects a foreign JSON-RPC result instead of accepting it as initialization or native receipt',async()=>{
   const fake=vi.fn(async()=>new Response(JSON.stringify({id:'foreign',result:{protocolVersion:'2025-11-25'}})));
   const t=new FleetGptAdminTransport({endpoint:'https://hub.test/mcp',headersProvider:()=>({}),fetch:fake as any});await expect(t.discover()).rejects.toThrow('identity_mismatch');expect(fake).toHaveBeenCalledTimes(1);

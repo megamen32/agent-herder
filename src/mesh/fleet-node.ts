@@ -12,11 +12,12 @@ import {assertModelAllowedForDirectoryWithPolicy,type ProjectModelPolicyProvider
 import { AutomationDisarmStore, buildAutomationDisarmSummary, humanWorkKeys, type AutomationDisarmRecord } from '../automation-disarm/index.js';
 import { sameSecret } from '../secret-compare.js';
 import { readFleetPolicyRevisions, type FleetPolicyRevisionPeer, type FleetPolicyRevisionTransport } from './fleet-policy-revision.js';
+import {unwrapResult} from './protocol.js';
 // One process generation across all MCP connections and authenticated contexts.
 let viewReads=0;
 const processGeneration=Date.now()-Math.floor(process.uptime()*1000);
 /** Attach to the existing local controller. No override, native activation, private writer or subprocess. */
-export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<string,HarnessAdapter>;inventorySnapshot?:()=>LocalInventorySnapshot;readSupervisor?:Pick<SessionSupervisor,'getSession'|'getSessionDetails'>;integratorRuntime?:IntegratorFleetRuntime;ownerJournal?:Pick<FleetCreateJournal,'once'>;launchPolicy?:ProjectModelPolicyProvider;launchPolicyRevision?:()=>Promise<{kind:'valid'|'absent'|'invalid';appliedRevision:string}>;fleetTransport?:FleetPolicyRevisionTransport;fleetPeers?:readonly FleetPolicyRevisionPeer[];policyRevisionLedgerPath?:string}):void{
+export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<string,HarnessAdapter>;inventorySnapshot?:()=>LocalInventorySnapshot;readSupervisor?:Pick<SessionSupervisor,'getSession'|'getSessionDetails'>;integratorRuntime?:IntegratorFleetRuntime;ownerJournal?:Pick<FleetCreateJournal,'once'>;launchPolicy?:ProjectModelPolicyProvider;launchPolicyRevision?:()=>Promise<{kind:'valid'|'absent'|'invalid';appliedRevision:string}>;fleetTransport?:FleetPolicyRevisionTransport;fleetPeers?:readonly FleetPolicyRevisionPeer[];sessionReadTransport?:FleetPolicyRevisionTransport;sessionReadPeers?:readonly FleetPolicyRevisionPeer[];policyRevisionLedgerPath?:string}):void{
  const disarmRecordSchema=z.object({scope:z.string().min(1).max(4096),forbidden:z.boolean(),owner:z.string().max(200).optional(),reason:z.string().max(500).optional(),createdAt:z.string().max(64).optional(),policyRevision:z.string().max(128).optional(),workKeys:z.array(z.string().min(1).max(1024)).max(256).optional()}).strict();
  server.registerTool('automation_disarm',{description:'Hold or release the owner-level automation lever on this node. The state is durable on disk and survives a restart of the runtime. The caller must hold the owner token of this node (AGENT_HERDER_DISARM_TOKEN) and state an explicit owner action; a node without a configured token fails closed and never moves the lever. The records of the owner decision travel with the request and are the authority on this node; the flat lever and the flat list of works travel with them for a node of the earlier format. In read mode the node only reports the state it holds and changes nothing. The answer always names this node and the state it now holds, so a fleet answer can tell a confirmed node from an unreachable one.',inputSchema:z.object({mode:z.enum(['apply','read']).optional(),disarmed:z.boolean().optional(),workKeys:z.array(z.string().min(1).max(1024)).max(256).optional(),records:z.array(disarmRecordSchema).max(256).optional(),reason:z.string().max(500).optional(),decisionId:z.string().min(1).max(128).optional(),source:z.literal('owner').optional(),token:z.string().min(1).max(512).optional()}).strict()},async(request)=>{
   const refuse=(code:string,reason:string)=>{const refused={ok:false,hostId:hostname(),code,reason,decisionId:request.decisionId??null};return {structuredContent:refused,content:[{type:'text' as const,text:JSON.stringify(refused)}]};};
@@ -66,14 +67,31 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
   return {structuredContent:{...result},content:[{type:'text' as const,text:'Session metadata page'}]};
  });
 
- server.registerTool('fleet_session_view',{description:'Read the latest three messages of one exact native session, on demand. Unavailable history is explicit; no activation or mutation.',annotations:{readOnlyHint:true},inputSchema:z.object({harness:z.enum(['codex','zcode','opencode','minimax-code']),sessionId:z.string().min(1).max(512).refine(s=>!/[\x00-\x1f\x7f]/.test(s))}).strict()},async({harness,sessionId})=>{
+ server.registerTool('fleet_session_view',{description:'Read the latest three messages of one exact native session, on demand. hostId is exact and optional; when omitted, only this host is read. An explicit host reads only that peer. Unavailable history is explicit; no activation or mutation.',annotations:{readOnlyHint:true},inputSchema:z.object({hostId:z.string().trim().min(1).max(512).optional(),harness:z.enum(['codex','zcode','opencode','minimax-code']),sessionId:z.string().min(1).max(512).refine(s=>!/[\x00-\x1f\x7f]/.test(s))}).strict()},async({hostId,harness,sessionId})=>{
+  const requestedHost=hostId?.trim()||hostname();
+  if(requestedHost!==hostname()){
+   const peer=deps.sessionReadPeers?.find(candidate=>candidate.hostId===requestedHost);
+   const unavailable=()=>({structuredContent:{hostId:requestedHost,available:false,found:null,harness,sessionId,reason:'native_host_unavailable'},content:[{type:'text' as const,text:'The requested host is unavailable or not configured for direct session reads.'}]});
+   const notFound=()=>({structuredContent:{hostId:requestedHost,available:true,found:false,harness,sessionId,reason:'native_session_not_found'},content:[{type:'text' as const,text:'Exact native session was not found on the requested host.'}]});
+   if(!peer||!deps.sessionReadTransport)return unavailable();
+   const result=unwrapResult(await deps.sessionReadTransport.call(peer.target,'fleet_session_view',{harness,sessionId}));
+   if(result.hostId!==requestedHost)throw new Error('native_owner_identity_mismatch');
+   if(result.found===false&&result.reason==='native_session_not_found')return notFound();
+   const details=result.details&&typeof result.details==='object'?result.details as Record<string,unknown>:{};
+   const session=details.session&&typeof details.session==='object'?details.session as Record<string,unknown>:{};
+   if(!Object.keys(session).length)throw new Error('fleet_session_response_invalid');
+   if(session.id!==sessionId||session.harness!==harness)throw new Error('fleet_session_identity_mismatch');
+   return {structuredContent:result,content:[{type:'text' as const,text:'Native session read view'}]};
+  }
   const routed=await deps.integratorRuntime?.adapterForSession({hostId:hostname(),harness,nativeSessionId:sessionId});
   if(routed?.kind==='deny')throw new Error('fleet_session_scope_unavailable');
   const adapter:HarnessAdapter|undefined=routed?.kind==='scoped'?routed.adapter:deps.adapters.get(harness);if(!adapter||adapter.lazyStart&&!adapter.nativeReadWithoutActivation&&(!adapter.isReady||!adapter.isReady()))throw new Error('fleet_session_native_not_ready');
   if((!deps.readSupervisor&&routed?.kind!=='scoped')||viewReads>=3)throw new Error('fleet_session_read_unavailable');viewReads++;let timer:ReturnType<typeof setTimeout>|undefined;
   try{
    const operation=(async()=>{
-    const native=routed?.kind==='scoped'?await adapter.getSession(sessionId):await deps.readSupervisor!.getSession(harness,sessionId);if(!native||native.id!==sessionId||native.harness!==harness)throw new Error('fleet_session_identity_mismatch');
+    const native=routed?.kind==='scoped'?await adapter.getSession(sessionId):await deps.readSupervisor!.getSession(harness,sessionId);
+    if(!native)return {hostId:hostname(),found:false,harness,sessionId,reason:'native_session_not_found'};
+    if(native.id!==sessionId||native.harness!==harness)throw new Error('fleet_session_identity_mismatch');
     let details:Awaited<ReturnType<SessionSupervisor['getSessionDetails']>>|undefined;
     let scopedMessages:Awaited<ReturnType<NonNullable<HarnessAdapter['getSessionMessages']>>>|null|undefined;
     if(routed?.kind!=='scoped')try{details=await deps.readSupervisor!.getSessionDetails(harness,sessionId,{limit:3,quick:true,history:'acp'});}catch{/* Exact native metadata is available, history is not. */}
@@ -84,6 +102,7 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
     if(Buffer.byteLength(JSON.stringify(result))>900000)throw new Error('fleet_session_response_limit');return result;
    })().finally(()=>{viewReads--;});
    const result=await Promise.race([operation,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('fleet_session_read_deadline')),9000);})]);
+   if((result as any).found===false&&(result as any).reason==='native_session_not_found')return {structuredContent:result,content:[{type:'text' as const,text:'Exact native session was not found on this host.'}]};
    return {structuredContent:result,content:[{type:'text' as const,text:'Native session read view'}]};
   }finally{if(timer)clearTimeout(timer);}
  });

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, readdir, rm, stat, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { hostname, tmpdir } from "node:os";
@@ -13,6 +13,8 @@ import { HerderJobRegistry } from "../src/herder-jobs.js";
 import { registerHerderResources } from "../src/mcp/resources.js";
 import { HumanRequestRegistry } from "../src/human-request/registry.js";
 import { HarnessEventHealthRegistry } from "../src/harness-event-health.js";
+import { UserMessageDelivery } from "../src/user-message-delivery.js";
+import { trustedMeshIngressForOwnerStdio } from "../src/mesh/authenticated-ingress.js";
 import type { AgentSession, HarnessAdapter } from "../src/types/index.js";
 import { createHash } from "node:crypto";
 
@@ -116,7 +118,7 @@ describe("durable long automatic messages", () => {
     const previousNotes = process.env.AGENT_HERDER_COORDINATION_NOTES;
     process.env.AGENT_HERDER_HUMAN_STOP_STORE = join(root, "stops.json");
     process.env.AGENT_HERDER_COORDINATION_NOTES = join(root, "notes.json");
-    const session: AgentSession = { id: "target-long-message", harness: "codex", status: "running", title: "target", cwd: root!, lastActivity: new Date().toISOString(), needsPermission: false };
+    const session: AgentSession = { id: "target-long-message", harness: "codex", hostId: hostname(), status: "running", title: "target", cwd: root!, lastActivity: new Date().toISOString(), needsPermission: false };
     let delivered = "";
     const adapter: HarnessAdapter = {
       type: "codex", name: "test adapter", async init() {}, async listSessions() { return [session]; }, async getSession(id) { return id === session.id ? session : null; },
@@ -124,10 +126,17 @@ describe("durable long automatic messages", () => {
       async stopSession() { return { ok: true }; }, async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
     };
     const adapters = new Map([["codex", adapter]]);
+    const events = new HerderEventBus();
+    const jobs = new HerderJobRegistry(events, { persistencePath: join(root!, "delivery-jobs.json") });
+    const delivery = new UserMessageDelivery(adapters, { sendMessage: (_harness, id, options) => adapter.sendMessage(id, options) }, jobs, { pollMs: 1, maxWaitMs: 1_000, maxPending: 4 });
     const original = `${"concrete assignment detail line\n".repeat(360)}final line ✅`;
     const digest = createHash("sha256").update(original).digest("hex");
-    const sent = await handleSendMessage(adapters, { harness: "codex", sessionId: session.id, inputId: "long-message-integration", message: original, mode: "queue" });
-    expect(sent).toContain("Message sent");
+    const sent = await handleSendMessage(adapters, {
+      harness: "codex", sessionId: session.id, inputId: "long-message-integration", message: original, mode: "queue",
+      meshSender: { hostId: hostname(), harness: "codex", nativeSessionId: "source-fixture" },
+    }, delivery, trustedMeshIngressForOwnerStdio());
+    expect(sent).toMatch(/Message (?:sent|accepted)/);
+    await vi.waitFor(() => expect(delivered).not.toBe(""), { interval: 1, timeout: 1_000 });
     const id = delivered.match(/herder:\/\/m\/([a-f0-9]{8,64})/)?.[1];
     expect(id).toBeTruthy();
     expect(delivered).not.toContain(original);
@@ -137,13 +146,12 @@ describe("durable long automatic messages", () => {
     const fallbackUri = delivered.match(/(herder:\/\/m\/[a-f0-9]{8,64})/)?.[1];
     expect(fallbackUri).toBe(`herder://m/${id}`);
 
-    const events = new HerderEventBus();
     const server = new McpServer({ name: "long-message-read-test", version: "1" });
-    registerControlPlaneTools(server, { jobs: new HerderJobRegistry(events), events, coordination: new CoordinationNoteStore(join(root!, "notes.json")) });
+    registerControlPlaneTools(server, { jobs, events, coordination: new CoordinationNoteStore(join(root!, "notes.json")) });
     registerHerderResources(server, {
       adapters: new Map(), coordination: new CoordinationNoteStore(join(root!, "notes.json")),
       humanRequests: new HumanRequestRegistry(join(root!, "human-requests.json"), events),
-      jobs: new HerderJobRegistry(events), events, eventHealth: new HarnessEventHealthRegistry(),
+      jobs, events, eventHealth: new HarnessEventHealthRegistry(),
     });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: "long-message-reader", version: "1" }, { versionNegotiation: { mode: "auto" } });
@@ -228,6 +236,7 @@ describe("durable long automatic messages", () => {
     const workspaceLink = join(root!, "workspace-link");
     await symlink(root!, workspaceLink);
     expect((await client.callTool({ name: "save_message_to_file", arguments: { messageId: id, cwd: workspaceLink } })).isError).toBe(true);
+    delivery.close();
     await client.close();
     await server.close();
     if (previousStops === undefined) delete process.env.AGENT_HERDER_HUMAN_STOP_STORE;

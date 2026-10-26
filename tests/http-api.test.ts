@@ -328,7 +328,7 @@ describe("agent-herder web API", () => {
 
     const permission = await fetch(`${base}/api/sessions/claude/session-1/permissions/p-1`, {
       method: "POST",
-      body: JSON.stringify({ response: "allow", remember: true }),
+      body: JSON.stringify({ hostId: "test-host", response: "allow", remember: true }),
     });
     expect(permission.status).toBe(502);
     expect(await permission.json()).toEqual({ ok: false, error: "permission backend unavailable" });
@@ -379,14 +379,37 @@ describe("agent-herder web API", () => {
       if (!address || typeof address === "string") throw new Error("server did not bind");
       const refused = await fetch(`http://127.0.0.1:${address.port}/api/sessions/claude/session-1/permissions/p-1`, {
         method: "POST",
-        body: JSON.stringify({ response: "allow", remember: true }),
+        body: JSON.stringify({ hostId: "expected-host", response: "allow", remember: true }),
       });
       expect(refused.status, testCase.label).toBe(502);
       expect(await refused.json(), testCase.label).toEqual({
         ok: false,
-        error: "Could not bind the permission response to its native host.",
+        error: "The native permission session no longer matches the selected host.",
       });
     }
+    expect(nativeReply).not.toHaveBeenCalled();
+  });
+
+  it("requires the host shown by the exact native permission readback", async () => {
+    const nativeReply = vi.fn(async () => ({ ok: true }));
+    const server = createWebServer({
+      adapters: new Map([["claude", { ...fakeAdapter("p-1"), respondPermission: nativeReply }]]),
+      converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("server did not bind");
+    const missingHost = await fetch(`http://127.0.0.1:${address.port}/api/sessions/claude/session-1/permissions/p-1`, {
+      method: "POST", body: JSON.stringify({ response: "allow", remember: false }),
+    });
+    expect(missingHost.status).toBe(400);
+    expect(nativeReply).not.toHaveBeenCalled();
+    const staleHost = await fetch(`http://127.0.0.1:${address.port}/api/sessions/claude/session-1/permissions/p-1`, {
+      method: "POST", body: JSON.stringify({ hostId: "old-host", response: "allow", remember: false }),
+    });
+    expect(staleHost.status).toBe(502);
+    expect(await staleHost.json()).toMatchObject({ ok: false, error: "The native permission session no longer matches the selected host." });
     expect(nativeReply).not.toHaveBeenCalled();
   });
 

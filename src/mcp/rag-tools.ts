@@ -5,9 +5,10 @@ import type { HarnessAdapter } from "../types/index.js";
 
 export function registerRagTools(server: McpServer, adapters?: Map<string, HarnessAdapter>): void {
   server.registerTool("agent_herder_search", {
-    description: "Search opted-in Codex, ZCode, and OpenCode conversation history semantically in Agent Herder's Qdrant index.",
+    description: "Search opted-in conversation history indexed locally on this Herder host. For an exact quote across computers, prefer session_search with the correct hostId; for a known native ID, use agent_info or fleet_session_view with hostId. Hybrid mode runs text matching then semantic embeddings; use mode=exact for fast local text-only results without waiting for embeddings, or mode=semantic for meaning similarity. This is not a complete fleet search: missing results do not prove a session is absent on other hosts. Results include stage timings and coverage.",
     inputSchema: z.object({
       query: z.string().trim().min(1).max(1000),
+      mode: z.enum(["hybrid", "exact", "semantic"]).optional(),
       harnesses: z.array(z.enum(["codex", "zcode", "opencode"])).max(3).optional(),
       from: z.string().date().optional(),
       to: z.string().date().optional(),

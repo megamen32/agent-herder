@@ -82,6 +82,13 @@ describe('owner direct route local logic only',()=>{
   await expect(t.call('mcp:shell:roomhacker-server-88:AgentHerder','mesh_deliver',{sender:{hostId:'forged'}})).rejects.toThrow('direct_sender_host_mismatch');
   await expect(t.call('mcp:shell:roomhacker-server-88:AgentHerder','workspace_reserve',{owner:{hostId:'forged'}})).rejects.toThrow('direct_sender_host_mismatch');
  });
+ it('allows an explicit exact-host read of one native session without widening mutation tools',async()=>{
+  const t=new FleetDirectTransport([macPeer]);state.reply={structuredContent:{hostId:'MacBook-Pro-User.local',found:true}};
+  await t.call('mcp:shell:MacBook-Pro-User.local:AgentHerder','fleet_session_view',{harness:'codex',sessionId:'native-exact'});
+  expect(state.spawns[0].body.params).toMatchObject({name:'fleet_session_view',arguments:{harness:'codex',sessionId:'native-exact'}});
+  await expect(t.call('mcp:shell:MacBook-Pro-User.local:AgentHerder','shell_exec',{})).rejects.toThrow('direct_tool_not_authorized');
+  expect(state.spawns).toHaveLength(1);
+ });
  it('mutation requires exact durable receiver intent and never forwards retryable raw create_session',async()=>{
   const t=new FleetDirectTransport([peer]);await expect(t.call('mcp:shell:roomhacker-server-88:AgentHerder','create_session',{})).rejects.toThrow('direct_create_identity');
   await t.call('mcp:shell:roomhacker-server-88:AgentHerder','create_session',{harness:'codex',name:'empty',cwd:'/home/roomhacker'},'a'.repeat(64));

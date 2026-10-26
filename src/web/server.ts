@@ -3543,6 +3543,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendOperationResult(response, await supervisor.changeModel(harness, id, body.model));
     }
     if (action.startsWith("permissions/")) {
+      if (typeof body.hostId !== "string" || !body.hostId.trim() || body.hostId.length > 255) {
+        return sendJson(response, 400, { ok: false, error: "hostId is required for an exact native permission response" });
+      }
       if (body.response !== "allow" && body.response !== "deny") {
         return sendJson(response, 400, { error: "response must be allow or deny" });
       }
@@ -3551,6 +3554,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         id,
         decodeURIComponent(actionMatch[4]),
         body.response,
+        body.hostId.trim(),
         body.remember === true,
       ));
     }

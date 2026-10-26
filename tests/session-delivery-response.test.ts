@@ -13,6 +13,7 @@ import {
   visibleHistoryText,
   waitForDeliveryResponse,
   nativeDeliveryResponseComplete,
+  nativeDeliveryResponseCompleteByInput,
   type DeliveryResponseBaseline,
   type DeliveryResponseHistory,
   type DeliveryResponseTarget,
@@ -89,6 +90,67 @@ describe("session delivery response observer", () => {
     expect(nativeDeliveryResponseComplete({ ...session, status: "running" } as any, job)).toBe(false);
     expect(nativeDeliveryResponseComplete({ ...session, meta: {} } as any, job)).toBe(false);
     expect(nativeDeliveryResponseComplete(session as any, completedJob("job-a"))).toBe(false);
+  });
+  it("recovers only the exact native OpenCode input after a missing pre-send baseline",async()=>{
+    const opencodeTarget=target("opencode");
+    const job:HerderJob<SendMessageResult>={...completedJob("job-native-input"),result:{ok:true,admitted:true,inputId:"input-a",nativeInputMessageId:"msg-native-input"}};
+    const baseline=await captureDeliveryResponseBaseline({jobId:job.id,inputId:"input-a",target:opencodeTarget,readMessages:async()=>({messages:null,complete:false})});
+    const messages:SessionMessageView[]=[
+      {id:"msg-native-input",role:"user",text:"bounded input",parts:[{type:"text",text:"bounded input"}]},
+      {id:"msg-native-answer",role:"assistant",phase:"stop",text:"HF26_OK",parts:[{type:"text",text:"HF26_OK"}]},
+    ];
+    const session={id:"session-a",harness:"opencode",hostId:"host-a",status:"idle",needsPermission:false} as const;
+    const complete=nativeDeliveryResponseCompleteByInput({target:opencodeTarget,inputId:"input-a",job,before:session,after:session,history:{messages,complete:false,inputTailComplete:true}});
+    const result=await waitForDeliveryResponse({jobId:job.id,inputId:"input-a",target:opencodeTarget,baseline,readJob:()=>job,waitMs:0,
+      readHistory:async()=>({messages,complete:false,inputTailComplete:true,turnComplete:complete})});
+    expect(complete).toBe(true);
+    expect(result).toMatchObject({status:"completed",correlation:"reply_to",text:"HF26_OK",totalTextLength:7,baselineCoverage:"unavailable"});
+  });
+  it("closes an exact empty OpenCode finish without replaying the input",async()=>{
+    const opencodeTarget=target("opencode");
+    const job:HerderJob<SendMessageResult>={...completedJob("job-empty-native"),result:{ok:true,admitted:true,inputId:"input-a",nativeInputMessageId:"msg-native-input"}};
+    const baseline=await captureDeliveryResponseBaseline({jobId:job.id,inputId:"input-a",target:opencodeTarget,readMessages:async()=>({messages:null,complete:false})});
+    const messages:SessionMessageView[]=[
+      {id:"msg-native-input",role:"user",text:"bounded input",parts:[{type:"text",text:"bounded input"}]},
+      {id:"msg-empty-final",role:"assistant",phase:"stop",parts:[]},
+    ];
+    const session={id:"session-a",harness:"opencode",hostId:"host-a",status:"idle",needsPermission:false} as const;
+    const complete=nativeDeliveryResponseCompleteByInput({target:opencodeTarget,inputId:"input-a",job,before:session,after:session,history:{messages,complete:false,inputTailComplete:true}});
+    const result=await waitForDeliveryResponse({jobId:job.id,inputId:"input-a",target:opencodeTarget,baseline,readJob:()=>job,waitMs:0,
+      readHistory:async()=>({messages,complete:false,inputTailComplete:true,turnComplete:complete})});
+    expect(result).toMatchObject({status:"completed",correlation:"reply_to",reason:"no_visible_response",text:"",baselineCoverage:"unavailable"});
+  });
+
+  it("does not treat a 49-row page without the admitted native input as a complete tail",()=>{
+    const opencodeTarget=target("opencode");
+    const job:HerderJob<SendMessageResult>={...completedJob("job-native-input"),result:{ok:true,admitted:true,inputId:"input-a",nativeInputMessageId:"msg-native-input"}};
+    const messages:SessionMessageView[]=Array.from({length:49},(_,index)=>({id:`unrelated-${index}`,role:index%2===0?"user":"assistant",text:"unrelated",parts:[]}));
+    const session={id:"session-a",harness:"opencode",hostId:"host-a",status:"idle",needsPermission:false} as const;
+    expect(nativeDeliveryResponseCompleteByInput({target:opencodeTarget,inputId:"input-a",job,before:session,after:session,history:{messages,complete:false,inputTailComplete:false}})).toBe(false);
+  });
+
+  it.each([
+    ["missing native input identity",(messages:SessionMessageView[])=>messages,{nativeInputMessageId:undefined}],
+    ["duplicate native user IDs",(messages:SessionMessageView[])=>[messages[0]!,messages[0]!,messages[1]!],{}],
+    ["a later user input",(messages:SessionMessageView[])=>[...messages,{id:"msg-next-user",role:"user" as const,text:"next",parts:[]}],{}],
+    ["a nonterminal assistant",(messages:SessionMessageView[])=>[{...messages[0]!},{...messages[1]!,phase:"tool-calls"}],{}],
+    ["a mismatched native turn",(messages:SessionMessageView[])=>[{...messages[0]!},{...messages[1]!,turnId:"turn-other"}],{turnId:"turn-expected"}],
+  ])("keeps a baseline-less OpenCode response unknown with %s",async(_label,change,jobOptions)=>{
+    const opencodeTarget=target("opencode");
+    const job:HerderJob<SendMessageResult>={...completedJob("job-native-input"),result:{ok:true,admitted:true,inputId:"input-a",nativeInputMessageId:"msg-native-input",...(jobOptions as any)}};
+    const baseline=await captureDeliveryResponseBaseline({jobId:job.id,inputId:"input-a",target:opencodeTarget,readMessages:async()=>({messages:null,complete:false})});
+    const base:SessionMessageView[]=[
+      {id:"msg-native-input",role:"user",text:"bounded input",parts:[{type:"text",text:"bounded input"}]},
+      {id:"msg-native-answer",role:"assistant",phase:"stop",text:"old or unrelated",parts:[{type:"text",text:"old or unrelated"}]},
+    ];
+    const messages=change(base);
+    const session={id:"session-a",harness:"opencode",hostId:"host-a",status:"idle",needsPermission:false} as const;
+    const complete=nativeDeliveryResponseCompleteByInput({target:opencodeTarget,inputId:"input-a",job,before:session,after:session,history:{messages,complete:false,inputTailComplete:true}});
+    const result=await waitForDeliveryResponse({jobId:job.id,inputId:"input-a",target:opencodeTarget,baseline,readJob:()=>job,waitMs:0,
+      readHistory:async()=>({messages,complete:false,inputTailComplete:true,turnComplete:complete})});
+    expect(complete).toBe(false);
+    expect(result.status).not.toBe("completed");
+    expect(result.baselineCoverage).toBe("unavailable");
   });
   it.each([
     ["codex", { id: "c-assistant", role: "assistant", text: "visible Codex answer", parts: [{ type: "text", text: "visible Codex answer" }] }],

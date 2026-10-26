@@ -7,7 +7,7 @@ import { sessionIdentity } from "../session-identity.js";
 import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import { UserMessageDelivery } from "../user-message-delivery.js";
-import { nativeDeliveryResponseComplete, waitForDeliveryResponse, type DeliveryResponseBaseline, type DeliveryResponseResult, type DeliveryResponseTarget } from "../session-delivery-response.js";
+import { captureDeliveryResponseBaseline, nativeDeliveryResponseComplete, nativeDeliveryResponseCompleteByInput, waitForDeliveryResponse, type DeliveryResponseBaseline, type DeliveryResponseResult, type DeliveryResponseTarget } from "../session-delivery-response.js";
 import { callerSessionFromMcpContext } from "./caller-session.js";
 import type { SendMessageResult } from "../types/index.js";
 import { trustedMeshIngressFromMcpAuthInfo } from "../mesh/authenticated-ingress.js";
@@ -137,12 +137,7 @@ export function registerSessionTools(server: McpServer, deps: {
       }
     }
     if (!baseline) {
-      return {
-        jobId: job.id, inputId, jobRef: job.resultRef, target, status: "unknown", correlation: "unavailable",
-        text: "", totalTextLength: 0, responseSha256: createHash("sha256").update("").digest("hex"),
-        responseFetchUri: `herder://delivery-responses/${encodeURIComponent(target.hostId)}/${encodeURIComponent(target.harness)}/${encodeURIComponent(target.sessionId)}/${encodeURIComponent(job.id)}/${encodeURIComponent(inputId)}`,
-        baselineCoverage: "unavailable", reason: "baseline_unavailable",
-      };
+      baseline=await captureDeliveryResponseBaseline({jobId:job.id,inputId,target,readMessages:async()=>({messages:null,complete:false})});
     }
     return await waitForDeliveryResponse({
       jobId: job.id, inputId, target, baseline,
@@ -152,10 +147,16 @@ export function registerSessionTools(server: McpServer, deps: {
         const current = await adapter.getSession(requested.sessionId);
         if (!current || current.id !== requested.sessionId || current.harness !== requested.harness || current.hostId !== requested.hostId) return { messages: null };
         const messages = await adapter.getSessionMessages(requested.sessionId, limit);
+        if (!messages) return { messages: null };
         const fresh = await adapter.getSession(requested.sessionId);
         if (!fresh || fresh.id !== requested.sessionId || fresh.harness !== requested.harness || fresh.hostId !== requested.hostId) return { messages: null };
         const latestJob = jobs.get<SendMessageResult>(job.id);
-        return { messages, complete: false, turnComplete: nativeDeliveryResponseComplete(current, latestJob) && nativeDeliveryResponseComplete(fresh, latestJob) };
+        const nativeInputMessageId=latestJob?.result?.nativeInputMessageId;
+        const inputTailComplete=requested.harness==='opencode'&&typeof nativeInputMessageId==='string'
+          &&messages.filter(message=>message.id===nativeInputMessageId&&message.role==='user').length===1;
+        const history={messages,complete:false,inputTailComplete};
+        const exactCompletion=nativeDeliveryResponseCompleteByInput({target:requested,inputId,job:latestJob,before:current,after:fresh,history});
+        return { ...history, turnComplete: (nativeDeliveryResponseComplete(current, latestJob) && nativeDeliveryResponseComplete(fresh, latestJob))||exactCompletion };
       },
       recordResponseReceipt: (id, value) => jobs.recordDeliveryResponseReceipt(id, value),
       waitMs: Math.max(0, deadline - Date.now()),

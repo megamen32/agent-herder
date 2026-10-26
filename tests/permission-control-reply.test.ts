@@ -16,41 +16,41 @@ function fixture(id:string){
 
 it('does not send a response to a stale native permission',async()=>{
  const f=fixture('stale');
- const result=await f.supervisor.respondPermission('zcode','stale','old-request','allow');
+ const result=await f.supervisor.respondPermission('zcode','stale','old-request','allow',f.current.hostId);
  expect(result.ok).toBe(false);expect(f.reply).not.toHaveBeenCalled();
 });
 
 it('rejects an exact-ID read that belongs to another native session',async()=>{
  const f=fixture('identity');f.current.id='foreign';
- expect((await f.supervisor.respondPermission('zcode','identity','perm-identity','allow')).ok).toBe(false);
+ expect((await f.supervisor.respondPermission('zcode','identity','perm-identity','allow',f.current.hostId)).ok).toBe(false);
  expect(f.reply).not.toHaveBeenCalled();
 });
 
 it('remembers the accepted decision across supervisor instances and refuses a conflicting reply',async()=>{
  const f=fixture('accepted');
- expect((await f.supervisor.respondPermission('zcode','accepted','perm-accepted','allow')).ok).toBe(true);
- expect((await f.create().respondPermission('zcode','accepted','perm-accepted','allow')).ok).toBe(true);
- expect((await f.create().respondPermission('zcode','accepted','perm-accepted','deny')).ok).toBe(false);
+ expect((await f.supervisor.respondPermission('zcode','accepted','perm-accepted','allow',f.current.hostId)).ok).toBe(true);
+ expect((await f.create().respondPermission('zcode','accepted','perm-accepted','allow',f.current.hostId)).ok).toBe(true);
+ expect((await f.create().respondPermission('zcode','accepted','perm-accepted','deny',f.current.hostId)).ok).toBe(false);
  expect(f.reply).toHaveBeenCalledTimes(1);
 });
 
 it('does not replay a native write with unknown outcome after recreating the controller',async()=>{
  const f=fixture('unknown');f.reply.mockImplementation(async()=>{throw Error('connection lost after response write');});
- expect((await f.supervisor.respondPermission('zcode','unknown','perm-unknown','allow')).ok).toBe(false);
- expect((await f.create().respondPermission('zcode','unknown','perm-unknown','allow')).ok).toBe(false);
+ expect((await f.supervisor.respondPermission('zcode','unknown','perm-unknown','allow',f.current.hostId)).ok).toBe(false);
+ expect((await f.create().respondPermission('zcode','unknown','perm-unknown','allow',f.current.hostId)).ok).toBe(false);
  expect(f.reply).toHaveBeenCalledTimes(1);
 });
 
 it('sends concurrent clicks for the same request at most once',async()=>{
  const f=fixture('concurrent');
- const results=await Promise.all([f.supervisor.respondPermission('zcode','concurrent','perm-concurrent','allow'),f.create().respondPermission('zcode','concurrent','perm-concurrent','allow')]);
+ const results=await Promise.all([f.supervisor.respondPermission('zcode','concurrent','perm-concurrent','allow',f.current.hostId),f.create().respondPermission('zcode','concurrent','perm-concurrent','allow',f.current.hostId)]);
  expect(results.some(r=>r.ok)).toBe(true);expect(f.reply).toHaveBeenCalledTimes(1);
 });
 
 it('does not retry a native response that returned an ambiguous failure',async()=>{
  const f=fixture('rejected');f.reply.mockImplementation(async()=>({ok:false,error:'native response failed'}));
- expect((await f.supervisor.respondPermission('zcode','rejected','perm-rejected','allow')).ok).toBe(false);
- expect((await f.create().respondPermission('zcode','rejected','perm-rejected','allow')).ok).toBe(false);
+ expect((await f.supervisor.respondPermission('zcode','rejected','perm-rejected','allow',f.current.hostId)).ok).toBe(false);
+ expect((await f.create().respondPermission('zcode','rejected','perm-rejected','allow',f.current.hostId)).ok).toBe(false);
  expect(f.reply).toHaveBeenCalledTimes(1);
 });
 
@@ -61,7 +61,7 @@ it('refuses the response if the selected host changes before the locked native r
   pendingRequests:[{id:'perm-host-drift',canRespond:true,nativeMethod:'fixtures/respond'}],observedAt:new Date().toISOString(),
  }),respondPermission:f.reply};
  const supervisor=new SessionSupervisor(new Map([['zcode',adapter]]),{convert:async()=>({success:true})} as any);
- const result=await supervisor.respondPermission('zcode','host-drift','perm-host-drift','allow');
+ const result=await supervisor.respondPermission('zcode','host-drift','perm-host-drift','allow','selected-host');
  expect(result.ok).toBe(false);expect(f.reply).not.toHaveBeenCalled();
 });
 
@@ -72,7 +72,7 @@ it('does not call an adapter for an exact pending request it marks non-resolvabl
   pendingRequests:[{id:'perm-unsupported',canRespond:false,unsupportedReason:'requires a permission subset',nativeMethod:'item/permissions/requestApproval'}],observedAt:new Date().toISOString(),
  }),respondPermission:f.reply};
  const supervisor=new SessionSupervisor(new Map([['zcode',adapter]]),{convert:async()=>({success:true})} as any);
- const result=await supervisor.respondPermission('zcode','unsupported','perm-unsupported','allow');
+ const result=await supervisor.respondPermission('zcode','unsupported','perm-unsupported','allow',f.current.hostId);
  expect(result.ok).toBe(false);expect(f.reply).not.toHaveBeenCalled();
 });
 
@@ -80,6 +80,6 @@ it('fails closed when a native adapter cannot prove that the pending request is 
  const f=fixture('unproven');
  const adapter:any={type:'zcode',name:'legacy-fixture',getSession:async()=>({...f.current}),respondPermission:f.reply};
  const supervisor=new SessionSupervisor(new Map([['zcode',adapter]]),{convert:async()=>({success:true})} as any);
- const result=await supervisor.respondPermission('zcode','unproven','perm-unproven','allow');
+ const result=await supervisor.respondPermission('zcode','unproven','perm-unproven','allow',f.current.hostId);
  expect(result.ok).toBe(false);expect(f.reply).not.toHaveBeenCalled();
 });

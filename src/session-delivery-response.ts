@@ -39,6 +39,8 @@ export type DeliveryResponseHistory = {
   messages: SessionMessageView[] | null;
   /** True only when the history source proves that its returned set is complete. */
   complete?: boolean;
+  /** True only when a native latest-page reader returned the exact admitted input and its full ordered suffix. */
+  inputTailComplete?: boolean;
   /** True only when the native/history source proves that the correlated turn finished. */
   turnComplete?: boolean;
 };
@@ -103,6 +105,58 @@ export function nativeDeliveryResponseComplete(
   const native = session.meta?.nativeLastTurn as { turnId?: unknown; status?: unknown } | undefined;
   return typeof turnId === "string" && turnId.length > 0
     && native?.turnId === turnId && native.status === "completed";
+}
+
+function exactNativeInputBoundary(input: {
+  target: DeliveryResponseTarget;
+  inputId: string;
+  job: HerderJob<SendMessageResult> | null;
+  history: DeliveryResponseHistory;
+}): { inputIndex: number; nativeInputMessageId: string; turnId?: string } | null {
+  const job = input.job;
+  const nativeInputMessageId = job?.result?.nativeInputMessageId;
+  if (input.target.harness !== "opencode" || !job || job.state !== "completed" || !job.result?.ok
+    || job.result.admitted !== true || job.result.admissionUnknown || job.ownerSessionId !== input.target.sessionId
+    || job.result.inputId !== input.inputId || typeof nativeInputMessageId !== "string" || !nativeInputMessageId
+    || input.history.inputTailComplete !== true || !input.history.messages) return null;
+
+  const messages = input.history.messages;
+  const matches = messages.flatMap((message, index) => message.id === nativeInputMessageId && message.role === "user" ? [index] : []);
+  if (matches.length !== 1) return null;
+  const inputIndex = matches[0]!;
+  if (messages.slice(inputIndex + 1).some((message) => message.role === "user")) return null;
+
+  const turnId = job.result.turnId;
+  if (turnId && messages.slice(inputIndex + 1).some((message) => message.role === "assistant" && message.turnId && message.turnId !== turnId)) return null;
+  return { inputIndex, nativeInputMessageId, ...(turnId ? { turnId } : {}) };
+}
+
+/**
+ * Native input ID, exact ordered history, final assistant finish, and stable
+ * idle readback can close a missing OpenCode pre-send baseline. No text before
+ * the native input is considered, and any ambiguity keeps the result unknown.
+ */
+export function nativeDeliveryResponseCompleteByInput(input: {
+  target: DeliveryResponseTarget;
+  inputId: string;
+  job: HerderJob<SendMessageResult> | null;
+  before: Pick<AgentSession, "id" | "harness" | "hostId" | "status" | "needsPermission">;
+  after: Pick<AgentSession, "id" | "harness" | "hostId" | "status" | "needsPermission">;
+  history: DeliveryResponseHistory;
+}): boolean {
+  const identityMatches = (session: typeof input.before) => session.id === input.target.sessionId
+    && session.harness === input.target.harness && session.hostId === input.target.hostId
+    && session.status === "idle" && !session.needsPermission;
+  if (!identityMatches(input.before) || !identityMatches(input.after)) return false;
+  const boundary = exactNativeInputBoundary(input);
+  if (!boundary || !input.history.messages) return false;
+  const afterInput = input.history.messages.slice(boundary.inputIndex + 1);
+  const assistants = afterInput.filter((message) => message.role === "assistant");
+  const terminals = assistants.filter((message) => message.phase === "stop");
+  const terminal = terminals.at(-1);
+  if (!terminal || terminals.length !== 1 || afterInput.at(-1)?.id !== terminal.id) return false;
+  if (boundary.turnId && terminal.turnId !== boundary.turnId) return false;
+  return true;
 }
 
 const sha256 = (value: string): string => createHash("sha256").update(value, "utf8").digest("hex");
@@ -338,11 +392,23 @@ async function toResult(input: {
       responseSha256: sha256(""), baselineCoverage: input.baseline.coverage, reason: "job_unavailable",
     };
   }
+  const exactBoundary=input.baseline.coverage==='unavailable'?exactNativeInputBoundary({target:input.target,inputId:input.inputId,job:input.job,history:input.history}):null;
+  let baselineForDiff=input.baseline;
+  if(exactBoundary&&input.history.messages){
+    const prefix=input.history.messages.slice(0,exactBoundary.inputIndex+1);
+    baselineForDiff=await captureDeliveryResponseBaseline({jobId:input.jobId,inputId:input.inputId,target:input.target,readMessages:async()=>({messages:prefix,complete:true})});
+  }
+  const terminalAssistant=exactBoundary&&input.history.messages
+    ?input.history.messages.slice(exactBoundary.inputIndex+1).filter(message=>message.role==='assistant'&&message.phase==='stop').at(-1)
+    :undefined;
+  const turnId=input.turnId??input.job.result?.turnId??terminalAssistant?.turnId;
   const delta = diffDeliveryResponse({
-    baseline: input.baseline, history: input.history, target: input.target,
-    jobId: input.jobId, inputId: input.inputId, ...(input.turnId ? { turnId: input.turnId } : {}),
+    baseline: baselineForDiff, history: input.history, target: input.target,
+    jobId: input.jobId, inputId: input.inputId,
+    ...(turnId?{turnId}:{}),
   });
   const status = resultStatus(input.job, input.history, delta);
+  const correlation=exactBoundary&&delta.integrity==='verified'?'reply_to':delta.correlation;
   const formatted = await formatResponseText(delta.text);
   if (formatted.responseResourceUri && input.recordResponseReceipt) {
     await input.recordResponseReceipt(input.jobId, {
@@ -355,13 +421,13 @@ async function toResult(input: {
   }
   return {
     jobId: input.jobId, inputId: input.inputId, jobRef: input.job.resultRef,
-    target: input.target, status, correlation: delta.correlation, text: formatted.text,
+    target: input.target, status, correlation, text: formatted.text,
     totalTextLength: delta.text.length, responseSha256: sha256(delta.text),
     responseFetchUri: `herder://delivery-responses/${encodeURIComponent(input.target.hostId)}/${encodeURIComponent(input.target.harness)}/${encodeURIComponent(input.target.sessionId)}/${encodeURIComponent(input.jobId)}/${encodeURIComponent(input.inputId)}`,
     ...(formatted.responseResourceUri ? { responseResourceUri: formatted.responseResourceUri } : {}),
     ...(formatted.nextOffset !== undefined ? { nextOffset: formatted.nextOffset } : {}),
     baselineCoverage: input.baseline.coverage,
-    ...(delta.turnId ? { turnId: delta.turnId } : {}),
+    ...(delta.turnId||turnId ? { turnId: delta.turnId||turnId } : {}),
     ...(input.observationCancelled ? { observationCancelled: true } : {}),
     ...(delta.integrity === "baseline_gap" ? { reason: "baseline_gap" as const } : {}),
     ...(delta.integrity === "baseline_prefix_changed" ? { reason: "baseline_prefix_changed" as const } : {}),

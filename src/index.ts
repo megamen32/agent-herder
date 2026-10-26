@@ -90,7 +90,7 @@ import { registerRagTools } from "./mcp/rag-tools.js";
 import { registerActiveSessionTools } from "./mcp/active-session-tools.js";
 import { registerSessionWorkspaceTools } from "./session-workspaces-tools.js";
 import { registerSessionSearchTools } from "./mcp/session-search-tools.js";
-import { nativeDeliveryResponseComplete, waitForDeliveryResponse, type DeliveryResponseTarget } from "./session-delivery-response.js";
+import { captureDeliveryResponseBaseline, nativeDeliveryResponseComplete, nativeDeliveryResponseCompleteByInput, waitForDeliveryResponse, type DeliveryResponseTarget } from "./session-delivery-response.js";
 import { loadCdpChatDriver } from "./cdp-chat-mcp.js";
 import type { CdpChatCapabilities, CdpChatDriver } from "./cdp-chat.js";
 import { ALL_CDP_CHAT_CAPABILITIES, CdpChatClient } from "./cdp-chat.js";
@@ -669,7 +669,7 @@ function registerTools(
   registerSessionSearchTools(server,{transport:new FleetDirectTransport(fleetPeers()),peers:fleetPeers().map(peer=>({hostId:peer.hostId,target:`mcp:shell:${peer.hostId}:AgentHerder`}))});
   registerHarnessMeshTools(server, { adapters, gptadmin: new FleetDirectTransport(fleetPeers()), deliveryPolicy: readLaunchPolicyStateForGate, userMessageDelivery, trustedIngress: trustedMeshIngress, ...(inventorySupervisor?{supervisor:inventorySupervisor}:{}) });
   registerWorkspaceTools(server, { transport: workspaceTransport });
-  registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, launchPolicyRevision: readLaunchPolicyRevision, fleetTransport: workspaceTransport, fleetPeers: fleetPeers().filter(peer => peer.hostId !== "MacBook-Pro-User.local").map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), policyRevisionLedgerPath: fleetPolicyRevisionLedgerPath(autopilotStateDir) });
+  registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, launchPolicyRevision: readLaunchPolicyRevision, fleetTransport: workspaceTransport, fleetPeers: fleetPeers().filter(peer => peer.hostId !== "MacBook-Pro-User.local").map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), sessionReadTransport: new FleetDirectTransport(fleetPeers()), sessionReadPeers: fleetPeers().map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), policyRevisionLedgerPath: fleetPolicyRevisionLedgerPath(autopilotStateDir) });
   // The common settings of the fleet: a node that has no owner of the document
   // named in its environment registers no tool and claims nothing.
   const commonSettings = commonSettingsService({ hooks: hooksLeverFromStore(hooksLeverStore) });
@@ -787,7 +787,8 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
       harness: binding.harness,
       sessionId: binding.sessionId,
     };
-    const baseline = jobs.readDeliveryResponseBaseline(binding.jobId, { inputId: binding.inputId, target });
+    const storedBaseline = jobs.readDeliveryResponseBaseline(binding.jobId, { inputId: binding.inputId, target });
+    const baseline = storedBaseline??await captureDeliveryResponseBaseline({jobId:binding.jobId,inputId:binding.inputId,target,readMessages:async()=>({messages:null,complete:false})});
     return waitForDeliveryResponse({
       jobId: binding.jobId,
       inputId: binding.inputId,
@@ -800,10 +801,16 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
           return { messages: null };
         }
         const messages = await adapter.getSessionMessages!(requested.sessionId, limit);
+        if (!messages) return { messages: null };
         const afterHistory = await adapter.getSession(requested.sessionId);
         if (!afterHistory || afterHistory.id !== requested.sessionId || afterHistory.harness !== requested.harness || afterHistory.hostId !== requested.hostId) return { messages: null };
         const latestJob = jobs.get<SendMessageResult>(binding.jobId);
-        return { messages, complete: false, turnComplete: nativeDeliveryResponseComplete(fresh, latestJob) && nativeDeliveryResponseComplete(afterHistory, latestJob) };
+        const nativeInputMessageId=latestJob?.result?.nativeInputMessageId;
+        const inputTailComplete=requested.harness==='opencode'&&typeof nativeInputMessageId==='string'
+          &&messages.filter(message=>message.id===nativeInputMessageId&&message.role==='user').length===1;
+        const history={messages,complete:false,inputTailComplete};
+        const exactCompletion=nativeDeliveryResponseCompleteByInput({target:requested,inputId:binding.inputId,job:latestJob,before:fresh,after:afterHistory,history});
+        return { ...history, turnComplete: (nativeDeliveryResponseComplete(fresh, latestJob) && nativeDeliveryResponseComplete(afterHistory, latestJob))||exactCompletion };
       },
       waitMs: 30_000,
       snapshotOnly: true,

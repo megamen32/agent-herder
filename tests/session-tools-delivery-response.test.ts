@@ -82,6 +82,41 @@ describe("MCP send response join", () => {
     expect(sends).toBe(1);
   });
 
+  it("joins an exact OpenCode input to its terminal response when the pre-send baseline was unavailable",async()=>{
+    root=await mkdtemp(join(tmpdir(),"herder-mcp-response-exact-input-"));
+    const target:AgentSession={id:"target-opencode",harness:"opencode",hostId:"host-a",status:"running",title:"exact input fixture",cwd:"/tmp",lastActivity:new Date().toISOString(),needsPermission:false};
+    const messages:SessionMessageView[]=[];let historyReads=0;let nativeWrites=0;
+    const adapter:HarnessAdapter={
+      type:"opencode",name:"exact input fixture",async init(){},
+      async listSessions(){return [target]},
+      async getSession(id){return id===target.id?target:null},
+      async getSessionMessages(id){
+        if(id!==target.id)return null;
+        historyReads++;
+        if(nativeWrites===0)return null;
+        return messages.map(item=>({...item}));
+      },
+      async sendMessage(id,options){
+        expect(id).toBe(target.id);nativeWrites++;
+        messages.push({id:"msg-native-input",role:"user",text:options.message,parts:[{type:"text",text:options.message}]});
+        messages.push({id:"msg-native-answer",role:"assistant",phase:"stop",text:"HF26_OK",parts:[{type:"text",text:"HF26_OK"}]});
+        target.status="idle";
+        return {ok:true,admitted:true,inputId:options.inputId,nativeInputMessageId:"msg-native-input"};
+      },
+      async stopSession(){return {ok:true}},async respondPermission(){return {ok:true}},async setPermissions(){return {ok:true}},
+    };
+    const events=new HerderEventBus();const server=new McpServer({name:"exact-input-response-test",version:"1"});
+    const jobs=new HerderJobRegistry(events,{persistencePath:join(root,"jobs.json")});
+    registerSessionTools(server,{adapters:new Map([["opencode",adapter]]),jobs,events,routingPeers:[]});
+    const [clientTransport,serverTransport]=InMemoryTransport.createLinkedPair();
+    const client=new Client({name:"exact-input-response-client",version:"1"},{versionNegotiation:{mode:"auto"}});
+    await server.connect(serverTransport);await client.connect(clientTransport);cleanup.push(async()=>{await client.close();await server.close()});
+    const result=await client.callTool({name:"send_message",arguments:{harness:"opencode",sessionId:target.id,message:"bounded fixture",inputId:"input-exact",humanRequested:true,mode:"sync"}});
+    const payload=JSON.parse(result.content[0]?.text??"{}");
+    expect(nativeWrites).toBe(1);expect(historyReads).toBeGreaterThan(1);
+    expect(payload.response).toMatchObject({status:"completed",correlation:"reply_to",text:"HF26_OK",baselineCoverage:"unavailable"});
+  });
+
   it("keeps response results bound to each concurrent target", async () => {
     root = await mkdtemp(join(tmpdir(), "herder-mcp-response-concurrent-"));
     const sessions = ["target-a", "target-b"].map((id): AgentSession => ({
@@ -276,7 +311,7 @@ describe("MCP send response join", () => {
     const payload = JSON.parse(result.content[0]?.text ?? "{}");
     expect(nativeWrites).toBe(1);
     expect(payload.response).toMatchObject({
-      status: "unknown", reason: "baseline_unavailable", target: { sessionId: target.id },
+      status: "unknown", reason: "job_unavailable", target: { sessionId: target.id },
       jobRef: expect.stringMatching(/^herder:\/\/jobs\/job_/),
     });
   });

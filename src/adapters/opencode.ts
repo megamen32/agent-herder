@@ -993,6 +993,8 @@ export class OpenCodeAdapter implements HarnessAdapter {
       return {
         id: message.id,
         role: message.role,
+        ...(message.turnId ? { turnId: message.turnId } : {}),
+        ...(message.phase ? { phase: message.phase } : {}),
         ...(message.model ? { model: message.model } : {}),
         ...(message.timestamp ? { timestamp: message.timestamp } : {}),
         ...(text ? { text } : {}),

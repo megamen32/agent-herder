@@ -849,17 +849,19 @@ export class SessionSupervisor {
     id: string,
     permissionId: string,
     response: "allow" | "deny",
+    expectedHostId: string,
     remember = false,
   ): Promise<{ ok: boolean; error?: string }> {
+    if (!expectedHostId.trim()) return { ok: false, error: "An expected native host is required for the permission response." };
     const adapter = this.requireAdapter(harness);
-    let expectedHostId: string | undefined;
+    let observedHostId: string | undefined;
     try {
       if (adapter.getPermissionState) {
         const state = await adapter.getPermissionState(id);
-        if (state?.target.harness === harness && state.target.sessionId === id) expectedHostId = state.target.hostId;
-      } else expectedHostId = (await adapter.getSession(id))?.hostId;
+        if (state?.target.harness === harness && state.target.sessionId === id) observedHostId = state.target.hostId;
+      } else observedHostId = (await adapter.getSession(id))?.hostId;
     } catch { /* the guard performs its own required fresh read */ }
-    if (!expectedHostId) return { ok: false, error: "Could not bind the permission response to its native host." };
+    if (!observedHostId || observedHostId !== expectedHostId) return { ok: false, error: "The native permission session no longer matches the selected host." };
     const result = await respondToNativePermission(adapter, harness, id, permissionId, response, remember, expectedHostId);
     if (result.ok) this.publishSessionChanged(harness, id, "changed");
     return result;
