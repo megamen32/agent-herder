@@ -369,6 +369,9 @@ export interface HarnessAdapter {
   /** List all agent sessions */
   listSessions(options?: ListSessionsOptions): Promise<AgentSession[]>;
 
+  /** Read the native active set without scanning historical sessions, when available. */
+  listActiveSessions?(): Promise<AgentSession[]>;
+
   /** Completeness evidence for the most recent listSessions() call, when supported. */
   getSessionSnapshotReceipt?(): SessionSnapshotReceipt;
 

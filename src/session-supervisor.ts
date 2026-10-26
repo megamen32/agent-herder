@@ -126,6 +126,8 @@ export class SessionSupervisor {
   private readonly permissionSnapshotInFlight = new Set<string>();
   private readonly permissionNoticeSeen = new Map<string, Set<string>>();
   private readonly permissionNoticePollInFlight = new Set<string>();
+  private readonly permissionActivePollInFlight = new Set<string>();
+  private permissionActiveTimer?: NodeJS.Timeout;
   private readonly permissionSnapshotWarnings = new Set<string>();
   /** The declared work place of every session, read once per update. */
   private projection: { observations: Map<string, WorkspaceObservation>; at: number } | null = null;
@@ -285,6 +287,19 @@ export class SessionSupervisor {
     };
     this.observationTimer = setInterval(tick, bounded);
     this.observationTimer.unref?.();
+    if (this.permissionNoticeObserver) {
+      const permissionTick = () => {
+        for (const [provider, adapter] of this.adapters) {
+          if (provider !== "opencode" || !adapter.listActiveSessions || this.permissionActivePollInFlight.has(provider)) continue;
+          this.permissionActivePollInFlight.add(provider);
+          void adapter.listActiveSessions().then(sessions => this.reconcileLatePermissionSessions(provider, adapter, sessions))
+            .catch(() => undefined).finally(() => this.permissionActivePollInFlight.delete(provider));
+        }
+      };
+      this.permissionActiveTimer = setInterval(permissionTick, Math.min(bounded, 5_000));
+      this.permissionActiveTimer.unref?.();
+      permissionTick();
+    }
     tick();
     return () => this.stopObservation();
   }
@@ -339,6 +354,8 @@ export class SessionSupervisor {
   stopObservation(): void {
     if (this.observationTimer) clearInterval(this.observationTimer);
     this.observationTimer = undefined;
+    if (this.permissionActiveTimer) clearInterval(this.permissionActiveTimer);
+    this.permissionActiveTimer = undefined;
     for (const unsubscribe of this.nativeEventUnsubscribers.values()) {
       try { unsubscribe(); } catch { /* best-effort adapter cleanup */ }
     }
@@ -383,25 +400,24 @@ export class SessionSupervisor {
     const read=Promise.resolve().then(()=>adapter.listSessions()).then(sessions=>{
       const observedAt=Date.now();const receipt=adapter.getSessionSnapshotReceipt?.()??{exhaustive:false,observedAt:new Date(observedAt).toISOString(),source:'native-adapter',reason:'native_enumeration_coverage_unknown'};
       this.nativeProviderSnapshots.set(provider,{sessions,observedAt,receipt});this.inventoryFailures.delete(provider);
-      // Late native requests need a polling fallback if the event stream misses
-      // them. Reconcile each newly observed ID once; the observer rechecks the
-      // exact request before creating and delivering its Notice card.
-      if (this.permissionNoticeObserver) {
-        const seen = this.permissionNoticeSeen.get(provider) ?? new Set<string>();
-        const current = new Set(sessions.filter(session=>session.needsPermission).map(session=>this.permissionObservationKey(session)));
-        for (const key of seen) if (!current.has(key)) seen.delete(key);
-        this.permissionNoticeSeen.set(provider, seen);
-        const fresh = sessions.filter(session=>session.needsPermission && !seen.has(this.permissionObservationKey(session)));
-        if (fresh.length && !this.permissionSnapshotInFlight.has(provider) && !this.permissionNoticePollInFlight.has(provider)) {
-          this.permissionNoticePollInFlight.add(provider);
-          void this.permissionNoticeObserver.reconcileInitialSnapshot(adapter,fresh).then(complete=>{
-            if (complete !== false) this.rememberObservedPermissions(provider,fresh);
-          }).catch(()=>undefined).finally(()=>this.permissionNoticePollInFlight.delete(provider));
-        }
-      }
+      this.reconcileLatePermissionSessions(provider, adapter, sessions);
       return sessions;
     }).catch(()=>{this.inventoryFailures.set(provider,'native_enumeration_failed');return this.nativeProviderSnapshots.get(provider)?.sessions??[];}).finally(()=>{this.nativeProviderRefreshes.delete(provider);});
     this.nativeProviderRefreshes.set(provider,read);return read;
+  }
+
+  private reconcileLatePermissionSessions(provider: string, adapter: HarnessAdapter, sessions: AgentSession[]): void {
+    if (!this.permissionNoticeObserver) return;
+    const seen = this.permissionNoticeSeen.get(provider) ?? new Set<string>();
+    const current = new Set(sessions.filter(session=>session.needsPermission).map(session=>this.permissionObservationKey(session)));
+    for (const key of seen) if (!current.has(key)) seen.delete(key);
+    this.permissionNoticeSeen.set(provider, seen);
+    const fresh = sessions.filter(session=>session.needsPermission && !seen.has(this.permissionObservationKey(session)));
+    if (!fresh.length || this.permissionSnapshotInFlight.has(provider) || this.permissionNoticePollInFlight.has(provider)) return;
+    this.permissionNoticePollInFlight.add(provider);
+    void this.permissionNoticeObserver.reconcileInitialSnapshot(adapter,fresh).then(complete=>{
+      if (complete !== false) this.rememberObservedPermissions(provider,fresh);
+    }).catch(()=>undefined).finally(()=>this.permissionNoticePollInFlight.delete(provider));
   }
 
   async refreshSessions(filters: SessionFilters = {}): Promise<AgentSession[]> {

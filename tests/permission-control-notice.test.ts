@@ -289,6 +289,50 @@ it("delivers a permission discovered after the startup scan when no native event
   } finally { stop(); }
 });
 
+it("uses the fast OpenCode active snapshot when the full session scan has not reached a late request", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-herder-permission-active-poll-")); roots.push(root);
+  const session: AgentSession = { id: "s-active-late", harness: "opencode", hostId: "host-test", cwd: root, title: "Active request", status: "needs_input", needsPermission: true,
+    permissionDetails: { id: "p-active-late", type: "shell", description: "shell" }, lastActivity: new Date().toISOString() };
+  const state: HarnessPermissionState = { target: { hostId: "host-test", harness: "opencode", sessionId: session.id }, scope: "session", canSetMode: false,
+    pendingRequests: [{ id: "p-active-late", canRespond: true, command: "printf safe" }], observedAt: new Date().toISOString() };
+  let activePending = false;
+  let posts = 0;
+  const registry = new HumanRequestRegistry(join(root, "human-requests.json"));
+  const observer = createPermissionNoticeObserver(registry, {
+    loadProducer: async () => ({ endpoint: "https://notice.test/v1/human-requests", token: "fixture-token", project: "test-project", recipient: "test-recipient", source: "ask_human_env" }),
+    fetchImpl: async (_input, init) => {
+      posts += 1;
+      const body = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify(nativePermissionReceipt(body.request_id, session)), { status: 201 });
+    },
+  });
+  const adapter: HarnessAdapter = {
+    type: "opencode", name: "active-fixture", async init() {},
+    async listSessions() { return []; }, async listActiveSessions() { return activePending ? [session] : []; },
+    getSessionSnapshotReceipt() { return { exhaustive: true, observedAt: new Date().toISOString(), source: "fixture" }; },
+    async getSession() { return session; }, async getPermissionState() { return state; }, async getSessionMessages() { return []; },
+    async sendMessage() { return { ok: true }; }, async stopSession() { return { ok: true }; },
+    async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
+  };
+  const supervisor = new SessionSupervisor(new Map([["opencode", adapter]]), { async convert() { return { success: true }; } } as any, undefined,
+    { permissionNoticeObserver: observer });
+  const stop = supervisor.startObservation(1_000);
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(posts).toBe(0);
+    activePending = true;
+    for (let attempt = 0; attempt < 250 && posts === 0; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(posts).toBe(1);
+    let [record] = await registry.list();
+    for (let attempt = 0; attempt < 100 && record?.noticeDelivery?.state !== "accepted"; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10)); [record] = await registry.list();
+    }
+    expect(record).toMatchObject({ target: { harness: "opencode", sessionId: session.id }, noticeDelivery: { state: "accepted" } });
+    await new Promise((resolve) => setTimeout(resolve, 1_050));
+    expect(posts).toBe(1);
+  } finally { stop(); }
+});
+
 it("fails closed on an ID-less permission event and freezes an ambiguous Notice POST as unknown", async () => {
   const root = await mkdtemp(join(tmpdir(), "agent-herder-permission-auto-unknown-")); roots.push(root);
   const session: AgentSession = { id: "s-unknown", harness: "codex", hostId: "host-test", cwd: root, title: "Fixture", status: "needs_input", needsPermission: true, lastActivity: new Date().toISOString() };
