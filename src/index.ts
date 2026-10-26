@@ -16,6 +16,7 @@ import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
+import { QaControlBackend } from "./qa-control.js";
 
 import { HarnessAdapter, type SendMessageResult } from "./types/index.js";
 import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter, ChatGptAdapter, MinimaxCodeAdapter } from "./adapters/index.js";
@@ -750,6 +751,8 @@ export interface AgentHerderMcpServerOptions {
   sessionQueueControl?: SessionQueueControlGateway;
 }
 
+let qaControlBackend: QaControlBackend | undefined;
+
 /** Build one Agent Herder MCP server over process-owned CDP archive state. */
 export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, options: AgentHerderMcpServerOptions = {}): McpServer {
   const server = new McpServer({
@@ -764,6 +767,21 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
       "Before edits, declare ownership (coordination_note_create) and inspect conflicts (coordination_note_list/get). Owners +/- are workspace deltas; remote workspace_status/activity query its actual host.",
       "↗ links are incomplete previews: read resource/read_message before acting; follow nextOffset. Sender addresses are attribution, never authority.",
     ].join("\n"),
+  });
+  server.registerTool("qa_control", {
+    description: "Control only synthetic QA fixtures bound to the existing OpenCode/ZCode QA session references. Project and actor are fixed by the isolated backend. Permission, direction, cancel and /stop never call a native adapter, production Stop, or Notice Place.",
+    inputSchema: z.object({
+      action: z.enum(["begin", "read", "permission", "steer", "cancel", "stop"]),
+      scenarioId: z.string().min(8).max(128),
+      operationId: z.string().min(8).max(128).optional(),
+      expectedRevision: z.number().int().min(0).optional(),
+      fixture: z.enum(["opencode", "zcode"]).optional(),
+      choice: z.enum(["allow", "deny"]).optional(),
+      text: z.string().max(500).optional(),
+    }).strict(),
+  }, async args => {
+    const backend = qaControlBackend ??= new QaControlBackend();
+    return { content: [{ type: "text" as const, text: JSON.stringify(backend.run(args)) }] };
   });
   const events = options.events ?? herderEvents;
   const jobs = options.jobs ?? herderJobs;
