@@ -124,13 +124,13 @@ export function createPermissionNoticeObserver(
     reported.add(key);
     console.warn(`[agent-herder] permission Notice unavailable: ${reason} (${harness})`);
   };
-  const deliverExact = async (adapter: HarnessAdapter, harness: string, sessionId: string, permissionRequestId: string): Promise<void> => {
+  const deliverExact = async (adapter: HarnessAdapter, harness: string, sessionId: string, permissionRequestId: string): Promise<boolean> => {
     try {
       const { record, binding, producer } = await createPermissionHumanQuestion(adapter, registry, harness, sessionId, permissionRequestId, dependencies, undefined, "automatic");
       const config = { project: producer.project, recipient: producer.recipient, allowedActors: producer.allowedActors };
       const payloadFingerprint = createHash("sha256").update(JSON.stringify(buildAskHumanRequest(binding as DeliverableHumanQuestion, config))).digest("hex");
       const claim = await registry.claimNoticeDelivery(record.requestId, payloadFingerprint);
-      if (!claim.admitted || !claim.claimId) return;
+      if (!claim.admitted || !claim.claimId) return true;
       try {
         const receipt = await deliverNoticeQuestion(binding as DeliverableHumanQuestion, {
           ...config, endpoint: producer.endpoint, token: producer.token, fetchImpl: dependencies.fetchImpl,
@@ -140,9 +140,14 @@ export function createPermissionNoticeObserver(
         await registry.completeNoticeDelivery(record.requestId, claim.claimId, {
           state: "accepted", httpStatus: receipt.httpStatus, noticeRequestId: receipt.requestId, deliveryStatus: receipt.deliveryStatus,
         });
+        return true;
       } catch {
-        await registry.completeNoticeDelivery(record.requestId, claim.claimId, { state: "unknown" });
+        // A POST may already have reached Notice. Even if recording UNKNOWN
+        // fails, this observer must never reissue the same external action.
+        try { await registry.completeNoticeDelivery(record.requestId, claim.claimId, { state: "unknown" }); }
+        catch { reportOnce(harness, "delivery_unknown_receipt_unavailable_no_replay"); }
         reportOnce(harness, "delivery_unknown_no_replay");
+        return true;
       }
     } catch (error) {
       const reason = error instanceof Error && error.message === "Notice question producer is not configured"
@@ -151,6 +156,7 @@ export function createPermissionNoticeObserver(
           ? "exact_request_not_pending_or_actionable"
           : "exact_native_binding_unavailable";
       reportOnce(harness, reason);
+      return false;
     }
   };
   return {
@@ -178,7 +184,7 @@ export function createPermissionNoticeObserver(
         // The adapter's fresh state explicitly enumerates each ID; no event is mapped to an arbitrary pending request.
         for (const request of state.pendingRequests) {
           if (request.canRespond !== true) continue;
-          await deliverExact(adapter, session.harness, session.id, request.id);
+          if (await deliverExact(adapter, session.harness, session.id, request.id) === false) complete = false;
         }
       }
       return complete;

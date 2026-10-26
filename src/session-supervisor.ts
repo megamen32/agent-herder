@@ -124,6 +124,8 @@ export class SessionSupervisor {
   private readonly nativeProviderRefreshes = new Map<string,Promise<AgentSession[]>>();
   private readonly permissionSnapshotProviders = new Set<string>();
   private readonly permissionSnapshotInFlight = new Set<string>();
+  private readonly permissionNoticeSeen = new Map<string, Set<string>>();
+  private readonly permissionNoticePollInFlight = new Set<string>();
   private readonly permissionSnapshotWarnings = new Set<string>();
   /** The declared work place of every session, read once per update. */
   private projection: { observations: Map<string, WorkspaceObservation>; at: number } | null = null;
@@ -305,7 +307,10 @@ export class SessionSupervisor {
           continue;
         }
         const complete = await this.permissionNoticeObserver?.reconcileInitialSnapshot(adapter, sessions);
-        if (complete !== false) this.permissionSnapshotProviders.add(provider);
+        if (complete !== false) {
+          this.permissionSnapshotProviders.add(provider);
+          this.rememberObservedPermissions(provider, sessions);
+        }
       } catch {
         // Observer reports only bounded reason codes; never dump native event or message text.
       } finally {
@@ -319,6 +324,16 @@ export class SessionSupervisor {
     if (this.permissionSnapshotWarnings.has(key)) return;
     this.permissionSnapshotWarnings.add(key);
     console.warn(`[agent-herder] permission Notice snapshot incomplete: ${reason} (${provider})`);
+  }
+
+  private permissionObservationKey(session: AgentSession): string {
+    return `${session.hostId}:${session.harness}:${session.id}:${session.permissionDetails?.id ?? "pending"}`;
+  }
+
+  private rememberObservedPermissions(provider: string, sessions: AgentSession[]): void {
+    const seen = this.permissionNoticeSeen.get(provider) ?? new Set<string>();
+    for (const session of sessions) if (session.needsPermission) seen.add(this.permissionObservationKey(session));
+    this.permissionNoticeSeen.set(provider, seen);
   }
 
   stopObservation(): void {
@@ -367,7 +382,24 @@ export class SessionSupervisor {
     const pending=this.nativeProviderRefreshes.get(provider);if(pending)return pending;
     const read=Promise.resolve().then(()=>adapter.listSessions()).then(sessions=>{
       const observedAt=Date.now();const receipt=adapter.getSessionSnapshotReceipt?.()??{exhaustive:false,observedAt:new Date(observedAt).toISOString(),source:'native-adapter',reason:'native_enumeration_coverage_unknown'};
-      this.nativeProviderSnapshots.set(provider,{sessions,observedAt,receipt});this.inventoryFailures.delete(provider);return sessions;
+      this.nativeProviderSnapshots.set(provider,{sessions,observedAt,receipt});this.inventoryFailures.delete(provider);
+      // Late native requests need a polling fallback if the event stream misses
+      // them. Reconcile each newly observed ID once; the observer rechecks the
+      // exact request before creating and delivering its Notice card.
+      if (this.permissionNoticeObserver) {
+        const seen = this.permissionNoticeSeen.get(provider) ?? new Set<string>();
+        const current = new Set(sessions.filter(session=>session.needsPermission).map(session=>this.permissionObservationKey(session)));
+        for (const key of seen) if (!current.has(key)) seen.delete(key);
+        this.permissionNoticeSeen.set(provider, seen);
+        const fresh = sessions.filter(session=>session.needsPermission && !seen.has(this.permissionObservationKey(session)));
+        if (fresh.length && !this.permissionSnapshotInFlight.has(provider) && !this.permissionNoticePollInFlight.has(provider)) {
+          this.permissionNoticePollInFlight.add(provider);
+          void this.permissionNoticeObserver.reconcileInitialSnapshot(adapter,fresh).then(complete=>{
+            if (complete !== false) this.rememberObservedPermissions(provider,fresh);
+          }).catch(()=>undefined).finally(()=>this.permissionNoticePollInFlight.delete(provider));
+        }
+      }
+      return sessions;
     }).catch(()=>{this.inventoryFailures.set(provider,'native_enumeration_failed');return this.nativeProviderSnapshots.get(provider)?.sessions??[];}).finally(()=>{this.nativeProviderRefreshes.delete(provider);});
     this.nativeProviderRefreshes.set(provider,read);return read;
   }
