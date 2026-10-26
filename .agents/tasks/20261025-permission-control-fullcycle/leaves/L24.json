@@ -12,11 +12,11 @@
     "minimum": 30,
     "maximum": 60
   },
-  "note": "Current backend/runtime27cb2f9, source main pushed; immutable build15/15, narrow adapter test1/1, tsc PASS. Real user-path ZCode guard canary returned notSubmitted/nonRetryable and native input count unchanged. Owner accept-node20/21 solely due intentional owner automation disarm. Earlier OpenCode/Notice/UserIO canary remains accepted; no replay. See evidence/zcode-queue-decisive-20261026.md.",
-  "wait_reason": "Installed Herder 27cb2f9 blocks unsafe ZCode After response command before native submission; full four-harness queue-to-final PASS still requires a native ZCode atomic deferred-only admission or upstream repair. Owner Notice Place automation pause remains intentionally armed, so owner acceptance is 20/21 with that exact policy check refused.",
+  "note": "Current installed Herder6135578 source main; immutable build15/15, focused QA test1/1, MCP HTTP200, owner acceptance20/21 solely intentional owner automation disarm. GPTAdmin profile agent-herder-qa-control-20261026 and client agent-herder-qa-actor-20261026 expose only qa_control; direct production send_message denied. Test actor completed begin/permission/steer/cancel/synthetic /stop with productionEffects=[]; native QA sessions unchanged. Authorization and receipts: evidence/qa-control-installed-20261026.md. No human acceptance claim; native ZCode queue remains blocked.",
+  "wait_reason": "Installed QA synthetic control and RBAC actor/project are proven; real native ZCode deferred queue still lacks atomic deferred-only admission. Owner automation disarm remains intentionally enabled; owner accept-node is 20/21 on that policy check.",
   "id": "L24",
   "harness": "codex",
-  "updated_at": "2026-10-26T22:37:29+03:00",
+  "updated_at": "2026-10-26T23:27:23+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T20:48:55+03:00",
@@ -124,6 +124,16 @@
       "changes": {
         "wait_reason": "Installed Herder 27cb2f9 blocks unsafe ZCode After response command before native submission; full four-harness queue-to-final PASS still requires a native ZCode atomic deferred-only admission or upstream repair. Owner Notice Place automation pause remains intentionally armed, so owner acceptance is 20/21 with that exact policy check refused.",
         "note": "Current backend/runtime27cb2f9, source main pushed; immutable build15/15, narrow adapter test1/1, tsc PASS. Real user-path ZCode guard canary returned notSubmitted/nonRetryable and native input count unchanged. Owner accept-node20/21 solely due intentional owner automation disarm. Earlier OpenCode/Notice/UserIO canary remains accepted; no replay. See evidence/zcode-queue-decisive-20261026.md."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T23:27:23+03:00",
+      "note": "26.10: новое прямое разрешение владельца сохранено в evidence/qa-control-installed-20261026.md. В установленном Herder6135578 создан изолированный QA backend; тестовый GPTAdmin client/profile через реальный RBAC прошёл permission→steer→cancel→synthetic /stop, production tools недоступны, native QA-сессии не изменились. Human acceptance не заявлена; очередь ZCode остаётся отдельным внешним блокером.",
+      "changes": {
+        "wait_reason": "Installed QA synthetic control and RBAC actor/project are proven; real native ZCode deferred queue still lacks atomic deferred-only admission. Owner automation disarm remains intentionally enabled; owner accept-node is 20/21 on that policy check.",
+        "note": "Current installed Herder6135578 source main; immutable build15/15, focused QA test1/1, MCP HTTP200, owner acceptance20/21 solely intentional owner automation disarm. GPTAdmin profile agent-herder-qa-control-20261026 and client agent-herder-qa-actor-20261026 expose only qa_control; direct production send_message denied. Test actor completed begin/permission/steer/cancel/synthetic /stop with productionEffects=[]; native QA sessions unchanged. Authorization and receipts: evidence/qa-control-installed-20261026.md. No human acceptance claim; native ZCode queue remains blocked."
       },
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex"
