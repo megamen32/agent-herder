@@ -1,0 +1,11 @@
+{
+  "id": "L31",
+  "label": "Подготовить автономный изолированный QA actor для управления Herder",
+  "status": "done",
+  "description": "Дать тестовому actor через действующие GPTAdmin auth/RBAC только qa_control и отдельный synthetic backend для permission, steer, cancel и /stop без production owner-level эффекта.",
+  "acceptance": "Тестовый actor и project существуют; installed path даёт точные квитанции каждого шага с productionEffects=[], production send_message запрещён RBAC, реальные native QA-сессии и owner automation state не изменились.",
+  "affected_files": ["src/qa-control.ts", "src/index.ts", "tests/qa-control.test.ts"],
+  "owner": "Herder QA owner",
+  "depends_on": [],
+  "note": "Installed source 5541688, QA SQLite mode 0600/dir 0700; автономный GPTAdmin client прошёл begin/permission/steer/cancel/synthetic /stop; все productionEffects=[]. Прямой production send_message отклонён RBAC, native QA session readback неизменён. Это синтетическая QA-поверхность, не приёмка native сценариев. См. evidence/qa-control-installed-20261026.md."
+}

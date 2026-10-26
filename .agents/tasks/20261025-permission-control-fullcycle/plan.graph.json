@@ -16,8 +16,8 @@
     "OpenCode empty-success: terminal outcome виден без финального текста и без повторения accepted side effects.",
     "Общий выпуск: один joined source/artifact, публичный SSO UI и независимые пользовательские проверки всех ветвей."
   ],
-  "current_progress": "4750249 установлен, runtime21/21, self-identity через настоящий подключённый MCP подтверждена. Новое поручение на полный остаток: три параллельных Worker направления на canonical main. UI ведёт L20/L21, Delivery ведёт L18/L25/L26/L28, Permissions ведёт L03/L04/L05/L06/L09/L10/L11. Найден новый конкретный UI defect: разрешение предлагается при native canRespond=false; исправляется владельцем. Минимальный native/consumer proof сначала переиспользует существующие квитанции; прошлые действия не повторяются. Общий review, единая установка и два независимых consumer tester выполняются после join. Прогноз текущего остатка110–205 активных минут, зависит от native fixtures/Notice test route и реального Whisper.",
-  "external_waits": "Проверяется изолированный Notice Place test route; остальные направления выполняются независимо.",
+  "current_progress": "26.10.2026: опубликован main ec2adca, установлен Herder source 5541688 (immutable build 15/15, owner acceptance 20/21: единственный отказ — намеренный owner disarm). Реальный OpenCode permission -> Notice Place -> UserIO Allow -> та же native-сессия принят; автономный синтетический QA actor/project/RBAC и permission/steer/cancel /stop проверены без production effects. Поиск/прямая ссылка, preview 8000 и composer/Whisper имеют отдельные consumer-квитанции; качество распознавания и все четыре native permission-режима ещё не приняты. ZCode «После ответа» установленно отказывает до записи (notSubmitted=true); настоящая очередь не доказана. Глобальный автозапуск выключен двумя независимыми рычагами. Полный цикл L12/L24 остаётся открыт.",
+  "external_waits": "Полная отложенная очередь ZCode требует нативной атомарной deferred-only записи: V4 сейчас может принять запрос queue как startNow. Общий автозапуск Herder отдельно запрещён устойчивым owner-решением scope=* от 26.10.2026 13:11 МСК; сетевая аварийная пауза Notice Place активна с 22.10. Их снятие зависит от нового решения владельца после проверки безопасного канарейного маршрута. Исторические accepted/UNKNOWN операции не повторять.",
   "slots": 3,
   "updated_at": "2026-10-26T23:31:17+03:00",
   "tasks": [
@@ -1432,6 +1432,46 @@
       "created_at": "2026-10-26T03:23:01+03:00"
     },
     {
+      "id": "L30",
+      "label": "Безопасно вернуть глобальные автозапуски Herder и Notice Place по решению владельца",
+      "status": "blocked",
+      "description": "Сверить причину исходной остановки и безопасность действующих автоматических проектов, затем отдельно снять owner disarm Herder scope=* и аварийную сетевую паузу Notice Place. Не возобновлять остановленные задания и не повторять accepted/UNKNOWN ввод. Проверить четыре узла и один изолированный автоматический канарейный запуск с квитанцией.",
+      "acceptance": "Владелец прямо отменил прежнее ограничение на глобальную автоматизацию; оба независимых рычага подтверждены readback как открытые, политика Notice Place разрешает нужный тестовый scope, канарейка запускается один раз на точном host/session, четыре узла согласованы, чужие сессии и ранее принятые сообщения не затронуты.",
+      "owner": "Herder release owner; включение только после нового прямого решения владельца",
+      "note": "Start в панели Notice Place открывает только новые операции; старые остановленные сессии не продолжает. Нельзя снимать рычаги ради искусственного acceptance 21/21. Доказательство текущего состояния: live Herder /api/automation/disarm и systemctl readback 26.10.2026.",
+      "blocker": "Действует ранее прямое ограничение владельца «Глобальную автоматизацию не включать». Запрос текущего статуса и плана сам по себе не отменяет его.",
+      "estimate_unknown_reason": "Дата решения владельца и причина отдельной аварийной сетевой паузы не установлены; время на безопасную проверку зависит от текущей политики Notice Place.",
+      "origin": "",
+      "supersedes": [],
+      "affected_files": [
+        "automation-disarm owner state",
+        "noticeplace-ai-pause.service",
+        "Notice Place AI control"
+      ],
+      "depends_on": [],
+      "blocker_details": {
+        "owner_disarm": "26.10 13:11 МСК Herder owner state disarmed=true, scope=*; readback подтверждён на server-100, 44, 88 и Mac Mini.",
+        "network_pause": "noticeplace-ai-pause.service active since 22.10 03:50 МСК; это отдельный запрет."
+      }
+    },
+    {
+      "id": "L31",
+      "label": "Подготовить автономный изолированный QA actor для управления Herder",
+      "status": "done",
+      "description": "Дать тестовому actor через действующие GPTAdmin auth/RBAC только qa_control и отдельный synthetic backend для permission, steer, cancel и /stop без production owner-level эффекта.",
+      "acceptance": "Тестовый actor и project существуют; installed path даёт точные квитанции каждого шага с productionEffects=[], production send_message запрещён RBAC, реальные native QA-сессии и owner automation state не изменились.",
+      "owner": "Herder QA owner",
+      "note": "Installed source 5541688, QA SQLite mode 0600/dir 0700; автономный GPTAdmin client прошёл begin/permission/steer/cancel/synthetic /stop; все productionEffects=[]. Прямой production send_message отклонён RBAC, native QA session readback неизменён. Это синтетическая QA-поверхность, не приёмка native сценариев. См. evidence/qa-control-installed-20261026.md.",
+      "origin": "",
+      "supersedes": [],
+      "affected_files": [
+        "src/qa-control.ts",
+        "src/index.ts",
+        "tests/qa-control.test.ts"
+      ],
+      "depends_on": []
+    },
+    {
       "id": "L02",
       "label": "Определить единый контракт режима и точного разрешения",
       "status": "done",
@@ -2303,7 +2343,7 @@
       }
     }
   ],
-  "leaf_count": 29,
+  "leaf_count": 31,
   "plan_origin": {
     "at": "2026-10-25T14:33:23+03:00",
     "source": "recorded_start",
