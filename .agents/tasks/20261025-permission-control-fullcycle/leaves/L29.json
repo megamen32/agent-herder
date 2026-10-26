@@ -1,6 +1,6 @@
 {
   "label": "Возобновлять свою сессию через MCP без выбора чужого ID",
-  "status": "waiting",
+  "status": "done",
   "description": "Существующий resume_after должен при отсутствии owner разрешать текущую сессию через подтверждённый caller context и описывать self-default в MCP. Использовать существующий session_identity; не устанавливать плагины, не угадывать по списку чатов и не повторять accepted таймер.",
   "acceptance": "MCP description и optional owner соответствуют реальному поведению; omitted owner привязан к точному вызывающему native session, другая параллельная сессия не выбирается. Если caller не предоставляет identity, возвратить понятную ошибку до создания таймера. Existing explicit target и dedup сохраняются.",
   "owner": "Lead +3Luna investigators",
@@ -15,7 +15,7 @@
   "estimate_unknown_reason": "Проверяется реальный caller-context существующего MCP и session_identity.",
   "id": "L29",
   "created_at": "2026-10-26T03:23:01+03:00",
-  "updated_at": "2026-10-26T03:38:29+03:00",
+  "updated_at": "2026-10-26T04:07:14+03:00",
   "progress_events": [
     {
       "at": "2026-10-26T03:23:01+03:00",
@@ -58,8 +58,19 @@
       },
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T04:07:14+03:00",
+      "note": "4750249 установлен на server-100 после завершения pending deliveries. Все76предшествующих durable receipts неизменны. Реальный HTTP MCP consumer прочитал self identity Codex иOpenCode безsessionId по request metadata; создал один новый собственный Codex timer безowner, подтвердил owner=текущаясессия и сразу отменил,state cancelled; native sends0. Старый accepted wait иисходныепользовательские inputs не повторялись. Квитанции self-default/install-receipt.json иself-default-consumer-receipt.json.",
+      "changes": {
+        "status": "done",
+        "wait_reason": "",
+        "note": "MCP self-default4750249 установлен; identity/self-resume/cancel consumer path проверен безnative sends и безreplay."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
     }
   ],
-  "wait_reason": "Две действующие human queue deliveries не завершены; перезапуск сейчас пометил бы их interrupted/UNKNOWN.",
-  "note": "MCP self-default готов в4750249,но ещё не установлен; ожидается безопасный restart без потери pending deliveries."
+  "wait_reason": "",
+  "note": "MCP self-default4750249 установлен; identity/self-resume/cancel consumer path проверен безnative sends и безreplay."
 }
