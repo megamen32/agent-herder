@@ -1,7 +1,7 @@
 {
   "id": "L27",
   "label": "Возвращать новый ответ доставки через inline результат и fetch",
-  "status": "running",
+  "status": "done",
   "description": "После уже принятой отправки сравнивать только новый видимый assistant text с приватным baseline; вернуть inline ответ в пределах 30 секунд, иначе тот же durable jobRef для последующего fetch и точечного MCP resource update.",
   "acceptance": "Baseline exact target/job/input сохраняется до native write в том же durable job. Возвращаются только новые нормализованные видимые части; correlation называется reply_to только при exact turn ID, иначе observed_after_delivery. 30s ограничивает только наблюдение, не native admission; fetch/continuation никогда не отправляют повторно. Long continuation закреплён durable per-job receipt; subscribe уведомляет только exact bound resource URI через реально поддержанный transport, fetch остаётся обязательным.",
   "affected_files": [
@@ -13,16 +13,16 @@
     "tests/session-delivery-response.test.ts",
     "tests/session-delivery-response-resources.test.ts"
   ],
-  "owner": "permission_mode_ui",
+  "owner": "Lead текущей сессии",
   "depends_on": [
     "L25"
   ],
   "estimate_unknown_reason": "Helper и transport contract проверены изолированно; до оценки остаётся shared-job wiring, authorization/readback join и consumer path.",
-  "note": "Response helper/shared UMD source 324f65e и durable guard 5cf6c22 получили independent SHIP; observer 8cc9754 прошёл 55 focused tests + TypeScript и также получил SHIP. Remote response-resource reader f47288b отдельно получил SHIP. MCP и local mesh используют один durable job без второго sender; возвращается inline результат в пределах 30 секунд и stable fetch после. Установленный runtime остаётся 8936deb. Эти source reviews не заменяют exact joined install и consumer proof; subscribe/notification не заявляются без подтверждённого transport/readback. ZCode последующий model/network error не дал финальный assistant response.",
-  "wait_reason": "Source helper, observer and owner-bound remote reader получили independent SHIP; остаются canonical main join, единая финальная установка и consumer proof.",
-  "session": "unknown",
+  "note": "Результат `completed` с пустым text теперь сохраняет `jobRef` и `responseFetchUri`, а поле reason явно равно `no_visible_response`; это не повторяет исходную отправку. Совпадение с exact native OpenCode session установлено на уровне outcome, но installed consumer acceptance остаётся отдельным шагом.",
+  "wait_reason": "",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
   "harness": "codex",
-  "updated_at": "2026-10-26T00:01:43+03:00",
+  "updated_at": "2026-10-26T03:21:11+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T23:59:34+03:00",
@@ -51,6 +51,36 @@
       },
       "session": "unknown",
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T02:30:16+03:00",
+      "note": "",
+      "changes": {
+        "owner": "Lead текущей сессии",
+        "result": "Добавлен случай из точной OpenCode-сессии: native outcome succeeded, но visible final text пуст. Нужен стабильный ответный status/fetch без повторной отправки. Регрессия сначала RED (ожидался reason no_visible_response, его не было), затем GREEN после добавления reason; focused tests 16/16 и `tsc --noEmit` зелёные. Изменение пока source-only, runtime не обновлялся.",
+        "note": "Результат `completed` с пустым text теперь сохраняет `jobRef` и `responseFetchUri`, а поле reason явно равно `no_visible_response`; это не повторяет исходную отправку. Совпадение с exact native OpenCode session установлено на уровне outcome, но installed consumer acceptance остаётся отдельным шагом."
+      },
+      "session": "unknown",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T02:46:41+03:00",
+      "note": "Scoped fix committed as 8187c75 and verified in origin/main (current head 7c5faaa contains it). RED→GREEN focused delivery test 16/16, tsc --noEmit GREEN, independent review found no blocking issue. no_visible_response preserves jobRef and responseFetchUri; accepted external action not replayed. Runtime/installed consumer proof remains pending same final release.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T03:21:11+03:00",
+      "note": "Установлен общий main 941966a, включающий8187c75 и exact-native completion38c02f8. Native process/artifact acceptance21/21; actual MCP resources/read дважды вернул тот же OpenCode response partial871символ и SHA256 ca3dc077b0f26a344f20fc3000f1378d80d4ab05677191dd224c038275aabe21. Все47ранее принятых durable jobs сохранились без изменения; native sends0. Доказательства .tmp/release-8187c75/accept-final.json, consumer-receipt.json, snapshot/install-receipt.json.",
+      "changes": {
+        "status": "done",
+        "wait_reason": "",
+        "session": "01a1754f-0228-7553-bea6-cc89e40b5187"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Добавлен случай из точной OpenCode-сессии: native outcome succeeded, но visible final text пуст. Нужен стабильный ответный status/fetch без повторной отправки. Регрессия сначала RED (ожидался reason no_visible_response, его не было), затем GREEN после добавления reason; focused tests 16/16 и `tsc --noEmit` зелёные. Изменение пока source-only, runtime не обновлялся."
 }

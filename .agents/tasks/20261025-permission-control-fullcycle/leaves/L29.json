@@ -1,0 +1,65 @@
+{
+  "label": "Возобновлять свою сессию через MCP без выбора чужого ID",
+  "status": "waiting",
+  "description": "Существующий resume_after должен при отсутствии owner разрешать текущую сессию через подтверждённый caller context и описывать self-default в MCP. Использовать существующий session_identity; не устанавливать плагины, не угадывать по списку чатов и не повторять accepted таймер.",
+  "acceptance": "MCP description и optional owner соответствуют реальному поведению; omitted owner привязан к точному вызывающему native session, другая параллельная сессия не выбирается. Если caller не предоставляет identity, возвратить понятную ошибку до создания таймера. Existing explicit target и dedup сохраняются.",
+  "owner": "Lead +3Luna investigators",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex",
+  "depends_on": [],
+  "affected_files": [
+    "src/mcp/resume-after-tools.ts",
+    "src/mcp/session-tools.ts",
+    "src/session-identity.ts"
+  ],
+  "estimate_unknown_reason": "Проверяется реальный caller-context существующего MCP и session_identity.",
+  "id": "L29",
+  "created_at": "2026-10-26T03:23:01+03:00",
+  "updated_at": "2026-10-26T03:38:29+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-26T03:23:01+03:00",
+      "note": "",
+      "changes": {
+        "label": "Возобновлять свою сессию через MCP без выбора чужого ID",
+        "status": "running",
+        "description": "Существующий resume_after должен при отсутствии owner разрешать текущую сессию через подтверждённый caller context и описывать self-default в MCP. Использовать существующий session_identity; не устанавливать плагины, не угадывать по списку чатов и не повторять accepted таймер.",
+        "acceptance": "MCP description и optional owner соответствуют реальному поведению; omitted owner привязан к точному вызывающему native session, другая параллельная сессия не выбирается. Если caller не предоставляет identity, возвратить понятную ошибку до создания таймера. Existing explicit target и dedup сохраняются.",
+        "owner": "Lead текущей сессии",
+        "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+        "harness": "codex",
+        "depends_on": [],
+        "affected_files": [
+          "src/mcp/resume-after-tools.ts",
+          "src/mcp/session-tools.ts",
+          "src/session-identity.ts"
+        ],
+        "estimate_unknown_reason": "Проверяется реальный caller-context существующего MCP и session_identity."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T03:26:08+03:00",
+      "note": "По прямому поручению пользователя запущены3Luna read-only: OpenCode,Codex,ZCode; каждая проверяет существующую native identity в model context и отдельно фактическую передачу caller nativeID через MCP. Плагин не установлен; собственные незакоммиченные plugin artifacts перенесены в ignored .tmp/release-8187c75. Пользовательской ses_e91d881... её правильный ID опубликован существующим session_identity announce:true без запуска хода/таймера.",
+      "changes": {
+        "owner": "Lead +3Luna investigators"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T03:38:29+03:00",
+      "note": "ТриLuna подтвердили все3producer metadata channels;4750249 main published,built immutable artifact,57focusedtests+tscGREEN,independent review fixed stale variable. Установка ещё не запускалась: live human queue jobs842915... и65bc36... ждут текущие ответы; restore при перезапуске сделал бы interrupted/UNKNOWN и проиграл незавершённую доставку. Предыдущий release941966a+8187c75 уже установлен21/21. Минимальный next: read exact receipts; один install4750249 после завершения pending native delivery без resends.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Две действующие human queue deliveries не завершены; перезапуск сейчас пометил бы их interrupted/UNKNOWN.",
+        "note": "MCP self-default готов в4750249,но ещё не установлен; ожидается безопасный restart без потери pending deliveries."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    }
+  ],
+  "wait_reason": "Две действующие human queue deliveries не завершены; перезапуск сейчас пометил бы их interrupted/UNKNOWN.",
+  "note": "MCP self-default готов в4750249,но ещё не установлен; ожидается безопасный restart без потери pending deliveries."
+}

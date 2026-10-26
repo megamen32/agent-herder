@@ -1,16 +1,16 @@
 {
   "schema_version": 2,
   "title": "Agent Herder: разрешения, доставка и единый проверенный выпуск",
-  "goal": "Сохранить подтверждённый режим доступа и адресную обработку разрешений; объединить human/agent/site доставку и recovery native очереди; дать пользователю единый composer с безопасным голосовым вводом, 8000-token preview и ответом/fetch для нового agent output; сохранить все существующие worktree/WIP функции, затем провести независимый review, синхронизацию main и одну финальную реальную приёмку.",
-  "business_result": "Уже принятые результаты остаются раздельными: immutable installed release 8936debbe39935770ec3903ac460916269a954f9, build 14/14 и owner acceptance 21/21; frontend pin 76e83d031cc7b3178a785001c1d86a9af4b45d6b применён timer/readback без managed drift. ZCode omitted-mode create и пять read-only YOLO sessions подтверждены. Codex exact-session fullAuto/session readback и два native mode перехода приняты; Codex/MiniMax session-mode capability не поддержана где установлено. MiniMax idle desktop human delivery accepted без replay с точным same-session/provider/model readback. MiniMax workspace/activity, TelegramAuto host filtering и 8/8 task-title app readback приняты как отдельные прежние outcomes; installed title generator и activity source causality остаются отделены в исходных leaves. Existing one-time Allow и queue edit/cancel/collapse semantics с сохранением inputId/jobId сохраняются; queue-resume UI/API source прошёл SHIP review (1fb5c77, adc1d6d, dfd1f78; 47 UI и 65 gateway tests, mock-browser с одним POST); он ещё не установлен в public runtime, который остаётся на 8936deb. OpenCode filtered search вернул 10 совпадений при partial index coverage 3189/3200; исходный полный запрос остаётся UNKNOWN. Не закрытые source slices: 8000-token preview 2ce5c18; composer 609c784 + privacy fix 2dda29d и Whisper route 1a3d948; delivery-response helper/guard 324f65e + 5cf6c22 прошли SHIP review; observer 8cc9754 прошёл 55 tests + TypeScript и получил independent SHIP; remote resource reader f47288b также SHIP. Joined install и consumer acceptance ещё не выполнены. Queue UI/API source review также готов, но ни эти изменения, ни preview/composer/voice slices не входят в installed 8936 и не являются финальной joined приёмкой. Notice topic binding подготовлен в защищённой конфигурации; runtime card и exact permission response ещё не приняты.",
+  "goal": "Сохранить подтверждённый режим доступа и адресную обработку разрешений; объединить human/agent/site доставку и recovery native очереди; дать пользователю единый composer с безопасным голосовым вводом и предпросмотром с жёстким лимитом 8 000 символов, независимым от модели и без пересчёта в токены, а также ответом/fetch для нового agent output; сохранить все существующие worktree/WIP функции, затем провести независимый review, синхронизацию main и одну финальную реальную приёмку.",
+  "business_result": "Уже принятые результаты остаются раздельными: immutable installed release 8936debbe39935770ec3903ac460916269a954f9, build 14/14 и owner acceptance 21/21; frontend pin 76e83d031cc7b3178a785001c1d86a9af4b45d6b применён timer/readback без managed drift. ZCode omitted-mode create и пять read-only YOLO sessions подтверждены. Codex exact-session fullAuto/session readback и два native mode перехода приняты; Codex/MiniMax session-mode capability не поддержана где установлено. MiniMax idle desktop human delivery accepted без replay с точным same-session/provider/model readback. MiniMax workspace/activity, TelegramAuto host filtering и 8/8 task-title app readback приняты как отдельные прежние outcomes; installed title generator и activity source causality остаются отделены в исходных leaves. Existing one-time Allow и queue edit/cancel/collapse semantics с сохранением inputId/jobId сохраняются; queue-resume UI/API source прошёл SHIP review (1fb5c77, adc1d6d, dfd1f78; 47 UI и 65 gateway tests, mock-browser с одним POST); он ещё не установлен в public runtime, который остаётся на 8936deb. OpenCode filtered search вернул 10 совпадений при partial index coverage 3189/3200; исходный полный запрос остаётся UNKNOWN. Не закрытые source slices: предпросмотр с лимитом 8 000 символов (2ce5c18; не токенов и без пересчёта по модели); composer 609c784 + privacy fix 2dda29d и Whisper route 1a3d948; delivery-response helper/guard 324f65e + 5cf6c22 прошли SHIP review; observer 8cc9754 прошёл 55 tests + TypeScript и получил independent SHIP; remote resource reader f47288b также SHIP. Joined install и consumer acceptance ещё не выполнены. Queue UI/API source review также готов, но ни эти изменения, ни preview/composer/voice slices не входят в installed 8936 и не являются финальной joined приёмкой. Notice topic binding подготовлен в защищённой конфигурации; runtime card и exact permission response ещё не приняты.",
   "business_results": [
-    "Уже принятые результаты остаются раздельными: immutable installed release 8936debbe39935770ec3903ac460916269a954f9, build 14/14 и owner acceptance 21/21; frontend pin 76e83d031cc7b3178a785001c1d86a9af4b45d6b применён timer/readback без managed drift. ZCode omitted-mode create и пять read-only YOLO sessions подтверждены. Codex exact-session fullAuto/session readback и два native mode перехода приняты; Codex/MiniMax session-mode capability не поддержана где установлено. MiniMax idle desktop human delivery accepted без replay с точным same-session/provider/model readback. MiniMax workspace/activity, TelegramAuto host filtering и 8/8 task-title app readback приняты как отдельные прежние outcomes; installed title generator и activity source causality остаются отделены в исходных leaves. Existing one-time Allow и queue edit/cancel/collapse semantics с сохранением inputId/jobId сохраняются; queue-resume UI/API source прошёл SHIP review (1fb5c77, adc1d6d, dfd1f78; 47 UI и 65 gateway tests, mock-browser с одним POST); он ещё не установлен в public runtime, который остаётся на 8936deb. OpenCode filtered search вернул 10 совпадений при partial index coverage 3189/3200; исходный полный запрос остаётся UNKNOWN. Не закрытые source slices: 8000-token preview 2ce5c18; composer 609c784 + privacy fix 2dda29d и Whisper route 1a3d948; delivery-response helper/guard 324f65e + 5cf6c22 прошли SHIP review; observer 8cc9754 прошёл 55 tests + TypeScript и получил independent SHIP; remote resource reader f47288b также SHIP. Joined install и consumer acceptance ещё не выполнены. Queue UI/API source review также готов, но ни эти изменения, ни preview/composer/voice slices не входят в installed 8936 и не являются финальной joined приёмкой. Notice topic binding подготовлен в защищённой конфигурации; runtime card и exact permission response ещё не приняты."
+    "Уже принятые результаты остаются раздельными: immutable installed release 8936debbe39935770ec3903ac460916269a954f9, build 14/14 и owner acceptance 21/21; frontend pin 76e83d031cc7b3178a785001c1d86a9af4b45d6b применён timer/readback без managed drift. ZCode omitted-mode create и пять read-only YOLO sessions подтверждены. Codex exact-session fullAuto/session readback и два native mode перехода приняты; Codex/MiniMax session-mode capability не поддержана где установлено. MiniMax idle desktop human delivery accepted без replay с точным same-session/provider/model readback. MiniMax workspace/activity, TelegramAuto host filtering и 8/8 task-title app readback приняты как отдельные прежние outcomes; installed title generator и activity source causality остаются отделены в исходных leaves. Existing one-time Allow и queue edit/cancel/collapse semantics с сохранением inputId/jobId сохраняются; queue-resume UI/API source прошёл SHIP review (1fb5c77, adc1d6d, dfd1f78; 47 UI и 65 gateway tests, mock-browser с одним POST); он ещё не установлен в public runtime, который остаётся на 8936deb. OpenCode filtered search вернул 10 совпадений при partial index coverage 3189/3200; исходный полный запрос остаётся UNKNOWN. Не закрытые source slices: предпросмотр с лимитом 8 000 символов (2ce5c18; не токенов и без пересчёта по модели); composer 609c784 + privacy fix 2dda29d и Whisper route 1a3d948; delivery-response helper/guard 324f65e + 5cf6c22 прошли SHIP review; observer 8cc9754 прошёл 55 tests + TypeScript и получил independent SHIP; remote resource reader f47288b также SHIP. Joined install и consumer acceptance ещё не выполнены. Queue UI/API source review также готов, но ни эти изменения, ни preview/composer/voice slices не входят в installed 8936 и не являются финальной joined приёмкой. Notice topic binding подготовлен в защищённой конфигурации; runtime card и exact permission response ещё не приняты."
   ],
   "acceptance_scenarios": [],
-  "current_progress": "Установленная база остаётся immutable release 8936debbe39935770ec3903ac460916269a954f9 с pin 76e83d031cc7b3178a785001c1d86a9af4b45d6b. Queue UI/API source 1fb5c77 + adc1d6d + dfd1f78 прошёл независимый SHIP review; 47 focused UI tests, 65 gateway tests и TypeScript GREEN, собственный mock-browser показал один POST без повтора. Это source/mock proof, не installed public UI acceptance. Общий UMD source 324f65e и durable guard 5cf6c22 — SHIP; observer 8cc9754 — 55 focused tests + TypeScript и independent SHIP; remote response-resource reader f47288b также SHIP. MCP/local mesh используют один durable job без второго sender, inline ≤30s и stable fetch. Это source readiness, не installed consumer acceptance. На ZCode source/native 4631e50 подтверждены admission/start исходного queued input точным turn-start; последующий model/network error поставил native retry, assistant output/task completion не доказаны. Unloaded TelegramAuto предположительно pending head оказался Desktop compact card, а не human message; ничего не меняли, история сохранена. На installed readback 500 retained jobs, 0 in-flight. MiniMax inter-agent live canary не запускался из-за прочитанной квоты 0%; прежняя accepted human→MiniMax доставка L16 ограничена своим сценарием. Preservation commit 1b919b2 охватывает 43 проверенных пути; 121 несвязанный untracked/private item сохранён и исключён из публикации. Main reconciliation, joined review, единый финальный release и live consumer acceptance впереди.",
+  "current_progress": "На server-100 установлен immutable release 941966a, включающий8187c75:21/21runtime checks,actual MCP fetch сохранённого OpenCode ответа дважды same target/input/SHA871символ,47accepted durable jobs неизменны,повторныхnative sends0. Из установленного dist отдельно проверен empty snapshot completed/no_visible_response; exact native OpenCode empty terminal без replay пока не доказан(L28). По новому self-wake дефекту три Luna подтвердили caller nativeID metadata в OpenCode(ai.opencode/sessionID),Codex(threadId),ZCode(com.zcode/request-context.session_id). Исправление4750249 опубликовано main,собрано;57focusedtests иTypeScript GREEN. session_identity иresume_after при отсутствии explicitID теперь берут request-scoped callerID. Плагины не устанавливались,прежний acceptedwait не повторяли. Установка4750249 ждёт безопасного завершения активных human queue deliveries: текущий restore превратил бы их в interrupted/UNKNOWN; pending записи сохранены.",
   "external_waits": "Открыты пять оставшихся этапов без общего процента и числового ETA: (1) закончить общий delivery/recovery, bridge remote response owner routing и безопасные ZCode queue cases; (2) завершить observer delta-review и response/fetch consumer join; (3) сверить существующие WIP и синхронизировать проверенные пути в main, сохранив 121 локальный untracked/private item; (4) независимый review точного joined source; (5) один финальный release и реальные consumer checks. Queue UI/API и UMD/durable guard source получили scoped SHIP, но остаются вне установленного 8936; observer 8cc9754 и remote reader f47288b получили SHIP; остаётся joined integration/release и live consumer proof. MiniMax inter-agent live canary не выполнялся при квоте 0%, поэтому не является PASS; ранее принятый human desktop сценарий не расширяется. ZCode native start доказан, итоговый assistant response — нет; unloaded TelegramAuto head был Desktop compact card, не human message, не изменялся, история сохранена. Loaded broker queue остаётся на explicit hold. L03/L06/L18, Notice card/runtime response и полный четырёх-harness цикл остаются открыты по их исходным acceptance. OpenCode full query остаётся UNKNOWN при partial index coverage; 8000 preview и composer/voice source не входят в installed release. Release 8936 и frontend pin 76e83d0 остаются текущей публичной базой.",
   "slots": 3,
-  "updated_at": "2026-10-26T00:01:43+03:00",
+  "updated_at": "2026-10-26T03:38:29+03:00",
   "tasks": [
     {
       "id": "L01",
@@ -184,14 +184,14 @@
     },
     {
       "id": "L20",
-      "label": "Проверить 8000-token preview на реальном consumer пути",
+      "label": "Проверить 8000-символьный preview на реальном consumer пути",
       "status": "running",
-      "description": "Проверить изменение, сохраняющее 8000-token preview при длинной доставке, в установленном настоящем MCP/UI consumer пути с корректными границами и без утечки лишнего текста.",
-      "acceptance": "Reviewed immutable release включает source fix 2ce5c18; реальный consumer получает ожидаемый preview до 8000 tokens без обрезания по старой границе, а соседние длинные сообщения сохраняют свои прежние semantics. Зафиксированы exact release SHA и readback. До live проверки источник считается только source-checked.",
+      "description": "Проверить изменение, которое сохраняет preview до 8000 символов при длинной доставке, в установленном MCP/UI consumer пути без утечки лишнего текста.",
+      "acceptance": "Reviewed immutable release сохраняет требуемые пользователем 8000 символов preview; реальный consumer получает это значение, а соседние long-message semantics остаются прежними. Зафиксированы exact release SHA и независимый readback; до live проверки результат остаётся source-only.",
       "owner": "permission_native",
       "harness": "codex",
-      "note": "Source commit 2ce5c18 проверен, но текущая установка 8936 и frontend pin 76e83d0 не доказывают наличие этого source. Реальный 8000-token consumer preview и сохранение соседних long-message semantics ещё не приняты.",
-      "estimate_over_limit_reason": "Одна ограниченная consumer проверка обязана связать source fix, immutable installed release и реальный 8000-token preview; раздельные source/live leafs не уменьшают acceptance и увеличивают риск перепутать SHA.",
+      "note": "Использовать точное требование пользователя: 8000 символов, не 8000 токенов. Source fix 2ce5c18 и installed release 8936/frontend pin 76e83d0 не считать live acceptance.",
+      "estimate_over_limit_reason": "Одна ограниченная consumer-проверка должна связать source fix, immutable installed release и preview с лимитом ровно 8 000 символов (без перевода в токены и пересчёта по модели); отдельные source/live проверки не подменяют реальную приёмку и повышают риск перепутать SHA.",
       "wait_reason": "Ожидает общего reviewed source join и единого финального release.",
       "origin": "",
       "supersedes": [],
@@ -236,6 +236,34 @@
           "changes": {
             "note": "Source commit 2ce5c18 проверен, но текущая установка 8936 и frontend pin 76e83d0 не доказывают наличие этого source. Реальный 8000-token consumer preview и сохранение соседних long-message semantics ещё не приняты."
           },
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T02:15:52+03:00",
+          "note": "",
+          "changes": {
+            "label": "Проверить 8000-символьный preview на реальном consumer пути",
+            "description": "Проверить изменение, которое сохраняет preview до 8000 символов при длинной доставке, в установленном MCP/UI consumer пути без утечки лишнего текста.",
+            "acceptance": "Reviewed immutable release сохраняет требуемые пользователем 8000 символов preview; реальный consumer получает это значение, а соседние long-message semantics остаются прежними. Зафиксированы exact release SHA и независимый readback; до live проверки результат остаётся source-only.",
+            "note": "Использовать точное требование пользователя: 8000 символов, не 8000 токенов. Source fix 2ce5c18 и installed release 8936/frontend pin 76e83d0 не считать live acceptance."
+          },
+          "session": "unknown",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T02:48:47+03:00",
+          "note": "Лимит предпросмотра задан ровно в 8 000 символов, не токенов. Это граница по символам исходного текста и не переводится пересчётом по модели; пересчёт в токены запрещён.",
+          "changes": {},
+          "session": "unknown",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T02:49:15+03:00",
+          "note": "Уточнено по прямой коррекции пользователя: 8 000 символов рассчитываются непосредственно; модельный токенизатор не используется.",
+          "changes": {
+            "estimate_over_limit_reason": "Одна ограниченная consumer-проверка должна связать source fix, immutable installed release и preview с лимитом ровно 8 000 символов (без перевода в токены и пересчёта по модели); отдельные source/live проверки не подменяют реальную приёмку и повышают риск перепутать SHA."
+          },
+          "session": "unknown",
           "harness": "codex"
         }
       ],
@@ -378,6 +406,181 @@
         "src/adapters/"
       ],
       "depends_on": []
+    },
+    {
+      "id": "L28",
+      "label": "Показать завершение OpenCode, если нет финального ответа",
+      "status": "running",
+      "description": "Исправить наблюдаемый исход в точной пользовательской OpenCode-сессии: нативный ход завершился успешно, побочные операции уже получили подтверждение, но последнее assistant-сообщение пустое. Herder должен показать правдивый terminal outcome и дать получить доступный результат без повторной отправки.",
+      "acceptance": "Быстрый TDD regression воспроизводит `outcome=succeeded` с пустым финальным assistant content после одного и более уже admitted tool calls; до исправления пользовательский интерфейс/API выглядит как молчаливое завершение, после исправления показывает explicit succeeded/no-final-text или stable fetch result. Любой accepted/UNKNOWN tool side effect остаётся no-replay. Обычные видимые финальные ответы сохраняют прежний путь.",
+      "result": "Exact native readback завершён: session `idle`, native `outcome=succeeded`; последнее assistant сообщение `finish=stop` пустое. Один запрос получил Notice Place 202 и одна coordination note update была принята; текущий агент ничего не повторял. Пользовательский симптом — молчаливый финал, не доказанная остановка через 20 минут. Source-level no-visible-response handling добавлен в L27; installed user-facing acceptance ещё не выполнена.",
+      "owner": "Lead текущей сессии",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "note": "Установлено941966a; installed empty snapshot и actual MCP visible response доказаны раздельно. Exact native OpenCode empty terminal без replay пока не доказан.",
+      "estimate_unknown_reason": "Сначала нужно прочитать точную пользовательскую native session и установить реальную границу обрыва.",
+      "estimate_over_limit_reason": "Связать точную native-сессию, оборванный ход и процесс-исполнитель с минимальной regression и исправлением — один неделимый сценарий этого конкретного дефекта; более короткая оценка может принять соседний timeout/route за доказанную причину.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-26T02:15:50+03:00",
+          "note": "",
+          "changes": {
+            "id": "L28",
+            "label": "Исправить остановку сессии посреди задания",
+            "description": "Диагностировать свежий пользовательский случай остановки созданной Herder-сессии на середине задания. Сопоставить точную native session, ход, процесс и очередь; если точный ID пока недоступен, воспроизвести только на отдельной benign fixture из TEST_ACCESS. Исправлять только подтверждённую причину.",
+            "acceptance": "Точный native session и завершённый/оборванный ход связаны с runtime evidence; быстрый TDD regression даёт RED до фикса и GREEN после. На отдельной разрешённой fixture вызвавший процесс/transport может завершиться, а тот же нативный ход завершается ровно один раз; очередь, input IDs и accepted/UNKNOWN не повторяются. Если пользовательский session ID нельзя получить, это остаётся UNKNOWN отдельно от доказанного fixture результата.",
+            "affected_files": [
+              "src/session-supervisor.ts",
+              "src/session-lifecycle.ts",
+              "src/adapters/zcode-workspace-lifecycle.ts",
+              "tests/zcode-workspace-lifecycle.test.ts",
+              ".agents/tasks/20261025-permission-control-fullcycle"
+            ],
+            "status": "running",
+            "owner": "Lead текущей сессии",
+            "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+            "harness": "codex",
+            "depends_on": [],
+            "estimate_minutes": {
+              "minimum": 20,
+              "maximum": 45
+            },
+            "estimate_unknown_reason": "Сначала нужно прочитать точную пользовательскую native session и установить реальную границу обрыва.",
+            "note": "Свежая пользовательская запись пока не найдена в снимке ZCode; пользователь попросил продолжить диагностику и это будет первым реальным воспроизведением."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T02:16:07+03:00",
+          "note": "",
+          "changes": {
+            "estimate_over_limit_reason": "Связать точную native-сессию, оборванный ход и процесс-исполнитель с минимальной regression и исправлением — один неделимый сценарий этого конкретного дефекта; более короткая оценка может принять соседний timeout/route за доказанную причину."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T02:26:25+03:00",
+          "note": "",
+          "changes": {
+            "label": "Показать завершение OpenCode, если нет финального ответа",
+            "description": "Исправить наблюдаемый исход в точной пользовательской OpenCode-сессии: нативный ход завершился успешно, побочные операции уже получили подтверждение, но последнее assistant-сообщение пустое. Herder должен показать правдивый terminal outcome и дать получить доступный результат без повторной отправки.",
+            "acceptance": "Быстрый TDD regression воспроизводит `outcome=succeeded` с пустым финальным assistant content после одного и более уже admitted tool calls; до исправления пользовательский интерфейс/API выглядит как молчаливое завершение, после исправления показывает explicit succeeded/no-final-text или stable fetch result. Любой accepted/UNKNOWN tool side effect остаётся no-replay. Обычные видимые финальные ответы сохраняют прежний путь.",
+            "result": "Read-only native readback точной сессии: `idle`, `outcome=succeeded`; после принятых операций OpenCode записал пустой assistant final (`finish=stop`). Один Notice Place запрос получил 202, запись Herder принята; повторов со стороны текущего агента не было. Причина жалобы — итог не отображён; 20-минутное принудительное завершение этим примером не доказано.",
+            "note": "Исходный симптом «остановилась на половине пути» уточнён по точной сессии: native runtime завершил её успешно, но без видимого финального текста. Не возобновлять и не повторять принятые действия; фиксировать только user-facing outcome/fetch."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T02:30:18+03:00",
+          "note": "",
+          "changes": {
+            "result": "Exact native readback завершён: session `idle`, native `outcome=succeeded`; последнее assistant сообщение `finish=stop` пустое. Один запрос получил Notice Place 202 и одна coordination note update была принята; текущий агент ничего не повторял. Пользовательский симптом — молчаливый финал, не доказанная остановка через 20 минут. Source-level no-visible-response handling добавлен в L27; installed user-facing acceptance ещё не выполнена.",
+            "note": "Проверка совпала с ответным delivery path; следующий реальный acceptance должен открыть уже имеющуюся квитанцию без replay и показать no-visible-response статус. Никаких сообщений в OpenCode-сессию не отправлять."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T02:46:43+03:00",
+          "note": "User-provided full-height local OpenChamber screenshot shows exact atv-views-sentinel-glm under TelegramAuto with green completion mark at 21m; prior screenshot was cropped above this row. Native readback remains idle/succeeded with empty assistant final. Not a missing OpenChamber session or proven 20-minute stop; no UI change and no accepted side effect replay.",
+          "changes": {},
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T03:21:14+03:00",
+          "note": "8187c75 установлен внутри941966a. Из установленного dist проверен completed/no_visible_response на изолированном snapshot; это не replay исходной OpenCode сессии и не выдаётся за exact native consumer proof. Реальный MCP fetch существующего видимого ответа проверен вL27. Для OpenCode native success без точного correlated turn receipt observer консервативен; исходную отправку не повторяли.",
+          "changes": {
+            "note": "Установлено941966a; installed empty snapshot и actual MCP visible response доказаны раздельно. Exact native OpenCode empty terminal без replay пока не доказан."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/session-supervisor.ts",
+        "src/session-lifecycle.ts",
+        "src/adapters/zcode-workspace-lifecycle.ts",
+        "tests/zcode-workspace-lifecycle.test.ts",
+        ".agents/tasks/20261025-permission-control-fullcycle"
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 20.0,
+        "maximum": 45.0
+      },
+      "created_at": "2026-10-26T02:15:50+03:00"
+    },
+    {
+      "id": "L29",
+      "label": "Возобновлять свою сессию через MCP без выбора чужого ID",
+      "status": "waiting",
+      "description": "Существующий resume_after должен при отсутствии owner разрешать текущую сессию через подтверждённый caller context и описывать self-default в MCP. Использовать существующий session_identity; не устанавливать плагины, не угадывать по списку чатов и не повторять accepted таймер.",
+      "acceptance": "MCP description и optional owner соответствуют реальному поведению; omitted owner привязан к точному вызывающему native session, другая параллельная сессия не выбирается. Если caller не предоставляет identity, возвратить понятную ошибку до создания таймера. Existing explicit target и dedup сохраняются.",
+      "owner": "Lead +3Luna investigators",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "note": "MCP self-default готов в4750249,но ещё не установлен; ожидается безопасный restart без потери pending deliveries.",
+      "estimate_unknown_reason": "Проверяется реальный caller-context существующего MCP и session_identity.",
+      "wait_reason": "Две действующие human queue deliveries не завершены; перезапуск сейчас пометил бы их interrupted/UNKNOWN.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-26T03:23:01+03:00",
+          "note": "",
+          "changes": {
+            "label": "Возобновлять свою сессию через MCP без выбора чужого ID",
+            "status": "running",
+            "description": "Существующий resume_after должен при отсутствии owner разрешать текущую сессию через подтверждённый caller context и описывать self-default в MCP. Использовать существующий session_identity; не устанавливать плагины, не угадывать по списку чатов и не повторять accepted таймер.",
+            "acceptance": "MCP description и optional owner соответствуют реальному поведению; omitted owner привязан к точному вызывающему native session, другая параллельная сессия не выбирается. Если caller не предоставляет identity, возвратить понятную ошибку до создания таймера. Existing explicit target и dedup сохраняются.",
+            "owner": "Lead текущей сессии",
+            "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+            "harness": "codex",
+            "depends_on": [],
+            "affected_files": [
+              "src/mcp/resume-after-tools.ts",
+              "src/mcp/session-tools.ts",
+              "src/session-identity.ts"
+            ],
+            "estimate_unknown_reason": "Проверяется реальный caller-context существующего MCP и session_identity."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T03:26:08+03:00",
+          "note": "По прямому поручению пользователя запущены3Luna read-only: OpenCode,Codex,ZCode; каждая проверяет существующую native identity в model context и отдельно фактическую передачу caller nativeID через MCP. Плагин не установлен; собственные незакоммиченные plugin artifacts перенесены в ignored .tmp/release-8187c75. Пользовательской ses_e91d881... её правильный ID опубликован существующим session_identity announce:true без запуска хода/таймера.",
+          "changes": {
+            "owner": "Lead +3Luna investigators"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T03:38:29+03:00",
+          "note": "ТриLuna подтвердили все3producer metadata channels;4750249 main published,built immutable artifact,57focusedtests+tscGREEN,independent review fixed stale variable. Установка ещё не запускалась: live human queue jobs842915... и65bc36... ждут текущие ответы; restore при перезапуске сделал бы interrupted/UNKNOWN и проиграл незавершённую доставку. Предыдущий release941966a+8187c75 уже установлен21/21. Минимальный next: read exact receipts; один install4750249 после завершения pending native delivery без resends.",
+          "changes": {
+            "status": "waiting",
+            "wait_reason": "Две действующие human queue deliveries не завершены; перезапуск сейчас пометил бы их interrupted/UNKNOWN.",
+            "note": "MCP self-default готов в4750249,но ещё не установлен; ожидается безопасный restart без потери pending deliveries."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/mcp/resume-after-tools.ts",
+        "src/mcp/session-tools.ts",
+        "src/session-identity.ts"
+      ],
+      "depends_on": [],
+      "created_at": "2026-10-26T03:23:01+03:00"
     },
     {
       "id": "L02",
@@ -764,15 +967,15 @@
     {
       "id": "L27",
       "label": "Возвращать новый ответ доставки через inline результат и fetch",
-      "status": "running",
+      "status": "done",
       "description": "После уже принятой отправки сравнивать только новый видимый assistant text с приватным baseline; вернуть inline ответ в пределах 30 секунд, иначе тот же durable jobRef для последующего fetch и точечного MCP resource update.",
       "acceptance": "Baseline exact target/job/input сохраняется до native write в том же durable job. Возвращаются только новые нормализованные видимые части; correlation называется reply_to только при exact turn ID, иначе observed_after_delivery. 30s ограничивает только наблюдение, не native admission; fetch/continuation никогда не отправляют повторно. Long continuation закреплён durable per-job receipt; subscribe уведомляет только exact bound resource URI через реально поддержанный transport, fetch остаётся обязательным.",
-      "owner": "permission_mode_ui",
-      "session": "unknown",
+      "result": "Добавлен случай из точной OpenCode-сессии: native outcome succeeded, но visible final text пуст. Нужен стабильный ответный status/fetch без повторной отправки. Регрессия сначала RED (ожидался reason no_visible_response, его не было), затем GREEN после добавления reason; focused tests 16/16 и `tsc --noEmit` зелёные. Изменение пока source-only, runtime не обновлялся.",
+      "owner": "Lead текущей сессии",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex",
-      "note": "Response helper/shared UMD source 324f65e и durable guard 5cf6c22 получили independent SHIP; observer 8cc9754 прошёл 55 focused tests + TypeScript и также получил SHIP. Remote response-resource reader f47288b отдельно получил SHIP. MCP и local mesh используют один durable job без второго sender; возвращается inline результат в пределах 30 секунд и stable fetch после. Установленный runtime остаётся 8936deb. Эти source reviews не заменяют exact joined install и consumer proof; subscribe/notification не заявляются без подтверждённого transport/readback. ZCode последующий model/network error не дал финальный assistant response.",
+      "note": "Результат `completed` с пустым text теперь сохраняет `jobRef` и `responseFetchUri`, а поле reason явно равно `no_visible_response`; это не повторяет исходную отправку. Совпадение с exact native OpenCode session установлено на уровне outcome, но installed consumer acceptance остаётся отдельным шагом.",
       "estimate_unknown_reason": "Helper и transport contract проверены изолированно; до оценки остаётся shared-job wiring, authorization/readback join и consumer path.",
-      "wait_reason": "Source helper, observer and owner-bound remote reader получили independent SHIP; остаются canonical main join, единая финальная установка и consumer proof.",
       "origin": "",
       "supersedes": [],
       "progress_events": [
@@ -802,6 +1005,35 @@
             "wait_reason": "Source helper, observer and owner-bound remote reader получили independent SHIP; остаются canonical main join, единая финальная установка и consumer proof."
           },
           "session": "unknown",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T02:30:16+03:00",
+          "note": "",
+          "changes": {
+            "owner": "Lead текущей сессии",
+            "result": "Добавлен случай из точной OpenCode-сессии: native outcome succeeded, но visible final text пуст. Нужен стабильный ответный status/fetch без повторной отправки. Регрессия сначала RED (ожидался reason no_visible_response, его не было), затем GREEN после добавления reason; focused tests 16/16 и `tsc --noEmit` зелёные. Изменение пока source-only, runtime не обновлялся.",
+            "note": "Результат `completed` с пустым text теперь сохраняет `jobRef` и `responseFetchUri`, а поле reason явно равно `no_visible_response`; это не повторяет исходную отправку. Совпадение с exact native OpenCode session установлено на уровне outcome, но installed consumer acceptance остаётся отдельным шагом."
+          },
+          "session": "unknown",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T02:46:41+03:00",
+          "note": "Scoped fix committed as 8187c75 and verified in origin/main (current head 7c5faaa contains it). RED→GREEN focused delivery test 16/16, tsc --noEmit GREEN, independent review found no blocking issue. no_visible_response preserves jobRef and responseFetchUri; accepted external action not replayed. Runtime/installed consumer proof remains pending same final release.",
+          "changes": {},
+          "session": "unknown",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-26T03:21:11+03:00",
+          "note": "Установлен общий main 941966a, включающий8187c75 и exact-native completion38c02f8. Native process/artifact acceptance21/21; actual MCP resources/read дважды вернул тот же OpenCode response partial871символ и SHA256 ca3dc077b0f26a344f20fc3000f1378d80d4ab05677191dd224c038275aabe21. Все47ранее принятых durable jobs сохранились без изменения; native sends0. Доказательства .tmp/release-8187c75/accept-final.json, consumer-receipt.json, snapshot/install-receipt.json.",
+          "changes": {
+            "status": "done",
+            "wait_reason": "",
+            "session": "01a1754f-0228-7553-bea6-cc89e40b5187"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
           "harness": "codex"
         }
       ],
@@ -1537,7 +1769,7 @@
       }
     }
   ],
-  "leaf_count": 27,
+  "leaf_count": 29,
   "plan_origin": {
     "at": "2026-10-25T14:33:23+03:00",
     "source": "recorded_start",

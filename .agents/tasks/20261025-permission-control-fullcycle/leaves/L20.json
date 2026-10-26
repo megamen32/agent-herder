@@ -1,8 +1,8 @@
 {
-  "label": "Проверить 8000-token preview на реальном consumer пути",
+  "label": "Проверить 8000-символьный preview на реальном consumer пути",
   "status": "running",
-  "description": "Проверить изменение, сохраняющее 8000-token preview при длинной доставке, в установленном настоящем MCP/UI consumer пути с корректными границами и без утечки лишнего текста.",
-  "acceptance": "Reviewed immutable release включает source fix 2ce5c18; реальный consumer получает ожидаемый preview до 8000 tokens без обрезания по старой границе, а соседние длинные сообщения сохраняют свои прежние semantics. Зафиксированы exact release SHA и readback. До live проверки источник считается только source-checked.",
+  "description": "Проверить изменение, которое сохраняет preview до 8000 символов при длинной доставке, в установленном MCP/UI consumer пути без утечки лишнего текста.",
+  "acceptance": "Reviewed immutable release сохраняет требуемые пользователем 8000 символов preview; реальный consumer получает это значение, а соседние long-message semantics остаются прежними. Зафиксированы exact release SHA и независимый readback; до live проверки результат остаётся source-only.",
   "affected_files": [
     "src/long-messages.ts",
     "src/mcp-tools/handlers.ts",
@@ -16,11 +16,11 @@
     "minimum": 15,
     "maximum": 30
   },
-  "note": "Source commit 2ce5c18 проверен, но текущая установка 8936 и frontend pin 76e83d0 не доказывают наличие этого source. Реальный 8000-token consumer preview и сохранение соседних long-message semantics ещё не приняты.",
+  "note": "Использовать точное требование пользователя: 8000 символов, не 8000 токенов. Source fix 2ce5c18 и installed release 8936/frontend pin 76e83d0 не считать live acceptance.",
   "wait_reason": "Ожидает общего reviewed source join и единого финального release.",
   "id": "L20",
   "harness": "codex",
-  "updated_at": "2026-10-25T22:03:22+03:00",
+  "updated_at": "2026-10-26T02:49:15+03:00",
   "progress_events": [
     {
       "at": "2026-10-25T20:48:53+03:00",
@@ -63,7 +63,35 @@
         "note": "Source commit 2ce5c18 проверен, но текущая установка 8936 и frontend pin 76e83d0 не доказывают наличие этого source. Реальный 8000-token consumer preview и сохранение соседних long-message semantics ещё не приняты."
       },
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T02:15:52+03:00",
+      "note": "",
+      "changes": {
+        "label": "Проверить 8000-символьный preview на реальном consumer пути",
+        "description": "Проверить изменение, которое сохраняет preview до 8000 символов при длинной доставке, в установленном MCP/UI consumer пути без утечки лишнего текста.",
+        "acceptance": "Reviewed immutable release сохраняет требуемые пользователем 8000 символов preview; реальный consumer получает это значение, а соседние long-message semantics остаются прежними. Зафиксированы exact release SHA и независимый readback; до live проверки результат остаётся source-only.",
+        "note": "Использовать точное требование пользователя: 8000 символов, не 8000 токенов. Source fix 2ce5c18 и installed release 8936/frontend pin 76e83d0 не считать live acceptance."
+      },
+      "session": "unknown",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T02:48:47+03:00",
+      "note": "Лимит предпросмотра задан ровно в 8 000 символов, не токенов. Это граница по символам исходного текста и не переводится пересчётом по модели; пересчёт в токены запрещён.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T02:49:15+03:00",
+      "note": "Уточнено по прямой коррекции пользователя: 8 000 символов рассчитываются непосредственно; модельный токенизатор не используется.",
+      "changes": {
+        "estimate_over_limit_reason": "Одна ограниченная consumer-проверка должна связать source fix, immutable installed release и preview с лимитом ровно 8 000 символов (без перевода в токены и пересчёта по модели); отдельные source/live проверки не подменяют реальную приёмку и повышают риск перепутать SHA."
+      },
+      "session": "unknown",
+      "harness": "codex"
     }
   ],
-  "estimate_over_limit_reason": "Одна ограниченная consumer проверка обязана связать source fix, immutable installed release и реальный 8000-token preview; раздельные source/live leafs не уменьшают acceptance и увеличивают риск перепутать SHA."
+  "estimate_over_limit_reason": "Одна ограниченная consumer-проверка должна связать source fix, immutable installed release и preview с лимитом ровно 8 000 символов (без перевода в токены и пересчёта по модели); отдельные source/live проверки не подменяют реальную приёмку и повышают риск перепутать SHA."
 }

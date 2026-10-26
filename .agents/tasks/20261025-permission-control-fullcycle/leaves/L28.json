@@ -1,0 +1,108 @@
+{
+  "id": "L28",
+  "label": "Показать завершение OpenCode, если нет финального ответа",
+  "description": "Исправить наблюдаемый исход в точной пользовательской OpenCode-сессии: нативный ход завершился успешно, побочные операции уже получили подтверждение, но последнее assistant-сообщение пустое. Herder должен показать правдивый terminal outcome и дать получить доступный результат без повторной отправки.",
+  "acceptance": "Быстрый TDD regression воспроизводит `outcome=succeeded` с пустым финальным assistant content после одного и более уже admitted tool calls; до исправления пользовательский интерфейс/API выглядит как молчаливое завершение, после исправления показывает explicit succeeded/no-final-text или stable fetch result. Любой accepted/UNKNOWN tool side effect остаётся no-replay. Обычные видимые финальные ответы сохраняют прежний путь.",
+  "affected_files": [
+    "src/session-supervisor.ts",
+    "src/session-lifecycle.ts",
+    "src/adapters/zcode-workspace-lifecycle.ts",
+    "tests/zcode-workspace-lifecycle.test.ts",
+    ".agents/tasks/20261025-permission-control-fullcycle"
+  ],
+  "status": "running",
+  "owner": "Lead текущей сессии",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex",
+  "depends_on": [],
+  "estimate_minutes": {
+    "minimum": 20,
+    "maximum": 45
+  },
+  "estimate_unknown_reason": "Сначала нужно прочитать точную пользовательскую native session и установить реальную границу обрыва.",
+  "note": "Установлено941966a; installed empty snapshot и actual MCP visible response доказаны раздельно. Exact native OpenCode empty terminal без replay пока не доказан.",
+  "created_at": "2026-10-26T02:15:50+03:00",
+  "updated_at": "2026-10-26T03:21:14+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-26T02:15:50+03:00",
+      "note": "",
+      "changes": {
+        "id": "L28",
+        "label": "Исправить остановку сессии посреди задания",
+        "description": "Диагностировать свежий пользовательский случай остановки созданной Herder-сессии на середине задания. Сопоставить точную native session, ход, процесс и очередь; если точный ID пока недоступен, воспроизвести только на отдельной benign fixture из TEST_ACCESS. Исправлять только подтверждённую причину.",
+        "acceptance": "Точный native session и завершённый/оборванный ход связаны с runtime evidence; быстрый TDD regression даёт RED до фикса и GREEN после. На отдельной разрешённой fixture вызвавший процесс/transport может завершиться, а тот же нативный ход завершается ровно один раз; очередь, input IDs и accepted/UNKNOWN не повторяются. Если пользовательский session ID нельзя получить, это остаётся UNKNOWN отдельно от доказанного fixture результата.",
+        "affected_files": [
+          "src/session-supervisor.ts",
+          "src/session-lifecycle.ts",
+          "src/adapters/zcode-workspace-lifecycle.ts",
+          "tests/zcode-workspace-lifecycle.test.ts",
+          ".agents/tasks/20261025-permission-control-fullcycle"
+        ],
+        "status": "running",
+        "owner": "Lead текущей сессии",
+        "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+        "harness": "codex",
+        "depends_on": [],
+        "estimate_minutes": {
+          "minimum": 20,
+          "maximum": 45
+        },
+        "estimate_unknown_reason": "Сначала нужно прочитать точную пользовательскую native session и установить реальную границу обрыва.",
+        "note": "Свежая пользовательская запись пока не найдена в снимке ZCode; пользователь попросил продолжить диагностику и это будет первым реальным воспроизведением."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T02:16:07+03:00",
+      "note": "",
+      "changes": {
+        "estimate_over_limit_reason": "Связать точную native-сессию, оборванный ход и процесс-исполнитель с минимальной regression и исправлением — один неделимый сценарий этого конкретного дефекта; более короткая оценка может принять соседний timeout/route за доказанную причину."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T02:26:25+03:00",
+      "note": "",
+      "changes": {
+        "label": "Показать завершение OpenCode, если нет финального ответа",
+        "description": "Исправить наблюдаемый исход в точной пользовательской OpenCode-сессии: нативный ход завершился успешно, побочные операции уже получили подтверждение, но последнее assistant-сообщение пустое. Herder должен показать правдивый terminal outcome и дать получить доступный результат без повторной отправки.",
+        "acceptance": "Быстрый TDD regression воспроизводит `outcome=succeeded` с пустым финальным assistant content после одного и более уже admitted tool calls; до исправления пользовательский интерфейс/API выглядит как молчаливое завершение, после исправления показывает explicit succeeded/no-final-text или stable fetch result. Любой accepted/UNKNOWN tool side effect остаётся no-replay. Обычные видимые финальные ответы сохраняют прежний путь.",
+        "result": "Read-only native readback точной сессии: `idle`, `outcome=succeeded`; после принятых операций OpenCode записал пустой assistant final (`finish=stop`). Один Notice Place запрос получил 202, запись Herder принята; повторов со стороны текущего агента не было. Причина жалобы — итог не отображён; 20-минутное принудительное завершение этим примером не доказано.",
+        "note": "Исходный симптом «остановилась на половине пути» уточнён по точной сессии: native runtime завершил её успешно, но без видимого финального текста. Не возобновлять и не повторять принятые действия; фиксировать только user-facing outcome/fetch."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T02:30:18+03:00",
+      "note": "",
+      "changes": {
+        "result": "Exact native readback завершён: session `idle`, native `outcome=succeeded`; последнее assistant сообщение `finish=stop` пустое. Один запрос получил Notice Place 202 и одна coordination note update была принята; текущий агент ничего не повторял. Пользовательский симптом — молчаливый финал, не доказанная остановка через 20 минут. Source-level no-visible-response handling добавлен в L27; installed user-facing acceptance ещё не выполнена.",
+        "note": "Проверка совпала с ответным delivery path; следующий реальный acceptance должен открыть уже имеющуюся квитанцию без replay и показать no-visible-response статус. Никаких сообщений в OpenCode-сессию не отправлять."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T02:46:43+03:00",
+      "note": "User-provided full-height local OpenChamber screenshot shows exact atv-views-sentinel-glm under TelegramAuto with green completion mark at 21m; prior screenshot was cropped above this row. Native readback remains idle/succeeded with empty assistant final. Not a missing OpenChamber session or proven 20-minute stop; no UI change and no accepted side effect replay.",
+      "changes": {},
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-26T03:21:14+03:00",
+      "note": "8187c75 установлен внутри941966a. Из установленного dist проверен completed/no_visible_response на изолированном snapshot; это не replay исходной OpenCode сессии и не выдаётся за exact native consumer proof. Реальный MCP fetch существующего видимого ответа проверен вL27. Для OpenCode native success без точного correlated turn receipt observer консервативен; исходную отправку не повторяли.",
+      "changes": {
+        "note": "Установлено941966a; installed empty snapshot и actual MCP visible response доказаны раздельно. Exact native OpenCode empty terminal без replay пока не доказан."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    }
+  ],
+  "estimate_over_limit_reason": "Связать точную native-сессию, оборванный ход и процесс-исполнитель с минимальной regression и исправлением — один неделимый сценарий этого конкретного дефекта; более короткая оценка может принять соседний timeout/route за доказанную причину.",
+  "result": "Exact native readback завершён: session `idle`, native `outcome=succeeded`; последнее assistant сообщение `finish=stop` пустое. Один запрос получил Notice Place 202 и одна coordination note update была принята; текущий агент ничего не повторял. Пользовательский симптом — молчаливый финал, не доказанная остановка через 20 минут. Source-level no-visible-response handling добавлен в L27; installed user-facing acceptance ещё не выполнена."
+}
