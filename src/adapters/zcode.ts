@@ -2384,7 +2384,7 @@ export class ZcodeAdapter implements HarnessAdapter {
       return { ok: false, admitted: true, nonRetryable: true, error };
     }
     await this.persistDesiredSessionTitle(id);
-    return { ok: true };
+    return { ok: true, ...(started.turnId ? { turnId: started.turnId } : {}) };
   }
 
   /** Native V4 owns start/guide/queue admission and command deduplication. Never

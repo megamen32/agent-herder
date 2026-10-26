@@ -128,6 +128,12 @@ class FakeClient implements ZcodeClientLike {
   }
 }
 
+function exactTurnIdForLastPrompt(client: FakeClient): string | undefined {
+  const sent = [...client.calls].reverse().find((call) => call.method === "sendPrompt");
+  const inputId = (sent?.args[0] as { inputId?: string } | undefined)?.inputId;
+  return inputId ? `turn-${inputId}` : undefined;
+}
+
 describe("ZCode terminal quota evidence", () => {
   const quotaSnapshot = {
     ...snapshot,
@@ -795,7 +801,8 @@ describe("ZCode adapter", () => {
         },
       }]);
       await adapter.init();
-      await expect(adapter.sendMessage("duplicate-1", { message: "Continue canonical session" })).resolves.toEqual({ ok: true });
+      const receipt = await adapter.sendMessage("duplicate-1", { message: "Continue canonical session" });
+      expect(receipt).toEqual({ ok: true, turnId: exactTurnIdForLastPrompt(client) });
       expect(client.calls.find((call) => call.method === "sendPrompt")?.args[0]).toMatchObject({
         sessionId: "duplicate-1",
         workspacePath: canonicalCwd,
@@ -1422,14 +1429,16 @@ describe("ZCode adapter", () => {
     db.exec(`create table tasks (task_id text primary key, title text)`);
     db.close();
     try {
-      const adapter = new ZcodeAdapter({ cwd: "/workspace", client: new FakeClient(), tasksIndexDbPath: dbPath });
+      const client = new FakeClient();
+      const adapter = new ZcodeAdapter({ cwd: "/workspace", client, tasksIndexDbPath: dbPath });
       await adapter.init();
       const created = await adapter.createSession({ name: "Автопродолжение — Аудит t-proxy", cwd: "/workspace" });
       const writer = new DatabaseSync(dbPath);
       writer.prepare("insert into tasks (task_id, title) values (?, ?)").run(created.id, "Автопродолжение — Аудит t-proxy Это единое продолжение");
       writer.close();
 
-      expect(await adapter.sendMessage(created.id, { message: "Автопродолжение — Аудит t-proxy\n\nПродолжи задачу" })).toEqual({ ok: true });
+      const receipt = await adapter.sendMessage(created.id, { message: "Автопродолжение — Аудит t-proxy\n\nПродолжи задачу" });
+      expect(receipt).toEqual({ ok: true, turnId: exactTurnIdForLastPrompt(client) });
       const reader = new DatabaseSync(dbPath, { readOnly: true });
       const row = reader.prepare("select title from tasks where task_id = ?").get(created.id) as { title: string };
       reader.close();
@@ -1460,10 +1469,12 @@ describe("ZCode adapter", () => {
     db.exec(`create table tasks (task_id text primary key, title text)`);
     db.close();
     try {
-      const adapter = new ZcodeAdapter({ cwd: "/workspace", client: new FakeClient(), tasksIndexDbPath: dbPath });
+      const client = new FakeClient();
+      const adapter = new ZcodeAdapter({ cwd: "/workspace", client, tasksIndexDbPath: dbPath });
       await adapter.init();
       const created = await adapter.createSession({ name: "Автопродолжение — Поздний индекс", cwd: "/workspace" });
-      expect(await adapter.sendMessage(created.id, { message: "Продолжи" })).toEqual({ ok: true });
+      const receipt = await adapter.sendMessage(created.id, { message: "Продолжи" });
+      expect(receipt).toEqual({ ok: true, turnId: exactTurnIdForLastPrompt(client) });
       const writer = new DatabaseSync(dbPath);
       writer.prepare("insert into tasks (task_id, title) values (?, ?)").run(created.id, "Продолжи технический хвост");
       writer.close();
@@ -1511,7 +1522,8 @@ describe("ZCode adapter", () => {
       { id: "message-2", role: "assistant", text: "I will inspect the repository." },
     ]);
 
-    expect(await adapter.sendMessage("session-1", { message: "continue" })).toEqual({ ok: true });
+    const receipt = await adapter.sendMessage("session-1", { message: "continue" });
+    expect(receipt).toEqual({ ok: true, turnId: exactTurnIdForLastPrompt(client) });
     expect(await adapter.cancelTurn?.("session-1")).toEqual({ ok: true });
     expect(await adapter.resumeSession?.("session-1")).toEqual({ ok: true });
     expect(await adapter.terminate?.("session-1")).toEqual({ ok: true });
@@ -1619,7 +1631,6 @@ describe("ZCode adapter", () => {
     await adapter.init();
 
     const result = await adapter.sendMessage("session-1", { message: "ping" });
-    expect(result).toEqual({ ok: true });
     expect(client.sendPromptCalls).toBe(2);
     const methods = client.calls.map((call) => call.method);
     const firstSend = methods.indexOf("sendPrompt");
@@ -1627,7 +1638,46 @@ describe("ZCode adapter", () => {
     expect(methods[firstSend + 2]).toBe("readSession");
     expect(methods[firstSend + 3]).toBe("sendPrompt");
     expect(methods[firstSend + 4]).toBe("readSessionEvents");
+    const acceptedInputId = (client.calls.filter((call) => call.method === "sendPrompt").at(-1)?.args[0] as { inputId?: string } | undefined)?.inputId;
+    expect(result).toEqual({ ok: true, turnId: `turn-${acceptedInputId}` });
 
+    await adapter.dispose();
+  });
+
+  it("returns only the native turn id proven by the exact legacy turn-start event", async () => {
+    const client = new FakeClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+
+    const result = await adapter.sendMessage("session-1", { message: "bounded receipt fixture", inputId: "legacy-turn-proof" });
+    const sent = client.calls.find((call) => call.method === "sendPrompt");
+    const acceptedInputId = (sent?.args[0] as { inputId?: string } | undefined)?.inputId;
+
+    expect(acceptedInputId).toBeTruthy();
+    expect(result).toEqual({ ok: true, turnId: `turn-${acceptedInputId}` });
+    await adapter.dispose();
+  });
+
+  it("does not guess a native turn id when the exact legacy start event omits it", async () => {
+    class TurnIdOmittingClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]): Promise<unknown> {
+        if (channel === "zcode-agent" && method === "readSessionEvents") {
+          this.calls.push({ channel, method, args });
+          const sent = [...this.calls].reverse().find((call) => call.method === "sendPrompt");
+          const inputId = (sent?.args[0] as { inputId?: string } | undefined)?.inputId;
+          return { events: [{ type: "turn.started", sessionId: "session-1", payload: { inputId } }] };
+        }
+        return super.call(channel, method, args);
+      }
+    }
+    const client = new TurnIdOmittingClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    await adapter.init();
+
+    const result = await adapter.sendMessage("session-1", { message: "no guessed id", inputId: "legacy-no-turn-id" });
+
+    expect(result).toEqual({ ok: true });
+    expect(result).not.toHaveProperty("turnId");
     await adapter.dispose();
   });
 
@@ -1872,10 +1922,11 @@ describe("ZCode adapter", () => {
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
     await adapter.init();
 
-    await expect(adapter.sendMessage("session-1", {
+    const receipt = await adapter.sendMessage("session-1", {
       message: "stable handoff",
       inputId: "handoff-operation-1",
-    })).resolves.toEqual({ ok: true });
+    });
+    expect(receipt).toEqual({ ok: true, turnId: "turn-agent-herder:auto:handoff-operation-1" });
     expect(client.calls.find((call) => call.method === "sendPrompt")?.args[0]).toMatchObject({
       sessionId: "session-1",
       inputId: "agent-herder:auto:handoff-operation-1",

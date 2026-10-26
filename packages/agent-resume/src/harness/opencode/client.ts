@@ -587,7 +587,7 @@ export class OpenCodeClient implements HarnessClient {
     }
     const query = params.toString() ? `?${params.toString()}` : "";
     const sessions = await this.fetchJson<OpenCodeSessionPayload[]>(this.api(`/session${query}`));
-    const statuses = await this.readStatuses(options.cwd);
+    const statuses = await this.readStatuses(options.cwd, sessions.map((session) => session.id));
     return sessions.map((session) => this.toSummary(session, statuses[session.id]));
   }
 
@@ -599,9 +599,9 @@ export class OpenCodeClient implements HarnessClient {
     } catch {
       const all = await this.listSessionDetails({ limit: 200 });
       const found = all.find((item) => item.id === id);
-      return found ? { ...found, needsPermission: false } : null;
+      return found ?? null;
     }
-    const statuses = await this.readStatuses(this.directoryOf(session));
+    const statuses = await this.readStatuses(this.directoryOf(session), [id]);
     return this.toSummary(session, statuses[id]);
   }
 
@@ -618,7 +618,7 @@ export class OpenCodeClient implements HarnessClient {
       if (!this.isV2) return { scope: "workspace", supportedModes: [], canSetMode: false, pendingRequests: [], observedAt: new Date().toISOString() };
       const [session, requests] = await Promise.all([
         this.fetchJson<OpenCodeSessionPayload>(this.api(`/session/${encodeURIComponent(id)}`)),
-        this.fetchJson<OpenCodePermissionRequest[]>(this.api("/permission/request")),
+        this.readSessionPermissionRequests(id),
       ]);
       if (session?.id !== id || !Array.isArray(requests)) return null;
       const wildcard = session.permissions?.find((rule) => rule.action === "*" && rule.resource === "*");
@@ -748,12 +748,12 @@ export class OpenCodeClient implements HarnessClient {
       if (session.id !== id || session.outcome !== "failed") return null;
       const [active, permissions] = await Promise.all([
         this.fetchJson<Record<string, { type?: string; status?: string }>>(this.api("/session/active")),
-        this.fetchJson<OpenCodePermissionRequest[]>(this.api("/permission/request")),
+        this.readSessionPermissionRequests(id),
       ]);
       if (!active || typeof active !== "object" || Array.isArray(active) || !Array.isArray(permissions)) return null;
       const activeSession = active[id];
       const activeType = activeSession?.type ?? activeSession?.status;
-      if ((activeSession !== undefined && activeType !== "idle") || permissions.some((request) => request?.sessionID === id)) return null;
+      if ((activeSession !== undefined && activeType !== "idle") || permissions.length > 0) return null;
 
       const fetched = await this.fetchJson<OpenCodeMessagePayload[]>(this.api(`/session/${encodeURIComponent(id)}/message?limit=150&order=desc`));
       if (!Array.isArray(fetched)) return null;
@@ -819,12 +819,12 @@ export class OpenCodeClient implements HarnessClient {
       if (session.id !== id || session.outcome !== "failed") return null;
       const [active, permissions] = await Promise.all([
         this.fetchJson<Record<string, { type?: string; status?: string }>>(this.api("/session/active")),
-        this.fetchJson<OpenCodePermissionRequest[]>(this.api("/permission/request")),
+        this.readSessionPermissionRequests(id),
       ]);
       if (!active || typeof active !== "object" || Array.isArray(active) || !Array.isArray(permissions)) return null;
       const activeSession = active[id];
       const activeType = activeSession?.type ?? activeSession?.status;
-      if ((activeSession !== undefined && activeType !== "idle") || permissions.some((request) => request?.sessionID === id)) return null;
+      if ((activeSession !== undefined && activeType !== "idle") || permissions.length > 0) return null;
 
       const fetched = await this.fetchJson<OpenCodeMessagePayload[]>(this.api(`/session/${encodeURIComponent(id)}/message?limit=150&order=desc`));
       if (!Array.isArray(fetched) || fetched.length === 0) return null;
@@ -898,11 +898,11 @@ export class OpenCodeClient implements HarnessClient {
       if (session.id !== id || session.outcome !== "failed") return null;
       const [active, permissions] = await Promise.all([
         this.fetchJson<Record<string, { type?: string; status?: string }>>(this.api("/session/active")),
-        this.fetchJson<OpenCodePermissionRequest[]>(this.api("/permission/request")),
+        this.readSessionPermissionRequests(id),
       ]);
       if (!active || typeof active !== "object" || Array.isArray(active) || !Array.isArray(permissions)) return null;
       const activeType = active[id]?.type ?? active[id]?.status;
-      if ((activeType !== undefined && activeType !== "idle") || permissions.some((request) => request?.sessionID === id)) return null;
+      if ((activeType !== undefined && activeType !== "idle") || permissions.length > 0) return null;
 
       const response = await this.fetch(this.api(`/session/${encodeURIComponent(id)}/message?limit=150&order=desc`), { cache: "no-store" });
       if (!response.ok || response.headers.get("age") && response.headers.get("age") !== "0") return null;
@@ -1410,7 +1410,7 @@ export class OpenCodeClient implements HarnessClient {
           : `/session/${encodeURIComponent(id)}/message?directory=${encodeURIComponent(directory)}&limit=50`,
       ),
       this.fetchJson<OpenCodeSessionPayload>(this.api(`/session/${encodeURIComponent(id)}`)),
-      this.readStatuses(directory),
+      this.readStatuses(directory, [id]),
     ]);
     if (session.id !== id || this.directoryOf(session) !== directory || !Array.isArray(messages)) return null;
     const status = statuses[id];
@@ -1478,21 +1478,34 @@ export class OpenCodeClient implements HarnessClient {
     this.apiPrefix = v1.ok ? "" : "/api";
   }
 
-  private async readStatuses(directory?: string): Promise<Record<string, OpenCodeStatusSnapshot>> {
+  private async readStatuses(directory?: string, sessionIds?: string[]): Promise<Record<string, OpenCodeStatusSnapshot>> {
     if (this.isV2) {
-      const [active, permissions] = await Promise.all([
-        this.fetchJson<Record<string, { type?: string; status?: string }>>(this.api("/session/active")).catch(() => ({})),
-        this.fetchJson<OpenCodePermissionRequest[]>(this.api("/permission/request")).catch(() => []),
-      ]);
+      const active = await this.fetchJson<Record<string, { type?: string; status?: string }>>(this.api("/session/active"));
+      if (!active || typeof active !== "object" || Array.isArray(active)) throw new Error("OpenCode active session read returned an invalid response");
       const statuses: Record<string, OpenCodeStatusSnapshot> = {};
-      for (const [id, entry] of Object.entries(active ?? {})) {
+      for (const [id, entry] of Object.entries(active)) {
         const raw = entry?.type || entry?.status;
         statuses[id] = { status: raw === "running" ? "running" : raw === "idle" ? "idle" : raw, type: raw };
       }
-      for (const request of permissions ?? []) {
-        if (!request?.sessionID) continue;
-        const current = statuses[request.sessionID] ?? { status: "idle" };
-        statuses[request.sessionID] = {
+      const candidates = sessionIds ?? Object.keys(active);
+      let legacyRequests: Promise<OpenCodePermissionRequest[]> | undefined;
+      const pendingBySession: Array<{ id: string; requests: OpenCodePermissionRequest[] }> = [];
+      let cursor = 0;
+      await Promise.all(Array.from({ length: Math.min(8, candidates.length) }, async () => {
+        while (cursor < candidates.length) {
+          const id = candidates[cursor++]!;
+          const requests = await this.readSessionPermissionRequests(id, () => {
+            legacyRequests ??= this.fetchJson<OpenCodePermissionRequest[]>(this.api("/permission/request"));
+            return legacyRequests;
+          });
+          pendingBySession.push({ id, requests });
+        }
+      }));
+      for (const { id, requests } of pendingBySession) {
+        const request = requests[0];
+        if (!request) continue;
+        const current = statuses[id] ?? { status: "idle" };
+        statuses[id] = {
           ...current,
           needsPermission: true,
           permission: {
@@ -1511,6 +1524,25 @@ export class OpenCodeClient implements HarnessClient {
     if (response.status === 404) return {};
     if (!response.ok) throw new Error(`OpenCode status read failed: HTTP ${response.status}`);
     return unwrapEnvelope<Record<string, OpenCodeStatusSnapshot>>(await response.json()) ?? {};
+  }
+
+  private async readSessionPermissionRequests(
+    sessionId: string,
+    legacyFallback?: () => Promise<OpenCodePermissionRequest[]>,
+  ): Promise<OpenCodePermissionRequest[]> {
+    const response = await this.fetch(this.api(`/session/${encodeURIComponent(sessionId)}/permission`), { cache: "no-store" });
+    if (response.status === 404) {
+      const legacy = await (legacyFallback?.() ?? this.fetchJson<OpenCodePermissionRequest[]>(this.api("/permission/request")));
+      if (!Array.isArray(legacy)) throw new Error("OpenCode global permission read returned an invalid response");
+      return legacy.filter((request) => request?.sessionID === sessionId);
+    }
+    if (!response.ok) throw new Error(`OpenCode API session permission read: HTTP ${response.status}${await this.errorHint(response)}`);
+    const requests = unwrapEnvelope(await response.json());
+    if (!Array.isArray(requests)) throw new Error("OpenCode session permission read returned an invalid response");
+    if (requests.some((request) => !request || typeof request !== "object" || request.sessionID !== sessionId)) {
+      throw new Error("OpenCode session permission read returned a different or unbound session request");
+    }
+    return requests as OpenCodePermissionRequest[];
   }
 
   private directoryOf(session: OpenCodeSessionPayload): string | undefined {
