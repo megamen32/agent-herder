@@ -3331,6 +3331,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       message,
       mode: "queue",
       model,
+      fallbackModels: [],
       sourceSessionId: typeof body.sourceSessionId === "string" ? body.sourceSessionId : undefined,
       sourceHarness: typeof body.sourceHarness === "string" ? body.sourceHarness : undefined,
       sourceSessions: body.sourceSessions as Array<{ harness: string; sessionId: string }> | undefined,

@@ -1,27 +1,17 @@
 import { isHealthPlanId, type HealthPlanId } from "../autopilot/notice-incident.js";
-import { isApprovedHealthRoute } from "../health-remediation.js";
+import { healthModelForHarness, INCIDENT_EXECUTION } from "../health-remediation.js";
 
 /**
  * The one model allowlist of Notice Place health work.
  *
- * The analysis of an incident and the repair of an incident must be able to
- * run on the same approved models, otherwise a repair can be refused for a
- * reason that the analysis never had. The known routes are listed explicitly,
- * but the allowlist is not a closed set: the owner picks the incident model
- * by hand, so every other route of the OmniRoute gateway to MiniMax is
- * accepted too. The MiniMax subscription route is approved as well, but it
- * is never the first choice: the gateway combo route stays first. No other
- * provider is allowed, and there is no automatic fallback.
+ * Both analysis and repair use the exact direct subscription model. A route
+ * from the general health profile cannot substitute for an incident route.
  */
 export const NOTICEPLACE_HEALTH_MODELS = {
-  /** The routes that are known to work, the default one first. */
-  known: [
-    "omniroute/minimax-combo-m3.1",
-    "omniroute/glm-5.3-flash-minimax-m3.1",
-    "minimax-coding-plan/MiniMax-M3.1-Flash",
-  ] as readonly string[],
+  /** The sole authorized incident route. */
+  known: [healthModelForHarness("opencode", INCIDENT_EXECUTION)] as readonly string[],
   /** True for a route the health work of an incident may run on. */
-  includes: (model: string): boolean => isApprovedHealthRoute(model),
+  includes: (model: string): boolean => model === healthModelForHarness("opencode", INCIDENT_EXECUTION),
   /** The known routes, in order. */
   *[Symbol.iterator](): Iterator<string> {
     yield* this.known;

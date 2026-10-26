@@ -447,7 +447,9 @@ export async function dispatchProjectLaunch(
   }
 
   const nativeResult = await run({ harness, cwd, message: input.message, ...(model ? { model } : {}), mode, inputId,
-    ...(input.policy.fallbackModels?.[harness as "opencode" | "zcode"] ? { fallbackModels: input.policy.fallbackModels[harness as "opencode" | "zcode"] } : {}),
+    ...(!healthAnalysis && input.policy.fallbackModels?.[harness as "opencode" | "zcode"]
+      ? { fallbackModels: input.policy.fallbackModels[harness as "opencode" | "zcode"] }
+      : healthAnalysis ? { fallbackModels: [] } : {}),
     configuredRoute: resolution.kind === "launch", ...(input.sourceSessions ? { sourceSessions: input.sourceSessions } : {}) });
   // Optional undefined fields disappear in JSON. Project the same durable shape
   // on the first response so a restart cannot change its receipt or model.

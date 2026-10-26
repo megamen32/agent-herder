@@ -1,6 +1,6 @@
 export interface HealthExecutionProfile {
   runtime: "zcode" | "hermes" | "fast-agent" | "opencode";
-  provider: "account:zai-individual-coding-plan" | "openai-codex" | "minimax" | "omniroute";
+  provider: "account:zai-individual-coding-plan" | "openai-codex" | "minimax" | "omniroute" | "minimax-coding-plan";
   model: string;
   reasoning: "high" | "default";
   topic: "health";
@@ -128,11 +128,24 @@ export function healthModelForHarness(harness: string, execution: HealthExecutio
   return execution.model.includes("/") ? execution.model : `${execution.provider}/${execution.model}`;
 }
 
-/** Separate incident policy: no global model or provider fallback. */
-export const INCIDENT_EXECUTION: HealthExecutionProfile = { ...CANONICAL_PROFILES.opencode };
+/** Separate Notice Place incident policy: the direct subscription route only. */
+export const INCIDENT_EXECUTION: HealthExecutionProfile = {
+  runtime: "opencode",
+  provider: "minimax-coding-plan",
+  model: "MiniMax-M3.1-Flash",
+  reasoning: "default",
+  topic: "health",
+};
 export function normalizeIncidentExecution(value: unknown): HealthExecutionProfile {
-  const profile = normalizeHealthExecution(value);
-  if (profile.runtime !== "opencode") throw new Error("Incident execution must use OpenCode; no provider fallback");
-  if (profile.provider !== "omniroute") throw new Error("Incident execution must use the OmniRoute provider; no provider fallback");
-  return profile;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("incident execution profile must be an object");
+  }
+  const raw = value as Record<string, unknown>;
+  for (const field of ["runtime", "provider", "model", "reasoning", "topic"] as const) {
+    const actual = bounded(raw[field], field, field === "model" ? MAX_HEALTH_MODEL_LENGTH : 64);
+    if (actual !== INCIDENT_EXECUTION[field]) {
+      throw new Error(`incident execution ${field} must be ${INCIDENT_EXECUTION[field]}`);
+    }
+  }
+  return { ...INCIDENT_EXECUTION };
 }

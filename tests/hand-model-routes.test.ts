@@ -16,32 +16,26 @@ const paidRoutes = [
   "omniroute/minimax/MiniMax-M3.1-Flash",
 ];
 
-describe("hand-picked model routes", () => {
-  it("allows the MiniMax subscription route as a fallback and keeps the combo first", () => {
-    expect(NOTICEPLACE_HEALTH_MODELS.known[0]).toBe("omniroute/minimax-combo-m3.1");
-    expect(INCIDENT_EXECUTION.model).toBe("omniroute/minimax-combo-m3.1");
+describe("Notice Place incident model route", () => {
+  it("allows only the direct MiniMax subscription route for incidents", () => {
+    expect(NOTICEPLACE_HEALTH_MODELS.known).toEqual(["minimax-coding-plan/MiniMax-M3.1-Flash"]);
+    expect(INCIDENT_EXECUTION.model).toBe("MiniMax-M3.1-Flash");
     for (const route of paidRoutes) {
-      const approved = route.startsWith("omniroute/") || route.startsWith("minimax-coding-plan/");
-      expect(isApprovedHealthRoute(route)).toBe(approved);
+      const approved = route === "minimax-coding-plan/MiniMax-M3.1-Flash";
       expect(isNoticeplaceHealthModel(route)).toBe(approved);
       expect(NOTICEPLACE_HEALTH_MODELS.includes(route)).toBe(approved);
       const refusal = validateNoticeplaceHealthLaunch({ harness: "opencode", model: route, operationId: "op" });
       if (approved) expect(refusal).toBeUndefined();
       else expect(typeof refusal).toBe("string");
-      if (approved) {
-        expect(() => normalizeIncidentExecution({ ...INCIDENT_EXECUTION, model: route })).not.toThrow();
-      } else {
-        expect(() => normalizeIncidentExecution({ ...INCIDENT_EXECUTION, model: route })).toThrow();
-      }
     }
   });
 
-  it("approves every other route of the OmniRoute gateway", () => {
+  it("does not reuse the general OmniRoute health route gate for incidents", () => {
     for (const route of ["omniroute/minimax-combo-m3.1", "omniroute/glm-5.3-flash-minimax-m3.1", "omniroute/provider/model"]) {
       expect(isApprovedHealthRoute(route)).toBe(true);
-      expect(isNoticeplaceHealthModel(route)).toBe(true);
-      expect(NOTICEPLACE_HEALTH_MODELS.includes(route)).toBe(true);
-      expect(validateNoticeplaceHealthLaunch({ harness: "opencode", model: route, operationId: "op" })).toBeUndefined();
+      expect(isNoticeplaceHealthModel(route)).toBe(false);
+      expect(NOTICEPLACE_HEALTH_MODELS.includes(route)).toBe(false);
+      expect(validateNoticeplaceHealthLaunch({ harness: "opencode", model: route, operationId: "op" })).toBeTruthy();
     }
   });
 
@@ -53,11 +47,10 @@ describe("hand-picked model routes", () => {
   });
 
   it("keeps the default route verifiable and the provider of the incident route", () => {
-    expect(INCIDENT_EXECUTION.provider).toBe("omniroute");
-    expect(INCIDENT_EXECUTION.model).toBe("omniroute/minimax-combo-m3.1");
-    expect(healthModelForHarness("opencode", INCIDENT_EXECUTION)).toBe("omniroute/minimax-combo-m3.1");
-    expect([...INCIDENT_MODELS]).toContain("omniroute/minimax-combo-m3.1");
-    expect([...INCIDENT_MODELS]).toContain("omniroute/glm-5.3-flash-minimax-m3.1");
+    expect(INCIDENT_EXECUTION.provider).toBe("minimax-coding-plan");
+    expect(INCIDENT_EXECUTION.model).toBe("MiniMax-M3.1-Flash");
+    expect(healthModelForHarness("opencode", INCIDENT_EXECUTION)).toBe("minimax-coding-plan/MiniMax-M3.1-Flash");
+    expect([...INCIDENT_MODELS]).toEqual(["minimax-coding-plan/MiniMax-M3.1-Flash"]);
   });
 
   it("refuses another harness and a provider substitution of the incident route", () => {
