@@ -45,12 +45,13 @@ export function ragIndexNoticeRu(run: RagIndexRun | undefined): RagIndexNotice |
 
 export function RagSearchView({ initialQuery, onInitialQueryApplied, onOpenSession }: { initialQuery?: string; onInitialQueryApplied?: () => void; onOpenSession?: (harness: Harness, sessionId: string) => void }) {
   const [savedPreferences] = React.useState(() => readAdvancedSearchPreferences(window.localStorage));
+  const [linked] = React.useState(() => new URLSearchParams(window.location.search));
   const [settings, setSettings] = React.useState<RagSettings>();
   const [query, setQuery] = React.useState(initialQuery ?? savedPreferences.query);
-  const [selected, setSelected] = React.useState<Harness[]>(savedPreferences.harnesses);
-  const [from, setFrom] = React.useState(savedPreferences.from);
-  const [to, setTo] = React.useState(savedPreferences.to);
-  const [project, setProject] = React.useState(savedPreferences.project);
+  const [selected, setSelected] = React.useState<Harness[]>(linked.has("q") ? linked.getAll("harness").filter((h): h is Harness => ["codex","opencode","zcode"].includes(h)) : savedPreferences.harnesses);
+  const [from, setFrom] = React.useState(linked.has("q") ? linked.get("from") || "" : savedPreferences.from);
+  const [to, setTo] = React.useState(linked.has("q") ? linked.get("to") || "" : savedPreferences.to);
+  const [project, setProject] = React.useState(linked.has("q") ? linked.get("project") || "" : savedPreferences.project);
   const [exactResults, setExactResults] = React.useState<SearchHit[]>([]);
   const [semanticResults, setSemanticResults] = React.useState<SearchHit[]>([]);
   const [exactExpanded, setExactExpanded] = React.useState(true);
@@ -67,6 +68,15 @@ export function RagSearchView({ initialQuery, onInitialQueryApplied, onOpenSessi
   }, [initialQuery, onInitialQueryApplied]);
   React.useEffect(() => {
     writeAdvancedSearchPreferences(window.localStorage, { query, harnesses: selected, from, to, project });
+    const url = new URL(window.location.href);
+    url.searchParams.set("page", "search");
+    url.searchParams.set("q", query);
+    url.searchParams.delete("harness");
+    for (const harness of selected) url.searchParams.append("harness", harness);
+    for (const [key,value] of [["from",from],["to",to],["project",project]]) {
+      if (value) url.searchParams.set(key,value); else url.searchParams.delete(key);
+    }
+    history.replaceState(null, "", url);
   }, [query, selected, from, to, project]);
 
   const refresh = React.useCallback(async () => {

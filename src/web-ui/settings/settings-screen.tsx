@@ -82,17 +82,19 @@ export function SettingsScreen({
   tab,
   onTabChange,
   onOpenLaunchSettings,
+  onOpenAutomationSettings,
 }: {
   tab: SettingsTab;
   onTabChange: (tab: SettingsTab) => void;
   onOpenLaunchSettings: () => void;
+  onOpenAutomationSettings: (section: "autopilot" | "autocontinue" | "launch-policy") => void;
 }): React.ReactElement {
   return (
     <section className="herder-settings-page" aria-label="Настройки herder">
       <header className="herder-settings-header">
         <div>
-          <h1>Настройки herder</h1>
-          <p>Все настройки контура — из одного места: значения, применение, журнал изменений и откат.</p>
+          <h1>{tab === "projects" ? "Проекты" : tab === "hooks" ? "Хуки" : "Настройки Herder"}</h1>
+          <p>{tab === "projects" ? "Среды, разрешённые модели и маршруты запуска для каждого проекта." : tab === "hooks" ? "Подключение событий агентских сред к Herder." : "Настройки Herder: значения, применение, журнал изменений и откат."}</p>
         </div>
         <div className="herder-settings-tabs" role="tablist" aria-label="Разделы настроек">
           <button
@@ -125,6 +127,7 @@ export function SettingsScreen({
         </div>
       </header>
       <div className="herder-settings-panel" role="tabpanel">
+        {tab === "settings" && <section aria-label="Автоматизация"><h2>Автоматизация</h2><p>Управление автопилотом, продолжением работы и запуском новых сессий.</p><div className="session-automation-links">{([['autopilot','Автопилот'],['autocontinue','Автопродолжение'],['launch-policy','Запуск сессий']] as const).map(([section,label]) => <button key={section} className="quiet-button" onClick={() => onOpenAutomationSettings(section)}>{label}</button>)}</div></section>}
         {tab === "settings"
           ? <HerderSettings onOpenLaunchSettings={onOpenLaunchSettings} />
           : tab === "projects"

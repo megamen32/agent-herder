@@ -28,7 +28,7 @@ export function FleetCabinet({creationMode=false,defaultHostId,onSelectedHostCha
  const [sessionSnapshot,setSessionSnapshot]=useState<FleetSessionSnapshot<FleetSession>|null>(null);
  const sessions=sessionSnapshot?.hostId===hostId?sessionSnapshot.sessions:[];
  const partial=sessionSnapshot?.hostId===hostId&&(!sessionSnapshot.complete||sessionSnapshot.stale);
- const [loaded,setLoaded]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(''),[refresh,setRefresh]=useState(0);
+ const [loaded,setLoaded]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(''),[hostsPollError,setHostsPollError]=useState(''),[hostsComplete,setHostsComplete]=useState<boolean|undefined>(undefined),[refresh,setRefresh]=useState(0);
  const [harness,setHarness]=useState<FleetHarness>('codex'),[name,setName]=useState(''),[cwd,setCwd]=useState(''),[model,setModel]=useState('');
  const [clock,setClock]=useState(Date.now());
  const [sending,setSending]=useState(false),[receipt,setReceipt]=useState<FleetCreateReceipt|null>(null);
@@ -55,7 +55,30 @@ export function FleetCabinet({creationMode=false,defaultHostId,onSelectedHostCha
   try{intentStore.current!.archiveUnknown();setArchived(intentStore.current!.archivedUnknown());setReceipt(null);setName('');setCwd('');setModel('');setError('Предыдущий запрос сохранён для проверки. Он не отправлялся повторно.');}
   catch{setError('Не удалось сохранить запрос для проверки. Новое создание остаётся отключено.');}
  };
- useEffect(()=>{const abort=new AbortController();setLoading(true);client.hosts(abort.signal,refresh>0).then(r=>{if(abort.signal.aborted)return;setHosts(r.hosts);setDirectRead(r.sessionReadSupported===true);if(!initialized.current){intentStore.current=new FleetBrowserIntent(localStorage,r.scopeKey);setArchived(intentStore.current.archivedUnknown());const saved=intentStore.current.load();if(saved){setHostId(saved.request.hostId);onSelectedHostChange?.(saved.request.hostId);setName(saved.request.name);setCwd(saved.request.cwd);setHarness(saved.request.harness);setModel(saved.request.model??'');setReceipt(saved.receipt);}else if(!defaultHostId){setHostId(r.defaultHostId);onSelectedHostChange?.(r.defaultHostId);}initialized.current=true;}setLoaded(true);}).catch(()=>{if(!abort.signal.aborted)setError('Не удалось получить список машин');}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});return()=>abort.abort();},[client,defaultHostId,refresh]);
+ useEffect(()=>{const abort=new AbortController();setLoading(true);client.hosts(abort.signal,refresh>0).then(r=>{if(abort.signal.aborted)return;setHosts(r.hosts);setHostsComplete(r.complete);setError('');setDirectRead(r.sessionReadSupported===true);if(!initialized.current){intentStore.current=new FleetBrowserIntent(localStorage,r.scopeKey);setArchived(intentStore.current.archivedUnknown());const saved=intentStore.current.load();if(saved){setHostId(saved.request.hostId);onSelectedHostChange?.(saved.request.hostId);setName(saved.request.name);setCwd(saved.request.cwd);setHarness(saved.request.harness);setModel(saved.request.model??'');setReceipt(saved.receipt);}else if(!defaultHostId){setHostId(r.defaultHostId);onSelectedHostChange?.(r.defaultHostId);}initialized.current=true;}setLoaded(true);}).catch(cause=>{if(!abort.signal.aborted)setError(cause instanceof Error?cause.message:'Не удалось получить список подтверждённых машин.');}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});return()=>abort.abort();},[client,defaultHostId,refresh]);
+ useEffect(()=>{
+  if(!loaded||creationMode)return;
+  let active:AbortController|undefined;
+  const poll=()=>{
+   if(document.visibilityState!=='visible'||active)return;
+   const abort=new AbortController();active=abort;
+   // Ordinary GET uses the cabinet's cached snapshot and only refreshes after
+   // its TTL expires. It never asks for a forced probe or changes capabilities.
+   client.hosts(abort.signal).then(r=>{
+    if(abort.signal.aborted)return;
+    setHosts(r.hosts);setHostsComplete(r.complete);setHostsPollError('');setDirectRead(r.sessionReadSupported===true);
+   }).catch(cause=>{
+    if(!abort.signal.aborted)setHostsPollError(cause instanceof Error?cause.message:'Не удалось обновить состояние машин.');
+   }).finally(()=>{if(active===abort)active=undefined;});
+  };
+  const onVisibility=()=>{
+   if(document.visibilityState==='visible')poll();
+   else{active?.abort();active=undefined;}
+  };
+  const timer=window.setInterval(poll,30000);
+  document.addEventListener('visibilitychange',onVisibility);
+  return()=>{window.clearInterval(timer);document.removeEventListener('visibilitychange',onVisibility);active?.abort();};
+ },[client,creationMode,loaded]);
  useEffect(()=>{if(!loaded)return;const abort=new AbortController();client.sessions(hostId||undefined,abort.signal).then(r=>{if(abort.signal.aborted)return;setSessionSnapshot({hostId,sessions:r.sessions,complete:r.complete&&!r.limited,stale:false,hasPrevious:true});}).catch(()=>{if(!abort.signal.aborted){setSessionSnapshot(previous=>failedSessionSnapshot(previous,hostId));setError('Не удалось прочитать сессии этой машины');}});return()=>abort.abort();},[client,hostId,loaded,refresh]);
  const selected=hosts.find(h=>h.hostId===hostId);
  const allowed=selected?.createHarnesses??[];
@@ -78,7 +101,7 @@ export function FleetCabinet({creationMode=false,defaultHostId,onSelectedHostCha
   {creationMode&&selected&&<p className="fleet-creation-target"><strong>{machineName(selected)} · {machineStatus(selected)}</strong><small>{machineReason(selected)}</small></p>}
   <details className="fleet-machine-choice" open={!creationMode||!selected}><summary>{creationMode?"Изменить машину":"Выбор машины"}</summary><fieldset className="fleet-machine-picker"><legend>Машина</legend><div className="fleet-hosts"><label className={`fleet-machine-option ${!hostId?'selected':''}`}><input type="radio" name="fleet-machine" value="" checked={!hostId} disabled={loading||sending} onChange={()=>{setHostId('');onSelectedHostChange?.('');if(receipt?.state!=='unknown')setReceipt(null);}}/><span><strong>Все машины</strong><small>Общий список сессий</small></span></label>{hosts.map(h=><label key={h.hostId} className={`fleet-machine-option ${hostId===h.hostId?'selected':''}`}><input type="radio" name="fleet-machine" value={h.hostId} checked={hostId===h.hostId} disabled={loading||sending} onChange={()=>{setHostId(h.hostId);onSelectedHostChange?.(h.hostId);if(receipt?.state!=='unknown')setReceipt(null);}}/><span><strong>{machineName(h)}</strong><span className={`machine-status ${h.state}`}>{machineStatus(h)}</span><small>{machineReason(h)}</small></span></label>)}</div></fieldset></details>
   {!creationMode&&selected?.uiUrl&&<a className="fleet-native-link" href={selected.uiUrl}>Открыть отдельный кабинет · {machineName(selected)} ↗</a>}
-  {error&&<p role="alert">{error}</p>}{!creationMode&&sessionSnapshot?.hostId===hostId&&sessionSnapshot.stale&&sessionSnapshot.hasPrevious&&<p role="status">Показан последний успешно полученный список; обновить его пока не удалось.</p>}{!creationMode&&partial&&!sessionSnapshot?.stale&&<p>Показан неполный список сессий. Состояние подключения указано на карточках машин.</p>}
+  {error&&<p role="alert">{error}</p>}{hostsPollError&&<p role="alert">{hostsPollError} Показано последнее полученное состояние.</p>}{!loading&&hostsComplete===false&&<p role="status">Не все машины подтвердили связь. Кабинет обновляет состояние каждые 30 секунд, пока открыт; у каждой машины указана её последняя причина.</p>}{!creationMode&&sessionSnapshot?.hostId===hostId&&sessionSnapshot.stale&&sessionSnapshot.hasPrevious&&<p role="status">Показан последний успешно полученный список; обновить его пока не удалось.</p>}{!creationMode&&partial&&!sessionSnapshot?.stale&&<p>Показан неполный список сессий. Состояние подключения указано на карточках машин.</p>}
   <section ref={sessionsElement} tabIndex={-1} className="fleet-session-list" aria-label="Список сессий" hidden={creationMode}><h3>Сессии</h3><ul className="fleet-sessions" hidden={creationMode}>{sessions.map(s=>{const host=hosts.find(h=>h.hostId===s.address.hostId);const link=host&&fleetSessionLink(host,s.address);const working=activity.get(`${s.address.hostId.toLowerCase()}|${s.address.harness}|${s.address.nativeSessionId}`);const goal=working?activeGoal(working):'';return <li key={s.key}><strong>{s.title||s.address.nativeSessionId}</strong><span>{host?.label??s.address.hostId} · {s.address.harness} · {working?'Выполняет задачу':fleetSessionStatus(s.status)}</span>{goal&&<small>Цель: {goal}</small>}<span>Текущий проект: {s.project.currentCwd??'не подтверждён'}</span>{s.project.launchCwd&&<small>Каталог запуска: {s.project.launchCwd}</small>}{directRead?<button type="button" onClick={()=>inspect(s.address)}>Открыть сессию</button>:onSelectSession?<button type="button" onClick={()=>onSelectSession(s)}>Открыть сессию</button>:link&&<a href={link}>Открыть сессию</a>}</li>;})}</ul></section>
   {reading&&<p role="status">Читаю сессию выбранной машины…</p>}
   {view&&<article ref={viewElement} tabIndex={-1} className="fleet-session-view" aria-label="Сессия выбранной машины"><h3>{view.title}</h3><p>{hosts.find(h=>h.hostId===view.address.hostId)?.label??view.address.hostId} · {view.address.harness} · {view.model}</p><p>{view.cwd}</p>{view.historyUnavailable?<p>История этой нативной сессии пока недоступна. Сессия подтверждена; сообщения не отправлялись повторно.</p>:view.messages.length?view.messages.map((m,i)=><div key={i}><strong>{m.role==='user'?'Вы':m.role==='assistant'?'Агент':'Сообщение'}</strong><pre>{m.text??''}</pre></div>):<p>Сессия пока пустая.</p>}<button type="button" onClick={()=>setView(null)}>Закрыть просмотр</button></article>}

@@ -51,7 +51,18 @@ export function createFleetApiHandler(resolve:FleetCabinetService|((request:Inco
     const receipt=await service.create(parsed.data);send(receipt.state==='created'?201:receipt.state==='unknown'?202:409,receipt);return true;
    }
    send(405,{error:'Метод не поддерживается'});
-  }catch{send(400,{error:'Не удалось выполнить запрос кабинета. Проверьте параметры и состояние хоста.'});}
+  }catch(error){
+   const code=error instanceof Error?error.message:'';
+   const reason=/^(?:fleet|gptadmin|rust_core)_[a-z0-9_]+$/.test(code)||['native_owner_identity_mismatch','native_snapshot_identity_mismatch'].includes(code)?code:'fleet_request_failed';
+   const message=reason==='gptadmin_deadline'||reason==='fleet_read_deadline'
+    ?'Узел не ответил вовремя. Последний полученный список сохранён; попробуйте обновить связь.'
+    :reason==='native_owner_identity_mismatch'||reason==='native_snapshot_identity_mismatch'||reason==='rust_core_route_unverified'
+     ?'Не удалось подтвердить, что ответ получен от выбранной машины.'
+     :reason==='fleet_registry_invalid'||reason==='fleet_request_failed'
+      ?'Не удалось получить корректный ответ кабинета флота. Проверьте подключение и повторите запрос.'
+      :'Запрос к кабинету флота не выполнен. Проверьте состояние подключения и повторите чтение.';
+   send(url.pathname==='/api/fleet/hosts'&&request.method==='GET'?502:400,{error:message,reason});
+  }
   return true;
  };
 }

@@ -1,7 +1,9 @@
 import * as React from "react";
 
 type NavigationProps = {
-  active: "chat" | "jobs" | "statistics" | "machines" | "search" | "projects";
+  active: "chat" | "jobs" | "statistics" | "machines" | "search" | "projects" | "settings";
+  chatsOpen: boolean;
+  onSettings: () => void;
   onChat: () => void;
   onNew: () => void;
   onJobs: () => void;
@@ -19,6 +21,7 @@ const paths = {
   machines: "M3 4h18v12H3ZM8 21h8M12 16v5",
   search: "M10.5 3a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15ZM16 16l5 5",
   projects: "M3 6h7v6H3ZM14 6h7v6h-7ZM3 16h7v4H3ZM14 16h7v4h-7Z",
+  settings: "M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6",
 };
 
 export function CodexNavigation(props: NavigationProps) {
@@ -28,11 +31,12 @@ export function CodexNavigation(props: NavigationProps) {
     { id: "projects", label: "Проекты", action: props.onProjects },
     { id: "machines", label: "Машины", action: props.onMachines },
     { id: "search", label: "Поиск", action: props.onSearch },
-    { id: "jobs", label: "Задачи", action: props.onJobs },
+    { id: "jobs", label: "Операции", action: props.onJobs },
     { id: "statistics", label: "Статистика", action: props.onStatistics },
+    { id: "settings", label: "Настройки", action: props.onSettings },
   ] as const;
   return <nav className="codex-navigation" aria-label="Основная навигация">
-    <div className="codex-navigation-items">{items.map((item) => <button key={item.id} type="button" title={item.label} aria-label={item.label} aria-pressed={item.id === props.active} className={item.id === props.active ? "active" : ""} onClick={item.action}><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={paths[item.id]} /></svg><span className="nav-label">{item.label}</span></button>)}</div>
+    <div className="codex-navigation-items">{items.map((item) => <button key={item.id} type="button" title={item.label} aria-label={item.label} aria-controls={item.id === "chat" ? "herder-chat-list" : undefined} aria-expanded={item.id === "chat" ? props.chatsOpen : undefined} aria-pressed={item.id === "chat" ? props.active === "chat" && props.chatsOpen : item.id === props.active} className={(item.id === "chat" ? props.active === "chat" && props.chatsOpen : item.id === props.active) ? "active" : ""} onClick={item.action}><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={paths[item.id]} /></svg><span className="nav-label">{item.label}</span></button>)}</div>
     <span className="codex-navigation-mark" title="Agent Herder">AH</span>
   </nav>;
 }

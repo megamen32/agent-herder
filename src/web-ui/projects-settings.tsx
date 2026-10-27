@@ -939,6 +939,7 @@ export function ProjectModelPolicyEditor({
   onChange: (next: ProjectLaunchRoute) => void;
 }) {
   const catalog = useHarnessModelCatalog(route.harnesses);
+  const [allowSelectedNotice, setAllowSelectedNotice] = React.useState("");
   const suggestions = [...new Set(route.harnesses.flatMap((harness) => [
     ...(catalog[harness] ?? []),
     ...(modelOptions[harness] ?? []),
@@ -1001,6 +1002,8 @@ export function ProjectModelPolicyEditor({
             })
             : undefined;
           const violation = routeModelViolation(route, effective);
+          const selectedDenied = deniedModels.some((entry) => modelMatchesEntry(effective, entry));
+          const selectedAllowed = allowedModels.some((entry) => modelMatchesEntry(effective, entry));
           const check = checks?.find((item) => item.harness === harness);
           const answer = catalog[harness];
           const list = answer ?? [];
@@ -1054,6 +1057,14 @@ export function ProjectModelPolicyEditor({
             {check?.state === "unconfirmed" && !label && <span className="projects-model-warn" role="status">{check.reason}.</span>}
             {verdict.kind === "closed" && <span className="projects-model-warn" role="status">{verdict.detail}</span>}
             {(verdict.kind === "unverified" || verdict.kind === "refused") && <span className="projects-model-warn" role="status">{verdict.detail}</span>}
+            {effective && allowedModels.length > 0 && !selectedAllowed && !selectedDenied && <span className="projects-model-actions">
+              <button type="button" aria-label={`Добавить выбранную модель ${effective} в разрешённые для проекта ${project}`}
+                disabled={disabled} onClick={() => {
+                  onChange(updateProjectRouteModelList(route, "allowedModels", effective));
+                  setAllowSelectedNotice(`В разрешённые модели проекта добавлен точный id ${effective}. Выбранный маршрут не изменён.`);
+                }}>Разрешить выбранную модель</button>
+              <small>Это меняет только список разрешённых моделей проекта. Неподтверждённый маршрут по-прежнему требует отдельной проверки.</small>
+            </span>}
             {working && working !== effective && (!restricted || leafVerdicts !== undefined) && <span className="projects-model-actions">
               <button type="button" aria-label={`Поставить рабочую модель ${working} для среды ${labelFor(harness, runtimes)} в проекте ${project}`}
                 disabled={disabled} onClick={() => onChange(setRouteModel(route, harness, working))}>Поставить рабочую модель</button>
@@ -1062,6 +1073,7 @@ export function ProjectModelPolicyEditor({
         })}
         {route.harnesses.length === 0 && <li className="projects-model-empty" aria-hidden="true">В маршруте нет ни одной среды.</li>}
       </ul>
+      {allowSelectedNotice && <p className="projects-model-notice" role="status">{allowSelectedNotice}</p>}
     </div>
   </fieldset>;
 }
@@ -1254,6 +1266,7 @@ export function BlockedModelNotice({
   confirmed,
   leafVerdicts,
   onSetModel,
+  onAllowModel,
   onOpenModels,
 }: {
   project: string;
@@ -1262,6 +1275,7 @@ export function BlockedModelNotice({
   /** The verdict of the server about the routes of this project. */
   leafVerdicts?: Record<string, LeafVerdictEntry>;
   onSetModel: (model: string) => void;
+  onAllowModel: () => void;
   onOpenModels: () => void;
 }) {
   const [routeOpen, setRouteOpen] = React.useState(false);
@@ -1273,7 +1287,7 @@ export function BlockedModelNotice({
       : verdict.kind === "notAllowed"
         ? `Модель ${check.model} не разрешена в проекте — запуск на ней не пройдёт`
         : verdict.kind === "unverified"
-            ? `Маршрут ${check.model} не верифицирован — запуск будет отозван`
+            ? `Сервер пока не подтвердил маршрут ${check.model}`
             : verdict.kind === "refused"
               ? `Маршрут ${check.model} отклонён правилом владельца — запуск не пройдёт`
               : `Модель ${check.model} среда не подтверждает — запуск на ней не пройдёт`;
@@ -1285,17 +1299,21 @@ export function BlockedModelNotice({
       <div><dt>Модель</dt><dd><code>{check.model}</code><small>{modelRouteTitle(check.model)}</small></dd></div>
       <div><dt>Проект</dt><dd>{project}</dd></div>
       <div><dt>Причина</dt><dd>{check.reason}</dd></div>
-      <div><dt>Что делать</dt><dd>{check.action || "Откройте Модели проекта и поставьте модель, которую среда подтверждает."}</dd></div>
+      <div><dt>Что делать</dt><dd>{verdict.kind === "unverified" ? "Модель уже прошла проверку списка разрешений проекта. Сервер не смог определить полный состав маршрута. Разрешение модели повторно не требуется: нужна проверка соединения и состава комбо. Выбранная модель не изменена." : check.action || "Откройте Модели проекта и проверьте выбранную модель."}</dd></div>
     </dl>
     <div className="projects-blocked-actions">
-      {working && <button type="button" className="primary-button"
+      {verdict.kind === "notAllowed" && <button type="button" className="primary-button"
+        aria-label={`Разрешить выбранную модель ${check.model} в проекте ${project}`}
+        onClick={onAllowModel}>Разрешить выбранную модель</button>}
+      {working && <button type="button" className="quiet-button"
         aria-label={`Поставить рабочую модель ${working} в проекте ${project}`}
-        onClick={() => onSetModel(working)}>Поставить рабочую модель</button>}
+        onClick={() => onSetModel(working)}>Выбрать другую модель</button>}
       <button type="button" className="quiet-button" onClick={onOpenModels}>Открыть Модели проекта</button>
       <button type="button" className="quiet-button" aria-expanded={routeOpen}
         onClick={() => setRouteOpen((value) => !value)}>Показать подтверждённый маршрут</button>
     </div>
-    {working && <p className="projects-blocked-hint">Рабочая модель этой среды: <code>{working}</code>. Кнопка запишет её в маршрут проекта — больше ничего менять не нужно.</p>}
+    {verdict.kind === "notAllowed" && <p className="projects-blocked-hint">Кнопка добавит точный id <code>{check.model}</code> в форму разрешённых моделей проекта. Затем сохраните изменения. Выбранный маршрут не изменится; проверка среды остаётся отдельным условием.</p>}
+    {working && <p className="projects-blocked-hint">Альтернативная подтверждённая модель: <code>{working}</code>. Её выбор изменит модель в форме проекта; изменение применяется после сохранения.</p>}
     {routeOpen && <div className="projects-blocked-route">
       <p>Среда подтверждает эти модели:</p>
       {confirmed.length === 0
@@ -1434,6 +1452,12 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
           const next = setRouteModel(route, harness, model);
           setRoutes({ ...(policy.projectRoutes ?? {}), [project]: next });
           setOpenCards((current) => ({ ...current, [project]: true }));
+        }}
+        onAllowModel={() => {
+          const next = updateProjectRouteModelList(route, "allowedModels", blocked.model);
+          setRoutes({ ...(policy.projectRoutes ?? {}), [project]: next });
+          setOpenCards((current) => ({ ...current, [project]: true }));
+          setScrollTo(project);
         }}
         onOpenModels={() => {
           setOpenCards((current) => ({ ...current, [project]: true }));

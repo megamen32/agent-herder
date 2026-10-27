@@ -13,8 +13,14 @@ export interface FleetClient {
 export function createFleetClient(base='/api/fleet'):FleetClient{
  const read=async<T>(path:string,init?:RequestInit):Promise<T>=>{
   const response=await fetch(base+path,{credentials:'same-origin',cache:'no-store',...init});
-  if(!response.ok&&![202,409].includes(response.status))throw new Error('Кабинет временно недоступен');
-  return response.json() as Promise<T>;
+  let value:T & {error?:unknown;message?:unknown};
+  try{value=await response.json() as T & {error?:unknown;message?:unknown};}
+  catch{throw new Error('Сервер кабинета вернул некорректный ответ. Повторите чтение позже.');}
+  if(!response.ok&&![202,409].includes(response.status)){
+   const message=typeof value?.error==='string'?value.error:typeof value?.message==='string'?value.message:'Кабинет временно недоступен';
+   throw new Error(message);
+  }
+  return value;
  };
  return {control:(address,control)=>remoteSessionRequest(base,address,control),inventory:(cursors,signal,hostId)=>read('/inventory?'+new URLSearchParams({...cursors?{cursors:JSON.stringify(cursors)}:{},...hostId?{hostId}:{}}),{signal}),session:(a,signal)=>read('/session?'+new URLSearchParams({hostId:a.hostId,harness:a.harness,sessionId:a.nativeSessionId}),{signal}),hosts:(signal,refresh)=>read('/hosts'+(refresh?'?refresh=1':''),{signal}),sessions:(hostId,signal)=>read('/sessions'+(hostId?'?hostId='+encodeURIComponent(hostId):''),{signal}),create:request=>read('/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)})};
 }

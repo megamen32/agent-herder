@@ -138,7 +138,7 @@ function diskCachePath(days: number): string {
 async function readDiskCache(days: number): Promise<AgentActivityStatistics | null> {
   try {
     const parsed = JSON.parse(await readFile(diskCachePath(days), "utf8")) as AgentActivityStatistics;
-    return parsed?.schemaVersion === 2 && parsed?.windowDays === days && typeof parsed?.generatedAt === "string" && Boolean(parsed?.codexDeep)&&Boolean(parsed?.deep)&&Array.isArray(parsed?.byHarness) ? parsed : null;
+    return (parsed as AgentActivityStatistics & { computationVersion?: number })?.computationVersion === 3 && parsed?.schemaVersion === 2 && parsed?.windowDays === days && typeof parsed?.generatedAt === "string" && Boolean(parsed?.codexDeep)&&Boolean(parsed?.deep)&&Array.isArray(parsed?.byHarness) ? parsed : null;
   } catch { return null; }
 }
 
@@ -146,7 +146,7 @@ async function writeDiskCache(days: number, value: AgentActivityStatistics): Pro
   const path = diskCachePath(days);
   await mkdir(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.tmp`;
-  await writeFile(tmp, JSON.stringify(value) + "\n", { mode: 0o600 });
+  await writeFile(tmp, JSON.stringify({ ...value, computationVersion: 3 }) + "\n", { mode: 0o600 });
   await rename(tmp, path);
 }
 
