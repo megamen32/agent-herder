@@ -15,21 +15,83 @@ provider/model fallback. Ordinary nonincident routes are outside this change.
   reject alternative routes or pass an empty fallback list.
 - Five focused test files: 53/53 passed; `npx tsc --noEmit` passed; scoped
   diff check passed. No incident producer event or native session was launched.
-- Live Herder process still runs immutable candidate release `5541688` through
-  the user `agent-herder.service` drop-in. Current live policy
-  `incidentExecution` still says `opencode/omniroute/minimax-combo-m3.1`; no
-  policy write has been attempted against that old validator.
-- The existing release builder creates a new Git worktree for a requested
-  commit. Project AGENTS.md requires explicit authorization for the specific
-  new worktree; approval requested for
-  `.worktrees/herder-fleet-candidate-e74c6e6` and remains pending.
+- Follow-up `aab06c81f763ef056d240f0ac0641ea6fbe6f5c7` fixes the repair
+  normalizer boundary too. Focused regression tests: 34 passed.
+- Canonical main build used the existing pinned-canonical-checkout manifest
+  contract and release assembly/check helpers, without creating a Git worktree
+  or another source checkout. All 14 package checks passed. Immutable release:
+  `/home/roomhacker/agents-projects/.notice-herder-release-20261027/releases/aab06c81f763ef056d240f0ac0641ea6fbe6f5c7`.
+  Bundle fingerprint: `870b84f628422a785d9ec90fdc56db4c3332b0426fcfdfe378ee90f935ffccb5`.
+- User `agent-herder.service` runs that release. Independent `/proc` readback
+  confirms its entrypoint; initial activation was 03:00:58 MSK on 27 October.
+- GET/If-Match PUT changed incidentExecution and the NoticePlace/isolated QA
+  project routes only. ETag `bb1b2b19bb53132eb348fbb988d03680` independently
+  reads back OpenCode, minimax-coding-plan, MiniMax-M3.1-Flash, no incident
+  fallback. Four existing project routes and general fallback policy preserved.
+- The first isolated native admission exposed stale Herder auth: old protected
+  credential returned 401, effective native credential returned JSON 200.
+  Copied only OPENCODE_SERVER_PASSWORD into Herder's own protected env and
+  restarted only Herder: PID 1001543, 03:15:10 MSK. Native OpenCode was not
+  restarted. Independent authenticated API check now returns JSON 200;
+  incident policy ETag stayed unchanged. Protected backup retained privately.
 
 ## Next owned action
 
-After the worktree decision, build and verify an immutable Herder release from
-`e74c6e6`, switch the one live user unit in a controlled restart, then use the
-existing `GET` + `If-Match` `PUT /api/automation/launch-policy` to change only
-`incidentExecution` and the Notice Place project route. Read back source SHA,
-runtime PID, exact policy ETag/route and safe rejection of OmniRoute. Do not
-send a synthetic incident from a production service. Full incident E2E needs
-an isolated source/service/verifier fixture owned by Notice Place.
+Complete the existing isolated incident `inc_076f5b7158de468bb5c2422b1a469c62`.
+Its SQLite, credentials, callback, Herder state, loopback service and verifier
+are isolated under `.tmp/notice-direct-20261027/isolated-control`. No production
+producer event was sent; no communication adapter is constructed. Scripts in
+the sibling task directory reproduce this bounded deployment. Preserve all
+admission receipts. The initial request was durably pre-admission rejected,
+created=false, delivery=not_attempted; its attempt log remains intact. The
+single post-auth correction admission has a separate QA attempt journal, and
+its existence blocks another retry. Accepted/UNKNOWN operations never replay.
+
+This canary exercises the real NoticePlace worker/helper and installed Herder
+artifact/native adapter. Its isolated helper runs locally, so it does not
+prove the separate production GPTAdmin webhook transport. Existing accepted
+desktop/mobile QA toggles and their receipts remain unchanged.
+
+## Installed result and exact external blocker
+
+The existing isolated incident admitted exactly one native executor:
+`ses_e85485447ffe94LLLhs1MabFaC`, operation
+`f05cfddfb825e9ebcb6e0b384bec6c37`, accepted at
+`2026-10-27T00:17:01.861Z`. Native receipt confirms provider
+`minimax-coding-plan`, model `MiniMax-M3.1-Flash`; autopilot arming succeeded.
+Generation then failed with provider HTTP 402, `insufficient balance (1008)`,
+request ID `072f207eb2a6dd0a767a47d0c8e3beb8`. No tools or source repair ran;
+the independent source verifier did not report healthy and did not resolve
+the incident. This is NOT successful repair acceptance.
+
+Read-only route investigation after that failure:
+
+- Live native `/api/provider` and `/api/model` report the canonical provider,
+  package `@opencode/ai/providers/minimax/messages`, Base URL
+  `https://api.minimax.io/anthropic/v1`. This matches the official MiniMax
+  OpenCode instructions: https://platform.minimax.io/docs/m-plan/opencode .
+- Read-only native SQLite `credential` lookup finds exactly one credential
+  for that integration, type `key`, subscription-key class. It matches the
+  legacy native auth store. No value or digest was printed or copied.
+- Read-only GET `https://www.minimax.io/v1/token_plan/remains` authenticated
+  with that exact native credential returns HTTP 200 with MiniMax code 2062,
+  `no active token plan subscription`, `model_remains:null`.
+- Therefore the external blocker is absence of an active plan for the
+  selected subscription credential, not proven quota exhaustion or a paid
+  API route substitution. No balance top-up, route change, fallback or further
+  generation attempt was made. Root does not manage the provider account.
+
+Private evidence: `.tmp/notice-direct-20261027/isolated-control/` contains
+`native-admission.json`, `native-messages.json`, both admission journals and
+the isolated Notice SQLite. The original rejection journal is preserved.
+The QA Herder/API/source processes exited; only the exact QA autopilot binding
+was disabled using the installed store API. The failed native session and
+receipts remain available for inspection; no live Stop was called. Communication
+adapters constructed: zero; production producer events: zero.
+
+Smallest next action: provider-account owner restores the active subscription
+for the existing key. Verify the exact native credential's plan read-only
+first. Only after a successful independent route/plan readback and confirmed
+isolated contacts may one explicitly bounded canary continuation be considered;
+never replay the previously accepted operation. Until then the installed
+runtime/policy result is complete, repair business acceptance remains blocked.
