@@ -26,6 +26,7 @@ import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopil
 import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "./autopilot/session-store.js";
 import { AutomationLaunchPolicyStore } from "./automation-launch-policy.js";
+import { resolveProjectRecoveryModels } from "./automation/project-recovery-models.js";
 import { AutomationDisarmStore, automationDisarmDecisionWithWork, sessionWorkKey } from "./automation-disarm/index.js";
 import { IntegratorSessionBindingStore } from "./integrator-session-binding.js";
 import { IntegratorFleetRuntime } from "./integrator-fleet-runtime.js";
@@ -1004,9 +1005,11 @@ async function main() {
     adapters,
     store: unfinishedSessionStore,
     settingsStore: sessionAutostartStore,
-    fallbackModelsForHarness: async (harness) => {
+    fallbackModelsForHarness: async (harness, session) => {
       const loaded = await automationLaunchPolicyStore.load();
-      return loaded.kind === "valid" ? loaded.policy.fallbackModels?.[harness] ?? [] : [];
+      return loaded.kind === "valid" && session?.cwd
+        ? resolveProjectRecoveryModels(loaded.policy, harness, session.cwd)
+        : [];
     },
     autopilotPolicyStore,
     autopilotSessionStore,

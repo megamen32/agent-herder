@@ -29,7 +29,8 @@ import { deferredMessages, isBusyCodexWriter, type DeferredMessageStore } from "
 import { effectivePolicyAllowsTarget, type EffectivePolicy } from "./policy.js";
 import type { AutopilotPolicyStore } from "./policy-store.js";
 import type { AutopilotSessionStore } from "./session-store.js";
-import { AutomationLaunchPolicyStore, findProjectRoute, operatorCohortRecoveryAllowed } from "../automation-launch-policy.js";
+import { AutomationLaunchPolicyStore, findGoverningProjectRoute, operatorCohortRecoveryAllowed } from "../automation-launch-policy.js";
+import { projectRecoveryModelAllowed, resolveProjectRecoveryModels } from "../automation/project-recovery-models.js";
 import { resolveAutopilotStateDir } from "./state-dir.js";
 import { automationDisarmDecision, sessionWorkKey, AutomationDisarmStore } from "../automation-disarm/index.js";
 
@@ -2295,7 +2296,7 @@ export interface UnfinishedSessionLauncherOptions {
   store: UnfinishedSessionStore;
   settingsStore: SessionAutostartStore;
   probeRecoveryQuota?: (modelId: string) => Promise<RecoveryModelQuota>;
-  fallbackModelsForHarness?: (harness: "opencode" | "zcode") => Promise<string[]>;
+  fallbackModelsForHarness?: (harness: "opencode" | "zcode", session?: { cwd: string }) => Promise<string[]>;
   /** Existing project launch policy is the authority for operator-cohort model admission. */
   projectLaunchPolicyStore?: Pick<AutomationLaunchPolicyStore, "load">;
   /** Read-only OpenCode session/active/permission/Inbox/transcript CAS snapshot for explicit operator continuations. */
@@ -2575,7 +2576,7 @@ export class UnfinishedSessionLauncher {
           || await this.suppressIfHumanStopped(provider, event.sessionId, session.cwd, session)) return;
         const effective = await this.options.settingsStore.getEffective(provider, session.id, session.cwd);
         if ((!effective.waitForQuota && !effective.fallbackForQuota) || await this.pendingQuestionBlocks(provider, session.id, session.cwd)) return;
-        const fallbackModels = effective.fallbackForQuota && provider !== "codex" ? await this.options.fallbackModelsForHarness?.(provider as "opencode" | "zcode") ?? [] : [];
+        const fallbackModels = effective.fallbackForQuota && provider !== "codex" ? await this.options.fallbackModelsForHarness?.(provider as "opencode" | "zcode", session) ?? [] : [];
         if (!effective.waitForQuota && !fallbackModels.length) return;
         await this.options.store.markQuotaRecoveryEligible(session, quotaEvidence, fallbackModels, this.generationId, new Date(), effective.waitForQuota);
         this.queueUrgentSession(sessionSourceKey(session));
@@ -2769,7 +2770,7 @@ export class UnfinishedSessionLauncher {
     if (!await this.admissionAllowed(session, "resume")) {
       return ineligible("session_recovery_not_admitted");
     }
-    const fallbackModels = await this.options.fallbackModelsForHarness("opencode");
+    const fallbackModels = await this.options.fallbackModelsForHarness("opencode", session);
     const candidates = operatorFallbackCandidates(fallbackModels, [expected.modelId, session.model ?? ""]);
     if (!candidates.length) return ineligible("no_configured_fallback_models");
     let admittedModel = false;
@@ -2849,7 +2850,7 @@ export class UnfinishedSessionLauncher {
       || nativeSnapshot.latestUserMessageId !== priorNativeInputMessageId
       || nativeSnapshot.latestUserInputId !== priorDispatchInputId
       || !nativeSnapshot.latestTerminalEventId || !nativeSnapshot.snapshotToken) return ineligible("native_operator_snapshot_not_safe");
-    const fallbackModels = await this.options.fallbackModelsForHarness("opencode");
+    const fallbackModels = await this.options.fallbackModelsForHarness("opencode", session);
     const candidates = operatorContinuationModelCandidates(fallbackModels, nativeSnapshot.modelId);
     if (!candidates.length) return ineligible("current_model_not_explicitly_configured_for_continuation");
     const [listedModels, projectAllowed] = await Promise.all([
@@ -3427,7 +3428,7 @@ export class UnfinishedSessionLauncher {
         const evidence = nativeLastTurn(fresh)?.quotaFailure;
         if (!evidence || !quotaModelId(evidence) || !exactTerminalQuotaSnapshot(fresh, evidence) || fresh?.needsPermission
           || fresh?.status === "needs_input" || await this.suppressIfHumanStopped(harness, listed.id, listed.cwd, fresh)) continue;
-        const fallbacks = effective.fallbackForQuota && harness !== "codex" ? await this.options.fallbackModelsForHarness?.(harness) ?? [] : [];
+        const fallbacks = effective.fallbackForQuota && harness !== "codex" ? await this.options.fallbackModelsForHarness?.(harness, fresh!) ?? [] : [];
         if (!effective.waitForQuota && !fallbacks.length) continue;
         await this.options.store.markQuotaRecoveryEligible(fresh!, evidence, fallbacks, this.generationId, new Date(), effective.waitForQuota);
       }
@@ -3542,13 +3543,16 @@ export class UnfinishedSessionLauncher {
     if (!await this.admissionAllowed(session, "resume")) return;
     const models = await adapter.listModels();
     const selectedModel = quota.candidateModels[quota.candidateIndex]!;
-    const modelAllowed = async () => {
-      const fallbacks = harness !== "codex" ? await this.options.fallbackModelsForHarness?.(harness) ?? [] : [];
+    const modelAllowed = async (currentSession: AgentSession) => {
+      // The original model used by wait-for-quota is not in the fallback list,
+      // so apply project policy independently before either candidate branch.
+      if (harness !== "codex" && !await this.recoveryProjectModelAllowed(currentSession, selectedModel)) return false;
+      const fallbacks = harness !== "codex" ? await this.options.fallbackModelsForHarness?.(harness, currentSession) ?? [] : [];
       const effective = await this.options.settingsStore.getEffective(harness, snapshot.sessionId, snapshot.workspaceIdentity || snapshot.cwd);
       return (operatorIntent || effective.fallbackForQuota) && fallbacks.includes(selectedModel)
         || !operatorIntent && effective.waitForQuota && selectedModel === recoveryEvidenceModelId(quota.evidence);
     };
-    if (!await modelAllowed() || !models.includes(selectedModel)
+    if (!await modelAllowed(session) || !models.includes(selectedModel)
       || operatorIntent && !await this.operatorProjectModelAllowed(session, selectedModel)) {
       await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
       return;
@@ -3628,7 +3632,7 @@ export class UnfinishedSessionLauncher {
       await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
       return;
     }
-    if (!await modelAllowed()
+    if (!await modelAllowed(verified)
       || operatorIntent && !await this.operatorProjectModelAllowed(verified, selectedModel)) {
       await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
       return;
@@ -3645,7 +3649,7 @@ export class UnfinishedSessionLauncher {
       : exactTerminalRecoverySnapshot(current, quota.evidence);
     if (!current || !await selectedModelMatches(current.model) || !currentTerminalSnapshotMatches
       || current.status === "running" || current.needsPermission
-      || !await modelAllowed()
+      || !await modelAllowed(current)
       || operatorIntent && !await this.operatorProjectModelAllowed(current, selectedModel)
       || !await enabled() || (!operatorContinuation && await this.suppressIfHumanStopped(harness, snapshot.sessionId, snapshot.cwd, current))
       || (operatorContinuation
@@ -5607,9 +5611,9 @@ export class UnfinishedSessionLauncher {
     try {
       const loaded = await this.projectLaunchPolicyStore.load();
       if (loaded.kind !== "valid") return false;
-      const route = findProjectRoute(loaded.policy, session.cwd);
+      const route = findGoverningProjectRoute(loaded.policy, session.cwd);
       if (route && (!route.harnesses.includes("opencode") || route.operatorCohortRecovery === "deny")) return false;
-      if (!loaded.policy.fallbackModels?.opencode?.includes(model)) return false;
+      if (!resolveProjectRecoveryModels(loaded.policy, "opencode", session.cwd).includes(model)) return false;
       if (!isCodexClaudeRestrictedCohortProject(session.cwd)) {
         return operatorCohortRecoveryAllowed(loaded.policy, session.cwd);
       }
@@ -5619,6 +5623,18 @@ export class UnfinishedSessionLauncher {
       if (!adapter?.resolveModelProviderLeaves) return false;
       const resolved = await adapter.resolveModelProviderLeaves(model);
       return isAllowedRestrictedProviderResolution(resolved, model);
+    } catch {
+      return false;
+    }
+  }
+
+  private async recoveryProjectModelAllowed(session: AgentSession, model: string): Promise<boolean> {
+    if (session.harness === "codex") return true;
+    if (session.harness !== "opencode" && session.harness !== "zcode") return false;
+    try {
+      const loaded = await this.projectLaunchPolicyStore.load();
+      return loaded.kind === "valid"
+        && projectRecoveryModelAllowed(loaded.policy, session.harness, session.cwd, model);
     } catch {
       return false;
     }

@@ -33,6 +33,19 @@ export function quotaRecoveryMode(wait: boolean, fallback: boolean): QuotaRecove
 export function quotaRecoveryModeFlags(mode: QuotaRecoveryMode) {
   return { waitForQuota: mode === "wait" || mode === "fallback-then-wait", fallbackForQuota: mode === "fallback" || mode === "fallback-then-wait" };
 }
+
+function ModelSwitchToggle({ setting, label, disabled, onChange }: {
+  setting: WaitForQuotaSettings;
+  label: string;
+  disabled: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  return <label className="runtime-toggle-setting">
+    <span><strong>Автопереключение моделей</strong><small>При исчерпании квоты — следующая разрешённая модель по приоритету проекта. Сессия и история сохраняются.</small></span>
+    <input type="checkbox" role="switch" aria-label={label} checked={setting.fallbackForQuota === true}
+      disabled={disabled} onChange={event => onChange(event.target.checked)} />
+  </label>;
+}
 function modeOptions(codex = false) {
   return <><option value="off">Выключено</option>{!codex && <option value="fallback">Переключиться на запасную модель</option>}<option value="wait">Ждать квоту исходной модели</option>{!codex && <option value="fallback-then-wait">Запасные модели, затем ждать исходную</option>}</>;
 }
@@ -269,6 +282,8 @@ export function QuotaRecoveryControls({ session }: { session?: QuotaRecoverySess
       <legend>Восстановление после квоты</legend>
       <p className="settings-help">{UNKNOWN_QUOTA_HELP}</p>
       {setting && <>
+        {session.harness !== "codex" && <ModelSwitchToggle setting={setting} label="Автопереключение моделей текущей сессии" disabled={Boolean(saving)}
+          onChange={enabled => void save({ kind: "session", session }, "session", setting.waitForQuota, enabled)} />}
         <label className="launch-policy-field"><span>Поведение при исчерпании квоты</span>
           <select aria-label="Политика квоты для текущей сессии" disabled={Boolean(saving)}
             value={quotaRecoveryMode(setting.waitForQuota, session.harness === "codex" ? false : setting.fallbackForQuota === true)}
@@ -298,6 +313,9 @@ export function QuotaRecoveryControls({ session }: { session?: QuotaRecoverySess
     <legend>Восстановление после квоты</legend>
     <p className="settings-help">{UNKNOWN_QUOTA_HELP}</p>
     <p className="settings-help">Политики действуют независимо от общего автопродолжения. Сохранённый список запасных моделей сам по себе не включает переключение. Выключение сохраняет его порядок.</p>
+    <p className="settings-help">Приоритеты меняются в настройках проекта, в разделе «Приоритет моделей при исчерпании квоты». Проекты без своего порядка наследуют общий список.</p>
+    {globalSetting && <ModelSwitchToggle setting={globalSetting} label="Автопереключение моделей по умолчанию" disabled={Boolean(saving)}
+      onChange={enabled => void save({ kind: "global" }, "global", globalSetting.waitForQuota, enabled)} />}
     {globalSetting && <label className="runtime-toggle-setting timeout-setting">
       <span><strong>Разрешить ожидание после квоты по умолчанию</strong><small>По умолчанию выключено. Настройки среды и отдельной сессии имеют приоритет.</small></span>
       <input type="checkbox" role="switch" aria-label="Ожидание квоты по умолчанию" checked={globalSetting.waitForQuota}
@@ -314,10 +332,12 @@ export function QuotaRecoveryControls({ session }: { session?: QuotaRecoverySess
       {QUOTA_RECOVERY_HARNESSES.map((harness) => {
         const setting = harnessSettings[harness];
         return <section className="harness-setting-row" key={harness} aria-label={`Ожидание квоты · ${HARNESS_LABELS[harness]}`}>
-          <div><strong>{HARNESS_LABELS[harness]}</strong><small>{setting ? `${setting.waitForQuota ? "Разрешено" : "Выключено"} · источник: ${sourceLabel(setting.waitForQuotaSource)}` : "Не загружено"}</small>
+          <div><strong>{HARNESS_LABELS[harness]}</strong><small>{setting ? `Переключение: ${setting.fallbackForQuota ? "включено" : "выключено"} · ожидание квоты: ${setting.waitForQuota ? "включено" : "выключено"}` : "Не загружено"}</small>
             {setting && (typeof setting.waitForQuotaOverride === "boolean" || typeof setting.fallbackForQuotaOverride === "boolean") && <button type="button" className="inherit-button" disabled={Boolean(saving)}
               onClick={() => void save({ kind: "harness", harness }, harness, null, null)}>Использовать общую настройку</button>}
           </div>
+          {setting && harness !== "codex" && <ModelSwitchToggle setting={setting} label={`Автопереключение моделей · ${HARNESS_LABELS[harness]}`} disabled={Boolean(saving)}
+            onChange={enabled => void save({ kind: "harness", harness }, harness, setting.waitForQuota, enabled)} />}
           <label className="launch-policy-field"><span className="sr-only">Политика квоты · {HARNESS_LABELS[harness]}</span>
             <select aria-label={`Политика квоты · ${HARNESS_LABELS[harness]}`} disabled={!setting || Boolean(saving)}
               value={setting ? quotaRecoveryMode(setting.waitForQuota, harness === "codex" ? false : setting.fallbackForQuota === true) : "off"}

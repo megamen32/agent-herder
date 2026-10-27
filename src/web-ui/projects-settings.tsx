@@ -38,6 +38,7 @@ import {
   type ModelVerdict,
 } from "./model-status.js";
 import { machineName } from "./fleet/machine-labels.js";
+import { ProjectModelPriorities } from "./project-model-priorities.js";
 
 export { BLOCKED_MODEL_ACTION, hasRestrictedProviderToken } from "./model-status.js";
 export { RESTRICTED_PROJECT_ROOTS } from "./model-status.js";
@@ -982,6 +983,8 @@ export function ProjectModelPolicyEditor({
       caption={MODEL_CONCEPT_CAPTIONS.denied}
       hint="Что никогда не запускается в проекте. Запрет сильнее разрешения: запрещённая модель не используется, даже если она указана в разрешённых."
       suggestions={suggestions} knownIds={knownIds} statusOf={statusOf} disabled={disabled} onChange={onChange} />
+    <ProjectModelPriorities project={project} route={route} policy={policy} catalog={catalog}
+      disabled={disabled} onChange={onChange} />
     {conflicts.length > 0 && <p className="autopilot-error" role="alert">{`Модель «${conflicts[0]}» указана и как разрешённая, и как запрещённая. Уберите её из одного из списков, иначе политика не сохранится.`}</p>}
     <div className="projects-field">
       <span className="projects-field-label">Эффективная модель по средам маршрута</span>

@@ -10,6 +10,8 @@ export type ProjectLaunchRoute = {
   allowedModels?: string[];
   /** Model ids this project must never run on. A denial always wins. */
   deniedModels?: string[];
+  /** Priority order for quota switching, referencing existing native models. */
+  fallbackModels?: Partial<Record<"opencode" | "zcode", string[]>>;
   /**
    * The identifier of the AI profile this project uses.
    *
@@ -24,6 +26,7 @@ export type LaunchPolicy = {
   allowedHarnesses: string[];
   preferredHarness: string;
   models: Record<string, string>;
+  fallbackModels?: Partial<Record<"opencode" | "zcode", string[]>>;
   incidentExecution?: HealthExecutionProfile;
   projectRoutes?: Record<string, ProjectLaunchRoute>;
 };
@@ -113,7 +116,10 @@ export function updateProjectRouteModel(route: ProjectLaunchRoute, harness: stri
 
 export function removeProjectRouteHarness(route: ProjectLaunchRoute, harness: string): ProjectLaunchRoute {
   const updated = updateProjectRouteModel(route, harness, "");
-  return { ...updated, harnesses: route.harnesses.filter((item) => item !== harness) };
+  const fallbackModels = { ...route.fallbackModels };
+  if (harness === "opencode" || harness === "zcode") delete fallbackModels[harness];
+  return { ...updated, harnesses: route.harnesses.filter((item) => item !== harness),
+    ...(route.fallbackModels === undefined ? {} : { fallbackModels }) };
 }
 
 /** One model list of a project route, read from the stored document. */
@@ -151,6 +157,20 @@ export function removeProjectRouteModelList(
   return { ...route, [field]: next };
 }
 
+function parseModelPriorities(value: unknown): ProjectLaunchRoute["fallbackModels"] {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Порядок моделей имеет неверный формат");
+  const result: NonNullable<ProjectLaunchRoute["fallbackModels"]> = {};
+  for (const [harness, models] of Object.entries(value)) {
+    if ((harness !== "opencode" && harness !== "zcode") || !Array.isArray(models) || models.length > 8
+      || !models.every((model) => typeof model === "string" && model.length > 0 && model.length <= 256 && !/[\u0000-\u0020\u007f]/u.test(model))) {
+      throw new Error("Порядок моделей имеет неверный формат");
+    }
+    result[harness] = [...models];
+  }
+  return result;
+}
+
 export function parseProjectRoutes(value: unknown): Record<string, ProjectLaunchRoute> {
   if (value === undefined) return {};
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Маршруты проектов должны быть объектом");
@@ -175,12 +195,14 @@ export function parseProjectRoutes(value: unknown): Record<string, ProjectLaunch
       : undefined;
     const allowedModels = parseModelList((route as { allowedModels?: unknown }).allowedModels);
     const deniedModels = parseModelList((route as { deniedModels?: unknown }).deniedModels);
+    const fallbackModels = parseModelPriorities((route as { fallbackModels?: unknown }).fallbackModels);
     routes[key] = {
       harnesses: [...new Set(route.harnesses as string[])],
       ...(models && Object.keys(models).length > 0 ? { models } : {}),
       ...(aliases && aliases.length > 0 ? { aliases } : {}),
       ...(allowedModels ? { allowedModels } : {}),
       ...(deniedModels ? { deniedModels } : {}),
+      ...(fallbackModels === undefined ? {} : { fallbackModels }),
     };
   }
   return routes;
@@ -202,6 +224,7 @@ export function parseLaunchPolicy(value: unknown): LaunchPolicy {
     allowedHarnesses: [...new Set(candidate.allowedHarnesses as string[])],
     preferredHarness: candidate.preferredHarness,
     models,
+    ...(candidate.fallbackModels === undefined ? {} : { fallbackModels: parseModelPriorities(candidate.fallbackModels) }),
     ...(candidate.incidentExecution === undefined ? {} : { incidentExecution: normalizeIncidentExecution(candidate.incidentExecution) }),
     ...(candidate.projectRoutes === undefined ? {} : { projectRoutes: parseProjectRoutes(candidate.projectRoutes) }),
   };
@@ -367,6 +390,10 @@ export function sameProjectRoute(left?: ProjectLaunchRoute, right?: ProjectLaunc
   if (!sameStringMap(left.models, right.models)) return false;
   if (!sameStringList(left.allowedModels, right.allowedModels)) return false;
   if (!sameStringList(left.deniedModels, right.deniedModels)) return false;
+  for (const harness of ["opencode", "zcode"] as const) {
+    if (!sameStringList(left.fallbackModels?.[harness], right.fallbackModels?.[harness])) return false;
+    if ((left.fallbackModels?.[harness] === undefined) !== (right.fallbackModels?.[harness] === undefined)) return false;
+  }
   // The reference to the AI profile is a part of the route: a route that
   // changed only its profile is a changed route, and a comparison that did
   // not know about it would drop the change without saying so.
@@ -382,7 +409,7 @@ export function sameProjectRoute(left?: ProjectLaunchRoute, right?: ProjectLaunc
  * route change made elsewhere, and the other way round. The model map is
  * compared per harness, so two harnesses do not conflict with each other.
  */
-export type ProjectRoutePart = "harnesses" | "aliases" | "allowedModels" | "deniedModels" | "profileId" | `model:${string}`;
+export type ProjectRoutePart = "harnesses" | "aliases" | "allowedModels" | "deniedModels" | "profileId" | `model:${string}` | `fallback:${"opencode" | "zcode"}`;
 
 export function changedProjectRouteParts(
   left?: ProjectLaunchRoute,
@@ -396,6 +423,7 @@ export function changedProjectRouteParts(
       parts.add("allowedModels");
       parts.add("deniedModels");
       parts.add("profileId");
+      for (const harness of ["opencode", "zcode"] as const) if (left?.fallbackModels?.[harness] !== undefined || right?.fallbackModels?.[harness] !== undefined) parts.add(`fallback:${harness}`);
       for (const harness of new Set([...Object.keys(left?.models ?? {}), ...Object.keys(right?.models ?? {})])) {
         parts.add(`model:${harness}`);
       }
@@ -408,6 +436,10 @@ export function changedProjectRouteParts(
   if (!sameStringList(left.allowedModels, right.allowedModels)) parts.add("allowedModels");
   if (!sameStringList(left.deniedModels, right.deniedModels)) parts.add("deniedModels");
   if ((left.profileId ?? undefined) !== (right.profileId ?? undefined)) parts.add("profileId");
+  for (const harness of ["opencode", "zcode"] as const) {
+    if (!sameStringList(left.fallbackModels?.[harness], right.fallbackModels?.[harness])
+      || (left.fallbackModels?.[harness] === undefined) !== (right.fallbackModels?.[harness] === undefined)) parts.add(`fallback:${harness}`);
+  }
   for (const harness of new Set([...Object.keys(left.models ?? {}), ...Object.keys(right.models ?? {})])) {
     if ((left.models ?? {})[harness] !== (right.models ?? {})[harness]) parts.add(`model:${harness}`);
   }
@@ -437,6 +469,7 @@ export function mergeProjectRouteParts(
     ...(fresh.aliases ? { aliases: [...fresh.aliases] } : {}),
     ...(fresh.allowedModels ? { allowedModels: [...fresh.allowedModels] } : {}),
     ...(fresh.deniedModels ? { deniedModels: [...fresh.deniedModels] } : {}),
+    ...(fresh.fallbackModels ? { fallbackModels: { ...fresh.fallbackModels } } : {}),
     // The reference to the AI profile travels with the route: a merge that
     // rebuilt the route from a known set of fields would drop it, and the
     // project would lose its profile without saying so.
@@ -450,6 +483,16 @@ export function mergeProjectRouteParts(
       continue;
     }
     switch (part) {
+      case "fallback:opencode":
+      case "fallback:zcode": {
+        const harness = part.slice("fallback:".length) as "opencode" | "zcode";
+        const next = { ...merged.fallbackModels };
+        const models = draft.fallbackModels?.[harness];
+        if (models === undefined) delete next[harness];
+        else next[harness] = [...models];
+        merged.fallbackModels = next;
+        break;
+      }
       case "harnesses": merged.harnesses = [...draft.harnesses]; break;
       case "aliases": merged.aliases = draft.aliases ? [...draft.aliases] : undefined; break;
       case "allowedModels": merged.allowedModels = draft.allowedModels ? [...draft.allowedModels] : undefined; break;

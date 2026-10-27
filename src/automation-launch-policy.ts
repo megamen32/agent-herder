@@ -28,6 +28,8 @@ export { canonicalProjectKey } from "./project-model-policy.js";
 export interface ProjectLaunchRoute {
   harnesses: HarnessType[];
   models?: Partial<Record<HarnessType, string>>;
+  /** Ordered quota recovery models for this project; absent inherits the global list. */
+  fallbackModels?: Partial<Record<"opencode" | "zcode", string[]>>;
   /** First-party hosted web search is granted only to the named integrator project route. */
   nativeWebSearch?: "live";
   /** Operator-authorized historical recovery is withheld until provider and descendant policy is enforced. */
@@ -349,7 +351,7 @@ function changedModelStrings(key: string, value: unknown): string[] {
   }
   if (key === "projectRoutes") {
     return Object.values(value as Record<string, unknown>).flatMap((route) =>
-      stringValues((route as Record<string, unknown>).models));
+      ["models", "fallbackModels"].flatMap((field) => stringValues((route as Record<string, unknown>)[field])));
   }
   return [];
 }
@@ -450,7 +452,7 @@ export function validateAutomationLaunchPolicy(value: unknown): AutomationLaunch
 const MAX_FALLBACK_MODELS = 8;
 const FALLBACK_MODEL_HARNESSES = ["opencode", "zcode"] as const;
 
-function validateFallbackModels(value: unknown): Partial<Record<"opencode" | "zcode", string[]>> {
+function validateFallbackModels(value: unknown, maxEntries = 64): Partial<Record<"opencode" | "zcode", string[]>> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("fallbackModels must be an object");
   const input = value as Record<string, unknown>;
   for (const key of Object.keys(input)) if (!FALLBACK_MODEL_HARNESSES.includes(key as typeof FALLBACK_MODEL_HARNESSES[number])) {
@@ -460,8 +462,8 @@ function validateFallbackModels(value: unknown): Partial<Record<"opencode" | "zc
   for (const harness of FALLBACK_MODEL_HARNESSES) {
     const candidate = input[harness];
     if (candidate === undefined) continue;
-    if (!Array.isArray(candidate) || candidate.length > 64) {
-      throw new Error(`fallbackModels.${harness} must be an ordered list of at most 64 entries`);
+    if (!Array.isArray(candidate) || candidate.length > maxEntries) {
+      throw new Error(`fallbackModels.${harness} must be an ordered list of at most ${maxEntries} entries`);
     }
     const seen = new Set<string>();
     const models: string[] = [];
@@ -533,6 +535,22 @@ function validateProjectRoutes(
         routeModels[harness] = model.trim();
       }
     }
+    let routeFallbackModels: Partial<Record<"opencode" | "zcode", string[]>> | undefined;
+    if (input.fallbackModels !== undefined) {
+      if (!input.fallbackModels || typeof input.fallbackModels !== "object" || Array.isArray(input.fallbackModels)) {
+        throw new Error(`Project route '${project}' fallbackModels must be an object`);
+      }
+      const raw = input.fallbackModels as Record<string, unknown>;
+      for (const harness of Object.keys(raw)) {
+        if (!FALLBACK_MODEL_HARNESSES.includes(harness as typeof FALLBACK_MODEL_HARNESSES[number])) {
+          throw new Error(`Project route '${project}' fallbackModels does not support '${harness}'`);
+        }
+        if (!harnesses.includes(harness as HarnessType)) {
+          throw new Error(`Project route '${project}' has fallback models for unused harness '${harness}'`);
+        }
+      }
+      routeFallbackModels = validateFallbackModels(raw, 8);
+    }
     // An explicit provider/model is preserved: a routed harness always has one.
     for (const harness of harnesses) {
       if (!routeModels?.[harness] && !models[harness]) {
@@ -586,6 +604,7 @@ function validateProjectRoutes(
     routes[key] = {
       harnesses,
       ...(routeModels && Object.keys(routeModels).length > 0 ? { models: routeModels } : {}),
+      ...(routeFallbackModels ? { fallbackModels: routeFallbackModels } : {}),
       ...(aliases ? { aliases } : {}),
       ...(input.nativeWebSearch === "live" ? { nativeWebSearch: "live" as const } : {}),
       ...(input.operatorCohortRecovery === "deny" ? { operatorCohortRecovery: "deny" as const } : {}),
@@ -694,6 +713,10 @@ export class AutomationLaunchPolicyStore {
             }
             if (old.deniedModels !== undefined && route.deniedModels === undefined) {
               preserved.deniedModels = old.deniedModels;
+              routeChanged = true;
+            }
+            if (old.fallbackModels !== undefined && route.fallbackModels === undefined) {
+              preserved.fallbackModels = old.fallbackModels;
               routeChanged = true;
             }
             if (routeChanged) {
