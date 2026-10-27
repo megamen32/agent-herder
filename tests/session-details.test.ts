@@ -52,6 +52,40 @@ function adapterWithoutLiveHistory(): HarnessAdapter {
 }
 
 describe("SessionSupervisor details", () => {
+  it("accepts explicit empty OpenCode live history as complete empty history", async () => {
+    const native: AgentSession = { ...session, id: "opencode-empty", harness: "opencode" };
+    const openCodeAdapter: HarnessAdapter = {
+      ...adapter(), type: "opencode",
+      async getSession(id) { return id === native.id ? native : null; },
+      async getSessionMessages() { return []; },
+    };
+    const supervisor = new SessionSupervisor(
+      new Map([["opencode", openCodeAdapter]]),
+      { async convert() { return { success: true }; }, async read() { return null; } },
+      new LineageStore("/tmp/agent-herder-test-lineage-opencode-empty.json"),
+    );
+    const details = await supervisor.getSessionDetails("opencode", native.id, { history: "auto" });
+    expect(details.messages).toEqual([]);
+    expect(details.history).toEqual({ source: "acp-load", complete: true });
+  });
+
+  it("does not treat null OpenCode history as an empty session", async () => {
+    const native: AgentSession = { ...session, id: "opencode-unavailable", harness: "opencode" };
+    const openCodeAdapter: HarnessAdapter = {
+      ...adapter(), type: "opencode",
+      async getSession(id) { return id === native.id ? native : null; },
+      async getSessionMessages() { return null; },
+    };
+    const supervisor = new SessionSupervisor(
+      new Map([["opencode", openCodeAdapter]]),
+      { async convert() { return { success: true }; }, async read() { return null; } },
+      new LineageStore("/tmp/agent-herder-test-lineage-opencode-unavailable.json"),
+    );
+    const details = await supervisor.getSessionDetails("opencode", native.id, { history: "auto" });
+    expect(details.messages).toEqual([]);
+    expect(details.history).toMatchObject({ source: "unavailable", complete: false });
+  });
+
   it("reads exact MiniMax quick history without enumerating every session",async()=>{
     const native={...session,id:"mvs_exact",harness:"minimax-code" as const};
     const list=vi.fn(async()=>{throw new Error("whole-store hydration must not run");});
