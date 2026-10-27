@@ -109,3 +109,22 @@ Owner-selected GLM family добавлена строго для этих дву
 синхронизированы. Не разрешаем произвольный ZCode model/provider; закрытые
 Codex/Claude/Anthropic остаются закрыты. Web verdict использует тот же helper.
 Это не запуск LLM и не доказательство native execution; только catalog proof.
+
+48ca2c09644b885d07a6c0c41152135202219743 installed/public; build/manifest/package
+checks passed. Bundle a4ed0b2401d21aaf06e52425f28b692a148a6e1d61d6f459cdf7ae03ed11f852;
+vhost d57f8d45, rollback20261027T170757Z, no managed drift.
+Browser st27 на этом срезе под testlogin получает законный owner-only401,
+видит явный отказ доступа без фиктивных «Нужна проверка». Это не owner readiness
+acceptance. Ранее UI принял URL/reload/back-forward/search filters/Chats toggle.
+
+Дополнительно найден устаревший Herder Basic password для official OpenCode.
+Четыре public default model IDs оказались hardcoded fallback клиента при401,
+а не реальным каталогом. configure-native-auth.mjs подтвердил current protected
+native credential GET /api/config200 и обновил только Herder credential;
+native PID2830250 не рестартован. Herder PID3887700 start20:11:59MSK,
+тот же compiled48ca2c0; launch policy/settings preserved.
+Native v2 каталог содержит оба точных combo IDs. Значения23символа sha256:...
+в /proc initial environ — fingerprints; loadSecretEnvironment разрешает их
+до init adapters. Не считать такие markers сырыми токенами и не утверждать
+credentials mismatch по одному /proc. Exact combo verdict покаunknown;
+следующий шаг — resolved-secret compiled resolver, точная строка отказа.
