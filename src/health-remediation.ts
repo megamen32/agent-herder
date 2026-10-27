@@ -97,9 +97,6 @@ export function normalizeHealthExecution(value: unknown): HealthExecutionProfile
   if (profile.runtime !== "zcode" && profile.runtime !== "hermes" && profile.runtime !== "fast-agent" && profile.runtime !== "opencode") {
     throw new Error("health execution runtime must be opencode, zcode, hermes, or fast-agent");
   }
-  if (profile.runtime === "opencode" && profile.provider === "minimax-coding-plan") {
-    return normalizeIncidentExecution(profile);
-  }
   const canonical = CANONICAL_PROFILES[profile.runtime];
   for (const field of ["provider", "reasoning", "topic"] as const) {
     if (profile[field] !== canonical[field]) {
@@ -131,11 +128,11 @@ export function healthModelForHarness(harness: string, execution: HealthExecutio
   return execution.model.includes("/") ? execution.model : `${execution.provider}/${execution.model}`;
 }
 
-/** Separate Notice Place incident policy: the direct subscription route only. */
+/** Exact owner-selected GLM Flash + MiniMax incident combo. */
 export const INCIDENT_EXECUTION: HealthExecutionProfile = {
   runtime: "opencode",
-  provider: "minimax-coding-plan",
-  model: "MiniMax-M3.1-Flash",
+  provider: "omniroute",
+  model: "omniroute/glm-5.3-flash-minimax-m3.1",
   reasoning: "default",
   topic: "health",
 };

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { normalizeHealthExecution, healthModelForHarness, INCIDENT_EXECUTION } from "../src/health-remediation.js";
+import { normalizeHealthExecution, normalizeIncidentExecution, healthModelForHarness, INCIDENT_EXECUTION } from "../src/health-remediation.js";
 
 describe("health remediation execution profile", () => {
-  it("accepts the exact Notice Place subscription profile at the repair boundary", () => {
+  it("accepts the exact Notice Place combo profile at the repair boundary", () => {
     expect(normalizeHealthExecution(INCIDENT_EXECUTION)).toEqual(INCIDENT_EXECUTION);
     expect(healthModelForHarness("opencode", normalizeHealthExecution(INCIDENT_EXECUTION)))
-      .toBe("minimax-coding-plan/MiniMax-M3.1-Flash");
-    expect(() => normalizeHealthExecution({ ...INCIDENT_EXECUTION, model: "other-model" })).toThrow(/model/);
+      .toBe("omniroute/glm-5.3-flash-minimax-m3.1");
+    expect(() => normalizeIncidentExecution({ ...INCIDENT_EXECUTION, model: "other-model" })).toThrow(/model/);
   });
   it("accepts the canonical ZCode/OmniRoute/GLM Flash profile", () => {
     expect(normalizeHealthExecution({

@@ -6,7 +6,7 @@ export const NOTICEPLACE_HEALTH_PURPOSE = "noticeplace.health-analysis";
 export const NOTICEPLACE_HEALTH_AUTHORIZED: unique symbol = Symbol("noticeplace.health-analysis.authorized");
 
 /**
- * The one direct subscription route authorized for incident analysis.
+ * The one owner-selected combo authorized for incident analysis.
  */
 export const INCIDENT_MODELS: ReadonlySet<string> = new Set([
   healthModelForHarness("opencode", INCIDENT_EXECUTION),
@@ -27,7 +27,9 @@ export function qualifyNoticeplaceHealthModel(model: unknown): unknown {
   // its exact spelling: a value that is nearly the right one stays as it is
   // and is refused by the gate, because a near miss is not a route.
   const pinned = INCIDENT_EXECUTION.model;
-  return model === pinned ? `${INCIDENT_EXECUTION.provider}/${model}` : model;
+  const prefix = `${INCIDENT_EXECUTION.provider}/`;
+  const bare = pinned.startsWith(prefix) ? pinned.slice(prefix.length) : pinned;
+  return model === bare ? `${prefix}${bare}` : model;
 }
 
 /** Only the HTTP boundary uses the dedicated verifier; no global MCP token. */
@@ -42,7 +44,7 @@ export function validateNoticeplaceHealthLaunch(input: {
   harness?: unknown; model?: unknown; operationId?: unknown;
 }): string | undefined {
   if (input.harness !== "opencode" || !INCIDENT_MODELS.has(String(input.model))) {
-    return `Для анализа инцидента разрешён только OpenCode с MiniMax по подписке: ${[...INCIDENT_MODELS].join(", ")}. Запасного маршрута нет.`;
+    return `Для анализа инцидента разрешён только OpenCode с выбранной комбо GLM + MiniMax: ${[...INCIDENT_MODELS].join(", ")}. Дополнительного запасного маршрута нет.`;
   }
   if (typeof input.operationId !== "string" || !input.operationId.trim()) {
     return "Для анализа инцидента требуется стабильный operation_id.";

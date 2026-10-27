@@ -1,5 +1,31 @@
 # Notice Place incident route: direct MiniMax subscription
 
+## Latest owner direction: GLM + MiniMax combo (27 October)
+
+This section supersedes the earlier direct-only target below. Owner states
+that MiniMax Token Plan has been bought but remains inactive; do not repeat
+2062 probes or use a paid fallback. Owner now selects the existing combo
+`omniroute/glm-5.3-flash-minimax-m3.1` for incident execution.
+
+The combo is present in the live OpenCode catalog. Read-only shared router
+configuration shows four enabled legs: zcode/zc/glm-5.3-flash,
+glm/glm/glm-5.3-flash, minimax-code/mmcode/MiniMax-M3.1-Flash and
+minimax/minimax/MiniMax-M3.1-Flash. The final API leg must not silently
+override the owner's paid-fallback prohibition. A concrete owner choice is
+pending: remove it from the shared combo or constrain NoticePlace only.
+Shared router settings have not been changed; no generation was attempted.
+
+Owned Herder source now pins only the exact selected combo for incident
+analysis/repair, including bare-model qualification; 49 focused checks passed.
+Live runtime/policy still use installed aab06c81 and the previous direct route.
+Do not claim the combo is installed. Source/release preparation can proceed;
+activation and the one isolated canary require resolving the shared-route
+constraint and aligning the NoticePlace-owned incident_model_policy contract.
+NoticePlace's designated owner was sent one if_running handoff, which returned
+skipped_inactive; no new session or wake was created.
+
+## Historical direct-subscription delivery
+
 Owner: Codex session `01a1754f-0228-7553-bea6-cc89e40b5187`.
 
 ## User result

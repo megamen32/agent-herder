@@ -4,7 +4,7 @@ import { healthModelForHarness, INCIDENT_EXECUTION } from "../health-remediation
 /**
  * The one model allowlist of Notice Place health work.
  *
- * Both analysis and repair use the exact direct subscription model. A route
+ * Both analysis and repair use the exact owner-selected combo. A route
  * from the general health profile cannot substitute for an incident route.
  */
 export const NOTICEPLACE_HEALTH_MODELS = {

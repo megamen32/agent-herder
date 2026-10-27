@@ -221,12 +221,12 @@ describe("Notice Place health launch policy", () => {
     }
     // No other provider is allowed on either path.
     expect(validateNoticeplaceHealthLaunch({ harness: "opencode", model: "zai/GLM-4.6", operationId: "op" })).toBeTruthy();
-    // The direct subscription route is the only incident route.
-    expect([...NOTICEPLACE_HEALTH_MODELS]).toEqual(["minimax-coding-plan/MiniMax-M3.1-Flash"]);
+    // The exact owner-selected combo is the only incident route.
+    expect([...NOTICEPLACE_HEALTH_MODELS]).toEqual(["omniroute/glm-5.3-flash-minimax-m3.1"]);
     expect(NOTICEPLACE_HEALTH_MODELS.includes("omniroute/any-provider/any-model")).toBe(false);
-    expect(NOTICEPLACE_HEALTH_MODELS.includes("minimax-coding-plan/MiniMax-M3.1-Flash")).toBe(true);
+    expect(NOTICEPLACE_HEALTH_MODELS.includes("minimax-coding-plan/MiniMax-M3.1-Flash")).toBe(false);
     expect(NOTICEPLACE_HEALTH_MODELS.includes("omniroute/minimax/MiniMax-M3.1-Flash")).toBe(false);
-    expect(isNoticeplaceHealthModel("minimax-coding-plan/MiniMax-M3.1-Flash")).toBe(true);
+    expect(isNoticeplaceHealthModel("omniroute/glm-5.3-flash-minimax-m3.1")).toBe(true);
     expect(isNoticeplaceHealthModel("omniroute/minimax-combo-m3.1")).toBe(false);
     expect(isNoticeplaceHealthModel("zai/GLM-4.6")).toBe(false);
   });
