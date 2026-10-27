@@ -1,7 +1,9 @@
 import { homedir } from "node:os";
 import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
+import { Worker } from "node:worker_threads";
 import type { AgentSession } from "./types/index.js";
+import { readActivitySources, type ActivityProgress, type ActivitySession, type ActivitySource } from "./session-statistics-sources.js";
 
 export type DistributionSummary = {
   count: number;
@@ -30,11 +32,13 @@ export type AgentActivityStatistics = {
   generatedAt: string;
   windowDays: number;
   source: {
-    harness: "codex";
+    harness: "mixed";
     sessionRoot: string;
     writeSignal: "apply_patch";
-    confidence: "high";
+    confidence: "high" | "medium";
     caveat: string;
+    caveatRu: string;
+    harnesses: Array<{ harness: string; state: "ready" | "unavailable" | "partial" | "pending"; reason?: string }>;
   };
   sample: {
     sessionFiles: number;
@@ -55,6 +59,19 @@ export type AgentActivityStatistics = {
     sameFileCoverageAtLeasePercent: number;
   };
   codexDeep: CodexDeepStatistics;
+  deep: CodexDeepStatistics;
+  byHarness: Array<{
+    harness: "codex" | "opencode" | "zcode";
+    sample: AgentActivityStatistics["sample"];
+    deep: CodexDeepStatistics;
+    activityGaps: DistributionSummary;
+    sameFileRevisits: DistributionSummary;
+    sameDirectoryRevisits: DistributionSummary;
+    source: ActivitySource;
+  }>;
+  refreshing?: boolean;
+  refreshError?: string;
+  progress?: ActivityProgress;
   portfolio?: SessionPortfolioStatistics;
 };
 
@@ -64,7 +81,10 @@ type CacheEntry = { expiresAt: number; value: AgentActivityStatistics };
 const DEFAULT_WINDOW_DAYS = 30;
 const CACHE_TTL_MS = 60 * 60_000;
 const caches = new Map<number, CacheEntry>();
-const inflight = new Map<number, Promise<AgentActivityStatistics>>();
+let activeRefresh: { days:number; promise:Promise<AgentActivityStatistics> } | undefined;
+let queuedRefresh:{days:number;sessionRoot:string}|undefined;
+const refreshErrors = new Map<number,string>();
+const refreshProgress = new Map<number,ActivityProgress>();
 const PATCH_HEADER = /^\*\*\* (?:Add|Update|Delete) File:\s*(.+?)\s*$/gm;
 const COVERAGE_SECONDS = [30, 60, 120, 180, 300];
 const HISTOGRAM_BUCKETS = [
@@ -83,29 +103,32 @@ export async function getAgentActivityStatistics(options: { days?: number; refre
   const sessionRoot = options.sessionRoot || process.env.CODEX_HOME
     ? resolve(options.sessionRoot || process.env.CODEX_HOME || join(homedir(), ".codex"), "sessions")
     : join(homedir(), ".codex", "sessions");
-  if (!options.refresh && !options.sessionRoot) {
-    const cached = caches.get(days);
-    if (cached && cached.expiresAt > Date.now()) return cached.value;
-    const disk = await readDiskCache(days);
-    if (disk && Date.now() - Date.parse(disk.generatedAt) < CACHE_TTL_MS) {
-      caches.set(days, { expiresAt: Date.now() + CACHE_TTL_MS, value: disk });
-      return disk;
+  if (!options.sessionRoot) {
+    let cached=caches.get(days);
+    if(!cached){const disk=await readDiskCache(days);if(disk){const expiresAt=Date.parse(disk.generatedAt)+CACHE_TTL_MS;cached={expiresAt,value:disk};caches.set(days,cached);}}
+    const priorError=refreshErrors.get(days);
+    if(!options.refresh&&priorError)return cached?{...cached.value,refreshError:priorError}:emptyStatistics(days,sessionRoot,false,priorError);
+    if(!options.refresh&&cached&&cached.expiresAt>Date.now()){
+      if(activeRefresh?.days===days){const progress=refreshProgress.get(days);return {...cached.value,refreshing:true,...(progress?{progress}:{})};}
+      return cached.value;
     }
-    const running = inflight.get(days);
-    if (running) return running;
+    if(activeRefresh&&options.refresh&&activeRefresh.days!==days)queuedRefresh={days,sessionRoot};
+    if(!activeRefresh)startRefresh(days,sessionRoot);
+    if(activeRefresh){const progress=refreshProgress.get(activeRefresh.days);return cached?{...cached.value,refreshing:true,...(progress?{progress}:{})}:{...emptyStatistics(days,sessionRoot,true,undefined,progress),refreshing:true};}
+    if(cached)return {...cached.value,refreshError:refreshErrors.get(days)};
+    return emptyStatistics(days,sessionRoot,false,refreshErrors.get(days));
   }
-  const work = computeAgentActivityStatistics(days, sessionRoot);
-  if (!options.sessionRoot) inflight.set(days, work);
-  try {
-    const value = await work;
-    if (!options.sessionRoot) {
-      caches.set(days, { expiresAt: Date.now() + CACHE_TTL_MS, value });
-      await writeDiskCache(days, value).catch(() => undefined);
-    }
-    return value;
-  } finally {
-    if (!options.sessionRoot) inflight.delete(days);
-  }
+  return computeAgentActivityStatistics(days,sessionRoot);
+}
+
+function startRefresh(days:number,sessionRoot:string):void{
+ refreshErrors.delete(days);refreshProgress.set(days,{harness:'codex',processed:0,total:0});const promise=computeInWorker(days,sessionRoot,value=>refreshProgress.set(days,value),true);activeRefresh={days,promise};
+ void promise.then(async value=>{caches.set(days,{expiresAt:Date.now()+CACHE_TTL_MS,value});await writeDiskCache(days,value).catch(()=>undefined);}).catch(error=>{refreshErrors.set(days,`Не удалось обновить статистику: ${error instanceof Error?error.message:String(error)}`);}).finally(()=>{refreshProgress.delete(days);if(activeRefresh?.promise===promise)activeRefresh=undefined;const queued=queuedRefresh;queuedRefresh=undefined;if(queued)startRefresh(queued.days,queued.sessionRoot);});
+}
+
+function computeInWorker(days:number,sessionRoot:string,onProgress?:(value:ActivityProgress)=>void,includeArchived=false):Promise<AgentActivityStatistics>{
+ const worker=new Worker(new URL('./session-statistics-worker.js',import.meta.url));
+ return new Promise((resolve,reject)=>{let settled=false;const finish=(fn:()=>void)=>{if(settled)return;settled=true;void worker.terminate();fn();};worker.on('message',(message:{ok?:boolean;value?:AgentActivityStatistics;error?:string;progress?:ActivityProgress})=>{if(message.progress){onProgress?.(message.progress);return;}if(message.ok&&message.value)finish(()=>resolve(message.value!));else if(message.error)finish(()=>reject(new Error(message.error)));});worker.once('error',error=>finish(()=>reject(error)));worker.once('exit',code=>{if(!settled)finish(()=>reject(new Error(`statistics_worker_exited_${code}`)));});worker.postMessage({days,sessionRoot,includeArchived});});
 }
 
 function diskCachePath(days: number): string {
@@ -115,7 +138,7 @@ function diskCachePath(days: number): string {
 async function readDiskCache(days: number): Promise<AgentActivityStatistics | null> {
   try {
     const parsed = JSON.parse(await readFile(diskCachePath(days), "utf8")) as AgentActivityStatistics;
-    return parsed?.schemaVersion === 2 && parsed?.windowDays === days && typeof parsed?.generatedAt === "string" && Boolean(parsed?.codexDeep) ? parsed : null;
+    return parsed?.schemaVersion === 2 && parsed?.windowDays === days && typeof parsed?.generatedAt === "string" && Boolean(parsed?.codexDeep)&&Boolean(parsed?.deep)&&Array.isArray(parsed?.byHarness) ? parsed : null;
   } catch { return null; }
 }
 
@@ -127,120 +150,50 @@ async function writeDiskCache(days: number, value: AgentActivityStatistics): Pro
   await rename(tmp, path);
 }
 
-export async function computeAgentActivityStatistics(days: number, sessionRoot: string): Promise<AgentActivityStatistics> {
-  const cutoffMs = Date.now() - days * 24 * 60 * 60_000;
-  const files = await collectSessionFiles(sessionRoot, cutoffMs);
-  const activityGaps: number[] = [];
-  const fileSeries = new Map<string, number[]>();
-  const directorySeries = new Map<string, number[]>();
-  let toolCalls = 0;
-  let patchCalls = 0;
-  let pathWriteEvents = 0;
-  let sessionsWithPatches = 0;
-  const codexDurations: number[] = [];
-  const codexTokens: number[] = [];
-  const codexModels = new Map<string, number>();
-  const codexDays = new Map<string, number>();
-
-  for (const file of files) {
-    let raw: string;
-    try { raw = await readFile(file, "utf8"); } catch { continue; }
-    let currentCwd = "";
-    const toolTimes: number[] = [];
-    let sessionHasPatch = false;
-    let firstTimestampSec: number | undefined;
-    let lastTimestampSec: number | undefined;
-    let latestTotalTokens: number | undefined;
-    let latestModel: string | undefined;
-    for (const line of raw.split("\n")) {
-      if (!line.trim()) continue;
-      let item: any;
-      try { item = JSON.parse(line); } catch { continue; }
-      const payload = item?.payload;
-      const anyTimestampSec = timestampSeconds(item?.timestamp);
-      if (anyTimestampSec !== undefined) { firstTimestampSec = firstTimestampSec === undefined ? anyTimestampSec : Math.min(firstTimestampSec, anyTimestampSec); lastTimestampSec = lastTimestampSec === undefined ? anyTimestampSec : Math.max(lastTimestampSec, anyTimestampSec); }
-      if (item?.type === "turn_context" && payload) {
-        if (typeof payload.cwd === "string") currentCwd = payload.cwd;
-        if (typeof payload.model === "string" && payload.model.trim()) latestModel = payload.model.trim();
-      }
-      if (item?.type === "event_msg" && payload?.type === "token_count") {
-        const total = payload?.info?.total_token_usage?.total_tokens;
-        if (typeof total === "number" && Number.isFinite(total)) latestTotalTokens = total;
-      }
-      if (item?.type !== "response_item" || !payload || (payload.type !== "function_call" && payload.type !== "custom_tool_call")) continue;
-      const timestampSec = anyTimestampSec;
-      if (timestampSec === undefined) continue;
-      toolCalls += 1;
-      toolTimes.push(timestampSec);
-      const patchText = extractPatchText(payload);
-      if (!patchText) continue;
-      const paths = extractPatchPaths(patchText, currentCwd);
-      if (paths.length === 0) continue;
-      patchCalls += 1;
-      sessionHasPatch = true;
-      for (const path of paths) {
-        pathWriteEvents += 1;
-        addSeries(fileSeries, `${file}\0${path}`, timestampSec);
-        addSeries(directorySeries, `${file}\0${dirname(path) || "."}`, timestampSec);
-      }
-    }
-    if (sessionHasPatch) sessionsWithPatches += 1;
-    activityGaps.push(...consecutiveGaps(toolTimes));
-    if (firstTimestampSec !== undefined) { const day = new Date(firstTimestampSec * 1000).toISOString().slice(0, 10); codexDays.set(day, (codexDays.get(day) || 0) + 1); }
-    if (firstTimestampSec !== undefined && lastTimestampSec !== undefined && lastTimestampSec >= firstTimestampSec) codexDurations.push(lastTimestampSec - firstTimestampSec);
-    if (latestTotalTokens !== undefined) codexTokens.push(latestTotalTokens);
-    if (latestModel && !latestModel.startsWith("<")) codexModels.set(latestModel, (codexModels.get(latestModel) || 0) + 1);
-  }
-
-  const sameFileGaps = gapsFromSeries(fileSeries);
-  const sameDirectoryGaps = gapsFromSeries(directorySeries);
-  const activitySummary = summarize(activityGaps);
-  const sameFileSummary = summarize(sameFileGaps);
-  const sameDirectorySummary = summarize(sameDirectoryGaps);
-  const p95 = activitySummary.percentilesSec.p95;
-  const inactivityLeaseSec = Number.isFinite(p95) && p95 > 0 ? clamp(Math.ceil(p95 / 15) * 15, 60, 180) : 60;
-  const fileLeaseCoverage = coverageAt(sameFileGaps, inactivityLeaseSec);
-
-  return {
-    schemaVersion: 2,
-    generatedAt: new Date().toISOString(),
-    windowDays: days,
-    source: {
-      harness: "codex",
-      sessionRoot,
-      writeSignal: "apply_patch",
-      confidence: "high",
-      caveat: "Write revisit statistics use explicit Codex apply_patch paths only; shell mutations and read-only tool calls are excluded.",
-    },
-    sample: {
-      sessionFiles: files.length,
-      sessionsWithPatches,
-      toolCalls,
-      toolIntervals: activityGaps.length,
-      patchCalls,
-      pathWriteEvents,
-      sameFileSeries: fileSeries.size,
-      repeatedFileSeries: [...fileSeries.values()].filter((values) => new Set(values).size >= 2).length,
-    },
-    activityGaps: activitySummary,
-    sameFileRevisits: sameFileSummary,
-    sameDirectoryRevisits: sameDirectorySummary,
-    recommendation: {
-      inactivityLeaseSec,
-      basis: "Rounded p95 gap between consecutive Codex tool calls, clamped to 60–180 seconds. Existing edited paths should be renewed by session activity rather than only by another write to that file.",
-      sameFileCoverageAtLeasePercent: fileLeaseCoverage.percent,
-    },
-    codexDeep: {
-      sessions: files.length,
-      tokenCoveragePercent: files.length ? codexTokens.length / files.length * 100 : 0,
-      modelCoveragePercent: files.length ? [...codexModels.values()].reduce((a, b) => a + b, 0) / files.length * 100 : 0,
-      durationCoveragePercent: files.length ? codexDurations.length / files.length * 100 : 0,
-      tokens: summarizeNumeric(codexTokens),
-      durationSec: summarizeNumeric(codexDurations),
-      models: rankCounts(codexModels),
-      sessionsByDay: [...codexDays.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, count]) => ({ day, count })),
-    },
+export async function computeAgentActivityStatistics(days: number, sessionRoot: string,onProgress?:(value:ActivityProgress)=>void,includeArchived=false): Promise<AgentActivityStatistics> {
+  const result=await readActivitySources(days,sessionRoot,onProgress,includeArchived);const cutoff=Date.now()/1000-days*86400;
+  const byHarness=result.sources.map(source=>summarizeHarness(source,result.sessions.filter(s=>s.harness===source.harness),cutoff));
+  const codex=byHarness.find(x=>x.harness==='codex')!;
+  const allSessions=result.sessions;
+  const aggregate=summarizeHarness({harness:'codex',state:'ready',sessions:allSessions.length},allSessions,cutoff);
+  const available=result.sources.filter(s=>s.state==='ready').length;
+  const p95=aggregate.activityGaps.percentilesSec.p95;
+  const inactivityLeaseSec=Number.isFinite(p95)&&p95>0?clamp(Math.ceil(p95/15)*15,60,180):60;
+  const fileLeaseCoverage=coverageAt(aggregate.rawSameFile,inactivityLeaseSec);
+  const sample={
+    sessionFiles:byHarness.reduce((n,x)=>n+x.sample.sessionFiles,0),
+    sessionsWithPatches:byHarness.reduce((n,x)=>n+x.sample.sessionsWithPatches,0),
+    toolCalls:byHarness.reduce((n,x)=>n+x.sample.toolCalls,0),
+    toolIntervals:aggregate.rawActivity.length,
+    patchCalls:byHarness.reduce((n,x)=>n+x.sample.patchCalls,0),
+    pathWriteEvents:byHarness.reduce((n,x)=>n+x.sample.pathWriteEvents,0),
+    sameFileSeries:aggregate.fileSeriesCount,
+    repeatedFileSeries:aggregate.repeatedFileSeries,
   };
+  return {
+    schemaVersion:2,generatedAt:new Date().toISOString(),windowDays:days,
+    source:{harness:'mixed',sessionRoot,writeSignal:'apply_patch',confidence:'medium',caveat:'Activity is aggregated from successful native tool completions and Codex tool outputs. Each source reports coverage; unavailable or partial sources are not treated as zero-activity success.',caveatRu:'Статистика объединяет подтверждённые завершения инструментов и события Codex. Состояние каждого источника показано отдельно; недоступный источник не считается нулевой активностью.',harnesses:result.sources.map(({harness,state,reason})=>({harness,state,...(reason?{reason}:{})}))},
+    sample,activityGaps:aggregate.activityGaps,sameFileRevisits:aggregate.sameFileRevisits,sameDirectoryRevisits:aggregate.sameDirectoryRevisits,
+    recommendation:{inactivityLeaseSec,basis:'Rounded p95 gap between successful tool completions across ready harness sources, clamped to 60–180 seconds.',sameFileCoverageAtLeasePercent:fileLeaseCoverage.percent},
+    codexDeep:codex.deep,deep:aggregate.deep,byHarness:byHarness.map(({rawActivity,rawSameFile,rawSameDirectory,fileSeriesCount,repeatedFileSeries,...publicValue})=>publicValue),
+  };
+}
+
+function emptyStatistics(days:number,sessionRoot:string,refreshing:boolean,error?:string,progress?:ActivityProgress):AgentActivityStatistics{
+ const state=refreshing?'pending':'unavailable';const reason=refreshing?'Статистика обновляется':error?'Обновление статистики завершилось ошибкой':'Нет доступных данных статистики';
+ const sources:ActivitySource[]=(['codex','opencode','zcode'] as const).map(harness=>({harness,state,reason,sessions:0}));
+ const emptyDeep:CodexDeepStatistics={sessions:0,tokenCoveragePercent:0,modelCoveragePercent:0,durationCoveragePercent:0,tokens:summarizeNumeric([]),durationSec:summarizeNumeric([]),models:[],sessionsByDay:[]};
+ const emptySample:AgentActivityStatistics['sample']={sessionFiles:0,sessionsWithPatches:0,toolCalls:0,toolIntervals:0,patchCalls:0,pathWriteEvents:0,sameFileSeries:0,repeatedFileSeries:0};
+ const emptyDistribution=summarize([]);
+ return {schemaVersion:2,generatedAt:new Date().toISOString(),windowDays:days,source:{harness:'mixed',sessionRoot,writeSignal:'apply_patch',confidence:'medium',caveat:'Statistics are being refreshed; per-harness source state is pending or unavailable.',caveatRu:'Статистика обновляется; состояние каждого источника отмечено отдельно.',harnesses:sources.map(({harness,state,reason})=>({harness,state,...(reason?{reason}:{})}))},sample:emptySample,activityGaps:emptyDistribution,sameFileRevisits:emptyDistribution,sameDirectoryRevisits:emptyDistribution,recommendation:{inactivityLeaseSec:60,basis:'No activity samples are available yet.',sameFileCoverageAtLeasePercent:0},codexDeep:emptyDeep,deep:emptyDeep,byHarness:sources.map(source=>({harness:source.harness,sample:emptySample,deep:emptyDeep,activityGaps:emptyDistribution,sameFileRevisits:emptyDistribution,sameDirectoryRevisits:emptyDistribution,source})),...(refreshing?{refreshing:true}:{}),...(error?{refreshError:error}:{}),...(progress?{progress}:{})};
+}
+
+type HarnessAggregate={harness:'codex'|'opencode'|'zcode';sample:AgentActivityStatistics['sample'];deep:CodexDeepStatistics;activityGaps:DistributionSummary;sameFileRevisits:DistributionSummary;sameDirectoryRevisits:DistributionSummary;source:ActivitySource;rawActivity:number[];rawSameFile:number[];rawSameDirectory:number[];fileSeriesCount:number;repeatedFileSeries:number};
+function summarizeHarness(source:ActivitySource,sessions:ActivitySession[],cutoff:number):HarnessAggregate{
+ const recent=sessions.filter(s=>s.lastAt!==undefined&&s.lastAt>=cutoff),activity:number[]=[],fileSeries=new Map<string,number[]>(),directorySeries=new Map<string,number[]>(),tokens:number[]=[],durations:number[]=[],models=new Map<string,number>(),days=new Map<string,number>();let toolCalls=0,patchCalls=0,pathWriteEvents=0,sessionsWithPatches=0;
+ for(const session of recent){const toolTimes:number[]=[];let hadPatch=false;for(const event of session.events){if(event.at<cutoff)continue;toolCalls++;toolTimes.push(event.at);if(!event.paths?.length)continue;patchCalls++;hadPatch=true;for(const path of event.paths){pathWriteEvents++;const key=`${session.harness}\0${session.id}\0${path}`;addSeries(fileSeries,key,event.at);addSeries(directorySeries,`${session.harness}\0${session.id}\0${dirname(path)||'.'}`,event.at);}}if(hadPatch)sessionsWithPatches++;for(const gap of consecutiveGaps(toolTimes))activity.push(gap);if(session.tokens!==undefined)tokens.push(session.tokens);if(session.model&&!session.model.startsWith('<'))models.set(session.model,(models.get(session.model)||0)+1);if(session.firstAt!==undefined&&session.lastAt!==undefined&&session.lastAt>=session.firstAt)durations.push(session.lastAt-session.firstAt);if(session.lastAt!==undefined){const day=new Date(session.lastAt*1000).toISOString().slice(0,10);days.set(day,(days.get(day)||0)+1);}}
+ const sameFile=gapsFromSeries(fileSeries),sameDirectory=gapsFromSeries(directorySeries),count=source.sessions||recent.length;
+ return {harness:source.harness,sample:{sessionFiles:source.files??count,sessionsWithPatches,toolCalls,toolIntervals:activity.length,patchCalls,pathWriteEvents,sameFileSeries:fileSeries.size,repeatedFileSeries:[...fileSeries.values()].filter(v=>new Set(v).size>=2).length},deep:{sessions:count,tokenCoveragePercent:count?tokens.length/count*100:0,modelCoveragePercent:count?[...models.values()].reduce((a,b)=>a+b,0)/count*100:0,durationCoveragePercent:count?durations.length/count*100:0,tokens:summarizeNumeric(tokens),durationSec:summarizeNumeric(durations),models:rankCounts(models),sessionsByDay:[...days].sort(([a],[b])=>a.localeCompare(b)).map(([day,n])=>({day,count:n}))},activityGaps:summarize(activity),sameFileRevisits:summarize(sameFile),sameDirectoryRevisits:summarize(sameDirectory),source,rawActivity:activity,rawSameFile:sameFile,rawSameDirectory:sameDirectory,fileSeriesCount:fileSeries.size,repeatedFileSeries:[...fileSeries.values()].filter(v=>new Set(v).size>=2).length};
 }
 
 export function withSessionPortfolioStatistics(base: AgentActivityStatistics, sessions: AgentSession[], days: number): AgentActivityStatistics {
@@ -355,7 +308,7 @@ function consecutiveGaps(values: number[]): number[] {
 
 function gapsFromSeries(series: Map<string, number[]>): number[] {
   const gaps: number[] = [];
-  for (const values of series.values()) gaps.push(...consecutiveGaps(values));
+  for (const values of series.values()) for (const gap of consecutiveGaps(values)) gaps.push(gap);
   return gaps;
 }
 

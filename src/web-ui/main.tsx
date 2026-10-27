@@ -1,5 +1,6 @@
 import {AUTOCONTINUE_HARNESS_IDS,loadAutocontinueHarnesses,saveAutocontinueHarness,type AutocontinueHarness,type WebSessionAutostartHarness} from "./autocontinue-harnesses.js";
 import * as React from "react";
+import type { AgentActivityStatistics, DistributionSummary as StatisticsDistribution } from "../session-statistics.js";
 import { createRoot } from "react-dom/client";
 import {ComposerSendControl,QueueProcessingControl,VoiceComposerControl,isComposerSubmitShortcut} from "./composer-controls.js";
 import ReactMarkdown from "react-markdown";
@@ -119,20 +120,6 @@ function MinimaxExecPolicyPanel({ session }: { session: { hostId?: string; harne
     {error && <small className="permission-mode-error">{error}</small>}
   </section>;
 }
-type StatisticsDistribution = { count: number; percentilesSec: { p50: number; p75: number; p90: number; p95: number; p99: number }; coverage: Array<{ seconds: number; count: number; percent: number }>; histogram: Array<{ label: string; minSec: number; maxSec?: number; count: number; percent: number }> };
-type NumericSummary = { count: number; mean: number; median: number; p75: number; p90: number; p95: number; p99: number; min: number; max: number };
-type RankedCount = { name: string; count: number; percent: number };
-type SessionPortfolioStatistics = { observedSessions: number; tokenCoveragePercent: number; durationCoveragePercent: number; modelCoveragePercent: number; harnesses: RankedCount[]; models: RankedCount[]; tokens: NumericSummary; durationSec: NumericSummary; sessionsByDay: Array<{ day: string; count: number }>; caveat: string };
-type CodexDeepStatistics = { sessions: number; tokenCoveragePercent: number; modelCoveragePercent: number; durationCoveragePercent: number; tokens: NumericSummary; durationSec: NumericSummary; models: RankedCount[]; sessionsByDay: Array<{ day: string; count: number }> };
-type AgentActivityStatistics = {
-  schemaVersion: 2; generatedAt: string; windowDays: number;
-  source: { harness: string; writeSignal: string; confidence: string; caveat: string };
-  sample: { sessionFiles: number; sessionsWithPatches: number; toolCalls: number; toolIntervals: number; patchCalls: number; pathWriteEvents: number; sameFileSeries: number; repeatedFileSeries: number };
-  activityGaps: StatisticsDistribution; sameFileRevisits: StatisticsDistribution; sameDirectoryRevisits: StatisticsDistribution;
-  recommendation: { inactivityLeaseSec: number; basis: string; sameFileCoverageAtLeasePercent: number };
-  codexDeep: CodexDeepStatistics;
-  portfolio?: SessionPortfolioStatistics;
-};
 type WebAutopilotChoice = { choiceId: string; label: string };
 type WebAutopilotChoiceCard = { requestId: string; sessionId: string; harness: string; cwd: string; status: "pending"; createdAt: string; choices: WebAutopilotChoice[] };
 type AutopilotHarness = "codex" | "opencode" | "claude" | "hermes" | "zcode";
@@ -355,65 +342,79 @@ const coverageFor = (distribution: StatisticsDistribution, seconds: number) => d
 function StatisticsView({ statistics, loading, error, days, onDays, onRefresh }: {
   statistics?: AgentActivityStatistics; loading: boolean; error?: string; days: number; onDays: (days: number) => void; onRefresh: () => void;
 }) {
-  if (loading && !statistics) return <div className="statistics-loading"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Анализирую активность агентов…</strong><small>Свежие транскрипты Codex сканируются один раз; результаты кэшируются на диске на час.</small></div>;
-  if (!statistics) return <div className="statistics-loading"><strong>Статистика недоступна</strong><small>{error || "Данных об активности пока нет."}</small><button className="quiet-button" onClick={onRefresh}>Повторить</button></div>;
+  const [harness, setHarness] = React.useState("all");
+  const harnessName = (name: string) => (({ codex: "Codex", opencode: "OpenCode", zcode: "ZCode" } as Record<string, string>)[name] || name);
+  const ranges = <div className="statistics-range" role="group" aria-label="Период статистики">{[7, 30, 90].map((value) => <button className={days === value ? "active" : ""} aria-pressed={days === value} key={value} onClick={() => onDays(value)}>{value} дн.</button>)}</div>;
+  if (!statistics || (statistics.refreshing && statistics.sample.sessionFiles === 0)) return <div className="statistics-loading">
+    {ranges}{loading && <div className="session-loading-orbit"><span /><span /><span /></div>}
+    <strong>{loading ? "Подготавливаю статистику агентов…" : "Статистика недоступна"}</strong>
+    <small>{error || statistics?.refreshError || "Первый расчёт идёт в фоне. Повторные открытия используют кеш неизменившихся историй Codex, OpenCode и ZCode."}</small>
+    {statistics?.progress && <small role="status">{harnessName(statistics.progress.harness)}: {statistics.progress.total > 1 ? `${formatStatCount(statistics.progress.processed)} из ${formatStatCount(statistics.progress.total)} сессий` : "читаю источник…"}</small>}
+    {!loading && <button className="quiet-button" onClick={onRefresh}>Повторить</button>}
+  </div>;
+  const sources = statistics.byHarness || [];
+  const selected = harness === "all" ? undefined : sources.find((item) => item.harness === harness);
+  const data = selected || statistics;
   const thresholds = [30, 60, 120, 180, 300];
-  const maxHistogram = Math.max(1, ...statistics.sameFileRevisits.histogram.map((item) => item.percent));
-  const p = statistics.sameFileRevisits.percentilesSec;
-  const ap = statistics.activityGaps.percentilesSec;
-  const portfolio = statistics.portfolio;
-  const deep = statistics.codexDeep;
-  const topHarnessMax = Math.max(1, ...(portfolio?.harnesses || []).map((item) => item.count));
-  const topModelMax = Math.max(1, ...(portfolio?.models.slice(0, 8) || []).map((item) => item.count));
+  const maxHistogram = Math.max(1, ...data.sameFileRevisits.histogram.map((item) => item.percent));
+  const p = data.sameFileRevisits.percentilesSec;
+  const ap = data.activityGaps.percentilesSec;
+  const deep = selected?.deep || statistics.deep || statistics.codexDeep;
+  const totalSessions = sources.reduce((sum, item) => sum + item.deep.sessions, 0);
+  const topHarnessMax = Math.max(1, ...sources.map((item) => item.deep.sessions));
+  const topModelMax = Math.max(1, ...deep.models.slice(0, 8).map((item) => item.count));
   const dayMax = Math.max(1, ...(deep.sessionsByDay || []).map((item) => item.count));
+  const leaseSec = ap.p95 > 0 ? Math.max(60, Math.min(180, Math.ceil(ap.p95 / 15) * 15)) : 60;
   return <div className="statistics-scroll"><div className="statistics-page">
     <div className="statistics-hero">
-      <div><span className="eyebrow">АКТИВНОСТЬ АГЕНТОВ</span><h2>Статистика</h2><p>Замеры по реальным рабочим сессиям, а не синтетическим бенчмаркам. Учитываются подтверждённые изменения файлов в сессиях Codex.</p></div>
-      <div className="statistics-controls"><div className="statistics-range">{[7, 30, 90].map((value) => <button className={days === value ? "active" : ""} aria-pressed={days === value} disabled={loading} key={value} onClick={() => onDays(value)}>{value} дн.</button>)}</div><button className="quiet-button" disabled={loading} onClick={onRefresh}>{loading ? `Обновляю ${days} дн.…` : "Обновить"}</button></div>
+      <div><span className="eyebrow">АКТИВНОСТЬ АГЕНТОВ</span><h2>Статистика</h2><p>Общие показатели по сохранённым сессиям Codex, OpenCode и ZCode. Выберите среду, чтобы увидеть её вклад и покрытие данных.</p></div>
+      <div className="statistics-controls">{ranges}<button className="quiet-button" disabled={loading} onClick={onRefresh}>{loading ? `Обновляю ${days} дн.…` : "Обновить"}</button></div>
      </div>
-     {error && <div className="statistics-warning">Последнее обновление не удалось: {error}</div>}
-     {loading && <div className="history-loading-banner" role="status"><span className="inline-loading-dot" /> Пересчитываю статистику за {days} дней…</div>}
+     <div className="statistics-controls" style={{ marginBottom: 14 }}><div className="statistics-range" role="group" aria-label="Среда статистики"><button className={harness === "all" ? "active" : ""} aria-pressed={harness === "all"} onClick={() => setHarness("all")}>Все среды</button>{sources.map((item) => <button key={item.harness} className={harness === item.harness ? "active" : ""} aria-pressed={harness === item.harness} onClick={() => setHarness(item.harness)}>{harnessName(item.harness)}</button>)}</div></div>
+     {(error || statistics.refreshError) && <div className="statistics-warning">Последнее обновление не удалось: {error || statistics.refreshError}</div>}
+     {loading && <div className="history-loading-banner" role="status"><span className="inline-loading-dot" /> Обновляю данные за {days} дней. Пока показан последний расчёт за {statistics.windowDays} дней.{statistics.progress && ` ${harnessName(statistics.progress.harness)}: ${formatStatCount(statistics.progress.processed)} из ${formatStatCount(statistics.progress.total)}.`}</div>}
+     {sources.filter((item) => item.source.state !== "ready").map((item) => <div className="statistics-warning" key={item.harness}>{harnessName(item.harness)}: {item.source.state === "partial" ? "данные доступны частично" : "источник недоступен"}{item.source.reason ? `. ${item.source.reason}` : ""}</div>)}
     <div className="statistics-cards">
-      <article><span>Выборка сессий</span><strong>{formatStatCount(statistics.sample.sessionFiles)}</strong><small>{formatStatCount(statistics.sample.sessionsWithPatches)} с патчами · {statistics.windowDays} дн.</small></article>
-      <article><span>События записи</span><strong>{formatStatCount(statistics.sample.pathWriteEvents)}</strong><small>{formatStatCount(statistics.sample.patchCalls)} подтверждённых серий изменений</small></article>
-      <article><span>Возвраты к тому же файлу</span><strong>{formatStatCount(statistics.sameFileRevisits.count)}</strong><small>медиана {formatStatDuration(p.p50)} · p95 {formatStatDuration(p.p95)}</small></article>
-      <article className="recommendation"><span>Рекомендуемый таймаут неактивности</span><strong>~{formatStatDuration(statistics.recommendation.inactivityLeaseSec)}</strong><small>p95 активности инструментов {formatStatDuration(ap.p95)} · продлевается, пока сессия активна</small></article>
+      <article><span>Выборка сессий</span><strong>{formatStatCount(deep.sessions)}</strong><small>{formatStatCount(data.sample.sessionsWithPatches)} с изменениями файлов · {statistics.windowDays} дн.</small></article>
+      <article><span>События записи</span><strong>{formatStatCount(data.sample.pathWriteEvents)}</strong><small>{formatStatCount(data.sample.patchCalls)} серий изменений</small></article>
+      <article><span>Возвраты к тому же файлу</span><strong>{formatStatCount(data.sameFileRevisits.count)}</strong><small>медиана {formatStatDuration(p.p50)} · p95 {formatStatDuration(p.p95)}</small></article>
+      <article className="recommendation"><span>Рекомендуемый таймаут неактивности</span><strong>{data.activityGaps.count ? `~${formatStatDuration(leaseSec)}` : "Нет данных"}</strong><small>p95 активности инструментов {formatStatDuration(ap.p95)} · настройка не меняется автоматически</small></article>
     </div>
 
-    {portfolio && <div className="statistics-grid landscape-grid">
+    <div className="statistics-grid landscape-grid">
       <section className="statistics-panel">
-        <div className="statistics-panel-head"><div><span className="eyebrow">СМЕСЬ АГЕНТОВ</span><h3>Что реально используется</h3></div><small>{formatStatCount(portfolio.observedSessions)} сессий активны в этом окне</small></div>
-        <div className="ranked-bars">{portfolio.harnesses.map((item) => <div className="ranked-row" key={item.name}><b>{item.name}</b><div><span style={{ width: `${item.count / topHarnessMax * 100}%` }} /></div><em>{item.count} · {formatPercent(item.percent)}</em></div>)}</div>
+        <div className="statistics-panel-head"><div><span className="eyebrow">СМЕСЬ АГЕНТОВ</span><h3>Вклад каждой среды</h3></div><small>{formatStatCount(totalSessions)} сессий в сохранённых источниках</small></div>
+        <div className="ranked-bars">{sources.map((item) => <div className="ranked-row" key={item.harness}><b>{harnessName(item.harness)}</b><div><span style={{ width: `${item.deep.sessions / topHarnessMax * 100}%` }} /></div><em>{formatStatCount(item.deep.sessions)} · {formatPercent(totalSessions ? item.deep.sessions / totalSessions * 100 : 0)}</em></div>)}</div>
       </section>
       <section className="statistics-panel">
-        <div className="statistics-panel-head"><div><span className="eyebrow">ПОПУЛЯРНЫЕ МОДЕЛИ</span><h3>Самые используемые модели</h3></div><small>известны для {formatPercent(portfolio.modelCoveragePercent)} недавних сессий</small></div>
-        <div className="ranked-bars model-bars">{portfolio.models.slice(0, 8).map((item) => <div className="ranked-row" key={item.name}><b title={item.name}>{item.name}</b><div><span style={{ width: `${item.count / topModelMax * 100}%` }} /></div><em>{item.count}</em></div>)}</div>
+        <div className="statistics-panel-head"><div><span className="eyebrow">ПОПУЛЯРНЫЕ МОДЕЛИ</span><h3>Самые используемые модели</h3></div><small>известны для {formatPercent(deep.modelCoveragePercent)} сессий выбранной среды</small></div>
+        <div className="ranked-bars model-bars">{deep.models.slice(0, 8).map((item) => <div className="ranked-row" key={item.name}><b title={item.name}>{item.name}</b><div><span style={{ width: `${item.count / topModelMax * 100}%` }} /></div><em>{formatStatCount(item.count)}</em></div>)}</div>
       </section>
-    </div>}
+    </div>
 
     <div className="statistics-cards session-metric-cards">
-      <article><span>Длительность сессии Codex</span><strong>{formatStatDuration(deep.durationSec.median)}</strong><small>медиана · среднее {formatStatDuration(deep.durationSec.mean)} · p95 {formatStatDuration(deep.durationSec.p95)}</small></article>
-      <article><span>Токены Codex за сессию</span><strong>{formatStatCount(deep.tokens.median)}</strong><small>медиана · среднее {formatStatCount(deep.tokens.mean)} · p95 {formatStatCount(deep.tokens.p95)}</small></article>
-      <article><span>Покрытие токенами</span><strong>{formatPercent(deep.tokenCoveragePercent)}</strong><small>{formatStatCount(deep.tokens.count)} из {formatStatCount(deep.sessions)} сессий Codex отдают данные о токенах</small></article>
-      <article><span>Покрытие токенами по портфелю</span><strong>{formatPercent(portfolio?.tokenCoveragePercent || 0)}</strong><small>все агенты · пустые поля исключены из средних</small></article>
+      <article><span>Длительность сессии</span><strong>{deep.durationSec.count ? formatStatDuration(deep.durationSec.median) : "Нет данных"}</strong><small>медиана · среднее {formatStatDuration(deep.durationSec.mean)} · p95 {formatStatDuration(deep.durationSec.p95)}</small></article>
+      <article><span>Токены за сессию</span><strong>{deep.tokens.count ? formatStatCount(deep.tokens.median) : "Нет данных"}</strong><small>за всю сессию · среднее {formatStatCount(deep.tokens.mean)} · p95 {formatStatCount(deep.tokens.p95)}</small></article>
+      <article><span>Покрытие токенами</span><strong>{formatPercent(deep.tokenCoveragePercent)}</strong><small>{formatStatCount(deep.tokens.count)} из {formatStatCount(deep.sessions)} сессий; неизвестные значения исключены</small></article>
+      <article><span>Покрытие длительностью</span><strong>{formatPercent(deep.durationCoveragePercent)}</strong><small>{formatStatCount(deep.durationSec.count)} сессий с известным временем начала и окончания</small></article>
     </div>
 
     <section className="statistics-panel">
-      <div className="statistics-panel-head"><div><span className="eyebrow">ОБЪЁМ СЕССИЙ</span><h3>Сессии Codex по дням</h3></div><small>глубокая выборка за {statistics.windowDays} дн.</small></div>
+      <div className="statistics-panel-head"><div><span className="eyebrow">ОБЪЁМ СЕССИЙ</span><h3>Сессии по дням последней активности</h3></div><small>{selected ? harnessName(selected.harness) : "Все среды"} · {statistics.windowDays} дн.</small></div>
       <div className="daily-chart">{deep.sessionsByDay.map((item) => <div className="daily-column" key={item.day} title={`${item.day}: ${item.count} сессий`}><span style={{ height: `${Math.max(3, item.count / dayMax * 100)}%` }} /><b>{item.day.slice(5)}</b></div>)}</div>
     </section>
 
     <section className="statistics-panel">
       <div className="statistics-panel-head"><div><span className="eyebrow">ПОКРЫТИЕ ТАЙМАУТА</span><h3>Что реально покрывают разные таймауты</h3></div><small>Разрыв активности = следующее действие инструмента. Возврат к файлу = следующая запись в тот же путь.</small></div>
       <div className="coverage-legend"><span><i className="activity" />Следующая активность агента</span><span><i className="revisit" />Возврат к тому же файлу</span></div>
-      <div className="coverage-chart">{thresholds.map((seconds) => { const activity = coverageFor(statistics.activityGaps, seconds); const revisit = coverageFor(statistics.sameFileRevisits, seconds); return <div className="coverage-row" key={seconds}><b>{formatStatDuration(seconds)}</b><div className="coverage-bars"><div className="coverage-bar activity" style={{ width: `${activity}%` }}><span>{activity.toFixed(1)}%</span></div><div className="coverage-bar revisit" style={{ width: `${revisit}%` }}><span>{revisit.toFixed(1)}%</span></div></div></div>; })}</div>
+      <div className="coverage-chart">{thresholds.map((seconds) => { const activity = coverageFor(data.activityGaps, seconds); const revisit = coverageFor(data.sameFileRevisits, seconds); return <div className="coverage-row" key={seconds}><b>{formatStatDuration(seconds)}</b><div className="coverage-bars"><div className="coverage-bar activity" style={{ width: `${activity}%` }}><span>{activity.toFixed(1)}%</span></div><div className="coverage-bar revisit" style={{ width: `${revisit}%` }}><span>{revisit.toFixed(1)}%</span></div></div></div>; })}</div>
       <p className="statistics-explainer">Короткий таймаут может быть корректен, даже если агенты часто возвращаются к тому же файлу гораздо позже: резервации должны жить на сигналах активности сессии, а не только на повторных записях в этот файл.</p>
     </section>
 
     <div className="statistics-grid">
       <section className="statistics-panel">
-        <div className="statistics-panel-head"><div><span className="eyebrow">ТОТ ЖЕ ФАЙЛ</span><h3>Распределение возвратов к записи</h3></div><small>{formatStatCount(statistics.sameFileRevisits.count)} интервалов</small></div>
-        <div className="histogram">{statistics.sameFileRevisits.histogram.map((item) => <div className="histogram-column" key={item.label}><div className="histogram-value">{item.percent.toFixed(1)}%</div><div className="histogram-track"><span style={{ height: `${Math.max(3, item.percent / maxHistogram * 100)}%` }} /></div><b>{item.label}</b></div>)}</div>
+        <div className="statistics-panel-head"><div><span className="eyebrow">ТОТ ЖЕ ФАЙЛ</span><h3>Распределение возвратов к записи</h3></div><small>{formatStatCount(data.sameFileRevisits.count)} интервалов</small></div>
+        <div className="histogram">{data.sameFileRevisits.histogram.map((item) => <div className="histogram-column" key={item.label}><div className="histogram-value">{item.percent.toFixed(1)}%</div><div className="histogram-track"><span style={{ height: `${Math.max(3, item.percent / maxHistogram * 100)}%` }} /></div><b>{item.label}</b></div>)}</div>
       </section>
       <section className="statistics-panel">
         <div className="statistics-panel-head"><div><span className="eyebrow">ПЕРЦЕНТИЛИ</span><h3>Насколько длинными бывают паузы</h3></div></div>
@@ -423,8 +424,9 @@ function StatisticsView({ statistics, loading, error, days, onDays, onRefresh }:
 
     <section className="statistics-panel statistics-method">
       <div><span className="eyebrow">МЕТОДИКА</span><h3>Что именно измеряется</h3></div>
-      <p>{statistics.source.caveat} {portfolio?.caveat || ""}</p>
-      <div className="method-facts"><span><b>{formatStatCount(statistics.sample.toolCalls)}</b> вызовов инструментов</span><span><b>{formatStatCount(statistics.activityGaps.count)}</b> интервалов активности</span><span><b>{formatStatCount(statistics.sample.repeatedFileSeries)}</b> многократно правленных файлов</span><span><b>{new Date(statistics.generatedAt).toLocaleTimeString()}</b> сформировано</span></div>
+      <p>{statistics.source.caveatRu || statistics.source.caveat}</p>
+      <p>Сводка рассчитана по доступным сохранённым источникам на этом сервере. Данные других сред и отсутствующие истории не считаются нулевым расходом.</p>
+      <div className="method-facts"><span><b>{formatStatCount(data.sample.toolCalls)}</b> вызовов инструментов</span><span><b>{formatStatCount(data.activityGaps.count)}</b> интервалов активности</span><span><b>{formatStatCount(data.sample.repeatedFileSeries)}</b> многократно правленных файлов</span><span><b>{new Date(statistics.generatedAt).toLocaleTimeString()}</b> сформировано</span></div>
     </section>
   </div></div>;
 }
@@ -911,6 +913,9 @@ function App() {
   const [statisticsLoading, setStatisticsLoading] = React.useState(false);
   const [statisticsError, setStatisticsError] = React.useState<string>();
   const [statisticsDays, setStatisticsDays] = React.useState(30);
+  const statisticsRequest = React.useRef<AbortController | undefined>(undefined);
+  React.useEffect(() => () => statisticsRequest.current?.abort(), []);
+  React.useEffect(() => { if (!showStatistics) statisticsRequest.current?.abort(); }, [showStatistics]);
   const [showSessionSettings, setShowSessionSettings] = React.useState(false);
   const [showSessionSearch, setShowSessionSearch] = React.useState(false);
   const [sessionSearch, setSessionSearch] = React.useState(() => readSessionSearchPreferences(window.localStorage).query);
@@ -1899,19 +1904,29 @@ function App() {
   };
 
   const loadStatistics = React.useCallback(async (days = statisticsDays, refresh = false) => {
+    statisticsRequest.current?.abort();
+    const controller = new AbortController();
+    statisticsRequest.current = controller;
+    setStatistics((previous) => previous?.windowDays === days ? previous : undefined);
     setStatisticsLoading(true); setStatisticsError(undefined);
     try {
-      let result = await api<AgentActivityStatistics>(`/api/statistics/activity?days=${days}${refresh ? "&refresh=1" : ""}`);
+      const get = (force = false) => api<AgentActivityStatistics>(`/api/statistics/activity?days=${days}${force ? "&refresh=1" : ""}`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]) });
+      let result = await get(refresh);
+      if (controller.signal.aborted) return;
       setStatistics(result);
-      if (!result.portfolio && !refresh) {
-        for (let attempt = 0; attempt < 8 && !result.portfolio; attempt++) {
-          await new Promise((resolve) => window.setTimeout(resolve, 500));
-          result = await api<AgentActivityStatistics>(`/api/statistics/activity?days=${days}`);
-          setStatistics(result);
-        }
+      while (result.refreshing && !controller.signal.aborted) {
+        await new Promise<void>((resolve) => {
+          const done = () => { window.clearTimeout(timer); controller.signal.removeEventListener("abort", done); resolve(); };
+          const timer = window.setTimeout(done, 1000);
+          controller.signal.addEventListener("abort", done, { once: true });
+        });
+        if (controller.signal.aborted) return;
+        result = await get();
+        if (controller.signal.aborted) return;
+        setStatistics(result);
       }
-    } catch (error) { setStatisticsError((error as Error).message); }
-    finally { setStatisticsLoading(false); }
+    } catch (error) { if (!controller.signal.aborted) setStatisticsError((error as Error).message); }
+    finally { if (!controller.signal.aborted) setStatisticsLoading(false); }
   }, [statisticsDays]);
   const openStatistics = () => { setShowStatistics(true); setChatMenuOpen(false); void loadStatistics(statisticsDays); };
   const changeStatisticsDays = (days: number) => { setStatisticsDays(days); void loadStatistics(days); };
