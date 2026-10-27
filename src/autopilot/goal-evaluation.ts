@@ -3,23 +3,33 @@ import { z } from "zod";
 
 /** User events are the authority; summaries and agent messages are never inserted here. */
 export type GoalUserEvent = { id: string; cursor: string; kind: "objective" | "amendment"; text: string };
-export type GoalRequirement = { id: string; text: string; sourceEventIds: string[]; status: "open" | "fulfilled" | "blocked"; evidenceIds: string[] };
-export type GoalEvidence = { id: string; requirementId: string; text: string; observedVersion: string; validUntil?: number; source: string; loaded?: boolean };
-export type GoalMaterial = { id: string; text: string; complete: boolean; version: string };
+export type GoalVerificationKind = "file" | "native-report";
+export type GoalRequirement = { id: string; text: string; sourceEventIds: string[]; verificationKind?: GoalVerificationKind; status: "open" | "fulfilled" | "blocked"; evidenceIds: string[] };
+export type GoalEvidence = { id: string; requirementId: string; text: string; observedVersion: string; validUntil?: number; source: string; sourceKind?: GoalVerificationKind; loaded?: boolean };
+export type GoalMaterial = { id: string; text: string; complete: boolean; version: string; kind?: GoalVerificationKind };
+export type GoalNativeReport = { messageId: string; text: string; version: string; source: string; observedAt: string; validUntil: number };
 export type GoalMemoKey = { goalRevision: string; inputCursor: string; evidenceVersion: string; controlEpoch: string };
 export type GoalEvaluationInput = {
   goalRevision: string; fullObjective: string; userEvents: GoalUserEvent[]; inputCursor: string;
   requirements: GoalRequirement[]; evidence: GoalEvidence[]; evidenceVersion: string; controlEpoch: string;
-  materials: GoalMaterial[]; requirementMemo?: GoalRequirementMemo; maxInputBytes?: number; now?: number;
+  materials: GoalMaterial[]; nativeReport?: GoalNativeReport; nativeReportUnavailable?: string; requirementMemo?: GoalRequirementMemo; maxInputBytes?: number; now?: number;
 };
-export type GoalRequirementMemo = { goalRevision: string; primaryHash: string; requirements: Array<{ id: string; text: string; sourceEventIds: string[] }>; supersessions?: GoalSupersession[] };
+export type GoalRequirementMemo = { goalRevision: string; primaryHash: string; formatVersion?: number; requirements: Array<{ id: string; text: string; sourceEventIds: string[]; verificationKind?: GoalVerificationKind }>; supersessions?: GoalSupersession[] };
 export type GoalSupersession = { requirementId: string; amendmentEventId: string; replacementRequirementId?: string; reason: string; previous: { id: string; text: string; sourceEventIds: string[] } };
 export type GoalModel = { call(request: { stage: "requirements" | "evidence-reconciliation" | "next-action" | "coverage-audit"; payload: unknown; maxOutputTokens: number }): Promise<unknown> };
 export type GoalModelUsage = { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number };
 export type GoalEvaluation = { memoKey: GoalMemoKey; requirementMemo: GoalRequirementMemo; supersessions: GoalSupersession[]; usage?: GoalModelUsage; requirements: GoalRequirement[]; decision: { kind: "continue"; nextAction: string } | { kind: "blocked"; reason: string } | { kind: "done-candidate"; summary: string; audit: "passed" } };
 
-const requirementSchema = z.object({ id: z.string().min(1), text: z.string().min(1), sourceEventIds: z.array(z.string().min(1)).min(1), status: z.enum(["open", "fulfilled", "blocked"]), evidenceIds: z.array(z.string().min(1)) }).strict();
-const requirementProjectionSchema = z.object({ id: z.string().min(1), text: z.string().min(1), sourceEventIds: z.array(z.string().min(1)).min(1) }).strict();
+export function makeNativeReportEvidence(requirementId: string, report: GoalNativeReport, now = Date.now()): GoalEvidence | null {
+  if (!report.messageId.trim() || !report.text.trim() || !report.version.trim() || !report.source.trim()
+    || !Number.isFinite(report.validUntil) || report.validUntil <= now) return null;
+  return { id: createHash("sha256").update(`${requirementId}\0native-report\0${report.version}`).digest("hex"),
+    requirementId, text: report.text, observedVersion: `sha256:${report.version}`, validUntil: report.validUntil,
+    source: report.source, sourceKind: "native-report", loaded: true };
+}
+
+const requirementSchema = z.object({ id: z.string().min(1), text: z.string().min(1), sourceEventIds: z.array(z.string().min(1)).min(1), verificationKind: z.enum(["file", "native-report"]).optional(), status: z.enum(["open", "fulfilled", "blocked"]), evidenceIds: z.array(z.string().min(1)) }).strict();
+const requirementProjectionSchema = z.object({ id: z.string().min(1), text: z.string().min(1), sourceEventIds: z.array(z.string().min(1)).min(1), verificationKind: z.enum(["file", "native-report"]).optional() }).strict();
 const supersessionSchema = z.object({ requirementId: z.string().min(1), amendmentEventId: z.string().min(1), replacementRequirementId: z.string().min(1).optional(), reason: z.string().min(1) }).strict();
 const requirementsReply = z.object({ requirements: z.array(requirementSchema), supersessions: z.array(supersessionSchema) }).strict();
 const actionReply = z.discriminatedUnion("kind", [
@@ -28,7 +38,7 @@ const actionReply = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("complete"), summary: z.string().min(1) }).strict(),
 ]);
 const evidenceReply = z.object({ assessments: z.array(z.object({ requirementId: z.string(), fulfilled: z.boolean(), evidenceIds: z.array(z.string()), reason: z.string() }).strict()) }).strict();
-const auditReply = z.object({ complete: z.boolean(), coverage: z.array(z.object({ requirementId: z.string(), covered: z.boolean(), evidenceIds: z.array(z.string()) }).strict()), supersessionChecks: z.array(z.object({ requirementId: z.string(), confirmed: z.boolean(), amendmentEventId: z.string() }).strict()), summary: z.string().min(1) }).strict();
+const auditReply = z.object({ complete: z.boolean(), coverage: z.array(z.object({ requirementId: z.string(), covered: z.boolean(), evidenceIds: z.array(z.string()) }).strict()), verificationKindChecks: z.array(z.object({ requirementId: z.string(), verificationKind: z.enum(["file", "native-report"]), confirmed: z.boolean() }).strict()), supersessionChecks: z.array(z.object({ requirementId: z.string(), confirmed: z.boolean(), amendmentEventId: z.string() }).strict()), summary: z.string().min(1) }).strict();
 const MAX_BYTES = 256 * 1024;
 
 function fail(message: string): never { throw new Error(`Goal evaluation fail-closed: ${message}`); }
@@ -37,7 +47,7 @@ function validateMaterials(input: GoalEvaluationInput): void {
   if (!input.fullObjective.trim() || !input.userEvents.length) fail("full objective and primary user events are required");
   if (!input.userEvents.some(e => e.kind === "objective")) fail("primary objective event is missing");
   if (input.userEvents.some(e => !e.text.trim() || !e.id || !e.cursor)) fail("primary user event unavailable");
-  if (bytes({ objective: input.fullObjective, events: input.userEvents, requirements: input.requirements, evidence: input.evidence, materials: input.materials }) > Math.min(input.maxInputBytes ?? MAX_BYTES, MAX_BYTES)) fail("input exceeds supported complete-context limit");
+  if (bytes({ objective: input.fullObjective, events: input.userEvents, requirements: input.requirements, evidence: input.evidence, materials: input.materials, nativeReport: input.nativeReport, nativeReportUnavailable: input.nativeReportUnavailable }) > Math.min(input.maxInputBytes ?? MAX_BYTES, MAX_BYTES)) fail("input exceeds supported complete-context limit");
 }
 function memoKey(i: GoalEvaluationInput): GoalMemoKey { return { goalRevision: i.goalRevision, inputCursor: i.inputCursor, evidenceVersion: i.evidenceVersion, controlEpoch: i.controlEpoch }; }
 function primaryHash(i: GoalEvaluationInput): string {
@@ -67,7 +77,7 @@ export async function evaluateGoal(input: GoalEvaluationInput, model: GoalModel)
   try { return await evaluateGoalChecked(input, model); }
   catch (error) {
     const openLedger = input.requirements.map(r => ({ ...r, status: "open" as const, evidenceIds: [] }));
-    return { memoKey: memoKey(input), requirementMemo: { goalRevision: input.goalRevision, primaryHash: primaryHash(input), requirements: [],
+    return { memoKey: memoKey(input), requirementMemo: { goalRevision: input.goalRevision, primaryHash: primaryHash(input), formatVersion: 2, requirements: [],
       ...(input.requirementMemo?.supersessions?.length ? { supersessions: input.requirementMemo.supersessions } : {}) },
       supersessions: input.requirementMemo?.supersessions ?? [], requirements: openLedger,
       decision: { kind: "blocked", reason: safeFailureReason(error) } };
@@ -82,11 +92,12 @@ async function evaluateGoalChecked(input: GoalEvaluationInput, model: GoalModel)
   if (current.size !== input.requirements.length) fail("duplicate requirement id");
   const currentPrimaryHash = primaryHash(input);
   // Requirements are reused only for this exact objective revision and primary material hash.
-  const memoIsCurrent = !!input.requirementMemo?.requirements.length && input.requirementMemo.goalRevision === input.goalRevision && input.requirementMemo.primaryHash === currentPrimaryHash;
+  const memoIsCurrent = !!input.requirementMemo?.requirements.length && input.requirementMemo.formatVersion === 2
+    && input.requirementMemo.goalRevision === input.goalRevision && input.requirementMemo.primaryHash === currentPrimaryHash;
   const projection = memoIsCurrent
     ? { requirements: input.requirementMemo!.requirements, supersessions: input.requirementMemo!.supersessions ?? [] }
     : requirementsReply.parse(await model.call({ stage: "requirements", maxOutputTokens: 6000, payload: { fullObjective: input.fullObjective, userEvents: input.userEvents, existingRequirements: input.requirements } }));
-  const derived = projection.requirements.map(r => ({ ...r, status: "open" as const, evidenceIds: [] }));
+  const derived = projection.requirements.map(r => ({ ...r, verificationKind: r.verificationKind ?? "file" as const, status: "open" as const, evidenceIds: [] }));
   const supersessions: GoalSupersession[] = projection.supersessions.map(s => {
     const old = current.get(s.requirementId) ?? ("previous" in s ? s.previous : undefined);
     if (!old) fail("supersession cites unknown historical requirement");
@@ -104,46 +115,65 @@ async function evaluateGoalChecked(input: GoalEvaluationInput, model: GoalModel)
   for (const old of input.requirements) {
     const next = returned.get(old.id);
     if (!next && !supersededIds.has(old.id)) fail("requirement removed without explicit supersession record");
-    if (next && (next.text !== old.text || old.sourceEventIds.some(id => !next.sourceEventIds.includes(id)))) fail("existing requirement rewritten; preserve it and supersede explicitly");
+    const changingTypedVerificationKind = old.verificationKind !== undefined && (next?.verificationKind ?? "file") !== old.verificationKind;
+    if (next && (next.text !== old.text || changingTypedVerificationKind || old.sourceEventIds.some(id => !next.sourceEventIds.includes(id)))) fail("existing requirement rewritten; preserve it and supersede explicitly");
   }
   for (const r of derived) {
     if (!r.sourceEventIds.every(id => eventIds.has(id))) fail("requirement references non-primary event");
     const old = current.get(r.id);
     if (r.status !== "open" || r.evidenceIds.length) fail("requirement extraction cannot assert fulfillment");
   }
-  const validEvidence = input.evidence.filter(e => e.loaded === true && e.text.trim() && e.source.trim() && e.observedVersion.trim() && (e.validUntil === undefined || e.validUntil > (input.now ?? Date.now())));
-  const rawAssessments = evidenceReply.parse(await model.call({ stage: "evidence-reconciliation", maxOutputTokens: 3000, payload: { requirements: derived, evidence: validEvidence, materials: input.materials } })).assessments;
+  const now = input.now ?? Date.now();
+  const typedNativeEvidence = derived.filter(r => r.verificationKind === "native-report" && input.nativeReport).flatMap(r => {
+    const proof = makeNativeReportEvidence(r.id, input.nativeReport!, now);
+    return proof ? [proof] : [];
+  });
+  const validEvidence = [...input.evidence.filter(e => e.sourceKind !== "native-report"), ...typedNativeEvidence]
+    .filter(e => e.loaded === true && e.text.trim() && e.source.trim() && e.observedVersion.trim() && (e.validUntil === undefined || e.validUntil > now));
+  const nativeReportMaterials: GoalMaterial[] = derived.filter(r => r.verificationKind === "native-report").map(requirement => {
+    const proof = typedNativeEvidence.find(e => e.requirementId === requirement.id);
+    return proof ? { id: `native-report:${requirement.id}`, text: `Observed visible assistant report text (message ${input.nativeReport!.messageId}); proves text emission only, not its claims or side effects.\n${input.nativeReport!.text}`, complete: true, version: proof.observedVersion, kind: "native-report" }
+      : { id: `native-report:${requirement.id}`, text: `Native report observation unavailable: ${input.nativeReportUnavailable ?? "no fresh, bounded, correlated visible assistant report"}`, complete: false, version: "unavailable", kind: "native-report" };
+  });
+  const materials = [...input.materials, ...nativeReportMaterials];
+  const rawAssessments = evidenceReply.parse(await model.call({ stage: "evidence-reconciliation", maxOutputTokens: 3000, payload: { requirements: derived, evidence: validEvidence, materials } })).assessments;
   const assessmentMap = new Map(rawAssessments.map(a => [a.requirementId, a]));
   if (assessmentMap.size !== rawAssessments.length || derived.some(r => !assessmentMap.has(r.id)) || rawAssessments.some(a => !derived.some(r => r.id === a.requirementId))) fail("evidence assessments must cover each current requirement exactly once");
   const ledger: GoalRequirement[] = derived.map(r => {
     const a = assessmentMap.get(r.id)!;
-    if (a.evidenceIds.some(id => !validEvidence.some(e => e.id === id && e.requirementId === r.id))) fail("evidence assessment cites missing, stale, or mismatched evidence");
+    if (a.evidenceIds.some(id => !validEvidence.some(e => e.id === id && e.requirementId === r.id && (e.sourceKind ?? "file") === (r.verificationKind ?? "file")))) fail("evidence assessment cites missing, stale, or mismatched evidence");
     if (a.fulfilled && !a.evidenceIds.length) fail("fulfilled requirement has no evidence");
     return { ...r, status: a.fulfilled ? "fulfilled" : "open", evidenceIds: a.fulfilled ? a.evidenceIds : [] };
   });
   if (!ledger.length) fail("requirement ledger is empty");
-  const requirementMemo: GoalRequirementMemo = { goalRevision: input.goalRevision, primaryHash: currentPrimaryHash, requirements: derived.map(({ id, text, sourceEventIds }) => ({ id, text, sourceEventIds })), supersessions };
+  const requirementMemo: GoalRequirementMemo = { goalRevision: input.goalRevision, primaryHash: currentPrimaryHash, formatVersion: 2, requirements: derived.map(({ id, text, sourceEventIds, verificationKind }) => ({ id, text, sourceEventIds, verificationKind })), supersessions };
   const liveEvidence = validEvidence;
-  const action = actionReply.parse(await model.call({ stage: "next-action", maxOutputTokens: 2000, payload: { fullObjective: input.fullObjective, userEvents: input.userEvents, requirements: ledger, evidence: liveEvidence, materials: input.materials } }));
+  const action = actionReply.parse(await model.call({ stage: "next-action", maxOutputTokens: 2000, payload: { fullObjective: input.fullObjective, userEvents: input.userEvents, requirements: ledger, evidence: liveEvidence, materials } }));
   if (action.kind !== "complete") return { memoKey: key, requirementMemo, supersessions, requirements: ledger, decision: action };
   if (ledger.some(r => r.status !== "fulfilled")) return { memoKey: key, requirementMemo, supersessions, requirements: ledger, decision: { kind: "blocked", reason: "Completion proposed while requirements remain open or blocked" } };
   // Completion is provisional until a distinct audit sees every accessible primary source in full.
-  validateMaterials(input);
-  const audit = auditReply.parse(await model.call({ stage: "coverage-audit", maxOutputTokens: 4000, payload: { fullObjective: input.fullObjective, userEvents: input.userEvents, requirements: ledger, supersessions, evidence: liveEvidence, materials: input.materials } }));
+  validateMaterials({ ...input, materials });
+  const audit = auditReply.parse(await model.call({ stage: "coverage-audit", maxOutputTokens: 4000, payload: { fullObjective: input.fullObjective, userEvents: input.userEvents, requirements: ledger, supersessions, evidence: liveEvidence, materials } }));
   const auditMap = new Map(audit.coverage.map(c => [c.requirementId, c]));
   const required = ledger.map(r => r.id);
   const coverageValid = auditMap.size === audit.coverage.length && required.length === auditMap.size && required.every(id => {
     const c = auditMap.get(id); const req = ledger.find(r => r.id === id)!;
-    return !!c?.covered && req.evidenceIds.length > 0 && c.evidenceIds.length > 0 && c.evidenceIds.every(eid => req.evidenceIds.includes(eid) && liveEvidence.some(e => e.id === eid && e.requirementId === id));
+    return !!c?.covered && req.evidenceIds.length > 0 && c.evidenceIds.length > 0 && c.evidenceIds.every(eid => req.evidenceIds.includes(eid) && liveEvidence.some(e => e.id === eid && e.requirementId === id && (e.sourceKind ?? "file") === (req.verificationKind ?? "file")));
+  });
+  const kindChecks = new Map(audit.verificationKindChecks.map(check => [check.requirementId, check]));
+  const verificationKindsValid = kindChecks.size === audit.verificationKindChecks.length && required.length === kindChecks.size && required.every(id => {
+    const req = ledger.find(r => r.id === id)!;
+    const check = kindChecks.get(id);
+    return !!check?.confirmed && check.verificationKind === (req.verificationKind ?? "file");
   });
   const supersessionChecks = new Map(audit.supersessionChecks.map(c => [c.requirementId, c]));
   const supersessionsValid = supersessionChecks.size === audit.supersessionChecks.length && supersessions.length === supersessionChecks.size && supersessions.every(s => {
     const check = supersessionChecks.get(s.requirementId);
     return !!check?.confirmed && check.amendmentEventId === s.amendmentEventId && s.previous.id === s.requirementId;
   });
-  const materialsComplete = input.materials.length > 0 && input.materials.every(m => m.complete && !!m.text && !!m.version);
-  if (!audit.complete || !coverageValid || !supersessionsValid || !materialsComplete) {
-    const reason = !materialsComplete ? "Primary result materials are missing or incomplete" : `Per-requirement coverage or supersession audit failed: ${audit.summary}`;
+  const materialsComplete = materials.length > 0 && materials.every(m => m.complete && !!m.text && !!m.version);
+  if (!audit.complete || !coverageValid || !verificationKindsValid || !supersessionsValid || !materialsComplete) {
+    const reason = !materialsComplete ? "Primary result materials are missing or incomplete" : `Per-requirement coverage, verification-kind, or supersession audit failed: ${audit.summary}`;
     return { memoKey: key, requirementMemo, supersessions, requirements: ledger, decision: { kind: "blocked", reason } };
   }
   return { memoKey: key, requirementMemo, supersessions, requirements: ledger, decision: { kind: "done-candidate", summary: audit.summary, audit: "passed" } };

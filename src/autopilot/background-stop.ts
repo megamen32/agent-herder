@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import type { HarnessAdapter } from "../types/index.js";
-import type { AutopilotRunnerInput } from "../autopilot-runner.js";
-import { applyAutopilotGoalCompletion, autopilotGoalArmed, autopilotGoalControllerAllowed, autopilotGoalFenceCurrent, autopilotGoalNativeInputsKnown, withAutopilotGoalContinuationAdmission } from "../autopilot-runner.js";
+import type { AutopilotRunnerInput, NativeFenceRead, NativeReportObservation } from "../autopilot-runner.js";
+import { applyAutopilotGoalCompletion, autopilotGoalArmed, autopilotGoalControllerAllowed, autopilotGoalFenceCurrent, autopilotGoalNativeInputsKnown, autopilotGoalNativeReportAdmissible, withAutopilotGoalContinuationAdmission } from "../autopilot-runner.js";
 import { getHumanStopStore } from "../human-stop-store.js";
 
 /** Uses the existing daemon jobs/Stop judge/native writers. No subprocess or extra loop. */
@@ -53,14 +53,16 @@ export class BackgroundAutopilotStop {
             const result = await this.options.evaluate({ ...input,
               lastUserMessage: before.lastUser ?? input.lastUserMessage,
               lastAssistantMessage: before.lastAssistant ?? input.lastAssistantMessage,
+              nativeReportObservation: before.nativeReportObservation,
               nativeFence: async () => {
                 const current = await this.snapshot(adapter, input);
                 if (!current || current.fingerprint !== before.fingerprint) return false;
                 const currentController = await autopilotGoalControllerAllowed(input, current.session);
-                return currentController.allowed
+                const allowed = currentController.allowed
                   && current.session.status !== "running" && current.session.status !== "needs_input"
                   && await autopilotGoalNativeInputsKnown(input, current.messages)
                   && !signal.aborted && await this.options.allowed(input) && !await this.options.held(input.harness, input.sessionId);
+                return { allowed, nativeReportObservation: current.nativeReportObservation } satisfies NativeFenceRead;
               } });
             const doneCandidate = result.decision === "done-candidate";
             if (!doneCandidate && (result.decision !== "continue" || typeof result.next_goal !== "string")) return result;
@@ -77,7 +79,7 @@ export class BackgroundAutopilotStop {
             }
             if (doneCandidate) {
               if (signal.aborted || !await this.options.allowed(input) || await this.options.held(input.harness, input.sessionId)) return { decision: "stale-or-held" };
-              const completed = await applyAutopilotGoalCompletion(input, result.completion_ticket);
+              const completed = await applyAutopilotGoalCompletion(input, result.completion_ticket, after.nativeReportObservation);
               return completed
                 ? { ...result, decision: "terminal", terminalKind: "completed", completion_ticket: undefined }
                 : { decision: "stale-completion-ticket" };
@@ -129,6 +131,25 @@ export class BackgroundAutopilotStop {
     const messages = await adapter.getSessionMessages?.(session.id, 50);
     if (!messages || (!messages.length && !await autopilotGoalArmed(input))) return null;
     const fingerprint = createHash("sha256").update(JSON.stringify(messages.map(m => [m.id, m.role, m.text, m.parts]))).digest("hex");
-    return { session, fingerprint, messages, lastUser: [...messages].reverse().find(m => m.role === "user")?.text, lastAssistant: [...messages].reverse().find(m => m.role === "assistant")?.text };
+    let nativeReportObservation = observeNativeReport(input, messages, fingerprint);
+    if (nativeReportObservation.status === "observed" && !await autopilotGoalNativeReportAdmissible(input, messages, nativeReportObservation.messageId)) {
+      nativeReportObservation = { status: "unavailable", nativeFingerprint: fingerprint, reason: "no matching current-goal continuation is linked to this assistant message" };
+    }
+    return { session, fingerprint, messages, nativeReportObservation, lastUser: [...messages].reverse().find(m => m.role === "user")?.text, lastAssistant: [...messages].reverse().find(m => m.role === "assistant")?.text };
   }
+}
+
+const MAX_NATIVE_REPORT_BYTES = 64 * 1024;
+const CREDENTIAL_SHAPED_NATIVE_TEXT = /(?:sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|Bearer\s+[A-Za-z0-9._~+/-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:api[_-]?key|access[_-]?token|password|client[_-]?secret)\s*[:=]\s*[^\s,;]{8,})/iu;
+export function observeNativeReport(input: AutopilotRunnerInput, messages: import("../types/index.js").SessionMessageView[], nativeFingerprint: string): NativeReportObservation {
+  const message = [...messages].reverse().find(item => item.role === "assistant");
+  if (!message?.id?.trim()) return { status: "unavailable", nativeFingerprint, reason: "no identified assistant message in bounded native history" };
+  const text = message.parts.filter(part => part.type === "text" && typeof part.text === "string").map(part => part.text!).join("\n");
+  if (!text.trim()) return { status: "unavailable", nativeFingerprint, reason: "assistant message has no visible text parts" };
+  if (Buffer.byteLength(text, "utf8") > MAX_NATIVE_REPORT_BYTES) return { status: "unavailable", nativeFingerprint, reason: "visible assistant message exceeds the native report evidence limit" };
+  if (CREDENTIAL_SHAPED_NATIVE_TEXT.test(text)) return { status: "unavailable", nativeFingerprint, reason: "visible assistant message contains credential-shaped text" };
+  const version = createHash("sha256").update(JSON.stringify([input.harness, input.sessionId, resolve(input.cwd), nativeFingerprint, message.id, message.role, message.turnId ?? null, text])).digest("hex");
+  const observedAt = new Date().toISOString();
+  return { status: "observed", nativeFingerprint, messageId: message.id, ...(message.turnId ? { turnId: message.turnId } : {}), text, version, observedAt,
+    freshUntil: new Date(Date.now() + 60_000).toISOString() };
 }

@@ -52,6 +52,15 @@ describe("background Stop delivery",()=>{
   f.finish({decision:"continue",next_goal:"Нельзя отправить"});await waitUntil(()=>["completed","cancelled"].includes(f.jobs.get(job.id)?.state||""));
   expect(f.deliver).not.toHaveBeenCalled();
  });
+ it("invalidates the native report fence when a message id/content changes",async()=>{
+  const f=await fixture();const job=f.consumer.submit(event);await waitUntil(()=>f.evaluate.mock.calls.length===1);
+  const runnerInput=f.evaluate.mock.calls[0]![0] as any;
+  await expect(runnerInput.nativeFence()).resolves.toMatchObject({allowed:true});
+  f.newMessage();
+  await expect(runnerInput.nativeFence()).resolves.toBe(false);
+  f.finish({decision:"unavailable",reason:"stale native report"});await waitUntil(()=>f.jobs.get(job.id)?.state==="completed");
+  expect(f.deliver).not.toHaveBeenCalled();
+ });
  it("keeps accepted/interrupted history after restart and never replays that event",async()=>{
   const f=await fixture();const job=f.consumer.submit(event);await waitUntil(()=>f.evaluate.mock.calls.length===1);
   const restored=new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(f.root,"jobs.json")});

@@ -3,14 +3,18 @@ import * as React from "react";
 type Session = { harness: string; id: string; cwd?: string };
 type GoalEvent = { eventId: string; text: string; refs?: Array<{ uri: string; label?: string }>; receivedAt?: string };
 type Requirement = { id: string; text: string; sourceEventIds: string[] };
-type EvaluationState = { lastDecision: "continue" | "blocked" | "done-candidate"; lastReason?: string; requirementsStatus: Array<{ id: string; status: "open" | "fulfilled" | "blocked"; evidenceIds: string[] }> };
+type EvaluationState = { controlEpoch?: number; lastDecision: "continue" | "blocked" | "done-candidate"; lastReason?: string; requirementsStatus: Array<{ id: string; status: "open" | "fulfilled" | "blocked"; evidenceIds: string[] }> };
 type GoalSnapshot = {
-  armed: boolean; completed: boolean; stopped: boolean; goalRevision: number;
+  armed: boolean; completed: boolean; stopped: boolean; goalRevision: number; controlEpoch: number;
   primaryEvents: GoalEvent[]; requirements: Requirement[]; inputCursor: number; processedInputCursor: number;
   evaluation?: EvaluationState;
 };
 type GoalState = { available: boolean; goal: GoalSnapshot | null; judge: { model: string; transport: "configured-openai-compatible"; subscription: false } };
 type Request = <T>(path: string, init?: RequestInit) => Promise<T>;
+
+export function goalEvaluationIsCurrent(goal: Pick<GoalSnapshot, "controlEpoch">, evaluation?: Pick<EvaluationState, "controlEpoch">): boolean {
+  return evaluation !== undefined && (evaluation.controlEpoch === undefined || evaluation.controlEpoch === goal.controlEpoch);
+}
 
 export function AutopilotGoalPanel({ session, request, supported, onChanged }: { session: Session; request: Request; supported: boolean; onChanged?: (session: Session) => void }) {
   const identity = `${session.harness}\0${session.id}\0${session.cwd ?? ""}`;
@@ -120,7 +124,8 @@ export function AutopilotGoalPanel({ session, request, supported, onChanged }: {
     }
   };
 
-  const status = !goal ? "Цель ещё не сохранена" : goal.stopped ? "Остановлен" : goal.completed ? "Завершён по проверке" : goal.evaluation?.lastDecision === "blocked" ? "Не удалось продолжить" : !goal.armed ? "Выключен" : goal.inputCursor !== goal.processedInputCursor ? "Ожидает обработки уточнения" : "В работе";
+  const evaluationCurrent = goal ? goalEvaluationIsCurrent(goal, goal.evaluation) : false;
+  const status = !goal ? "Цель ещё не сохранена" : goal.completed ? "Завершён по проверке" : goal.stopped ? "Остановлен" : goal.evaluation && !evaluationCurrent && goal.armed ? "Проверяю цель" : evaluationCurrent && goal.evaluation?.lastDecision === "blocked" ? "Не удалось продолжить" : !goal.armed ? "Выключен" : goal.inputCursor !== goal.processedInputCursor ? "Ожидает обработки уточнения" : "В работе";
   const refInput = refsFor(draft);
   const existingRefs = [...new Map((goal?.primaryEvents.flatMap(event => event.refs ?? []) ?? []).map(ref => [ref.uri, ref])).values()];
   return <section className="autopilot-control autopilot-goal-panel" aria-label="Полная цель автопилота">
@@ -129,10 +134,10 @@ export function AutopilotGoalPanel({ session, request, supported, onChanged }: {
       {loading && !state && <p role="status">Загружаю цель…</p>}
       {state?.judge && <small>Судья: {state.judge.model} · настроенный OpenAI совместимый маршрут</small>}
       {goal && <><h4>Исходное поручение и уточнения</h4><ol>{goal.primaryEvents.map((event) => <li key={event.eventId}><p>{event.text}</p></li>)}</ol><h4>Требования</h4>{goal.requirements.length ? <ul>{goal.requirements.map((item) => {
-        const reqStatus = goal.evaluation?.requirementsStatus.find(value => value.id === item.id);
+        const reqStatus = evaluationCurrent ? goal.evaluation?.requirementsStatus.find(value => value.id === item.id) : undefined;
         return <li key={item.id}>{item.text}{reqStatus && <small> — {reqStatus.status === "fulfilled" ? "подтверждено" : reqStatus.status === "blocked" ? "заблокировано" : "открыто"}</small>}</li>;
       })}</ul> : <small>Требования пока не выделены.</small>}</>}
-      {goal?.evaluation?.lastReason && <p role="status">{goal.evaluation.lastDecision === "blocked" ? "Причина остановки:" : "Последняя проверка:"} {goal.evaluation.lastReason}</p>}
+      {evaluationCurrent && goal?.evaluation?.lastReason && <p role="status">{goal.evaluation.lastDecision === "blocked" ? "Причина остановки:" : "Последняя проверка:"} {goal.evaluation.lastReason}</p>}
       {!goal && <label>Полный текст цели<textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={5} placeholder="Введите исходное поручение целиком" disabled={saving} /></label>}
       {goal?.armed && !goal.completed && <label>Уточнение цели<textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={3} placeholder="Добавьте уточнение, не удаляя исходное поручение" disabled={saving} /></label>}
       {(!goal || (goal.armed && !goal.completed)) && <label>Файлы результата для проверки (по одному пути на строку)<textarea value={refDraft} onChange={(event) => setRefDraft(event.target.value)} rows={2} placeholder="gamma.md или subdir/result.md" disabled={saving} /></label>}
@@ -141,7 +146,7 @@ export function AutopilotGoalPanel({ session, request, supported, onChanged }: {
       <div className="inspector-actions">
         {!goal && <button className="primary-button" disabled={saving || loading || !draft.trim() || refInput.invalid.length > 0} onClick={() => void mutate("arm")}>{saving ? "Сохраняю…" : "Сохранить цель и включить"}</button>}
         {goal?.armed && !goal.completed && <><button className="quiet-button" disabled={saving || loading || !draft.trim() || refInput.invalid.length > 0} onClick={() => void mutate("amend")}>{saving ? "Сохраняю…" : "Добавить уточнение"}</button><button className="stop-button" disabled={saving || loading} onClick={() => void mutate("stop")}>Остановить цель</button></>}
-        {goal?.stopped && <button className="quiet-button" disabled={saving || loading} onClick={() => void mutate("resume")}>Возобновить цель</button>}
+        {goal?.stopped && !goal.completed && <button className="quiet-button" disabled={saving || loading} onClick={() => void mutate("resume")}>Возобновить цель</button>}
       </div>
       {error && <p role="alert" className="permission-mode-error">{error}</p>}
     </>}

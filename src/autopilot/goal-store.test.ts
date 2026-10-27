@@ -154,6 +154,54 @@ describe("GoalStore", () => {
     expect((await goals.snapshot(identity)).evaluation?.lastAdmission).toMatchObject({ actionFingerprint: "sha256:unknown", outcome: "unknown" });
   });
 
+  it("keeps a completed receipt and its proof when the goal is stopped", async () => {
+    const { value: goals } = await store();
+    await goals.arm({ identity, goal: { eventId: "human-1", text: "Finish and verify the result" }, requirements: [{ id: "r1", text: "Result verified", sourceEventIds: ["human-1"] }] });
+    const before = await goals.snapshot(identity);
+    const projected = await goals.applyRequirements(identity, before, before.inputCursor, [{ id: "r1", text: "Result verified", sourceEventIds: ["human-1"] }]);
+    expect(projected).not.toBeNull();
+    if (!projected) return;
+    const result = await goals.checkCompletion(identity, projected, [{ id: "e1", requirementId: "r1", version: "sha256:verified", provenance: "native readback", observedAt: new Date().toISOString(), freshUntil: new Date(Date.now() + 60_000).toISOString(), materialLoaded: true }]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(await goals.applyCompletion(identity, result.ticket)).toBe(true);
+    const stopped = await goals.stop(identity);
+    expect(stopped).toMatchObject({ armed: false, stopped: true, completed: true, evidence: [{ id: "e1" }] });
+    await expect(goals.resume(identity)).rejects.toThrow("no resumable incomplete goal");
+  });
+
+  it("defaults an untyped stored requirement to file proof", async () => {
+    const { value: goals } = await store();
+    const snapshot = await goals.arm({ identity, goal: { eventId: "human-1", text: "Write the requested file" }, requirements: [{ id: "r1", text: "File is written", sourceEventIds: ["human-1"] }] });
+    expect(snapshot.requirements[0]?.verificationKind).toBe("file");
+  });
+
+  it("requires native-message evidence for a native-report requirement", async () => {
+    const { value: goals } = await store();
+    await goals.arm({ identity, goal: { eventId: "human-1", text: "Emit a completion report" }, requirements: [{ id: "report", text: "Emit the visible report", sourceEventIds: ["human-1"], verificationKind: "native-report" }] });
+    const before = await goals.snapshot(identity);
+    const fileProof = await goals.checkCompletion(identity, before, [{ id: "file-proof", requirementId: "report", version: "sha256:file", provenance: "/project/report.md", observedAt: new Date().toISOString(), materialLoaded: true }]);
+    expect(fileProof.ok).toBe(false);
+    if (fileProof.ok) return;
+    const current = await goals.snapshot(identity);
+    const reportProof = await goals.checkCompletion(identity, current, [{ id: "message-proof", requirementId: "report", version: "sha256:message", provenance: "native-message:codex:test-session:msg-report", observedAt: new Date().toISOString(), freshUntil: new Date(Date.now() + 60_000).toISOString(), materialLoaded: true, sourceKind: "native-report", text: "The report text emitted in the assistant message." }]);
+    expect(reportProof.ok).toBe(true);
+  });
+
+  it("keeps a prior blocked reason tagged with its old control epoch after resume", async () => {
+    const { value: goals } = await store();
+    await goals.arm({ identity, goal: { eventId: "human-1", text: "Continue the task" }, requirements: [{ id: "r1", text: "Complete the result", sourceEventIds: ["human-1"] }] });
+    const initial = await goals.snapshot(identity);
+    await goals.recordEvaluation(identity, initial, {
+      requirementMemo: { goalRevision: String(initial.goalRevision), primaryHash: "sha256:goal", formatVersion: 2, requirements: [{ id: "r1", text: "Complete the result", sourceEventIds: ["human-1"], verificationKind: "file" }] },
+      requirementsStatus: [{ id: "r1", status: "open", evidenceIds: [] }], lastDecision: "blocked", lastReason: "Old judge failure",
+    });
+    await goals.stop(identity);
+    const resumed = await goals.resume(identity);
+    expect(resumed.evaluation?.lastReason).toBe("Old judge failure");
+    expect(resumed.evaluation?.controlEpoch).toBeLessThan(resumed.controlEpoch);
+  });
+
   it("stores a verified native cursor without bumping goal versions and fences stale cursor updates", async () => {
     const { value: goals } = await store();
     await goals.arm({ identity, goal: { eventId: "human-1", text: "Use the current transcript" }, requirements: [{ id: "r1", text: "Finish from current context", sourceEventIds: ["human-1"] }], nativeCursor: "native-100" });

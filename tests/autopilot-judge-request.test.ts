@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createConfiguredGoalModel, JudgeRequestError, JudgeRequestTrace } from "../src/autopilot/judge-request.js";
 import { createAnthropicCompatibleSessionCompletionJudge, createOpenAICompatibleSessionCompletionJudge } from "../src/autopilot/unfinished-session-launcher.js";
 import { createOpenAICompatibleJudge, type StopHookInput } from "../src/autopilot/index.js";
@@ -112,5 +112,22 @@ describe("judge provider diagnostics", () => {
       expect((model as typeof model & { getUsage(): { inputTokens?: number; outputTokens?: number } }).getUsage()).toMatchObject({ inputTokens: 12, outputTokens: 3000 });
       expect(calls).toBe(1);
     } finally { globalThis.fetch = originalFetch; }
+  });
+  it("gives only the exact GLM-5.3 coverage audit the longer default timeout", async () => {
+    const originalFetch = globalThis.fetch;
+    const timer = vi.spyOn(globalThis, "setTimeout");
+    globalThis.fetch = (async () => Response.json({ choices: [{ message: { content: "{}" }, finish_reason: "stop" }] })) as typeof fetch;
+    try {
+      const glm = createConfiguredGoalModel({ baseUrl: "https://api.z.ai/api/paas/v4", model: "glm-5.3" });
+      await glm.call({ stage: "requirements", payload: {}, maxOutputTokens: 6000 });
+      await glm.call({ stage: "coverage-audit", payload: {}, maxOutputTokens: 4000 });
+      const exactTimeouts = timer.mock.calls.map(call => call[1]).filter(value => typeof value === "number");
+      expect(exactTimeouts).toEqual([90_000, 180_000]);
+
+      timer.mockClear();
+      const configured = createConfiguredGoalModel({ baseUrl: "https://api.z.ai/api/paas/v4", model: "glm-5.3", timeoutMs: 7_000 });
+      await configured.call({ stage: "coverage-audit", payload: {}, maxOutputTokens: 4000 });
+      expect(timer.mock.calls.map(call => call[1])).toEqual([7_000]);
+    } finally { timer.mockRestore(); globalThis.fetch = originalFetch; }
   });
 });

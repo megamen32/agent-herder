@@ -32,7 +32,7 @@ import { SessionAutostartStore } from "./autopilot/unfinished-session-launcher.j
 import { AgentResumeClient } from "./resume-transport.js";
 import { getHumanStopStore } from "./human-stop-store.js";
 import { GoalStore, type ContinuationSubmission } from "./autopilot/goal-store.js";
-import { evaluateGoal } from "./autopilot/goal-evaluation.js";
+import { evaluateGoal, makeNativeReportEvidence, type GoalNativeReport } from "./autopilot/goal-evaluation.js";
 import { createConfiguredGoalModel, configuredJudgeRoute } from "./autopilot/judge-request.js";
 import { collectGoalEvidence, type GoalEvidenceTargetRef } from "./autopilot/goal-evidence.js";
 import { fileURLToPath } from "node:url";
@@ -52,9 +52,15 @@ export type AutopilotRunnerInput = {
   transcriptPath?: string | null;
   stopHookActive?: boolean;
   model?: string;
+  nativeReportObservation?: NativeReportObservation;
   /** Internal native idle/history fingerprint gate supplied by BackgroundAutopilotStop. */
-  nativeFence?: () => Promise<boolean>;
+  nativeFence?: () => Promise<boolean | NativeFenceRead>;
 };
+
+export type NativeReportObservation =
+  | { status: "observed"; nativeFingerprint: string; messageId: string; turnId?: string; text: string; version: string; observedAt: string; freshUntil: string }
+  | { status: "unavailable"; nativeFingerprint: string; reason: string };
+export type NativeFenceRead = { allowed: boolean; nativeReportObservation?: NativeReportObservation };
 
 const stateDir = resolveAutopilotStateDir();
 
@@ -263,12 +269,7 @@ async function evaluateArmedGoal(args: {
   if (!events.length || events[0].text.length === 0) return { ok: false, decision: "unavailable", reason: "full-primary-goal-unavailable", goal_control: "opt-in" };
   const targetRefs = explicitGoalTargetRefs(snapshot.primaryEvents, snapshot.requirements);
   const collected = await collectGoalEvidence({ identity: snapshot.identity, requirements: snapshot.requirements, targetRefs });
-  const evidenceFingerprint = createHash("sha256").update(JSON.stringify({
-    evidence: collected.evidence.map(e => [e.requirementId, e.id, e.version, e.materialLoaded]).sort((a, b) => String(a[1]).localeCompare(String(b[1]))),
-    materials: collected.materials.map(m => [m.requirementId, m.path, m.version]).sort((a, b) => String(a[1]).localeCompare(String(b[1]))),
-    unavailable: [...collected.unavailable].sort(),
-  })).digest("hex");
-  const evidenceById = new Map([...snapshot.evidence, ...collected.evidence].map(evidence => [evidence.id, evidence]));
+  const evidenceById = new Map([...snapshot.evidence.filter(evidence => evidence.sourceKind !== "native-report"), ...collected.evidence].map(evidence => [evidence.id, evidence]));
   const result = await evaluateGoal({
     goalRevision: String(snapshot.goalRevision), fullObjective: events[0].text, userEvents: events,
     inputCursor: String(snapshot.inputCursor),
@@ -277,18 +278,29 @@ async function evaluateArmedGoal(args: {
     })),
     ...(snapshot.evaluation?.requirementMemo ? { requirementMemo: snapshot.evaluation.requirementMemo } : {}),
     evidence: [...evidenceById.values()].map(evidence => ({ id: evidence.id, requirementId: evidence.requirementId, text: evidence.text ?? evidence.provenance,
-      observedVersion: evidence.version, ...(evidence.freshUntil ? { validUntil: Date.parse(evidence.freshUntil) } : {}), source: evidence.provenance, loaded: evidence.materialLoaded })),
+      observedVersion: evidence.version, ...(evidence.freshUntil ? { validUntil: Date.parse(evidence.freshUntil) } : {}), source: evidence.provenance,
+      sourceKind: evidence.sourceKind ?? "file", loaded: evidence.materialLoaded })),
     evidenceVersion: String(snapshot.evidenceVersion), controlEpoch: String(snapshot.controlEpoch),
+    ...(input.nativeReportObservation?.status === "observed" ? { nativeReport: toGoalNativeReport(snapshot.identity, input.nativeReportObservation) } : {}),
+    ...(input.nativeReportObservation?.status === "unavailable" ? { nativeReportUnavailable: input.nativeReportObservation.reason } : {}),
     materials: [
-      ...collected.materials.map(material => ({ id: material.path, text: material.text, complete: material.complete, version: material.version })),
+      ...collected.materials.map(material => ({ id: material.path, text: material.text, complete: material.complete, version: material.version, kind: "file" as const })),
       ...collected.evidence.filter(evidence => !evidence.materialLoaded).map(evidence => ({ id: evidence.provenance,
-        text: `Материал недоступен: ${evidence.provenance}`, complete: false, version: evidence.version })),
+        text: `Материал недоступен: ${evidence.provenance}`, complete: false, version: evidence.version, kind: "file" as const })),
       ...explicitUnavailableMaterials(snapshot.primaryEvents, snapshot.requirements),
     ],
   }, args.model);
   const modelUsage = (args.model as typeof args.model & { getUsage?: () => import("./autopilot/goal-evaluation.js").GoalModelUsage | undefined }).getUsage?.();
   if (await args.isHeld()) return stop();
-  const requirements = result.requirements.map(({ id, text, sourceEventIds }) => ({ id, text, sourceEventIds }));
+  const reportRequirements = result.requirements.filter(requirement => requirement.verificationKind === "native-report");
+  const initialNativeEvidence = nativeReportEvidence(snapshot.identity, reportRequirements, input.nativeReportObservation);
+  const evidenceFingerprint = createHash("sha256").update(JSON.stringify({
+    evidence: collected.evidence.map(e => [e.requirementId, e.id, e.version, e.materialLoaded]).sort((a, b) => String(a[1]).localeCompare(String(b[1]))),
+    materials: collected.materials.map(m => [m.requirementId, m.path, m.version]).sort((a, b) => String(a[1]).localeCompare(String(b[1]))),
+    unavailable: [...collected.unavailable].sort(),
+    nativeReport: initialNativeEvidence.map(e => [e.requirementId, e.version, e.materialLoaded]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+  })).digest("hex");
+  const requirements = result.requirements.map(({ id, text, sourceEventIds, verificationKind }) => ({ id, text, sourceEventIds, verificationKind }));
   // An empty memo is the evaluator's explicit fail-closed extraction/error
   // marker. Persist the reason without advancing the processed-input cursor or
   // replacing the durable requirement ledger with a fabricated projection.
@@ -335,22 +347,32 @@ async function evaluateArmedGoal(args: {
       goal_evidence_unavailable: collected.unavailable, judge_route: args.route,
     };
   }
-  const activeEvidence = collected.evidence.filter(evidence => evaluated.requirements.some(requirement => requirement.id === evidence.requirementId));
+  const firstNativeFence = input.nativeFence ? normalizeNativeFence(await input.nativeFence()) : { allowed: false };
+  if (!firstNativeFence.allowed || await args.isHeld() || !await args.canApply()) return {
+    ok: true, command: input.command ?? "stop", harness: input.harness, session_id: input.sessionId,
+    decision: "unavailable", reason: "native-session-fence-unavailable-or-stale", goal_control: "opt-in", judge_route: args.route,
+  };
+  const freshNativeObservation = firstNativeFence.nativeReportObservation;
+  const freshNativeEvidence = nativeReportEvidence(args.snapshot.identity, reportRequirements, freshNativeObservation);
+  if (reportRequirements.length && !sameNativeReportVersions(initialNativeEvidence, freshNativeEvidence)) return {
+    ok: true, command: input.command ?? "stop", harness: input.harness, session_id: input.sessionId,
+    decision: "unavailable", reason: "native-report-changed-or-unavailable-after-audit", goal_control: "opt-in", judge_route: args.route,
+  };
+  const fresh = await collectGoalEvidence({ identity: evaluated.identity, requirements: evaluated.requirements, targetRefs: explicitGoalTargetRefs(evaluated.primaryEvents, evaluated.requirements) });
+  const auditedFileEvidence = collected.evidence.filter(evidence => evaluated.requirements.some(requirement => requirement.id === evidence.requirementId && (requirement.verificationKind ?? "file") === "file"));
+  if (!sameEvidenceVersions(auditedFileEvidence, fresh.evidence)) return {
+    ok: true, command: input.command ?? "stop", harness: input.harness, session_id: input.sessionId,
+    decision: "unavailable", reason: "goal-evidence-changed-after-audit", goal_control: "opt-in", judge_route: args.route,
+  };
+  const activeEvidence = [...fresh.evidence, ...freshNativeEvidence].filter(evidence => evaluated.requirements.some(requirement => requirement.id === evidence.requirementId));
   const check = await store.checkCompletion(args.snapshot.identity, evaluated, activeEvidence);
   if (!check.ok || await args.isHeld() || !await args.canApply()) return {
     ok: true, command: input.command ?? "stop", harness: input.harness, session_id: input.sessionId,
     decision: "unavailable", reason: check.ok ? "human-stop-held" : check.reasons.join("; "), goal_control: "opt-in", judge_route: args.route,
   };
-  if (!input.nativeFence || !await input.nativeFence() || await args.isHeld() || !await args.canApply()) return {
-    ok: true, command: input.command ?? "stop", harness: input.harness, session_id: input.sessionId,
-    decision: "unavailable", reason: "native-session-fence-unavailable-or-stale", goal_control: "opt-in", judge_route: args.route,
-  };
-  const fresh = await collectGoalEvidence({ identity: evaluated.identity, requirements: evaluated.requirements, targetRefs: explicitGoalTargetRefs(evaluated.primaryEvents, evaluated.requirements) });
-  if (!sameEvidenceVersions(collected.evidence, fresh.evidence)) return {
-    ok: true, command: input.command ?? "stop", harness: input.harness, session_id: input.sessionId,
-    decision: "unavailable", reason: "goal-evidence-changed-after-audit", goal_control: "opt-in", judge_route: args.route,
-  };
-  if (!input.nativeFence || !await input.nativeFence() || await args.isHeld() || !await args.canApply()) return {
+  const finalNativeFence = input.nativeFence ? normalizeNativeFence(await input.nativeFence()) : { allowed: false };
+  if (!finalNativeFence.allowed || await args.isHeld() || !await args.canApply()
+    || (reportRequirements.length && !sameNativeReportVersions(freshNativeEvidence, nativeReportEvidence(args.snapshot.identity, reportRequirements, finalNativeFence.nativeReportObservation)))) return {
     ok: true, command: input.command ?? "stop", harness: input.harness, session_id: input.sessionId,
     decision: "unavailable", reason: "native-session-fence-unavailable-or-stale", goal_control: "opt-in", judge_route: args.route,
   };
@@ -364,8 +386,34 @@ function sameEvidenceVersions(before: Array<{ requirementId: string; version: st
   return key(before) === key(after);
 }
 
-function explicitGoalTargetRefs(events: Array<{ eventId: string; refs?: Array<{ uri: string }> }>, requirements: Array<{ id: string; sourceEventIds: string[] }>): GoalEvidenceTargetRef[] {
-  return requirements.flatMap(requirement => requirement.sourceEventIds.flatMap(eventId => {
+function normalizeNativeFence(value: boolean | NativeFenceRead): NativeFenceRead {
+  return typeof value === "boolean" ? { allowed: value } : value;
+}
+
+function nativeReportEvidence(identity: import("./autopilot/goal-store.js").GoalIdentity, requirements: Array<{ id: string }>, observation?: NativeReportObservation): import("./autopilot/goal-store.js").GoalEvidence[] {
+  if (observation?.status !== "observed" || Date.parse(observation.freshUntil) <= Date.now()
+    || !observation.version || !observation.messageId || Buffer.byteLength(observation.text, "utf8") > 64 * 1024) return [];
+  const report = toGoalNativeReport(identity, observation);
+  return requirements.flatMap(requirement => {
+    const proof = makeNativeReportEvidence(requirement.id, report);
+    return proof ? [{ id: proof.id, requirementId: proof.requirementId, version: proof.observedVersion, provenance: proof.source,
+      observedAt: observation.observedAt, freshUntil: observation.freshUntil, materialLoaded: true, sourceKind: "native-report" as const, text: proof.text }] : [];
+  });
+}
+
+function toGoalNativeReport(identity: import("./autopilot/goal-store.js").GoalIdentity, observation: Extract<NativeReportObservation, { status: "observed" }>): GoalNativeReport {
+  return { messageId: observation.messageId, text: observation.text, version: observation.version,
+    source: `native-message:${identity.harness}:${identity.sessionId}:${observation.messageId}`,
+    observedAt: observation.observedAt, validUntil: Date.parse(observation.freshUntil) };
+}
+
+function sameNativeReportVersions(before: Array<{ requirementId: string; version: string }>, after: Array<{ requirementId: string; version: string }>): boolean {
+  const key = (items: typeof before) => items.map(item => `${item.requirementId}\0${item.version}`).sort().join("\n");
+  return key(before) === key(after) && before.length === after.length;
+}
+
+function explicitGoalTargetRefs(events: Array<{ eventId: string; refs?: Array<{ uri: string }> }>, requirements: Array<{ id: string; sourceEventIds: string[]; verificationKind?: "file" | "native-report" }>): GoalEvidenceTargetRef[] {
+  return requirements.filter(requirement => (requirement.verificationKind ?? "file") === "file").flatMap(requirement => requirement.sourceEventIds.flatMap(eventId => {
     const event = events.find(item => item.eventId === eventId);
     return (event?.refs ?? []).flatMap(ref => {
       try {
@@ -376,13 +424,13 @@ function explicitGoalTargetRefs(events: Array<{ eventId: string; refs?: Array<{ 
   }));
 }
 
-function explicitUnavailableMaterials(events: Array<{ eventId: string; refs?: Array<{ uri: string; label?: string }> }>, requirements: Array<{ id: string; sourceEventIds: string[] }>): Array<{ id: string; text: string; complete: false; version: string }> {
-  return requirements.flatMap(requirement => requirement.sourceEventIds.flatMap(eventId => {
+function explicitUnavailableMaterials(events: Array<{ eventId: string; refs?: Array<{ uri: string; label?: string }> }>, requirements: Array<{ id: string; sourceEventIds: string[]; verificationKind?: "file" | "native-report" }>): Array<{ id: string; text: string; complete: false; version: string; kind: "file" }> {
+  return requirements.filter(requirement => (requirement.verificationKind ?? "file") === "file").flatMap(requirement => requirement.sourceEventIds.flatMap(eventId => {
     const event = events.find(item => item.eventId === eventId);
     return (event?.refs ?? []).flatMap(ref => {
       if (ref.uri.startsWith("/")) return [];
       try { if (ref.uri.startsWith("file://")) { fileURLToPath(ref.uri); return []; } } catch { /* Keep malformed declared refs incomplete. */ }
-      return [{ id: `${requirement.id}:${ref.uri}`, text: `Материал не поддерживается для проверки: ${ref.label ?? ref.uri}`, complete: false as const, version: "unavailable" }];
+      return [{ id: `${requirement.id}:${ref.uri}`, text: `Материал не поддерживается для проверки: ${ref.label ?? ref.uri}`, complete: false as const, version: "unavailable", kind: "file" as const }];
     });
   }));
 }
@@ -432,6 +480,30 @@ export async function autopilotGoalNativeInputsKnown(input: Pick<AutopilotRunner
   return latestId === snapshot.nativeCursor || !!latestId && await store.recordNativeCursor(identity, snapshot, latestId);
 }
 
+export async function autopilotGoalNativeReportAdmissible(
+  input: Pick<AutopilotRunnerInput, "harness" | "sessionId" | "cwd">,
+  messages: SessionMessageView[],
+  observedMessageId: string,
+): Promise<boolean> {
+  const identity = { harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) };
+  const snapshot = await readGoalSnapshot(new GoalStore(stateDir), identity);
+  const admission = snapshot?.evaluation?.lastAdmission;
+  if (!snapshot?.armed || !admission || admission.goalRevision !== snapshot.goalRevision
+    || admission.inputCursor !== snapshot.inputCursor
+    || admission.nativeCursor === undefined) return false;
+  const anchorIndex = admission.nativeCursor === null ? -1 : messages.findIndex(message => message.id === admission.nativeCursor);
+  if (admission.nativeCursor !== null && anchorIndex < 0) return false;
+  const promptIndex = messages.findIndex((message, index) => index > anchorIndex && message.role === "user"
+    && createHash("sha256").update(visibleNativeText(message)).digest("hex") === admission.actionFingerprint);
+  if (promptIndex < 0) return false;
+  return messages.some((message, index) => index > promptIndex && message.id === observedMessageId && message.role === "assistant"
+    && visibleNativeText(message).trim().length > 0);
+}
+
+function visibleNativeText(message: SessionMessageView): string {
+  return message.parts.filter(part => part.type === "text" && typeof part.text === "string").map(part => part.text!).join("\n");
+}
+
 export async function autopilotGoalArmed(input: Pick<AutopilotRunnerInput, "harness" | "sessionId" | "cwd">): Promise<boolean> {
   const snapshot = await readGoalSnapshot(new GoalStore(stateDir), { harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) });
   return snapshot?.armed === true;
@@ -442,7 +514,7 @@ export async function autopilotGoalControllerAllowed(input: Pick<AutopilotRunner
   return !snapshot?.armed ? { allowed: true } : goalControllerAdmission(session);
 }
 
-export async function applyAutopilotGoalCompletion(input: Pick<AutopilotRunnerInput, "harness" | "sessionId" | "cwd">, ticket: unknown): Promise<boolean> {
+export async function applyAutopilotGoalCompletion(input: Pick<AutopilotRunnerInput, "harness" | "sessionId" | "cwd">, ticket: unknown, nativeObservation?: NativeReportObservation): Promise<boolean> {
   if (!ticket || typeof ticket !== "object") return false;
   const identity = { harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) };
   const store = new GoalStore(stateDir);
@@ -453,7 +525,11 @@ export async function applyAutopilotGoalCompletion(input: Pick<AutopilotRunnerIn
     || expected.processedInputCursor !== snapshot.processedInputCursor || expected.evidenceVersion !== snapshot.evidenceVersion
     || expected.controlEpoch !== snapshot.controlEpoch || expected.nativeCursor !== snapshot.nativeCursor) return false;
   const fresh = await collectGoalEvidence({ identity, requirements: snapshot.requirements, targetRefs: explicitGoalTargetRefs(snapshot.primaryEvents, snapshot.requirements) });
-  if (!sameEvidenceVersions(snapshot.evidence, fresh.evidence)) return false;
+  const fileEvidence = snapshot.evidence.filter(evidence => (evidence.sourceKind ?? "file") === "file");
+  if (!sameEvidenceVersions(fileEvidence, fresh.evidence)) return false;
+  const reportEvidence = snapshot.evidence.filter(evidence => evidence.sourceKind === "native-report");
+  if (reportEvidence.length && (nativeObservation?.status !== "observed" || Date.parse(nativeObservation.freshUntil) <= Date.now()
+    || reportEvidence.some(evidence => evidence.version !== `sha256:${nativeObservation.version}`))) return false;
   return store.applyCompletion(identity, expected);
 }
 

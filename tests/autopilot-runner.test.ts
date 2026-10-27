@@ -1,4 +1,5 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -92,6 +93,35 @@ describe("autopilot runner", () => {
       expect(after.processedInputCursor).toBe(before.processedInputCursor);
       expect(after.processedInputCursor).toBeLessThan(after.inputCursor);
     } finally { vi.unstubAllGlobals(); vi.unstubAllEnvs(); }
+  });
+
+  it("admits native report proof only after the exact current continuation and rejects an old report after amendment", async () => {
+    const root = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR!;
+    const { GoalStore } = await import("../src/autopilot/goal-store.js");
+    const { autopilotGoalNativeReportAdmissible } = await import("../src/autopilot-runner.js");
+    const goals = new GoalStore(root);
+    const identity = { harness: "codex", sessionId: "native-report-correlation", cwd: root };
+    await goals.arm({ identity, goal: { eventId: "human-1", text: "Complete the task and report it" }, requirements: [], nativeCursor: "before-action" });
+    const beforeAdmission = await goals.snapshot(identity);
+    const action = "Verify ALPHA-READY and BETA-FINAL, then emit the concise report";
+    const actionFingerprint = createHash("sha256").update(action).digest("hex");
+    await goals.withContinuationAdmission(identity, beforeAdmission, async () => ({ status: "accepted" }), {
+      actionFingerprint, evidenceFingerprint: "sha256:evidence",
+      classify: result => result.status === "accepted" ? "accepted" : "not-admitted",
+    });
+    const messages = [
+      { id: "before-action", role: "assistant" as const, parts: [{ type: "text" as const, text: "Old report from before this goal step" }] },
+      { id: "generated-input", role: "user" as const, parts: [{ type: "text" as const, text: action }] },
+    ];
+    await expect(autopilotGoalNativeReportAdmissible(identity, messages, "before-action")).resolves.toBe(false);
+    const freshReply = [...messages, { id: "fresh-report", role: "assistant" as const, parts: [{ type: "text" as const, text: "ALPHA-READY and BETA-FINAL verified." }] }];
+    await expect(autopilotGoalNativeReportAdmissible(identity, freshReply, "fresh-report")).resolves.toBe(true);
+    await goals.stop(identity);
+    await goals.resume(identity);
+    await expect(autopilotGoalNativeReportAdmissible(identity, freshReply, "fresh-report")).resolves.toBe(true);
+
+    await goals.acceptHumanEvent(identity, { eventId: "human-2", text: "Also include the changed-output explanation" });
+    await expect(autopilotGoalNativeReportAdmissible(identity, freshReply, "fresh-report")).resolves.toBe(false);
   });
 
   it("inherits the selected harness from the persisted global policy", async () => {

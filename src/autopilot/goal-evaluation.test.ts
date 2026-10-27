@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { evaluateGoal, type GoalEvaluationInput, type GoalModel } from "./goal-evaluation.js";
+import { evaluateGoal, makeNativeReportEvidence, type GoalEvaluationInput, type GoalModel } from "./goal-evaluation.js";
 
 const input: GoalEvaluationInput = {
   goalRevision: "r1", fullObjective: "Build and verify X", inputCursor: "c1", evidenceVersion: "e1", controlEpoch: "s1",
@@ -17,7 +17,7 @@ describe("evaluateGoal", () => {
       if (stage === "requirements") return { requirements: input.requirements, supersessions: [] };
       if (stage === "evidence-reconciliation") return { assessments: [{ requirementId: "req1", fulfilled: true, evidenceIds: ["proof1"], reason: "verified" }] };
       if (stage === "next-action") return { kind: "complete", summary: "looks done" };
-      return { complete: true, coverage: [{ requirementId: "req1", covered: true, evidenceIds: ["proof1"] }], supersessionChecks: [], summary: "covered" };
+      return { complete: true, coverage: [{ requirementId: "req1", covered: true, evidenceIds: ["proof1"] }], verificationKindChecks: [{ requirementId: "req1", verificationKind: "file", confirmed: true }], supersessionChecks: [], summary: "covered" };
     } };
     const result = await evaluateGoal({ ...input, evidence: [{ id: "proof1", requirementId: "req1", text: "verified", observedVersion: "v1", source: "test", loaded: true }] }, model);
     expect(stages).toEqual(["requirements", "evidence-reconciliation", "next-action", "coverage-audit"]);
@@ -33,7 +33,7 @@ describe("evaluateGoal", () => {
       if (stage === "evidence-reconciliation") return { assessments: [{ requirementId: "req1", fulfilled: true, evidenceIds: ["proof1"], reason: "proof" }] };
       if (stage === "next-action") return { kind: "complete", summary: "done" };
       auditMaterials = (payload as { materials: unknown }).materials;
-      return { complete: true, coverage: [{ requirementId: "req1", covered: true, evidenceIds: ["proof1"] }], supersessionChecks: [], summary: "looks done" };
+      return { complete: true, coverage: [{ requirementId: "req1", covered: true, evidenceIds: ["proof1"] }], verificationKindChecks: [{ requirementId: "req1", verificationKind: "file", confirmed: true }], supersessionChecks: [], summary: "looks done" };
     } });
     expect(stages).toEqual(["requirements", "evidence-reconciliation", "next-action", "coverage-audit"]);
     expect(auditMaterials).toEqual([{ ...input.materials[0]!, complete: false }]);
@@ -53,7 +53,7 @@ describe("evaluateGoal", () => {
       if (stage === "requirements") return { requirements: input.requirements, supersessions: [] };
       if (stage === "evidence-reconciliation") return { assessments: [{ requirementId: "req1", fulfilled: false, evidenceIds: [], reason: "stale" }] };
       if (stage === "next-action") return { kind: "complete", summary: "done" };
-      return { complete: true, coverage: [{ requirementId: "req1", covered: true, evidenceIds: ["old"] }], supersessionChecks: [], summary: "claimed coverage" };
+      return { complete: true, coverage: [{ requirementId: "req1", covered: true, evidenceIds: ["old"] }], verificationKindChecks: [{ requirementId: "req1", verificationKind: "file", confirmed: true }], supersessionChecks: [], summary: "claimed coverage" };
     } });
     expect(result.requirements[0]?.status).toBe("open");
     expect(result.decision.kind).toBe("blocked");
@@ -62,13 +62,44 @@ describe("evaluateGoal", () => {
   it("reuses exact primary requirement memo without another extraction call", async () => {
     let extracted = false;
     const primaryHash = (await import("node:crypto")).createHash("sha256").update(JSON.stringify({ fullObjective: input.fullObjective, userEvents: input.userEvents })).digest("hex");
-    const result = await evaluateGoal({ ...input, requirementMemo: { goalRevision: "r1", primaryHash, requirements: [{ id: "req1", text: "Build X", sourceEventIds: ["u1"] }], supersessions: [] } }, { async call({ stage }) {
+    const result = await evaluateGoal({ ...input, requirementMemo: { goalRevision: "r1", primaryHash, formatVersion: 2, requirements: [{ id: "req1", text: "Build X", sourceEventIds: ["u1"], verificationKind: "file" }], supersessions: [] } }, { async call({ stage }) {
       if (stage === "requirements") extracted = true;
       if (stage === "evidence-reconciliation") return { assessments: [{ requirementId: "req1", fulfilled: false, evidenceIds: [], reason: "none" }] };
       return { kind: "continue", nextAction: "continue work" };
     } });
     expect(extracted).toBe(false);
     expect(result.decision.kind).toBe("continue");
+  });
+
+  it("re-extracts a legacy memo that predates the verification-kind projection", async () => {
+    const primaryHash = (await import("node:crypto")).createHash("sha256").update(JSON.stringify({ fullObjective: input.fullObjective, userEvents: input.userEvents })).digest("hex");
+    let extracted = false;
+    const result = await evaluateGoal({ ...input, requirementMemo: { goalRevision: "r1", primaryHash, requirements: [{ id: "req1", text: "Build X", sourceEventIds: ["u1"] }] } }, { async call({ stage }) {
+      if (stage === "requirements") { extracted = true; return { requirements: input.requirements, supersessions: [] }; }
+      if (stage === "evidence-reconciliation") return { assessments: [{ requirementId: "req1", fulfilled: false, evidenceIds: [], reason: "not verified" }] };
+      return { kind: "continue", nextAction: "Continue" };
+    } });
+    expect(extracted).toBe(true);
+    expect(result.requirementMemo.formatVersion).toBe(2);
+  });
+
+  it("allows a legacy untyped report requirement to be classified with a fresh full-goal audit", async () => {
+    const report = { messageId: "msg", text: "Completed and verified.", version: "report-v1", source: "native-message:codex:s:msg", observedAt: new Date().toISOString(), validUntil: Date.now() + 60_000 };
+    const proof = makeNativeReportEvidence("report", report)!;
+    const legacyReport: GoalEvaluationInput = { ...input,
+      fullObjective: "Build the result and emit a concise completion report.",
+      requirements: [{ id: "report", text: "Emit a concise completion report", sourceEventIds: ["u1"], status: "open", evidenceIds: [] }],
+      evidence: [], nativeReport: report,
+    };
+    const result = await evaluateGoal(legacyReport, { async call({ stage }) {
+      if (stage === "requirements") return { requirements: [{ id: "report", text: "Emit a concise completion report", sourceEventIds: ["u1"], verificationKind: "native-report", status: "open", evidenceIds: [] }], supersessions: [] };
+      if (stage === "evidence-reconciliation") return { assessments: [{ requirementId: "report", fulfilled: true, evidenceIds: [proof.id], reason: "literal report observed" }] };
+      if (stage === "next-action") return { kind: "complete", summary: "Report emitted" };
+      return { complete: true, coverage: [{ requirementId: "report", covered: true, evidenceIds: [proof.id] }],
+        verificationKindChecks: [{ requirementId: "report", verificationKind: "native-report", confirmed: true }], supersessionChecks: [], summary: "audit" };
+    } });
+    expect(result.requirements[0]?.verificationKind).toBe("native-report");
+    expect(result.decision.kind).toBe("done-candidate");
   });
 
   it("retains old requirement details through explicit event-linked supersession", async () => {
@@ -138,5 +169,53 @@ describe("evaluateGoal", () => {
       expect(retryStages).toContain("requirements");
       expect(retry.decision.kind).toBe("continue");
     } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("accepts literal native report text only for a separately typed report requirement", async () => {
+    const report = { messageId: "msg-final", text: "Completed: ALPHA-READY and BETA-FINAL were verified.", version: "native-message", source: "native-message:codex:session:msg-final", observedAt: new Date().toISOString(), validUntil: Date.now() + 60_000 };
+    const proof = makeNativeReportEvidence("report", report)!;
+    const reportInput: GoalEvaluationInput = { ...input,
+      requirements: [{ id: "report", text: "Emit the concise completion report", sourceEventIds: ["u1"], verificationKind: "native-report", status: "open", evidenceIds: [] }],
+      evidence: [], nativeReport: report,
+    };
+    const result = await evaluateGoal(reportInput, { async call({ stage }) {
+      if (stage === "requirements") return { requirements: [{ id: "report", text: "Emit the concise completion report", sourceEventIds: ["u1"], verificationKind: "native-report", status: "open", evidenceIds: [] }], supersessions: [] };
+      if (stage === "evidence-reconciliation") return { assessments: [{ requirementId: "report", fulfilled: true, evidenceIds: [proof.id], reason: "the literal visible report is present" }] };
+      if (stage === "next-action") return { kind: "complete", summary: "Report emitted" };
+      return { complete: true, coverage: [{ requirementId: "report", covered: true, evidenceIds: [proof.id] }],
+        verificationKindChecks: [{ requirementId: "report", verificationKind: "native-report", confirmed: true }], supersessionChecks: [], summary: "Native report text was emitted." };
+    } });
+    expect(result.decision.kind).toBe("done-candidate");
+  });
+
+  it("never lets native report prose prove a file or external-action requirement", async () => {
+    const fileInput: GoalEvaluationInput = { ...input,
+      requirements: [{ id: "write-and-verify", text: "Write and verify the files", sourceEventIds: ["u1"], verificationKind: "file", status: "open", evidenceIds: [] }],
+      evidence: [], nativeReport: { messageId: "msg-final", text: "I wrote and verified the files.", version: "report", source: "native-message:codex:session:msg-final", observedAt: new Date().toISOString(), validUntil: Date.now() + 60_000 },
+    };
+    const result = await evaluateGoal(fileInput, { async call({ stage }) {
+      if (stage === "requirements") return { requirements: [{ id: "write-and-verify", text: "Write and verify the files", sourceEventIds: ["u1"], verificationKind: "file", status: "open", evidenceIds: [] }], supersessions: [] };
+      if (stage === "evidence-reconciliation") return { assessments: [{ requirementId: "write-and-verify", fulfilled: true, evidenceIds: ["report-claim"], reason: "assistant claimed it" }] };
+      return { kind: "complete", summary: "done" };
+    } });
+    expect(result.decision.kind).toBe("blocked");
+    if (result.decision.kind === "blocked") expect(result.decision.reason).toContain("evidence");
+  });
+
+  it("requires independent audit confirmation of the human-grounded verification kind", async () => {
+    const report = { messageId: "msg", text: "Report text", version: "msg", source: "native-message:session:msg", observedAt: new Date().toISOString(), validUntil: Date.now() + 60_000 };
+    const proof = makeNativeReportEvidence("report", report)!;
+    const reportInput: GoalEvaluationInput = { ...input,
+      requirements: [{ id: "report", text: "Emit a report", sourceEventIds: ["u1"], verificationKind: "native-report", status: "open", evidenceIds: [] }],
+      evidence: [], nativeReport: report,
+    };
+    const result = await evaluateGoal(reportInput, { async call({ stage }) {
+      if (stage === "requirements") return { requirements: [{ id: "report", text: "Emit a report", sourceEventIds: ["u1"], verificationKind: "native-report", status: "open", evidenceIds: [] }], supersessions: [] };
+      if (stage === "evidence-reconciliation") return { assessments: [{ requirementId: "report", fulfilled: true, evidenceIds: [proof.id], reason: "literal text exists" }] };
+      if (stage === "next-action") return { kind: "complete", summary: "done" };
+      return { complete: true, coverage: [{ requirementId: "report", covered: true, evidenceIds: [proof.id] }],
+        verificationKindChecks: [{ requirementId: "report", verificationKind: "file", confirmed: true }], supersessionChecks: [], summary: "audit" };
+    } });
+    expect(result.decision.kind).toBe("blocked");
   });
 });

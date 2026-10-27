@@ -11,6 +11,9 @@ export type GoalEvidenceLimits = { maxFiles?: number; maxFileBytes?: number; max
 
 const DEFAULT_LIMITS: Required<GoalEvidenceLimits> = { maxFiles: 16, maxFileBytes: 256 * 1024, maxTotalBytes: 1024 * 1024, freshnessMs: 60_000 };
 const HARD_LIMITS: Required<GoalEvidenceLimits> = { maxFiles: 64, maxFileBytes: 1024 * 1024, maxTotalBytes: 8 * 1024 * 1024, freshnessMs: 10 * 60_000 };
+const MAX_REQUIREMENTS = 512;
+const MAX_RAW_TARGET_REFS = 8192;
+type PhysicalRead = { path: string; version: string; text: string } | { path: string; reason: string };
 
 /** Read only explicitly declared files from the exact project tree, with realpath and stable-read fences. */
 export async function collectGoalEvidence(input: {
@@ -21,7 +24,9 @@ export async function collectGoalEvidence(input: {
 }): Promise<GoalEvidenceCollection> {
   const limits = normalizeLimits(input.limits);
   if (!Array.isArray(input.targetRefs)) throw new Error("goal evidence targetRefs must be an explicit list");
-  if (input.targetRefs.length > limits.maxFiles) throw new Error(`goal evidence target count exceeds ${limits.maxFiles}`);
+  if (!Array.isArray(input.requirements) || input.requirements.length > MAX_REQUIREMENTS) throw new Error(`goal evidence requirement count exceeds ${MAX_REQUIREMENTS}`);
+  const rawRefLimit = Math.min(MAX_RAW_TARGET_REFS, limits.maxFiles * Math.max(1, input.requirements.length));
+  if (input.targetRefs.length > rawRefLimit) throw new Error(`goal evidence target reference count exceeds ${rawRefLimit}`);
   const cwd = await realpath(input.identity.cwd);
   const cwdStat = await stat(cwd);
   if (!cwdStat.isDirectory()) throw new Error("goal evidence project cwd is not a directory");
@@ -30,7 +35,10 @@ export async function collectGoalEvidence(input: {
   const materials: GoalEvidenceMaterial[] = [];
   const unavailable: string[] = [];
   const seen = new Set<string>();
-  const seenCanonicalTargets = new Set<string>();
+  const physicalReads = new Map<string, PhysicalRead>();
+  const emittedEvidenceIds = new Set<string>();
+  const emittedMaterials = new Set<string>();
+  const uniquePhysicalPaths = new Set<string>();
   let totalBytes = 0;
 
   for (const target of input.targetRefs) {
@@ -53,46 +61,65 @@ export async function collectGoalEvidence(input: {
       resolvedPath = await realpath(candidate);
       assertInside(cwd, resolvedPath);
       if (isSensitivePath(relative(cwd, resolvedPath))) throw new Error("sensitive path refused");
-      const evidenceId = createHash("sha256").update(`${target.requirementId}\0${resolvedPath}`).digest("hex");
-      if (seenCanonicalTargets.has(evidenceId)) continue;
-      seenCanonicalTargets.add(evidenceId);
-      const before = await stat(resolvedPath, { bigint: true });
-      if (!before.isFile()) throw new Error("special files are unavailable");
-      if (before.size > BigInt(limits.maxFileBytes)) throw new Error("file exceeds per-file evidence limit");
-      if (totalBytes + Number(before.size) > limits.maxTotalBytes) throw new Error("files exceed aggregate evidence limit");
-      const handle = await open(resolvedPath, constants.O_RDONLY | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0));
-      let bytes: Buffer;
-      try {
-        const openedBefore = await handle.stat({ bigint: true });
-        if (!openedBefore.isFile()) throw new Error("special files are unavailable");
-        assertStable(before, openedBefore);
-        bytes = await readBounded(handle, limits.maxFileBytes);
-        const openedAfter = await handle.stat({ bigint: true });
-        assertStable(openedBefore, openedAfter);
-      } finally {
-        await handle.close();
+      let physical = physicalReads.get(resolvedPath);
+      if (!physical) {
+        uniquePhysicalPaths.add(resolvedPath);
+        if (uniquePhysicalPaths.size > limits.maxFiles) throw new Error(`unique evidence file count exceeds ${limits.maxFiles}`);
+        try {
+          const before = await stat(resolvedPath, { bigint: true });
+          if (!before.isFile()) throw new Error("special files are unavailable");
+          if (before.size > BigInt(limits.maxFileBytes)) throw new Error("file exceeds per-file evidence limit");
+          if (totalBytes + Number(before.size) > limits.maxTotalBytes) throw new Error("files exceed aggregate evidence limit");
+          const handle = await open(resolvedPath, constants.O_RDONLY | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0));
+          let bytes: Buffer;
+          try {
+            const openedBefore = await handle.stat({ bigint: true });
+            if (!openedBefore.isFile()) throw new Error("special files are unavailable");
+            assertStable(before, openedBefore);
+            bytes = await readBounded(handle, limits.maxFileBytes);
+            const openedAfter = await handle.stat({ bigint: true });
+            assertStable(openedBefore, openedAfter);
+          } finally {
+            await handle.close();
+          }
+          const pathAfter = await realpath(candidate);
+          assertInside(cwd, pathAfter);
+          if (pathAfter !== resolvedPath) throw new Error("file target changed during evidence read");
+          const after = await stat(pathAfter, { bigint: true });
+          assertStable(before, after);
+          if (bytes.byteLength !== Number(after.size) || totalBytes + bytes.byteLength > limits.maxTotalBytes) throw new Error("file changed or aggregate evidence limit exceeded");
+          const text = bytes.toString("utf8");
+          if (!Buffer.from(text, "utf8").equals(bytes)) throw new Error("file is not complete UTF-8 text");
+          totalBytes += bytes.byteLength;
+          physical = { path: resolvedPath, version: `sha256:${createHash("sha256").update(bytes).digest("hex")}`, text };
+        } catch (error) {
+          physical = { path: resolvedPath, reason: error instanceof Error ? error.message : "file evidence unavailable" };
+        }
+        physicalReads.set(resolvedPath, physical);
       }
-      const pathAfter = await realpath(candidate);
-      assertInside(cwd, pathAfter);
-      if (pathAfter !== resolvedPath) throw new Error("file target changed during evidence read");
-      const after = await stat(pathAfter, { bigint: true });
-      assertStable(before, after);
-      if (bytes.byteLength !== Number(after.size) || totalBytes + bytes.byteLength > limits.maxTotalBytes) throw new Error("file changed or aggregate evidence limit exceeded");
-      const text = bytes.toString("utf8");
-      if (!Buffer.from(text, "utf8").equals(bytes)) throw new Error("file is not complete UTF-8 text");
-      totalBytes += bytes.byteLength;
+      const id = createHash("sha256").update(`${target.requirementId}\0${resolvedPath}`).digest("hex");
+      if (emittedEvidenceIds.has(id)) continue;
+      emittedEvidenceIds.add(id);
+      if ("reason" in physical) {
+        unavailable.push(`${suppliedPath}: ${physical.reason}`);
+        evidence.push({ id, requirementId: target.requirementId, version: "unavailable", provenance: resolvedPath,
+          observedAt: new Date().toISOString(), freshUntil: new Date(0).toISOString(), materialLoaded: false });
+        continue;
+      }
       const observedAt = new Date().toISOString();
-      const version = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-      const id = evidenceId;
-      evidence.push({ id, requirementId: target.requirementId, version, provenance: resolvedPath, observedAt,
-        freshUntil: new Date(Date.now() + limits.freshnessMs).toISOString(), materialLoaded: true, text });
-      materials.push({ requirementId: target.requirementId, path: resolvedPath, version, text, complete: true });
+      evidence.push({ id, requirementId: target.requirementId, version: physical.version, provenance: resolvedPath, observedAt,
+        freshUntil: new Date(Date.now() + limits.freshnessMs).toISOString(), materialLoaded: true });
+      if (!emittedMaterials.has(resolvedPath)) {
+        emittedMaterials.add(resolvedPath);
+        materials.push({ requirementId: target.requirementId, path: resolvedPath, version: physical.version, text: physical.text, complete: true });
+      }
     } catch (error) {
       const reason = error instanceof Error ? error.message : "file evidence unavailable";
       unavailable.push(`${suppliedPath}: ${reason}`);
       const provenance = resolvedPath && isInside(cwd, resolvedPath) ? resolvedPath : suppliedPath;
       const id = createHash("sha256").update(`${target.requirementId}\0${provenance}`).digest("hex");
-      if (evidence.some((item) => item.id === id)) continue;
+      if (emittedEvidenceIds.has(id)) continue;
+      emittedEvidenceIds.add(id);
       evidence.push({ id, requirementId: target.requirementId, version: "unavailable", provenance,
         observedAt: new Date().toISOString(), freshUntil: new Date(0).toISOString(), materialLoaded: false });
     }

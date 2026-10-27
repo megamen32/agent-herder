@@ -2,12 +2,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import lockfile from "proper-lockfile";
-import type { GoalModelUsage, GoalRequirementMemo } from "./goal-evaluation.js";
+import type { GoalModelUsage, GoalRequirementMemo, GoalVerificationKind } from "./goal-evaluation.js";
 
 export type GoalIdentity = { harness: string; sessionId: string; cwd: string };
 export type GoalReference = { uri: string; label?: string };
 export type GoalEvent = { eventId: string; text: string; refs?: GoalReference[]; receivedAt?: string };
-export type GoalRequirement = { id: string; text: string; sourceEventIds: string[] };
+export type GoalRequirement = { id: string; text: string; sourceEventIds: string[]; verificationKind?: GoalVerificationKind };
 export type GoalEvidence = {
   id: string;
   requirementId: string;
@@ -17,6 +17,7 @@ export type GoalEvidence = {
   freshUntil?: string;
   materialLoaded: boolean;
   text?: string;
+  sourceKind?: GoalVerificationKind;
 };
 export type GoalSnapshot = {
   identity: GoalIdentity;
@@ -62,12 +63,16 @@ export type GoalEvaluationMetadata = {
   usage?: GoalModelUsage;
 };
 export type GoalEvaluationState = Partial<GoalEvaluationMetadata> & {
+  /** Control epoch for which this evaluation status/reason was recorded. */
+  controlEpoch?: number;
   lastAdmission?: {
     actionFingerprint: string;
     evidenceFingerprint: string;
     inputCursor: number;
     goalRevision: number;
     evidenceVersion: number;
+    controlEpoch: number;
+    nativeCursor?: string | null;
     outcome: "accepted" | "unknown";
     admittedAt: string;
   };
@@ -110,10 +115,13 @@ export class GoalStore {
     return this.mutate(identity, (file) => {
       if (file.goalRevision === 0 || file.completed) throw new Error("no resumable incomplete goal exists for this session");
       if (!file.armed || file.stopped) {
+        if (file.stopped) {
+          if (file.evaluation) file.evaluation.controlEpoch ??= file.controlEpoch;
+          file.controlEpoch += 1;
+        }
         file.armed = true;
         file.stopped = false;
         file.completed = false;
-        file.controlEpoch += 1;
       }
       return copySnapshot(file);
     });
@@ -164,6 +172,7 @@ export class GoalStore {
       file.seenEventIds.push(event.eventId);
       file.goalRevision += 1;
       file.inputCursor += 1;
+      if (file.evaluation) file.evaluation.controlEpoch ??= file.controlEpoch;
       file.controlEpoch += 1;
       file.completed = false;
       return { snapshot: copySnapshot(file), duplicate: false };
@@ -211,7 +220,7 @@ export class GoalStore {
       if (normalized.requirementMemo.requirements.some((item) => item.sourceEventIds.some((eventId) => !eventIds.has(eventId)))) throw new Error("requirement memo has invalid primary provenance");
       if ((normalized.requirementMemo.supersessions ?? []).some((item) => !eventIds.has(item.amendmentEventId) || item.previous.sourceEventIds.some((eventId) => !eventIds.has(eventId)))) throw new Error("requirement supersession has invalid primary provenance");
       assertSupersessionsAppendOnly(file.evaluation, normalized);
-      const next: GoalEvaluationState = { ...normalized, ...(file.evaluation?.lastAdmission ? { lastAdmission: file.evaluation.lastAdmission } : {}) };
+      const next: GoalEvaluationState = { ...normalized, controlEpoch: file.controlEpoch, ...(file.evaluation?.lastAdmission ? { lastAdmission: file.evaluation.lastAdmission } : {}) };
       if (JSON.stringify(file.evaluation) !== JSON.stringify(next)) file.evaluation = next;
       return copySnapshot(file);
     });
@@ -258,7 +267,7 @@ export class GoalStore {
     const events = new Set(snapshot.primaryEvents.map((event) => event.eventId));
     for (const requirement of snapshot.requirements) {
       if (!requirement.sourceEventIds.length || requirement.sourceEventIds.some((id) => !events.has(id))) reasons.push(`requirement ${requirement.id} has missing primary provenance`);
-      const proof = snapshot.evidence.find((e) => e.requirementId === requirement.id && e.materialLoaded && e.provenance.trim() && e.version.trim()
+      const proof = snapshot.evidence.find((e) => e.requirementId === requirement.id && (e.sourceKind ?? "file") === (requirement.verificationKind ?? "file") && e.materialLoaded && e.provenance.trim() && e.version.trim()
         && (!e.freshUntil || Date.parse(e.freshUntil) > Date.now()));
       if (!proof) reasons.push(`requirement ${requirement.id} lacks fresh, loaded, provenance-backed evidence`);
     }
@@ -280,7 +289,7 @@ export class GoalStore {
       const now = Date.now();
       const valid = file.requirements.length > 0 && file.requirements.every((requirement) =>
         requirement.sourceEventIds.length > 0 && requirement.sourceEventIds.every((id) => events.has(id))
-        && file.evidence.some((e) => e.requirementId === requirement.id && e.materialLoaded && !!e.provenance.trim() && !!e.version.trim()
+        && file.evidence.some((e) => e.requirementId === requirement.id && (e.sourceKind ?? "file") === (requirement.verificationKind ?? "file") && e.materialLoaded && !!e.provenance.trim() && !!e.version.trim()
           && (!e.freshUntil || Date.parse(e.freshUntil) > now)));
       if (!valid) return false;
       file.completed = true;
@@ -311,6 +320,8 @@ export class GoalStore {
           inputCursor: file.inputCursor,
           goalRevision: file.goalRevision,
           evidenceVersion: file.evidenceVersion,
+          controlEpoch: file.controlEpoch,
+          nativeCursor: file.nativeCursor ?? null,
           outcome,
           admittedAt: new Date().toISOString(),
         };
@@ -325,7 +336,6 @@ export class GoalStore {
     return this.mutate(identity, (file) => {
       file.armed = false;
       file.stopped = true;
-      file.completed = false;
       file.controlEpoch += 1;
       return copySnapshot(file);
     });
@@ -401,7 +411,9 @@ function normalizeRequirements(items: GoalRequirement[], eventIds: string[]): Go
     if (!r.id?.trim() || !r.text?.trim() || ids.has(r.id)) throw new Error("requirements need unique ids and non-empty text");
     ids.add(r.id);
     if (!r.sourceEventIds?.length || r.sourceEventIds.some((id) => !known.has(id))) throw new Error(`requirement ${r.id} has invalid primary provenance`);
-    return { id: r.id, text: r.text, sourceEventIds: [...new Set(r.sourceEventIds)] };
+    const verificationKind = r.verificationKind ?? "file";
+    if (verificationKind !== "file" && verificationKind !== "native-report") throw new Error("invalid requirement verification kind");
+    return { id: r.id, text: r.text, sourceEventIds: [...new Set(r.sourceEventIds)], verificationKind };
   });
 }
 function normalizeEvidence(items: GoalEvidence[], requirements: GoalRequirement[]): GoalEvidence[] {
@@ -410,13 +422,16 @@ function normalizeEvidence(items: GoalEvidence[], requirements: GoalRequirement[
     if (!e.id?.trim() || ids.has(e.id) || !allowed.has(e.requirementId) || !e.version?.trim() || !e.provenance?.trim() || !Number.isFinite(Date.parse(e.observedAt)) || typeof e.materialLoaded !== "boolean" || (e.text !== undefined && (typeof e.text !== "string" || Buffer.byteLength(e.text, "utf8") > 1024 * 1024))) throw new Error("invalid goal evidence or provenance");
     ids.add(e.id);
     if (e.freshUntil && !Number.isFinite(Date.parse(e.freshUntil))) throw new Error("invalid evidence freshness bound");
-    return { ...e };
+    const sourceKind = e.sourceKind ?? "file";
+    if (sourceKind !== "file" && sourceKind !== "native-report") throw new Error("invalid evidence source kind");
+    return { ...e, sourceKind };
   });
 }
 function normalizeEvaluation(metadata: GoalEvaluationMetadata): GoalEvaluationMetadata {
   if (!metadata || !["continue", "blocked", "done-candidate"].includes(metadata.lastDecision)) throw new Error("invalid goal evaluation decision");
   const memo = metadata.requirementMemo;
   if (!memo || typeof memo.goalRevision !== "string" || !memo.goalRevision || typeof memo.primaryHash !== "string" || !memo.primaryHash
+    || (memo.formatVersion !== undefined && memo.formatVersion !== 2)
     || !Array.isArray(memo.requirements) || memo.requirements.length > 512 || (memo.supersessions !== undefined && (!Array.isArray(memo.supersessions) || memo.supersessions.length > 512))) {
     throw new Error("invalid goal requirement memo");
   }
@@ -424,7 +439,9 @@ function normalizeEvaluation(metadata: GoalEvaluationMetadata): GoalEvaluationMe
   const requirements = memo.requirements.map((item) => {
     if (!item.id?.trim() || requirementIds.has(item.id) || !Array.isArray(item.sourceEventIds) || item.sourceEventIds.length === 0 || item.sourceEventIds.length > 512) throw new Error("invalid memo requirement");
     requirementIds.add(item.id);
-    return { id: safeMetadataText(item.id, 256), text: safeMetadataText(item.text, 2048), sourceEventIds: item.sourceEventIds.map((id) => safeMetadataText(id, 512)) };
+    const verificationKind = item.verificationKind ?? "file";
+    if (verificationKind !== "file" && verificationKind !== "native-report") throw new Error("invalid memo verification kind");
+    return { id: safeMetadataText(item.id, 256), text: safeMetadataText(item.text, 2048), sourceEventIds: item.sourceEventIds.map((id) => safeMetadataText(id, 512)), verificationKind };
   });
   const supersessions = (memo.supersessions ?? []).map((item) => ({
     requirementId: safeMetadataText(item.requirementId, 256), amendmentEventId: safeMetadataText(item.amendmentEventId, 512),
@@ -450,7 +467,7 @@ function normalizeEvaluation(metadata: GoalEvaluationMetadata): GoalEvaluationMe
     usage = { ...(inputTokens === undefined ? {} : { inputTokens }), ...(outputTokens === undefined ? {} : { outputTokens }), ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }) };
   }
   const normalized: GoalEvaluationMetadata = {
-    requirementMemo: { goalRevision: safeMetadataText(memo.goalRevision, 64), primaryHash: safeMetadataText(memo.primaryHash, 256), requirements,
+    requirementMemo: { goalRevision: safeMetadataText(memo.goalRevision, 64), primaryHash: safeMetadataText(memo.primaryHash, 256), ...(memo.formatVersion === undefined ? {} : { formatVersion: memo.formatVersion }), requirements,
       ...(supersessions.length ? { supersessions } : {}) },
     requirementsStatus, lastDecision: metadata.lastDecision,
     ...(lastReason === undefined ? {} : { lastReason }), ...(usage === undefined ? {} : { usage }),
