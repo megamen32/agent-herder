@@ -82,9 +82,9 @@ export class SessionSearchIndex {
   const indexing=this.ingesting||run?.status==='running';
   return {hostId:this.hostId,sessions:counts.sessions??0,chunks:counts.chunks??0,chunksIncludeStaging:indexing,indexing,run:run??null,sources:this.db.prepare('SELECT receipt FROM sources ORDER BY harness').all().map(row=>JSON.parse(String(row.receipt)))};
  }
- /** Staged generations keep the last complete transcript visible on failed reads. */
+ /** Read the complete replacement before one atomic, ordinal-based update of the stored chunks. */
  async ingest(session:SearchSessionInput,scan:string):Promise<boolean>{
-  const old=this.db.prepare('SELECT revision,title,cwd FROM sessions WHERE harness=? AND native_id=?').get(session.harness,session.nativeSessionId);
+  const old=this.db.prepare('SELECT revision,title,cwd,generation FROM sessions WHERE harness=? AND native_id=?').get(session.harness,session.nativeSessionId);
   if(old&&session.contentUnavailable){
    if(old.title===session.title&&old.cwd===session.cwd)return false;
    this.db.exec('BEGIN IMMEDIATE');try{
@@ -103,28 +103,36 @@ export class SessionSearchIndex {
    }catch(error){this.db.exec('ROLLBACK');throw error;}
    return false;
   }
-  const generation=randomUUID();
+  // Parse before opening the write transaction. Chunk IDs may repeat, so the
+  // diff is by ordinal and the old rowid order remains the indexed order.
+  const incoming:Array<{id:string;text:string}>=[{id:'title',text:''}];
+  for await(const chunk of session.chunks){incoming.push(chunk);if(incoming.length%128===0)await yieldToConsumers();}
+  const oldChunks=old?this.db.prepare('SELECT id,chunk_id,title,text FROM chunks WHERE harness=? AND native_id=? AND generation=? ORDER BY id').all(session.harness,session.nativeSessionId,old.generation) as Array<{id:number;chunk_id:string;title:string;text:string}>:[];
+  const generation=old?String(old.generation):randomUUID();
   const insert=this.db.prepare('INSERT INTO chunks(harness,native_id,generation,chunk_id,title,text) VALUES(?,?,?,?,?,?)');
-  const insertBatch=(batch:Array<{id:string;text:string}>)=>{
-   this.db.exec('BEGIN IMMEDIATE');try{
-    for(const chunk of batch)insert.run(session.harness,session.nativeSessionId,generation,chunk.id,session.title,chunk.text);
-    this.db.exec('COMMIT');
-   }catch(error){this.db.exec('ROLLBACK');throw error;}
-  };
+  const update=this.db.prepare('UPDATE chunks SET chunk_id=?,title=?,text=? WHERE id=?');
+  const remove=this.db.prepare('DELETE FROM chunks WHERE id=?');
+  const common=Math.min(oldChunks.length,incoming.length);
+  this.db.exec('BEGIN IMMEDIATE');
   try{
-   // A title-only session remains searchable even with no messages.
-   insertBatch([{id:'title',text:''}]);
-   let batch:Array<{id:string;text:string}>=[];
-   for await(const chunk of session.chunks){batch.push(chunk);if(batch.length===128){insertBatch(batch);batch=[];await yieldToConsumers();}}
-   if(batch.length)insertBatch(batch);
-   this.db.exec('BEGIN IMMEDIATE');
-   try{
-    this.db.prepare('INSERT INTO sessions VALUES(?,?,?,?,?,?,?) ON CONFLICT(harness,native_id) DO UPDATE SET title=excluded.title,cwd=excluded.cwd,revision=excluded.revision,generation=excluded.generation,scan=excluded.scan').run(session.harness,session.nativeSessionId,session.title,session.cwd,session.revision,generation,scan);
-    this.db.prepare('DELETE FROM chunks WHERE harness=? AND native_id=? AND generation<>?').run(session.harness,session.nativeSessionId,generation);
-    this.db.exec('COMMIT');
-   }catch(error){this.db.exec('ROLLBACK');throw error;}
-   return true;
-  }catch(error){this.db.prepare('DELETE FROM chunks WHERE harness=? AND native_id=? AND generation=?').run(session.harness,session.nativeSessionId,generation);throw error;}
+   for(let index=0;index<common;index++){
+    const previous=oldChunks[index]!,next=incoming[index]!;
+    if(previous.chunk_id!==next.id||previous.title!==session.title||previous.text!==next.text){
+     update.run(next.id,session.title,next.text,previous.id);
+    }
+   }
+   for(let index=common;index<incoming.length;index++){
+    const chunk=incoming[index]!;insert.run(session.harness,session.nativeSessionId,generation,chunk.id,session.title,chunk.text);
+   }
+   for(let index=common;index<oldChunks.length;index++)remove.run(oldChunks[index]!.id);
+   if(old){
+    this.db.prepare('UPDATE sessions SET title=?,cwd=?,revision=?,generation=?,scan=? WHERE harness=? AND native_id=?').run(session.title,session.cwd,session.revision,generation,scan,session.harness,session.nativeSessionId);
+   }else{
+    this.db.prepare('INSERT INTO sessions VALUES(?,?,?,?,?,?,?)').run(session.harness,session.nativeSessionId,session.title,session.cwd,session.revision,generation,scan);
+   }
+   this.db.exec('COMMIT');
+  }catch(error){this.db.exec('ROLLBACK');throw error;}
+  return true;
  }
  /** Only successful exhaustive sources may remove missing sessions. */
  finishSource(receipt:SearchSourceReceipt,scan:string,options:{pruneComplete?:boolean;seenSessionIds?:ReadonlySet<string>}={}){
