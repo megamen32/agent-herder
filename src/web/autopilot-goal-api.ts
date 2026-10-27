@@ -66,7 +66,10 @@ export async function autopilotGoalApi(input: {
           if (!baseline) return bad("Не удалось подтвердить исходное состояние истории этой сессии.");
           const nativeCursor = baseline.at(-1)?.id;
           if (baseline.length && !nativeCursor) return bad("Среда не сообщила точный курсор истории. Цель не включена.");
-          goal = await store.arm({ identity, goal: { eventId, text, refs }, requirements: [{ id: "original-goal", text, sourceEventIds: [eventId] }],
+          // Raw human text is authoritative. The first evaluation derives a
+          // compact ledger; making the entire long goal one immutable row
+          // would require echoing it into every bounded JSON model response.
+          goal = await store.arm({ identity, goal: { eventId, text, refs }, requirements: [],
             ...(nativeCursor ? { nativeCursor } : {}) });
           await input.sessionStore.set({ ...identity, harness: identity.harness as AutopilotHarness }, true);
         }

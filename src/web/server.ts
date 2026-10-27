@@ -1259,8 +1259,15 @@ function lineageStorePath(): string {
 async function dirtyWorktreeFiles(cwd: string): Promise<string[]> {
   if (!cwd || !isAbsolute(cwd)) return [];
   try {
-    const { stdout } = await execFileAsync("git", ["-C", cwd, "status", "--porcelain=v1", "--untracked-files=all"], { timeout: 4000, maxBuffer: 1024 * 1024 });
-    return stdout.split("\n").filter(Boolean).map((line) => line.slice(3).trim()).filter(Boolean);
+    const { stdout: prefix } = await execFileAsync("git", ["-C", cwd, "rev-parse", "--show-prefix"], { timeout: 4000, maxBuffer: 16 * 1024 });
+    const cwdPrefix = prefix.trim().replace(/\/+$/u, "");
+    const { stdout } = await execFileAsync("git", ["-C", cwd, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--", "."], { timeout: 4000, maxBuffer: 1024 * 1024 });
+    return stdout.split("\0").filter(Boolean).map((entry) => {
+      const path = entry.slice(3);
+      if (!cwdPrefix) return path;
+      if (!path.startsWith(`${cwdPrefix}/`)) return "";
+      return path.slice(cwdPrefix.length + 1);
+    }).filter(Boolean);
   } catch { return []; }
 }
 

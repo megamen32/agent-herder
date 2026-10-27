@@ -12,7 +12,7 @@ type GoalSnapshot = {
 type GoalState = { available: boolean; goal: GoalSnapshot | null; judge: { model: string; transport: "configured-openai-compatible"; subscription: false } };
 type Request = <T>(path: string, init?: RequestInit) => Promise<T>;
 
-export function AutopilotGoalPanel({ session, request, supported }: { session: Session; request: Request; supported: boolean }) {
+export function AutopilotGoalPanel({ session, request, supported, onChanged }: { session: Session; request: Request; supported: boolean; onChanged?: (session: Session) => void }) {
   const identity = `${session.harness}\0${session.id}\0${session.cwd ?? ""}`;
   const identityRef = React.useRef(identity);
   identityRef.current = identity;
@@ -27,19 +27,31 @@ export function AutopilotGoalPanel({ session, request, supported }: { session: S
   const getInFlightRef = React.useRef(false);
 
   const route = `/api/autopilot/goals/${encodeURIComponent(session.harness)}/${encodeURIComponent(session.id)}?cwd=${encodeURIComponent(session.cwd ?? "")}`;
+  const projectRootUrl = session.cwd?.startsWith("/")
+    ? new URL(`file://${(`/${session.cwd.split("/").filter(Boolean).map(encodeURIComponent).join("/")}`).replace(/\/+$/u, "")}/`)
+    : undefined;
+  const resolveRef = (value: string): string | undefined => {
+    if (!projectRootUrl) return undefined;
+    try {
+      const parsed = value.startsWith("file:") ? new URL(value)
+        : value.startsWith("/") ? new URL(`file://${value}`)
+          : new URL(value, projectRootUrl);
+      if (parsed.protocol !== "file:" || (parsed.hostname && parsed.hostname !== "localhost") || parsed.username || parsed.password || parsed.search || parsed.hash) return undefined;
+      const rootPath = projectRootUrl.pathname;
+      if (!(parsed.pathname === rootPath.slice(0, -1) || parsed.pathname.startsWith(rootPath))) return undefined;
+      return parsed.href;
+    } catch { return undefined; }
+  };
   const refsFor = (text: string) => {
     const refs = new Map<string, { uri: string; label?: string }>();
     const invalid: string[] = [];
     for (const match of text.matchAll(/file:\/\/\/[^\s"'<>]+/gu)) {
-      try { const parsed = new URL(match[0]); if (parsed.protocol !== "file:" || parsed.hostname || parsed.search || parsed.hash) invalid.push(match[0]); else refs.set(parsed.href, { uri: parsed.href }); }
-      catch { invalid.push(match[0]); }
+      const uri = resolveRef(match[0]);
+      if (uri) refs.set(uri, { uri }); else invalid.push(match[0]);
     }
     for (const line of refDraft.split(/\r?\n/u).map(value => value.trim()).filter(Boolean)) {
-      try {
-        const parsed = line.startsWith("file:") ? new URL(line) : line.startsWith("/") ? new URL(`file://${line}`) : undefined;
-        if (!parsed || parsed.protocol !== "file:" || parsed.hostname || parsed.search || parsed.hash) invalid.push(line);
-        else refs.set(parsed.href, { uri: parsed.href });
-      } catch { invalid.push(line); }
+      const uri = resolveRef(line);
+      if (uri) refs.set(uri, { uri }); else invalid.push(line);
     }
     return { refs: [...refs.values()], invalid };
   };
@@ -100,6 +112,7 @@ export function AutopilotGoalPanel({ session, request, supported }: { session: S
       if (inputId && attemptRef.current?.inputId === inputId) attemptRef.current = undefined;
       setState(result);
       if (action === "arm" || action === "amend") { setDraft(""); setRefDraft(""); }
+      onChanged?.({ ...session });
     } catch (cause) {
       if (identityRef.current === capturedIdentity) setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -121,9 +134,9 @@ export function AutopilotGoalPanel({ session, request, supported }: { session: S
       })}</ul> : <small>Требования пока не выделены.</small>}{goal.evaluation?.lastReason && <p role="status">Последняя проверка: {goal.evaluation.lastReason}</p>}</>}
       {!goal && <label>Полный текст цели<textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={5} placeholder="Введите исходное поручение целиком" disabled={saving} /></label>}
       {goal?.armed && !goal.completed && <label>Уточнение цели<textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={3} placeholder="Добавьте уточнение, не удаляя исходное поручение" disabled={saving} /></label>}
-      {(!goal || (goal.armed && !goal.completed)) && <label>Файлы результата для проверки (по одному пути на строку)<textarea value={refDraft} onChange={(event) => setRefDraft(event.target.value)} rows={2} placeholder="/absolute/project/result.md или file:///absolute/project/result.md" disabled={saving} /></label>}
+      {(!goal || (goal.armed && !goal.completed)) && <label>Файлы результата для проверки (по одному пути на строку)<textarea value={refDraft} onChange={(event) => setRefDraft(event.target.value)} rows={2} placeholder="gamma.md или subdir/result.md" disabled={saving} /></label>}
       {(existingRefs.length > 0 || refInput.refs.length > 0) && <small>Файлы для проверки: {[...existingRefs.map(ref => ref.uri), ...refInput.refs.map(ref => ref.uri)].join(", ")}</small>}
-      {refInput.invalid.length > 0 && <small role="alert">Некорректные пути к файлам: {refInput.invalid.join(", ")}. Укажите абсолютный локальный путь или file:// URI.</small>}
+      {refInput.invalid.length > 0 && <small role="alert">Некорректные пути к файлам: {refInput.invalid.join(", ")}. Укажите имя или путь внутри проекта, абсолютный путь внутри проекта либо file:// URI.</small>}
       <div className="inspector-actions">
         {!goal && <button className="primary-button" disabled={saving || loading || !draft.trim() || refInput.invalid.length > 0} onClick={() => void mutate("arm")}>{saving ? "Сохраняю…" : "Сохранить цель и включить"}</button>}
         {goal?.armed && !goal.completed && <><button className="quiet-button" disabled={saving || loading || !draft.trim() || refInput.invalid.length > 0} onClick={() => void mutate("amend")}>{saving ? "Сохраняю…" : "Добавить уточнение"}</button><button className="stop-button" disabled={saving || loading} onClick={() => void mutate("stop")}>Остановить цель</button></>}

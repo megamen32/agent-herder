@@ -1133,6 +1133,9 @@ export class SessionSupervisor {
     if (mode !== "files" && adapter.getSessionMessages) {
       try {
         const liveMessages = await adapter.getSessionMessages(id, limit);
+        if (provider === "opencode" && Array.isArray(liveMessages) && liveMessages.length === 0) {
+          return { messages: [], info: { source: "acp-load", complete: true } };
+        }
         if (liveMessages && liveMessages.length > 0) {
           return {
             messages: tailLogicalTurns(liveMessages, limit),

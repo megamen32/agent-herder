@@ -597,8 +597,12 @@ export class OpenCodeClient implements HarnessClient {
       ]);
       if (session?.id !== id || !Array.isArray(requests)) return null;
       const wildcard = session.permissions?.find((rule) => rule.action === "*" && rule.resource === "*");
+      // OpenCode encodes its session-wide full-auto mode as an allow wildcard.
+      // Expose the canonical mode name so callers can compare readback with
+      // the requested native mode without treating an equivalent state as UNKNOWN.
+      const currentMode = wildcard?.effect === "allow" ? "fullAuto" : wildcard?.effect;
       return {
-        ...(wildcard?.effect ? { currentMode: wildcard.effect } : {}),
+        ...(currentMode ? { currentMode } : {}),
         scope: "session",
         supportedModes: ["default", "plan", "fullAuto"],
         canSetMode: true,
@@ -655,6 +659,9 @@ export class OpenCodeClient implements HarnessClient {
         : this.api(`/session/${encodeURIComponent(id)}/message?limit=${bounded}`);
       const messages = await this.fetchJson<OpenCodeMessagePayload[]>(endpoint);
       if (!Array.isArray(messages)) return null;
+      // A successful empty native history is a complete observation (for
+      // example, a newly created session), distinct from unreadable history.
+      if (messages.length === 0) return [];
       const ordered = this.isV2 ? [...messages].reverse() : messages;
       const conversation = this.isV2 ? ordered.filter((message) => !isOpenCodeTurnStatusFrame(message)).slice(-bounded) : ordered.slice(-bounded);
       if (conversation.length === 0 && this.isV2) {

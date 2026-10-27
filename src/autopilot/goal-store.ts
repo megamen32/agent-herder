@@ -83,7 +83,6 @@ export class GoalStore {
   async arm(input: { identity: GoalIdentity; goal: GoalEvent; requirements: GoalRequirement[]; nativeCursor?: string }): Promise<GoalSnapshot> {
     const identity = normalizeIdentity(input.identity);
     validateEvent(input.goal);
-    if (!input.requirements.length) throw new Error("an explicitly armed goal needs at least one requirement");
     const requirements = normalizeRequirements(input.requirements, [input.goal.eventId]);
     return this.mutate(identity, (file) => {
       if (file.goalRevision > 0) throw new Error("a durable goal already exists for this session; it cannot be replaced");
@@ -124,7 +123,6 @@ export class GoalStore {
   async newGoal(input: { identity: GoalIdentity; goal: GoalEvent; requirements: GoalRequirement[]; nativeCursor?: string }): Promise<GoalSnapshot> {
     const identity = normalizeIdentity(input.identity);
     validateEvent(input.goal);
-    if (!input.requirements.length) throw new Error("a new goal needs at least one requirement");
     return this.mutate(identity, (file) => {
       if (!file.completed && !file.stopped) throw new Error("the current goal must be completed or stopped before starting a new one");
       if (file.seenEventIds.includes(input.goal.eventId)) throw new Error("new goal eventId must be unique for this session");

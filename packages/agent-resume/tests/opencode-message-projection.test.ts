@@ -17,3 +17,21 @@ it("preserves the native assistant turn identity and terminal finish in the exis
  ]);
  expect(fetch).toHaveBeenCalledOnce();
 });
+
+it("returns an empty array for a successful empty native history",async()=>{
+ const fetch=vi.fn(async()=>new Response(JSON.stringify({data:[]}),{headers:{"content-type":"application/json"}}));
+ vi.stubGlobal("fetch",fetch);
+ const client=new OpenCodeClient({baseUrl:"http://opencode.test",protocol:"v2"});
+
+ expect(await client.getMessages("ses_empty",10)).toEqual([]);
+});
+
+it("keeps a nonempty status-only history unavailable when it has no failure details",async()=>{
+ const fetch=vi.fn(async()=>new Response(JSON.stringify({data:[
+  {id:"status_running",type:"step-start",sessionID:"ses_status"},
+ ]}),{headers:{"content-type":"application/json"}}));
+ vi.stubGlobal("fetch",fetch);
+ const client=new OpenCodeClient({baseUrl:"http://opencode.test",protocol:"v2"});
+
+ expect(await client.getMessages("ses_status",10)).toBeNull();
+});

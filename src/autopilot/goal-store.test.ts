@@ -166,4 +166,16 @@ describe("GoalStore", () => {
     expect(await goals.recordNativeCursor(identity, initial, "native-102")).toBe(false);
     expect((await goals.snapshot(identity)).nativeCursor).toBe("native-101");
   });
+
+  it("preserves a 17 KiB primary goal with an initially empty derived ledger and refuses completion", async () => {
+    const { value: goals } = await store();
+    const longGoal = "Я".repeat(17 * 1024 / Buffer.byteLength("Я", "utf8"));
+    expect(Buffer.byteLength(longGoal, "utf8")).toBe(17 * 1024);
+    const armed = await goals.arm({ identity, goal: { eventId: "human-long", text: longGoal }, requirements: [] });
+    expect(armed.primaryEvents[0]?.text).toBe(longGoal);
+    expect(armed.requirements).toEqual([]);
+    const check = await goals.checkCompletion(identity, armed);
+    expect(check).toMatchObject({ ok: false });
+    if (!check.ok) expect(check.reasons).toContain("requirements are missing");
+  });
 });

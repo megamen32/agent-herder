@@ -45,6 +45,24 @@ it("reads pending permissions from the exact session endpoint even when the glob
  }]);
 });
 
+it("normalizes OpenCode's native allow wildcard to the canonical fullAuto mode",async()=>{
+ const fetch=vi.fn(async(input:RequestInfo|URL)=>{
+  const url=String(input);
+  const json=(data:unknown)=>new Response(JSON.stringify({data}),{headers:{"content-type":"application/json"}});
+  if(url.endsWith("/api/config"))return json({});
+  if(url.endsWith(`/api/session/${sessionId}`))return json({
+   id:sessionId,
+   permissions:[{action:"*",resource:"*",effect:"allow"}],
+  });
+  if(url.endsWith(`/api/session/${sessionId}/permission`))return json([]);
+  return new Response("not found",{status:404});
+ });
+ vi.stubGlobal("fetch",fetch);
+ const client=new OpenCodeClient({baseUrl:"http://opencode.test",protocol:"v2"});
+
+ expect((await client.getPermissionState(sessionId))?.currentMode).toBe("fullAuto");
+});
+
 it("projects the exact native session permission into the session read",async()=>{
  const calls=installNativeReadFixture();
  const client=new OpenCodeClient({baseUrl:"http://opencode.test",protocol:"v2"});
