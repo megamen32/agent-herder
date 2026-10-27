@@ -9,6 +9,7 @@ import type { AutopilotRunnerInput } from "../autopilot-runner.js";
 import { projectSessionInventory } from "./session-inventory.js";
 import { isRestrictedProjectPath } from "../web-ui/model-status.js";
 import { SessionImageStore } from "../session-images.js";
+import { getDefaultMcpClientTokenStore } from "../mcp/client-token-store.js";
 import { homedir, hostname, userInfo } from "node:os";
 import { UserMessageDelivery, type UserMessageRoute } from "../user-message-delivery.js";
 import { MinimaxExecPolicyConflict, isMinimaxExecPolicyMode } from "../permission-control/minimax-exec-policy.js";
@@ -120,6 +121,7 @@ import {startSessionSearchBackground} from '../session-search-worker.js';
 import { handleIntegratorSessionTranscript } from "../integrator-session-route.js";
 import { COMPOSER_TRANSCRIPTION_PATH, ComposerTranscriptionError, readComposerAudioUpload, transcribeComposerAudio, type ComposerTranscriber } from "./composer-transcription.js";
 import type {SessionQueueControlGateway} from "../session-queue-control-gateway.js";
+import { handleMcpConnectionRequest } from "./mcp-connection-api.js";
 
 /** How many skipped sessions of one recovery are named in the operator's log. */
 const MAX_LOGGED_SKIP_REASONS = 50;
@@ -1526,6 +1528,7 @@ export async function computeModelLaunchVerdicts(input: {
 
 async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, allowOwnerLoopbackMcp=false, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch, composerTranscriber?: ComposerTranscriber, sessionQueueControl?: SessionQueueControlGateway): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
+  if (await handleMcpConnectionRequest(request, response, { configured: !!mcpAuthToken, enabled: !!mcpNodeHandler })) return;
   const resolveSessionRoute = async (harness: string, sessionId: string) => await resolveSessionRouteFor(integratorRuntime, adapters, scopedSupervisorFactory, harness, sessionId);
   if (url.pathname === COMPOSER_TRANSCRIPTION_PATH && request.method === "POST") {
     response.setHeader("cache-control", "no-store");
@@ -2765,20 +2768,31 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 404, { error: (error as Error).message });
     }
   }
-  if (url.pathname === "/mcp" && (request.method === "POST" || request.method === "GET" || request.method === "DELETE")) {
-    if (mcpAuthToken && !sameSecret(request.headers.authorization, `Bearer ${mcpAuthToken}`)) {
-      return sendJson(response, 401, { error: "unauthorized" });
+  if (url.pathname === "/mcp") {
+    const authorization = request.headers.authorization;
+    let authenticatedToken: string | undefined;
+    if (mcpAuthToken && sameSecret(authorization, `Bearer ${mcpAuthToken}`)) authenticatedToken = mcpAuthToken;
+    if (!authenticatedToken && typeof authorization === "string" && authorization.startsWith("Bearer ")) {
+      const bearer = authorization.slice("Bearer ".length);
+      const issued = await getDefaultMcpClientTokenStore().verifyToken(bearer);
+      if (issued) authenticatedToken = `issued-client:${issued.id}`;
+    }
+    const ownerLoopback = !authorization && !mcpAuthToken && allowOwnerLoopbackMcp && isOwnerLoopbackMcpRequest(request);
+    if (!authenticatedToken && !ownerLoopback) return sendJson(response, 401, { error: "unauthorized" });
+    if (!["GET", "POST", "DELETE"].includes(request.method ?? "")) {
+      response.setHeader("Allow", "GET, POST, DELETE");
+      return sendJson(response, 405, { error: "method_not_allowed" });
     }
     if (!mcpNodeHandler) return sendJson(response, 503, { error: "MCP HTTP transport is disabled" });
     // Propagate only the validated bearer or the local owner-loopback boundary
     // as transport context. Tool JSON cannot create this principal.
-    if (mcpAuthToken) {
+    if (authenticatedToken) {
       (request as IncomingMessage & { auth?: { token: string; clientId: string; scopes: string[] } }).auth = {
-        token: mcpAuthToken,
+        token: authenticatedToken,
         clientId: TRUSTED_MESH_MCP_CLIENT_ID,
         scopes: [TRUSTED_MESH_MCP_SCOPE],
       };
-    } else if (allowOwnerLoopbackMcp && isOwnerLoopbackMcpRequest(request)) {
+    } else if (ownerLoopback) {
       // Managed server-100 owner clients use the documented loopback MCP URL
       // without a second bearer. Derive the same narrowly scoped identity from
       // the accepted local socket/Host boundary, never from tool arguments.

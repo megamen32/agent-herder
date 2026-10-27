@@ -13,6 +13,7 @@ import {FleetOwnerHttpTransport} from "../mesh/fleet-owner-http-transport.js";
 import {FleetGptAdminTransport} from "../mesh/fleet-gptadmin-transport.js";
 import {unwrapResult} from "../mesh/protocol.js";
 import type {FleetHostDefinition} from "../mesh/fleet-contract.js";
+import {getDefaultMcpClientTokenStore} from "../mcp/client-token-store.js";
 
 export const fleetHosts: readonly FleetHostDefinition[] = [
   {hostId: "roomhacker-server-100", label: "Сервер 100", nativeUser: "roomhacker", uiUrl: "https://agent.bezrabotnyi.com"},
@@ -238,6 +239,17 @@ function verifiedPublicOwner(request:IncomingMessage):Promise<boolean>{
  }
  return check;
 }
+/** Owner proof shared by the MCP connection settings API. */
+export async function isMcpConnectionOwnerRequest(request:IncomingMessage):Promise<boolean>{
+ if(isDirectOwnerRequest(request))return true;
+ return isManagedPublicHost(request)&&validPublicOrigin(request)&&await verifiedPublicOwner(request);
+}
+/** The public URL is selected only from the configured fleet inventory for this host. */
+export function managedMcpConnectionUrl():string|undefined{
+ const configured=fleetHosts.find(host=>host.hostId===hostname()&&host.nativeUser===userInfo().username)?.uiUrl;
+ if(!configured)return undefined;
+ return `${configured.replace(/\/+$/,'')}/mcp`;
+}
 /** Public LAN/recovery ingress reuses the signed owner cookie. Loopback native MCP/SSH authority stays local. */
 export function createManagedFleetHttpGuard(mcpToken?:string){
  return async(request:IncomingMessage,response:ServerResponse):Promise<boolean>=>{
@@ -246,7 +258,12 @@ export function createManagedFleetHttpGuard(mcpToken?:string){
   const path=new URL(request.url??'/', 'http://localhost').pathname;
   // These exact routes retain their existing downstream credential checks.
   if(typeof request.headers.authorization==='string'&&path.startsWith('/api/fleet/'))return false;
-  if(path==='/mcp'&&mcpToken&&typeof request.headers.authorization==='string'&&matches(request.headers.authorization,'Bearer '+mcpToken))return false;
+  if(path==='/mcp'&&typeof request.headers.authorization==='string'){
+   const authorization=request.headers.authorization;
+   if(mcpToken&&matches(authorization,'Bearer '+mcpToken))return false;
+   const bearer=authorization.startsWith('Bearer ')?authorization.slice(7):'';
+   if(bearer&&await getDefaultMcpClientTokenStore().verifyToken(bearer))return false;
+  }
   const own=isManagedPublicHost(request)&&await verifiedPublicOwner(request);
   const status=!own?401:!validPublicOrigin(request)?403:0;
   if(!status)return false;
