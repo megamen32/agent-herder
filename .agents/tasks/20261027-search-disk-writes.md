@@ -168,3 +168,23 @@ db0d7fb cold180s510.25MiB, warm180s862.52MiB, third75s676.38MiB:
 заполнять отсутствующие поля. Последующие вложенные метаданные игнорируются.
 В одном Codex source nativeSessionId выдаётся один раз (catalog-first).
 Форматrevision прежний, изменятся только ошибочно определённые записи.
+
+a36205273b941831a4bf37988ffa4e6ea493afb8 установлен18:06:51MSK,
+PID1170771, bundle33f2b954e2a3c4fb69d869af39e2835a8c4dc1317f46ee27e4b146358c693e8f.
+Settings/policy прежние; events23554868 persisted, live23554870→23554876.
+Codex index IDs исправлены7495→7638; search сохранил точные прежние результаты
+и показывает отдельные продолжения, ранее потерянные из-за collision.
+identity-cold.json240.67s:12.53MiB write_bytes за окно после первого исправления
+ID;128старыхстрок не изменены. Это окно включает завершение первого и часть
+второгоscan, не весь старт: ранние разовые correction writes~0.5GiB исключены
+и не скрываются как steady-state. Явный pre/post rate пока послеwarm ниже.
+
+Независимо обнаружен лишний Hermes reread: nativeDB1.4GiB,mtime21Oct,
+WAL0bytesmtime23Oct, но digest читает весь текст каждыйscan. Следующий owned
+patch кеширует digest только при exact DB+WAL stamp от успешно проверенного
+scan; при смене stamp/identity применяется прежняя проверка. NativeDB неизменна.
+
+Обзор направления/метода через120мин: scope остаётсяdisk I/O Herder, соседние
+проекты и automation settings не затрагиваются. Урок: first-line metadata
+проверка не доказывает фактическое parser identity; проверять весь consumed
+prefix. Приёмка только full repeat-scan, idle0 и одинHTTP200 недостаточны.
