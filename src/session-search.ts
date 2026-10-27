@@ -31,11 +31,11 @@ export class SessionSearchIndex {
   if(options.readOnly){
    if(!tables.length){this.db.close();throw new Error('search_index_not_ready');}
    this.hasRunScanId=(this.db.prepare('PRAGMA table_info(search_run)').all() as Array<{name:string}>).some(column=>column.name==='scan_id');
-   this.db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=100');
+   this.db.exec('PRAGMA temp_store=MEMORY; PRAGMA query_only=ON; PRAGMA busy_timeout=100');
    return;
   }
   chmodSync(path,0o600);
-  this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=3000;
+  this.db.exec(`PRAGMA temp_store=MEMORY; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=3000;
    CREATE TABLE IF NOT EXISTS search_schema(version INTEGER NOT NULL);
    INSERT INTO search_schema SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM search_schema);
    CREATE TABLE IF NOT EXISTS sessions(harness TEXT NOT NULL,native_id TEXT NOT NULL,title TEXT NOT NULL,cwd TEXT NOT NULL,revision TEXT NOT NULL,generation TEXT NOT NULL,scan TEXT NOT NULL,PRIMARY KEY(harness,native_id));

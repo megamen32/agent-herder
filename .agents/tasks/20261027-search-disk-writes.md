@@ -109,3 +109,26 @@ DB/schema не меняется; SQL order/revision остаются прежн�
 HTTP fleet search HF26_PERMISSION_AUTO_C9E2AE4_QA вернул исходную root-сессию;
 events replay после restart сохранил последовательность23546487..23546491.
 Coverage Codex уже был partial из-за missing rollout paths; корпус не удаляется.
+
+## Дальнейший реальный замер: SQLite temp files
+
+Sourceeea762d5ef79b16c74bfdef93bae237c64a0b118 установлен PID4154969,
+start17:02:50МСК, bundle409aa855ad2616a4a01c71942e7cdc7e158c28f20a8db706ec36ea51e89c5800.
+Полный cold scan завершился14:06:40UTC,24634sessions; для этого scan ни одна
+строка sessions не получила новую generation/scan. Поиск сохранил root receipt
+и OpenCode agent-herder-web-autopilot-canary, события после рестарта восстановлены.
+Но физическая запись110.6MiB/5s сохранилась: open fd27 указывает на
+`/var/tmp/etilqs_4591656b9b389983 (deleted)`. Это SQLite temp sort, не FTS
+транзакции и не перепись unchanged sessions. Поэтому версия не объявляется
+окончательной по диску.
+
+Минимальное исправление: temp_store=MEMORY в собственных read-only native
+connections и derived index connections. Native schema/SQLorder/revision не
+меняются. Доступная RAM в замере45GB; это устранение временной дисковой
+сортировки, а не перенос native/index DB в RAM и не выключение persistence.
+
+Сверка направления через час: весь дополнительный объём — только доказанные
+реальным I/O источники чтения/записи Herder. Нет новых агентов/надзора/native
+сессий/provider calls; параллельные source leaves завершены, root продолжает
+одну поставку с сохранением policies и прежних приёмок. Нужен фактический
+post-install write measurement, а не завершение по source/build.

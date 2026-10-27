@@ -59,7 +59,7 @@ async function safeJsonSession(path:string,harness:string,options:Options,catalo
 async function* codex(options:Options):AsyncGenerator<SearchSourceSession>{
  const home=process.env.CODEX_HOME||join(homedir(),'.codex');const seen=new Set<string>();const localFiles:string[]=[];for(const name of ['sessions','archived_sessions']){const root=join(home,name);if(await stat(root).catch(()=>null))for await(const path of files(root,options.signal))if(path.endsWith('.jsonl'))localFiles.push(path);}const byName=new Map(localFiles.map(path=>[basename(path),path]));const dbPath=process.env.CODEX_STATE_DB||join(home,'state_5.sqlite');
  if(await stat(dbPath).catch(()=>null)){
-  const db=new DatabaseSync(dbPath,{readOnly:true});try{db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=1000');for(const row of db.prepare('SELECT id,title,cwd,rollout_path FROM threads ORDER BY id').iterate() as Iterable<any>){check(options.signal);let p=str(row.rollout_path);if(!p)continue;if(!await stat(p).catch(()=>null))p=byName.get(basename(p))||p;seen.add(p);if(!await stat(p).catch(()=>null)){options.onIssue?.('native_rollout_file_missing');yield {harness:'codex',nativeSessionId:str(row.id),title:str(row.title)||str(row.id),cwd:str(row.cwd),revision:JSON.stringify(row),contentUnavailable:true,chunks:(async function*(){})()};continue;}const session=await safeJsonSession(p,'codex',options,row);if(session)yield session;}}finally{db.close();}
+  const db=new DatabaseSync(dbPath,{readOnly:true});try{db.exec('PRAGMA temp_store=MEMORY; PRAGMA query_only=ON; PRAGMA busy_timeout=1000');for(const row of db.prepare('SELECT id,title,cwd,rollout_path FROM threads ORDER BY id').iterate() as Iterable<any>){check(options.signal);let p=str(row.rollout_path);if(!p)continue;if(!await stat(p).catch(()=>null))p=byName.get(basename(p))||p;seen.add(p);if(!await stat(p).catch(()=>null)){options.onIssue?.('native_rollout_file_missing');yield {harness:'codex',nativeSessionId:str(row.id),title:str(row.title)||str(row.id),cwd:str(row.cwd),revision:JSON.stringify(row),contentUnavailable:true,chunks:(async function*(){})()};continue;}const session=await safeJsonSession(p,'codex',options,row);if(session)yield session;}}finally{db.close();}
  }
  for(const p of localFiles){if(!seen.has(p)){const session=await safeJsonSession(p,'codex',options);if(session)yield session;}}
  if(!localFiles.length&&!seen.size)throw new Error('codex_session_sources_missing');
@@ -112,7 +112,7 @@ function resyncScans():number{const value=Number(process.env.AGENT_HERDER_SESSIO
 async function* sqliteSessions(harness:'opencode'|'zcode'|'hermes',path:string,options:Options):AsyncGenerator<SearchSourceSession>{
  await stat(path);const sourceRevision=await dbStamp(path);const db=new DatabaseSync(path,{readOnly:true});
  try{
-  db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=1000');
+  db.exec('PRAGMA temp_store=MEMORY; PRAGMA query_only=ON; PRAGMA busy_timeout=1000');
   const hermes=harness==='hermes';
   const sessionTable=hermes?'sessions':'session',messageTable=hermes?'messages':'message';
   const sessionColumns=columnsOf(db,sessionTable);
