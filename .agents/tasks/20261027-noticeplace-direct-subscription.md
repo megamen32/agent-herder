@@ -1,4 +1,44 @@
-# Notice Place incident route: direct MiniMax subscription
+# Notice Place incident route: owner-selected GLM + MiniMax combo
+
+## Latest owner decision and installed receipt
+
+Owner explicitly removed the paid-fallback prohibition on 27 October. Keep
+the existing shared combo and its legs unchanged; the MiniMax API leg is
+intentional. This supersedes the pending choice and earlier direct-only
+instructions recorded below. Do not repeat subscription probes for activity.
+
+Installed Herder source `46885ff4a5422da6bdafaeb4b2f441439eb02bb8` from canonical
+main; no new checkout/worktree. 49 focused tests, canonical backend/frontend
+build and all 14 release package checks passed. Bundle fingerprint
+`1eed28dc5d733b068b4cd029d74458bb97d11e131d06b61756e8a4c813d36092`.
+User unit PID `1383333`, start `2026-10-27 03:33:11 MSK`, entrypoint under
+`.notice-herder-release-20261027/releases/46885ff4a5422da6bdafaeb4b2f441439eb02bb8/dist/index.js`.
+
+Independent API readback ETag `c4d46cbefd965e8eb4e21d1426355edd` confirms
+incidentExecution `{runtime:opencode, provider:omniroute,
+model:omniroute/glm-5.3-flash-minimax-m3.1, reasoning:default, topic:health}`.
+Only incidentExecution and the two existing NoticePlace/isolated-fixture
+project routes changed. General routes and fallback configuration preserved;
+incident dispatch still does not add an extra harness fallback around the
+owner-selected combo. No shared router changes, generation or 2062 probe.
+
+Activation restarted Herder once. The new validator initially returned 503
+for the old direct-only policy, so readiness required correction: a valid
+ETag on that response is sufficient to apply the compatible policy. The
+existing documented If-Match PUT updated it without another restart; independent
+GET and `/proc` entrypoint checks passed. Activation receipt is private at
+`.tmp/notice-direct-20261027/combo-activation.json`.
+
+Remaining integration boundary: NoticePlace-owned incident_model_policy.py
+still pins direct MiniMax. Assigned its existing owner session
+`01a174ce-7e3c-7a00-8b4d-174cf7ba10ad` the exact compatible combo contract,
+with separate source/runtime ownership. Delivery
+`owner-combo-allowed-fallback-20261027` was accepted, turn
+`01a17ac5-7ef4-7d90-b227-780a8c3b49eb`. Do not overwrite that owner's source,
+env or runtime. Full NP→Herder repair acceptance remains unproven until its
+contract is installed; preserve previous accepted QA/session receipts. Then
+run only one isolated source/service/verifier canary, not a production event
+and not a replay of the previously accepted native operation.
 
 ## Latest owner direction: GLM + MiniMax combo (27 October)
 
