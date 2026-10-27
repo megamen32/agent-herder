@@ -1,5 +1,35 @@
 # Notice Place incident route: owner-selected GLM + MiniMax combo
 
+## Owner correction and scheduled subscription check
+
+Owner confirms the combo installation is correct; the previous instruction
+to stop it was an error. Do not roll back the installed combo or change its
+legs. An active Token Plan gates only the direct native subscription canary,
+not the combo itself or independent integration work.
+
+On 27 October the owner requested one read-only plan status per hour starting
+tomorrow at noon Moscow: **28 October 2026, 12:00 Europe/Moscow**. Existing
+Herder resume_after accepted the initial exact-session wake:
+`wait_896ac6f6a785452b9bbda5ba9122dd84`, scheduled
+`2026-10-28T09:00:00.000Z`, request
+`notice-token-plan-hourly-start-20261028T1200MSK`, state waiting. No new session
+or separate watchdog was created and no plan status was queried now.
+
+The wake carries these continuation instructions: exactly one read-only
+token_plan/remains request using the effective native integration credential;
+never expose the credential. On inactive/unknown status schedule the next
+hourly wake of this same session using a stable per-hour request ID. Do not
+retry within the hour or invoke generation, login, purchase or fallback for
+the check. On independently confirmed active plan with remaining quota,
+stop rescheduling and record the gate for one isolated native acceptance
+scenario; never replay accepted/UNKNOWN input. Existing combo operation and
+independent tasks remain permitted. The first wake is durably scheduled;
+later wakes are created by this bounded continuation, not claimed in advance.
+
+Independent read-only source check still finds NoticePlace direct-only pin at
+96b5fe1, with foreign WIP in its tests/bin. Leave those files to its already
+assigned owner. No cross-session freeze or acknowledgement is required.
+
 ## Latest owner decision and installed receipt
 
 Owner explicitly removed the paid-fallback prohibition on 27 October. Keep
