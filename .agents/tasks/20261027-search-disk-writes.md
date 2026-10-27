@@ -81,3 +81,31 @@ replay. Не изменяет семантику уведомлений/receipts
 Важное для будущего rollback на старый binary: он не читает sidecar. Сначала
 нужно checkpoint snapshot кодом нового release; не откатывать binary молча
 поверх несвёрнутого журнала. Пока task не выполняет rollback или чужой restart.
+
+## Первая установленная версия и найденная причина чтения
+
+Source85f8fcf79666c67601fde7317f61080c7c555cc6 опубликован/main, compiler
+inputs pinned, build/plugin/manifest и14package checks прошли. Bundle
+741910d60844169460ee2a8d347df0d37c3ae0114e5f5f958511ab64730cb7db.
+Runtime PID3900683 start16:50:15МСК; activation подтвердил прежние policy,
+полный settings hash, event sequence23546486→23546490. Публичный static pin
+тоже85f8fcf, nginx b173c09d. Это промежуточная версия, не окончательная приёмка.
+
+150s cold-scan: total200.65MiB writes, main thread376832bytes — journal fix
+фактически убрал main write storm. У128 архивных записей совпали revision,
+generation и scan до/после; они не переписаны. Но rchar112713MiB за150s
+показал оставшееся повторное чтение. Это не steady-state и сравнение скоростей
+до/после пока не выдаётся за полную приёмку.
+
+Root read-only EXPLAIN на native OpenCode доказал: part query с session_id+
+message_id выбирает part_session_idx, читает все parts сессии для каждого
+message. Уже существующий part_message_id_id_idx даёт точечный поиск по
+message_id с тем же session filter и ORDER BY. Поправка Herder выбирает
+подходящий НЕpartial index из native schema: composite(session_id,message_id)
+либо message_id-leading, безопасно quotes имя и добавляет INDEXED BY. Native
+DB/schema не меняется; SQL order/revision остаются прежними. Для ZCode
+используется существующий composite. При отсутствии индексов прежний fallback.
+
+HTTP fleet search HF26_PERMISSION_AUTO_C9E2AE4_QA вернул исходную root-сессию;
+events replay после restart сохранил последовательность23546487..23546491.
+Coverage Codex уже был partial из-за missing rollout paths; корпус не удаляется.

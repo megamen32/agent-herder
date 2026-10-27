@@ -25,6 +25,13 @@ settings, _ = read("/api/session-autostart")
 events, _ = read("/api/events?limit=1")
 snapshot = Path.home() / ".local/state/agent-herder/events.json"
 persisted_sequence = json.loads(snapshot.read_text())["latestSequence"]
+journal = Path(str(snapshot) + ".journal")
+if journal.exists():
+    for line in journal.read_text().splitlines():
+        try:
+            persisted_sequence = max(persisted_sequence, int(json.loads(line)["sequence"]))
+        except (ValueError, KeyError, TypeError):
+            pass
 unit = Path.home() / ".config/systemd/user/agent-herder.service.d/10-release-exec.conf"
 backup = task / f"release-exec.before-{sha[:12]}"
 if backup.exists():

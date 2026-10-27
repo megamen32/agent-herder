@@ -79,6 +79,20 @@ async function* minimax(options:Options):AsyncGenerator<SearchSourceSession>{
 function columnsOf(db:DatabaseSync,table:string):Set<string>{
  try{const rows=db.prepare(`PRAGMA table_info(${JSON.stringify(table)})`).all() as Iterable<any>;return new Set(Array.from(rows,row=>str(row.name)).filter(Boolean));}catch{return new Set();}
 }
+function quoteIdentifier(value:string):string{return `"${value.replaceAll('"','""')}"`;}
+/** Prefer a non-partial composite part lookup index; fall back to message_id-leading. */
+function partLookupIndexOf(db:DatabaseSync,table:string):string|undefined{
+ try{
+  const composite:string[]=[],messageLeading:string[]=[];
+  for(const item of db.prepare(`PRAGMA index_list(${quoteIdentifier(table)})`).all() as Iterable<any>){
+   const name=str(item.name);if(!name||Number(item.partial)!==0)continue;
+   const columns=Array.from(db.prepare(`PRAGMA index_info(${quoteIdentifier(name)})`).all() as Iterable<any>,entry=>str(entry.name)).filter(Boolean);
+   if(columns[0]==='session_id'&&columns[1]==='message_id')composite.push(name);
+   else if(columns[0]==='message_id')messageLeading.push(name);
+  }
+  return composite[0]??messageLeading[0];
+ }catch{return undefined;}
+}
 /** Columns of an index that starts with session_id; undefined means no such index. */
 function sessionIndexOf(db:DatabaseSync,table:string):string[]|undefined{
  try{
@@ -105,7 +119,8 @@ async function* sqliteSessions(harness:'opencode'|'zcode'|'hermes',path:string,o
   const sessionKey=hermes?null:(['time_updated','updated_at'].find(column=>sessionColumns.has(column))??null);
   const sessions=db.prepare(hermes?'SELECT id,title,cwd FROM sessions ORDER BY id':sessionKey?`SELECT id,title,directory AS cwd,${sessionKey} FROM session ORDER BY id`:'SELECT id,title,directory AS cwd FROM session ORDER BY id');
   const messages=db.prepare(hermes?'SELECT id,content FROM messages WHERE session_id=? ORDER BY timestamp,id':'SELECT id,data FROM message WHERE session_id=? ORDER BY time_created,id');
-  const parts=hermes?null:db.prepare('SELECT id,data FROM part WHERE session_id=? AND message_id=? ORDER BY time_created,id');
+  const partLookupIndex=hermes?undefined:partLookupIndexOf(db,'part');
+  const parts=hermes?null:db.prepare(`SELECT id,data FROM part${partLookupIndex?` INDEXED BY ${quoteIdentifier(partLookupIndex)}`:''} WHERE session_id=? AND message_id=? ORDER BY time_created,id`);
   // A source that publishes its own change key may skip the content hash.
   // Hermes publishes none: its rows carry creation time only, so the hash stays.
   const messageIndex=sessionIndexOf(db,messageTable);
