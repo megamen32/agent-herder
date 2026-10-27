@@ -1,0 +1,12 @@
+{
+  "ownerSessionId": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "hostId": "roomhacker-server-100",
+  "harness": "opencode",
+  "sessionId": "ses_e80eb63d1ffeiPeBKMW1XhStge",
+  "cwd": "/home/roomhacker/agents-projects/agent-herder/.tmp/goal-autopilot-qa-20261027/project",
+  "model": "omniroute/glm-5.3-flash-minimax-m3.1",
+  "nativeCreation": "accepted; no prompt sent by setup",
+  "allowedEffects": ["goal opt-in for this session", "goal amendments", "alpha.md and beta.md in isolated cwd", "stop/resume only this goal", "read-only result verification"],
+  "forbiddenEffects": ["production incidents", "phone calls", "external messages", "global automation enablement", "other sessions or files"],
+  "cleanup": "disable only own QA goal after receipt; preserve no-replay receipts and source evidence"
+}

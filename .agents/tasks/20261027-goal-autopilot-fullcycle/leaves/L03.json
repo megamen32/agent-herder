@@ -1,0 +1,50 @@
+{
+  "id": "L03",
+  "label": "Проверка полноты и экономное решение следующего шага",
+  "status": "done",
+  "description": "Проверка полноты и экономное решение следующего шага в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
+  "acceptance": "Судья видит исходные поручения; done требует отдельного coverage audit; кэш не разрешает stale completion.",
+  "affected_files": [
+    "src/autopilot/goal-evaluation.ts",
+    "src/autopilot/index.ts"
+  ],
+  "owner": "goal_evaluation_worker",
+  "depends_on": [
+    "L01"
+  ],
+  "estimate_minutes": {
+    "minimum": 15,
+    "maximum": 30
+  },
+  "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
+  "estimate_over_limit_reason": "Единый проверяемый контракт этого этапа включает интеграцию и независимый readback; деление на меньшие состояния не ускорит критический путь. Прогресс фиксируется каждые 15 минут.",
+  "harness": "codex",
+  "session": "/root/goal_evaluation_worker",
+  "model": "gpt-6-luna",
+  "updated_at": "2026-10-27T23:26:07+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-27T23:06:50+03:00",
+      "note": "Оценку цели выполняет Luna",
+      "changes": {
+        "status": "running",
+        "owner": "goal_evaluation_worker",
+        "session": "/root/goal_evaluation_worker",
+        "model": "gpt-6-luna"
+      },
+      "session": "/root/goal_evaluation_worker",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-27T23:26:07+03:00",
+      "note": "Оценка цели реализована",
+      "changes": {
+        "status": "done",
+        "result": "Полный primary context, extraction memo, structured supersession, per-requirement evidence и separate audit реализованы; focused checks зелёные."
+      },
+      "session": "/root/goal_evaluation_worker",
+      "harness": "codex"
+    }
+  ],
+  "result": "Полный primary context, extraction memo, structured supersession, per-requirement evidence и separate audit реализованы; focused checks зелёные."
+}

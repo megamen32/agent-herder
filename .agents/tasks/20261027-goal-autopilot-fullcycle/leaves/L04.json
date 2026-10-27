@@ -1,0 +1,38 @@
+{
+  "id": "L04",
+  "label": "Маршрут контрольной модели и измерения стоимости",
+  "status": "running",
+  "description": "Маршрут контрольной модели и измерения стоимости в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
+  "acceptance": "Штатный доступ к выбранной модели, честная поддержка/отказ, без скрытой замены; usage/cache/latency учитываются при наличии provider данных.",
+  "affected_files": [
+    "src/autopilot/judge-request.ts"
+  ],
+  "owner": "goal_integration_worker",
+  "depends_on": [
+    "L01"
+  ],
+  "estimate_minutes": {
+    "minimum": 15,
+    "maximum": 25
+  },
+  "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
+  "estimate_over_limit_reason": "Единый проверяемый контракт этого этапа включает интеграцию и независимый readback; деление на меньшие состояния не ускорит критический путь. Прогресс фиксируется каждые 15 минут.",
+  "harness": "codex",
+  "session": "/root/goal_integration_worker",
+  "model": "gpt-6-luna",
+  "updated_at": "2026-10-27T23:06:53+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-27T23:06:53+03:00",
+      "note": "Маршрут и интеграцию исследует Luna",
+      "changes": {
+        "status": "running",
+        "owner": "goal_integration_worker",
+        "session": "/root/goal_integration_worker",
+        "model": "gpt-6-luna"
+      },
+      "session": "/root/goal_integration_worker",
+      "harness": "codex"
+    }
+  ]
+}

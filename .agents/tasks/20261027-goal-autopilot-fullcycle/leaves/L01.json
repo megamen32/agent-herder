@@ -1,0 +1,33 @@
+{
+  "id": "L01",
+  "label": "План и контракт приёмки",
+  "status": "done",
+  "description": "План и контракт приёмки в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
+  "acceptance": "Полная цель и решения кворума связаны с критериями и графом; план доступен по одной ссылке.",
+  "affected_files": [
+    ".agents/tasks/20261027-goal-autopilot-fullcycle/"
+  ],
+  "owner": "Lead",
+  "depends_on": [],
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
+  "harness": "codex",
+  "result": "Native goal создана, council architecture связана с 12 leaves и consumer acceptance; публичная ссылка выдана.",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "updated_at": "2026-10-27T23:06:44+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-27T23:06:44+03:00",
+      "note": "План создан и опубликован",
+      "changes": {
+        "status": "done",
+        "result": "Native goal создана, council architecture связана с 12 leaves и consumer acceptance; публичная ссылка выдана."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    }
+  ]
+}

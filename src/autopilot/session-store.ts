@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, normalize } from "node:path";
 import lockfile from "proper-lockfile";
+import { GoalStore } from "./goal-store.js";
 import { isHealthPlanId, parseNoticeIncident, type HealthPlanId, type NoticeIncidentBinding } from "./notice-incident.js";
 
 export type AutopilotHarness = "codex" | "opencode" | "claude" | "hermes" | "zcode";
@@ -48,6 +49,9 @@ export class AutopilotSessionStore {
     enabled: boolean,
   ): Promise<AutopilotSessionOverride> {
     const normalized = normalizeTarget(target);
+    // Fence in-flight goal audits before the legacy switch is persisted. A
+    // crash between these writes leaves the stricter stopped state in force.
+    if (!enabled) await this.stopGoalIfPresent(normalized);
     return this.mutate(async (file) => {
       const key = sessionKey(normalized.harness, normalized.sessionId);
       const previous = file.sessions.find((item) => sessionKey(item.harness, item.sessionId) === key);
@@ -127,6 +131,8 @@ export class AutopilotSessionStore {
 
   /** Remove an explicit session override so it inherits the harness policy again. */
   async delete(harness: AutopilotHarness, sessionId: string): Promise<boolean> {
+    const previous = await this.get(harness, sessionId);
+    if (previous) await this.stopGoalIfPresent(previous);
     const key = sessionKey(harness, sessionId);
     return this.mutate(async (file) => {
       const index = file.sessions.findIndex((item) => sessionKey(item.harness, item.sessionId) === key);
@@ -148,6 +154,16 @@ export class AutopilotSessionStore {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, sessions: [] };
       throw error;
+    }
+  }
+
+  private async stopGoalIfPresent(target: { harness: AutopilotHarness; sessionId: string; cwd: string }): Promise<void> {
+    const goals = new GoalStore(dirname(this.path));
+    try {
+      const goal = await goals.snapshot(target);
+      if (goal.armed || !goal.stopped) await goals.stop(target);
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "goal is not armed for this session") throw error;
     }
   }
 

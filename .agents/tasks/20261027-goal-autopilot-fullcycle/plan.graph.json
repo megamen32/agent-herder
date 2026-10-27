@@ -1,0 +1,468 @@
+{
+  "schema_version": 2,
+  "title": "Автопилот до полной пользовательской цели",
+  "goal": "Реализовать принятое решение кворума: автопилот хранит полное поручение и уточнения, доводит до фактического результата и не завершает работу по частичному достижению.",
+  "business_result": "В выбранной сессии пользователь включает автопилот, видит сохранённую цель и незакрытые требования; система безопасно продолжает и завершает только после проверки полного результата.",
+  "business_results": [
+    "В выбранной сессии пользователь включает автопилот, видит сохранённую цель и незакрытые требования; система безопасно продолжает и завершает только после проверки полного результата."
+  ],
+  "acceptance_scenarios": [
+    "Изолированная сессия: длинное поручение с двумя результатами; после первого результата автопилот продолжает до второго.",
+    "Во время аудита приходит уточнение: прежний done не применяется, уточнение выполнено.",
+    "Stop и restart не порождают повтор или второй controller; устаревший результат/недоступный материал не разрешают done.",
+    "Два независимых тестировщика пользуются установленным интерфейсом без чтения кода; замечания исправлены и перепроверены."
+  ],
+  "current_progress": "Цель создана; архитектурный кворум завершён ранее. Идёт планирование и раздача реализации. Продуктовые изменения ещё не выполнены.",
+  "external_waits": "",
+  "slots": 3,
+  "updated_at": "2026-10-27T23:26:23+03:00",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "План и контракт приёмки",
+      "status": "done",
+      "description": "План и контракт приёмки в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
+      "acceptance": "Полная цель и решения кворума связаны с критериями и графом; план доступен по одной ссылке.",
+      "result": "Native goal создана, council architecture связана с 12 leaves и consumer acceptance; публичная ссылка выдана.",
+      "owner": "Lead",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-27T23:06:44+03:00",
+          "note": "План создан и опубликован",
+          "changes": {
+            "status": "done",
+            "result": "Native goal создана, council architecture связана с 12 leaves и consumer acceptance; публичная ссылка выдана."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        ".agents/tasks/20261027-goal-autopilot-fullcycle/"
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 15.0
+      }
+    },
+    {
+      "id": "L02",
+      "label": "Хранилище цели, уточнений и требований",
+      "status": "done",
+      "description": "Хранилище цели, уточнений и требований в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
+      "acceptance": "Полный текст, происхождение, ревизии, cursor входящих событий и control epoch переживают restart; неизменные данные не переписываются.",
+      "result": "Durable goal/events/CAS, stop/resume/archive, memo+status и explicit file evidence collector реализованы; focused checks зелёные. Runtime ещё не установлен.",
+      "owner": "goal_storage_worker",
+      "session": "/root/goal_storage_worker",
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
+      "estimate_over_limit_reason": "Единый проверяемый контракт этого этапа включает интеграцию и независимый readback; деление на меньшие состояния не ускорит критический путь. Прогресс фиксируется каждые 15 минут.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-27T23:06:48+03:00",
+          "note": "Хранилище выполняет Luna",
+          "changes": {
+            "status": "running",
+            "owner": "goal_storage_worker",
+            "session": "/root/goal_storage_worker",
+            "model": "gpt-6-luna"
+          },
+          "session": "/root/goal_storage_worker",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-27T23:26:05+03:00",
+          "note": "Хранилище и collector готовы",
+          "changes": {
+            "status": "done",
+            "result": "Durable goal/events/CAS, stop/resume/archive, memo+status и explicit file evidence collector реализованы; focused checks зелёные. Runtime ещё не установлен."
+          },
+          "session": "/root/goal_storage_worker",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/autopilot/goal-store.ts"
+      ],
+      "depends_on": [
+        "L01"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 30.0
+      }
+    },
+    {
+      "id": "L03",
+      "label": "Проверка полноты и экономное решение следующего шага",
+      "status": "done",
+      "description": "Проверка полноты и экономное решение следующего шага в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
+      "acceptance": "Судья видит исходные поручения; done требует отдельного coverage audit; кэш не разрешает stale completion.",
+      "result": "Полный primary context, extraction memo, structured supersession, per-requirement evidence и separate audit реализованы; focused checks зелёные.",
+      "owner": "goal_evaluation_worker",
+      "session": "/root/goal_evaluation_worker",
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
+      "estimate_over_limit_reason": "Единый проверяемый контракт этого этапа включает интеграцию и независимый readback; деление на меньшие состояния не ускорит критический путь. Прогресс фиксируется каждые 15 минут.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-27T23:06:50+03:00",
+          "note": "Оценку цели выполняет Luna",
+          "changes": {
+            "status": "running",
+            "owner": "goal_evaluation_worker",
+            "session": "/root/goal_evaluation_worker",
+            "model": "gpt-6-luna"
+          },
+          "session": "/root/goal_evaluation_worker",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-27T23:26:07+03:00",
+          "note": "Оценка цели реализована",
+          "changes": {
+            "status": "done",
+            "result": "Полный primary context, extraction memo, structured supersession, per-requirement evidence и separate audit реализованы; focused checks зелёные."
+          },
+          "session": "/root/goal_evaluation_worker",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/autopilot/goal-evaluation.ts",
+        "src/autopilot/index.ts"
+      ],
+      "depends_on": [
+        "L01"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 30.0
+      }
+    },
+    {
+      "id": "L04",
+      "label": "Маршрут контрольной модели и измерения стоимости",
+      "status": "running",
+      "description": "Маршрут контрольной модели и измерения стоимости в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
+      "acceptance": "Штатный доступ к выбранной модели, честная поддержка/отказ, без скрытой замены; usage/cache/latency учитываются при наличии provider данных.",
+      "owner": "goal_integration_worker",
+      "session": "/root/goal_integration_worker",
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
+      "estimate_over_limit_reason": "Единый проверяемый контракт этого этапа включает интеграцию и независимый readback; деление на меньшие состояния не ускорит критический путь. Прогресс фиксируется каждые 15 минут.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-27T23:06:53+03:00",
+          "note": "Маршрут и интеграцию исследует Luna",
+          "changes": {
+            "status": "running",
+            "owner": "goal_integration_worker",
+            "session": "/root/goal_integration_worker",
+            "model": "gpt-6-luna"
+          },
+          "session": "/root/goal_integration_worker",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/autopilot/judge-request.ts"
+      ],
+      "depends_on": [
+        "L01"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 25.0
+      }
+    },
+    {
+      "id": "L05",
+      "label": "Связать цель с приёмом пользовательского ввода",
+      "status": "running",
+      "description": "Связать цель с приёмом пользовательского ввода в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
+      "acceptance": "Принятый ввод сразу инвалидирует старый аудит, автоматические сообщения не становятся поручениями; история не усечена молча.",
+      "owner": "Lead",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
+      "estimate_over_limit_reason": "Единый проверяемый контракт этого этапа включает интеграцию и независимый readback; деление на меньшие состояния не ускорит критический путь. Прогресс фиксируется каждые 15 минут.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-27T23:26:10+03:00",
+          "note": "Goal API и input fence подключены",
+          "changes": {
+            "status": "running",
+            "owner": "Lead"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/autopilot/session-store.ts",
+        "src/autopilot/goal-input.ts"
+      ],
+      "depends_on": [
+        "L02"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 30.0
+      }
+    },
+    {
+      "id": "L06",
+      "label": "Продолжение и атомарное завершение в существующем controller",
+      "status": "running",
+      "description": "Продолжение и атомарное завершение в существующем controller в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
+      "acceptance": "Один controller, проверка native identity/revision/input cursor/evidence/stop перед применением; позднее уточнение и restart не закрываются старым результатом.",
+      "owner": "goal_integration_worker",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
+      "estimate_over_limit_reason": "Единый проверяемый контракт этого этапа включает интеграцию и независимый readback; деление на меньшие состояния не ускорит критический путь. Прогресс фиксируется каждые 15 минут.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-27T23:26:13+03:00",
+          "note": "Интеграция existing controller; исправляются точные findings review",
+          "changes": {
+            "status": "running",
+            "owner": "goal_integration_worker",
+            "model": "gpt-6-luna"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/autopilot/background-stop.ts",
+        "src/autopilot-runner.ts"
+      ],
+      "depends_on": [
+        "L02",
+        "L03",
+        "L05"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 30.0
+      }
+    },
+    {
+      "id": "L07",
+      "label": "Цель и состояние в управлении сессией",
+      "status": "done",
+      "description": "Цель и состояние в управлении сессией в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
+      "acceptance": "Можно включить для выбранной сессии, прочитать полную цель/незакрытые требования, дополнить и остановить; чужие сессии не затронуты.",
+      "result": "Панель и polling/status реализованы, compiler/API tests прошли. Браузерная приёмка ещё не выполнена.",
+      "owner": "goal_evaluation_worker",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
+      "estimate_over_limit_reason": "Единый проверяемый контракт этого этапа включает интеграцию и независимый readback; деление на меньшие состояния не ускорит критический путь. Прогресс фиксируется каждые 15 минут.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-27T23:26:17+03:00",
+          "note": "Панель готова к установленной приёмке",
+          "changes": {
+            "status": "done",
+            "owner": "goal_evaluation_worker",
+            "model": "gpt-6-luna",
+            "result": "Панель и polling/status реализованы, compiler/API tests прошли. Браузерная приёмка ещё не выполнена."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/web-ui/main.tsx",
+        "src/web-ui/autopilot-goal-panel.tsx"
+      ],
+      "depends_on": [
+        "L05",
+        "L06"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 30.0
+      }
+    },
+    {
+      "id": "L08",
+      "label": "Интеграционная проверка затронутого поведения",
+      "status": "running",
+      "description": "Интеграционная проверка затронутого поведения в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
+      "acceptance": "Проверены long goal, late input, stop, restart, stale evidence, unavailable material, dedupe; исходное поведение и no-replay сохранены.",
+      "owner": "Lead",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
+      "estimate_over_limit_reason": "Единый проверяемый контракт этого этапа включает интеграцию и независимый readback; деление на меньшие состояния не ускорит критический путь. Прогресс фиксируется каждые 15 минут.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-27T23:26:19+03:00",
+          "note": "Focused checks зелёные; общий затронутый срез проверяется",
+          "changes": {
+            "status": "running",
+            "owner": "Lead"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/autopilot/*goal*.test.ts",
+        ".agents/tasks/20261027-goal-autopilot-fullcycle/"
+      ],
+      "depends_on": [
+        "L04",
+        "L06",
+        "L07"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 25.0
+      }
+    },
+    {
+      "id": "L09",
+      "label": "Независимый review и публикация main",
+      "status": "running",
+      "description": "Независимый review и публикация main в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
+      "acceptance": "Исправлены конкретные находки, scoped owned diff опубликован; SHA и artifact связаны без чужого WIP.",
+      "owner": "quorum_sol",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
+      "estimate_over_limit_reason": "Единый проверяемый контракт этого этапа включает интеграцию и независимый readback; деление на меньшие состояния не ускорит критический путь. Прогресс фиксируется каждые 15 минут.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-27T23:26:23+03:00",
+          "note": "Единый integrated review нашёл конкретные гонки; исправления идут до публикации",
+          "changes": {
+            "status": "running",
+            "owner": "quorum_sol",
+            "model": "gpt-6.1-sol"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        ".agents/tasks/20261027-goal-autopilot-fullcycle/"
+      ],
+      "depends_on": [
+        "L08"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 25.0
+      }
+    },
+    {
+      "id": "L10",
+      "label": "Установка совместимого выпуска",
+      "status": "queued",
+      "description": "Установка совместимого выпуска в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
+      "acceptance": "Один runtime executor; установленный SHA/pid/settings readback; сохранены credentials, маршруты, чужие активные сессии.",
+      "owner": "не назначен",
+      "harness": "codex",
+      "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
+      "estimate_over_limit_reason": "Единый проверяемый контракт этого этапа включает интеграцию и независимый readback; деление на меньшие состояния не ускорит критический путь. Прогресс фиксируется каждые 15 минут.",
+      "origin": "",
+      "supersedes": [],
+      "affected_files": [
+        ".agents/tasks/20261027-goal-autopilot-fullcycle/"
+      ],
+      "depends_on": [
+        "L09"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 20.0
+      }
+    },
+    {
+      "id": "L11",
+      "label": "Реальная приёмка двумя независимыми тестировщиками",
+      "status": "queued",
+      "description": "Реальная приёмка двумя независимыми тестировщиками в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
+      "acceptance": "На изолированной QA-сессии через настоящий интерфейс длинная цель+позднее уточнение доводятся до результата, Stop соблюдается; есть независимые evidence и cleanup.",
+      "owner": "не назначен",
+      "harness": "codex",
+      "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
+      "estimate_over_limit_reason": "Единый проверяемый контракт этого этапа включает интеграцию и независимый readback; деление на меньшие состояния не ускорит критический путь. Прогресс фиксируется каждые 15 минут.",
+      "origin": "",
+      "supersedes": [],
+      "affected_files": [
+        ".agents/tasks/20261027-goal-autopilot-fullcycle/"
+      ],
+      "depends_on": [
+        "L10"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 30.0
+      }
+    },
+    {
+      "id": "L12",
+      "label": "Исправить фидбэк, повторно проверить путь и закрыть цель",
+      "status": "queued",
+      "description": "Исправить фидбэк, повторно проверить путь и закрыть цель в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
+      "acceptance": "Все подтверждённые дефекты разрешённого scope устранены и установлены, свежая приёмка подтверждает полную цель; план и receipts актуальны.",
+      "owner": "не назначен",
+      "harness": "codex",
+      "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
+      "estimate_over_limit_reason": "Единый проверяемый контракт этого этапа включает интеграцию и независимый readback; деление на меньшие состояния не ускорит критический путь. Прогресс фиксируется каждые 15 минут.",
+      "origin": "",
+      "supersedes": [],
+      "affected_files": [
+        ".agents/tasks/20261027-goal-autopilot-fullcycle/"
+      ],
+      "depends_on": [
+        "L11"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 30.0
+      }
+    }
+  ],
+  "leaf_count": 12,
+  "plan_origin": {
+    "at": "2026-10-27T20:04:14.566349+00:00",
+    "source": "file_birthtime",
+    "leaf_id": "L01",
+    "recorded_at": "2026-10-27T20:04:17.058574+00:00"
+  }
+}

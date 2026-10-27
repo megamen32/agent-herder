@@ -53,6 +53,8 @@ import { AutopilotPolicyRevisionConflictError, AutopilotPolicyStore } from "../a
 import { parseNoticeIncident, readIncidentBinding, NoticeIncidentBindingError, isHealthPlanId, HEALTH_PLAN_IDS, type HealthPlanId } from "../autopilot/notice-incident.js";
 import { resolveAutopilotStateDir } from "../autopilot/state-dir.js";
 import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/session-store.js";
+import { autopilotGoalApi, recordGoalHumanInput, stopGoalForSession } from "./autopilot-goal-api.js";
+import { isMcpConnectionOwnerRequest as isGoalControlOwnerRequest } from "./fleet-wiring.js";
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
 import type { AutoCompactService, AutoCompactStore } from "../autocontinue/auto-compact.js";
 import type { OperatorCohortEnrollmentTarget, OperatorContinuationEnrollmentTarget, SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
@@ -2030,6 +2032,24 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 400, { error: (error as Error).message });
     }
   }
+  const goalMatch = url.pathname.match(/^\/api\/autopilot\/goals\/([^/]+)\/([^/]+)$/);
+  if (goalMatch && (request.method === "GET" || request.method === "PUT")) {
+    if (!await isGoalControlOwnerRequest(request)) return sendJson(response, 401, { available: false, error: "Управление целью доступно владельцу выбранной сессии." });
+    const body = request.method === "PUT" ? await readJson(request) : undefined;
+    const harness = decodeURIComponent(goalMatch[1]);
+    const sessionId = decodeURIComponent(goalMatch[2]);
+    const cwd = typeof body?.cwd === "string" ? body.cwd : url.searchParams.get("cwd") || "";
+    const settings = await sessionAutostartStore?.getSettings();
+    const result = await autopilotGoalApi({ harness, sessionId, cwd, method: request.method, body,
+      adapters, sessionStore: autopilotSessionStore, judgeModel: settings?.autopilotJudgeModel,
+      kick: backgroundAutopilotStop ? (identity, goal) => backgroundAutopilotStop.submit({
+        harness: identity.harness as AutopilotHarness, sessionId: identity.sessionId, cwd: identity.cwd,
+        turnId: `goal:${goal.goalRevision}:control:${goal.controlEpoch}`,
+      }) : undefined,
+    });
+    response.setHeader("cache-control", "no-store");
+    return sendJson(response, result.status, result.body);
+  }
   const autopilotSessionMatch = url.pathname.match(/^\/api\/autopilot\/sessions\/([^/]+)\/([^/]+)$/);
   if (autopilotSessionMatch && (request.method === "GET" || request.method === "PUT" || request.method === "DELETE")) {
     if (!autopilotSessionStore) return sendJson(response, 503, { error: "Autopilot session store is disabled" });
@@ -3530,7 +3550,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { ok: false, state: "not_attempted", nonRetryable: true, error: "Scoped session control port is unavailable." });
     if (route.kind === "scoped" && !["message", "resume", "stop"].includes(action)) return sendJson(response, 409, { ok: false, state: "not_attempted", nonRetryable: true, error: "This project-scoped control is not supported." });
     const sessionSupervisor = route.kind === "scoped" ? route.supervisor! : supervisor;
-    if (["stop", "cancel", "terminate"].includes(action)) userMessageDelivery?.cancelSession(harness, id);
+    if (["stop", "cancel", "terminate"].includes(action)) {
+      const localRecord = route.kind !== "scoped" && isAutopilotHarness(harness) ? await autopilotSessionStore?.get(harness, id) : undefined;
+      if (localRecord) await stopGoalForSession({ harness, sessionId: id, cwd: localRecord.cwd });
+      userMessageDelivery?.cancelSession(harness, id);
+    }
     if (action === "resume") {
       if (body.inputId !== undefined && (typeof body.inputId !== "string" || !body.inputId.trim() || body.inputId.length > 512)) {
         return sendJson(response, 400, { error: "inputId must be a non-empty string of at most 512 characters" });
@@ -3608,6 +3632,12 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       if (body.imageIds !== undefined && !(route.kind === "scoped" ? route.adapter : adapters.get(harness))?.controlCapabilities?.imageInput) throw new Error("Эта среда пока не принимает изображения.");
       images = await sessionImages!.resolve(harness, id, body.imageIds);
     } catch (error) { return sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) }); }
+    if (body.humanRequested === true && route.kind !== "scoped" && isAutopilotHarness(harness)) {
+      const target = await adapters.get(harness)?.getSession(id);
+      if (!target || target.id !== id || target.harness !== harness) return sendJson(response, 409, { error: "Точная сессия для уточнения цели не подтверждена." });
+      await recordGoalHumanInput({ harness, sessionId: id, cwd: target.cwd, text: body.message,
+        inputId: typeof body.inputId === "string" ? body.inputId : undefined, hasImages: images.length > 0 });
+    }
     if (route.kind === "scoped" || (body.humanRequested === true && (body.mode === "queue" || body.mode === "steer") && body.inputId !== undefined)) {
       if (!userMessageDelivery) return sendJson(response, 503, { error: "Надёжная очередь сообщений недоступна" });
       const deliveryRoute: UserMessageRoute | undefined = route.kind === "scoped" ? { adapter: route.adapter, supervisor: sessionSupervisor } : undefined;
