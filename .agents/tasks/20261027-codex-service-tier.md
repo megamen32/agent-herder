@@ -41,3 +41,31 @@ developer instruction. Секреты не выводятся; чужой WIP с
 identity, read-only MCP schema и выбор в UI; новые тестовые сессии/turns и
 suite не запускаются. Ускорение/списание квоты провайдером не объявляется
 подтверждённым без соответствующей native/provider квитанции.
+
+## Установка 27.10.2026
+
+Source `48626f861e4565c6a8efda36a8dcc0f1d604759d` опубликован в main.
+TypeScript/build/plugin/package прошли; новая форма и backend собраны из
+одних закреплённых compiler inputs без чужого WIP. Immutable runtime100:
+PID1843383, start21:31:49MSK, bundle SHA256
+`8c6a1088a593543d126d4325730a348da1f0508eaf33c6c856ee3c55328b9169`.
+Policy ETag `c4d46cbefd965e8eb4e21d1426355edd` и settings hash сохранены;
+persisted event sequence23633729 → live23633749, рестартов после активации0.
+Публичный static pin совпадает; infra commit496d43b3, rollback183303Z,
+managed diff без расхождений. MCP tools/list после установки подтвердил
+enum normal/fast у create_session, new_or_resume, fleet_create_session;
+receipt `.tmp/codex-service-tier-20261027/contract.json`.
+
+Установка ограничена Herder на server100. Другие runtime флота не обновлялись;
+старый strict fleet_create_session отклонит новое поле без создания сессии.
+Пользовательские Codex-сессии и глобальный config.toml не изменялись.
+Запрошенный tier не объявляется подтверждением фактической скорости провайдера.
+
+Независимая read-only UI приёмка worker ct27: новая Codex форма открывается
+с Normal, выбор Fast работает; после отмены/повторного открытия снова Normal.
+В OpenCode поле отсутствует. Создать не нажималось, собственный браузер закрыт.
+Screenshots: `/tmp/ct27-newsession-fast-selected.png`,
+`/tmp/ct27-newsession-default-reopen.png`, `/tmp/ct27-main-opencode-tier-hidden.png`.
+Fleet selector отдельно не принят:100 был «Нужна проверка», выбор среды
+отключён;44/88 доступны. Screenshot `/tmp/ct27-fleet-hosts-not-ready.png`.
+Это наблюдение не засчитывается как успешное remote create.

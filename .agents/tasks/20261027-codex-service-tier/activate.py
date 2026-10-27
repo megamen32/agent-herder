@@ -1,4 +1,5 @@
 """Activate one exact canonical build, preserving settings and event continuity."""
+import argparse
 import hashlib
 import json
 import os
@@ -9,7 +10,12 @@ import time
 import urllib.request
 
 root = Path(__file__).resolve().parents[3]
-task = root / '.tmp/codex-service-tier-20261027'
+parser = argparse.ArgumentParser()
+parser.add_argument('--task-dir', default='.tmp/codex-service-tier-20261027')
+args = parser.parse_args()
+task = (root / args.task_dir).resolve()
+if not task.is_relative_to(root / '.tmp'):
+    raise SystemExit('Task receipts must stay within the canonical .tmp directory')
 sha = json.loads((task / 'source.json').read_text())['source_sha']
 release = root.parent / '.notice-herder-release-20261027/releases' / sha
 manifest = json.loads((release / 'dist/fleet-deployment-manifest.json').read_text())
@@ -38,7 +44,7 @@ if backup.exists():
     raise SystemExit('Activation already attempted; inspect receipt instead of replay')
 shutil.copy2(unit, backup)
 temporary = unit.with_suffix('.switch-tmp')
-temporary.write_text(f'# Canonical Codex service tier release.\n[Service]\nExecStart=\nExecStart=/usr/local/bin/node {release}/dist/index.js\n')
+temporary.write_text(f'# Canonical Herder release.\n[Service]\nExecStart=\nExecStart=/usr/local/bin/node {release}/dist/index.js\n')
 os.replace(temporary, unit)
 subprocess.run(['systemctl', '--user', 'daemon-reload'], check=True)
 subprocess.run(['systemctl', '--user', 'restart', 'agent-herder.service'], check=True)
