@@ -635,6 +635,7 @@ export function useLaunchPolicyDraft(options: { merge?: PolicyMergeStrategy } = 
       if (result.kind === "saved") {
         setPolicy(withKeptDraft(result.policy, kept, policy));
         setBase(result.policy);
+        setEtag(result.etag);
         setDirty([]);
         setConflict(false);
         setSaved(true);
@@ -674,6 +675,7 @@ export function useLaunchPolicyDraft(options: { merge?: PolicyMergeStrategy } = 
       if (saved.kind === "saved") {
         setPolicy(withKeptDraft(saved.policy, result.kept ?? {}, policy));
         setBase(saved.policy);
+        setEtag(saved.etag);
         setKept(result.kept ?? {});
         setDirty([]);
         setConflict(false);
