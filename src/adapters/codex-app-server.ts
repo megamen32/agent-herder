@@ -103,6 +103,8 @@ interface CodexThread {
   canAcceptDirectInput?: boolean | null;
   createdAt?: string | number;
   updatedAt?: string | number;
+  /** Native thread/start or thread/resume readback; not present on every thread/read. */
+  serviceTier?: string | null;
 }
 
 interface CodexThreadPermissionState {
@@ -111,6 +113,7 @@ interface CodexThreadPermissionState {
   sandboxPolicy?: { type?: unknown };
   activePermissionProfile?: { id?: unknown } | null;
   runtimeWorkspaceRoots?: unknown;
+  serviceTier?: string | null;
 }
 
 interface CodexOwnedPermissionState {
@@ -954,11 +957,14 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     const result = await this.request("thread/start", {
       cwd: options.cwd,
       ...(this.projectRuntimePolicy ? { model: this.projectRuntimePolicy.modelId } : options.model ? { model: options.model } : {}),
+      // `default` is Codex's standard tier; explicit normal must not inherit a global fast tier.
+      serviceTier: options.serviceTier === "fast" ? "fast" : "default",
       ...(options.fullAccess ? { approvalPolicy: "never", sandbox: "danger-full-access" } : {}),
       ...(this.projectRuntimePolicy ? codexProjectThreadParams(this.projectRuntimePolicy) : {}),
     }) as { thread?: CodexThread } & CodexThreadPermissionState;
     const thread = result.thread;
     if (!thread?.id) throw new Error("Codex thread/start did not return a thread id");
+    if (result.serviceTier !== undefined) thread.serviceTier = result.serviceTier;
     observedThreadId = thread.id;
     materializationStage = "thread_start_observed";
     if (reservation) {
@@ -1706,6 +1712,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       }) as { thread?: CodexThread } & CodexThreadPermissionState;
       if (!result.thread?.id) throw new Error("Codex thread/resume did not return a thread id");
       if (result.thread.id !== id) throw new Error(`Codex thread/resume returned a different thread id (${result.thread.id})`);
+      if (result.serviceTier !== undefined) result.thread.serviceTier = result.serviceTier;
       if (this.projectRuntimePolicy && !codexProjectPermissionObserved(result, this.projectRuntimePolicy)) {
         throw new Error("Codex resume did not confirm the project permission profile and exact runtime root");
       }
@@ -1766,6 +1773,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         model,
         ...(this.projectRuntimePolicy ? codexProjectResumeParams(this.projectRuntimePolicy) : {}),
       }) as { thread?: CodexThread } & CodexThreadPermissionState;
+      if (result.thread && result.serviceTier !== undefined) result.thread.serviceTier = result.serviceTier;
       if (this.projectRuntimePolicy && !codexProjectPermissionObserved(result, this.projectRuntimePolicy)) {
         throw new Error("Codex model switch did not confirm the project permission profile and exact runtime root");
       }
@@ -2808,6 +2816,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         ...(this.unavailableNativeTurnStates.has(thread.id) ? { nativeTurnStateUnavailable: true } : {}),
         ...(typeof thread.parentThreadId === "string" && thread.parentThreadId !== thread.id ? { parentThreadId: thread.parentThreadId } : {}),
         modelProvider: thread.modelProvider,
+        ...(thread.serviceTier !== undefined ? { nativeServiceTier: thread.serviceTier } : {}),
       },
     };
   }

@@ -217,13 +217,16 @@ export class FleetCabinetService {
  async create(request:FleetCreateRequest):Promise<FleetCreateReceipt>{
   const reject=(reason:string,retryable=true):FleetCreateReceipt=>({state:'not_attempted',inputId:request.inputId,retryable,reason});
   if(!this.journal)return reject('durable_create_journal_not_configured',false);
+  if(request.serviceTier!==undefined&&request.harness!=='codex')return reject('service_tier_codex_only',false);
+  if(request.serviceTier!==undefined&&request.serviceTier!=='normal'&&request.serviceTier!=='fast')return reject('invalid_service_tier',false);
   if(!this.deps.hosts.some(h=>h.hostId===request.hostId)||!fleetHarnesses.includes(request.harness)||!validText(request.inputId,256)||!validText(request.name,128)||!validText(request.cwd,4096)||!absolutePath(request.cwd)||request.model!==undefined&&!validText(request.model,128)||request.project!==undefined&&!validText(request.project,512))return reject('invalid_create_request',false);
   return this.journal.once(request,async()=>{
    try{await this.snapshot({hostId:request.hostId,refresh:true});}catch{return reject('native_preflight_read_failed');}
    const node=this.cache.get(request.hostId);
    if(!node||node.host.state!=='ready'||(node.host.expiresAt??0)<=this.now()||!node.host.createHarnesses.includes(request.harness))return reject('native_create_unavailable');
+   const serviceTier=request.serviceTier??'normal';
    // One mutation only. A lost response is durable UNKNOWN, even if the native process completes later.
-   const raw=unwrapResult(await this.bounded(this.transport(request.hostId).call(node.target,'create_session',{harness:request.harness,name:request.name,cwd:request.cwd,...(request.model?{model:request.model}:{}),...(request.project!==undefined?{project:request.project}:{})},createHash('sha256').update(JSON.stringify([this.deps.scope.profileId,this.deps.scope.userId,request.hostId,request.inputId])).digest('hex')),this.now()+(this.deps.createDeadlineMs??30000),this.deps.createDeadlineMs??30000));
+   const raw=unwrapResult(await this.bounded(this.transport(request.hostId).call(node.target,'create_session',{harness:request.harness,name:request.name,cwd:request.cwd,...(request.model?{model:request.model}:{}),...(request.harness==='codex'?{serviceTier}:{}),...(request.project!==undefined?{project:request.project}:{})},createHash('sha256').update(JSON.stringify([this.deps.scope.profileId,this.deps.scope.userId,request.hostId,request.inputId])).digest('hex')),this.now()+(this.deps.createDeadlineMs??30000),this.deps.createDeadlineMs??30000));
    if(raw.ok===true&&raw.created===true&&raw.harness===request.harness&&typeof raw.sessionId==='string'&&validText(raw.sessionId,512)&&typeof raw.cwd==='string'&&validText(raw.cwd,4096)&&absolutePath(raw.cwd))return {state:'created',inputId:request.inputId,address:{hostId:request.hostId,harness:request.harness,nativeSessionId:raw.sessionId},launchCwd:raw.cwd,retryable:false};
    return {state:'unknown',inputId:request.inputId,retryable:false,reason:'native_creation_receipt_unverified'};
   });

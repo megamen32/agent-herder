@@ -3,7 +3,7 @@ import type {IncomingMessage,ServerResponse} from 'node:http';
 import {z} from 'zod';
 import type {FleetCabinetService} from './fleet-service.js';
 import {fleetSessionControlSchema} from './fleet-session-control.js';
-const createSchema=z.object({hostId:z.string().min(1).max(512),harness:z.enum(['codex','zcode','opencode']),name:z.string().trim().min(1).max(128),cwd:z.string().min(1).max(4096),model:z.string().min(1).max(128).optional(),inputId:z.string().min(1).max(256),project:z.string().trim().min(1).max(512).optional()}).strict();
+const createSchema=z.object({hostId:z.string().min(1).max(512),harness:z.enum(['codex','zcode','opencode']),name:z.string().trim().min(1).max(128),cwd:z.string().min(1).max(4096),model:z.string().min(1).max(128).optional(),serviceTier:z.enum(['normal','fast']).optional(),inputId:z.string().min(1).max(256),project:z.string().trim().min(1).max(512).optional()}).strict();
 /** Invoke AFTER the existing HTTP authentication guard. Resolver binds the authenticated profile/user. */
 export function createFleetApiHandler(resolve:FleetCabinetService|((request:IncomingMessage)=>FleetCabinetService|Promise<FleetCabinetService>),localHostId=hostname()){
  return async(request:IncomingMessage,response:ServerResponse):Promise<boolean>=>{
@@ -48,6 +48,7 @@ export function createFleetApiHandler(resolve:FleetCabinetService|((request:Inco
     const chunks:Buffer[]=[];let bytes=0;let timer:ReturnType<typeof setTimeout>|undefined;
     const body=await Promise.race([(async()=>{for await(const chunk of request){const b=Buffer.from(chunk);bytes+=b.length;if(bytes>8192)throw new Error('request_too_large');chunks.push(b);}return Buffer.concat(chunks).toString('utf8');})(),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('request_body_deadline')),3000);})]).finally(()=>{if(timer)clearTimeout(timer);});
     const parsed=createSchema.safeParse(JSON.parse(body));if(!parsed.success){send(400,{error:'Некорректные параметры создания сессии'});return true;}
+    if(parsed.data.serviceTier!==undefined&&parsed.data.harness!=='codex'){send(400,{error:'serviceTier поддерживается только для Codex'});return true;}
     const receipt=await service.create(parsed.data);send(receipt.state==='created'?201:receipt.state==='unknown'?202:409,receipt);return true;
    }
    send(405,{error:'Метод не поддерживается'});

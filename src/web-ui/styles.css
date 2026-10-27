@@ -233,6 +233,7 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .composer-plus.active { background: var(--accent-soft); color: var(--accent); }
 .composer-create-panel { position: absolute; left: 0; right: 0; bottom: calc(100% + 9px); z-index: 12; padding: 10px; border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border)); border-radius: var(--radius-m); background: var(--surface-2); box-shadow: 0 16px 42px var(--shadow-menu); }
 .composer-create-row { display: grid; grid-template-columns: 120px minmax(180px, 1.4fr) minmax(160px, 1fr) auto; align-items: end; gap: var(--space-2); }
+.composer-create-row[data-codex="true"] { grid-template-columns: 110px minmax(150px, 1.4fr) minmax(130px, 1fr) 110px auto; }
 .composer-create-row label { display: grid; gap: var(--space-1); color: var(--muted); font-size: var(--text-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
 .composer-create-row select, .composer-create-row input { width: 100%; min-width: 0; height: 31px; padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--surface-1); color: var(--text); font-size: var(--text-xs); text-transform: none; letter-spacing: normal; }
 .composer-create-row select:focus, .composer-create-row input:focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); box-shadow: 0 0 0 2px var(--accent-soft); }
@@ -503,7 +504,7 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
   .statistics-page { padding: 20px var(--space-3) 50px; }.statistics-hero { display: grid; gap: 15px; }.statistics-controls { justify-content: space-between; }.statistics-cards { grid-template-columns: 1fr 1fr; }.statistics-cards strong { font-size: var(--text-xl); }.statistics-panel { padding: 13px; }.statistics-panel-head { display: grid; gap: var(--space-2); }.statistics-panel-head > small { text-align: left; }.histogram { gap: var(--space-1); overflow-x: auto; }.coverage-row { grid-template-columns: 36px minmax(0, 1fr); }.header-actions .quiet-button.selected-icon:not(.automation-setting-button) { display: inline-block; }
   .jobs-page { padding: 20px var(--space-3) 50px; }.jobs-hero { display: grid; gap: 14px; }.jobs-summary { justify-content: flex-start; }.job-head > div { align-items: flex-start; flex-direction: column; gap: var(--space-2); }.job-actions { align-items: flex-start; flex-direction: column; }.job-actions .danger-button { align-self: flex-end; }
 }
-@media (max-width: 900px) { .composer-create-row { grid-template-columns: 1fr 1fr; }.composer-create-row label:nth-child(2) { grid-column: 1 / -1; }.composer-create-submit { width: 100%; } }
+@media (max-width: 900px) { .composer-create-row, .composer-create-row[data-codex="true"] { grid-template-columns: 1fr 1fr; }.composer-create-row label:nth-child(2) { grid-column: 1 / -1; }.composer-create-submit { width: 100%; } }
 .oc-app.no-inspector { grid-template-columns: 280px minmax(0, 1fr); }
 .oc-app.no-inspector .inspector-pane { display: none; }
 @container chat-pane (max-width: 900px) { .header-actions .automation-setting-button { display: none; } }

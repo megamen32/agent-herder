@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import lockfile from "proper-lockfile";
-import type { AgentSession, HarnessAdapter } from "./types/index.js";
+import type { AgentSession, CodexServiceTier, HarnessAdapter } from "./types/index.js";
 import { coordinationNotes } from "./coordination-notes.js";
 import { deferredMessages, isBusyCodexWriter, withDeferred } from "./deferred-messages.js";
 import { getHumanStopStore } from "./human-stop-store.js";
@@ -33,6 +33,7 @@ export interface NamedSessionRequest {
   name: string;
   cwd: string;
   model?: string;
+  serviceTier?: CodexServiceTier;
   /** Ordered same-harness models for definite pre-admission 429/quota failures; when omitted, a known model route may supply its default. */
   fallbackModels?: string[];
 }
@@ -70,6 +71,12 @@ export interface NamedSessionResult {
    */
   routingReasonDetail?: string;
   model?: string;
+  /** Requested tier for a newly created Codex session. */
+  requestedServiceTier?: CodexServiceTier;
+  /** Native tier observed on a newly created Codex session, when reported. */
+  serviceTier?: CodexServiceTier;
+  /** True only when native readback reports a tier different from the request. */
+  serviceTierMismatch?: boolean;
   requestedModel?: string;
   fallbackFrom?: string;
   error?: string;
@@ -284,6 +291,9 @@ export async function createNamedSession(
   return withNamedSessionLock(request, async (normalized) => {
     const sourceError = await namedAutomationError(adapters, request, normalized);
     if (sourceError) return failed(normalized, sourceError, "not_attempted");
+    if (request.serviceTier !== undefined && normalized.harness !== "codex") {
+      return failed(normalized, "serviceTier is only supported for Codex sessions", "not_attempted");
+    }
     const disarm = await automationDisarmRefusal(normalized, "explicit");
     if (disarm) return disarmFailed(normalized, disarm);
     const adapter = adapters.get(normalized.harness);
@@ -300,9 +310,9 @@ export async function createNamedSession(
     }
     try {
       if (await sourceHeldNow(request)) return failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted");
-      const session = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model, fullAccess: true, healthRecovery: request.healthRecovery });
+      const session = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model, serviceTier: request.serviceTier, fullAccess: true, healthRecovery: request.healthRecovery });
       await rememberNamedSession(adapter, normalized.name, normalized.cwd, session);
-      return { ok: true, created: true, sessionId: session.id, model: request.model, ...normalized };
+      return { ok: true, created: true, sessionId: session.id, model: request.model, ...normalized, ...createdCodexServiceTierResult(session, request.serviceTier) };
     } catch (error) {
       return failed(normalized, (error as Error).message);
     }
@@ -316,6 +326,9 @@ export async function newOrResumeNamedSession(
   const resolved = await withNamedSessionLock<NamedSessionResolution>(request, async (normalized) => {
     const sourceError = await namedAutomationError(adapters, request, normalized);
     if (sourceError) return { kind: "error", result: failed(normalized, sourceError, "not_attempted") };
+    if (request.serviceTier !== undefined && normalized.harness !== "codex") {
+      return { kind: "error", result: failed(normalized, "serviceTier is only supported for Codex sessions", "not_attempted") };
+    }
     const disarm = await automationDisarmRefusal(normalized, request.humanRequested === true ? "human" : "automation");
     if (disarm) return { kind: "error", result: disarmFailed(normalized, disarm) };
     const adapter = adapters.get(normalized.harness);
@@ -339,7 +352,7 @@ export async function newOrResumeNamedSession(
       if (await getHumanStopStore().findHeldNamed(normalized.harness, normalized.name, normalized.cwd)) return { kind: "error", result: failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted") };
       try {
         if (await sourceHeldNow(request)) return { kind: "error", result: failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted") };
-        target = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model, fullAccess: true, healthRecovery: request.healthRecovery });
+        target = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model, serviceTier: request.serviceTier, fullAccess: true, healthRecovery: request.healthRecovery });
         await rememberNamedSession(adapter, normalized.name, normalized.cwd, target);
         created = true;
       } catch (error) {
@@ -349,8 +362,9 @@ export async function newOrResumeNamedSession(
     return { kind: "resolved", adapter, target, created, normalized };
   });
   if (resolved.kind === "error") return resolved.result;
+  const createdServiceTier = resolved.created ? createdCodexServiceTierResult(resolved.target, request.serviceTier) : {};
 
-  if (request.healthRecovery && resolved.target.meta?.healthRecovery !== true) return { ...failed(resolved.normalized, "Health recovery requires a dedicated bounded session", "not_attempted"), sessionId: resolved.target.id };
+  if (request.healthRecovery && resolved.target.meta?.healthRecovery !== true) return { ...failed(resolved.normalized, "Health recovery requires a dedicated bounded session", "not_attempted"), sessionId: resolved.target.id, created: resolved.created, ...createdServiceTier };
 
   const deliveryIdentity = namedDeliveryIdentity(resolved.normalized, request.message);
   const priorDelivery = recentNamedDelivery(deliveryIdentity);
@@ -371,6 +385,7 @@ export async function newOrResumeNamedSession(
         delivery: "not_attempted",
         error: `${resolved.adapter.name} does not support model selection before delivery`,
         ...resolved.normalized,
+        ...createdServiceTier,
       };
     }
     const modelResult = await resolved.adapter.changeModel(resolved.target.id, request.model);
@@ -382,12 +397,13 @@ export async function newOrResumeNamedSession(
         delivery: "not_attempted",
         error: modelResult.error || "Model selection failed",
         ...resolved.normalized,
+        ...createdServiceTier,
       };
     }
   }
   const pending = await withDeferred(resolved.target.id, agentRelayEnvelope(request.message));
   const injectedMessage = await coordinationNotes.inject(resolved.target, pending.message);
-  if (await sourceHeldNow(request) || await automaticDeliveryHeld(resolved.target, false, resolved.adapter)) return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created };
+  if (await sourceHeldNow(request) || await automaticDeliveryHeld(resolved.target, false, resolved.adapter)) return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created, ...createdServiceTier };
   const inputId = request.inputId ?? (request.humanRequested ? undefined : createHash("sha256").update(request.message).digest("hex"));
   let selectedModel = request.model;
   let fallbackFrom: string | undefined;
@@ -402,7 +418,7 @@ export async function newOrResumeNamedSession(
       queue: mode === "queue",
   }));
   const firstSend = await send(request.model);
-  if (!firstSend.allowed) return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created };
+  if (!firstSend.allowed) return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created, ...createdServiceTier };
   let delivery = firstSend.value;
   const tried = new Set([request.model].filter((model): model is string => typeof model === "string"));
   for (const fallbackModel of request.fallbackModels ?? defaultFallbackModels(request.harness, request.model)) {
@@ -413,6 +429,7 @@ export async function newOrResumeNamedSession(
     if (!changed.ok) break;
     if (await sourceHeldNow(request) || await automaticDeliveryHeld(resolved.target, false, resolved.adapter)) {
       return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created,
+        ...createdServiceTier,
         ...(request.model ? { requestedModel: request.model, model: request.model } : {}) };
     }
     fallbackFrom ??= request.model;
@@ -420,6 +437,7 @@ export async function newOrResumeNamedSession(
     const retrySend = await send(fallbackModel);
     if (!retrySend.allowed) {
       return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created,
+        ...createdServiceTier,
         ...(request.model ? { requestedModel: request.model, model: request.model } : {}) };
     }
     delivery = retrySend.value;
@@ -439,6 +457,7 @@ export async function newOrResumeNamedSession(
       ...(isConfirmedQuotaExhaustion(delivery.error) ? { failureCode: "quota_exhausted" as const } : {}),
       error: delivery.error || "Message delivery failed",
       ...resolved.normalized,
+      ...createdServiceTier,
       ...(selectedModel ? { model: selectedModel } : {}),
       ...(fallbackFrom ? { requestedModel: fallbackFrom, fallbackFrom } : {}),
     };
@@ -455,6 +474,7 @@ export async function newOrResumeNamedSession(
     ...(delivery.pending ? { pending: true } : {}),
     ...resolved.normalized,
     ...(selectedModel ? { model: selectedModel } : {}),
+    ...createdServiceTier,
     ...(fallbackFrom ? { requestedModel: fallbackFrom, fallbackFrom } : {}),
   };
   if (delivery.pending) rememberNamedDelivery(deliveryIdentity, result);
@@ -690,6 +710,19 @@ function failed(
   extra?: Partial<NamedSessionResult>,
 ): NamedSessionResult {
   return { ok: false, created: false, error, ...(delivery ? { delivery } : {}), ...request, ...extra };
+}
+
+function createdCodexServiceTierResult(session: AgentSession, requested?: CodexServiceTier): Pick<NamedSessionResult, "requestedServiceTier" | "serviceTier" | "serviceTierMismatch"> {
+  if (session.harness !== "codex") return {};
+  const requestedServiceTier = requested ?? "normal";
+  const native = session.meta?.nativeServiceTier;
+  const serviceTier: CodexServiceTier | undefined = native === "default" ? "normal"
+    : native === "fast" || native === "priority" ? "fast" : undefined;
+  return {
+    requestedServiceTier,
+    ...(serviceTier ? { serviceTier } : {}),
+    ...(serviceTier && serviceTier !== requestedServiceTier ? { serviceTierMismatch: true } : {}),
+  };
 }
 
 export type DeliverActivation = "always" | "if_running" | "defer";

@@ -16,7 +16,7 @@ export interface FleetHost extends FleetHostDefinition {
 }
 export interface FleetSession extends MeshSession {key:string}
 export interface FleetView {hosts:FleetHost[];sessions:FleetSession[];complete:boolean;limited:boolean}
-export interface FleetCreateRequest {hostId:string;harness:FleetHarness;name:string;cwd:string;model?:string;inputId:string;project?:string;projectReadinessContract?:"integrator-host-readiness-v1"}
+export interface FleetCreateRequest {hostId:string;harness:FleetHarness;name:string;cwd:string;model?:string;serviceTier?:"normal"|"fast";inputId:string;project?:string;projectReadinessContract?:"integrator-host-readiness-v1"}
 /** The project-execution receipt of one created session. The harness and the model are the ones the project route designates, so the receipt of a route that is not codex names its own harness. */
 export interface FleetProjectExecutionReceipt {projectId:string;projectRoot:string;rootIdentity:string;policyRevision:string;runtimePolicyRevision:string;hostId:string;harness:FleetHarness;model:string;requiredTools:readonly string[];address:MeshAddress;launchCwd:string}
 export interface FleetCreateReceipt {state:"created"|"not_attempted"|"unknown";inputId:string;address?:MeshAddress;launchCwd?:string;retryable:boolean;reason?:string;projectReadinessContract?:"integrator-host-readiness-v1";projectExecution?:FleetProjectExecutionReceipt}

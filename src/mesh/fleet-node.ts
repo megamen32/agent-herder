@@ -111,7 +111,11 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
  const ownerJournal=deps.ownerJournal??new FleetCreateJournal(join(homedir(),'.local/state/agent-herder/fleet/direct-peer-create.json'),{profileId:'native-owner:'+nativeUser,userId:nativeUser});
  // Receiver owns the once-record across sender-node failure and client disconnect.
  const readinessSchema=z.object({state:z.literal('ready').optional(),projectId:z.string(),projectRoot:z.string(),rootIdentity:z.string(),policyRevision:z.string(),hostId:z.string(),harness:z.enum(['codex','zcode','opencode']),harnessVersion:z.string(),model:z.string().min(1),requiredTools:z.array(z.string()),availableTools:z.array(z.string()),availableModels:z.array(z.string()),resourceReady:z.boolean(),runtimeInstanceId:z.string(),cwd:z.string(),pathResolution:z.object({requestedCwd:z.string(),canonicalCwd:z.string(),rootPath:z.string(),contained:z.boolean(),identityMatches:z.boolean()}).strict(),observedAtMs:z.number()}).strict();
- server.registerTool('fleet_create_session',{description:'Create one local empty session with a durable exact intent identity. An uncertain result is never replayed.',inputSchema:z.object({inputId:z.string().regex(/^[a-f0-9]{64}$/),harness:z.enum(['codex','zcode','opencode']),name:z.string().trim().min(1).max(128),cwd:z.string().min(1).max(4096),model:z.string().min(1).max(128).optional(),project:z.string().trim().min(1).max(512).optional(),projectReadinessContract:z.literal('integrator-host-readiness-v1').optional(),projectReadiness:readinessSchema.optional()}).strict()},async(request)=>{
+ server.registerTool('fleet_create_session',{description:'Create one local empty session with a durable exact intent identity. Codex serviceTier applies only to a newly created Codex thread; other harnesses reject the field. An uncertain result is never replayed.',inputSchema:z.object({inputId:z.string().regex(/^[a-f0-9]{64}$/),harness:z.enum(['codex','zcode','opencode']),name:z.string().trim().min(1).max(128),cwd:z.string().min(1).max(4096),model:z.string().min(1).max(128).optional(),serviceTier:z.enum(['normal','fast']).optional(),project:z.string().trim().min(1).max(512).optional(),projectReadinessContract:z.literal('integrator-host-readiness-v1').optional(),projectReadiness:readinessSchema.optional()}).strict()},async(request)=>{
+  if(request.serviceTier!==undefined&&request.harness!=='codex'){
+   const refused={ok:false,created:false,state:'not_attempted',inputId:request.inputId,reason:'service_tier_codex_only'};
+   return {structuredContent:refused,content:[{type:'text' as const,text:JSON.stringify(refused)}]};
+  }
   // A model the project forbids must not reach a session, whatever created it.
   await assertModelAllowedForDirectoryWithPolicy(deps.launchPolicy,request.cwd,request.model,request.harness);
   if(request.project!==undefined){
@@ -129,11 +133,11 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
     if(!deps.integratorRuntime)return {state:'not_attempted',inputId:request.inputId,retryable:false,reason:'project_scoped_create_unavailable'};
     // The selected harness reaches the runtime: the project route of that harness decides whether
     // it is prepared, and it names the reason when it is not.
-    return deps.integratorRuntime.create({project:request.project,inputId:request.inputId,name:request.name,cwd:request.cwd,...(request.model?{model:request.model}:{}),harness:request.harness,projectReadinessContract:request.projectReadinessContract,projectReadiness:request.projectReadiness as IntegratorProjectReadinessSnapshot});
+    return deps.integratorRuntime.create({project:request.project,inputId:request.inputId,name:request.name,cwd:request.cwd,...(request.model?{model:request.model}:{}),...(request.serviceTier?{serviceTier:request.serviceTier}:{}),harness:request.harness,projectReadinessContract:request.projectReadinessContract,projectReadiness:request.projectReadiness as IntegratorProjectReadinessSnapshot});
    }
    const adapter=deps.adapters.get(request.harness);
    if(!adapter?.createSession)return {state:'not_attempted',inputId:request.inputId,retryable:false,reason:'native_create_unavailable'};
-   const session=await adapter.createSession({name:request.name,cwd:request.cwd,...(request.model?{model:request.model}:{})});
+   const session=await adapter.createSession({name:request.name,cwd:request.cwd,...(request.model?{model:request.model}:{}),...(request.serviceTier?{serviceTier:request.serviceTier}:{})});
    return {state:'created',inputId:request.inputId,address:{hostId:hostname(),harness:request.harness,nativeSessionId:session.id},launchCwd:session.cwd,retryable:false};
   });
   const result=receipt.state==='created'&&receipt.address&&receipt.launchCwd?{ok:true,created:true,harness:receipt.address.harness,sessionId:receipt.address.nativeSessionId,cwd:receipt.launchCwd,inputId:receipt.inputId}:{ok:false,created:false,state:receipt.state,inputId:receipt.inputId,...(receipt.reason?{reason:receipt.reason}:{})};

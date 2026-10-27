@@ -116,6 +116,7 @@ const NamedSessionBaseSchema = z.object({
   cwd: z.string().min(1).describe("Absolute working directory. It is canonicalized before identity matching."),
   hostId: hostTarget(HOST_TARGET_DESCRIPTION),
   model: z.string().trim().min(1).max(MAX_MODEL_LENGTH).regex(/^[^\u0000-\u001f\u007f]*$/).optional().describe("Optional model selected before the first message is delivered."),
+  serviceTier: z.enum(["normal", "fast"]).optional().describe("Codex only. Applies only if a new session is created; defaults to normal and never changes an existing named session."),
 });
 
 export const CreateSessionSchema = NamedSessionBaseSchema;

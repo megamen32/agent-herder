@@ -16,6 +16,7 @@ import type { ProjectExecutionBinding, TrustedRuntimeOwnerResolver } from "./pro
 import { IntegratorSessionBindingStore, type IntegratorLaunchReceipt, type IntegratorNativeAddress, type IntegratorOperationBinding } from "./integrator-session-binding.js";
 import { fleetHarnesses, type FleetCreateReceipt, type FleetHarness } from "./mesh/fleet-contract.js";
 import type { HarnessAdapter } from "./types/index.js";
+import type { CodexServiceTier } from "./types/index.js";
   // ORCHESTRATOR-CONFLICT: src/integrator-fleet-runtime.ts:16 — его импорты (IntegratorLaunchReceipt, FleetHarness, HarnessAdapter) сохранены; добавлен наш value-импорт fleetHarnesses (маршрут гарна): набор ours ⊃ theirs, потеря его кода нет.
 
 export interface IntegratorFleetCreateInput {
@@ -25,6 +26,7 @@ export interface IntegratorFleetCreateInput {
   /** A supplied cwd is a consistency check only; the saved route is authoritative. */
   cwd?: string;
   model?: string;
+  serviceTier?: CodexServiceTier;
   /** The explicitly selected harness of the request. The project route must designate it. */
   harness?: FleetHarness;
   projectReadinessContract?: "integrator-host-readiness-v1";
@@ -154,6 +156,9 @@ export class IntegratorFleetRuntime {
     const project = configured.project;
     if (project.harness !== (input.harness ?? "codex")) {
       return this.notAttempted(input.inputId, "project_route_harness_not_prepared");
+    }
+    if (input.serviceTier !== undefined && project.harness !== "codex") {
+      return this.notAttempted(input.inputId, "service_tier_codex_only");
     }
     if (input.model && input.model !== project.model) {
       return this.notAttempted(input.inputId, "project_route_conflict");
@@ -394,7 +399,7 @@ export class IntegratorFleetRuntime {
         integratorSessionBindingStore: this.options.bindingStore,
         projectRuntimeOwner: owner,
       });
-      const session = await adapter.createSession({ name: input.name.trim(), cwd: project.rootPath, model: project.model });
+      const session = await adapter.createSession({ name: input.name.trim(), cwd: project.rootPath, model: project.model, serviceTier: input.serviceTier });
       const binding = await this.options.bindingStore.get(input.inputId);
       const attempt = binding?.attempts.at(-1);
       if (binding?.state !== "accepted" || attempt?.state !== "accepted"

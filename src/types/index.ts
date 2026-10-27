@@ -7,6 +7,7 @@ export {
   type SendMessageResult,
   type MessageAdmissionResult,
   type CreateSessionOptions,
+  type CodexServiceTier,
   type ListSessionsOptions,
   type SetPermissionsOptions,
   type HarnessPermissionState,

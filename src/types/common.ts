@@ -264,6 +264,8 @@ export interface MessageAdmissionResult {
   receipt?: ControlResult;
 }
 
+export type CodexServiceTier = "normal" | "fast";
+
 export interface CreateSessionOptions {
   /** Dedicated bounded health recovery worker, never a general chat. */
   healthRecovery?: boolean;
@@ -273,6 +275,8 @@ export interface CreateSessionOptions {
   cwd: string;
   /** Optional model selected when creating the session. */
   model?: string;
+  /** Codex thread tier. Omitted means the normal/default tier for a new thread. */
+  serviceTier?: CodexServiceTier;
   /** Enable full native tool access; defaults to true without a mode selection. Use false or a conservative mode for an explicit restriction. */
   fullAccess?: boolean;
   /** Optional native session mode for harnesses that distinguish modes from permissions. */

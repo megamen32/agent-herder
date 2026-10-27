@@ -3356,7 +3356,10 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 400, { error: "harness, name, and cwd are required" });
     }
     if (body.model !== undefined && (typeof body.model !== "string" || body.model.length > MAX_MODEL_LENGTH || hasControlCharacters(body.model))) return sendJson(response, 400, { error: "model must be a bounded string without control characters" });
+    if (body.serviceTier !== undefined && body.serviceTier !== "normal" && body.serviceTier !== "fast") return sendJson(response, 400, { error: "serviceTier must be normal or fast" });
+    if (body.serviceTier !== undefined && body.harness !== "codex") return sendJson(response, 400, { error: "serviceTier is only supported for Codex sessions" });
     const result = await supervisor.createNamedSession({ harness: body.harness, name: body.name, cwd: body.cwd, model: typeof body.model === "string" && body.model.trim() ? body.model.trim() : undefined,
+      serviceTier: body.serviceTier as "normal" | "fast" | undefined,
       sourceSessionId: typeof body.sourceSessionId === "string" ? body.sourceSessionId : undefined,
       sourceHarness: typeof body.sourceHarness === "string" ? body.sourceHarness : undefined,
       sourceSessions: body.sourceSessions as Array<{ harness: string; sessionId: string }> | undefined,
@@ -3376,6 +3379,8 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (body.model !== undefined && (typeof body.model !== "string" || body.model.trim().length === 0 || body.model.length > MAX_MODEL_LENGTH || hasControlCharacters(body.model))) {
       return sendJson(response, 400, { error: "model must be a bounded non-empty string without control characters" });
     }
+    if (body.serviceTier !== undefined && body.serviceTier !== "normal" && body.serviceTier !== "fast") return sendJson(response, 400, { error: "serviceTier must be normal or fast" });
+    if (body.serviceTier !== undefined && body.harness !== "codex") return sendJson(response, 400, { error: "serviceTier is only supported for Codex sessions" });
     const result = await supervisor.newOrResumeNamedSession({
       harness: body.harness,
       name: body.name,
@@ -3383,6 +3388,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       message: body.message,
       mode: body.mode as "queue" | "sync" | undefined,
       model: body.model as string | undefined,
+      serviceTier: body.serviceTier as "normal" | "fast" | undefined,
       humanRequested: body.humanRequested === true,
       sourceSessionId: typeof body.sourceSessionId === "string" ? body.sourceSessionId : undefined,
       sourceHarness: typeof body.sourceHarness === "string" ? body.sourceHarness : undefined,

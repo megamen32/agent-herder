@@ -30,6 +30,7 @@ export function FleetCabinet({creationMode=false,defaultHostId,onSelectedHostCha
  const partial=sessionSnapshot?.hostId===hostId&&(!sessionSnapshot.complete||sessionSnapshot.stale);
  const [loaded,setLoaded]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(''),[hostsPollError,setHostsPollError]=useState(''),[hostsAuthRequired,setHostsAuthRequired]=useState(false),[hostsComplete,setHostsComplete]=useState<boolean|undefined>(undefined),[refresh,setRefresh]=useState(0);
  const [harness,setHarness]=useState<FleetHarness>('codex'),[name,setName]=useState(''),[cwd,setCwd]=useState(''),[model,setModel]=useState('');
+ const [serviceTier,setServiceTier]=useState<'normal'|'fast'>('normal');
  const [clock,setClock]=useState(Date.now());
  const [sending,setSending]=useState(false),[receipt,setReceipt]=useState<FleetCreateReceipt|null>(null);
  const [directRead,setDirectRead]=useState(false),[view,setView]=useState<{address:MeshAddress;title:string;cwd?:string;model?:string;historyUnavailable?:boolean;messages:{text?:string;role?:string;kind?:string}[]}|null>(null),[reading,setReading]=useState(false);
@@ -40,6 +41,7 @@ export function FleetCabinet({creationMode=false,defaultHostId,onSelectedHostCha
   section?.scrollIntoView({block:'start'});focusTarget?.focus({preventScroll:true});
  };
  useEffect(()=>{if(view){viewElement.current?.scrollIntoView({block:'nearest'});viewElement.current?.focus({preventScroll:true});}},[view]);
+ useEffect(()=>{setServiceTier('normal');},[harness,creationMode]);
  const inspect=async(address:MeshAddress)=>{
   if(!client.session)return;viewRequest.current?.abort();const abort=new AbortController();viewRequest.current=abort;setReading(true);setView(null);
   try{const r=await client.session(address,abort.signal);if(abort.signal.aborted)return;if(r.hostId!==address.hostId||r.details.session.id!==address.nativeSessionId||r.details.session.harness!==address.harness)throw new Error('foreign_session');setView({address,title:r.details.session.title??address.nativeSessionId,cwd:r.details.session.cwd,model:r.details.session.model,historyUnavailable:r.details.historyUnavailable===true,messages:(r.details.messages??[]).slice(-3)});}
@@ -90,7 +92,7 @@ export function FleetCabinet({creationMode=false,defaultHostId,onSelectedHostCha
  useEffect(()=>{if(!allowed.includes(harness)&&allowed.length)setHarness(allowed[0]!);},[selected]);
  const submit=async(event:FormEvent)=>{
   event.preventDefault();if(ownMutation.current||receipt?.state==='unknown'||!canCreate)return;
-  const inputId=crypto.randomUUID();const request={hostId,harness,name,cwd,...(model.trim()?{model:model.trim()}:{}),inputId};
+  const inputId=crypto.randomUUID();const request={hostId,harness,name,cwd,...(model.trim()?{model:model.trim()}:{}),...(harness==='codex'?{serviceTier}:{}),inputId};
   try{if(!intentStore.current)throw new Error('Нет сохранённого состояния кабинета');intentStore.current.begin(request);}catch{setError('Не удалось сохранить запрос. Создание не отправлено.');return;}
   ownMutation.current=true;setSending(true);setError('');
   // One POST. Lost response locks this intent; subsequent reads are GET only.
@@ -110,6 +112,7 @@ export function FleetCabinet({creationMode=false,defaultHostId,onSelectedHostCha
   {view&&<article ref={viewElement} tabIndex={-1} className="fleet-session-view" aria-label="Сессия выбранной машины"><h3>{view.title}</h3><p>{hosts.find(h=>h.hostId===view.address.hostId)?.label??view.address.hostId} · {view.address.harness} · {view.model}</p><p>{view.cwd}</p>{view.historyUnavailable?<p>История этой нативной сессии пока недоступна. Сессия подтверждена; сообщения не отправлялись повторно.</p>:view.messages.length?view.messages.map((m,i)=><div key={i}><strong>{m.role==='user'?'Вы':m.role==='assistant'?'Агент':'Сообщение'}</strong><pre>{m.text??''}</pre></div>):<p>Сессия пока пустая.</p>}<button type="button" onClick={()=>setView(null)}>Закрыть просмотр</button></article>}
   <form ref={formElement} tabIndex={-1} aria-label="Новая сессия" onSubmit={submit} hidden={noHostSnapshot}>{!creationMode&&<><h3>Новая сессия</h3><p>{selected?`На машине: ${machineName(selected)}`:'Для создания выберите одну машину выше.'}</p></>}
    <label>Среда <select value={harness} onChange={e=>setHarness(e.target.value as FleetHarness)} disabled={!allowed.length||sending}>{allowed.map(h=><option key={h}>{h}</option>)}</select></label>
+   {harness==='codex'&&<label>Режим Codex <select aria-label="Режим Codex" value={serviceTier} onChange={e=>setServiceTier(e.target.value as 'normal'|'fast')} disabled={sending}><option value="normal">Normal</option><option value="fast">Fast</option></select><small>Fast расходует больше квоты.</small></label>}
    <label>Название <input ref={nameElement} required maxLength={128} value={name} onChange={e=>setName(e.target.value)} disabled={sending}/></label>
    <label>Каталог проекта на выбранной машине <input required placeholder={hostId==='MacBook-Pro-User.local'?'/Users/user/project':'/home/roomhacker/project'} maxLength={4096} value={cwd} onChange={e=>setCwd(e.target.value)} disabled={sending}/></label>
    <label>Модель <input placeholder="По умолчанию" maxLength={128} value={model} onChange={e=>setModel(e.target.value)} disabled={sending}/></label>

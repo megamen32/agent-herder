@@ -1041,6 +1041,7 @@ function App() {
   const [resumeSending, setResumeSending] = React.useState(false);
   const [showCreateSession, setShowCreateSession] = React.useState(false);
   const [createHarness, setCreateHarness] = React.useState("fast-agent");
+  const [createServiceTier, setCreateServiceTier] = React.useState<"normal" | "fast">("normal");
   const [createAdapters, setCreateAdapters] = React.useState<Array<{ id: string; name: string; active: boolean; ready: boolean; status: string }>>([]);
   const [createCwd, setCreateCwd] = React.useState("/home/roomhacker");
   const [cwdSuggestions, setCwdSuggestions] = React.useState<Array<{ name: string; path: string }>>([]);
@@ -1870,6 +1871,7 @@ function App() {
     setCreateCwd(cwd);
     setCreateSessionError(undefined);
     setShowJobs(false);
+    setCreateServiceTier("normal");
     setShowStatistics(false);
     setShowQuota(false);
     setAutomationSettings(undefined);
@@ -1889,7 +1891,7 @@ function App() {
     try {
       const created = await api<{ sessionId?: string }>("/api/sessions", {
         method: "POST",
-        body: JSON.stringify({ harness: createHarness, name: generatedName, cwd: createCwd.trim(), model: createModel.trim() || undefined }),
+        body: JSON.stringify({ harness: createHarness, name: generatedName, cwd: createCwd.trim(), model: createModel.trim() || undefined, ...(createHarness === "codex" ? { serviceTier: createServiceTier } : {}) }),
       });
       if (!created.sessionId) throw new Error("Сервер не вернул созданную сессию");
       setShowCreateSession(false);
@@ -2503,10 +2505,11 @@ function App() {
       {queueEditError&&<div className="composer-queue-edit-error" role="status">{queueEditError}</div>}
       <form className="composer" data-creating={showCreateSession} onSubmit={(event) => { event.preventDefault(); if(showCreateSession){void createNewSession();return;} if (isResumeMode && !queueEdit) void runAction("resume"); else void sendMessage(); }}>
         {showCreateSession && <div className="composer-create-panel"><div className="composer-create-machine"><button type="button" className="quiet-button" onClick={() => setShowCreateSession(false)}>Отмена</button><span>Создание на машине: {directory.hosts.find(host => host.hostId === directory.localHostId)?.label || "Текущая машина"}</span><button type="button" className="quiet-button" onClick={() => {setFleetCreationMode(true);setShowFleet(true);}}>Выбрать другую машину</button></div>
-          <div className="composer-create-row">
+          <div className="composer-create-row" data-codex={createHarness === "codex"}>
             <label>Агент<select value={createHarness} onChange={(event) => { const harness = event.target.value; setCreateHarness(harness); setCreateModel(""); setCreateModels([]); void loadCreateModels(harness); }}>{(createAdapters.length ? createAdapters : [{ id: "fast-agent", name: "Fast Agent", active: true, ready: true, status: "active" }]).map((adapter) => <option key={adapter.id} value={adapter.id} disabled={!adapter.active}>{adapter.name}{adapter.active ? "" : ` · ${adapter.status}`}</option>)}</select></label>
             <label className="cwd-picker">Папка<input value={createCwd} onChange={(event) => { const value = event.target.value; setCreateCwd(value); void loadCwdSuggestions(value); }} onFocus={() => void loadCwdSuggestions(createCwd.endsWith("/") ? createCwd : `${createCwd}/`)} onBlur={() => window.setTimeout(() => setCwdSuggestionsOpen(false), 120)} placeholder="/home/roomhacker/project" autoComplete="off" />{cwdSuggestionsOpen && cwdSuggestions.length > 0 && <div className="cwd-suggestions">{cwdSuggestions.map((item) => <button type="button" key={item.path} onMouseDown={(event) => event.preventDefault()} onClick={() => { setCreateCwd(`${item.path}/`); void loadCwdSuggestions(`${item.path}/`); }}><span className="cwd-folder">▱</span><span>{item.name}</span><small>{item.path}</small></button>)}</div>}</label>
             <label>Модель{createModels.length > 0 ? <select value={createModel} onChange={(event) => setCreateModel(event.target.value)}>{createModels.map((model) => <option key={model} value={model}>{model === "anthropic.MiniMax-M3.1-Flash" ? "MiniMax M3.1 Flash" : model}</option>)}</select> : createModelsRefreshing ? <select disabled><option>загрузка моделей…</option></select> : <input value={createModel} onChange={(event) => setCreateModel(event.target.value)} placeholder="модель (кэш пуст)" />}</label>
+            {createHarness === "codex" && <label>Режим Codex<select aria-label="Режим Codex" title="Fast расходует больше квоты." value={createServiceTier} onChange={(event) => setCreateServiceTier(event.target.value as "normal" | "fast")}><option value="normal">Normal</option><option value="fast">Fast</option></select></label>}
             <button type="button" className="primary-button composer-create-submit" disabled={creatingSession || !createCwd.trim()} onClick={() => void createNewSession()}>{creatingSession ? "…" : "Создать"}</button>
           </div>
           {createSessionError && <div className="create-session-error">{createSessionError}</div>}
