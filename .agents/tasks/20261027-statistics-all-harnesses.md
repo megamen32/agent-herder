@@ -59,3 +59,26 @@ settings/settings-screen.tsx, session-statistics.ts и выпуском. Backend
 и фильтры; «Чаты» на рейке открывает/закрывает панель; пустой фильтр объяснён и
 сбрасывается явно; автоматика доступна из настроек. «Задачи» называются
 «Операции»: это журнал фоновых действий Herder, не проектная доска.
+
+## Установленный совместимый срез
+
+1c62467c546876c124ad7aeccd69f01a48ffd11b опубликован в main; TypeScript и
+npm build/plugin/package checks прошли. Suite/tests не запускались.
+Immutable bundle 0ade62209222df3f0b7f91162a98d04e11eaab6d4163068edfe21d77fe352f11;
+Herder PID3310742 start19:47:33MSK, runtime entrypoint exact release.
+Policy ETag c4d46cbefd965e8eb4e21d1426355edd/settings hash сохранены;
+events23575963 persisted→23575981 restored. Public pin dea27e40, no managed drift.
+
+30d readback16:49:23UTC:4385 sessions =929Codex+2390OpenCode+1066ZCode.
+Exact ses_e8ab75780ffeqDhM84IXxDabXN присутствует в V2 source cache;
+3551 per-session envelopes, старый Codex cache не инвалидирован.
+7d следующий cached-source расчёт18.472s:778Codex+2372OpenCode+96ZCode,
+все источники ready. Process counters этого окна:1432MiB physical reads,
+27.23MiB writes,5680MiB rchar. Это общий процесс вместе с индексатором,
+не отдельный замер статистического worker и не доказательство постоянного I/O.
+
+Конкретный независимый остаток model route: exactcombo proof409, underlying
+OmniRoute catalog401/403; Herder process credential не принимается текущим
+API, management endpoints требуют отдельный management credential. Выбранный
+combo/policy не менялись. Source даёт явное разрешение выбранной модели только
+при notAllowed; unverified объясняет проверку каталога, не требует смены модели.
