@@ -69,3 +69,9 @@ Screenshots: `/tmp/ct27-newsession-fast-selected.png`,
 Fleet selector отдельно не принят:100 был «Нужна проверка», выбор среды
 отключён;44/88 доступны. Screenshot `/tmp/ct27-fleet-hosts-not-ready.png`.
 Это наблюдение не засчитывается как успешное remote create.
+
+Последующий root readback fleet с refresh подтвердил100/44/88ready; screenshot
+наблюдение ct27 было временным, новая remote-сессия всё равно не создавалась.
+Затем по отдельному owner-forwarded поручению gate release45fbd0b установлен
+на100 PID2197008 start21:45:26MSK. Все четыре frontend файла побайтно совпадают
+с принятым ct27 release48626f86; Normal/Fast и его QA receipts сохранены.
