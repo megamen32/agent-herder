@@ -98,11 +98,17 @@ export interface OpenCodeModelProviderResolution {
 export interface OpenCodeModelProviderResolverOptions {
   /** Optional explicit OmniRoute origin; defaults to the existing local route. */
   omniRouteBaseUrl?: string;
-  /** Read-only catalog auth. Never included in the resolution result or errors. */
+  /** Existing native OpenCode provider API key for `/v1/models`; never returned or logged. */
   omniRouteApiKey?: string;
+  /** Existing management credential for read-only `/api/*` catalog routes. */
+  omniRouteManagementToken?: string;
+  /** Existing machine-bound CLI token; sent only to a loopback OmniRoute origin. */
+  omniRouteCliToken?: string;
   /** Test seam for the supported GET-only catalog calls. */
   fetcher?: typeof fetch;
 }
+
+type OpenCodeModelProviderResolverConfig = Omit<OpenCodeModelProviderResolverOptions, "fetcher">;
 
 type OmniRouteCombo = { id: string; name: string; models: Array<{ providerId: string; model: string }> };
 
@@ -123,6 +129,15 @@ function omniRouteCatalogUrls(baseValue: string): { api: string; models: string 
     return { api: `${root}/api`, models: `${root}/v1/models` };
   } catch {
     return undefined;
+  }
+}
+
+function isLoopbackOmniRouteOrigin(value: string): boolean {
+  try {
+    const hostname = new URL(value).hostname.replace(/^\[|\]$/gu, "");
+    return hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return false;
   }
 }
 
@@ -337,8 +352,12 @@ export class OpenCodeAdapter implements HarnessAdapter {
   private readonly integratorSessionBindingStore: IntegratorSessionBindingStore | undefined;
   /** The reservation the integrator runtime handed to this adapter. */
   private readonly integratorReservation: OpenCodeIntegratorReservation | undefined;
+  /** Explicit credentials for the read-only OmniRoute route proof. */
+  private readonly modelProviderResolverConfig: OpenCodeModelProviderResolverConfig;
 
   constructor(config: { baseUrl?: string; password?: string; protocol?: "auto" | "v1" | "v2";
+    /** Explicit, separately scoped credentials for read-only OmniRoute route resolution. */
+    modelProviderResolver?: OpenCodeModelProviderResolverConfig;
     /** Durable integrator journal of the reserved operation, when this adapter serves one. */
     integratorSessionBindingStore?: IntegratorSessionBindingStore;
     /** The reservation the integrator runtime handed to this adapter. */
@@ -354,6 +373,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
     this.authorization = password ? `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}` : undefined;
     this.integratorSessionBindingStore = config.integratorSessionBindingStore;
     this.integratorReservation = config.integratorReservation;
+    this.modelProviderResolverConfig = config.modelProviderResolver ?? {};
   }
 
   /** True once the server answered as an OpenCode 2 (`/api`) instance. */
@@ -841,9 +861,10 @@ export class OpenCodeAdapter implements HarnessAdapter {
    */
   async resolveModelProviderLeaves(
     nativeModelId: string,
-    options: OpenCodeModelProviderResolverOptions = {},
+    requestOptions: OpenCodeModelProviderResolverOptions = {},
   ): Promise<OpenCodeModelProviderResolution | null> {
     try {
+      const options = { ...this.modelProviderResolverConfig, ...requestOptions };
       const separator = nativeModelId.indexOf("/");
       if (separator <= 0 || separator === nativeModelId.length - 1 || nativeModelId.trim() !== nativeModelId) return null;
       const providerId = nativeModelId.slice(0, separator);
@@ -857,15 +878,20 @@ export class OpenCodeAdapter implements HarnessAdapter {
         return { ...base, resolvedProviderLeaves: [{ providerId, modelId }] };
       }
 
-      const apiKey = options.omniRouteApiKey ?? process.env.OMNIROUTE_API_KEY;
+      const apiKey = nonEmptyString(options.omniRouteApiKey);
       if (!apiKey) return null;
       const urls = omniRouteCatalogUrls(options.omniRouteBaseUrl
         ?? process.env.AGENT_HERDER_OMNIROUTE_BASE_URL
         ?? "http://127.0.0.1:20128");
       if (!urls) return null;
       const fetcher = options.fetcher ?? globalThis.fetch;
-      const headers = { Authorization: `Bearer ${apiKey}` };
-      const request = async (url: string): Promise<unknown> => {
+      const managementToken = nonEmptyString(options.omniRouteManagementToken);
+      const cliToken = nonEmptyString(options.omniRouteCliToken);
+      if (!managementToken && (!cliToken || !isLoopbackOmniRouteOrigin(urls.api))) return null;
+      const managementHeaders: Record<string, string> = managementToken
+        ? { Authorization: `Bearer ${managementToken}` }
+        : { "X-OmniRoute-CLI-Token": cliToken! };
+      const request = async (url: string, headers: Record<string, string>): Promise<unknown> => {
         const response = await fetcher(url, {
           method: "GET", headers, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(5_000),
         });
@@ -874,9 +900,9 @@ export class OpenCodeAdapter implements HarnessAdapter {
       };
 
       const [modelCatalogResponse, mappingResponse, aliasResponse] = await Promise.all([
-        request(urls.models),
-        request(`${urls.api}/model-combo-mappings`),
-        request(`${urls.api}/models/alias`),
+        request(urls.models, { Authorization: `Bearer ${apiKey}` }),
+        request(`${urls.api}/model-combo-mappings`, managementHeaders),
+        request(`${urls.api}/models/alias`, managementHeaders),
       ]);
       const modelCatalog = parseOpenAIModelCatalog(modelCatalogResponse);
       const modelAliases = parseOpenAIModelAliases(aliasResponse);
@@ -910,7 +936,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
       // catalog says so. A child/alias route needs a separately understood map.
       if (selected.root !== modelId || selected.parent !== null) return null;
 
-      const comboResponse = await request(`${urls.api}/combos`);
+      const comboResponse = await request(`${urls.api}/combos`, managementHeaders);
       const combos = parseOmniRouteComboCatalog(comboResponse);
       if (!combos) return null;
 
@@ -932,9 +958,8 @@ export class OpenCodeAdapter implements HarnessAdapter {
         const leaves: OpenCodeProviderLeaf[] = [];
         for (const member of combo.models) {
           const listedModel = catalogById.get(member.model);
-          if (!listedModel || !listedModel.root) return null;
-          if (listedModel.owner === "combo") {
-            const child = combosByNameOrId.get(member.model);
+          const child = combosByNameOrId.get(member.model);
+          if (listedModel?.owner === "combo" || child) {
             if (!child || (member.providerId !== "combo" && member.providerId !== "omniroute"
               && member.providerId !== child.name && member.providerId !== child.id)) return null;
             const childLeaves = expand(child, nextAncestors);
@@ -942,7 +967,16 @@ export class OpenCodeAdapter implements HarnessAdapter {
             leaves.push(...childLeaves);
             continue;
           }
-          if (listedModel.owner !== member.providerId) return null;
+          if (listedModel) {
+            if (!listedModel.root || listedModel.owner !== member.providerId) return null;
+          } else if (member.providerId === "combo" || member.providerId === "omniroute"
+            || !member.model.startsWith(`${member.providerId}/`)
+            || member.model.length <= member.providerId.length + 1) {
+            // A combo's authenticated management definition remains authoritative
+            // when this inference key cannot see one of its provider-scoped leaves.
+            // Accept only an exact provider-qualified id in that case.
+            return null;
+          }
           leaves.push({ providerId: member.providerId, modelId: member.model });
         }
         return leaves.length ? leaves : null;
@@ -955,23 +989,18 @@ export class OpenCodeAdapter implements HarnessAdapter {
       // the same model a second public name without changing its provider.
       if (aliasesNamed(modelAliases, uniqueLeaves.map((leaf) => leaf.modelId))) return null;
       const identityModels = [...new Set(uniqueLeaves.map((leaf) => leaf.modelId.split("/").at(-1)!).filter(Boolean))];
-      // A verifiable combo serves one model identity under several providers.
-      // A combo whose legs are different models has no single identity for its
-      // mapping to name, so its route is not provable here.
-      if (identityModels.length !== 1) return null;
-      const identityPattern = `${rootCombo.name}/${identityModels[0]}`;
+      if (identityModels.length === 0) return null;
+      const identityPatterns = new Set(identityModels.map((identity) => `${rootCombo.name}/${identity}`));
       // Enabled mappings are judged per route. Only a mapping that claims the
-      // selected identity can redirect it, and no enabled mapping may rewrite a
-      // sibling name inside the selected combo's own namespace. A second enabled
-      // mapping that serves the same combo under an unrelated name is a
-      // separate route, not a conflict.
-      const claiming = mappingRows.filter((row) => row.enabled && row.pattern === identityPattern);
-      if (claiming.length > 1) return null;
-      if (claiming.length === 1
-        && (claiming[0]!.comboId !== rootCombo.id || claiming[0]!.comboName !== rootCombo.name)) return null;
+      // selected member identities can redirect it. Exact parentless combo IDs
+      // may intentionally contain different terminal model ids; validate each
+      // identity mapping independently instead of requiring one shared suffix.
+      const claiming = mappingRows.filter((row) => row.enabled && identityPatterns.has(row.pattern));
+      if ([...identityPatterns].some((pattern) => claiming.filter((row) => row.pattern === pattern).length > 1)
+        || claiming.some((row) => row.comboId !== rootCombo.id || row.comboName !== rootCombo.name)) return null;
       const conflicting = mappingRows.filter((row) => row.enabled && (
         row.pattern === rootCombo.name
-        || (row.pattern.startsWith(`${rootCombo.name}/`) && row.pattern !== identityPattern)
+        || (row.pattern.startsWith(`${rootCombo.name}/`) && !identityPatterns.has(row.pattern))
       ));
       if (conflicting.length > 0) return null;
       return { ...base, resolvedProviderLeaves: uniqueLeaves };

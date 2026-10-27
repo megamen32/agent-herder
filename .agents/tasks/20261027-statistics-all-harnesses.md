@@ -82,3 +82,30 @@ OmniRoute catalog401/403; Herder process credential не принимается 
 API, management endpoints требуют отдельный management credential. Выбранный
 combo/policy не менялись. Source даёт явное разрешение выбранной модели только
 при notAllowed; unverified объясняет проверку каталога, не требует смены модели.
+
+## Финальный узкий follow-up: catalog auth и owner SSO
+
+Браузер st27 подтвердил 1c62467: Chats toggle, automation settings location,
+page URLs/back/forward, восстановление поисковых параметров, V2 statistics.
+Также нашёл реальный 401 fleet API при homepage200. Публичный nginx использует
+существующий signed GPTAdmin SSO; Herder требовал отдельно HAOS cookie. На100
+проверяем точную owner identity через действующий local checker, сохраняя HAOS
+как существующую authority. Никаких caller identity headers и fake owner ID.
+При отказе UI не выдаёт незагруженные placeholder rows за проверенные машины.
+
+OMNIROUTE_API_KEY из старого Herder процесса невалиден. Штатный existing native
+OpenCode auth key даёт inference catalog200; отдельный local machine-bound CLI
+credential даёт management catalog200. configure-catalog-auth.mjs сохраняет
+их в существующий private Herder env без вывода/ротации и с no-replay backup;
+explicit adapter constructor seam отделяет два auth class, CLI header loopback-only.
+Resolver понимает authenticated management combo members, которых нет в
+scoped inference catalog, и разные terminal model IDs; конфликты/alias/cycles
+по-прежнему отказываются. Нативные/provider source не меняются.
+
+Фактическая выбранная combo имеет zcode-start/glm-5.3-flash,
+zcode-individual/glm-5.3-flash, glm/glm-5.3-flash, minimax/MiniMax-M3.1-Flash.
+Owner-selected GLM family добавлена строго для этих двух ZCode providers и
+точного glm-5.3-flash в canonical leaf policy; generated plugin/core copies
+синхронизированы. Не разрешаем произвольный ZCode model/provider; закрытые
+Codex/Claude/Anthropic остаются закрыты. Web verdict использует тот же helper.
+Это не запуск LLM и не доказательство native execution; только catalog proof.

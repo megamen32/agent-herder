@@ -48,7 +48,7 @@ export function RagSearchView({ initialQuery, onInitialQueryApplied, onOpenSessi
   const [linked] = React.useState(() => new URLSearchParams(window.location.search));
   const [settings, setSettings] = React.useState<RagSettings>();
   const [query, setQuery] = React.useState(initialQuery ?? savedPreferences.query);
-  const [selected, setSelected] = React.useState<Harness[]>(linked.has("q") ? linked.getAll("harness").filter((h): h is Harness => ["codex","opencode","zcode"].includes(h)) : savedPreferences.harnesses);
+  const [selected, setSelected] = React.useState<Harness[]>(linked.has("harness") ? linked.getAll("harness").filter((h): h is Harness => ["codex","opencode","zcode"].includes(h)) : savedPreferences.harnesses);
   const [from, setFrom] = React.useState(linked.has("q") ? linked.get("from") || "" : savedPreferences.from);
   const [to, setTo] = React.useState(linked.has("q") ? linked.get("to") || "" : savedPreferences.to);
   const [project, setProject] = React.useState(linked.has("q") ? linked.get("project") || "" : savedPreferences.project);

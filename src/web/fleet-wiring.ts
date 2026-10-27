@@ -218,7 +218,25 @@ const validPublicOrigin=(request:IncomingMessage)=>{
 };
 function verifiedPublicOwner(request:IncomingMessage):Promise<boolean>{
  let check=publicOwnerChecks.get(request);
- if(!check){const cookie=request.headers.cookie;check=typeof cookie==='string'&&!request.headers.authorization?verifyFleetOwnerCookie(cookie):Promise.resolve(false);publicOwnerChecks.set(request,check);}return check;
+ if(!check){
+  const cookie=request.headers.cookie;
+  check=(async()=>{
+   if(typeof cookie!=='string'||Buffer.byteLength(cookie)>16384||/[\r\n]/.test(cookie)||request.headers.authorization)return false;
+   // The server100 public vhost uses this existing signed SSO authority.
+   // Verify its exact owner identity, not a caller-supplied identity header.
+   if(hostname()==='roomhacker-server-100'){
+    try{
+     const result=await fetch('http://127.0.0.1:18991/check',{headers:{Cookie:cookie},redirect:'error',signal:AbortSignal.timeout(3000)});
+     const valid=result.status===204&&result.headers.get('X-GPTAdmin-User')===userInfo().username;
+     await result.body?.cancel();
+     if(valid)return true;
+    }catch{/* Existing HAOS owner authority remains available below. */}
+   }
+   return verifyFleetOwnerCookie(cookie);
+  })();
+  publicOwnerChecks.set(request,check);
+ }
+ return check;
 }
 /** Public LAN/recovery ingress reuses the signed owner cookie. Loopback native MCP/SSH authority stays local. */
 export function createManagedFleetHttpGuard(mcpToken?:string){

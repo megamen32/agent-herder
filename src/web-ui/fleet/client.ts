@@ -10,15 +10,18 @@ export interface FleetClient {
  create(request:FleetCreateRequest):Promise<FleetCreateReceipt>;
  control?(address:{hostId:string;harness:string;nativeSessionId:string},control:FleetSessionControl):Promise<{status:number;body:unknown}>;
 }
+export class FleetClientError extends Error {
+ constructor(message:string,readonly status:number,readonly reason?:string){super(message);this.name='FleetClientError';}
+}
 export function createFleetClient(base='/api/fleet'):FleetClient{
  const read=async<T>(path:string,init?:RequestInit):Promise<T>=>{
   const response=await fetch(base+path,{credentials:'same-origin',cache:'no-store',...init});
-  let value:T & {error?:unknown;message?:unknown};
-  try{value=await response.json() as T & {error?:unknown;message?:unknown};}
-  catch{throw new Error('Сервер кабинета вернул некорректный ответ. Повторите чтение позже.');}
+  let value:T & {error?:unknown;message?:unknown;reason?:unknown};
+  try{value=await response.json() as T & {error?:unknown;message?:unknown;reason?:unknown};}
+  catch{throw new FleetClientError(response.status===401?'Войдите в кабинет владельца флота.':'Сервер кабинета вернул некорректный ответ. Повторите чтение позже.',response.status);}
   if(!response.ok&&![202,409].includes(response.status)){
    const message=typeof value?.error==='string'?value.error:typeof value?.message==='string'?value.message:'Кабинет временно недоступен';
-   throw new Error(message);
+   throw new FleetClientError(message,response.status,typeof value?.reason==='string'?value.reason:undefined);
   }
   return value;
  };

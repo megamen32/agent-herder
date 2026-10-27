@@ -1,4 +1,5 @@
 import {startActiveFleetInventoryOwner} from '../active-session-fleet.js';
+import { isLeafAllowedByOwnerRule } from "../model-launch-policy.js";
 import {startActiveInventoryOwner} from "../active-session-inventory.js";
 import {listActiveSessions} from "../mcp/active-session-tools.js";
 import {readMinimaxThreadGoals} from "../adapters/minimax-code-thread-goals.js";
@@ -1436,14 +1437,7 @@ async function boardForPath(path: string, fallback: string): Promise<string> {
  * launcher against this one, so the two cannot drift apart unnoticed.
  */
 export function isAllowedRestrictedProviderLeaf(leaf: { providerId: string; modelId: string }): boolean {
-  const providerId = leaf.providerId.trim().toLocaleLowerCase("en-US");
-  const modelId = leaf.modelId.trim().toLocaleLowerCase("en-US");
-  if (!providerId || !modelId || /codex|claude/u.test(`${providerId}/${modelId}`)) return false;
-  const allowedMiniMax = new Set(["minimax", "minimax-code", "minimax-coding-plan"]);
-  const allowedGlm = new Set(["glm", "zai", "zai-coding-plan", "zhipu"]);
-  const isMiniMax = allowedMiniMax.has(providerId) && /minimax|mmcode/u.test(modelId);
-  const isGlm = allowedGlm.has(providerId) && /(^|[/_-])glm([-_/]|$)/u.test(modelId);
-  return isMiniMax || isGlm;
+  return isLeafAllowedByOwnerRule(leaf);
 }
 
 /**

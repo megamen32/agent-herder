@@ -40,11 +40,12 @@ const restrictedProjectRoots = new Set([
  * launcher admits.
  */
 const LEAF_LAUNCH_POLICY = {
-    version: 1,
+    version: 2,
     closedProviderPattern: "codex|claude|anthropic",
     allowedFamilies: [
         { providers: ["minimax", "minimax-code", "minimax-coding-plan"], modelPattern: "minimax|mmcode" },
         { providers: ["glm", "zai", "zai-coding-plan", "zhipu"], modelPattern: "(^|[/_-])glm([-_/]|$)" },
+        { providers: ["zcode-start", "zcode-individual"], modelPattern: "^(?:(?:zcode-start|zcode-individual)/)?glm-5\\.3-flash$" },
     ],
 };
 /**

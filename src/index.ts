@@ -245,10 +245,17 @@ const adapterRegistry = new AdapterRegistry(
   process.env.AGENT_HERDER_ADAPTER_REGISTRY || ".agent-herder/adapters.json",
 );
 
+const openCodeModelProviderResolver = () => ({
+  omniRouteBaseUrl: process.env.AGENT_HERDER_OMNIROUTE_BASE_URL,
+  omniRouteApiKey: process.env.OMNIROUTE_API_KEY,
+  omniRouteManagementToken: process.env.AGENT_HERDER_OMNIROUTE_MANAGEMENT_TOKEN,
+  omniRouteCliToken: process.env.AGENT_HERDER_OMNIROUTE_CLI_TOKEN,
+});
 function configureAdapterRegistry(): void {
   adapterFactories.set("opencode", () => new OpenCodeAdapter({
     baseUrl: process.env.OPENCODE_URL,
     password: process.env.OPENCODE_SERVER_PASSWORD,
+    modelProviderResolver: openCodeModelProviderResolver(),
   }));
   adapterFactories.set("claude", () => ENABLE_CLAUDE_SDK ? new ClaudeSDKAdapter() : new ClaudeCodeAdapter({ claudeBin: process.env.CLAUDE_BIN }));
   adapterFactories.set("codex", () => CODEX_TRANSPORT === "cli"
@@ -322,6 +329,7 @@ async function initAdapters() {
     const adapter = new OpenCodeAdapter({
       baseUrl: process.env.OPENCODE_URL,
       password: process.env.OPENCODE_SERVER_PASSWORD,
+    modelProviderResolver: openCodeModelProviderResolver(),
     });
     adapters.set("opencode", adapter);
     adapterRegistry.registerActive(adapter);
