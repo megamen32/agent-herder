@@ -1,5 +1,24 @@
 # Проверки восстановления квот — 22.10.2026
 
+## Полная цель автопилота — прямое поручение 27.10.2026
+
+Владелец принял архитектуру кворума и поручил полный цикл реализации, установки
+и приёмки. Текущий scope: две отдельные OpenCode QA-сессии на server-100,
+`ses_e80eb63d1ffeiPeBKMW1XhStge` и `ses_e80dcd858ffehZ5xi4M5rJSMfs`,
+обе `omniroute/glm-5.3-flash-minimax-m3.1`. Их единственные области записи:
+`.tmp/goal-autopilot-qa-20261027/project` (alpha.md, beta.md) и
+`.tmp/goal-autopilot-qa-20261027/project-stop` (gamma.md). Для этих двух точных
+сессий подготовлен нативный режим fullAuto. Остальные сессии не менять.
+
+Проверяются собственные goal opt-in/уточнение/Stop/resume через установленный
+интерфейс. Локальный браузер на loopback использует существующий настоящий
+локальный доступ оператора; личный браузер и подстановка owner ID не нужны.
+Это owner-control journey однопользовательского продукта, а не доказательство
+прав обычного SSO testlogin на управление чужими сессиями. Публичный SSO-логин
+остается отдельным контрактом ниже. Не включать глобальную автоматику,
+не создавать production-инцидентов и уведомлений, не делать звонков/сообщений
+людям. После приёмки отключить только собственные QA-цели и сохранить квитанции.
+
 Прямое согласование владельца передано основной сессией: реализация, scoped main publication, build/restart Herder и собственные benign native OpenCode/ZCode consumer canaries разрешены. Рабочий OmniRoute сохраняется ради общего logging/context. Никаких core forks, платного fallback или скрытой смены provider.
 
 Канонический checkout: `/home/roomhacker/agents-projects/agent-herder`; runtime: user systemd `agent-herder.service`, существующий immutable release path из ExecStart. GET управления: `http://127.0.0.1:18787`; native OpenCode endpoint из существующей конфигурации сервиса. Защищённый env reference: `~/.config/agent-herder/herder.env`; значения не выводить/не копировать в артефакты.
@@ -55,3 +74,10 @@ The private receipt retains exact identities and timestamps.
 26.10.2026 реальный вход открыл защищённую страницу Agent Herder; сообщений,
 задач, звонков и изменений продукта не выполнялось. Повторное создание
 учётки/роли, правка htpasswd и перезапуск SSO для QA-входа не нужны.
+<!-- goal-autopilot-clean-20261028:begin -->
+## Чистый повтор desktop-сценария полной цели
+
+Из-за одной ошибочно принятой ручной QA-реплики предыдущий desktop scope не считается доказательством автономного завершения; его история сохранена, цель выключена. Новый разрешённый изолированный scope: OpenCode `ses_e807f3838ffeIAODnvv7foeXs4`, cwd `/home/roomhacker/agents-projects/agent-herder/.tmp/goal-autopilot-qa-20261027/project-clean`, только `alpha.md` и `beta.md`. Model `omniroute/glm-5.3-flash-minimax-m3.1`, `fullAuto` установлен один раз и независимо прочитан.
+
+Тестировщик сохраняет полную цель и одно уточнение только через панель цели. Обычный chat composer и любые ручные report-only подсказки запрещены для этого сценария. Root проверяет итоговые файлы и выключает только этот QA scope после квитанции. Производственные сессии и внешние сообщения не затрагиваются.
+<!-- goal-autopilot-clean-20261028:end -->

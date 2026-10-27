@@ -6,6 +6,9 @@
   "cwd": "/home/roomhacker/agents-projects/agent-herder/.tmp/goal-autopilot-qa-20261027/project",
   "model": "omniroute/glm-5.3-flash-minimax-m3.1",
   "nativeCreation": "accepted; no prompt sent by setup",
+  "secondFixture": {"sessionId":"ses_e80dcd858ffehZ5xi4M5rJSMfs","cwd":"/home/roomhacker/agents-projects/agent-herder/.tmp/goal-autopilot-qa-20261027/project-stop","model":"omniroute/glm-5.3-flash-minimax-m3.1","purpose":"independent mobile Stop/resume journey; gamma.md only"},
+  "cleanFixture": {"sessionId":"ses_e807f3838ffeIAODnvv7foeXs4","cwd":"/home/roomhacker/agents-projects/agent-herder/.tmp/goal-autopilot-qa-20261027/project-clean","model":"omniroute/glm-5.3-flash-minimax-m3.1","purpose":"fresh unassisted desktop acceptance after prior tester accidentally added one manual report-only input; preserve prior receipt, no undo/replay"},
+  "browserIdentity": "local owner/operator browser on loopback; ordinary single-owner product control, no personal browser/profile or owner-ID impersonation",
   "allowedEffects": ["goal opt-in for this session", "goal amendments", "alpha.md and beta.md in isolated cwd", "stop/resume only this goal", "read-only result verification"],
   "forbiddenEffects": ["production incidents", "phone calls", "external messages", "global automation enablement", "other sessions or files"],
   "cleanup": "disable only own QA goal after receipt; preserve no-replay receipts and source evidence"

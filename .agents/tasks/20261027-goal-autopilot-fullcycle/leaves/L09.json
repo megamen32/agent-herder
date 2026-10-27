@@ -1,7 +1,7 @@
 {
   "id": "L09",
   "label": "Независимый review и публикация main",
-  "status": "running",
+  "status": "done",
   "description": "Независимый review и публикация main в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
   "acceptance": "Исправлены конкретные находки, scoped owned diff опубликован; SHA и artifact связаны без чужого WIP.",
   "affected_files": [
@@ -20,7 +20,7 @@
   "harness": "codex",
   "model": "gpt-6.1-sol",
   "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
-  "updated_at": "2026-10-27T23:26:23+03:00",
+  "updated_at": "2026-10-28T00:01:17+03:00",
   "progress_events": [
     {
       "at": "2026-10-27T23:26:23+03:00",
@@ -29,6 +29,15 @@
         "status": "running",
         "owner": "quorum_sol",
         "model": "gpt-6.1-sol"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T00:01:17+03:00",
+      "note": "Main44c58b0 опубликован, independent review SHIP-for-isolated-QA.",
+      "changes": {
+        "status": "done"
       },
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex"

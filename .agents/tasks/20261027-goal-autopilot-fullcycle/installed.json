@@ -1,0 +1,18 @@
+{
+  "sourceSha": "c42d55d27e5a48b7f61769ac0d157041204c2d4f",
+  "runtimeHost": "roomhacker-server-100",
+  "runtimePid": 3304356,
+  "startedAt": "2026-10-28T01:27:36+03:00",
+  "restartCount": 0,
+  "releasePath": "/home/roomhacker/agents-projects/.notice-herder-release-20261027/releases/c42d55d27e5a48b7f61769ac0d157041204c2d4f",
+  "bundleFingerprint": "52d98272f05b6ce0642ed46d000c74f1c9e99a5a985404a36d24aef9959aacf5",
+  "frontendAsset": "index-DL6Z_pqm.js",
+  "ingressCommit": "fd31478a",
+  "checks": {"focusedSourceTests": "63/63 integration, 5/5 collector, 1/1 UI freshness", "compilerBuild": "passed", "independentReview": "SHIP-for-isolated-QA", "realFullGoalAcceptance": "clean desktop autonomous completion and mobile Stop/reload/Resume accepted; independent file SHA readbacks"},
+  "consumerFindings": ["empty session incorrectly renders unavailable transcript", "project inspector lists parent repository changes", "relative proof filename disables save", "permission mode returns native allow instead of canonical fullAuto; UNKNOWN attempt not replayed"],
+  "consumerFixReadback": {"bothExactQaHistories": "acp-load, complete=true, messages=[]", "bothExactQaPermissionModes": "fullAuto", "permissionWritesReplayed": false},
+  "publicBrowser": {"address": "https://agent.bezrabotnyi.com/?release=f05f57c", "identity": "existing SSO testlogin, no owner impersonation", "login": "one submit via protected stdin helper", "rendered": "Agent Herder, chats visible", "authenticatedAsset": "200 application/javascript, 880709 bytes, SHA256 equals built asset", "deploymentFix": "copied assets inherited mode 600; scoped current public frontend normalized with a+rX; screenshot before reload retained"},
+  "finalPublicBrowser": {"address": "https://agent.bezrabotnyi.com/?release=c42d55d#/session/opencode%3Ases_e807f3838ffeIAODnvv7foeXs4", "identity": "existing SSO testlogin read-only", "rendered": "exact clean native session, final ALPHA-READY/BETA-FINAL answer and both result files visible", "screenshot": ".tmp/goal-autopilot-release/public-c42-rendered.png"},
+  "cleanup": {"cleanDesktop": "completed=true armed=false stopped=true epoch3", "mobile": "completed=true armed=false stopped=true epoch4", "oldDesktop": "contaminated run excluded, stopped, raw history preserved", "rootBrowser": "ga27 closed"},
+  "next": "no remaining blocker for accepted file-goal slice; generic external action verification and native Codex subscription judge remain outside delivered scope"
+}

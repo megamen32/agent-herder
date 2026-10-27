@@ -1,7 +1,7 @@
 {
   "id": "L04",
   "label": "Маршрут контрольной модели и измерения стоимости",
-  "status": "running",
+  "status": "done",
   "description": "Маршрут контрольной модели и измерения стоимости в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
   "acceptance": "Штатный доступ к выбранной модели, честная поддержка/отказ, без скрытой замены; usage/cache/latency учитываются при наличии provider данных.",
   "affected_files": [
@@ -20,7 +20,7 @@
   "harness": "codex",
   "session": "/root/goal_integration_worker",
   "model": "gpt-6-luna",
-  "updated_at": "2026-10-27T23:06:53+03:00",
+  "updated_at": "2026-10-28T00:01:16+03:00",
   "progress_events": [
     {
       "at": "2026-10-27T23:06:53+03:00",
@@ -30,6 +30,15 @@
         "owner": "goal_integration_worker",
         "session": "/root/goal_integration_worker",
         "model": "gpt-6-luna"
+      },
+      "session": "/root/goal_integration_worker",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T00:01:16+03:00",
+      "note": "Штатный configured judge route сохранён; native Codex subscription adapter не заявляется. Usage читается только из фактического ответа.",
+      "changes": {
+        "status": "done"
       },
       "session": "/root/goal_integration_worker",
       "harness": "codex"

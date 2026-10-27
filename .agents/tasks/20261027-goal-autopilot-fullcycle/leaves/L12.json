@@ -1,13 +1,13 @@
 {
   "id": "L12",
   "label": "Исправить фидбэк, повторно проверить путь и закрыть цель",
-  "status": "queued",
+  "status": "done",
   "description": "Исправить фидбэк, повторно проверить путь и закрыть цель в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
   "acceptance": "Все подтверждённые дефекты разрешённого scope устранены и установлены, свежая приёмка подтверждает полную цель; план и receipts актуальны.",
   "affected_files": [
     ".agents/tasks/20261027-goal-autopilot-fullcycle/"
   ],
-  "owner": "не назначен",
+  "owner": "root",
   "depends_on": [
     "L11"
   ],
@@ -17,5 +17,21 @@
   },
   "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
   "estimate_over_limit_reason": "Единый проверяемый контракт этого этапа включает интеграцию и независимый readback; деление на меньшие состояния не ускорит критический путь. Прогресс фиксируется каждые 15 минут.",
-  "harness": "codex"
+  "harness": "codex",
+  "result": "RESULT.md; installed.json; clean-independent-readback.json; mobile-independent-readback.json",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "updated_at": "2026-10-28T01:47:27+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-28T01:47:27+03:00",
+      "note": "Исправления установлены c42d55d, публичный интерфейс и независимый файловый результат подтверждены. Собственные QA цели отключены, completed сохранён; квитанции и RESULT.md записаны. Ограничения среза указаны явно.",
+      "changes": {
+        "status": "done",
+        "owner": "root",
+        "result": "RESULT.md; installed.json; clean-independent-readback.json; mobile-independent-readback.json"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    }
+  ]
 }

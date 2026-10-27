@@ -12,10 +12,10 @@
     "Stop и restart не порождают повтор или второй controller; устаревший результат/недоступный материал не разрешают done.",
     "Два независимых тестировщика пользуются установленным интерфейсом без чтения кода; замечания исправлены и перепроверены."
   ],
-  "current_progress": "Цель создана; архитектурный кворум завершён ранее. Идёт планирование и раздача реализации. Продуктовые изменения ещё не выполнены.",
+  "current_progress": "Готово: установлен c42d55d, runtime PID3304356; публичный интерфейс проверен через SSO. Чистая desktop-приёмка: полный исходный текст 18126 bytes сохранён без сокращения (добавлен лишь завершающий LF), одно позднее уточнение, ALPHA-READY/BETA-FINAL созданы автономно; completed=true, оба требования fulfilled, SHA независимо совпали. Мобильный Stop→reload→Resume принят отдельно. Прежний desktop-прогон с ручным сообщением исключён из автономной приёмки. Квитанции сохранены, собственные QA цели отключены без потери completed. Универсальная проверка внешних действий и подписочный Codex judge не заявляются.",
   "external_waits": "",
   "slots": 3,
-  "updated_at": "2026-10-27T23:26:23+03:00",
+  "updated_at": "2026-10-28T01:47:27+03:00",
   "tasks": [
     {
       "id": "L01",
@@ -155,7 +155,7 @@
     {
       "id": "L04",
       "label": "Маршрут контрольной модели и измерения стоимости",
-      "status": "running",
+      "status": "done",
       "description": "Маршрут контрольной модели и измерения стоимости в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
       "acceptance": "Штатный доступ к выбранной модели, честная поддержка/отказ, без скрытой замены; usage/cache/latency учитываются при наличии provider данных.",
       "owner": "goal_integration_worker",
@@ -178,6 +178,15 @@
           },
           "session": "/root/goal_integration_worker",
           "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T00:01:16+03:00",
+          "note": "Штатный configured judge route сохранён; native Codex subscription adapter не заявляется. Usage читается только из фактического ответа.",
+          "changes": {
+            "status": "done"
+          },
+          "session": "/root/goal_integration_worker",
+          "harness": "codex"
         }
       ],
       "affected_files": [
@@ -194,7 +203,7 @@
     {
       "id": "L05",
       "label": "Связать цель с приёмом пользовательского ввода",
-      "status": "running",
+      "status": "done",
       "description": "Связать цель с приёмом пользовательского ввода в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
       "acceptance": "Принятый ввод сразу инвалидирует старый аудит, автоматические сообщения не становятся поручениями; история не усечена молча.",
       "owner": "Lead",
@@ -211,6 +220,15 @@
           "changes": {
             "status": "running",
             "owner": "Lead"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T00:01:16+03:00",
+          "note": "Goal API/input fence/baseline подключены и installed. Полная native consumer acceptance пока не принята.",
+          "changes": {
+            "status": "done"
           },
           "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
           "harness": "codex"
@@ -231,7 +249,7 @@
     {
       "id": "L06",
       "label": "Продолжение и атомарное завершение в существующем controller",
-      "status": "running",
+      "status": "done",
       "description": "Продолжение и атомарное завершение в существующем controller в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
       "acceptance": "Один controller, проверка native identity/revision/input cursor/evidence/stop перед применением; позднее уточнение и restart не закрываются старым результатом.",
       "owner": "goal_integration_worker",
@@ -250,6 +268,15 @@
             "status": "running",
             "owner": "goal_integration_worker",
             "model": "gpt-6-luna"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T00:01:16+03:00",
+          "note": "Один background controller, admission lock/CAS/native cursor/no-progress guards реализованы и installed; source review принят.",
+          "changes": {
+            "status": "done"
           },
           "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
           "harness": "codex"
@@ -314,7 +341,7 @@
     {
       "id": "L08",
       "label": "Интеграционная проверка затронутого поведения",
-      "status": "running",
+      "status": "done",
       "description": "Интеграционная проверка затронутого поведения в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
       "acceptance": "Проверены long goal, late input, stop, restart, stale evidence, unavailable material, dedupe; исходное поведение и no-replay сохранены.",
       "owner": "Lead",
@@ -331,6 +358,15 @@
           "changes": {
             "status": "running",
             "owner": "Lead"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T00:01:17+03:00",
+          "note": "23 focused checks и compiler/build прошли; не заменяют browser acceptance.",
+          "changes": {
+            "status": "done"
           },
           "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
           "harness": "codex"
@@ -353,7 +389,7 @@
     {
       "id": "L09",
       "label": "Независимый review и публикация main",
-      "status": "running",
+      "status": "done",
       "description": "Независимый review и публикация main в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
       "acceptance": "Исправлены конкретные находки, scoped owned diff опубликован; SHA и artifact связаны без чужого WIP.",
       "owner": "quorum_sol",
@@ -375,6 +411,15 @@
           },
           "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
           "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T00:01:17+03:00",
+          "note": "Main44c58b0 опубликован, independent review SHIP-for-isolated-QA.",
+          "changes": {
+            "status": "done"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
         }
       ],
       "affected_files": [
@@ -391,15 +436,27 @@
     {
       "id": "L10",
       "label": "Установка совместимого выпуска",
-      "status": "queued",
+      "status": "done",
       "description": "Установка совместимого выпуска в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
       "acceptance": "Один runtime executor; установленный SHA/pid/settings readback; сохранены credentials, маршруты, чужие активные сессии.",
       "owner": "не назначен",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex",
       "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
       "estimate_over_limit_reason": "Единый проверяемый контракт этого этапа включает интеграцию и независимый readback; деление на меньшие состояния не ускорит критический путь. Прогресс фиксируется каждые 15 минут.",
       "origin": "",
       "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-28T00:01:17+03:00",
+          "note": "Installed44c58b0 PID853965/23:48:58MSK; public UI pin13bea53f. Установленная версия подтверждена.",
+          "changes": {
+            "status": "done"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
       "affected_files": [
         ".agents/tasks/20261027-goal-autopilot-fullcycle/"
       ],
@@ -414,15 +471,47 @@
     {
       "id": "L11",
       "label": "Реальная приёмка двумя независимыми тестировщиками",
-      "status": "queued",
+      "status": "done",
       "description": "Реальная приёмка двумя независимыми тестировщиками в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
       "acceptance": "На изолированной QA-сессии через настоящий интерфейс длинная цель+позднее уточнение доводятся до результата, Stop соблюдается; есть независимые evidence и cleanup.",
-      "owner": "не назначен",
+      "result": "clean-independent-readback.json + mobile-independent-readback.json",
+      "owner": "root + independent browser testers",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex",
       "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
       "estimate_over_limit_reason": "Единый проверяемый контракт этого этапа включает интеграцию и независимый readback; деление на меньшие состояния не ускорит критический путь. Прогресс фиксируется каждые 15 минут.",
       "origin": "",
       "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-28T00:01:17+03:00",
+          "note": "Два свежих browser testers нашли blockers до arm: пустая история, parentrepo файлы, relativepath, permission alias. Исправления в работе; принятой goal/provider отправки пока нет.",
+          "changes": {
+            "status": "running"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T01:45:02+03:00",
+          "note": "Чистый desktop: два GoalPanel ввода, полная цель 18126 bytes плюс завершающий LF сохранена; оба файла и позднее уточнение выполнены автономно, completed=true. Мобильный Stop/reload/Resume принят ранее. Ожидается финальный визуальный readback тестировщика.",
+          "changes": {
+            "owner": "root + independent browser testers"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T01:46:38+03:00",
+          "note": "Чистая автономная приёмка completed=true, все требования fulfilled и точные SHA файлов независимо проверены. Мобильный Stop/reload/Resume принят; тестовые цели отключены с сохранением completed.",
+          "changes": {
+            "status": "done",
+            "result": "clean-independent-readback.json + mobile-independent-readback.json"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
       "affected_files": [
         ".agents/tasks/20261027-goal-autopilot-fullcycle/"
       ],
@@ -437,15 +526,30 @@
     {
       "id": "L12",
       "label": "Исправить фидбэк, повторно проверить путь и закрыть цель",
-      "status": "queued",
+      "status": "done",
       "description": "Исправить фидбэк, повторно проверить путь и закрыть цель в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
       "acceptance": "Все подтверждённые дефекты разрешённого scope устранены и установлены, свежая приёмка подтверждает полную цель; план и receipts актуальны.",
-      "owner": "не назначен",
+      "result": "RESULT.md; installed.json; clean-independent-readback.json; mobile-independent-readback.json",
+      "owner": "root",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex",
       "note": "Оценка предварительная; неизвестные внешние ожидания не включены.",
       "estimate_over_limit_reason": "Единый проверяемый контракт этого этапа включает интеграцию и независимый readback; деление на меньшие состояния не ускорит критический путь. Прогресс фиксируется каждые 15 минут.",
       "origin": "",
       "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-28T01:47:27+03:00",
+          "note": "Исправления установлены c42d55d, публичный интерфейс и независимый файловый результат подтверждены. Собственные QA цели отключены, completed сохранён; квитанции и RESULT.md записаны. Ограничения среза указаны явно.",
+          "changes": {
+            "status": "done",
+            "owner": "root",
+            "result": "RESULT.md; installed.json; clean-independent-readback.json; mobile-independent-readback.json"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
       "affected_files": [
         ".agents/tasks/20261027-goal-autopilot-fullcycle/"
       ],

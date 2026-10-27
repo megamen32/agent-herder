@@ -1,0 +1,15 @@
+{
+  "installedSource": "f1206c74b0b0006e61e53d613c2caeb0beaa0f39",
+  "sessionId": "ses_e80eb63d1ffeiPeBKMW1XhStge",
+  "goalRevision": 2,
+  "humanEvents": 2,
+  "files": [
+    {"path": "project/alpha.md", "exactBytes": "ALPHA-READY\n", "bytes": 12, "sha256": "65b73f218460bdacd313e726b194194215fd8c6f94091e91098570aaf134a210"},
+    {"path": "project/beta.md", "exactBytes": "BETA-FINAL\n", "bytes": 11, "sha256": "21b377e32d875ebc4280051fd773268786d923aeaf08f896d19c323204559aa5"}
+  ],
+  "nativeFinalReportId": "msg_17f5fbfd5001BxTO7TxLh3yR6y",
+  "currentBlocker": "brief-completion-report lacks observed native emitted-text evidence; file outcomes alone do not satisfy that requirement",
+  "completed": false,
+  "noReplay": "original goal and amendment submitted once; accepted alpha and beta native actions not replayed",
+  "testerCorrection": "immediate old invalid_json reason after Resume was stale UI state, not a confirmed new provider failure; newer backend completed both files and now blocks on report evidence"
+}

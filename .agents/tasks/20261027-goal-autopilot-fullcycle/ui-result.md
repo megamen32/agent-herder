@@ -21,10 +21,19 @@ retained. `refs` are sent with arm/amend for server-side within-project validati
 references are shown and block saving. Remote sessions show an explicit unsupported message
 and make no local request.
 
+The session inspector treats an empty conversation as empty only after a live, exact-session
+full details read confirms zero messages and complete available history. It keeps transcript
+errors visible for nonempty or incomplete/unavailable history. The uncommitted worktree file
+list is scoped to the exact session cwd; transcript-proven paths remain visible as recorded.
+Relative goal file refs such as `gamma.md` resolve under the selected session cwd; traversal,
+out-of-project paths, and invalid URIs show a validation error and block saving.
+
 This UI does not claim a universal verifier. Without accessible, loaded primary result material,
 the backend evaluator remains fail-closed and cannot return a completion candidate.
 
 Focused API/evaluator tests passed (11/11), covering read-only GET versus explicit arm,
 non-local-session rejection, missing read-only baseline rejection, stop/resume, safe validation
-errors, and evaluator invariants. `npx tsc --noEmit --pretty false` passed. No browser/runtime
-test or deploy was run; no model/provider calls were made.
+errors, and evaluator invariants. `npx tsc --noEmit --pretty false` passed after the source
+updates. A scratch nested Git repository confirmed cwd descendants were listed and sibling
+worktree changes excluded. No browser/runtime test or deploy was run; no model/provider calls
+were made.

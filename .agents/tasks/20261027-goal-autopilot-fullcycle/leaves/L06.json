@@ -1,7 +1,7 @@
 {
   "id": "L06",
   "label": "Продолжение и атомарное завершение в существующем controller",
-  "status": "running",
+  "status": "done",
   "description": "Продолжение и атомарное завершение в существующем controller в рамках полной исходной цели; архитектура .agents/tasks/20261027-autopilot-quorum/decision.md.",
   "acceptance": "Один controller, проверка native identity/revision/input cursor/evidence/stop перед применением; позднее уточнение и restart не закрываются старым результатом.",
   "affected_files": [
@@ -23,7 +23,7 @@
   "harness": "codex",
   "model": "gpt-6-luna",
   "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
-  "updated_at": "2026-10-27T23:26:13+03:00",
+  "updated_at": "2026-10-28T00:01:16+03:00",
   "progress_events": [
     {
       "at": "2026-10-27T23:26:13+03:00",
@@ -32,6 +32,15 @@
         "status": "running",
         "owner": "goal_integration_worker",
         "model": "gpt-6-luna"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T00:01:16+03:00",
+      "note": "Один background controller, admission lock/CAS/native cursor/no-progress guards реализованы и installed; source review принят.",
+      "changes": {
+        "status": "done"
       },
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex"

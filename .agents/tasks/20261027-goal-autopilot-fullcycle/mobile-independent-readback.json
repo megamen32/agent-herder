@@ -1,0 +1,15 @@
+{
+  "installedSource": "33f2405dba366bbf6d4178be6a75e4f179465561",
+  "sessionId": "ses_e80dcd858ffehZ5xi4M5rJSMfs",
+  "browserJourney": "independent mobile tester: arm once, Stop, reload verifies held state, Resume once, actual native reply",
+  "file": "/home/roomhacker/agents-projects/agent-herder/.tmp/goal-autopilot-qa-20261027/project-stop/gamma.md",
+  "exactBytes": "GAMMA-READY\n",
+  "bytes": 12,
+  "sha256": "9ecf2c37583c2f630d21bb4fcb13d24816c832f428e2edff1871a45e7cbf21e7",
+  "goal": {"completed": true, "goalRevision": 1, "inputCursor": 1, "processedInputCursor": 1, "evidenceVersion": 1, "controlEpoch": 3},
+  "requirements": ["create-gamma-md", "gamma-md-contains-gamma-ready"],
+  "evidence": "both requirement proofs loaded=true, SHA matches independent disk read",
+  "knownUiFindings": ["goal panel layout needs scoped wrapping fix", "header briefly reported running after final reply; independent later session API idle and active inventory excludes session"],
+  "priorUnknownPermissionAttempt": "d8c2f7d7-a856-4d88-a62c-2a7281177870 retained, not replayed; current fullAuto independently confirmed",
+  "notClaimed": ["human acceptance", "generic native tool evidence", "native Codex subscription judge", "desktop long-goal completion"]
+}

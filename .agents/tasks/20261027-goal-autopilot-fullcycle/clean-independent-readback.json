@@ -1,0 +1,27 @@
+{
+  "sourceSha": "c42d55d27e5a48b7f61769ac0d157041204c2d4f",
+  "sessionId": "ses_e807f3838ffeIAODnvv7foeXs4",
+  "scope": "isolated local owner browser, project-clean; no production effects",
+  "primaryEvents": 2,
+  "goalRevision": 2,
+  "inputCursor": 2,
+  "fullOriginalGoalBytes": 18126,
+  "fullOriginalGoalSha256": "9b350883c512a7ff324ebe47c8841c9f5d2aed106cb5c6a04e90dbbd07f9e1df",
+  "savedGoalBytes": 18127,
+  "savedGoalSha256": "ea67234844b412330ed0bc90c97469da9a9fa71d956a2f1cf214ea9a1a9b582b",
+  "savedGoalDifference": "one trailing newline; original text retained byte-for-byte",
+  "amendment": "one original clarification changes only beta from BETA-READY to BETA-FINAL",
+  "completed": true,
+  "evidenceVersion": 1,
+  "controlEpoch": 2,
+  "lastDecision": "done-candidate",
+  "requirements": {"create-alpha-md": "fulfilled", "create-beta-md-final": "fulfilled"},
+  "files": {
+    "alpha.md": {"exactBytes": "ALPHA-READY\n", "bytes": 12, "sha256": "65b73f218460bdacd313e726b194194215fd8c6f94091e91098570aaf134a210"},
+    "beta.md": {"exactBytes": "BETA-FINAL\n", "bytes": 11, "sha256": "21b377e32d875ebc4280051fd773268786d923aeaf08f896d19c323204559aa5"}
+  },
+  "evidence": "loaded file evidence SHA matches independent direct disk read for each fulfilled requirement",
+  "publicBrowser": "existing SSO testlogin read-only, actual native final answer and two exact result files visible at ordinary HTTPS address",
+  "screenshots": [".tmp/goal-autopilot-release/public-c42-rendered.png"],
+  "notClaimed": ["human acceptance", "generic external action verification", "native Codex subscription judge", "unassisted completion of contaminated old desktop fixture"]
+}
