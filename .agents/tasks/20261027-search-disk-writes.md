@@ -188,3 +188,42 @@ scan; при смене stamp/identity применяется прежняя п�
 проекты и automation settings не затрагиваются. Урок: first-line metadata
 проверка не доказывает фактическое parser identity; проверять весь consumed
 prefix. Приёмка только full repeat-scan, idle0 и одинHTTP200 недостаточны.
+
+## Финальная установленная приёмка
+
+Source b76e4352f9db012f702be3249247c3670d8e6955 опубликован main,
+compiler/plugin/manifest/package проверки завершены; suite не запускалась.
+Bundle7f3b566e824c5b8f860b8bfd780ee5ad97eb7b5b390ce821a0c9d91557c2cec5.
+PID1405381 start18:18:43MSK, exact immutable /proc entrypoint; NRestarts0.
+Activation policy/settings неизменны; events23560054 persisted,
+live23560056→23560066. Public static/bundle pin тот жеsource, nginxf5033350;
+timer уже применил, explicit scoped apply unchanged/no reload. Final managed
+diff no drift; deployed doc descendant6a0d9173.
+
+cache-warm.json:180.509s write_bytes8.96875MiB, read_bytes10.01172MiB;
+старыйbefore.json75.214s450.87109MiB writes. Наблюдаемый rate
+5.9945→0.0497MiB/s, снижение120.65раз (не постоянный лимит нагрузки).
+Worker-indexer1406509 записал1,007,616bytes за180s; весь процесс включает
+events и другие штатные persistence writes. rchar8129.73MiB — логическое
+чтение из page cache, не8GiB чтения SSD. RAM sampleVmRSS1548108kB,
+VmHWM2975328kB,VmSwap0; RAM scratch не вынесен в swap.
+
+Окно захватило два repeat-scan IDs и complete24635sessions. Chunk count
+529634→529639 (только+5), нет прежних+2700/-2700 циклов.128 unchanged rows
+совпадают revision/generation/scan. Ранее коллидирующие01a1372a… и01a14c32…
+стабильно имеют335и2360chunks соответственно.
+
+Реальный fleet HTTP search: HF26_PERMISSION_AUTO_C9E2AE4_QA вернул исходный
+Codex01a1754f… и отдельные продолжения; agent-herder-web-autopilot-canary
+вернул OpenCode ses_008d54f04ffeL5iJEsb6qm3eSc. Последние timings489/727ms.
+Это проверка результата поиска, не просто200. Coverage Codex/OpenCode partial
+из-за прежних missing paths/изменения nativeDB во время чтения; unsupported
+harnesses не объявляются covered. Native source DB/files не изменялись.
+
+Пользовательский результат достигнут: unchanged index не переписывается,
+changed transcript diff сохраняет unchanged chunks, canonical identity
+предотвращает churn, events append, точные неизменённые Hermes snapshots
+не перечитывают тела. Full scan остаётся только лёгким обнаружением изменений;
+если native snapshot изменён, его фактическое содержимое проверяется.
+Сжатые Codex .zst остаются прежним отдельным coverage ограничением, не
+распаковывались радиdisk-fix. Прежние принятые QA/provider действия не повторены.

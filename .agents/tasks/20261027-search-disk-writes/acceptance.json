@@ -1,0 +1,19 @@
+{
+  "source_sha": "b76e4352f9db012f702be3249247c3670d8e6955",
+  "bundle": "7f3b566e824c5b8f860b8bfd780ee5ad97eb7b5b390ce821a0c9d91557c2cec5",
+  "pid": 1405381,
+  "started_msk": "2026-10-27 18:18:43",
+  "policy_and_settings_preserved": true,
+  "before": {"seconds": 75.214, "write_mib": 450.871, "write_mib_per_second": 5.9945},
+  "after": {"seconds": 180.509, "write_mib": 8.969, "write_mib_per_second": 0.0497, "read_mib": 10.012},
+  "observed_write_rate_reduction": 120.65,
+  "unchanged_archive_rows": 128,
+  "repeat_scan_sessions": 24635,
+  "repeat_window_chunks": [529634, 529639],
+  "search_exact_native_receipts_preserved": true,
+  "search_elapsed_ms": [489, 727],
+  "native_source_mutations": 0,
+  "provider_calls": 0,
+  "test_suite_run": false,
+  "scope": "server-100 installed Herder runtime; observed natural workload, not a guaranteed I/O ceiling"
+}
