@@ -29,15 +29,29 @@ function jsonMessage(row:any,harness:string):{id:string;text:string;role:string}
  const p=row.message??row;return {id:str(row.message_id)||str(row.uuid)||str(p.id),text:text(p.content),role:str(p.role)};
 }
 async function* jsonChunks(path:string,harness:string,signal?:AbortSignal){for await(const {row,line} of records(path,signal)){const message=jsonMessage(row,harness);if(message?.text)yield {id:message.id||`line:${line}`,text:message.text};}}
+const MAX_JSON_METADATA_CACHE=50_000;
+type JsonSessionMetadata={nativeSessionId:string;title:string;cwd:string;revision:string};
+type JsonMetadataCacheEntry={stamp:string;catalogId:string;catalogTitle:string;catalogCwd:string;metadata:JsonSessionMetadata};
+const jsonMetadataCache=new Map<string,JsonMetadataCacheEntry>();
 async function jsonSession(path:string,harness:string,options:Options,catalog?:any):Promise<SearchSourceSession>{
- let id=str(catalog?.id)||basename(path).replace(/\.jsonl$/,'');let title=str(catalog?.title),cwd=str(catalog?.cwd);
+ const catalogId=str(catalog?.id),catalogTitle=str(catalog?.title),catalogCwd=str(catalog?.cwd);
  const revision=await stamp(path);
+ const cacheKey=JSON.stringify([harness,path]);
+ const cached=jsonMetadataCache.get(cacheKey);
+ if(cached&&cached.stamp===revision&&cached.catalogId===catalogId&&cached.catalogTitle===catalogTitle&&cached.catalogCwd===catalogCwd){
+  return {...cached.metadata,harness,chunks:jsonChunks(path,harness,options.signal)};
+ }
+ let id=catalogId||basename(path).replace(/\.jsonl$/,'');let title=catalogTitle,cwd=catalogCwd;
  for await(const {row} of records(path,options.signal)){
   if(harness==='codex'&&row.type==='session_meta'){id=str(row.payload?.id)||str(row.payload?.session_id)||id;cwd=str(row.payload?.cwd)||cwd;title=str(row.payload?.title)||title;}
   if(harness==='claude'){id=str(row.sessionId)||id;cwd=str(row.cwd)||cwd;}
   const m=jsonMessage(row,harness);if(m?.role==='user'&&m.text){title||=m.text.replace(/\s+/g,' ').slice(0,160);break;}
  }
- return {harness,nativeSessionId:id,title:title||id,cwd,revision:`${revision}:${title}:${cwd}`,chunks:jsonChunks(path,harness,options.signal)};
+ if(await stamp(path)!==revision)throw new Error('source_changed_during_metadata_parse');
+ const metadata={nativeSessionId:id,title:title||id,cwd,revision:`${revision}:${title}:${cwd}`};
+ if(!cached&&jsonMetadataCache.size>=MAX_JSON_METADATA_CACHE){const oldest=jsonMetadataCache.keys().next().value;if(oldest!==undefined)jsonMetadataCache.delete(oldest);}
+ jsonMetadataCache.set(cacheKey,{stamp:revision,catalogId,catalogTitle,catalogCwd,metadata});
+ return {...metadata,harness,chunks:jsonChunks(path,harness,options.signal)};
 }
 async function safeJsonSession(path:string,harness:string,options:Options,catalog?:any):Promise<SearchSourceSession|undefined>{
  try{return await jsonSession(path,harness,options,catalog);}catch(error){check(options.signal);options.onIssue?.('native_session_metadata_unavailable');if(catalog?.id)return {harness,nativeSessionId:str(catalog.id),title:str(catalog.title)||str(catalog.id),cwd:str(catalog.cwd),revision:JSON.stringify(catalog),contentUnavailable:true,chunks:(async function*(){})()};return undefined;}

@@ -41,6 +41,7 @@ export class SessionSearchIndex {
    CREATE TABLE IF NOT EXISTS sessions(harness TEXT NOT NULL,native_id TEXT NOT NULL,title TEXT NOT NULL,cwd TEXT NOT NULL,revision TEXT NOT NULL,generation TEXT NOT NULL,scan TEXT NOT NULL,PRIMARY KEY(harness,native_id));
    CREATE TABLE IF NOT EXISTS chunks(id INTEGER PRIMARY KEY,harness TEXT NOT NULL,native_id TEXT NOT NULL,generation TEXT NOT NULL,chunk_id TEXT NOT NULL,title TEXT NOT NULL,text TEXT NOT NULL);
    CREATE INDEX IF NOT EXISTS chunks_session ON chunks(harness,native_id,generation);
+   CREATE INDEX IF NOT EXISTS chunks_nonempty_session ON chunks(harness,native_id) WHERE length(text)>0;
    CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(title,text,content='chunks',content_rowid='id',tokenize='unicode61 remove_diacritics 2');
    CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN INSERT INTO chunks_fts(rowid,title,text) VALUES(new.id,new.title,new.text); END;
    CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN INSERT INTO chunks_fts(chunks_fts,rowid,title,text) VALUES('delete',old.id,old.title,old.text); END;
@@ -85,21 +86,37 @@ export class SessionSearchIndex {
  async ingest(session:SearchSessionInput,scan:string):Promise<boolean>{
   const old=this.db.prepare('SELECT revision,title,cwd FROM sessions WHERE harness=? AND native_id=?').get(session.harness,session.nativeSessionId);
   if(old&&session.contentUnavailable){
+   if(old.title===session.title&&old.cwd===session.cwd)return false;
    this.db.exec('BEGIN IMMEDIATE');try{
-    this.db.prepare('UPDATE sessions SET scan=?,title=?,cwd=? WHERE harness=? AND native_id=?').run(scan,session.title,session.cwd,session.harness,session.nativeSessionId);
+    this.db.prepare('UPDATE sessions SET title=?,cwd=? WHERE harness=? AND native_id=?').run(session.title,session.cwd,session.harness,session.nativeSessionId);
     if(old.title!==session.title)this.db.prepare('UPDATE chunks SET title=? WHERE harness=? AND native_id=?').run(session.title,session.harness,session.nativeSessionId);
     this.db.exec('COMMIT');
    }catch(error){this.db.exec('ROLLBACK');throw error;}
    return false;
   }
-  if(old?.revision===session.revision&&old?.title===session.title&&old?.cwd===session.cwd){this.db.prepare('UPDATE sessions SET scan=? WHERE harness=? AND native_id=?').run(scan,session.harness,session.nativeSessionId);return false;}
+  if(old?.revision===session.revision){
+   if(old.title===session.title&&old.cwd===session.cwd)return false;
+   this.db.exec('BEGIN IMMEDIATE');try{
+    this.db.prepare('UPDATE sessions SET title=?,cwd=? WHERE harness=? AND native_id=?').run(session.title,session.cwd,session.harness,session.nativeSessionId);
+    if(old.title!==session.title)this.db.prepare('UPDATE chunks SET title=? WHERE harness=? AND native_id=?').run(session.title,session.harness,session.nativeSessionId);
+    this.db.exec('COMMIT');
+   }catch(error){this.db.exec('ROLLBACK');throw error;}
+   return false;
+  }
   const generation=randomUUID();
   const insert=this.db.prepare('INSERT INTO chunks(harness,native_id,generation,chunk_id,title,text) VALUES(?,?,?,?,?,?)');
+  const insertBatch=(batch:Array<{id:string;text:string}>)=>{
+   this.db.exec('BEGIN IMMEDIATE');try{
+    for(const chunk of batch)insert.run(session.harness,session.nativeSessionId,generation,chunk.id,session.title,chunk.text);
+    this.db.exec('COMMIT');
+   }catch(error){this.db.exec('ROLLBACK');throw error;}
+  };
   try{
    // A title-only session remains searchable even with no messages.
-   insert.run(session.harness,session.nativeSessionId,generation,'title',session.title,'');
-   let chunkCount=0;
-   for await(const chunk of session.chunks){insert.run(session.harness,session.nativeSessionId,generation,chunk.id,session.title,chunk.text);if(++chunkCount%128===0)await yieldToConsumers();}
+   insertBatch([{id:'title',text:''}]);
+   let batch:Array<{id:string;text:string}>=[];
+   for await(const chunk of session.chunks){batch.push(chunk);if(batch.length===128){insertBatch(batch);batch=[];await yieldToConsumers();}}
+   if(batch.length)insertBatch(batch);
    this.db.exec('BEGIN IMMEDIATE');
    try{
     this.db.prepare('INSERT INTO sessions VALUES(?,?,?,?,?,?,?) ON CONFLICT(harness,native_id) DO UPDATE SET title=excluded.title,cwd=excluded.cwd,revision=excluded.revision,generation=excluded.generation,scan=excluded.scan').run(session.harness,session.nativeSessionId,session.title,session.cwd,session.revision,generation,scan);
@@ -110,12 +127,20 @@ export class SessionSearchIndex {
   }catch(error){this.db.prepare('DELETE FROM chunks WHERE harness=? AND native_id=? AND generation=?').run(session.harness,session.nativeSessionId,generation);throw error;}
  }
  /** Only successful exhaustive sources may remove missing sessions. */
- finishSource(receipt:SearchSourceReceipt,scan:string,options:{pruneComplete?:boolean}={}){
+ finishSource(receipt:SearchSourceReceipt,scan:string,options:{pruneComplete?:boolean;seenSessionIds?:ReadonlySet<string>}={}){
   this.db.exec('BEGIN IMMEDIATE');
   try{
    if(receipt.state==='complete'&&options.pruneComplete!==false){
-    this.db.prepare('DELETE FROM chunks WHERE harness=? AND native_id IN (SELECT native_id FROM sessions WHERE harness=? AND scan<>?)').run(receipt.harness,receipt.harness,scan);
-    this.db.prepare('DELETE FROM sessions WHERE harness=? AND scan<>?').run(receipt.harness,scan);
+    if(options.seenSessionIds){
+     const chunks=this.db.prepare('DELETE FROM chunks WHERE harness=? AND native_id=?');
+     const session=this.db.prepare('DELETE FROM sessions WHERE harness=? AND native_id=?');
+     const missing=Array.from(this.db.prepare('SELECT native_id FROM sessions WHERE harness=?').iterate(receipt.harness) as Iterable<{native_id:string}>,row=>row.native_id)
+      .filter(nativeId=>!options.seenSessionIds!.has(nativeId));
+     for(const nativeId of missing){chunks.run(receipt.harness,nativeId);session.run(receipt.harness,nativeId);}
+    }else{
+     this.db.prepare('DELETE FROM chunks WHERE harness=? AND native_id IN (SELECT native_id FROM sessions WHERE harness=? AND scan<>?)').run(receipt.harness,receipt.harness,scan);
+     this.db.prepare('DELETE FROM sessions WHERE harness=? AND scan<>?').run(receipt.harness,scan);
+    }
    }
    const indexed=this.db.prepare("SELECT count(DISTINCT native_id) AS textSessions,count(*) AS chunks FROM chunks WHERE harness=? AND length(text)>0").get(receipt.harness) as {textSessions:number;chunks:number};
    const recorded={...receipt,scanId:scan,processedTextSessions:receipt.textSessions??0,processedChunks:receipt.chunks??0,indexedTextSessions:Number(indexed?.textSessions??0),indexedChunks:Number(indexed?.chunks??0),observedAt:new Date().toISOString()};
@@ -125,20 +150,22 @@ export class SessionSearchIndex {
  }
  async scan(sessions:AsyncIterable<SearchSessionInput>,receipts:SearchSourceReceipt[]):Promise<void>{
   if(this.ingesting)throw new Error('search_indexing_busy');
-  this.ingesting=true;const scan=randomUUID();let processed=0;
+  this.ingesting=true;const scan=randomUUID();let processed=0;let lastProgressAt=Date.now();
   const record=(status:string,error:string|null=null)=>this.db.prepare('INSERT INTO search_run(id,status,updated_at,processed,error,scan_id) VALUES(1,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,updated_at=excluded.updated_at,processed=excluded.processed,error=excluded.error,scan_id=excluded.scan_id').run(status,new Date().toISOString(),processed,error,scan);
   record('running');
   try{
    const failures=new Map<string,number>();
+   const seenByHarness=new Map<string,Set<string>>();
    let recorded=0;
    const withIngestFailures=(receipt:SearchSourceReceipt)=>failures.has(receipt.harness)?{...receipt,state:'partial' as const,reason:`session_content_read_failed:${failures.get(receipt.harness)}`} : receipt;
-   const publishAvailableReceipts=()=>{for(;recorded<receipts.length;recorded++)this.finishSource(withIngestFailures(receipts[recorded]),scan,{pruneComplete:false});};
+   const publishAvailableReceipts=()=>{for(;recorded<receipts.length;recorded++)this.finishSource(withIngestFailures(receipts[recorded]),scan,{pruneComplete:false,seenSessionIds:seenByHarness.get(receipts[recorded].harness)});};
    for await(const session of sessions){
+    let seen=seenByHarness.get(session.harness);if(!seen){seen=new Set();seenByHarness.set(session.harness,seen);}seen.add(session.nativeSessionId);
     try{await this.ingest(session,scan);}catch{failures.set(session.harness,(failures.get(session.harness)??0)+1);}
-    processed++;record('running');publishAvailableReceipts();if(processed%16===0)await yieldToConsumers();
+    processed++;const now=Date.now();if(now-lastProgressAt>=1000){record('running');lastProgressAt=now;}publishAvailableReceipts();if(processed%16===0)await yieldToConsumers();
    }
    // Only normal iterator exhaustion proves a complete source snapshot safe to prune.
-   for(const receipt of receipts)this.finishSource(withIngestFailures(receipt),scan,{pruneComplete:true});
+   for(const receipt of receipts)this.finishSource(withIngestFailures(receipt),scan,{pruneComplete:true,seenSessionIds:seenByHarness.get(receipt.harness)??new Set()});
    record('complete');
   }
   catch(error){
