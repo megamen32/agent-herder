@@ -7,9 +7,9 @@
 
 ## Результат до / после
 
-Сейчас live OpenCode fallbackForQuota=false, общий fallbackModels содержит
-только omniroute/minimax-combo-m3.1. Механизм quota-recovery уже существует,
-но читает список только по среде, без проектного порядка и ограничений.
+На старте live OpenCode fallbackForQuota=false, общий fallbackModels содержал
+только omniroute/minimax-combo-m3.1. Механизм quota-recovery уже существовал,
+но читал список только по среде, без проектного порядка и ограничений.
 После: включённое автопереключение выбирает следующую разрешённую модель
 проекта по явному порядку, не меняет native session ID и не повторяет
 принятые/неизвестные отправки. HumanStop и вопрос человеку блокируют запуск.
@@ -83,3 +83,142 @@ MiniMax Token Plan до уже назначенного 28.10 12:00 МСК. Не
 - Независимый UI-исполнитель имеет браузер ms27; при истечении SSO использует
   существующий testlogin через secure helper. Ни паролей в контексте, ни новых
   аккаунтов/разрешений не создаётся.
+
+## Установка a97d784 перед окончательной UI-приёмкой
+
+- Source/runtime `a97d784dd947ba6fcac77358036362066eaa3038`, user unit
+  agent-herder.service PID1683769. Политика до/после совпадает побайтно по
+  нормализованному JSON и ETag `c4d46cbefd965e8eb4e21d1426355edd`; никаких
+  изменений NoticePlace combo/общей автоматики установщик не делает.
+- Сборка backend/frontend/plugin, manifest exact source+payload и все 14
+  package checks прошли. Bundle fingerprint
+  `be3054a65fe2cd523c2bb6996e0f3dabc7689d8d3d1ff6ba6c96164075d0f040`.
+  `/proc/PID/cmdline` указывает на этот immutable release.
+- Независимый resolver из установленного пакета подтвердил семантику:
+  проектный порядок MiniMax→combo; [] даёт ноль кандидатов; {} наследует общий
+  порядок; запрет MiniMax оставляет только combo; вложенный маршрут с более
+  узким allowlist не выпускает модель наружу; запрещённый harness даёт ноль;
+  запрещённая исходная модель ожидания получает allowed=false.
+- Это проверка настоящей установленной логики выбора, не generation/provider
+  receipt и не доказательство реального исчерпания квоты. Изолированные 34
+  recovery checks подтверждают сохранность прежней continuation/no-replay
+  логики без обращений к провайдерам. UI-приёмка пока не завершена.
+- Приватные receipts и логи: `.tmp/project-model-switching-20261027/`.
+
+## Реальный браузер: выявлен и исправлен путь поставки
+
+Первая независимая UI-приёмка выявила повторяющийся 412 при сохранении и
+отсутствие новых controls. Root проверил actual public path: nginx отдавал
+отдельный immutable фронтенд c9e2ae4 с index-Cu9BqIl1.js, хотя backend уже
+был новым. Кроме того, gzip превращал strong document ETag в W/"…"; frontend
+передавал его в If-Match, и backend правильно отклонял несовпадающую версию.
+Это реальный FAIL, не ожидание стороннего проекта.
+
+Штатная поставка через canonical ServersAdministartion/nginx-dev:
+публичный pin a97d784, dirs755/files644/www-data-readable; exact
+/api/automation/launch-policy использует gzip off и прежний SSO/proxy contract.
+Config source `505c5fcdb156f151c76eacb4771720887e3cb6e1`, refresh/check PASS,
+scoped apply PASS, rollback `/var/lib/nginx-dev/rollback/20261027T121723Z`.
+Managed-tree diff после применения: returncode0, zero drift; whole-tree
+deployed SHA прочитан как 505c5fcdb156f151c76eacb4771720887e3cb6e1.
+
+Проверено в том же аутентифицированном браузере: X-Herder-UI-Source=a97d784,
+index-CrJUByKo.js, strong ETag без content encoding. Старый frontend сохранён.
+Повторная UI-приёмка на новом публичном frontend продолжается; source/build
+и readback не выдаются за принятую кнопку.
+
+Дополнительно проверено без provider calls: существующий deferQuotaRecoveryProbe
+уже безопасно продвигается к следующему кандидату при исчерпанной квоте,
+до claim/send, без подделки receipt. Лишнего изменения алгоритма не делалось.
+
+## Окончательная версия после повторной UI-приёмки
+
+Первое сохранение QA-маршрута прошло, второе выявило ещё один настоящий 412:
+React hook сохранял старый ETag после успешного save/reconciliation. Исправлены
+две строки обновления состояния; новый source/main
+`b2abd69bd7d1a6aae0a1a0537c05afc872a559e8` собран целиком, включая plugin.
+Manifest и 14 package checks прошли. Bundle fingerprint
+`4521492b52a5deaf555a03f9e43d861a172d81efe158e1ce36e0cecd1ec94f57`.
+
+Установлен immutable release с этим SHA. Readback user unit:
+PID2285054, start 27.10.2026 15:30:21 МСК, active. Установщик подтвердил
+точный /proc entrypoint и сохранность policy/ETag между установками.
+Публичный static pin также b2abd69, asset `index-pN5K6wKW.js`;
+nginx commit `312a24e531e0eb8b234246b258bb1330ecb69610`, scoped apply PASS,
+rollback `/var/lib/nginx-dev/rollback/20261027T123051Z`.
+Последующий diff: `no managed drift`, deployed SHA совпадает с 312a24e5.
+
+Финальная независимая браузерная приёмка продолжает тот же собственный QA
+маршрут, без provider turns, повторных production-команд или новых сессий.
+
+## Сверка направления через час работы
+
+Исходный результат остаётся прежним: стандартное управляемое переключение
+OpenCode и приоритеты моделей проекта в существующем реестре. Добавлены только
+две необходимые починки фактического сохранения и совмещение публичного
+frontend с установленным backend; соседние NoticePlace/OmniRoute задачи не
+присваивались. Общий автозапуск не требуется: terminal quota recovery читает
+свой fallbackForQuota независимо от enabled. Остаток — повторное сохранение
+через UI, включение только OpenCode switch и финальные квитанции.
+
+## Как настроить
+
+1. Автопродолжение → OpenCode → «Автопереключение моделей» управляет реакцией
+   на подтверждённую ошибку квоты, отдельно от обычного автозапуска задач.
+2. Проекты → Модели проекта → нужный проект → «Автопереключение моделей»:
+   отключить наследование, выбрать существующие модели из каталога, задать
+   порядок кнопками вверх/вниз, сохранить маршруты проектов.
+3. Пустой собственный порядок запрещает переключение для проекта; возврат
+   к общему порядку снова использует настройки среды. Фильтры разрешений и
+   запретов проекта применяются независимо от порядка; запрет сильнее.
+
+Модели и провайдеры повторно не регистрируются. Максимум восемь уникальных
+кандидатов на среду. Codex в этом срезе поддерживает только ожидание исходной
+модели, без подмены; OpenCode и ZCode поддерживают порядок резервных моделей.
+
+## Итоговая приёмка и установленный результат
+
+Независимый UI-исполнитель через обычный публичный адрес и существующий QA
+SSO сохранил GLM→MiniMax, кнопкой вверх изменил на MiniMax→GLM, сохранил второй
+раз и подтвердил порядок после reload. Затем сохранил собственный пустой
+порядок (UI: «для этого проекта переключение выключено») и возврат к общему
+порядку. Root повторно открыл страницу после reload: наследование включено,
+отображается общий MiniMax combo. Это принятые UI-сохранения; не повторять.
+
+Root удалил только собственный QA-маршрут через UI и сохранил. Policy ETag
+вернулся к исходному `c4d46cbefd965e8eb4e21d1426355edd`: остальной policy не
+менялся, NoticePlace combo остался точным. Затем через UI включён только
+«Автопереключение моделей · OpenCode». Readback: fallbackForQuota=true,
+waitForQuota=false, enabled=false; global fallbackForQuota=false и enabled=false.
+Явные индивидуальные overrides других сессий не менялись. ZCode switch остался
+выключен; Codex по-прежнему не подменяет модель.
+
+Последняя приёмка выявила отдельный подтверждённый navigation defect:
+нажатие sidebar «Автопродолжение» из страницы проекта не закрывало showProjects,
+поэтому overlay не рендерился. Сохранены и осмотрены снимки
+`/tmp/ms27-autocontinue-nav.png`, `/tmp/ms27-nav-settings.png`.
+В main.tsx изменён только этот handler: setShowProjects(false).
+
+**Окончательно установлен source/main
+`468542b7753c22b7c99ceda4dc6a9d1798a69389`.** Чистые compiler inputs зафиксированы
+перед повторной полной сборкой; backend/frontend/plugin, manifest verify и
+14 package checks прошли. Bundle
+`be1bf6fd75b65e11b54151fa7b00a848be0157d7e43bdc847b23fcde87d5b5fd`.
+User unit PID2999650, start 16:05:39 МСК; точный /proc entrypoint и policy
+preserved подтверждены activation.json. Public asset `index-DPQdXIQD.js`,
+nginx source `a7bbc7f2ccb772f1f71bead7717e045b802e0bfa`, scoped apply PASS,
+rollback `/var/lib/nginx-dev/rollback/20261027T130728Z`.
+Независимый managed diff: no managed drift; deployed-git-sha совпадает.
+
+После этой установки Root открыл обычный HTTPS адрес, нажал Проекты, затем
+Автопродолжение: окно открылось. Свежий UI snapshot подтверждает OpenCode
+switch checked=true и общий switch checked=false. Финальный readback подтвердил
+те же значения и отсутствие QA-маршрута. Screenshot
+`/tmp/ms27-final-release.png` сохранён и осмотрен; прежний снимок включённого
+контрола — `/tmp/ms27-opencode-enabled.png`.
+
+Код и установленные controls приняты. 34 изолированных recovery checks прошли;
+реальное исчерпание квоты и provider generation не вызывались, native MiniMax
+Token Plan не опрашивался. Это не receipt реального GLM→MiniMax ответа.
+Существующее hourly-задание проверки подписки и принятые соседние receipts
+сохранены. Новые звонки/уведомления людям и новые native-сессии: ноль.
