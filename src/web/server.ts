@@ -10,6 +10,8 @@ import { projectSessionInventory } from "./session-inventory.js";
 import { isRestrictedProjectPath } from "../web-ui/model-status.js";
 import { SessionImageStore } from "../session-images.js";
 import { getDefaultMcpClientTokenStore } from "../mcp/client-token-store.js";
+import { getDefaultMcpOAuthTokenStore, MCP_OAUTH_OWNER_SCOPE, type McpOAuthTokenStore } from "../mcp/oauth-token-store.js";
+import { MCP_OAUTH_ISSUER, MCP_OAUTH_PRM_URL, MCP_OAUTH_RESOURCE } from "../mcp/oauth-constants.js";
 import { homedir, hostname, userInfo } from "node:os";
 import { UserMessageDelivery, type UserMessageRoute } from "../user-message-delivery.js";
 import { MinimaxExecPolicyConflict, isMinimaxExecPolicyMode } from "../permission-control/minimax-exec-policy.js";
@@ -122,6 +124,7 @@ import { handleIntegratorSessionTranscript } from "../integrator-session-route.j
 import { COMPOSER_TRANSCRIPTION_PATH, ComposerTranscriptionError, readComposerAudioUpload, transcribeComposerAudio, type ComposerTranscriber } from "./composer-transcription.js";
 import type {SessionQueueControlGateway} from "../session-queue-control-gateway.js";
 import { handleMcpConnectionRequest } from "./mcp-connection-api.js";
+import { handleMcpOAuthRequest } from "./mcp-oauth-api.js";
 
 /** How many skipped sessions of one recovery are named in the operator's log. */
 const MAX_LOGGED_SKIP_REASONS = 50;
@@ -135,6 +138,8 @@ export interface WebDependencies {
   adapterRegistry?: AdapterRegistry;
   mcpServerFactory?: (context?: { authInfo?: unknown }) => McpServer;
   mcpAuthToken?: string;
+  /** Isolated OAuth storage seam for HTTP protocol tests; production uses the owner state directory. */
+  mcpOAuthTokenStore?: McpOAuthTokenStore;
   allowOwnerLoopbackMcp?: boolean;
   herderEvents?: HerderEventBus;
   choiceRegistry?: ChoiceRegistry;
@@ -1087,7 +1092,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
       // checks the owner of the request itself.
       if (await settingsApi(request, response)) return;
       if (await rag.handleHttp(request, response, async (harness, id) => (await dependencies.adapters.get(harness)?.getSession(id)) || undefined)) return;
-      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.allowOwnerLoopbackMcp === true, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport, dependencies.noticeAnswerFetch, dependencies.composerTranscriber, dependencies.sessionQueueControl);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.allowOwnerLoopbackMcp === true, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport, dependencies.noticeAnswerFetch, dependencies.composerTranscriber, dependencies.sessionQueueControl, dependencies.mcpOAuthTokenStore);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -1526,8 +1531,9 @@ export async function computeModelLaunchVerdicts(input: {
   return Object.fromEntries(entries);
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, allowOwnerLoopbackMcp=false, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch, composerTranscriber?: ComposerTranscriber, sessionQueueControl?: SessionQueueControlGateway): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, allowOwnerLoopbackMcp=false, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch, composerTranscriber?: ComposerTranscriber, sessionQueueControl?: SessionQueueControlGateway, mcpOAuthTokenStore?: McpOAuthTokenStore): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
+  if (await handleMcpOAuthRequest(request, response, { store: mcpOAuthTokenStore })) return;
   if (await handleMcpConnectionRequest(request, response, { configured: !!mcpAuthToken, enabled: !!mcpNodeHandler })) return;
   const resolveSessionRoute = async (harness: string, sessionId: string) => await resolveSessionRouteFor(integratorRuntime, adapters, scopedSupervisorFactory, harness, sessionId);
   if (url.pathname === COMPOSER_TRANSCRIPTION_PATH && request.method === "POST") {
@@ -2771,14 +2777,22 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   if (url.pathname === "/mcp") {
     const authorization = request.headers.authorization;
     let authenticatedToken: string | undefined;
+    let oauthPrincipal: Awaited<ReturnType<ReturnType<typeof getDefaultMcpOAuthTokenStore>["verifyAccessToken"]>>;
     if (mcpAuthToken && sameSecret(authorization, `Bearer ${mcpAuthToken}`)) authenticatedToken = mcpAuthToken;
-    if (!authenticatedToken && typeof authorization === "string" && authorization.startsWith("Bearer ")) {
-      const bearer = authorization.slice("Bearer ".length);
+    const bearer = typeof authorization === "string" ? authorization.match(/^Bearer\s+(\S+)$/i)?.[1] : undefined;
+    if (!authenticatedToken && bearer) {
       const issued = await getDefaultMcpClientTokenStore().verifyToken(bearer);
       if (issued) authenticatedToken = `issued-client:${issued.id}`;
+      if (!authenticatedToken) oauthPrincipal = await (mcpOAuthTokenStore ?? getDefaultMcpOAuthTokenStore()).verifyAccessToken(bearer, {
+        issuer: MCP_OAUTH_ISSUER, audience: MCP_OAUTH_RESOURCE, requiredScope: MCP_OAUTH_OWNER_SCOPE,
+      });
     }
     const ownerLoopback = !authorization && !mcpAuthToken && allowOwnerLoopbackMcp && isOwnerLoopbackMcpRequest(request);
-    if (!authenticatedToken && !ownerLoopback) return sendJson(response, 401, { error: "unauthorized" });
+    if (!authenticatedToken && !oauthPrincipal && !ownerLoopback) {
+      response.setHeader("WWW-Authenticate", `Bearer resource_metadata="${MCP_OAUTH_PRM_URL}", scope="${MCP_OAUTH_OWNER_SCOPE}"`);
+      response.setHeader("Cache-Control", "no-store");
+      return sendJson(response, 401, { error: "unauthorized" });
+    }
     if (!["GET", "POST", "DELETE"].includes(request.method ?? "")) {
       response.setHeader("Allow", "GET, POST, DELETE");
       return sendJson(response, 405, { error: "method_not_allowed" });
@@ -2789,6 +2803,14 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (authenticatedToken) {
       (request as IncomingMessage & { auth?: { token: string; clientId: string; scopes: string[] } }).auth = {
         token: authenticatedToken,
+        clientId: TRUSTED_MESH_MCP_CLIENT_ID,
+        scopes: [TRUSTED_MESH_MCP_SCOPE],
+      };
+    } else if (oauthPrincipal) {
+      // A validated OAuth grant represents the same existing owner authority as
+      // an issued owner Bearer token; never pass the bearer secret downstream.
+      (request as IncomingMessage & { auth?: { token: string; clientId: string; scopes: string[] } }).auth = {
+        token: `oauth-owner:${oauthPrincipal.clientId}:${oauthPrincipal.expiresAt}`,
         clientId: TRUSTED_MESH_MCP_CLIENT_ID,
         scopes: [TRUSTED_MESH_MCP_SCOPE],
       };

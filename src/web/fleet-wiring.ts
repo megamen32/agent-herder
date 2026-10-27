@@ -14,6 +14,8 @@ import {FleetGptAdminTransport} from "../mesh/fleet-gptadmin-transport.js";
 import {unwrapResult} from "../mesh/protocol.js";
 import type {FleetHostDefinition} from "../mesh/fleet-contract.js";
 import {getDefaultMcpClientTokenStore} from "../mcp/client-token-store.js";
+import {getDefaultMcpOAuthTokenStore, MCP_OAUTH_OWNER_SCOPE} from "../mcp/oauth-token-store.js";
+import {MCP_OAUTH_AS_METADATA_PATH, MCP_OAUTH_ISSUER, MCP_OAUTH_PRM_PATH, MCP_OAUTH_REGISTER_PATH, MCP_OAUTH_RESOURCE, MCP_OAUTH_REVOKE_PATH, MCP_OAUTH_TOKEN_PATH} from "../mcp/oauth-constants.js";
 
 export const fleetHosts: readonly FleetHostDefinition[] = [
   {hostId: "roomhacker-server-100", label: "Сервер 100", nativeUser: "roomhacker", uiUrl: "https://agent.bezrabotnyi.com"},
@@ -256,13 +258,20 @@ export function createManagedFleetHttpGuard(mcpToken?:string){
   const local=['127.0.0.1','::1','::ffff:127.0.0.1'].includes(request.socket.remoteAddress??'');
   if(local&&(hostname()==='roomhacker-server-100'||!isManagedPublicHost(request)))return false;
   const path=new URL(request.url??'/', 'http://localhost').pathname;
+  if(isManagedPublicHost(request)&&((request.method==='GET'&&(path===MCP_OAUTH_PRM_PATH||path===MCP_OAUTH_AS_METADATA_PATH))
+    ||(request.method==='POST'&&(path===MCP_OAUTH_REGISTER_PATH||path===MCP_OAUTH_TOKEN_PATH||path===MCP_OAUTH_REVOKE_PATH))))return false;
   // These exact routes retain their existing downstream credential checks.
   if(typeof request.headers.authorization==='string'&&path.startsWith('/api/fleet/'))return false;
-  if(path==='/mcp'&&typeof request.headers.authorization==='string'){
+  if(path==='/mcp'){
    const authorization=request.headers.authorization;
-   if(mcpToken&&matches(authorization,'Bearer '+mcpToken))return false;
-   const bearer=authorization.startsWith('Bearer ')?authorization.slice(7):'';
-   if(bearer&&await getDefaultMcpClientTokenStore().verifyToken(bearer))return false;
+   const bearer=typeof authorization==='string'?authorization.match(/^Bearer\s+(\S+)$/i)?.[1]:undefined;
+   if(bearer){
+    if(mcpToken&&authorization&&matches(authorization,'Bearer '+mcpToken))return false;
+    if(await getDefaultMcpClientTokenStore().verifyToken(bearer))return false;
+    if(await getDefaultMcpOAuthTokenStore().verifyAccessToken(bearer,{issuer:MCP_OAUTH_ISSUER,audience:MCP_OAUTH_RESOURCE,requiredScope:MCP_OAUTH_OWNER_SCOPE}))return false;
+   }
+   // Let the MCP resource server issue the RFC 9728 WWW-Authenticate challenge.
+   return false;
   }
   const own=isManagedPublicHost(request)&&await verifiedPublicOwner(request);
   const status=!own?401:!validPublicOrigin(request)?403:0;

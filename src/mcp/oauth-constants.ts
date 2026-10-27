@@ -1,0 +1,11 @@
+export const MCP_OAUTH_ISSUER = "https://agent.bezrabotnyi.com";
+export const MCP_OAUTH_RESOURCE = `${MCP_OAUTH_ISSUER}/mcp`;
+export const CHATGPT_REDIRECT_URI = "https://chatgpt.com/connector_platform_oauth_redirect";
+export const MCP_OAUTH_PRM_PATH = "/.well-known/oauth-protected-resource/mcp";
+export const MCP_OAUTH_PRM_URL = `${MCP_OAUTH_ISSUER}${MCP_OAUTH_PRM_PATH}`;
+export const MCP_OAUTH_AS_METADATA_PATH = "/.well-known/oauth-authorization-server";
+export const MCP_OAUTH_AUTHORIZE_PATH = "/oauth/authorize";
+export const MCP_OAUTH_CONSENT_PATH = "/oauth/consent";
+export const MCP_OAUTH_REGISTER_PATH = "/oauth/register";
+export const MCP_OAUTH_TOKEN_PATH = "/oauth/token";
+export const MCP_OAUTH_REVOKE_PATH = "/oauth/revoke";
