@@ -5633,8 +5633,8 @@ export class UnfinishedSessionLauncher {
     if (session.harness !== "opencode" && session.harness !== "zcode") return false;
     try {
       const loaded = await this.projectLaunchPolicyStore.load();
-      return loaded.kind === "valid"
-        && projectRecoveryModelAllowed(loaded.policy, session.harness, session.cwd, model);
+      if (loaded.kind === "absent") return true;
+      return loaded.kind === "valid" && projectRecoveryModelAllowed(loaded.policy, session.harness, session.cwd, model);
     } catch {
       return false;
     }
