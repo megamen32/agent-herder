@@ -128,3 +128,12 @@ Native v2 каталог содержит оба точных combo IDs. Зна�
 до init adapters. Не считать такие markers сырыми токенами и не утверждать
 credentials mismatch по одному /proc. Exact combo verdict покаunknown;
 следующий шаг — resolved-secret compiled resolver, точная строка отказа.
+
+Последний parser defect подтверждён resolved-secret read-only проверкой:
+OmniRoute catalog1383rows/1372uniqueIDs,11 повторов с одинаковыми routing
+metadata,0 конфликтов. Парсер отказывался от всего каталога. Теперь одинаковые
+owner/root/parent дубликаты схлопываются, различающиеся по этим полям
+по-прежнему отклоняются. In-memory source validation разрешила обе exactcombo
+в ожидаемые leaves и получила200 всех каталогов; final install/readback далее.
+Shared Herder OpenCode client больше не выдаёт hardcoded GPT/Gemini/DeepSeek
+модели за доступный каталог при ошибке чтения: возвращается пустая выборка.

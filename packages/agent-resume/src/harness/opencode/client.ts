@@ -11,7 +11,6 @@ import type {
 } from "../client.js";
 import {
   LEAF_LAUNCH_REFUSAL_MESSAGES,
-  isClosedProviderLeaf,
   leafLaunchVerdict,
   type LeafLaunchVerdict,
   type ProviderLeaf,
@@ -188,30 +187,6 @@ export interface OpenCodeStatusSnapshot {
   needsPermission?: boolean;
   permission?: OpenCodePermissionDetails;
 }
-
-/** Last resort catalog: what a caller can still try when no catalog endpoint answered. */
-const defaultModelRoutes = [
-  "openai/gpt-4o",
-  "openai/gpt-4o-mini",
-  "anthropic/claude-sonnet-4-20250514",
-  "google/gemini-2.5-pro",
-  "deepseek/deepseek-chat",
-];
-
-/**
- * The routes of the last resort catalog the rule of the owner does not close.
- *
- * A provider the owner closed can never run, so the client does not offer it
- * even when no catalog endpoint answered: the catalog must not promise what
- * the guard of the OpenCode integration revokes. The routes the rule only
- * refuses while the prohibitions are on stay in the catalog — the switch of
- * the owner is known to the guard, not to the catalog, and
- * `openCodeRouteVerdict` answers what the rule allows.
- */
-const defaultModels = defaultModelRoutes.filter((route) => {
-  const leaf = openCodeRouteLeaf(route);
-  return leaf !== undefined && !isClosedProviderLeaf(leaf);
-});
 
 const textLimit = 16_384;
 const thinkingLimit = 2_048;
@@ -1223,7 +1198,7 @@ export class OpenCodeClient implements HarnessClient {
       if (config.models?.length) return config.models;
       if (config.model) return [config.model];
     } catch { /* an unreadable catalog must not fabricate availability */ }
-    return [...defaultModels];
+    return [];
   }
 
   /**

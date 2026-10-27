@@ -171,17 +171,26 @@ function parseOpenAIModelCatalog(value: unknown): Array<{ id: string; owner: str
   const body = objectRecord(value);
   if (!body || !Array.isArray(body.data)) return undefined;
   const result: Array<{ id: string; owner: string; root?: string; parent?: string | null }> = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, { owner: string; root?: string; parent?: string | null }>();
   for (const raw of body.data) {
     const row = objectRecord(raw);
     const id = nonEmptyString(row?.id);
     const owner = nonEmptyString(row?.owned_by);
-    if (!row || !id || !owner || seen.has(id)) return undefined;
-    seen.add(id);
+    if (!row || !id || !owner) return undefined;
     const root = nonEmptyString(row.root);
     const parent = row.parent === null || typeof row.parent === "string" ? row.parent : undefined;
     if (row.parent !== undefined && parent === undefined) return undefined;
-    result.push({ id, owner, ...(root ? { root } : {}), ...(parent !== undefined ? { parent } : {}) });
+    const previous = seen.get(id);
+    if (previous) {
+      // The gateway may repeat an identical model row in its combined
+      // provider catalog. Collapse that harmless duplicate, but keep rejecting
+      // IDs whose owner or routing metadata disagree.
+      if (previous.owner !== owner || previous.root !== root || previous.parent !== parent) return undefined;
+      continue;
+    }
+    const entry = { owner, ...(root ? { root } : {}), ...(parent !== undefined ? { parent } : {}) };
+    seen.set(id, entry);
+    result.push({ id, ...entry });
   }
   return result;
 }

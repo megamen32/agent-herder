@@ -18,7 +18,7 @@ def git(root, *args):
 def inputs(root):
     names = git(root, 'ls-files', '-z').split('\0')
     return {name: sha(root / name) for name in names if name and
-            (name.startswith(('src/', 'public/')) or name in INPUTS or name.startswith('tsconfig.'))}
+            (name.startswith(('src/', 'public/', 'packages/')) or name in INPUTS or name.startswith('tsconfig.'))}
 
 def outputs(dist):
     result = {}
