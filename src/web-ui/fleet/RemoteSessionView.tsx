@@ -79,8 +79,9 @@ export async function submitSessionQueueProcessing(
  }
  throw new Error('Команда всё ещё выполняется или не получила подтверждения. Её inputId сохранён; повтор не выполняется.');
 }
+const LOCAL_TRANSCRIPT_HARNESSES = new Set(["codex", "claude", "qoder"]);
 export function localTranscriptAddressFor(hostId:string|undefined,session:{harness:string;id:string;remote?:boolean}|undefined,remoteSelection?:MeshAddress):MeshAddress|undefined{
- if(!hostId||!session||session.remote||remoteSelection)return undefined;
+ if(!hostId||!session||session.remote||remoteSelection||!LOCAL_TRANSCRIPT_HARNESSES.has(session.harness))return undefined;
  return {hostId,harness:session.harness,nativeSessionId:session.id};
 }
 export type TranscriptRequestToken={readonly sessionKey:string;readonly generation:number;readonly id:symbol};

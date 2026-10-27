@@ -1,17 +1,19 @@
 import { redactSecrets } from "./index.js";
 
 export type JudgeFailureKind = "timeout" | "cancelled" | "network" | "rate_limited" | "quota_exhausted"
-  | "overloaded" | "authentication" | "access_denied" | "http_error" | "provider_error" | "invalid_json";
+  | "overloaded" | "authentication" | "access_denied" | "http_error" | "provider_error" | "invalid_json" | "truncated_output";
 export type JudgeRequestDiagnostic = {
   model: string; endpoint: string; operation: string; elapsedMs: number;
   stage: "headers" | "body"; kind: JudgeFailureKind; httpStatus?: number;
   providerCode?: string; providerMessage?: string; requestId?: string; retryAfter?: string; transportCode?: string;
+  finishReason?: string; completionTokens?: number;
 };
 const LABELS: Record<JudgeFailureKind, string> = {
   timeout: "истекло время ожидания", cancelled: "запрос отменён", network: "сбой соединения",
   rate_limited: "ограничена частота запросов", quota_exhausted: "исчерпана квота",
   overloaded: "провайдер перегружен", authentication: "ошибка авторизации", access_denied: "доступ отклонён",
   http_error: "ошибка HTTP", provider_error: "ошибка провайдера", invalid_json: "ответ не является JSON",
+  truncated_output: "модель достигла лимита вывода до завершения JSON",
 };
 export class JudgeRequestError extends Error {
   constructor(readonly diagnostic: JudgeRequestDiagnostic) {
@@ -113,6 +115,13 @@ export class JudgeRequestTrace {
     return this.failure(this.classify(detail.providerCode), detail);
   }
 
+  truncatedOutput(finishReason: string, completionTokens?: number): JudgeRequestError {
+    return this.failure("truncated_output", {
+      finishReason,
+      ...(completionTokens === undefined ? {} : { completionTokens }),
+    });
+  }
+
   async read<T>(read: () => Promise<T>): Promise<T> {
     try { return await read(); }
     catch (error) {
@@ -137,6 +146,7 @@ import type { GoalModel, GoalModelUsage } from "./goal-evaluation.js";
 /** Uses the existing configured judge route verbatim; it does not claim Codex subscription access. */
 export function createConfiguredGoalModel(config: { baseUrl: string; model: string; token?: string; timeoutMs?: number }): GoalModel {
   const endpoint = `${config.baseUrl.replace(/\/$/, "")}/chat/completions`;
+  const zAiGlm53 = new URL(config.baseUrl).hostname === "api.z.ai" && /^glm-5\.3(?:-flash)?$/iu.test(config.model);
   const usage: GoalModelUsage = {};
   const model: GoalModel & { getUsage(): GoalModelUsage | undefined } = { getUsage: () => Object.keys(usage).length ? { ...usage } : undefined,
     async call({ stage, payload, maxOutputTokens }) {
@@ -144,10 +154,15 @@ export function createConfiguredGoalModel(config: { baseUrl: string; model: stri
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new DOMException("Timeout", "TimeoutError")), config.timeoutMs ?? 90_000);
     try {
+      const reasoningStage = stage === "coverage-audit" ? "high" : "low";
+      const requestMaxTokens = zAiGlm53
+        ? stage === "coverage-audit" ? 8192 : Math.max(maxOutputTokens, 4096)
+        : maxOutputTokens;
       const response = await trace.fetch(fetch, endpoint, {
         method: "POST", signal: controller.signal,
         headers: { "content-type": "application/json", ...(config.token ? { authorization: `Bearer ${config.token}` } : {}) },
-        body: JSON.stringify({ model: config.model, stream: false, response_format: { type: "json_object" }, max_tokens: maxOutputTokens,
+        body: JSON.stringify({ model: config.model, stream: false, response_format: { type: "json_object" }, max_tokens: requestMaxTokens,
+          ...(zAiGlm53 ? { thinking: { type: "enabled" }, reasoning_effort: reasoningStage } : {}),
           messages: [
             { role: "system", content: `${GOAL_JUDGE_PREFIX}\n${GOAL_STAGE_CONTRACTS[stage]}` },
             { role: "user", content: JSON.stringify(payload) },
@@ -159,6 +174,11 @@ export function createConfiguredGoalModel(config: { baseUrl: string; model: stri
       addUsage(usage, "outputTokens", reported?.completion_tokens);
       addUsage(usage, "cachedInputTokens", (reported?.prompt_tokens_details as Record<string, unknown> | undefined)?.cached_tokens);
       const choices = body.choices as Array<{ message?: { content?: unknown } }> | undefined;
+      const completion = reported?.completion_tokens;
+      const completionTokens = typeof completion === "number" && Number.isSafeInteger(completion) && completion >= 0 && completion <= 1_000_000_000 ? completion : undefined;
+      const choice = (body.choices as Array<{ message?: { content?: unknown }; finish_reason?: unknown }> | undefined)?.[0];
+      const finishReason = typeof choice?.finish_reason === "string" && /^[A-Za-z_]{1,32}$/u.test(choice.finish_reason) ? choice.finish_reason : undefined;
+      if (finishReason === "length") throw trace.truncatedOutput(finishReason, completionTokens);
       const content = choices?.[0]?.message?.content;
       if (typeof content !== "string") throw new Error("configured judge returned no JSON content");
       return trace.read(async () => JSON.parse(content));

@@ -13,6 +13,15 @@ const page = (hostId: string, nativeSessionId: string, eventId: string): Transcr
 const key = (value: TranscriptView) => JSON.stringify([value.scope.hostId, value.scope.harness, value.scope.nativeSessionId]);
 
 describe("local native transcript deferred updates", () => {
+  it("requests JSONL pages only for supported local transcript harnesses", () => {
+    for (const harness of ["codex", "claude", "qoder"]) {
+      expect(localTranscriptAddressFor("local-host", { harness, id: "native/id" })).toEqual({
+        hostId: "local-host", harness, nativeSessionId: "native/id",
+      });
+    }
+    expect(localTranscriptAddressFor("local-host", { harness: "opencode", id: "empty-or-active" })).toBeUndefined();
+  });
+
   it("binds the normal local session selection to its exact host, harness and native id", () => {
     expect(localTranscriptAddressFor("local-host", { harness: "codex", id: "native/id" })).toEqual({
       hostId: "local-host",

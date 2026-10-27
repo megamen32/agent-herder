@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { JudgeRequestError, JudgeRequestTrace } from "../src/autopilot/judge-request.js";
+import { createConfiguredGoalModel, JudgeRequestError, JudgeRequestTrace } from "../src/autopilot/judge-request.js";
 import { createAnthropicCompatibleSessionCompletionJudge, createOpenAICompatibleSessionCompletionJudge } from "../src/autopilot/unfinished-session-launcher.js";
 import { createOpenAICompatibleJudge, type StopHookInput } from "../src/autopilot/index.js";
 const endpoint = "https://api.z.ai/api/coding/paas/v4/chat/completions";
@@ -64,5 +64,53 @@ describe("judge provider diagnostics", () => {
   it("diagnoses malformed JSON without including the raw response", async () => {
     const t = trace(); const r = await t.fetch(async () => new Response("private response"), endpoint, {});
     const e = await errorOf(t.json(r)); expect(e.diagnostic.kind).toBe("invalid_json"); expect(e.message).not.toContain("private response");
+  });
+  it("uses bounded GLM-5.3 reasoning effort and token headroom only on the exact Z.AI route", async () => {
+    const bodies: Array<Record<string, any>> = [];
+    const fetchImpl = async (_url: unknown, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return Response.json({ choices: [{ message: { content: "{}" }, finish_reason: "stop" }] });
+    };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchImpl as typeof fetch;
+    try {
+      const glm = createConfiguredGoalModel({ baseUrl: "https://api.z.ai/api/paas/v4", model: "glm-5.3-flash" });
+      await glm.call({ stage: "requirements", payload: {}, maxOutputTokens: 6000 });
+      await glm.call({ stage: "evidence-reconciliation", payload: {}, maxOutputTokens: 3000 });
+      await glm.call({ stage: "next-action", payload: {}, maxOutputTokens: 2000 });
+      await glm.call({ stage: "coverage-audit", payload: {}, maxOutputTokens: 4000 });
+    } finally { globalThis.fetch = originalFetch; }
+    expect(bodies.map(body => [body.max_tokens, body.thinking, body.reasoning_effort])).toEqual([
+      [6000, { type: "enabled" }, "low"], [4096, { type: "enabled" }, "low"],
+      [4096, { type: "enabled" }, "low"], [8192, { type: "enabled" }, "high"],
+    ]);
+
+    let otherBody: Record<string, any> | undefined;
+    const other = createConfiguredGoalModel({ baseUrl: "https://judge.example/v1", model: "other-model" });
+    const previousFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: unknown, init: RequestInit) => {
+      otherBody = JSON.parse(String(init.body));
+      return Response.json({ choices: [{ message: { content: "{}" }, finish_reason: "stop" }] });
+    }) as typeof fetch;
+    try { await other.call({ stage: "coverage-audit", payload: {}, maxOutputTokens: 4000 }); }
+    finally { globalThis.fetch = previousFetch; }
+    expect(otherBody?.max_tokens).toBe(4000);
+    expect(otherBody).not.toHaveProperty("thinking");
+    expect(otherBody).not.toHaveProperty("reasoning_effort");
+  });
+  it("fails closed on a length finish without parsing partial JSON or retrying", async () => {
+    let calls = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return Response.json({ choices: [{ message: { content: '{"partial":' }, finish_reason: "length" }], usage: { prompt_tokens: 12, completion_tokens: 3000 } });
+    }) as typeof fetch;
+    const model = createConfiguredGoalModel({ baseUrl: "https://api.z.ai/api/paas/v4", model: "glm-5.3" });
+    try {
+      const error = await errorOf(model.call({ stage: "evidence-reconciliation", payload: {}, maxOutputTokens: 4096 }));
+      expect(error.diagnostic).toMatchObject({ kind: "truncated_output", finishReason: "length", completionTokens: 3000, httpStatus: 200, operation: "goal-evidence-reconciliation" });
+      expect((model as typeof model & { getUsage(): { inputTokens?: number; outputTokens?: number } }).getUsage()).toMatchObject({ inputTokens: 12, outputTokens: 3000 });
+      expect(calls).toBe(1);
+    } finally { globalThis.fetch = originalFetch; }
   });
 });
