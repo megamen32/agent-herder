@@ -156,3 +156,14 @@ omniroute/glm-5.3-flash-minimax-m3.1 и omniroute/minimax-combo-m3.1
 LLM execution и production permission/save для проверки не запускались.
 Owner-only browser fleet readiness остаётся непроверенной: testlogin закономерно
 не получает owner capability; этот отказ UI показывает явно, не fake rows.
+
+Final browser st27 на67bd9cd: TelegramAuto карточка больше не показывает
+«маршрут не верифицирован»; OpenCode omniroute/minimax-combo-m3.1 и ZCode
+account:zai-individual-coding-plan/GLM-5.3-Flash$high имеют «рабочая»/
+«Модель есть в каталоге моделей среды». Screenshot
+/tmp/st27-projects-telegramauto-fullstatus-67bd.png. Настройки/модели не
+сохранялись и не запускались. Закрыта только собственная st27 session.
+Native/operator fleet read100/44/88ready; MacMini explicitly configured offline,
+MacM1 direct_native_listener_unavailable. Восстановление этих machine endpoints
+не выдаётся за выполненное исправлением web pages; owner browser fleet readiness
+не подменяется read-only receipt loopback или denied testlogin.
