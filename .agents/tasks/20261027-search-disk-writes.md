@@ -64,8 +64,10 @@ replay. Не изменяет семантику уведомлений/receipts
 - Неизменившиеся session rows не пишутся; факт присутствия хранится в RAM
   текущего полного обхода. Удаление только после complete и только missing IDs.
 - Прогресс в SQLite не чаще1раз/секунду плюс точные start/final.
-- Новые/изменённые chunks вставляются транзакциями до128 элементов; await
-  только вне transaction. Ошибочный source оставляет last-good generation.
+- Окончательное решение db0d7fb: полное чтение одной изменённой сессии в RAM
+  до transaction, затем ordinal diff chunk_id/title/text. Неизменённые rowid/FTS
+  остаются; только отличия UPDATE/INSERT/DELETE. Повторяющиеся chunk IDs допустимы.
+  Ошибка чтения/SQL сохраняет прежний полный transcript; await вне transaction.
 - JSONL metadata memo bounded50k путями: exact dev/inode/size/mtime/ctime и
   catalog id/title/cwd; ленивый content stream создаётся заново. Никаких новых
   revisions, массового FTS rebuild или миграции transcript-поколений.
@@ -132,3 +134,37 @@ connections и derived index connections. Native schema/SQLorder/revision не
 сессий/provider calls; параллельные source leaves завершены, root продолжает
 одну поставку с сохранением policies и прежних приёмок. Нужен фактический
 post-install write measurement, а не завершение по source/build.
+
+## Окончательная дельта transcript — установка
+
+cb7f77f убрал SQLite etilqs scratch files, но steady120s всё ещё838.72MiB
+write_bytes: полная замена47 естественно изменившихся сессий раздувала WAL.
+Активная5s трасса подтвердила8,190,560bytes WAL/3976pwrite; idle0 не приёмка.
+Наибольший индексированный transcript17.7MB; RAM45GB доступно, swap0.
+
+db0d7fb95a5b7aeb9495ed50fd2ed5fb0f33c414 опубликован origin/main,
+build/plugin/manifest/package прошли. Bundle
+55d6ab029854c5755aa41ec8e372ea027c2eb64ef7f3fa34a14e5a7d6bb65011.
+PID632907 start17:38:21MSK; точный immutable entrypoint подтверждён.
+Policy/settings сохранены; persisted event23551301, live23551303→23551307.
+Публичный static pin c64bd8a0; scoped apply rollback
+/var/lib/nginx-dev/rollback/20261027T144019Z; no managed drift.
+Реальный HTTP fleet search вернул точные прежние Codex/OpenCode receipts.
+Измерение delta-cold.json запущено на180s; итог ниже после завершения.
+
+## Подтверждённая причина повторной переписи Codex
+
+db0d7fb cold180s510.25MiB, warm180s862.52MiB, third75s676.38MiB:
+не приёмка по диску. Read-only oscillation.json каждые5s доказал перепись
+одного native ID в рамках одного scan: 01a1372a…9→335→9chunks;
+01a14c32…17→2360, другие694→19,430→33. Multiwriter исключён lsof/owner.
+Проверка только первых строк была недостаточна: они совпадают с каталогом,
+но до первого user в файлах встречаются следующие session_meta из вложенных
+историй; старый parser перезаписывал canonical ID/title/cwd каждым из них.
+У50 stale candidates ограниченная проверка47headers нашла4 ID mismatch,
+три duplicate-ID группы. Нативные файлы/БД не менялись.
+
+Исправление: catalog identity authoritative; только первый session_meta может
+заполнять отсутствующие поля. Последующие вложенные метаданные игнорируются.
+В одном Codex source nativeSessionId выдаётся один раз (catalog-first).
+Форматrevision прежний, изменятся только ошибочно определённые записи.

@@ -42,8 +42,16 @@ async function jsonSession(path:string,harness:string,options:Options,catalog?:a
   return {...cached.metadata,harness,chunks:jsonChunks(path,harness,options.signal)};
  }
  let id=catalogId||basename(path).replace(/\.jsonl$/,'');let title=catalogTitle,cwd=catalogCwd;
+ let seenCodexMeta=false;
  for await(const {row} of records(path,options.signal)){
-  if(harness==='codex'&&row.type==='session_meta'){id=str(row.payload?.id)||str(row.payload?.session_id)||id;cwd=str(row.payload?.cwd)||cwd;title=str(row.payload?.title)||title;}
+  if(harness==='codex'&&row.type==='session_meta'){
+   if(!seenCodexMeta){
+    seenCodexMeta=true;
+    id=catalogId||str(row.payload?.id)||str(row.payload?.session_id)||id;
+    title=catalogTitle||str(row.payload?.title)||title;
+    cwd=catalogCwd||str(row.payload?.cwd)||cwd;
+   }
+  }
   if(harness==='claude'){id=str(row.sessionId)||id;cwd=str(row.cwd)||cwd;}
   const m=jsonMessage(row,harness);if(m?.role==='user'&&m.text){title||=m.text.replace(/\s+/g,' ').slice(0,160);break;}
  }
@@ -57,11 +65,12 @@ async function safeJsonSession(path:string,harness:string,options:Options,catalo
  try{return await jsonSession(path,harness,options,catalog);}catch(error){check(options.signal);options.onIssue?.('native_session_metadata_unavailable');if(catalog?.id)return {harness,nativeSessionId:str(catalog.id),title:str(catalog.title)||str(catalog.id),cwd:str(catalog.cwd),revision:JSON.stringify(catalog),contentUnavailable:true,chunks:(async function*(){})()};return undefined;}
 }
 async function* codex(options:Options):AsyncGenerator<SearchSourceSession>{
- const home=process.env.CODEX_HOME||join(homedir(),'.codex');const seen=new Set<string>();const localFiles:string[]=[];for(const name of ['sessions','archived_sessions']){const root=join(home,name);if(await stat(root).catch(()=>null))for await(const path of files(root,options.signal))if(path.endsWith('.jsonl'))localFiles.push(path);}const byName=new Map(localFiles.map(path=>[basename(path),path]));const dbPath=process.env.CODEX_STATE_DB||join(home,'state_5.sqlite');
+ const home=process.env.CODEX_HOME||join(homedir(),'.codex');const seen=new Set<string>(),seenNativeIds=new Set<string>();const localFiles:string[]=[];for(const name of ['sessions','archived_sessions']){const root=join(home,name);if(await stat(root).catch(()=>null))for await(const path of files(root,options.signal))if(path.endsWith('.jsonl'))localFiles.push(path);}const byName=new Map(localFiles.map(path=>[basename(path),path]));const dbPath=process.env.CODEX_STATE_DB||join(home,'state_5.sqlite');
+ const firstForNativeId=(session:SearchSourceSession)=>{const id=session.nativeSessionId;if(!id)return true;if(seenNativeIds.has(id))return false;seenNativeIds.add(id);return true;};
  if(await stat(dbPath).catch(()=>null)){
-  const db=new DatabaseSync(dbPath,{readOnly:true});try{db.exec('PRAGMA temp_store=MEMORY; PRAGMA query_only=ON; PRAGMA busy_timeout=1000');for(const row of db.prepare('SELECT id,title,cwd,rollout_path FROM threads ORDER BY id').iterate() as Iterable<any>){check(options.signal);let p=str(row.rollout_path);if(!p)continue;if(!await stat(p).catch(()=>null))p=byName.get(basename(p))||p;seen.add(p);if(!await stat(p).catch(()=>null)){options.onIssue?.('native_rollout_file_missing');yield {harness:'codex',nativeSessionId:str(row.id),title:str(row.title)||str(row.id),cwd:str(row.cwd),revision:JSON.stringify(row),contentUnavailable:true,chunks:(async function*(){})()};continue;}const session=await safeJsonSession(p,'codex',options,row);if(session)yield session;}}finally{db.close();}
+  const db=new DatabaseSync(dbPath,{readOnly:true});try{db.exec('PRAGMA temp_store=MEMORY; PRAGMA query_only=ON; PRAGMA busy_timeout=1000');for(const row of db.prepare('SELECT id,title,cwd,rollout_path FROM threads ORDER BY id').iterate() as Iterable<any>){check(options.signal);let p=str(row.rollout_path);if(!p)continue;if(!await stat(p).catch(()=>null))p=byName.get(basename(p))||p;seen.add(p);if(!await stat(p).catch(()=>null)){options.onIssue?.('native_rollout_file_missing');const session:SearchSourceSession={harness:'codex',nativeSessionId:str(row.id),title:str(row.title)||str(row.id),cwd:str(row.cwd),revision:JSON.stringify(row),contentUnavailable:true,chunks:(async function*(){})()};if(firstForNativeId(session))yield session;continue;}const session=await safeJsonSession(p,'codex',options,row);if(session&&firstForNativeId(session))yield session;}}finally{db.close();}
  }
- for(const p of localFiles){if(!seen.has(p)){const session=await safeJsonSession(p,'codex',options);if(session)yield session;}}
+ for(const p of localFiles){if(!seen.has(p)){const session=await safeJsonSession(p,'codex',options);if(session&&firstForNativeId(session))yield session;}}
  if(!localFiles.length&&!seen.size)throw new Error('codex_session_sources_missing');
 }
 async function* minimax(options:Options):AsyncGenerator<SearchSourceSession>{
