@@ -1,0 +1,11 @@
+{
+  "source_sha": "f35713f249bddbfceee4ad1ea30604e47586de08",
+  "pre_pid": 2197008,
+  "pre_execstart_sha256": "cc579791253bf3f4019d0cf2dc7424e0409b073be5e89cdb5bcc03b4693639cd",
+  "policy_etag": "\"a3e68b8f2c9e1d5c2f7efb7b259258db\"",
+  "policy_sha256": "1d0f32c5539c5fc0a2e1afdefc92a0c09c898745c8078915acf1f3821f78bc9a",
+  "settings_sha256": "94944fbdb3319e8479bbb0b036e6039706900938d608cfe802d81c155ff4f321",
+  "persisted_event_sequence": 23708208,
+  "live_event_sequence": 23708210,
+  "started_at": "2026-10-27T23:13:28+0300"
+}
