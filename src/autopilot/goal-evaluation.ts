@@ -40,12 +40,37 @@ function validateMaterials(input: GoalEvaluationInput): void {
   if (bytes({ objective: input.fullObjective, events: input.userEvents, requirements: input.requirements, evidence: input.evidence, materials: input.materials }) > Math.min(input.maxInputBytes ?? MAX_BYTES, MAX_BYTES)) fail("input exceeds supported complete-context limit");
 }
 function memoKey(i: GoalEvaluationInput): GoalMemoKey { return { goalRevision: i.goalRevision, inputCursor: i.inputCursor, evidenceVersion: i.evidenceVersion, controlEpoch: i.controlEpoch }; }
+function primaryHash(i: GoalEvaluationInput): string {
+  return createHash("sha256").update(JSON.stringify({ fullObjective: i.fullObjective, userEvents: i.userEvents })).digest("hex");
+}
+function safeFailureReason(error: unknown): string {
+  if (error instanceof z.ZodError) {
+    const issues = error.issues.slice(0, 4).map(issue => {
+      const path = issue.path.map(part => typeof part === "number" ? "[]" : typeof part === "string" && /^[A-Za-z0-9_.-]{1,48}$/.test(part) ? part : "[field]").join(".");
+      return `${issue.code}${path ? ` at ${path}` : ""}`;
+    });
+    return `Ответ проверяющей модели не прошёл проверку формата (${issues.join("; ") || "invalid response"})`;
+  }
+  const message = error instanceof Error ? error.message : "Judge unavailable or returned invalid data";
+  const sanitized = message
+    .replace(/(?:sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|Bearer\s+[A-Za-z0-9._~+/-]{20,})/giu, "[redacted]")
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/giu, "[private key redacted]")
+    .replace(/((?:api[_-]?key|access[_-]?token|password|client[_-]?secret)\s*[:=]\s*)[^\s,;]{8,}/giu, "$1[redacted]")
+    .replace(/[\u0000-\u001f\u007f]/gu, " ").slice(0, 1400);
+  if (/(?:sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|Bearer\s+[A-Za-z0-9._~+/-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:api[_-]?key|access[_-]?token|password|client[_-]?secret)\s*[:=]\s*[^\s,;]{8,})/iu.test(sanitized)) {
+    return "Judge evaluation blocked; sensitive diagnostic redacted";
+  }
+  return sanitized;
+}
 
 export async function evaluateGoal(input: GoalEvaluationInput, model: GoalModel): Promise<GoalEvaluation> {
   try { return await evaluateGoalChecked(input, model); }
   catch (error) {
     const openLedger = input.requirements.map(r => ({ ...r, status: "open" as const, evidenceIds: [] }));
-    return { memoKey: memoKey(input), requirementMemo: input.requirementMemo ?? { goalRevision: input.goalRevision, primaryHash: "", requirements: [] }, supersessions: [], requirements: openLedger, decision: { kind: "blocked", reason: error instanceof Error ? error.message : "Judge unavailable or returned invalid data" } };
+    return { memoKey: memoKey(input), requirementMemo: { goalRevision: input.goalRevision, primaryHash: primaryHash(input), requirements: [],
+      ...(input.requirementMemo?.supersessions?.length ? { supersessions: input.requirementMemo.supersessions } : {}) },
+      supersessions: input.requirementMemo?.supersessions ?? [], requirements: openLedger,
+      decision: { kind: "blocked", reason: safeFailureReason(error) } };
   }
 }
 
@@ -55,9 +80,9 @@ async function evaluateGoalChecked(input: GoalEvaluationInput, model: GoalModel)
   const eventIds = new Set(input.userEvents.map(e => e.id));
   const current = new Map(input.requirements.map(r => [r.id, r]));
   if (current.size !== input.requirements.length) fail("duplicate requirement id");
-  const primaryHash = createHash("sha256").update(JSON.stringify({ fullObjective: input.fullObjective, userEvents: input.userEvents })).digest("hex");
+  const currentPrimaryHash = primaryHash(input);
   // Requirements are reused only for this exact objective revision and primary material hash.
-  const memoIsCurrent = input.requirementMemo?.goalRevision === input.goalRevision && input.requirementMemo.primaryHash === primaryHash;
+  const memoIsCurrent = !!input.requirementMemo?.requirements.length && input.requirementMemo.goalRevision === input.goalRevision && input.requirementMemo.primaryHash === currentPrimaryHash;
   const projection = memoIsCurrent
     ? { requirements: input.requirementMemo!.requirements, supersessions: input.requirementMemo!.supersessions ?? [] }
     : requirementsReply.parse(await model.call({ stage: "requirements", maxOutputTokens: 6000, payload: { fullObjective: input.fullObjective, userEvents: input.userEvents, existingRequirements: input.requirements } }));
@@ -97,7 +122,7 @@ async function evaluateGoalChecked(input: GoalEvaluationInput, model: GoalModel)
     return { ...r, status: a.fulfilled ? "fulfilled" : "open", evidenceIds: a.fulfilled ? a.evidenceIds : [] };
   });
   if (!ledger.length) fail("requirement ledger is empty");
-  const requirementMemo: GoalRequirementMemo = { goalRevision: input.goalRevision, primaryHash, requirements: derived.map(({ id, text, sourceEventIds }) => ({ id, text, sourceEventIds })), supersessions };
+  const requirementMemo: GoalRequirementMemo = { goalRevision: input.goalRevision, primaryHash: currentPrimaryHash, requirements: derived.map(({ id, text, sourceEventIds }) => ({ id, text, sourceEventIds })), supersessions };
   const liveEvidence = validEvidence;
   const action = actionReply.parse(await model.call({ stage: "next-action", maxOutputTokens: 2000, payload: { fullObjective: input.fullObjective, userEvents: input.userEvents, requirements: ledger, evidence: liveEvidence, materials: input.materials } }));
   if (action.kind !== "complete") return { memoKey: key, requirementMemo, supersessions, requirements: ledger, decision: action };

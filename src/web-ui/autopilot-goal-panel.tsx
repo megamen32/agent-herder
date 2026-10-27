@@ -120,7 +120,7 @@ export function AutopilotGoalPanel({ session, request, supported, onChanged }: {
     }
   };
 
-  const status = !goal ? "Цель ещё не сохранена" : goal.stopped ? "Остановлен" : goal.completed ? "Завершён по проверке" : !goal.armed ? "Выключен" : goal.inputCursor !== goal.processedInputCursor ? "Ожидает обработки уточнения" : "В работе";
+  const status = !goal ? "Цель ещё не сохранена" : goal.stopped ? "Остановлен" : goal.completed ? "Завершён по проверке" : goal.evaluation?.lastDecision === "blocked" ? "Не удалось продолжить" : !goal.armed ? "Выключен" : goal.inputCursor !== goal.processedInputCursor ? "Ожидает обработки уточнения" : "В работе";
   const refInput = refsFor(draft);
   const existingRefs = [...new Map((goal?.primaryEvents.flatMap(event => event.refs ?? []) ?? []).map(ref => [ref.uri, ref])).values()];
   return <section className="autopilot-control autopilot-goal-panel" aria-label="Полная цель автопилота">
@@ -131,7 +131,8 @@ export function AutopilotGoalPanel({ session, request, supported, onChanged }: {
       {goal && <><h4>Исходное поручение и уточнения</h4><ol>{goal.primaryEvents.map((event) => <li key={event.eventId}><p>{event.text}</p></li>)}</ol><h4>Требования</h4>{goal.requirements.length ? <ul>{goal.requirements.map((item) => {
         const reqStatus = goal.evaluation?.requirementsStatus.find(value => value.id === item.id);
         return <li key={item.id}>{item.text}{reqStatus && <small> — {reqStatus.status === "fulfilled" ? "подтверждено" : reqStatus.status === "blocked" ? "заблокировано" : "открыто"}</small>}</li>;
-      })}</ul> : <small>Требования пока не выделены.</small>}{goal.evaluation?.lastReason && <p role="status">Последняя проверка: {goal.evaluation.lastReason}</p>}</>}
+      })}</ul> : <small>Требования пока не выделены.</small>}</>}
+      {goal?.evaluation?.lastReason && <p role="status">{goal.evaluation.lastDecision === "blocked" ? "Причина остановки:" : "Последняя проверка:"} {goal.evaluation.lastReason}</p>}
       {!goal && <label>Полный текст цели<textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={5} placeholder="Введите исходное поручение целиком" disabled={saving} /></label>}
       {goal?.armed && !goal.completed && <label>Уточнение цели<textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={3} placeholder="Добавьте уточнение, не удаляя исходное поручение" disabled={saving} /></label>}
       {(!goal || (goal.armed && !goal.completed)) && <label>Файлы результата для проверки (по одному пути на строку)<textarea value={refDraft} onChange={(event) => setRefDraft(event.target.value)} rows={2} placeholder="gamma.md или subdir/result.md" disabled={saving} /></label>}

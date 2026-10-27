@@ -257,6 +257,13 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .inspector-empty-metrics { margin: var(--space-1) 0 var(--space-4); padding: 10px 11px; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-2); color: var(--muted); font-size: var(--text-xs); line-height: 1.45; }
 .autopilot-control { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: 20px; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-2); }
 .autopilot-control > div { min-width: 0; } .autopilot-control strong, .autopilot-control small { display: block; } .autopilot-control strong { margin-top: 5px; font-size: var(--text-md); } .autopilot-control small { margin-top: 3px; color: var(--muted); font-size: var(--text-xs); }
+.autopilot-goal-panel { display: block; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.autopilot-goal-panel .autopilot-goal-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); min-width: 0; }
+.autopilot-goal-panel .autopilot-goal-heading > span { display: block; flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
+.autopilot-goal-panel .autopilot-goal-heading > button { flex: 0 0 auto; }
+.autopilot-goal-panel ol, .autopilot-goal-panel ul { min-width: 0; max-width: 100%; margin-inline: 0; padding-inline-start: 1.25rem; }
+.autopilot-goal-panel li, .autopilot-goal-panel p, .autopilot-goal-panel h4 { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.autopilot-goal-panel textarea { display: block; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; resize: vertical; }
 .inherit-button { margin-top: var(--space-2); padding: 0; border: 0; background: transparent; color: var(--accent); font-size: var(--text-xs); text-align: left; }
 .switch-control { position: relative; width: 44px; height: 26px; flex: 0 0 44px; padding: 3px; border-radius: 999px; background: var(--border-2); }
 .switch-control span { display: block; width: 20px; height: 20px; border-radius: 50%; background: var(--text); transition: transform .15s ease; }

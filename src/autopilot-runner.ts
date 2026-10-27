@@ -289,16 +289,26 @@ async function evaluateArmedGoal(args: {
   const modelUsage = (args.model as typeof args.model & { getUsage?: () => import("./autopilot/goal-evaluation.js").GoalModelUsage | undefined }).getUsage?.();
   if (await args.isHeld()) return stop();
   const requirements = result.requirements.map(({ id, text, sourceEventIds }) => ({ id, text, sourceEventIds }));
-  const projected = await store.applyRequirements(args.snapshot.identity, args.snapshot, snapshot.inputCursor, requirements);
+  // An empty memo is the evaluator's explicit fail-closed extraction/error
+  // marker. Persist the reason without advancing the processed-input cursor or
+  // replacing the durable requirement ledger with a fabricated projection.
+  const extractionFailed = result.requirementMemo.requirements.length === 0;
+  const projected = extractionFailed ? args.snapshot : await store.applyRequirements(args.snapshot.identity, args.snapshot, snapshot.inputCursor, requirements);
   if (!projected) return { ok: true, command: input.command ?? "stop", harness: input.harness, session_id: input.sessionId, decision: "unavailable", reason: "goal-input-changed-during-evaluation", goal_control: "opt-in" };
   const evaluated = await store.recordEvaluation(args.snapshot.identity, projected, {
     requirementMemo: result.requirementMemo,
     requirementsStatus: result.requirements.map(({ id, status, evidenceIds }) => ({ id, status, evidenceIds })),
     lastDecision: result.decision.kind,
+    ...(result.decision.kind === "blocked" ? { lastReason: result.decision.reason } : {}),
     ...(modelUsage ? { usage: modelUsage } : {}),
   });
   if (!evaluated) return { ok: true, command: input.command ?? "stop", harness: input.harness, session_id: input.sessionId, decision: "unavailable", reason: "goal-changed-during-evaluation-record", goal_control: "opt-in" };
   if (await args.isHeld()) return stop();
+  if (result.decision.kind === "blocked") return {
+    ok: true, command: input.command ?? "stop", harness: input.harness, session_id: input.sessionId,
+    decision: "unavailable", reason: result.decision.reason, goal_status: `Завершение цели пока не подтверждено: ${result.decision.reason}`, goal_revision: evaluated.goalRevision,
+    goal_control: "opt-in", judge_route: args.route,
+  };
   if (input.harness === "hermes") return {
     ok: true, command: input.command ?? "stop", harness: input.harness, session_id: input.sessionId,
     decision: "unavailable", reason: "Hermes has no verified equal-proof full-goal handoff", goal_status: "Автопилот не подтверждает продолжение и завершение цели в этой среде.",
@@ -325,11 +335,6 @@ async function evaluateArmedGoal(args: {
       goal_evidence_unavailable: collected.unavailable, judge_route: args.route,
     };
   }
-  if (result.decision.kind === "blocked") return {
-    ok: true, command: input.command ?? "stop", harness: input.harness, session_id: input.sessionId,
-    decision: "unavailable", reason: result.decision.reason, goal_status: `Завершение цели пока не подтверждено: ${result.decision.reason}`, goal_revision: evaluated.goalRevision,
-    goal_control: "opt-in", judge_route: args.route,
-  };
   const activeEvidence = collected.evidence.filter(evidence => evaluated.requirements.some(requirement => requirement.id === evidence.requirementId));
   const check = await store.checkCompletion(args.snapshot.identity, evaluated, activeEvidence);
   if (!check.ok || await args.isHeld() || !await args.canApply()) return {

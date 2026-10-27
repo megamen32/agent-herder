@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { evaluateGoal, type GoalEvaluationInput, type GoalModel } from "./goal-evaluation.js";
 
 const input: GoalEvaluationInput = {
@@ -79,5 +80,63 @@ describe("evaluateGoal", () => {
     } });
     expect(result.supersessions[0]?.previous.text).toBe("Old result");
     expect(result.decision.kind).toBe("continue");
+  });
+
+  it("projects an early amendment directly when no prior requirement IDs exist", async () => {
+    const earlyAmendment: GoalEvaluationInput = { ...input,
+      userEvents: [...input.userEvents, { id: "u2", cursor: "c2", kind: "amendment", text: "Also include verification" }],
+      inputCursor: "c2", requirements: [],
+    };
+    const result = await evaluateGoal(earlyAmendment, { async call({ stage }) {
+      if (stage === "requirements") return { requirements: [{ id: "deliver-and-verify", text: "Build X and verify it", sourceEventIds: ["u1", "u2"], status: "open", evidenceIds: [] }], supersessions: [] };
+      if (stage === "evidence-reconciliation") return { assessments: [{ requirementId: "deliver-and-verify", fulfilled: false, evidenceIds: [], reason: "not complete" }] };
+      return { kind: "continue", nextAction: "Build and verify X" };
+    } });
+    expect(result.requirements[0]?.sourceEventIds).toEqual(["u1", "u2"]);
+    expect(result.supersessions).toEqual([]);
+    expect(result.decision.kind).toBe("continue");
+  });
+
+  it("persists an extraction failure reason without caching the failed memo, then retries extraction", async () => {
+    const { mkdtemp, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { GoalStore } = await import("./goal-store.js");
+    const root = await mkdtemp(join(tmpdir(), "goal-eval-failure-"));
+    try {
+      const store = new GoalStore(root);
+      const identity = { harness: "codex", sessionId: "failed-extraction", cwd: "/tmp/project" };
+      await store.arm({ identity, goal: { eventId: "u1", text: "Build X" }, requirements: [] });
+      await store.acceptHumanEvent(identity, { eventId: "u2", text: "Also verify X" });
+      const snapshot = await store.snapshot(identity);
+      const failedInput: GoalEvaluationInput = { ...input, goalRevision: String(snapshot.goalRevision), fullObjective: "Build X",
+        userEvents: [{ id: "u1", cursor: "1", kind: "objective", text: "Build X" }, { id: "u2", cursor: "2", kind: "amendment", text: "Also verify X" }],
+        inputCursor: String(snapshot.inputCursor), requirements: [], requirementMemo: undefined };
+      const largeSchema = z.object({ ["x".repeat(10_000)]: z.string() });
+      const failed = await evaluateGoal(failedInput, { async call() { largeSchema.parse({}); } });
+      expect(failed.decision).toMatchObject({ kind: "blocked", reason: expect.stringContaining("не прошёл проверку формата") });
+      if (failed.decision.kind !== "blocked") throw new Error("expected blocked evaluation");
+      expect(failed.decision.reason.length).toBeLessThan(1500);
+      expect(failed.decision.reason).not.toContain("x".repeat(100));
+      expect(failed.requirementMemo.primaryHash).not.toBe("");
+      expect(failed.requirementMemo.requirements).toEqual([]);
+      expect(snapshot.processedInputCursor).toBeLessThan(snapshot.inputCursor);
+      const persisted = await store.recordEvaluation(identity, snapshot, {
+        requirementMemo: failed.requirementMemo, requirementsStatus: [], lastDecision: "blocked",
+        ...(failed.decision.kind === "blocked" ? { lastReason: failed.decision.reason } : {}),
+      });
+      expect(persisted?.evaluation?.lastReason).toContain("не прошёл проверку формата");
+      expect(persisted?.processedInputCursor).toBe(snapshot.processedInputCursor);
+
+      const retryStages: string[] = [];
+      const retry = await evaluateGoal({ ...failedInput, requirementMemo: persisted?.evaluation?.requirementMemo }, { async call({ stage }) {
+        retryStages.push(stage);
+        if (stage === "requirements") return { requirements: [{ id: "deliver-verify", text: "Build and verify X", sourceEventIds: ["u1", "u2"], status: "open", evidenceIds: [] }], supersessions: [] };
+        if (stage === "evidence-reconciliation") return { assessments: [{ requirementId: "deliver-verify", fulfilled: false, evidenceIds: [], reason: "not done" }] };
+        return { kind: "continue", nextAction: "Build and verify X" };
+      } });
+      expect(retryStages).toContain("requirements");
+      expect(retry.decision.kind).toBe("continue");
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

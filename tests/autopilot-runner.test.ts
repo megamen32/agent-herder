@@ -65,6 +65,35 @@ describe("autopilot runner", () => {
     });
   });
 
+  it("persists an early-amendment judge failure without advancing the goal cursor", async () => {
+    const { GoalStore } = await import("../src/autopilot/goal-store.js");
+    const { evaluateAutopilotStop } = await import("../src/autopilot-runner.js");
+    const root = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR!;
+    const identity = { harness: "codex", sessionId: "early-amendment-failure", cwd: root };
+    const goals = new GoalStore(root);
+    await goals.arm({ identity, goal: { eventId: "human-objective", text: "Build and verify the result" }, requirements: [] });
+    await goals.acceptHumanEvent(identity, { eventId: "human-amendment", text: "Also include a concise report" });
+    const before = await goals.snapshot(identity);
+
+    vi.stubEnv("AGENT_HERDER_AUTOPILOT_JUDGE_BASE_URL", "https://judge.fixture.invalid/v1");
+    vi.stubEnv("AGENT_HERDER_AUTOPILOT_JUDGE_MODEL", "fixture-model");
+    const fetchMock = vi.fn(async () => Response.json({ error: { message: "fixture schema rejection" } }, { status: 400 }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const result = await evaluateAutopilotStop({ harness: "codex", sessionId: identity.sessionId, cwd: identity.cwd,
+        nativeFence: async () => true, lastAssistantMessage: "prior turn ended" });
+      const after = await goals.snapshot(identity);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(result).toMatchObject({ decision: "unavailable", reason: expect.stringContaining("fixture schema rejection") });
+      expect(after.evaluation?.lastDecision).toBe("blocked");
+      expect(after.evaluation?.lastReason).toContain("fixture schema rejection");
+      expect(after.evaluation?.requirementMemo?.primaryHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(after.evaluation?.requirementMemo?.requirements).toEqual([]);
+      expect(after.processedInputCursor).toBe(before.processedInputCursor);
+      expect(after.processedInputCursor).toBeLessThan(after.inputCursor);
+    } finally { vi.unstubAllGlobals(); vi.unstubAllEnvs(); }
+  });
+
   it("inherits the selected harness from the persisted global policy", async () => {
     const { AutopilotPolicyStore } = await import("../src/autopilot/policy-store.js");
     const { createDefaultAutopilotPolicy } = await import("../src/autopilot/policy.js");
