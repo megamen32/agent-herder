@@ -137,3 +137,22 @@ owner/root/parent дубликаты схлопываются, различаю�
 в ожидаемые leaves и получила200 всех каталогов; final install/readback далее.
 Shared Herder OpenCode client больше не выдаёт hardcoded GPT/Gemini/DeepSeek
 модели за доступный каталог при ошибке чтения: возвращается пустая выборка.
+
+## Финальная установка и live route proof
+
+Installed source67bd9cd81ed4c8dde6382ad0d04680993bf902e8, immutable bundle
+8e467c8ee61859eb9d3f7001cc7ee2cfbed2fc6d61705f7e64803fb5d38a5591.
+TypeScript/build/plugin/manifest/package checks passed; compiler manifest
+теперь явно включает tracked packages/ workspace inputs. Unit/suite не запускали.
+Herder PID4153136 start20:23:23MSK; policy ETag/settings hash сохранены,
+events23585603persisted→23585669restored. Native OpenCode не рестартовался.
+Public static pin2a0942ac, rollback20261027T172416Z, no managed drift.
+
+Независимый runtime GET /api/native-model-route-proof:200 за409ms,
+exactGLM+MiniMaxcombo раскрыт в четыре ожидаемых provider leaves.
+GET /api/model-launch-verdict для TelegramAuto:200 за721ms, обе
+omniroute/glm-5.3-flash-minimax-m3.1 и omniroute/minimax-combo-m3.1
+имеют allowed/verified. Выбранный runtime/project route не подменялся;
+LLM execution и production permission/save для проверки не запускались.
+Owner-only browser fleet readiness остаётся непроверенной: testlogin закономерно
+не получает owner capability; этот отказ UI показывает явно, не fake rows.
