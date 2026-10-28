@@ -13,7 +13,7 @@ import {
   type CodexProjectRuntimePolicy,
 } from "./project-runtime-policy.js";
 import type { ProjectExecutionBinding, TrustedRuntimeOwnerResolver } from "./project-execution-scope.js";
-import { IntegratorSessionBindingStore, type IntegratorLaunchReceipt, type IntegratorNativeAddress, type IntegratorOperationBinding } from "./integrator-session-binding.js";
+import { IntegratorSessionBindingStore, type IntegratorAttemptScope, type IntegratorLaunchReceipt, type IntegratorNativeAddress, type IntegratorOperationBinding } from "./integrator-session-binding.js";
 import { fleetHarnesses, type FleetCreateReceipt, type FleetHarness } from "./mesh/fleet-contract.js";
 import type { HarnessAdapter } from "./types/index.js";
 import type { CodexServiceTier } from "./types/index.js";
@@ -120,6 +120,8 @@ export interface IntegratorFleetRuntimeOptions {
   createScopedAdapter?: ScopedFactory;
   /** Builds the adapter of the selected harness for one reserved operation. */
   createHarnessAdapter?: IntegratorHarnessAdapterFactory;
+  /** Observed native data home of the OpenCode harness on this host (scope evidence). */
+  opencodeDataHome?: string;
 }
 
 /** Connects one explicitly routed Codex project to the existing H32/H34 owner APIs. */
@@ -342,17 +344,20 @@ export class IntegratorFleetRuntime {
     const lookup = await this.options.bindingStore.findByNativeAddress(address).catch(() => null);
     if (!lookup) return { kind: "deny", reason: "project_binding_store_unavailable" };
     if (lookup.state === "not_found") return { kind: "ordinary" };
-    // A harness-first journal row keeps its durable tuple in the created
-    // receipt instead of a codex scope, so the store reports it as
-    // scope_missing. Such an accepted opencode row joins the scoped route
-    // below; every other unresolved lookup is denied as before.
-    const scopeMissingJoin = lookup.state === "unresolved" && lookup.reason === "scope_missing"
-      && lookup.binding?.harness === "opencode" && address.harness === "opencode";
-    if (lookup.state !== "accepted" && !scopeMissingJoin) {
+    // A harness-first journal row without a codex scope is reported as
+    // scope_missing. Fail closed: an unknown legacy row is never authorized
+    // from the currently configured root. Only a row whose accepted created
+    // receipt carries the exact durable launch root that still resolves to the
+    // same opencode route may be adopted explicitly, and every such adoption
+    // is audited.
+    const legacyCandidate = lookup.state === "unresolved" && lookup.reason === "scope_missing"
+      && lookup.binding?.harness === "opencode" && address.harness === "opencode"
+      ? { binding: lookup.binding, attempt: lookup.binding.attempts.at(-1) } : null;
+    if (lookup.state !== "accepted" && !legacyCandidate) {
       return { kind: "deny", reason: lookup.reason };
     }
     const binding = lookup.binding;
-    const attempt = lookup.state === "accepted" ? lookup.attempt : binding!.attempts.at(-1)!;
+    const attempt = lookup.state === "accepted" ? lookup.attempt : legacyCandidate!.attempt!;
     if (attempt.hostId !== this.hostId) {
       return { kind: "deny", reason: "project_session_host_or_harness_mismatch" };
     }
@@ -377,6 +382,7 @@ export class IntegratorFleetRuntime {
         project: { rootPath: configured.project.rootPath, model: configured.project.model, etag: configured.project.etag },
         bindingStore: this.options.bindingStore,
       });
+      console.error("SCOPEDEBUG:", JSON.stringify({stored: attempt.scope?.policyRevision ?? null, live: configured.project.etag, rootIdMatch: attempt.scope?.rootIdentity === rootIdentity}));
       // A stored scope must prove the exact historical tuple against the live
       // route; a legacy row adopts only through its exact created receipt
       // (launchCwd), never through the currently configured root alone.
@@ -391,6 +397,15 @@ export class IntegratorFleetRuntime {
       const native = await (adapter.getSession?.(address.nativeSessionId).catch(() => null) ?? null);
       if (!native || native.cwd !== configured.project.rootPath) {
         return { kind: "deny", reason: "project_session_native_cwd_drift" };
+      }
+      if (legacyCandidate) {
+        // Explicit, auditable adoption of one legacy harness-first row: the
+        // original durable evidence (accepted created receipt + launch root)
+        // is the grant; the live route and root identity merely reconfirm it.
+        console.warn(`[integrator] legacy-scope-adoption ${JSON.stringify({
+          operationId: binding!.operationId, nativeSessionId: address.nativeSessionId,
+          launchRoot: launchRoot, rootIdentity, policyRevision: configured.project.etag,
+        })}`);
       }
       return { kind: "scoped", adapter };
     }
@@ -471,12 +486,18 @@ export class IntegratorFleetRuntime {
   /**
    * Creates one session for the selected harness. The runtime reserves the operation with that
    * harness and hands the reservation to the harness adapter, which writes the durable created
-   * receipt through the binding store.
+   * receipt through the binding store. The exact project/root/policy/host tuple is captured
+   * before the reservation and stored with it, so the later scoped resolution proves the
+   * historical grant instead of re-deriving it from the currently configured root.
    */
   private async createHarnessFirst(input: IntegratorFleetCreateInput, project: ConfiguredProject): Promise<FleetCreateReceipt> {
+    const capturedScope = await this.captureHarnessScope(project).catch(() => null);
+    if (!capturedScope) {
+      return { state: "unknown", inputId: input.inputId, retryable: false, reason: "project_harness_scope_uncapturable" };
+    }
     let reservation: IntegratorHarnessReservation;
     try {
-      reservation = await this.reserveOperation(input, project.harness);
+      reservation = await this.reserveOperation(input, project.harness, capturedScope);
     } catch {
       return { state: "unknown", inputId: input.inputId, retryable: false, reason: "project_operation_reservation_unavailable" };
     }
@@ -509,9 +530,9 @@ export class IntegratorFleetRuntime {
     }
   }
 
-  /** Reserves one operation for the selected harness; the reservation carries the harness. */
-  private async reserveOperation(input: IntegratorFleetCreateInput, harness: FleetHarness): Promise<IntegratorHarnessReservation> {
-    const reserved = await this.options.bindingStore.reserve({ operationId: input.inputId, hostId: this.hostId, harness });
+  /** Reserves one operation for the selected harness; the reservation carries the harness and the captured scope. */
+  private async reserveOperation(input: IntegratorFleetCreateInput, harness: FleetHarness, scope?: IntegratorAttemptScope): Promise<IntegratorHarnessReservation> {
+    const reserved = await this.options.bindingStore.reserve({ operationId: input.inputId, hostId: this.hostId, harness, ...(scope ? { scope } : {}) });
     if (!reserved.claimed) throw new Error("integrator_operation_reservation_not_claimed");
     return { operationId: input.inputId, attempt: reserved.attempt.attempt, inputId: reserved.attempt.inputId,
       hostId: reserved.attempt.hostId, harness };
@@ -569,6 +590,37 @@ export class IntegratorFleetRuntime {
       const details = await stat(root);
       return JSON.stringify([root, details.dev, details.ino]);
     } catch { return ""; }
+  }
+
+  /**
+   * Observe the exact project/root/policy/host/harness tuple of a harness-first
+   * launch before the native reservation, so the durable journal carries the
+   * grant that the later scoped resolution proves. Every field is observed
+   * here: the reservation is refused when the root cannot be captured exactly.
+   */
+  private async captureHarnessScope(project: ConfiguredProject): Promise<IntegratorAttemptScope> {
+    const canonicalRoot = await realpath(project.rootPath);
+    const rootStat = await stat(canonicalRoot);
+    if (canonicalRoot !== project.rootPath) throw new Error("project_root_not_canonical");
+    // The OpenCode harness stores its sessions under its own data home on this
+    // host; the reserve-time evidence observes that exact directory instead of
+    // inventing a mapping. A missing home fails the capture closed.
+    const nativeDataHome = this.options.opencodeDataHome
+      ?? join(homedir(), ".local", "share", "opencode");
+    const homeStat = await stat(nativeDataHome);
+    return {
+      projectId: project.rootPath,
+      rootIdentity: JSON.stringify([canonicalRoot, rootStat.dev, rootStat.ino]),
+      policyRevision: project.etag,
+      hostId: this.hostId,
+      harness: project.harness,
+      // The harness binary version is not observable at reserve time for a
+      // harness-first route; the store requires a non-empty marker, so the
+      // absence is recorded explicitly instead of a fabricated version.
+      harnessVersion: "unknown-at-reserve",
+      canonicalRoot: { path: canonicalRoot, device: rootStat.dev, inode: rootStat.ino },
+      nativeDataHome: { path: nativeDataHome, device: homeStat.dev, inode: homeStat.ino },
+    };
   }
 
   private async restoreAccepted(operationId: string, address: IntegratorNativeAddress, project: CodexConfiguredProject): Promise<ScopedResolution> {
