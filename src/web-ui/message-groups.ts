@@ -2,6 +2,21 @@ import type { SessionMessageView } from "../types/index.js";
 
 export type MessageGroup = { id: string; role: SessionMessageView["role"]; timestamp?: string; messages: SessionMessageView[] };
 
+/** Render one native assistant turn as ordered content/activity segments, without
+ * introducing an artificial row boundary for every persisted tool record. */
+export function joinAssistantTurnMessages(messages: SessionMessageView[], isBoundary: (message: SessionMessageView) => boolean = () => false): SessionMessageView[] {
+  const joined: SessionMessageView[] = [];
+  const parts = (message: SessionMessageView) => message.parts.length ? message.parts : message.text ? [{ type: "text" as const, text: message.text }] : [];
+  for (const message of messages) {
+    const previous = joined[joined.length - 1];
+    if (previous?.role === "assistant" && message.role === "assistant" && message.turnId
+      && previous.turnId === message.turnId && !isBoundary(previous) && !isBoundary(message)) {
+      joined[joined.length - 1] = { ...previous, text: "", parts: [...parts(previous), ...parts(message)] };
+    } else joined.push(message);
+  }
+  return joined;
+}
+
 /** Stack only assistant messages whose native turn identity is known. */
 export function groupSessionMessages(messages: SessionMessageView[]): MessageGroup[] {
   const groups: MessageGroup[] = [];

@@ -3,6 +3,55 @@ import type { SessionMessagePart } from "../types/index.js";
 
 export type MessagePartSegment = { kind: "activity" | "content"; parts: SessionMessagePart[] };
 
+function toolLabel(part: SessionMessagePart): { label: string; commands: boolean } {
+  const input = typeof part.input === "object" && part.input !== null ? part.input as Record<string, unknown> : undefined;
+  const name = part.name || "";
+  if (name === "subagent") {
+    const agent = typeof input?.agentPath === "string" ? ` ${input.agentPath}` : "";
+    const completed = input?.kind === "completed" || input?.kind === "finished";
+    return { label: `Субагент${agent}${completed ? " завершил работу" : input?.kind === "spawned" ? " запущен" : ""}`, commands: false };
+  }
+  // Read wrapper source as data only. Never execute it or evaluate arguments.
+  const code = name === "exec" || name === "functions.exec"
+    ? typeof part.input === "string" ? part.input : typeof input?.code === "string" ? input.code : ""
+    : "";
+  const wrapped = code ? Array.from(code.matchAll(/\btools(?:\.([A-Za-z_$][\w$]*)|\[\s*["']([\w.:-]+)["']\s*\])\s*\(/g), match => match[1] || match[2]!) : [];
+  if (wrapped.length) {
+    const labels = wrapped.map(tool => toolLabel({ type: "tool_call", name: tool }));
+    return labels.every(label => label.commands) ? { label: "Выполнил команды", commands: true }
+      : { label: [...new Set(labels.map(label => label.label))].join(" · "), commands: false };
+  }
+  const short = name.replace(/^functions\./, "");
+  if (["command", "exec_command", "shell_exec", "bash", "terminal"].includes(short)) return { label: "Выполнил команды", commands: true };
+  if (short === "view_image") return { label: "Просмотрено изображение", commands: false };
+  if (["read_file", "read_text_file"].includes(short)) return { label: "Прочитан файл", commands: false };
+  if (short === "apply_patch") return { label: "Внесены изменения", commands: false };
+  if (short === "write_stdin") return { label: "Проверено выполнение команды", commands: false };
+  const mcp = name.match(/^(?:mcp__)?(.+?)__(?:.+)$/);
+  if (mcp) {
+    const aliases: Record<string, string> = { agent_herder: "Agent Herder", context_mode: "Context Mode", UserIO: "UserIO", userio: "UserIO", gptadmin: "GPTAdmin", noticeplace: "Notice Place", AskSecret: "AskSecret", xerj: "XERJ", grepmesh: "GrepMesh" };
+    const integration = aliases[mcp[1]!] || mcp[1]!.replace(/^(?:codex_apps__)/, "").replace(/[_-]+/g, " ");
+    return { label: `Использовано ${integration}`, commands: false };
+  }
+  return { label: name === "exec" || name === "functions.exec" ? "Выполнен сценарий" : "Использован инструмент", commands: false };
+}
+
+type ToolEntry = { part: SessionMessagePart; result?: SessionMessagePart };
+
+function ToolDetails({ entries, label }: { entries: ToolEntry[]; label: string }) {
+  const failed = entries.some(({ part, result }) => part.error || result?.error);
+  return <details className={`tool-actions tool-action-row${failed ? " tool-actions-failed" : ""}`}>
+    <summary><span className="tool-action-name">{label}</span></summary>
+    <div className="tool-actions-body">
+      {entries.map(({ part, result }, index) => <div className="tool-actions-item" key={index}>
+        <b>{part.name || "Инструмент"} · {part.error || result?.error ? "Ошибка" : part.name === "subagent" ? "Взаимодействие" : result || part.type === "tool_result" ? "Готово" : "Вызов"}</b>
+        {part.type === "tool_call" && part.input !== undefined && <><b>Вход</b><pre>{typeof part.input === "string" ? part.input : JSON.stringify(part.input, null, 2)}</pre></>}
+        {(result?.output ?? part.output) !== undefined && <><b>Результат</b><pre>{result?.output ?? part.output}</pre></>}
+      </div>)}
+    </div>
+  </details>;
+}
+
 export function groupMessagePartSegments(parts: SessionMessagePart[]): MessagePartSegment[] {
   const segments: MessagePartSegment[] = [];
   for (const part of parts) {
@@ -20,9 +69,16 @@ export function MessageActivityRows({ parts, showReasoning, showTools }: {
   showTools: boolean;
 }) {
   const rows: React.ReactNode[] = [];
+  let commands: ToolEntry[] = [];
+  const flushCommands = () => {
+    if (!commands.length) return;
+    rows.push(<ToolDetails key={`commands:${rows.length}`} entries={commands} label="Выполнил команды" />);
+    commands = [];
+  };
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index]!;
     if (part.type === "thinking") {
+      flushCommands();
       if (!showReasoning) continue;
       rows.push(<details className="oc-disclosure activity-thinking" key={`thinking:${index}`}>
         <summary>Думаю</summary>
@@ -30,37 +86,20 @@ export function MessageActivityRows({ parts, showReasoning, showTools }: {
       </details>);
       continue;
     }
-    if (part.type !== "tool_call" && part.type !== "tool_result") continue;
+    if (part.type !== "tool_call" && part.type !== "tool_result") { flushCommands(); continue; }
     if (!showTools) continue;
     const isCall = part.type === "tool_call";
     const next = parts[index + 1];
     const result = isCall && part.name && part.name !== "subagent" && next?.type === "tool_result" && next.name === part.name ? next : undefined;
     if (result) index += 1;
-    const input = isCall && typeof part.input === "object" && part.input !== null ? part.input as Record<string, unknown> : undefined;
-    const isSubagentEvent = isCall && part.name === "subagent";
-    const command = isCall && part.name === "command"
-      ? typeof input?.command === "string" ? input.command : Array.isArray(input?.command) && input.command.every((value) => typeof value === "string") ? input.command.join(" ") : undefined
-      : undefined;
-    const agentPath = isSubagentEvent && typeof input?.agentPath === "string" ? input.agentPath : undefined;
-    const name = isSubagentEvent ? `Субагент${agentPath ? ` · ${agentPath}` : ""}` : command ? `command · ${command}` : part.name || (isCall ? "Вызов инструмента" : "Результат инструмента");
-    const subagentKind = typeof input?.kind === "string" ? input.kind : undefined;
-    const error = result?.error === true || !isCall && part.error === true;
-    const status = isSubagentEvent
-      ? subagentKind === "interacted" ? "Взаимодействие" : subagentKind === "spawned" ? "Запуск" : "Событие"
-      : isCall && !result ? "Вызов" : error ? "Ошибка" : "Готово";
-    const output = result ? result.output : !isCall ? part.output : undefined;
-    rows.push(<details className={`tool-actions tool-action-row${error ? " tool-actions-failed" : ""}`} key={`tool:${index}`}>
-      <summary>
-        <span className="tool-actions-icon" aria-hidden="true">⌘</span>
-        <span className="tool-action-name">{name}</span>
-        <small className="tool-action-status">{status}</small>
-      </summary>
-      <div className="tool-actions-body">
-        {isCall && part.input !== undefined && <><b>Вход</b><pre>{JSON.stringify(part.input, null, 2)}</pre></>}
-        {output !== undefined && <><b>Результат</b><pre>{output}</pre></>}
-      </div>
-    </details>);
+    const label = toolLabel(part);
+    if (label.commands) commands.push({ part, result });
+    else {
+      flushCommands();
+      rows.push(<ToolDetails key={`tool:${index}`} entries={[{ part, result }]} label={label.label} />);
+    }
   }
+  flushCommands();
   return <div className="message-activity-rows">
     {rows}
   </div>;

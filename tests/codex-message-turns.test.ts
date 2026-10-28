@@ -28,6 +28,21 @@ async function withRollout(lines: string[], test: (adapter: CodexAdapter) => Pro
 }
 
 describe("Codex native transcript turn identity", () => {
+  it("keeps commentary visible when recent activity saturates the bounded history tail", async () => {
+    await withRollout([
+      message("commentary-before", "I am checking the current deployment", "live-turn"),
+      record("response_item", {type: "custom_tool_call", call_id: "tool-1", name: "exec", input: "first check"}),
+      message("commentary-between", "The issue is localized; applying the narrow fix", "live-turn"),
+      ...[2, 3, 4].map(n => record("response_item", {type: "custom_tool_call", call_id: `tool-${n}`, name: "exec", input: `check ${n}`})),
+    ], async adapter => {
+      const messages = await adapter.getSessionMessages("thread-1", 2);
+      expect(messages?.map(m => m.id)).toEqual(["commentary-before", "commentary-between", "tool-3", "tool-4"]);
+      expect(messages).toHaveLength(4);
+      expect(new Set(messages?.map(m => m.id)).size).toBe(messages?.length);
+      expect((await adapter.getSessionMessages("thread-1", 50))?.map(m => m.id)).toEqual(["commentary-before", "tool-1", "commentary-between", "tool-2", "tool-3", "tool-4"]);
+    });
+  });
+
   it("retains scalar public summaries and one identity for legacy/native activity updates", async () => {
     await withRollout([
       record("response_item", {type: "reasoning", id: "scalar-summary", summary: "Public legacy summary", encrypted_content: "PRIVATE_ENCRYPTED"}),

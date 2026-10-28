@@ -46,7 +46,7 @@ import { RagSearchView } from "./rag-search-view.js";
 import { creationModels } from "./creation-models.js";
 import { isLongVisibleMessage, readCollapseLongMessages, writeCollapseLongMessages } from "./message-collapse.js";
 import { MessageActivityRows, groupMessagePartSegments } from "./message-activity.js";
-import { groupSessionMessages } from "./message-groups.js";
+import { groupSessionMessages, joinAssistantTurnMessages } from "./message-groups.js";
 import { projectDeliveredChat, resolveDeliveredImages } from "./delivered-chat.js";
 import {sidebarEntries, sessionPinKey, projectLocalSessionHost} from './session-pins.js';
 import {SessionSidebarRow, useSessionPins} from './session-sidebar.js';
@@ -2505,7 +2505,7 @@ function App() {
             const transcriptCaption = modelCaption(message);
             return <article className={`message ${visualRole}`} key={message.id??index} data-turn-id={event.turnId} data-event-id={event.eventId}><div className="message-meta"><span>{attribution}</span><time>{formatTime(message.timestamp||"")}</time>{transcriptCaption && <span className="message-model" title={transcriptCaption.full}>{transcriptCaption.short}</span>}</div>{noteLabel?<ServiceNote label={noteLabel} message={message}/>:<CollapsibleMessage message={message} showReasoning={showReasoning} showTools={showTools} jsonRendering={jsonRendering} collapseLongMessages={collapseLongMessages}/>}</article>;
           }) : groupSessionMessages(chatDelivery.messages).map((group, groupIndex, groups) => {
-            const visible = group.messages.filter((message) => hasVisibleMessage(message, showReasoning, showTools));
+            const visible = joinAssistantTurnMessages(group.messages.filter((message) => hasVisibleMessage(message, showReasoning, showTools)), (message) => Boolean(serviceNoteLabel(message)));
             if (visible.length === 0) return null;
             const isLastAssistant = group.role === "assistant" && groupIndex === groups.length - 1;
             const groupCaption = modelCaption(visible[0], group.timestamp);

@@ -26,16 +26,16 @@ describe("message activity rows", () => {
     ] }));
 
     expect(html).toContain("Думаю");
-    expect(html).toContain("shell_exec");
-    expect(html).toContain("read_file");
+    expect(html).toContain("Выполнил команды");
+    expect(html).toContain("Прочитан файл");
     expect(html).toContain("Вызов");
     expect(html).toContain("Готово");
     expect(html).toContain("Ошибка");
     expect(html).toContain("Субагент");
-    expect(html).toContain("Субагент · reviewer");
+    expect(html).toContain("Субагент reviewer");
     expect(html).toContain("Взаимодействие");
     expect(html).toContain("interacted");
-    expect(html).toContain("command · git status --short");
+    expect(html).not.toContain("command · git status --short");
     expect(html).not.toMatch(/<details[^>]* open/);
     expect(html).toContain("Reasoning body");
     expect(html).toContain("permission denied");
@@ -47,10 +47,38 @@ describe("message activity rows", () => {
       { type: "tool_result", name: "command", output: "/workspace" },
     ] }));
     expect(html.match(/<details/g)).toHaveLength(1);
-    expect(html).toContain("command · pwd");
+    expect(html).toContain("Выполнил команды");
     expect(html).toContain("Готово");
     expect(html).toContain("/workspace");
     expect(html).not.toContain("Вызов</small>");
+  });
+
+  it("groups adjacent commands and keeps raw inputs and failures inside details only", () => {
+    const html = renderToStaticMarkup(React.createElement(MessageActivityRows, { showReasoning: true, showTools: true, parts: [
+      { type: "tool_call", name: "functions.exec_command", input: { cmd: "pwd" } },
+      { type: "tool_result", name: "functions.exec_command", output: "failed", error: true },
+      { type: "tool_call", name: "command", input: { command: ["git", "status"] } },
+    ] }));
+    expect(html.match(/<details/g)).toHaveLength(1);
+    expect(html.match(/<summary[^>]*>(.*?)<\/summary>/g)).toEqual([expect.stringContaining("Выполнил команды")]);
+    const summary = html.match(/<summary[^>]*>(.*?)<\/summary>/)?.[1];
+    expect(summary).not.toMatch(/pwd|git|Ошибка|Вызов|⌘/);
+    expect(html).toContain("failed");
+    expect(html).toContain("Ошибка");
+  });
+
+  it("labels image and MCP wrapper actions semantically without executing code", () => {
+    const html = renderToStaticMarkup(React.createElement(MessageActivityRows, { showReasoning: true, showTools: true, parts: [
+      { type: "tool_call", name: "view_image", input: { path: "/tmp/image.png" } },
+      { type: "tool_call", name: "functions.exec", input: "await tools.mcp__agent_herder__mesh_discover({});" },
+      { type: "tool_call", name: "mcp__context_mode__ctx_execute", input: {} },
+      { type: "tool_call", name: "subagent", input: { agentPath: "reviewer", kind: "completed" } },
+    ] }));
+    expect(html).toContain("Просмотрено изображение");
+    expect(html).toContain("Использовано Agent Herder");
+    expect(html).toContain("Использовано Context Mode");
+    expect(html).toContain("Субагент reviewer завершил работу");
+    expect(html.match(/<summary[^>]*>(.*?)<\/summary>/g)?.join(" ")).not.toMatch(/mesh_discover|ctx_execute|await|⌘/);
   });
 
   it("respects saved visibility controls", () => {

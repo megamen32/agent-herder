@@ -183,6 +183,21 @@ function appendCodexMessage(messages: Map<string, SessionMessageView>, message: 
   } else messages.set(message.id, message);
 }
 
+/** Activity must not consume the dialogue budget; retain order inside the already-read tail. */
+function tailCodexMessages(messages: SessionMessageView[], limit: number): SessionMessageView[] {
+  const retained = new Set<string>();
+  let dialogue = 0;
+  let activity = 0;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message.parts.some(part => part.type === "text" || part.type === "image")) {
+      if (dialogue++ < limit) retained.add(message.id);
+    } else if (activity++ < limit) retained.add(message.id);
+    if (dialogue >= limit && activity >= limit) break;
+  }
+  return messages.filter(message => retained.has(message.id));
+}
+
 /**
  * Codex CLI adapter backed by Codex's current JSONL session index.
  *
@@ -704,12 +719,12 @@ export class CodexAdapter implements HarnessAdapter {
           }
           const currentMessages = [...currentMessagesById.values()];
           bestMessages = currentMessages;
-          if (currentMessages.length >= target || bytesToRead === fileStat.size) return currentMessages.slice(-target);
+          if (currentMessages.length >= target || bytesToRead === fileStat.size) return tailCodexMessages(currentMessages, target);
           const next = Math.min(fileStat.size, bytesToRead * 2);
-          if (next === bytesToRead) return currentMessages.slice(-target);
+          if (next === bytesToRead) return tailCodexMessages(currentMessages, target);
           bytesToRead = next;
         }
-        return bestMessages.slice(-target);
+        return tailCodexMessages(bestMessages, target);
       } finally {
         await file.close();
       }
