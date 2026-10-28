@@ -20,6 +20,7 @@ import { HooksSection } from "../hooks-section.js";
 import { HooksRuntimeSwitch } from "../hooks-runtime-switch.js";
 import { ConnectionsSection } from "./connections-section.js";
 import { McpConnectionSection } from "./mcp-connection-section.js";
+import { IndexingSection } from "./indexing-section.js";
 import { RuntimeSection } from "./runtime-section.js";
 import { ProjectsSection } from "./projects-section.js";
 import { FleetConfirmation } from "./fleet-confirmation.js";
@@ -129,6 +130,7 @@ export function SettingsScreen({
       </header>
       <div className="herder-settings-panel" role="tabpanel">
         {tab === "settings" && <McpConnectionSection />}
+        {tab === "settings" && <IndexingSection />}
         {tab === "settings" && <section aria-label="Автоматизация"><h2>Автоматизация</h2><p>Управление автопилотом, продолжением работы и запуском новых сессий.</p><div className="session-automation-links">{([['autopilot','Автопилот'],['autocontinue','Автопродолжение'],['launch-policy','Запуск сессий']] as const).map(([section,label]) => <button key={section} className="quiet-button" onClick={() => onOpenAutomationSettings(section)}>{label}</button>)}</div></section>}
         {tab === "settings"
           ? <HerderSettings onOpenLaunchSettings={onOpenLaunchSettings} />

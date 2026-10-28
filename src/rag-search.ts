@@ -6,6 +6,8 @@ import { basename, join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { DatabaseSync } from "node:sqlite";
+import { setImmediate as yieldEventLoop } from "node:timers/promises";
+import { backgroundIndexingSettings, type BackgroundIndexingSettings } from "./indexing-settings.js";
 
 const COLLECTION = "agent_herder_sessions_v1";
 const VECTOR_SIZE = 2048;
@@ -65,7 +67,7 @@ function splitText(value: string): string[] {
 }
 
 async function requestJson(url: string, init?: RequestInit): Promise<any> {
-  const response = await fetch(url, { ...init, signal: AbortSignal.timeout(180_000) });
+  const response = await fetch(url, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(180_000)]) : AbortSignal.timeout(180_000) });
   if (!response.ok) {
     const detail = scrubSecrets((await response.text().catch(() => "")).replace(/\s+/g, " ").trim()).slice(0, 300);
     throw new Error(`${new URL(url).pathname} returned HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
@@ -82,10 +84,11 @@ async function embeddingToken(): Promise<string> {
   return match[2].trim();
 }
 
-async function embed(inputs: string[]): Promise<number[][]> {
+async function embed(inputs: string[], signal?: AbortSignal): Promise<number[][]> {
   if (!inputs.length) return [];
   const token = await embeddingToken();
   const data = await requestJson(EMBEDDINGS, {
+    ...(signal ? { signal } : {}),
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify({ model: MODEL, input: inputs, dimensions: VECTOR_SIZE }),
@@ -97,8 +100,8 @@ async function embed(inputs: string[]): Promise<number[][]> {
   return vectors as number[][];
 }
 
-async function ensureCollection(): Promise<void> {
-  const response = await fetch(`${QDRANT}/collections/${COLLECTION}`, { signal: AbortSignal.timeout(5_000) });
+async function ensureCollection(signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${QDRANT}/collections/${COLLECTION}`, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5_000)]) : AbortSignal.timeout(5_000) });
   if (response.ok) {
     const current = await response.json();
     if (current?.result?.config?.params?.vectors?.size !== VECTOR_SIZE) throw new Error("Agent Herder Qdrant collection has an incompatible vector size");
@@ -106,6 +109,7 @@ async function ensureCollection(): Promise<void> {
   }
   if (response.status !== 404) throw new Error(`Qdrant returned HTTP ${response.status}`);
   await requestJson(`${QDRANT}/collections/${COLLECTION}`, {
+    ...(signal ? { signal } : {}),
     method: "PUT", headers: { "content-type": "application/json" },
     body: JSON.stringify({ vectors: { size: VECTOR_SIZE, distance: "Cosine" } }),
   });
@@ -135,10 +139,11 @@ async function atomicJson(path: string, value: unknown): Promise<void> {
   await rename(temp, path);
 }
 
-async function allFiles(root: string): Promise<string[]> {
+async function allFiles(root: string, check: () => void = () => {}): Promise<string[]> {
   const files: string[] = [];
   const pending = [root];
   while (pending.length) {
+    check();
     const directory = pending.pop()!;
     let entries;
     try { entries = await readdir(directory, { withFileTypes: true }); } catch { continue; }
@@ -170,6 +175,24 @@ function messageTime(value: Record<string, unknown>, fallback: number): number {
 }
 
 export class AgentHerderRag {
+  private indexAbort?: AbortController;
+  constructor(private readonly indexing: BackgroundIndexingSettings = backgroundIndexingSettings()) {
+    indexing.subscribe(async enabled => {
+      if (!enabled) {
+        this.indexAbort?.abort();
+        if (this.timer) { clearTimeout(this.timer); this.timer = undefined; }
+        await this.run;
+      } else if (this.state?.options.enabled) this.startIndex(false);
+    });
+  }
+  private assertIndexing(): void {
+    this.indexAbort?.signal.throwIfAborted();
+    if (!this.indexing.get().enabled || this.state?.options.enabled === false) throw new Error("background indexing paused");
+  }
+  private async indexRequest(url: string, init: RequestInit): Promise<any> {
+    this.assertIndexing();
+    return requestJson(url, { ...init, signal: this.indexAbort?.signal });
+  }
   private state?: Persisted;
   private loading?: Promise<Persisted>;
   private run?: Promise<void>;
@@ -196,7 +219,8 @@ export class AgentHerderRag {
 
   async getSettings(): Promise<Record<string, unknown>> {
     const state = await this.load();
-    return { enabled: state.options.enabled, harnesses: state.options.harnesses, collection: COLLECTION, dimensions: VECTOR_SIZE, model: MODEL, run: state.run ?? { status: "idle", processed: 0, indexed: 0 } };
+    const backgroundIndexing = this.indexing.get().enabled;
+    return { enabled: state.options.enabled, backgroundIndexing, harnesses: state.options.harnesses, collection: COLLECTION, dimensions: VECTOR_SIZE, model: MODEL, run: !backgroundIndexing ? { ...state.run, status: "paused", processed: state.run?.processed ?? 0, indexed: state.run?.indexed ?? 0 } : state.run ?? { status: "idle", processed: 0, indexed: 0 } };
   }
 
   async setSettings(value: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -210,7 +234,7 @@ export class AgentHerderRag {
         opencode: incoming.opencode === undefined ? state.options.harnesses.opencode : incoming.opencode === true,
       },
     };
-    if (next.enabled) {
+    if (next.enabled && this.indexing.get().enabled) {
       await ensureCollection();
     }
     state.options = next;
@@ -347,11 +371,12 @@ export class AgentHerderRag {
   }
 
   private startIndex(reset: boolean): void {
-    if (this.run) return;
+    if (this.run || !this.indexing.get().enabled) return;
+    this.indexAbort = new AbortController();
     this.run = this.indexAll(reset).finally(() => {
       this.run = undefined;
       void this.load().then((state) => {
-        if (state.options.enabled && state.run?.status === "complete") {
+        if (this.indexing.get().enabled && state.options.enabled && state.run?.status === "complete") {
           this.timer = setTimeout(() => this.startIndex(false), 15 * 60_000);
           this.timer.unref?.();
         }
@@ -360,6 +385,7 @@ export class AgentHerderRag {
   }
 
   async reindex(): Promise<Record<string, unknown>> {
+    if (!this.indexing.get().enabled) throw new Error("background indexing paused; saved history remains searchable");
     const state = await this.load();
     if (!state.options.enabled) throw new Error("enable semantic indexing first");
     if (!this.run) this.startIndex(true);
@@ -392,10 +418,10 @@ export class AgentHerderRag {
     let indexed = 0;
     const batchSize = 16;
     for (let offset = 0; offset < points.length; offset += batchSize) {
-      if (!this.state?.options.enabled) break;
+      this.assertIndexing();
       const batch = points.slice(offset, offset + batchSize);
-      const vectors = await embed(batch.map((point) => point.text));
-      await requestJson(`${QDRANT}/collections/${COLLECTION}/points?wait=true`, {
+      const vectors = await embed(batch.map((point) => point.text), this.indexAbort?.signal);
+      await this.indexRequest(`${QDRANT}/collections/${COLLECTION}/points?wait=true`, {
         method: "PUT", headers: { "content-type": "application/json" },
         body: JSON.stringify({ points: batch.map((point, index) => ({ id: point.id, vector: vectors[index], payload: point.payload })) }),
       });
@@ -406,10 +432,11 @@ export class AgentHerderRag {
   }
 
   private async indexCodex(state: Persisted): Promise<void> {
+    this.assertIndexing();
     const root = join(process.env.CODEX_HOME || homedir() + "/.codex", "sessions");
-    const files = (await Promise.all((await allFiles(root)).map(async (path) => ({ path, mtime: (await stat(path).catch(() => undefined))?.mtimeMs || 0 })))).sort((a, b) => b.mtime - a.mtime || a.path.localeCompare(b.path));
+    const files = (await Promise.all((await allFiles(root, () => this.assertIndexing())).map(async (path) => ({ path, mtime: (await stat(path).catch(() => undefined))?.mtimeMs || 0 })))).sort((a, b) => b.mtime - a.mtime || a.path.localeCompare(b.path));
     for (const file of files) {
-      if (!state.options.enabled) return;
+      this.assertIndexing();
       const path = file.path;
       const info = await stat(path).catch(() => undefined);
       if (!info) continue;
@@ -423,6 +450,7 @@ export class AgentHerderRag {
       const metadataInput = createInterface({ input: metadataStream, crlfDelay: Infinity });
       try {
         for await (const line of metadataInput) {
+          this.assertIndexing();
           let record: any;
           try { record = JSON.parse(line); } catch { continue; }
           if (record.type !== "session_meta") continue;
@@ -434,13 +462,15 @@ export class AgentHerderRag {
       const aliases = [...new Set([fileSessionId, nativeSessionId, legacySessionId, basename(path).replace(/\.jsonl$/, "")].filter((id): id is string => Boolean(id)))];
       // Older versions indexed current Codex rollouts under their full filename.
       // Invalidate their checkpoint and remove both aliases before native-id upsert.
-      await requestJson(`${QDRANT}/collections/${COLLECTION}/points/delete?wait=true`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ filter: { must: [{ key: "harness", match: { value: "codex" } }, { key: "session_id", match: { any: aliases } }] } }) });
-      const input = createInterface({ input: createReadStream(path, { encoding: "utf8" }), crlfDelay: Infinity });
+      await this.indexRequest(`${QDRANT}/collections/${COLLECTION}/points/delete?wait=true`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ filter: { must: [{ key: "harness", match: { value: "codex" } }, { key: "session_id", match: { any: aliases } }] } }) });
+      const stream = createReadStream(path, { encoding: "utf8" });
+      const input = createInterface({ input: stream, crlfDelay: Infinity });
       let sessionId = fileSessionId;
       let sessionDirectory = "";
       let title = sessionId;
       let index = 0;
-      for await (const line of input) {
+      try { for await (const line of input) {
+        this.assertIndexing();
         if (!line.trim()) continue;
         let record: any;
         try { record = JSON.parse(line); } catch { continue; }
@@ -461,20 +491,23 @@ export class AgentHerderRag {
           messages.length = 0;
         }
       }
+      } finally { input.close(); stream.destroy(); }
       if (messages.length) {
         await this.indexMessages("codex", { id: sessionId, title, directory: sessionDirectory, project: sessionDirectory, timestamp: info.mtimeMs }, messages);
       }
+      this.assertIndexing();
       state.checkpoints[checkpointKey] = info.mtimeMs;
       await this.updateRun({ processed: (this.state?.run?.processed ?? 0) + 1 });
     }
   }
 
   private async indexSqlite(harness: "zcode" | "opencode", path: string, state: Persisted): Promise<void> {
+    this.assertIndexing();
     const db = dbOpen(path);
     try {
       const sessions = db.prepare("SELECT id,title,directory,time_created,time_updated FROM session ORDER BY time_updated DESC,id").all() as Array<Record<string, unknown>>;
       for (const row of sessions) {
-        if (!state.options.enabled) return;
+        this.assertIndexing();
         const id = text(row.id);
         const updated = Number(row.time_updated) || Number(row.time_created) || Date.now();
         if (!id) continue;
@@ -495,10 +528,11 @@ export class AgentHerderRag {
               ELSE 0 END
           ORDER BY time_created,id
         `);
-        await requestJson(`${QDRANT}/collections/${COLLECTION}/points/delete?wait=true`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ filter: { must: [{ key: "harness", match: { value: harness } }, { key: "session_id", match: { value: id } }] } }) });
+        await this.indexRequest(`${QDRANT}/collections/${COLLECTION}/points/delete?wait=true`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ filter: { must: [{ key: "harness", match: { value: harness } }, { key: "session_id", match: { value: id } }] } }) });
         const session = { id, title: text(row.title), directory: text(row.directory), project: text(row.directory), timestamp: Number(row.time_created) || updated };
         let messages: Array<{ id: string; role: string; text: string; timestamp: number }> = [];
         let current: { id: string; role: string; text: string[]; timestamp: number } | undefined;
+        let visitedParts = 0;
         const flush = async (): Promise<void> => {
           if (!messages.length) return;
           await this.indexMessages(harness, session, messages);
@@ -511,15 +545,19 @@ export class AgentHerderRag {
           current = undefined;
         };
         for (const record of messageRows) {
+          this.assertIndexing();
           const messageId = text(record.id);
           current = { id: messageId, role: text(record.role), text: [], timestamp: Number(record.time_created) || Number(record.time_updated) || updated };
           for (const part of partRows.iterate(messageId, id) as Iterable<Record<string, unknown>>) {
+            this.assertIndexing();
+            if (++visitedParts % 128 === 0) await yieldEventLoop();
             current.text.push(text(part.part_text));
           }
           finishMessage();
           if (messages.length >= 24) await flush();
         }
         await flush();
+        this.assertIndexing();
         state.checkpoints[`${harness}:${id}`] = updated;
         await this.updateRun({ processed: (this.state?.run?.processed ?? 0) + 1 });
       }
@@ -528,9 +566,11 @@ export class AgentHerderRag {
 
   private async indexAll(reset: boolean): Promise<void> {
     const state = await this.load();
-    if (!state.options.enabled) return;
+    if (!state.options.enabled || !this.indexing.get().enabled) return;
     try {
-      await ensureCollection();
+      this.assertIndexing();
+      await ensureCollection(this.indexAbort?.signal);
+      this.assertIndexing();
       if (reset) state.checkpoints = {};
       state.run = { status: "running", startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), processed: 0, indexed: 0 };
       await this.save();
@@ -543,12 +583,12 @@ export class AgentHerderRag {
       const outcomes = await Promise.allSettled(sources);
       const failure = outcomes.find((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
       if (failure) throw failure.reason;
-      if (!state.options.enabled) throw new Error("indexing paused because opt-in was turned off");
+      this.assertIndexing();
       state.run = { status: "complete", startedAt: state.run?.startedAt || new Date().toISOString(), updatedAt: new Date().toISOString(), processed: state.run?.processed || 0, indexed: state.run?.indexed || 0 };
       await this.save();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (!state.options.enabled) {
+      if (!state.options.enabled || !this.indexing.get().enabled || this.indexAbort?.signal.aborted) {
         state.run = { status: "paused", startedAt: state.run?.startedAt || new Date().toISOString(), updatedAt: new Date().toISOString(), processed: state.run?.processed || 0, indexed: state.run?.indexed || 0 };
         await this.save();
         return;

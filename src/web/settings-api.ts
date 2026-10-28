@@ -19,6 +19,7 @@ import type { FleetDisarmNodeResult, FleetDisarmTransport } from "../automation-
 import type { AutomationDisarmDocument } from "../automation-disarm/state.js";
 
 import { verifyFleetOwnerCookie } from "./fleet-owner-auth.js";
+import { backgroundIndexingSettings, type BackgroundIndexingSettings } from "../indexing-settings.js";
 import {
   SettingsStore,
   type SettingsAuditRecord,
@@ -72,6 +73,7 @@ export interface SettingsLaunchPolicyLayer {
 }
 
 export interface SettingsApiOptions {
+  indexing?: BackgroundIndexingSettings;
   /** The durable settings of the herder product. */
   store: SettingsStore;
   /** The existing launch policy layer: the policy is read here and changed at its own endpoint. */
@@ -626,6 +628,18 @@ const CONNECTION_TOKEN_KEY = "NOTIFY_CENTER_TOKEN";
     if (isChangingMethod(request.method) && !isSameOrigin(request)) {
       respond(response, 403, { ok: false, error: "Изменение доступно из своего кабинета" });
       return true;
+    }
+
+    if (url.pathname === "/api/settings/background-indexing") {
+      const indexing = options.indexing ?? backgroundIndexingSettings();
+      if (request.method === "GET") { respond(response, 200, indexing.get()); return true; }
+      if (request.method === "PUT") {
+        let body: Record<string, unknown>;
+        try { body = await readJson(request); } catch { respond(response, 400, { error: "Нужен JSON с enabled: true или false." }); return true; }
+        if (typeof body.enabled !== "boolean") { respond(response, 400, { error: "enabled должен быть true или false." }); return true; }
+        respond(response, 200, await indexing.set(body.enabled)); return true;
+      }
+      respond(response, 405, { error: "Используйте GET или PUT." }); return true;
     }
 
     if (url.pathname.startsWith("/api/settings/connections")) {

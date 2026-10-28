@@ -10,6 +10,7 @@ const root = mkdtempSync(join(realpathSync("/tmp"), "agent-herder-vitest-"));
 process.on("exit", () => { try { rmSync(root, { recursive: true, force: true }); } catch { /* best effort */ } });
 
 process.env.AGENT_HERDER_DEFERRED_MESSAGES ??= join(root, "deferred-messages.json");
+process.env.AGENT_HERDER_INDEXING_SETTINGS ??= join(root, "indexing-settings.json");
 process.env.AGENT_HERDER_HUMAN_STOP_STORE ??= join(root, "human-stops.json");
 process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR ??= root;
 process.env.AGENT_HERDER_NATIVE_STOCK_CASES_PATH ??= join(root, "native-stock-cases.json");

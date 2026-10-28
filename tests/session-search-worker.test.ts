@@ -11,7 +11,7 @@ import {startSessionSearchBackground} from '../src/session-search-worker.js';
 
 it('serves real HTTP health and indexed search while a native SQLite corpus is ingested in the owner worker',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'herder-worker-')),dist=join(dir,'dist');mkdirSync(dist);writeFileSync(join(dist,'package.json'),' {"type":"module"}');
- for(const name of ['session-search','session-search-indexer','session-search-sources','session-search-worker'])writeFileSync(join(dist,name+'.js'),ts.transpileModule(readFileSync(new URL('../src/'+name+'.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText);
+ for(const name of ['session-search','session-search-indexer','session-search-sources','session-search-worker','indexing-settings'])writeFileSync(join(dist,name+'.js'),ts.transpileModule(readFileSync(new URL('../src/'+name+'.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText);
  const dbpath=join(dir,'native.sqlite'),db=new DatabaseSync(dbpath);db.exec('CREATE TABLE session(id TEXT,title TEXT,directory TEXT,time_updated INTEGER);CREATE TABLE message(id TEXT,session_id TEXT,data TEXT,time_created INTEGER);CREATE TABLE part(id TEXT,session_id TEXT,message_id TEXT,data TEXT,time_created INTEGER);BEGIN');
  db.prepare('INSERT INTO session VALUES(?,?,?,?)').run('native','Huge native fixture','/fixture',1);db.prepare('INSERT INTO message VALUES(?,?,?,?)').run('msg','native','{"role":"user"}',1);
  const insert=db.prepare('INSERT INTO part VALUES(?,?,?,?,?)');for(let n=0;n<10000;n++)insert.run(String(n),'native','msg',JSON.stringify({type:'text',text:'native history '.repeat(20)}),n);db.exec('COMMIT');db.close();
