@@ -33,9 +33,10 @@ import { IntegratorSessionBindingStore } from "./integrator-session-binding.js";
 import { IntegratorFleetRuntime } from "./integrator-fleet-runtime.js";
 import { dispatchProjectLaunch, namedSessionRunner, ProjectLaunchAttemptLog, type ProjectLaunchDispatcher } from "./automation/project-launch-dispatch.js";
 import {IncidentSessionRouter, incidentSourceKey} from './automation/incident-session-router.js';
+import {noticeplaceGroupContinuationPorts} from './automation/noticeplace-group-continuation.js';
 import { createAnthropicCompatibleSessionCompletionJudge, createOpenAICompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type SessionCompletionJudge, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
 import { applyOutboundFamilyToProcess } from "./net/outbound-family.js";
-import { createIncidentUpdateSink, deliverIncidentQuestion, loadIncidentCallback, readIncidentBinding } from "./autopilot/notice-incident.js";
+import { createIncidentUpdateSink, deliverIncidentQuestion, readIncidentBinding } from "./autopilot/notice-incident.js";
 import { createNoticePlacePayload, createNoticePlaceSink, drainPendingNotices, loadReceiptStore, persistReceiptStore, type PendingHumanQuestion } from "./autopilot/index.js";
 import { buildAskHumanRequest } from "./human-request/notice-question.js";
 import { describeAskHumanProducer, loadAskHumanProducer, type AskHumanProducer } from "./human-request/ask-human-producer.js";
@@ -1192,37 +1193,7 @@ async function main() {
     },
     unfinished: incidentUnfinished,
     held: session => humanStopStore.isHeld(session.harness, session.id),
-    boundIncidentOpen: async session => {
-      const override = await autopilotSessionStore.get(session.harness as AutopilotHarness, session.id);
-      if (!override?.noticeIncident) return false;
-      try {
-        await readIncidentBinding({ ...override.noticeIncident, incidentId: override.noticeAttempt?.incidentId ?? override.noticeIncident.incidentId });
-        return true;
-      } catch (error) {
-        if (error instanceof Error && 'kind' in error && error.kind === 'rejected') return false;
-        throw error; // A failed read cannot authorize a replacement executor.
-      }
-    },
-    continuationReady: async session => {
-      const override = await autopilotSessionStore.get(session.harness as AutopilotHarness, session.id);
-      if (!override?.noticeIncident) return false;
-      const binding = { ...override.noticeIncident, incidentId: override.noticeAttempt?.incidentId ?? override.noticeIncident.incidentId };
-      await readIncidentBinding(binding);
-      const callback = await loadIncidentCallback(binding.project);
-      const response = await fetch(`${callback.url}/v1/incidents/${encodeURIComponent(binding.incidentId)}`, {
-        headers: { authorization: `Bearer ${callback.token}`, accept: "application/json" },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!response.ok) throw new Error(`Notice incident ${binding.incidentId} continuation read failed with HTTP ${response.status}`);
-      const document = await response.json() as { lifecycle?: { continuation?: Record<string, unknown> } };
-      const continuation = document.lifecycle?.continuation;
-      return continuation?.session_id === session.id
-        && continuation.harness === session.harness
-        && typeof continuation.attempt_id === "string" && continuation.attempt_id.length > 0
-        && (!override.noticeAttempt || continuation.attempt_id === override.noticeAttempt.attemptId)
-        && typeof continuation.request_id === "string" && continuation.request_id.length > 0
-        && typeof continuation.generation === "number";
-    },
+    ...noticeplaceGroupContinuationPorts(autopilotSessionStore),
     findExisting: async (request, source) => {
       const adapter = adapters.get(request.harness);
       if (!adapter?.getFirstUserMessage) return;

@@ -150,6 +150,21 @@ it('continues a finished attempt in its original session while the incident rema
   expect(f.count()).toBe(1);
 });
 
+it('retains the same native session when its latest episode closed but an authoritative sibling continuation exists', async () => {
+  const f = await fixture();
+  const first = await f.router().run(request('one'), f.launch('one'));
+  const router = new IncidentSessionRouter(f.path, {
+    readSession: async () => f.sessions.get(first.sessionId!)!,
+    unfinished: async () => false,
+    boundIncidentOpen: async () => false,
+    continuationReady: async () => true,
+  });
+  const next = await router.run(request('sibling-degraded'), f.launch('sibling-degraded'));
+  expect(next.sessionId).toBe(first.sessionId);
+  expect(next.created).toBe(false);
+  expect(f.count()).toBe(1);
+});
+
 it('blocks a missing or closed bound session without creating a replacement', async () => {
   const f = await fixture();
   const first = await f.router().run(request('one'), f.launch('one'));

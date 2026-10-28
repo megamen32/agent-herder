@@ -5,7 +5,7 @@ import lockfile from 'proper-lockfile';
 import type {AgentSession} from '../types/common.js';
 import type {NamedSessionResult} from '../named-session.js';
 
-type IncidentFacts = {project: string; sourceId?: string; consumerId?: string; hostId: string; signalType?: string; problemType?: string};
+type IncidentFacts = {id: string; project: string; sourceId?: string; consumerId?: string; hostId: string; signalType?: string; problemType?: string};
 
 const PROBLEM_TYPE_ALIASES: Record<string, string[]> = {
   cpu: ['load', 'loadavg', 'cpu_load', 'cpu'],
@@ -34,10 +34,11 @@ function incidentFacts(message: string): IncidentFacts | undefined {
       const consumerId = typeof facts.consumer_id === 'string' && facts.consumer_id.trim() ? facts.consumer_id.trim() : undefined;
       const signalType = typeof facts.signal_type === 'string' && facts.signal_type.trim() ? facts.signal_type.trim() : undefined;
       const problemType = typeof facts.problem_type === 'string' && facts.problem_type.trim() ? facts.problem_type.trim() : undefined;
-      return {project: facts.project.trim(), sourceId, consumerId, hostId: facts.host_id.trim(), signalType, problemType};
+      return {id: facts.id, project: facts.project.trim(), sourceId, consumerId, hostId: facts.host_id.trim(), signalType, problemType};
     } catch { /* Bounded telemetry, never executable instructions. */ }
   }
 }
+export function incidentRequestId(message: string): string | undefined { return incidentFacts(message)?.id; }
 
 /** Source identity deliberately excludes incident ID, correlation and sample fingerprint. */
 export function incidentSourceKey(message: string): string | undefined {
@@ -67,9 +68,9 @@ export type IncidentSessionRouterPorts = {
   unfinished(session: AgentSession): Promise<boolean>;
   held?(session: AgentSession): Promise<boolean>;
   /** Confirm that the original bound incident is still open before continuation. */
-  boundIncidentOpen?(session: AgentSession): Promise<boolean>;
+  boundIncidentOpen?(session: AgentSession, request?: Request): Promise<boolean>;
   /** Confirm a durable degraded/work-finished receipt for a stopped attempt. */
-  continuationReady?(session: AgentSession): Promise<boolean>;
+  continuationReady?(session: AgentSession, request?: Request): Promise<boolean | 'blocked'>;
   /** Adopt a pre-upgrade executor only after matching its original native facts. */
   findExisting?(request: Request, sourceKey: string): Promise<AgentSession | undefined>;
 };
@@ -135,9 +136,11 @@ export class IncidentSessionRouter {
           error: 'Исходная сессия ремонта архивирована или сменила рабочую директорию; новая сессия не создана.',
         };
         if (!await this.ports.held?.(existing)) {
-          if (this.ports.boundIncidentOpen && !await this.ports.boundIncidentOpen(existing)) existing = undefined;
-          else if (!await this.ports.unfinished(existing)) {
-            if (!this.ports.continuationReady || !await this.ports.continuationReady(existing)) return {
+          const open = !this.ports.boundIncidentOpen || await this.ports.boundIncidentOpen(existing, request);
+          if (!open || !await this.ports.unfinished(existing)) {
+            const continuation = await this.ports.continuationReady?.(existing, request);
+            if (!open && (continuation === false || !this.ports.continuationReady)) existing = undefined; // Proven new episode retains normal new-generation policy.
+            else if (continuation !== true) return {
               ok: false, created: false, name: 'incident-continuation-unconfirmed', cwd: request.cwd, harness: request.harness,
               inputId: request.inputId, delivery: 'not_attempted', nonRetryable: true, sessionId: existing.id,
               error: 'Исходная сессия завершила попытку, но актуальная квитанция продолжения не подтверждена; новая сессия не создана.',
