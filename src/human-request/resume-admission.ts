@@ -10,6 +10,8 @@ export interface HumanRequestResumeDependencies {
   admitResume(requestId: string, input?: ResumeClaimInput): Promise<ResumeAdmissionReceipt>;
   completeResume(requestId: string, input: ResumeCompletionInput): Promise<HumanRequestRecord>;
   failResume(requestId: string, input: ResumeCompletionInput): Promise<HumanRequestRecord>;
+  /** Cancels the still-waiting resume_after wake bound to this request. */
+  invalidateResumeWaits?: (requestId: string, reason: string) => Promise<number>;
 }
 
 export interface HumanRequestResumeInput {
@@ -73,6 +75,13 @@ export async function resumeHumanRequestOnce(input: HumanRequestResumeInput): Pr
     // exact-answer callback; this call itself performs no second transport.
     const recovered = await readAdmittedReceipt(input, record, admission.idempotencyKey, true);
     return recovered ?? { status: "in_flight", record, idempotencyKey: admission.idempotencyKey, duplicate: true };
+  }
+
+  // The admitted answer is canonical and the wait bound to this request must
+  // not fire afterwards: cancel it before any transport work so a question
+  // timeout can never race the answer.
+  if (record.resumeWaitId) {
+    await input.dependencies.invalidateResumeWaits?.(requestId, `request ${requestId} answered`);
   }
 
   const target = humanRequestResumeTarget(record);

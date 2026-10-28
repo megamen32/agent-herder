@@ -18,6 +18,10 @@ export interface ResumeAfterRequest {
   requestId?: string;
   /** One-shot scheduling trigger; mutually exclusive with dependency joins. */
   trigger?: ResumeAfterTrigger;
+  /** HumanRequest this wake continues; an admitted answer invalidates the wake. */
+  humanRequestId?: string;
+  /** Native-bound question deadline; the durable registry arbitrates the close. */
+  expiresAt?: string;
 }
 export interface ResumeAfterWait {
   id: string;
@@ -25,6 +29,8 @@ export interface ResumeAfterWait {
   dependencies: SessionRef[];
   trigger?: ResumeAfterTrigger;
   scheduledAt?: string;
+  humanRequestId?: string;
+  expiresAt?: string;
   message: string;
   createdAt: string;
   state: "waiting" | "dispatching" | "resumed" | "cancelled" | "delivery_unknown" | "delivery_failed" | "delivery_blocked";
@@ -49,6 +55,8 @@ export interface ResumeAfterOptions {
   validateRef?: (ref: SessionRef) => Promise<void>;
   /** Extra dependency-only checks, e.g. a harness without a native event stream can never prove completion. */
   validateDependency?: (ref: SessionRef) => Promise<void>;
+  /** Asks the durable HumanRequest registry whether an expired question may close. */
+  onHumanRequestTimeout?: (wait: ResumeAfterWait) => Promise<"closed" | "already_answered">;
   now?: () => number;
 }
 const key = (ref: SessionRef): string => JSON.stringify([ref.harness, ref.sessionId]);
@@ -119,11 +127,19 @@ export class ResumeAfterService {
       if(!message.trim() || message.length>16000) throw new Error("A nonempty continuation up to 16000 characters is required");
       if(input.trigger && (!input.requestId?.trim() || input.requestId.length>256))throw new Error("A scheduled resume requires a stable requestId up to 256 characters");
       if(input.trigger && !input.message?.trim())throw new Error("A scheduled resume requires an explicit message");
-      const fingerprint=JSON.stringify({owner:input.owner,dependencies,message,...(input.trigger?{trigger:input.trigger}:{})});
+      if(input.humanRequestId!==undefined && (typeof input.humanRequestId!=="string" || !input.humanRequestId.trim() || input.humanRequestId.length>128))throw new Error("humanRequestId must be a non-empty identifier up to 128 characters");
+      if(input.expiresAt!==undefined && !validRfc3339Instant(input.expiresAt))throw new Error("expiresAt must be a timezone-qualified RFC3339 instant");
+      const fingerprint=JSON.stringify({owner:input.owner,dependencies,message,
+        ...(input.trigger?{trigger:input.trigger}:{}),
+        ...(input.humanRequestId?{humanRequestId:input.humanRequestId}:{}),
+        ...(input.expiresAt?{expiresAt:input.expiresAt}:{})});
       const id="wait_"+createHash("sha256").update(JSON.stringify([key(input.owner),input.requestId ?? fingerprint])).digest("hex").slice(0,32);
       const existing=await this.get(id);
       if(existing){
-        const existingFingerprint=JSON.stringify({owner:existing.owner,dependencies:existing.dependencies,message:existing.message,...(existing.trigger?{trigger:existing.trigger}:{})});
+        const existingFingerprint=JSON.stringify({owner:existing.owner,dependencies:existing.dependencies,message:existing.message,
+          ...(existing.trigger?{trigger:existing.trigger}:{}),
+          ...(existing.humanRequestId?{humanRequestId:existing.humanRequestId}:{}),
+          ...(existing.expiresAt?{expiresAt:existing.expiresAt}:{})});
         if(existingFingerprint!==fingerprint) throw new Error("Retry id belongs to a different wait");
         return existing;
       }
@@ -156,7 +172,11 @@ export class ResumeAfterService {
       // dependency happens to be inspected first. Validate every dependency
       // before HumanStop handling or a terminal runtime snapshot can short-circuit.
       for(const ref of dependencies) await this.options.validateDependency?.(ref);
-      const wait:ResumeAfterWait={id,owner:{...input.owner},dependencies,message,...(input.trigger?{trigger:{...input.trigger},scheduledAt}:{}),createdAt:new Date(this.options.now?.()??Date.now()).toISOString(),state:"waiting",completed:{}};
+      const wait:ResumeAfterWait={id,owner:{...input.owner},dependencies,message,
+        ...(input.trigger?{trigger:{...input.trigger},scheduledAt}:{}),
+        ...(input.humanRequestId?{humanRequestId:input.humanRequestId}:{}),
+        ...(input.expiresAt?{expiresAt:input.expiresAt}:{}),
+        createdAt:new Date(this.options.now?.()??Date.now()).toISOString(),state:"waiting",completed:{}};
       if(await this.options.isHeld(wait.owner)){
         wait.state="cancelled";wait.reason="requester was stopped";
       } else for(const ref of dependencies) {
@@ -181,6 +201,24 @@ export class ResumeAfterService {
       if(key(wait.owner)!==key(owner))throw new Error("Only the waiting session may cancel this wait");
       if(wait.state==="resumed")return wait;
       wait.state="cancelled";wait.reason="cancelled by requester";await this.save(wait);return wait;
+    });
+  }
+  /**
+   * Cancel the still-waiting wake bound to an answered HumanRequest.
+   *
+   * Only `waiting` wakes are invalidated: a dispatch already in flight or an
+   * unknown delivery keeps its own durable state machine and is never replayed
+   * or rewritten here. Returns the number of cancelled waits.
+   */
+  invalidateByHumanRequest(requestId:string,reason:string):Promise<number>{
+    return this.serialized(async()=>{
+      let invalidated=0;
+      for(const wait of await this.list()){
+        if(wait.humanRequestId!==requestId || wait.state!=="waiting")continue;
+        wait.state="cancelled";wait.reason=`answered by human: ${reason}`;await this.save(wait);
+        invalidated+=1;
+      }
+      return invalidated;
     });
   }
   observe(event:{harness:string;sessionId?:string;kind:string;at?:string;data?:Record<string,unknown>}):Promise<void>{
@@ -262,6 +300,19 @@ export class ResumeAfterService {
       // Explicit maintenance holds never cancel or rewrite a user wait. HumanStop
       // remains authoritative above, and receipt reconciliation below is never held.
       if(wait.state==="waiting" && this.isMaintenanceHeld(wait))continue;
+      if(wait.state==="waiting" && wait.expiresAt && Date.parse(wait.expiresAt)<=(this.options.now?.()??Date.now())){
+        if(!wait.humanRequestId){
+          wait.state="cancelled";wait.reason="question expired";await this.save(wait);continue;
+        }
+        let verdict:"closed"|"already_answered"="closed";
+        try { verdict=await this.options.onHumanRequestTimeout?.(wait)??"closed"; }
+        catch { continue; /* The arbiter is unreachable: never close on a guess, retry next sweep. */ }
+        if(verdict==="closed"){
+          wait.state="cancelled";wait.reason="question expired";await this.save(wait);continue;
+        }
+        // The durable registry says the answer won: fall through to the normal
+        // delivery rules instead of closing the question.
+      }
       if(wait.state==="dispatching" || wait.state==="delivery_unknown"){
         // A restart or a dropped receipt is not permission to replay an action.
         const receipt=await this.options.queryReceipt?.(wait);

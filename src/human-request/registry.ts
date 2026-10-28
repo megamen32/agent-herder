@@ -130,6 +130,10 @@ export interface HumanRequestRecord {
   receipt?: string;
   /** False fences ambiguous/admitted failures even if their reason looks retryable. */
   resumeRetryable?: boolean;
+  /** Durable resume_after wait that continues this request; an admitted answer invalidates it. */
+  resumeWaitId?: string;
+  /** Atomic answer-or-timeout winner; written once under the durable file lock. */
+  resumeWaitWinner?: "answer" | "timeout";
   /** Write-ahead Notice card delivery metadata only; never stores the card text. */
   noticeDelivery?: NoticeDeliveryClaim;
   createdAt: string;
@@ -220,6 +224,11 @@ function validateRecord(record: HumanRequestRecord): HumanRequestRecord {
   opaqueRef(record.idempotencyKey, "idempotencyKey");
   opaqueRef(record.receipt, "receipt");
   if (record.resumeRetryable !== undefined && typeof record.resumeRetryable !== "boolean") throw new Error("invalid resume retry evidence");
+  if (record.resumeWaitId !== undefined) opaqueRef(record.resumeWaitId, "resumeWaitId");
+  if (record.resumeWaitWinner !== undefined) {
+    if (record.resumeWaitWinner !== "answer" && record.resumeWaitWinner !== "timeout") throw new Error("invalid resume wait winner");
+    if (record.resumeWaitId === undefined) throw new Error("resume wait winner requires a bound resume wait");
+  }
   if (record.noticeDelivery) {
     const delivery = record.noticeDelivery;
     if ((delivery.state !== "claimed" && delivery.state !== "accepted" && delivery.state !== "unknown")
@@ -463,6 +472,9 @@ export class HumanRequestRegistry {
       // or lease takeover keeps it, so an explicit stop that happened after the
       // answer still fences this resume.
       record.admittedAt = now.toISOString();
+      // The admitted answer is the atomic winner over a concurrent question
+      // timeout: the wait bound to this request is invalidated by the caller.
+      if (record.resumeWaitId) record.resumeWaitWinner = "answer";
       if (resultRef) record.resultRef = resultRef;
       if (resolutionRef) record.resolutionRef = resolutionRef;
       await this.write(file);
@@ -537,6 +549,65 @@ export class HumanRequestRegistry {
       await this.write(file);
       this.publishRequest(record.requestId, "updated");
       return cloneRecord(record);
+    });
+  }
+
+  /**
+   * Bind this request to the durable resume_after wait that continues it.
+   * One request owns one wait; a repeated identical bind is idempotent.
+   */
+  async bindResumeWait(requestId: string, waitId: string): Promise<HumanRequestRecord> {
+    const checkedWaitId = opaqueRef(waitId, "resumeWaitId");
+    return this.mutate(async () => {
+      const file = await this.read();
+      const record = file.requests.find((item) => item.requestId === requestId);
+      if (!record) throw new Error(`Human request '${requestId}' not found`);
+      if (record.resumeWaitId && record.resumeWaitId !== checkedWaitId) {
+        throw new Error(`Human request '${requestId}' is already bound to resume wait '${record.resumeWaitId}'`);
+      }
+      if (!record.resumeWaitId) {
+        record.resumeWaitId = checkedWaitId;
+        await this.write(file);
+        this.publishRequest(record.requestId, "updated");
+      }
+      return cloneRecord(record);
+    });
+  }
+
+  /**
+   * Atomically settle the single winner between the human answer and the
+   * question timeout for one bound resume wait.
+   *
+   * The timeout wins only while the request is still pending; a request that
+   * already admitted its answer (or reached any other terminal state) is
+   * reported as `answer` and left untouched. Replays of a settled timeout are
+   * idempotent. Both this method and the answer admission run under the same
+   * durable file lock, so exactly one of them can be first.
+   */
+  async timeoutResumeWait(requestId: string, waitId: string, reason: string): Promise<{ settled: "timeout" | "answer"; duplicate: boolean; record: HumanRequestRecord }> {
+    const checkedWaitId = opaqueRef(waitId, "resumeWaitId");
+    const checkedReason = opaqueRef(reason, "reason");
+    return this.mutate(async () => {
+      const file = await this.read();
+      const record = file.requests.find((item) => item.requestId === requestId);
+      if (!record) throw new Error(`Human request '${requestId}' not found`);
+      if (record.resumeWaitId !== checkedWaitId) {
+        throw new Error(`Human request '${requestId}' is not bound to resume wait '${waitId}'`);
+      }
+      if (record.resumeWaitWinner === "timeout") {
+        // This wait already closed the question; a replay stays idempotent.
+        return { settled: "timeout" as const, duplicate: true, record: cloneRecord(record) };
+      }
+      if (record.status !== "pending" || record.resumeWaitWinner === "answer") {
+        return { settled: "answer" as const, duplicate: false, record: cloneRecord(record) };
+      }
+      record.resumeWaitWinner = "timeout";
+      record.status = "cancelled";
+      record.resolvedAt = new Date().toISOString();
+      record.receipt = `timeout:${checkedReason}`;
+      await this.write(file);
+      this.publishRequest(record.requestId, "updated");
+      return { settled: "timeout" as const, duplicate: false, record: cloneRecord(record) };
     });
   }
 

@@ -16,11 +16,13 @@ export function parseResumeAfterStartupHold(value:string|undefined=process.env.A
 /** Reuse the existing native adapters and admission. No CLI, model or daemon. */
 export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,supervisor:Supervisor,
   held:(harness:string,id:string)=>Promise<boolean>,directory=process.env.AGENT_HERDER_RESUME_AFTER_DIR ?? join(homedir(),".local/state/agent-herder/resume-after"),
-  holdExistingWaitingAtStartup=parseResumeAfterStartupHold()) {
+  holdExistingWaitingAtStartup=parseResumeAfterStartupHold(),
+  onHumanRequestTimeout?:(wait:ResumeAfterWait)=>Promise<"closed"|"already_answered">) {
   const inputId=(wait:ResumeAfterWait)=>"resume-after:"+wait.id;
   const service=new ResumeAfterService({
     directory,
     holdExistingWaitingAtStartup,
+    onHumanRequestTimeout,
     validateRef:async(ref:SessionRef)=>{
       if(!adapters.has(ref.harness) || !await adapters.get(ref.harness)!.getSession(ref.sessionId))
         throw new Error(`Exact session unavailable: ${ref.harness}:${ref.sessionId}`);

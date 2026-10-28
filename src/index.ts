@@ -1076,7 +1076,12 @@ async function main() {
     autoCompact: autoCompactService, admissionGate: recoveryAdmissionGate,
     permissionNoticeObserver,
   });
-  const resumeAfterRuntime = createResumeAfterRuntime(adapters, processSupervisor, (harness,id) => humanStopStore.isHeld(harness,id));
+  const resumeAfterRuntime = createResumeAfterRuntime(adapters, processSupervisor, (harness,id) => humanStopStore.isHeld(harness,id),
+    undefined, undefined, async wait => {
+      if (!wait.humanRequestId) return "closed";
+      const verdict = await humanRequests.timeoutResumeWait(wait.humanRequestId, wait.id, "question expired");
+      return verdict.settled === "timeout" ? "closed" : "already_answered";
+    });
   const cadence = createCadenceRuntime(adapters, processSupervisor, join(autopilotStateDir, "cadence.json"));
   const stopCadence = cadence.start(error => console.error("[agent-herder] cadence:", error));
   process.once("exit", stopCadence);
