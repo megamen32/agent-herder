@@ -38,10 +38,20 @@ function toolLabel(part: SessionMessagePart): { label: string; commands: boolean
 
 type ToolEntry = { part: SessionMessagePart; result?: SessionMessagePart };
 
+function ActivityIcon({ label }: { label: string }) {
+  const kind = label.includes("команд") || label === "Выполнен сценарий" ? "terminal"
+    : label === "Просмотрено изображение" ? "image" : "integration";
+  return <svg className="activity-semantic-icon" data-activity-icon={kind} aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+    {kind === "terminal" ? <><rect x="2" y="3" width="16" height="14" rx="2" /><path d="m5 7 3 3-3 3m5 0h4" /></>
+      : kind === "image" ? <><rect x="2" y="3" width="16" height="14" rx="2" /><circle cx="6.5" cy="7.5" r="1.5" /><path d="m3 15 4-4 3 3 3-5 4 6" /></>
+        : <><path d="M7 2v4m6-4v4M5 6h10v3a5 5 0 0 1-10 0V6Zm5 8v4" /></>}
+  </svg>;
+}
+
 function ToolDetails({ entries, label }: { entries: ToolEntry[]; label: string }) {
   const failed = entries.some(({ part, result }) => part.error || result?.error);
   return <details className={`tool-actions tool-action-row${failed ? " tool-actions-failed" : ""}`}>
-    <summary><span className="tool-action-name">{label}</span></summary>
+    <summary><ActivityIcon label={label} /><span className="tool-action-name">{label}</span></summary>
     <div className="tool-actions-body">
       {entries.map(({ part, result }, index) => <div className="tool-actions-item" key={index}>
         <b>{part.name || "Инструмент"} · {part.error || result?.error ? "Ошибка" : part.name === "subagent" ? "Взаимодействие" : result || part.type === "tool_result" ? "Готово" : "Вызов"}</b>
@@ -78,6 +88,7 @@ export function MessageActivityRows({ parts, showReasoning, showTools }: {
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index]!;
     if (part.type === "thinking") {
+      if (!part.text?.trim() && index !== parts.length - 1) continue;
       flushCommands();
       if (!showReasoning) continue;
       rows.push(<details className="oc-disclosure activity-thinking" key={`thinking:${index}`}>

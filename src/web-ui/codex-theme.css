@@ -225,6 +225,10 @@ body { font-size: 15px; -webkit-font-smoothing: antialiased; }
 .message-activity-rows > details > summary::-webkit-details-marker { display: none; }
 .message-activity-rows > details > summary::before { content: "›"; display: inline-block; flex: 0 0 12px; width: 12px; text-align: center; transition: transform .12s; }
 .message-activity-rows > details[open] > summary::before { transform: rotate(90deg); }
+.message-activity-rows > .tool-action-row > summary::before { content: none; }
+.message-activity-rows > .tool-action-row > summary::after { content: "›"; margin-left: 2px; opacity: .65; transition: transform .12s; }
+.message-activity-rows > .tool-action-row[open] > summary::after { transform: rotate(90deg); }
+.message-activity-rows .activity-semantic-icon { width: 16px; height: 16px; flex: 0 0 16px; }
 .message-activity-rows > details > summary:hover { color: var(--text-2); }
 .message-activity-rows .tool-actions-body { margin: 4px 0 8px 18px; gap: 8px; }
 .message-activity-rows .activity-thinking > pre,

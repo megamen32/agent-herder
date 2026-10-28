@@ -78,6 +78,8 @@ describe("message activity rows", () => {
     expect(html).toContain("Использовано Agent Herder");
     expect(html).toContain("Использовано Context Mode");
     expect(html).toContain("Субагент reviewer завершил работу");
+    expect(html).toContain('data-activity-icon="image"');
+    expect(html).toContain('data-activity-icon="integration"');
     expect(html.match(/<summary[^>]*>(.*?)<\/summary>/g)?.join(" ")).not.toMatch(/mesh_discover|ctx_execute|await|⌘/);
   });
 
@@ -96,5 +98,21 @@ describe("message activity rows", () => {
     ] }));
     expect(html).toContain("Думаю");
     expect(html).toContain("Codex не сохранил публичную сводку этого события.");
+  });
+
+  it("hides historical empty reasoning while preserving public summaries and the trailing event", () => {
+    const html = renderToStaticMarkup(React.createElement(MessageActivityRows, { showReasoning: true, showTools: true, parts: [
+      { type: "thinking", text: "  " },
+      { type: "tool_call", name: "command", input: { command: "pwd" } },
+      { type: "thinking", text: "" },
+      { type: "tool_call", name: "command", input: { command: "ls" } },
+      { type: "thinking", text: "Public reasoning summary" },
+      { type: "thinking", text: "" },
+    ] }));
+    expect(html.match(/activity-thinking/g)).toHaveLength(2);
+    expect(html.match(/tool-action-row/g)).toHaveLength(1);
+    expect(html).toContain("Public reasoning summary");
+    expect(html).toContain('data-activity-icon="terminal"');
+    expect(html.match(/<summary>Думаю<\/summary>/g)).toHaveLength(2);
   });
 });
