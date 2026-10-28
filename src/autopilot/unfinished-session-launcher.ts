@@ -730,6 +730,19 @@ function admittedNonRetryableFailure(result: SendMessageResult): string | undefi
 
 export type UnfinishedSessionState = "active" | "recovering" | "exhausted";
 
+type CodexRebootRecoveryMarker = {
+  turnId: string;
+  userMessageId: string;
+  dispatchInputId: string;
+  dispatchGenerationId: string;
+  phase: "ready" | "dispatching";
+  priorAcceptedAt: string;
+  priorAcceptedFingerprint?: string;
+  priorAdmissionPhase: "in_progress";
+  priorLastNativeProgressAt?: string;
+  priorGenerationId: string;
+};
+
 export type SessionAutostartOverride = {
   harness: HarnessType;
   sessionId: string;
@@ -1093,6 +1106,10 @@ export interface UnfinishedSessionRecord {
   recoveryObservedAt?: string;
   recoveryTurnId?: string;
   recoveryInputId?: string;
+  /** One new, idempotent continuation authorized by a later process generation's exact interrupted turn. */
+  rebootRecovery?: CodexRebootRecoveryMarker;
+  /** Prior reboot-continuation admissions retained when a later exact turn is interrupted. */
+  rebootRecoveryHistory?: CodexRebootRecoveryMarker[];
   quotaRecovery?: QuotaRecoveryRecord;
   /** Immutable snapshots of accepted/unknown attempts superseded by a new operator intent. */
   quotaRecoveryHistory?: QuotaRecoveryHistoryEntry[];
@@ -1372,6 +1389,8 @@ export class UnfinishedSessionStore {
           ...(existing.recoveryInputId ? { recoveryInputId: existing.recoveryInputId } : {}),
         } : {}),
         ...(existing?.quotaRecovery ? { quotaRecovery: cloneQuotaRecovery(existing.quotaRecovery) } : {}),
+        ...(existing?.rebootRecovery ? { rebootRecovery: { ...existing.rebootRecovery } } : {}),
+        ...(existing?.rebootRecoveryHistory ? { rebootRecoveryHistory: existing.rebootRecoveryHistory.map((item) => ({ ...item })) } : {}),
         ...(existing?.activeNativeOwner ? {activeNativeOwner:existing.activeNativeOwner} : {}),
         ...(existing?.activeTurnStartedAt ? {
           activeTurnStartedAt: existing.activeTurnStartedAt,
@@ -1931,6 +1950,128 @@ export class UnfinishedSessionStore {
       sortRecords(file.sessions);
       return { ...record };
     });
+  }
+
+  async markCodexRebootRecoveryEligible(
+    session: AgentSession,
+    evidence: { turnId: string; userMessageId: string; startedAt: string },
+    processGenerationId: string,
+    now = new Date(),
+  ): Promise<UnfinishedSessionRecord | null> {
+    if (session.harness !== "codex" || isSubagentSession(session)) return null;
+    const startedAt = nativeTimestamp(evidence.startedAt);
+    const turnId = nonEmptyText(evidence.turnId);
+    const userMessageId = nonEmptyText(evidence.userMessageId);
+    if (!startedAt || !turnId || !userMessageId) return null;
+    const workspaceIdentity = sessionWorkspaceIdentity(session);
+    const dispatchInputId = `herder-reboot-${createHash("sha256")
+      .update(JSON.stringify([session.id, turnId, userMessageId]))
+      .digest("hex").slice(0, 48)}`;
+    return this.mutate((file) => {
+      const record = findUnfinishedRecord(file.sessions, "codex", session.id, workspaceIdentity);
+      if (!record || record.threadSource === "subagent") return null;
+      const exactRecoveryTurn = record.recoveryTurnId === turnId;
+      const exactActiveTurn = record.activeTurnId === turnId;
+      if (!exactRecoveryTurn && !exactActiveTurn) return null;
+      let priorRebootRecovery: CodexRebootRecoveryMarker | undefined;
+      if (record.rebootRecovery) {
+        if (record.rebootRecovery.turnId === turnId && record.rebootRecovery.userMessageId === userMessageId) {
+          // A ready marker means dispatch never crossed its durable CAS. It is
+          // safe to bind that same idempotent input to the current generation.
+          // A dispatching marker is deliberately left pinned to prevent replay.
+          if (record.rebootRecovery.phase === "ready"
+            && record.rebootRecovery.dispatchGenerationId !== processGenerationId) {
+            record.rebootRecovery = { ...record.rebootRecovery, dispatchGenerationId: processGenerationId };
+            record.recoveryObservedAt = now.toISOString();
+            record.updatedAt = now.toISOString();
+          }
+          return { ...record };
+        }
+        const priorMarker = record.rebootRecovery;
+        const acceptedAt = record.acceptedAt ? Date.parse(record.acceptedAt) : Number.NaN;
+        const nativeStartedAt = Date.parse(startedAt);
+        // A previous reboot continuation may itself have become the exact
+        // interrupted native turn. Advance only when its new acceptance is
+        // linked to a distinct latest turn in the new process generation.
+        if (priorMarker.phase !== "dispatching" || !record.acceptedAt
+          || record.acceptedAt === priorMarker.priorAcceptedAt
+          || !Number.isFinite(acceptedAt) || Math.abs(nativeStartedAt - acceptedAt) > 10_000
+          || record.admissionPhase !== "in_progress" || record.deliveryPending || record.nonRetryableAdmission
+          || record.terminalAssistantObserved || record.generationId === processGenerationId
+          || (!exactRecoveryTurn && !exactActiveTurn)
+          || dispatchInputId === priorMarker.dispatchInputId) return null;
+        priorRebootRecovery = priorMarker;
+      }
+      const acceptedAt = record.acceptedAt ? Date.parse(record.acceptedAt) : Number.NaN;
+      const nativeStartedAt = Date.parse(startedAt);
+      // A stale/unknown admission is not evidence that this exact interrupted
+      // native turn belongs to the accepted prompt. Require the previous
+      // controller's terminal identity and near-simultaneous native start.
+      if (!record.acceptedAt || !Number.isFinite(acceptedAt) || Math.abs(nativeStartedAt - acceptedAt) > 10_000
+        || record.admissionPhase !== "in_progress" || record.deliveryPending || record.nonRetryableAdmission
+        || record.terminalAssistantObserved || record.generationId === processGenerationId
+        || dispatchInputId === record.recoveryInputId) return null;
+      if (priorRebootRecovery && dispatchInputId === priorRebootRecovery.dispatchInputId) return null;
+      if (priorRebootRecovery) {
+        record.rebootRecoveryHistory = [
+          ...(record.rebootRecoveryHistory ?? []),
+          { ...priorRebootRecovery },
+        ].slice(-8);
+      }
+      if (exactActiveTurn) {
+        // A hard host loss may happen before the old process persists its
+        // disconnect event. Fresh exact native interrupted evidence itself
+        // establishes this recovery boundary for the still-active record.
+        record.recoveryCause = "process.disconnected";
+        record.recoveryTurnId = turnId;
+        if (record.activeInputId) record.recoveryInputId = record.activeInputId;
+        delete record.activeTurnStartedAt;
+        delete record.activeTurnId;
+        delete record.activeInputId;
+      }
+      record.rebootRecovery = {
+        turnId,
+        userMessageId,
+        dispatchInputId,
+        dispatchGenerationId: processGenerationId,
+        phase: "ready",
+        priorAcceptedAt: record.acceptedAt,
+        ...(record.acceptedFingerprint ? { priorAcceptedFingerprint: record.acceptedFingerprint } : {}),
+        priorAdmissionPhase: "in_progress",
+        ...(record.lastNativeProgressAt ? { priorLastNativeProgressAt: record.lastNativeProgressAt } : {}),
+        priorGenerationId: record.generationId,
+      };
+      record.recoveryObservedAt = now.toISOString();
+      record.updatedAt = now.toISOString();
+      record.attempts = 0;
+      record.state = "active";
+      return { ...record };
+    }, (record) => record !== null);
+  }
+
+  async markCodexRebootRecoveryDispatching(attempt: UnfinishedSessionRecord, processGenerationId: string): Promise<boolean> {
+    return this.mutate((file) => {
+      const record = findUnfinishedRecord(file.sessions, "codex", attempt.sessionId, attempt.workspaceIdentity || attempt.cwd);
+      const marker = record?.rebootRecovery;
+      if (!record || !marker || marker.phase !== "ready" || marker.dispatchGenerationId !== processGenerationId
+        || marker.turnId !== attempt.rebootRecovery?.turnId
+        || marker.userMessageId !== attempt.rebootRecovery?.userMessageId
+        || marker.dispatchInputId !== attempt.rebootRecovery?.dispatchInputId
+        || marker.priorAcceptedAt !== attempt.rebootRecovery?.priorAcceptedAt) return false;
+      record.rebootRecovery = { ...marker, phase: "dispatching" };
+      return true;
+    }, (changed) => changed);
+  }
+
+  async resetCodexRebootRecoveryNotSubmitted(attempt: UnfinishedSessionRecord, processGenerationId: string): Promise<boolean> {
+    return this.mutate((file) => {
+      const record = findUnfinishedRecord(file.sessions, "codex", attempt.sessionId, attempt.workspaceIdentity || attempt.cwd);
+      const marker = record?.rebootRecovery;
+      if (!record || !marker || marker.phase !== "dispatching" || marker.dispatchGenerationId !== processGenerationId
+        || marker.dispatchInputId !== attempt.rebootRecovery?.dispatchInputId) return false;
+      record.rebootRecovery = { ...marker, phase: "ready" };
+      return true;
+    }, (changed) => changed);
   }
 
   async markNativeTurnStarted(
@@ -3384,8 +3525,16 @@ export class UnfinishedSessionLauncher {
         // A prompt already crossed the native admission boundary. Idle/error
         // supervisor snapshots alone are not permission to submit it again;
         // watchdog progress/terminal evidence must first mark the record urgent.
-        await this.pinActiveSession(adapter, record.sessionId, runtimeSettings);
-        continue;
+        // A separate CAS-protected continuation is allowed only when a later
+        // process generation proved this exact accepted turn interrupted.
+        const rebootRecoveryReady = record.harness === "codex"
+          && record.rebootRecovery?.phase === "ready"
+          && record.rebootRecovery.dispatchGenerationId === this.generationId
+          && record.recoveryTurnId === record.rebootRecovery.turnId;
+        if (!rebootRecoveryReady) {
+          await this.pinActiveSession(adapter, record.sessionId, runtimeSettings);
+          continue;
+        }
       }
       if (admissionPhase === "terminal_observed" && (record.terminalRetryCount ?? 0) >= 1) {
         // A terminal event authorizes at most one bounded re-admission if the
@@ -3958,7 +4107,7 @@ export class UnfinishedSessionLauncher {
     adapter: HarnessAdapter,
     session: AgentSession,
     expected?: { turnId: string; userMessageId: string },
-  ): Promise<{ turnId: string; userMessageId: string; observedAt: string } | null> {
+  ): Promise<{ turnId: string; userMessageId: string; startedAt: string; observedAt: string } | null> {
     if (session.harness !== "codex" || isSubagentSession(session)
       || session.status === "running" || session.status === "needs_input" || session.needsPermission
       || nonEmptyText(session.meta?.activeTurnId) || hasPendingNativePermission(session)) return null;
@@ -3983,7 +4132,8 @@ export class UnfinishedSessionLauncher {
       || (expected && (turnId !== expected.turnId || userMessageId !== expected.userMessageId))) return null;
     const projected = nativeLastTurn(session);
     if (projected && (projected.turnId !== turnId || projected.status?.toLowerCase() !== "interrupted")) return null;
-    return { turnId, userMessageId, observedAt };
+    if (!startedAt) return null;
+    return { turnId, userMessageId, startedAt, observedAt };
   }
 
   private async ingestColdCodexInterruptedTurns(runtimeSettings: SessionAutostartFile, lifecycleEpoch: number): Promise<void> {
@@ -4014,6 +4164,10 @@ export class UnfinishedSessionLauncher {
           : Boolean(session.meta?.automationStop))) continue;
       const evidence = await this.readEligibleColdCodexInterruptedTurn(adapter, session);
       if (!evidence || !this.lifecycleActive(lifecycleEpoch)) continue;
+      const rebootRecovery = await this.options.store.markCodexRebootRecoveryEligible(session, {
+        turnId: evidence.turnId, userMessageId: evidence.userMessageId, startedAt: evidence.startedAt,
+      }, this.generationId);
+      if (rebootRecovery) continue;
       await this.options.store.ingestColdFailure(session, {
         turnId: evidence.turnId,
         userMessageId: evidence.userMessageId,
@@ -4052,8 +4206,12 @@ export class UnfinishedSessionLauncher {
         || last.assistantSucceeded !== false || last.progressedAfterFailure !== false || last.cancelledByUser !== false
         || coldFailureBlockReason(last)) return false;
     }
-    if (record.harness === "codex" && record.generationId === "cold-native-failure") {
-      if (record.recoveryCause === "process.disconnected") {
+    if (record.harness === "codex" && (record.rebootRecovery || record.generationId === "cold-native-failure")) {
+      if (record.rebootRecovery) {
+        if (!await this.readEligibleColdCodexInterruptedTurn(adapter, current, {
+          turnId: record.rebootRecovery.turnId, userMessageId: record.rebootRecovery.userMessageId,
+        })) return false;
+      } else if (record.recoveryCause === "process.disconnected") {
         if (!record.recoveryTurnId || !record.recoveryInputId
           || !await this.readEligibleColdCodexInterruptedTurn(adapter, current, {
             turnId: record.recoveryTurnId, userMessageId: record.recoveryInputId,
@@ -4249,12 +4407,26 @@ export class UnfinishedSessionLauncher {
       if(lifecycle.workspaceCrashRecoveryAllowed?.(record.sessionId,record.recoveryTurnId,record.recoveryInputId)===false){
         await this.options.store.cancelAttempt(attempt);return;
       }
+      let rebootDispatchInputId: string | undefined;
+      if (record.rebootRecovery) {
+        if (record.rebootRecovery.phase !== "ready"
+          || record.rebootRecovery.dispatchGenerationId !== this.generationId
+          || !await this.options.store.markCodexRebootRecoveryDispatching(attempt, this.generationId)) {
+          await this.options.store.cancelAttempt(attempt);
+          return;
+        }
+        rebootDispatchInputId = record.rebootRecovery.dispatchInputId;
+      }
       const sent = normalizeSendAdmission(await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true,
+        ...(rebootDispatchInputId ? { inputId: rebootDispatchInputId } : {}),
         ...(workspaceCrash?{workspaceCrashBoundary:workspaceCrash}:{}),
         ...(boundary?.turnId && boundary.userMessageId && boundary.completedAt ? { recoveryBoundary: {
           turnId: boundary.turnId, userMessageId: boundary.userMessageId, completedAt: Date.parse(boundary.completedAt),
         } } : {}),
       }));
+      if (rebootDispatchInputId && sent.admission === "not_submitted") {
+        await this.options.store.resetCodexRebootRecoveryNotSubmitted(attempt, this.generationId);
+      }
       const terminalAdmission = admittedNonRetryableFailure(sent);
       if (terminalAdmission) {
         promptAccepted = true;
@@ -6560,6 +6732,12 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
     ...(record.recoveryObservedAt ? { recoveryObservedAt: isoDate(record.recoveryObservedAt, "recoveryObservedAt") } : {}),
     ...(record.recoveryTurnId ? { recoveryTurnId: bounded(record.recoveryTurnId, "recoveryTurnId") } : {}),
     ...(record.recoveryInputId ? { recoveryInputId: bounded(record.recoveryInputId, "recoveryInputId") } : {}),
+    ...(parseCodexRebootRecoveryMarker(record.rebootRecovery)
+      ? { rebootRecovery: parseCodexRebootRecoveryMarker(record.rebootRecovery)! } : {}),
+    ...(Array.isArray(record.rebootRecoveryHistory)
+      ? { rebootRecoveryHistory: record.rebootRecoveryHistory.map(parseCodexRebootRecoveryMarker)
+        .filter((entry): entry is CodexRebootRecoveryMarker => Boolean(entry)).slice(-8) }
+      : {}),
     ...(parseNativeOwnerProof(record.activeNativeOwner) ? {activeNativeOwner:parseNativeOwnerProof(record.activeNativeOwner)} : {}),
     ...(record.activeTurnStartedAt ? { activeTurnStartedAt: isoDate(record.activeTurnStartedAt, "activeTurnStartedAt") } : {}),
     ...(record.activeTurnId ? { activeTurnId: bounded(record.activeTurnId, "activeTurnId") } : {}),
@@ -6571,6 +6749,31 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
     ...(record.lastError ? { lastError: bounded(record.lastError, "lastError") } : {}),
     ...(record.notifiedAt ? { notifiedAt: isoDate(record.notifiedAt, "notifiedAt") } : {}),
   };
+}
+
+function parseCodexRebootRecoveryMarker(value: unknown): CodexRebootRecoveryMarker | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const marker = value as Record<string, unknown>;
+  if (marker.phase !== "ready" && marker.phase !== "dispatching") return undefined;
+  if (marker.priorAdmissionPhase !== "in_progress") return undefined;
+  try {
+    return {
+      turnId: bounded(marker.turnId, "rebootRecovery.turnId"),
+      userMessageId: bounded(marker.userMessageId, "rebootRecovery.userMessageId"),
+      dispatchInputId: bounded(marker.dispatchInputId, "rebootRecovery.dispatchInputId"),
+      dispatchGenerationId: bounded(marker.dispatchGenerationId, "rebootRecovery.dispatchGenerationId"),
+      phase: marker.phase,
+      priorAcceptedAt: isoDate(marker.priorAcceptedAt, "rebootRecovery.priorAcceptedAt"),
+      ...(typeof marker.priorAcceptedFingerprint === "string"
+        ? { priorAcceptedFingerprint: bounded(marker.priorAcceptedFingerprint, "rebootRecovery.priorAcceptedFingerprint") } : {}),
+      priorAdmissionPhase: "in_progress",
+      ...(typeof marker.priorLastNativeProgressAt === "string"
+        ? { priorLastNativeProgressAt: isoDate(marker.priorLastNativeProgressAt, "rebootRecovery.priorLastNativeProgressAt") } : {}),
+      priorGenerationId: bounded(marker.priorGenerationId, "rebootRecovery.priorGenerationId"),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function parseQuotaRecovery(value: unknown): QuotaRecoveryRecord | undefined {

@@ -309,14 +309,14 @@ describe("unfinished session crash recovery", () => {
             const launcher = new UnfinishedSessionLauncher({ adapters: new Map([["codex", adapter]]), store: state,
                 settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) });
             await launcher.recoverPending();
-            expect(calls.resumes, JSON.stringify(await state.list())).toBe(1);
+            expect(calls.resumes).toBe(1);
             expect(calls.messages).toHaveLength(1);
             expect(await state.list()).toEqual(expect.arrayContaining([
                 expect.objectContaining({ sessionId: current.id, recoveryCause: "process.disconnected",
                     recoveryTurnId: "native-interrupted-1", recoveryInputId: "native-user-1" }),
             ]));
             await launcher.recoverPending();
-            expect(calls.resumes).toBe(1);
+            expect(calls.resumes, JSON.stringify(await state.list())).toBe(1);
             expect(calls.messages).toHaveLength(1);
         } finally { await rm(root, { recursive: true, force: true }); }
     });
@@ -394,6 +394,160 @@ describe("unfinished session crash recovery", () => {
                 settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) }).recoverPending();
             expect(calls).toEqual({ resumes: 0, messages: [] });
             expect(await state.list()).toEqual([]);
+        } finally { await rm(root, { recursive: true, force: true }); }
+    });
+    it("continues an exact accepted interrupted Codex turn in a new process with a distinct stable input ID", async () => {
+        const root = await mkdtemp(join(tmpdir(), "codex-reboot-after-accepted-turn-"));
+        const acceptedAt = new Date(Date.now() - 5_000);
+        const turnId = "accepted-native-turn-2";
+        const current = { ...fixture("idle", "codex", "codex-reboot-second-loss"),
+            meta: { nativeLastTurn: { turnId, status: "interrupted" } } };
+        let latest = { turnId, userMessageId: "native-user-for-turn-2", startedAt: new Date(acceptedAt.getTime() - 700).toISOString() };
+        const state = new UnfinishedSessionStore(join(root, "state.json"));
+        const calls = { resumes: 0, messages: [] as string[] };
+        const sentInputIds: Array<string | undefined> = [];
+        const adapter = fakeAdapter(() => current, calls);
+        Object.assign(adapter, {
+            async readLatestTurnRecoveryEvidence() {
+                return { available: true, observedAt: new Date().toISOString(), latest: {
+                    turnId: latest.turnId, status: "interrupted", startedAt: latest.startedAt,
+                    completedAt: null, userMessageId: latest.userMessageId, userInputId: null,
+                    userMessageCount: 1, assistantFinal: false, pendingQuestion: false,
+                } };
+            },
+            async sendMessage(_id: string, options: { message: string; inputId?: string }) {
+                calls.messages.push(options.message);
+                sentInputIds.push(options.inputId);
+                return { ok: true, admitted: true, inputId: options.inputId };
+            },
+        });
+        try {
+            await state.markStarted(current, "process-before-reboot", acceptedAt, true, true, false);
+            await state.markNativeTurnStarted(current, { turnId }, "process-before-reboot", new Date(acceptedAt.getTime() - 700));
+            await state.markAdmissionInProgress("codex", current.id, current.cwd, "native-progress-before-reboot", new Date(acceptedAt.getTime() + 1_000));
+            await state.markPersistedActiveTurnFailed("codex", current.id, "process.disconnected", { turnId, inputId: "old-source-input" }, new Date(acceptedAt.getTime() + 2_000));
+            const prior = (await state.list())[0]!;
+            expect(prior).toMatchObject({ generationId: "process-before-reboot", acceptedAt: acceptedAt.toISOString(),
+                admissionPhase: "in_progress", recoveryCause: "process.disconnected", recoveryTurnId: turnId,
+                recoveryInputId: "old-source-input" });
+            const launcher = new UnfinishedSessionLauncher({ adapters: new Map([["codex", adapter]]), store: state,
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), generationId: "process-after-reboot" });
+
+            await launcher.recoverPending();
+
+            expect(calls.resumes, JSON.stringify(await state.list())).toBe(1);
+            expect(sentInputIds).toHaveLength(1);
+            expect(sentInputIds[0]).toMatch(/^herder-reboot-[a-f0-9]{48}$/);
+            expect(sentInputIds[0]).not.toBe("old-source-input");
+            const after = (await state.list())[0]!;
+            expect(after.rebootRecovery).toMatchObject({ turnId, userMessageId: "native-user-for-turn-2",
+                priorAcceptedAt: acceptedAt.toISOString(), priorGenerationId: "process-before-reboot",
+                dispatchGenerationId: "process-after-reboot", phase: "dispatching" });
+
+            await new UnfinishedSessionLauncher({ adapters: new Map([["codex", adapter]]), store: new UnfinishedSessionStore(join(root, "state.json")),
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}), generationId: "process-after-reboot-2" }).recoverPending();
+            expect(sentInputIds).toHaveLength(1);
+            expect(calls.messages).toHaveLength(1);
+
+            // A second and third reboot can happen before the previous
+            // process persists its disconnect boundary. Exact activeTurnId
+            // evidence must advance the marker and retain bounded history.
+            for (const [index, previousGeneration] of [[3, "process-after-reboot"], [4, "process-after-reboot-2"]] as const) {
+                const nextAcceptedAt = new Date(Date.now() - 1_000);
+                const nextTurnId = `accepted-native-turn-${index}`;
+                latest = { turnId: nextTurnId, userMessageId: `native-user-for-turn-${index}`,
+                    startedAt: new Date(nextAcceptedAt.getTime() - 700).toISOString() };
+                current.meta.nativeLastTurn = { turnId: nextTurnId, status: "interrupted" };
+                await state.markStarted(current, previousGeneration, nextAcceptedAt, true, true, false);
+                await state.markNativeTurnStarted(current, { turnId: nextTurnId }, previousGeneration,
+                    new Date(nextAcceptedAt.getTime() - 700));
+                await state.markAdmissionInProgress("codex", current.id, current.cwd, `native-progress-${index}`,
+                    new Date(nextAcceptedAt.getTime() + 100));
+                await new UnfinishedSessionLauncher({ adapters: new Map([["codex", adapter]]), store: state,
+                    settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+                    generationId: `process-after-reboot-${index - 1}` }).recoverPending();
+                expect(sentInputIds, JSON.stringify(await state.list())).toHaveLength(index - 1);
+                expect(sentInputIds.at(-1)).not.toBe(sentInputIds.at(-2));
+                const latestRecord = (await state.list())[0]!;
+                expect(latestRecord.rebootRecovery).toMatchObject({ turnId: nextTurnId,
+                    userMessageId: `native-user-for-turn-${index}`, phase: "dispatching" });
+                expect(latestRecord.rebootRecoveryHistory).toHaveLength(index - 2);
+            }
+        } finally { await rm(root, { recursive: true, force: true }); }
+    });
+    it("does not replay an UNKNOWN reboot continuation after durable-store reload", async () => {
+        const root = await mkdtemp(join(tmpdir(), "codex-reboot-unknown-no-replay-"));
+        const acceptedAt = new Date(Date.now() - 5_000);
+        const turnId = "accepted-native-turn-unknown";
+        const current = { ...fixture("idle", "codex", "codex-reboot-unknown"),
+            meta: { nativeLastTurn: { turnId, status: "interrupted" } } };
+        const state = new UnfinishedSessionStore(join(root, "state.json"));
+        const calls = { resumes: 0, messages: [] as string[] };
+        const sentInputIds: Array<string | undefined> = [];
+        const adapter = fakeAdapter(() => current, calls);
+        Object.assign(adapter, {
+            async readLatestTurnRecoveryEvidence() {
+                return { available: true, observedAt: new Date().toISOString(), latest: {
+                    turnId, status: "interrupted", startedAt: new Date(acceptedAt.getTime() - 700).toISOString(),
+                    completedAt: null, userMessageId: "native-user-for-unknown-turn", userInputId: null,
+                    userMessageCount: 1, assistantFinal: false, pendingQuestion: false,
+                } };
+            },
+            async sendMessage(_id: string, options: { message: string; inputId?: string }) {
+                calls.messages.push(options.message);
+                sentInputIds.push(options.inputId);
+                return { ok: false, admission: "unknown" as const, admissionUnknown: true, inputId: options.inputId };
+            },
+        });
+        try {
+            await state.markStarted(current, "process-before-reboot", acceptedAt, true, true, false);
+            await state.markNativeTurnStarted(current, { turnId }, "process-before-reboot", new Date(acceptedAt.getTime() - 700));
+            await state.markAdmissionInProgress("codex", current.id, current.cwd, "native-progress-before-reboot", new Date(acceptedAt.getTime() + 1_000));
+            await state.markPersistedActiveTurnFailed("codex", current.id, "process.disconnected", { turnId, inputId: "old-source-input" }, new Date(acceptedAt.getTime() + 2_000));
+            const settingsPath = join(root, "settings.json");
+            await new UnfinishedSessionLauncher({ adapters: new Map([["codex", adapter]]), store: state,
+                settingsStore: new SessionAutostartStore(settingsPath, {}), generationId: "process-after-reboot" }).recoverPending();
+            expect(sentInputIds).toHaveLength(1);
+            const rebootInputId = sentInputIds[0];
+            expect(rebootInputId).toBeTruthy();
+            await new UnfinishedSessionLauncher({ adapters: new Map([["codex", adapter]]), store: new UnfinishedSessionStore(join(root, "state.json")),
+                settingsStore: new SessionAutostartStore(settingsPath, {}), generationId: "process-after-unknown" }).recoverPending();
+            expect(sentInputIds).toEqual([rebootInputId]);
+            expect(calls.messages).toHaveLength(1);
+        } finally { await rm(root, { recursive: true, force: true }); }
+    });
+    it("rebinds only a ready reboot marker after a crash before dispatch", async () => {
+        const root = await mkdtemp(join(tmpdir(), "codex-reboot-ready-marker-rebind-"));
+        const acceptedAt = new Date(Date.now() - 5_000);
+        const current = { ...fixture("idle", "codex", "codex-reboot-ready-rebind"),
+            meta: { nativeLastTurn: { turnId: "accepted-native-ready-turn", status: "interrupted" } } };
+        const state = new UnfinishedSessionStore(join(root, "state.json"));
+        const adapter = fakeAdapter(() => current, { resumes: 0, messages: [] });
+        Object.assign(adapter, { async readLatestTurnRecoveryEvidence() {
+            return { available: true, observedAt: new Date().toISOString(), latest: {
+                turnId: "accepted-native-ready-turn", status: "interrupted",
+                startedAt: new Date(acceptedAt.getTime() - 500).toISOString(), completedAt: null,
+                userMessageId: "native-ready-user", userInputId: null, userMessageCount: 1,
+                assistantFinal: false, pendingQuestion: false,
+            } };
+        } });
+        try {
+            await state.markStarted(current, "old-generation", acceptedAt, true, true, false);
+            await state.markNativeTurnStarted(current, { turnId: "accepted-native-ready-turn", inputId: "old-input" },
+                "old-generation", new Date(acceptedAt.getTime() - 500));
+            await state.markAdmissionInProgress("codex", current.id, current.cwd, "native-ready-progress", acceptedAt);
+            await state.markPersistedActiveTurnFailed("codex", current.id, "process.disconnected",
+                { turnId: "accepted-native-ready-turn", inputId: "old-input" }, new Date(acceptedAt.getTime() + 1));
+            const ready = await state.markCodexRebootRecoveryEligible(current,
+                { turnId: "accepted-native-ready-turn", userMessageId: "native-ready-user",
+                    startedAt: new Date(acceptedAt.getTime() - 500).toISOString() }, "crashed-before-dispatch");
+            expect(ready?.rebootRecovery).toMatchObject({ phase: "ready", dispatchGenerationId: "crashed-before-dispatch" });
+            const reloaded = new UnfinishedSessionStore(join(root, "state.json"));
+            const rebound = await reloaded.markCodexRebootRecoveryEligible(current,
+                { turnId: "accepted-native-ready-turn", userMessageId: "native-ready-user",
+                    startedAt: new Date(acceptedAt.getTime() - 500).toISOString() }, "restarted-generation");
+            expect(rebound?.rebootRecovery).toMatchObject({ phase: "ready", dispatchGenerationId: "restarted-generation",
+                dispatchInputId: ready?.rebootRecovery?.dispatchInputId });
         } finally { await rm(root, { recursive: true, force: true }); }
     });
     it("gates already durable causes when recovery is disabled", async () => {
