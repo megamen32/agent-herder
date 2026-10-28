@@ -31,6 +31,8 @@ export interface NamedSessionRequest {
   sourceHarness?: string;
   harness: string;
   name: string;
+  /** Native presentation title; never used as the durable operation key. */
+  displayTitle?: string;
   cwd: string;
   model?: string;
   serviceTier?: CodexServiceTier;
@@ -205,6 +207,19 @@ class NamedSessionBindingStore {
     }));
   }
 
+  async renameTitle(harness: string, sessionId: string, title: string): Promise<void> {
+    await this.serial(() => this.withFileLock(async () => {
+      const file = await this.read();
+      let changed = false;
+      for (const binding of file.bindings) {
+        if (binding.harness !== harness || binding.sessionId !== sessionId) continue;
+        binding.title = title;
+        changed = true;
+      }
+      if (changed) await this.write(file);
+    }));
+  }
+
   private async read(): Promise<NamedSessionBindingFile> {
     try {
       const parsed = JSON.parse(await readFile(this.path, "utf8")) as NamedSessionBindingFile;
@@ -310,7 +325,7 @@ export async function createNamedSession(
     }
     try {
       if (await sourceHeldNow(request)) return failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted");
-      const session = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model, serviceTier: request.serviceTier, fullAccess: true, healthRecovery: request.healthRecovery });
+      const session = await adapter.createSession({ name: request.displayTitle || normalized.name, cwd: normalized.cwd, model: request.model, serviceTier: request.serviceTier, fullAccess: true, healthRecovery: request.healthRecovery });
       await rememberNamedSession(adapter, normalized.name, normalized.cwd, session);
       return { ok: true, created: true, sessionId: session.id, model: request.model, ...normalized, ...createdCodexServiceTierResult(session, request.serviceTier) };
     } catch (error) {
@@ -352,7 +367,7 @@ export async function newOrResumeNamedSession(
       if (await getHumanStopStore().findHeldNamed(normalized.harness, normalized.name, normalized.cwd)) return { kind: "error", result: failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted") };
       try {
         if (await sourceHeldNow(request)) return { kind: "error", result: failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted") };
-        target = await adapter.createSession({ name: normalized.name, cwd: normalized.cwd, model: request.model, serviceTier: request.serviceTier, fullAccess: true, healthRecovery: request.healthRecovery });
+        target = await adapter.createSession({ name: request.displayTitle || normalized.name, cwd: normalized.cwd, model: request.model, serviceTier: request.serviceTier, fullAccess: true, healthRecovery: request.healthRecovery });
         await rememberNamedSession(adapter, normalized.name, normalized.cwd, target);
         created = true;
       } catch (error) {
@@ -504,6 +519,13 @@ function isConfirmedQuotaExhaustion(error: string | undefined): boolean {
   return /(?:\b4292056\b|\b2056\b|\b(?:1308|1310|1316|1317|1318|1319|1320|1321)\b|quota[_ -]exhausted|quota exceeded|usage limit exceeded)/iu.test(error);
 }
 
+export async function recordNamedSessionTitle(harness: string, sessionId: string, title: string): Promise<void> {
+  await namedSessionBindings().renameTitle(harness, sessionId, title);
+  for (const [key, value] of recentNamedSessions) {
+    if (value.session.harness === harness && value.session.id === sessionId) recentNamedSessions.delete(key);
+  }
+}
+
 async function exactMatches(adapter: HarnessAdapter, name: string, cwd: string): Promise<AgentSession[]> {
   const identity = namedIdentity(adapter.type, name, cwd);
   const recent = recentNamedSessions.get(identity);
@@ -518,7 +540,7 @@ async function exactMatches(adapter: HarnessAdapter, name: string, cwd: string):
     const session = await adapter.getSession(bound.sessionId);
     // An archived session is not a live one: a binding to it is stale, and a
     // stale binding must not keep a dead session in service.
-    if (session && !isArchivedSession(session) && session.title === name && await sameCwd(session.cwd, cwd)) {
+    if (session && !isArchivedSession(session) && (session.title === name || session.title === bound.title) && await sameCwd(session.cwd, cwd)) {
       recentNamedSessions.set(identity, { session, seenAt: Date.now() });
       return [session];
     }

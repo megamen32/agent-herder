@@ -12,6 +12,7 @@ import {
 } from "agent-resume-mcp";
 import { HarnessAdapter, AgentSession, ControlResult, CreateSessionOptions, HarnessCapabilities, HarnessEvent, HarnessPermissionState, ListSessionsOptions, RawTranscriptExport, SendMessageOptions, SendMessageResult, SetPermissionsOptions, SessionMessagePart, SessionMessageView, localSessionHostId } from "../types/index.js";
 import { randomUUID } from "node:crypto";
+import {recordNamedSessionTitle} from '../named-session.js';
 import { readFileSync } from "node:fs";
 import { throwIfAborted } from "../abort-utils.js";
 import { terminalQuotaFailure, normalizeSendAdmission } from "./quota-failure.js";
@@ -618,6 +619,19 @@ export class OpenCodeAdapter implements HarnessAdapter {
       cwd: created.cwd || options.cwd,
     }).catch(() => false);
     return this.toAgentSession({ ...created, cwd: created.cwd || options.cwd });
+  }
+
+  async renameSession(id: string, options: {title:string}) {
+    const title = options.title.trim();
+    if (!title) return {ok:false, sessionId:id, error:'A session title is required'};
+    const before = await this.client.getSession(id);
+    if (!before || before.id !== id) return {ok:false, sessionId:id, error:'Session not found'};
+    await this.client.renameSession(id, title);
+    const after = await this.client.getSession(id);
+    if (after?.id === id && after.title === title) await recordNamedSessionTitle('opencode', id, title);
+    return after?.id === id && after.title === title
+      ? {ok:true, sessionId:id, title, previousTitle:before.title}
+      : {ok:false, sessionId:id, error:'Native title readback did not match'};
   }
 
   /**

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import {projectLaunchTitle} from './project-launch-title.js';
 import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import lockfile from "proper-lockfile";
@@ -660,6 +661,7 @@ export function namedSessionRunner(adapters: Map<string, HarnessAdapter>, name: 
     return await newOrResumeNamedSession(adapters, {
       harness: request.harness,
       name,
+      ...(name.startsWith('project-launch-') ? {displayTitle:projectLaunchTitle(request.message, request.cwd)} : {}),
       cwd: request.cwd,
       message: request.message,
       mode: request.mode,

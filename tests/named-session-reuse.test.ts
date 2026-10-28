@@ -313,6 +313,7 @@ describe("named session reuse", () => {
       const first = await deliver(adapters, {
         harness: "opencode",
         name: "project-launch-binding",
+        displayTitle: "Инцидент: сайт возвращает 502 | fleet-health",
         cwd,
         message: "work",
         inputId: "input-1",
@@ -320,6 +321,7 @@ describe("named session reuse", () => {
       expect(first.ok).toBe(true);
       expect(first.created).toBe(true);
       const sessionId = first.sessionId;
+      expect((await adapter.getSession(sessionId!))?.title).toBe("Инцидент: сайт возвращает 502 | fleet-health");
 
       // The catalog stops answering the name, and the listing window moved on.
       fake.blindSearch = true;
