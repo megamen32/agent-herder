@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore } from "../src/autopilot/unfinished-session-launcher.js";
 import type { AgentSession, HarnessAdapter } from "../src/types/index.js";
 
-it.each(["idle", "old", "pending", "session-off"] as const)("does not cold-resume %s OpenCode work", async reason => {
+it.each(["idle", "old", "pending", "session-off", "finished-notice-attempt"] as const)("does not cold-resume %s OpenCode work", async reason => {
   const root = await mkdtemp(join(tmpdir(), "opencode-cold-guard-"));
   try {
     const completedAt = new Date(Date.now() - (reason === "old" ? 25 * 60 * 60_000 : 60_000)).toISOString();
@@ -20,7 +20,9 @@ it.each(["idle", "old", "pending", "session-off"] as const)("does not cold-resum
     const settings = new SessionAutostartStore(join(root, "settings.json"), {});
     await settings.setHarness("opencode", true);
     if (reason === "session-off") await settings.setSession({ harness: "opencode", sessionId: current.id, cwd: root }, false);
-    await new UnfinishedSessionLauncher({ adapters: new Map([["opencode", adapter]]), store, settingsStore: settings }).recoverPending();
+    await new UnfinishedSessionLauncher({ adapters: new Map([["opencode", adapter]]), store, settingsStore: settings,
+      ...(reason === "finished-notice-attempt" ? { autopilotSessionStore: { get: async () => ({ enabled: false, noticeAttempt: { incidentId: "finished-incident", attemptId: "finished-attempt" } }) } as any } : {}),
+    }).recoverPending();
     expect(sends).toBe(0);
     expect(await store.list()).toHaveLength(0);
   } finally { await rm(root, { recursive: true, force: true }); }

@@ -3928,6 +3928,7 @@ export class UnfinishedSessionLauncher {
   }
 
   private async recoveryNativeStateStillEligible(adapter: HarnessAdapter, record: UnfinishedSessionRecord): Promise<boolean> {
+    if (await this.noticeAttemptRecoveryPaused(record.harness, record.sessionId)) return false;
     if((adapter as WorkspaceLifecycleAdapter).workspaceCrashRecoveryAllowed?.(record.sessionId,record.recoveryTurnId,record.recoveryInputId)===false)return false;
     const key = sessionKey(record.harness, record.sessionId);
     if (this.completedSessions.has(key) || this.completedSessions.has(unfinishedRecordKey(record))) return false;
@@ -5789,7 +5790,15 @@ export class UnfinishedSessionLauncher {
    */
   private async mayWorkOnSession(harness: HarnessType, sessionId: string, cwd: string): Promise<boolean> {
     if (!await this.isEnabled(harness, sessionId, cwd)) return false;
+    if (await this.noticeAttemptRecoveryPaused(harness, sessionId)) return false;
     return !(await this.pendingQuestionBlocks(harness, sessionId, cwd));
+  }
+
+  /** An explicit incident-attempt finish pauses recovery until that attempt is rearmed. */
+  private async noticeAttemptRecoveryPaused(harness: HarnessType, sessionId: string): Promise<boolean> {
+    if (harness !== "opencode" || !this.options.autopilotSessionStore) return false;
+    const record = await this.options.autopilotSessionStore.get("opencode", sessionId);
+    return Boolean(record?.noticeAttempt && record.enabled === false);
   }
 
   /**
