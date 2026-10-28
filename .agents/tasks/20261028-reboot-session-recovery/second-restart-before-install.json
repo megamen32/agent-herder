@@ -1,0 +1,12 @@
+{
+  "scope": "Read-only baseline before second-reboot fix activation; no resume/send",
+  "herderPid": 7859,
+  "runtimeSource": "98caf6270a22dc3aee2c37dff0b93858f9310383",
+  "nativeCodexPids": [26565, 47482],
+  "stateSha256": {
+    "indexing-settings.json": "237113942b4354857f555d86f386cdba803ce81358a54f3caa6323a6c1ef941a",
+    "autopilot-live/session-autostart.json": "4c653e0372cc48fa8e27bb397f904a91ee704dab90cc161baa7d297c80958312",
+    "autopilot-live/automation-disarm.json": "22deaf35cdb79c1b85625be8d88953bdbc4c06b2f17bc32ff7276df545e84bb1",
+    "human-stops.json": "1b012d1a75ca3d2e2e66d8c0b162e0feea5af31a75b569ef66437e74cbbc1543"
+  }
+}

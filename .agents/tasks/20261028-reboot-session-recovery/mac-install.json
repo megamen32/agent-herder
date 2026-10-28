@@ -1,0 +1,127 @@
+{
+  "checkedAt": "2026-10-28T22:13:59.403739Z",
+  "scope": "Mini exact release install and independent readback; bounded M1 config diagnosis",
+  "mini": {
+    "hostId": "mac-mini-2012.lan",
+    "address": "roomhacker@192.168.2.4",
+    "status": "installed",
+    "previousSourceSha": "c1e920a8c0572e21e7a80b516c5a5e6274eeeafe",
+    "sourceSha": "98caf6270a22dc3aee2c37dff0b93858f9310383",
+    "currentRelease": "/Users/roomhacker/.local/share/agent-herder/fleet/releases/98caf6270a22dc3aee2c37dff0b93858f9310383",
+    "entrypoint": "deploy/fleet/rollout-candidate.py --node-side --kind fleet",
+    "helperPython": "/usr/local/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python",
+    "transportArchiveBytes": 56750080,
+    "transportArchiveSha256": "30f7decf1039a68865d1c5d2580a624ecc8660286ca11420b0eb5297a79fbbbc",
+    "installedPayloadFiles": 1807,
+    "installedIndexSha256": "3cb6873e2ad6b5f390cf9265656898048514631c33b6f81a2de14f2d4726b431",
+    "agentResumeResolvedInsideRelease": true,
+    "agentResumeFiles": 59,
+    "agentResumePackageSha256": "847b1993f6ca0e358195d65226cba1c343ce1cb1a7db71883c835cd213985116",
+    "releaseDirectories": 2,
+    "releaseBudgetBytes": 54654976,
+    "launchd": {
+      "domain": "user/501",
+      "label": "com.bezrabotnyi.agent-herder-fleet-node",
+      "nodePid": 20419,
+      "nodeEntrypointSourceSha": "98caf6270a22dc3aee2c37dff0b93858f9310383"
+    },
+    "httpReadbacks": {
+      "sessions": 200,
+      "launchPolicy": 200,
+      "mcpInitialize": 200,
+      "settings": 200,
+      "sessionCount": 38,
+      "allowedHarnesses": ["codex"],
+      "models": {"codex": "gpt-6.1-sol"}
+    },
+    "preserved": {
+      "configAllFieldsExceptSourceShaUnchanged": true,
+      "configWithoutSourceShaHash": "4042de5423618de03a498670f5576780a5e4fcb8863af2b9933589870166284b",
+      "nativeCodexPidsAndStartTimesUnchanged": true,
+      "nativeCodexPids": [413, 6889],
+      "indexingPaused": true,
+      "indexingSettingsSha256": "cdad77a45c0fb0cb7a96e93287fb3e56f6d0f862a1993d7934b7a8ae90a77bcf",
+      "automationDisarmSha256": "959ea29934dccfe369b92d6d8decd258d3f084ec39a8436897e2bd72f285480b",
+      "automationDisarmed": false,
+      "watchdogNotReplaced": true,
+      "watchdogSha256": "7eb9e2a6658a3f5531d7152decbe9954caf1f3b267172b3959634c291af5e9d1",
+      "nativeInputsOrResumesIssued": 0
+    },
+    "acceptanceLimit": "Installed runtime and preserved controls verified. No recent Mini interrupted session existed in the prior native inventory; no synthetic native session was created and no actual recovery on Mini is claimed.",
+    "evidence": [".tmp/recovery-mini-98caf/install.log", ".tmp/recovery-mini-98caf/before.json", ".tmp/recovery-mini-98caf/after.json"]
+  },
+  "m1": {
+    "hostId": "MacBook-Pro-User.local",
+    "address": "user@127.0.0.1:2222",
+    "status": "blocked_native_control",
+    "launchdDomain": "gui/501",
+    "existingNodeSourceSha": "b8f8470a69aa46bc0f848b813a17a2b91ee35c18",
+    "nativeConfigSourceSha": "b8f8470a69aa46bc0f848b813a17a2b91ee35c18",
+    "nativeConfigCodexVersion": "0.163.0",
+    "nodeConfigCodexVersion": "0.164.0",
+    "correctedDefect": {
+      "field": "native-codex-config.json.launcherHashes.mac-node-watchdog.py",
+      "before": "fce53f441565b65af118cd08c57584d4c5e413ea7b20a7330aacbfe096ead7f9",
+      "after": "1dfa7c46a4c6f2d4991af9b3463e78e9ed2b6c964c22cf4c0504b148fb8a08fa",
+      "verifiedPublishedSourceCommit": "0655bee8f7a0d2e23c4378ea832f28ef6a15d156",
+      "configBeforeSha256": "93bfed04908f99a4ae77cd449e4c3ca67234b561465a3e656032fbeddb788605",
+      "configAfterSha256": "e3bb7c90887ee4ec9766f4c31f93ae3ae8034e094235559dd7b8a4bba6734a85",
+      "backup": "/Users/user/.local/share/agent-herder/fleet/native-codex-config.before-recovery-20261029-pin.json"
+    },
+    "correctedSourcePin": {
+      "field": "native-codex-config.json.sourceSha",
+      "before": "2e941c15b5c85d867588154349c510511222d2ce",
+      "after": "b8f8470a69aa46bc0f848b813a17a2b91ee35c18",
+      "publishedMainAncestryConfirmed": true,
+      "currentManifestSha256": "b10741f006750f7c5f13f5bb5c9c667025f045a61fb6f98103d50e71fa07834c",
+      "currentManifestSourceDirty": false,
+      "currentPayloadFilesVerified": 574,
+      "configAfterSha256": "2eb62b4acc5592bf952e9c679f496c2eba6baa39de7b98c1867f69778c64d95e",
+      "backup": "/Users/user/.local/share/agent-herder/fleet/native-codex-config.before-recovery-20261029-source.json",
+      "codexBinUnchanged": true
+    },
+    "readOnlyCheckAfterPin": {"exitCode": 78, "reason": "source_identity_mismatch"},
+    "readOnlyCheckAfterSourcePin": {"exitCode": 78, "reason": "native_socket_already_owned_or_unknown"},
+    "remainingSocketBoundary": {
+      "pointer": "/Users/user/.codex/app-server-control/app-server-control.sock",
+      "kind": "dangling_symlink",
+      "target": "/private/tmp/codex-daemon-501/b23947332cd7665d9ee8443c0f8c85335a86f6db847a22d6e86a8319aebc1e93",
+      "targetExists": false,
+      "targetParentExists": false,
+      "pointerUid": 501,
+      "pointerDevice": 16777229,
+      "pointerInode": 177527201,
+      "pointerBirthTimeEpoch": 1792749204.7942657,
+      "matchingLsofUnixDescriptors": 0,
+      "lsofExitCode": 0,
+      "savedNativeReadyReceiptMatchesPointer": false,
+      "savedNativeReadyReceipt": {
+        "pid": 4791,
+        "ready": false,
+        "reason": "resource_budget",
+        "aliasInode": 162524613,
+        "physicalPath": "/private/tmp/codex-daemon-501/40dd7963de3d0664e1ec97f81edc7d8aeefa57bd0ad5d07f69662ea53f8e67bb"
+      },
+      "socketTouched": false,
+      "unknownOwnerTakenOver": false
+    },
+    "nativeStartIssued": false,
+    "startOmittedReason": "The verified installed canonical watchdog calls refuse_existing_socket using os.path.lexists before binary launch, so its start would repeat the refusal. Official codex app-server daemon start exists, but the current pointer generation does not match the saved managed ready receipt: UID501 and absent target/no descriptors do not prove that this task owns the pointer. No daemon takeover was attempted.",
+    "officialDaemonReadOnlyChecks": {
+      "binaryVersion": "0.163.0",
+      "daemonStartHelp": "Start the local app server daemon if it is not already running",
+      "daemonVersionReadback": "failed to connect to canonical app-server-control.sock: No such file or directory",
+      "daemonStartIssued": false
+    },
+    "herderStartIssued": false,
+    "nativeInputsOrResumesIssued": 0,
+    "acceptanceLimit": "Missing local native control prevents verification of pending/STOP/accepted UNKNOWN. No M1 session resumed. Port18787 remains the server100 SSH forward, not M1 service evidence. Exact remaining blocker is canonical stale socket ownership cleanup outside the assigned no-unlink/no-takeover boundary; root informed."
+  },
+  "cleanup": {
+    "localTransportArchiveRemoved": true,
+    "remoteTransportArchiveRemoved": true,
+    "ownRemoteProbeAndCasScriptsRemoved": true,
+    "nativePromptsOrResumesIssued": 0,
+    "browserTouched": false
+  }
+}

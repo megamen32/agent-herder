@@ -1,0 +1,199 @@
+{
+  "recordedAt": "2026-10-28T22:13:42.934178+00:00",
+  "sourceSha": "98caf6270a22dc3aee2c37dff0b93858f9310383",
+  "method": "read-only verification of already installed release; no install/restart/prompt/resume performed by this worker",
+  "nodes": {
+    "44": {
+      "host": "server-44",
+      "release": "/home/roomhacker/.local/share/agent-herder/fleet/releases/98caf6270a22dc3aee2c37dff0b93858f9310383",
+      "service": {
+        "MainPID": "207785",
+        "ExecMainStartTimestamp": "Thu 2026-10-29 00:08:11 MSK",
+        "ActiveState": "active"
+      },
+      "cmdline": [
+        "/usr/bin/node",
+        "/home/roomhacker/.local/share/agent-herder/fleet/releases/98caf6270a22dc3aee2c37dff0b93858f9310383/dist/index.js",
+        ""
+      ],
+      "sourceSha": "98caf6270a22dc3aee2c37dff0b93858f9310383",
+      "bundleFingerprint": "5d607eeab64595e05ca43848bbd0410def736d0ee784d5a14d9eb646df876aac",
+      "payloadFilesVerified": 1807,
+      "payloadAllMatch": true,
+      "states": {
+        "indexing": {
+          "path": "/home/roomhacker/.local/state/agent-herder/indexing-settings.json",
+          "sha256": "713b3b0fd7130cfcc6241d519a7937f123559b896ff2e7b500a1e1e57e2bede6",
+          "state": {
+            "enabled": false,
+            "updatedAt": "2026-10-28T15:07:00.950Z"
+          }
+        },
+        "stop": {
+          "path": "/home/roomhacker/.local/state/agent-herder/fleet-node/autopilot/automation-disarm.json",
+          "sha256": "7eb64d5faf64468137b1724d6434798461c0f648dc2397ce236dadef6aa757b9"
+        }
+      },
+      "nativePids": [
+        {
+          "pid": 8435,
+          "comm": "codex"
+        },
+        {
+          "pid": 57822,
+          "comm": "codex"
+        }
+      ],
+      "api": {
+        "sessions": {
+          "status": 200,
+          "keys": [
+            "sessions",
+            "warming",
+            "total",
+            "limit",
+            "truncated"
+          ],
+          "sha256": "167b34111352f5d93e2a9454bb8cfaa97d3c4c23192b3f05d51737a992bd69b1"
+        },
+        "launchPolicy": {
+          "status": 200,
+          "keys": [
+            "version",
+            "allowedHarnesses",
+            "preferredHarness",
+            "models"
+          ],
+          "sha256": "9ee6ba28c146c22d723e1b495171e960e042a923d9986c8ba4c1ea887dd9bb3c"
+        },
+        "autostart": {
+          "status": 200,
+          "keys": [
+            "version",
+            "enabled",
+            "waitForQuota",
+            "fallbackForQuota",
+            "pinActiveSessions",
+            "rolloverExpiredCache",
+            "movePinnedOnRollover",
+            "inventoryWindowHours",
+            "evidenceMessageCount",
+            "recoverOnFailure",
+            "recoverOnDisconnect",
+            "watchdogEnabled",
+            "watchdogIntervalSeconds",
+            "stalledTurnMinutes",
+            "judgeModel",
+            "autopilotJudgeModel",
+            "harnesses",
+            "sessions",
+            "waitForQuotaHarnesses",
+            "waitForQuotaSessions",
+            "source",
+            "waitForQuotaSource"
+          ],
+          "sha256": "5d9fb13e1e47ac081c2b630037168b7ed724e36ecf0a1b9da99dd19aa053a55f"
+        }
+      }
+    },
+    "88": {
+      "host": "roomhacker-server-88",
+      "release": "/home/roomhacker/.local/share/agent-herder/fleet/releases/98caf6270a22dc3aee2c37dff0b93858f9310383",
+      "service": {
+        "MainPID": "1664365",
+        "ExecMainStartTimestamp": "Thu 2026-10-29 00:08:13 MSK",
+        "ActiveState": "active"
+      },
+      "cmdline": [
+        "/usr/bin/node",
+        "/home/roomhacker/.local/share/agent-herder/fleet/releases/98caf6270a22dc3aee2c37dff0b93858f9310383/dist/index.js",
+        ""
+      ],
+      "sourceSha": "98caf6270a22dc3aee2c37dff0b93858f9310383",
+      "bundleFingerprint": "5d607eeab64595e05ca43848bbd0410def736d0ee784d5a14d9eb646df876aac",
+      "payloadFilesVerified": 1807,
+      "payloadAllMatch": true,
+      "states": {
+        "indexing": {
+          "path": "/home/roomhacker/.local/state/agent-herder/indexing-settings.json",
+          "sha256": "9879d8cce6382426813e0a330248432640c807f507edf630192f006951c18bee",
+          "state": {
+            "enabled": false,
+            "updatedAt": "2026-10-28T15:07:39.388Z"
+          }
+        },
+        "stop": {
+          "path": "/home/roomhacker/.local/state/agent-herder/fleet-node/autopilot/automation-disarm.json",
+          "sha256": "7708307b65dc42c72a6595cef1cd46295aab7c92293dbc55c89130b84f41d832"
+        }
+      },
+      "nativePids": [
+        {
+          "pid": 8290,
+          "comm": "codex"
+        },
+        {
+          "pid": 1292875,
+          "comm": "codex"
+        },
+        {
+          "pid": 2053045,
+          "comm": "opencode"
+        }
+      ],
+      "api": {
+        "sessions": {
+          "status": 200,
+          "keys": [
+            "sessions",
+            "warming",
+            "total",
+            "limit",
+            "truncated"
+          ],
+          "sha256": "75512d72b7e2fed4e0c0ff9484eead1c4e649042ca2fb9d2f8b9c408d1203af7"
+        },
+        "launchPolicy": {
+          "status": 200,
+          "keys": [
+            "version",
+            "allowedHarnesses",
+            "preferredHarness",
+            "models",
+            "fallbackModels"
+          ],
+          "sha256": "a6be6d5261add9b44f33fe16ff7b57f894b9b7ee1b35b0032cb52fc10f182e99"
+        },
+        "autostart": {
+          "status": 200,
+          "keys": [
+            "version",
+            "enabled",
+            "fallbackForQuota",
+            "waitForQuota",
+            "pinActiveSessions",
+            "rolloverExpiredCache",
+            "movePinnedOnRollover",
+            "inventoryWindowHours",
+            "evidenceMessageCount",
+            "recoverOnFailure",
+            "recoverOnDisconnect",
+            "watchdogEnabled",
+            "watchdogIntervalSeconds",
+            "stalledTurnMinutes",
+            "judgeModel",
+            "autopilotJudgeModel",
+            "harnesses",
+            "sessions",
+            "waitForQuotaHarnesses",
+            "waitForQuotaSessions",
+            "source",
+            "waitForQuotaSource"
+          ],
+          "sha256": "44b943f1dd7cace005a084ea724751ce5bda4ac4f234b985899ffd0ec666793f"
+        }
+      }
+    }
+  },
+  "limits": "No pre-install snapshot from the interrupted installer was found; current native PIDs and config hashes are observations, not a claim of pre/post equality. No synthetic native turn was launched."
+}

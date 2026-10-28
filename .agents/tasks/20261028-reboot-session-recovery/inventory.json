@@ -1,0 +1,1497 @@
+{
+  "observedAt": "2026-10-28T20:35:18.626Z",
+  "scope": "Read-only persisted Herder recovery/autostart/HumanStop state on100/44/88 plus exact existing Codex nativeLastTurn quick details on100. No sends, restarts, settings edits or indexing.",
+  "notes": [
+    "native interrupted is proven; reboot causality is NOT inferred from timestamps.",
+    "native completed proves turn termination only, not business-goal completion.",
+    "accepted/UNKNOWN and held STOP records must never be replayed. No continuation eligibility is claimed without fresh admission/question/identity checks.",
+    "API100 initially lacked Codex per parent; latest readback has21localCodex after late native daemon startup. Earlier absence is historical."
+  ],
+  "nodes": {
+    "44": {
+      "host": "server-44",
+      "pid": "10325",
+      "observedAt": "2026-10-28T20:33:19.256617+00:00",
+      "boot": "2026-10-28 22:51:41",
+      "stateDir": "/home/roomhacker/.local/state/agent-herder/fleet-node/autopilot",
+      "files": {
+        "unfinished": {
+          "path": "/home/roomhacker/.local/state/agent-herder/fleet-node/autopilot/unfinished-sessions.json",
+          "exists": true,
+          "state": {
+            "rootKeys": [
+              "version",
+              "sessions"
+            ],
+            "version": 1,
+            "sessionsTotal": 0,
+            "sessions": []
+          }
+        },
+        "autostart": {
+          "path": "/home/roomhacker/.local/state/agent-herder/fleet-node/autopilot/session-autostart.json",
+          "exists": false
+        },
+        "humanStops": {
+          "path": "/home/roomhacker/.local/state/agent-herder/human-stops.json",
+          "exists": true,
+          "state": {
+            "rootKeys": [
+              "version",
+              "sessions",
+              "generatedInputs"
+            ],
+            "sessions": [],
+            "activeTotal": 0
+          }
+        }
+      },
+      "api": {
+        "sessions": {
+          "count": 6,
+          "harnessCounts": {
+            "codex": 6
+          }
+        },
+        "session-autostart": {
+          "version": 8,
+          "enabled": true,
+          "waitForQuota": false,
+          "fallbackForQuota": false,
+          "pinActiveSessions": true,
+          "rolloverExpiredCache": false,
+          "movePinnedOnRollover": false,
+          "inventoryWindowHours": 48,
+          "evidenceMessageCount": 200,
+          "recoverOnFailure": true,
+          "recoverOnDisconnect": true,
+          "watchdogEnabled": false,
+          "watchdogIntervalSeconds": 10,
+          "stalledTurnMinutes": 2,
+          "judgeModel": "MiniMax-M3.1-Flash",
+          "autopilotJudgeModel": "MiniMax-M3",
+          "harnesses": [],
+          "waitForQuotaHarnesses": [],
+          "source": "default",
+          "waitForQuotaSource": "default"
+        }
+      }
+    },
+    "88": {
+      "host": "roomhacker-server-88",
+      "pid": "824018",
+      "observedAt": "2026-10-28T20:33:22.926988+00:00",
+      "boot": "2026-10-13 02:19:01",
+      "stateDir": "/home/roomhacker/.local/state/agent-herder/fleet-node/autopilot",
+      "files": {
+        "unfinished": {
+          "path": "/home/roomhacker/.local/state/agent-herder/fleet-node/autopilot/unfinished-sessions.json",
+          "exists": true,
+          "state": {
+            "rootKeys": [
+              "version",
+              "sessions"
+            ],
+            "version": 1,
+            "sessionsTotal": 1,
+            "sessions": [
+              {
+                "harness": "codex",
+                "sessionId": "01a15023-11d9-7312-bc1d-109cc46f5e31",
+                "cwd": "/home/roomhacker/PycharmProjects/EquaFlow",
+                "model": "gpt-6-luna",
+                "title": "equaflow-stage2-visual-20261018",
+                "startedAt": "2026-10-18T17:50:38.512Z",
+                "updatedAt": "2026-10-18T17:50:38.512Z",
+                "activeTurnStartedAt": "2026-10-18T17:50:38.512Z",
+                "activeTurnId": "01a15023-138c-7290-8476-cfc534818463",
+                "attempts": 0,
+                "state": "active"
+              }
+            ]
+          }
+        },
+        "autostart": {
+          "path": "/home/roomhacker/.local/state/agent-herder/fleet-node/autopilot/session-autostart.json",
+          "exists": true,
+          "state": {
+            "version": 8,
+            "enabled": true,
+            "fallbackForQuota": false,
+            "waitForQuota": false,
+            "pinActiveSessions": true,
+            "rolloverExpiredCache": false,
+            "movePinnedOnRollover": false,
+            "inventoryWindowHours": 48,
+            "evidenceMessageCount": 200,
+            "recoverOnFailure": true,
+            "recoverOnDisconnect": true,
+            "watchdogEnabled": false,
+            "watchdogIntervalSeconds": 10,
+            "stalledTurnMinutes": 2,
+            "judgeModel": "MiniMax-M3.1-Flash-Preview",
+            "autopilotJudgeModel": "MiniMax-M3",
+            "harnesses": [
+              {
+                "harness": "opencode",
+                "enabled": true,
+                "updatedAt": "2026-10-28T15:28:25.754Z"
+              }
+            ],
+            "sessions": [],
+            "waitForQuotaHarnesses": [],
+            "waitForQuotaSessions": [],
+            "sessionOverridesTotal": 6,
+            "waitForQuotaSessionOverridesTotal": 0
+          }
+        },
+        "humanStops": {
+          "path": "/home/roomhacker/.local/state/agent-herder/human-stops.json",
+          "exists": true,
+          "state": {
+            "rootKeys": [
+              "version",
+              "sessions",
+              "generatedInputs"
+            ],
+            "sessions": [],
+            "activeTotal": 1
+          }
+        }
+      },
+      "api": {
+        "sessions": {
+          "count": 56,
+          "harnessCounts": {
+            "codex": 21,
+            "zcode": 12,
+            "opencode": 23
+          }
+        },
+        "session-autostart": {
+          "version": 8,
+          "enabled": true,
+          "fallbackForQuota": false,
+          "waitForQuota": false,
+          "pinActiveSessions": true,
+          "rolloverExpiredCache": false,
+          "movePinnedOnRollover": false,
+          "inventoryWindowHours": 48,
+          "evidenceMessageCount": 200,
+          "recoverOnFailure": true,
+          "recoverOnDisconnect": true,
+          "watchdogEnabled": false,
+          "watchdogIntervalSeconds": 10,
+          "stalledTurnMinutes": 2,
+          "judgeModel": "MiniMax-M3.1-Flash-Preview",
+          "autopilotJudgeModel": "MiniMax-M3",
+          "harnesses": [
+            {
+              "harness": "opencode",
+              "enabled": true,
+              "updatedAt": "2026-10-28T15:28:25.754Z"
+            }
+          ],
+          "waitForQuotaHarnesses": [],
+          "source": "persisted",
+          "waitForQuotaSource": "global"
+        }
+      }
+    },
+    "100": {
+      "host": "roomhacker-server-100",
+      "pid": "7371",
+      "observedAt": "2026-10-28T20:33:15.477618+00:00",
+      "boot": "2026-10-28 23:00:04",
+      "stateDir": "/home/roomhacker/.local/state/agent-herder/autopilot-live",
+      "files": {
+        "unfinished": {
+          "path": "/home/roomhacker/.local/state/agent-herder/autopilot-live/unfinished-sessions.json",
+          "exists": true,
+          "state": {
+            "rootKeys": [
+              "version",
+              "sessions",
+              "inventory"
+            ],
+            "version": 1,
+            "sessionsTotal": 27,
+            "sessions": [
+              {
+                "harness": "opencode",
+                "sessionId": "ses_e7c7b78fdffeM5EILXS2zkGiR9",
+                "cwd": "/home/roomhacker/ServersAdministartion",
+                "model": "omniroute/glm-5.3-flash-minimax-m3.1",
+                "title": "Инцидент: Сайт airlock.bezrabotnyi.com недоступен извне | fleet-health",
+                "startedAt": "2026-10-28T17:17:46.608Z",
+                "updatedAt": "2026-10-28T17:17:46.608Z",
+                "activeTurnStartedAt": "2026-10-28T17:17:46.608Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_e7c7f9007ffeZgr4F03k3dax0M",
+                "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto",
+                "title": "atv-stale-closer-fix",
+                "startedAt": "2026-10-28T17:13:15.328Z",
+                "updatedAt": "2026-10-28T17:13:15.328Z",
+                "activeTurnStartedAt": "2026-10-28T17:13:15.328Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_e7c7fbd85ffej46CWp4H1rl2kg",
+                "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto",
+                "title": "atv-stale-close-fix",
+                "startedAt": "2026-10-28T17:13:03.719Z",
+                "updatedAt": "2026-10-28T17:13:03.719Z",
+                "activeTurnStartedAt": "2026-10-28T17:13:03.719Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_e7c7fbf78ffeD6Fp30bDDhtv8P",
+                "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto",
+                "title": "tgc-reaction-contour-fix",
+                "startedAt": "2026-10-28T17:13:03.348Z",
+                "updatedAt": "2026-10-28T17:28:55.590Z",
+                "activeTurnStartedAt": "2026-10-28T17:28:55.590Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_e7c7fc0eaffe16XEw5t74q9D59",
+                "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto",
+                "title": "atv-views-profile-fix",
+                "startedAt": "2026-10-28T17:13:02.854Z",
+                "updatedAt": "2026-10-28T17:29:51.557Z",
+                "activeTurnStartedAt": "2026-10-28T17:29:51.557Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_e7c849ab9ffeA5lL9rAli7jl1R",
+                "cwd": "/home/roomhacker/agents-projects/noticeplace/.tmp/lifecycle-canary-20261028/fixture",
+                "model": "omniroute/glm-5.3-flash-minimax-m3.1",
+                "title": "Инцидент: Тестовый сервис: требуется двухэтапное восстановление | noticeplace-qa-stop-20261023b",
+                "startedAt": "2026-10-28T17:07:47.149Z",
+                "updatedAt": "2026-10-28T17:14:55.134Z",
+                "activeTurnStartedAt": "2026-10-28T17:14:55.134Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_e7cc3f623ffeE9T7QN1GHrsobw",
+                "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto/ATV",
+                "model": "omniroute/minimax/MiniMax-M3.1-Flash",
+                "title": "atv-cancel-audit-review",
+                "startedAt": "2026-10-28T15:58:59.305Z",
+                "updatedAt": "2026-10-28T18:14:10.884Z",
+                "activeTurnStartedAt": "2026-10-28T18:14:10.884Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_e7cd74beeffedqRs3hXA7ajmi0",
+                "cwd": "/home/roomhacker/ServersAdministartion",
+                "title": "browser-copy-canary-1028",
+                "startedAt": "2026-10-28T15:37:26.026Z",
+                "updatedAt": "2026-10-28T15:37:26.026Z",
+                "activeTurnStartedAt": "2026-10-28T15:37:26.026Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_e8ab75780ffeqDhM84IXxDabXN",
+                "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto",
+                "model": "omniroute/glm-5.3-flash-minimax-m3.1",
+                "title": "Сторож. TVC ATV.",
+                "startedAt": "2026-10-28T15:53:18.644Z",
+                "updatedAt": "2026-10-28T17:18:08.360Z",
+                "activeTurnStartedAt": "2026-10-28T17:18:08.360Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_e99c29993ffelr4vUdOhBZz0xs",
+                "cwd": "/home/roomhacker/agents-projects/agent-herder/.tmp/quota-recovery-20261022/native-glm-fallback",
+                "model": "omniroute/zc/glm-5.3-flash",
+                "title": "current-pin-quota-marker-20261023-v8",
+                "startedAt": "2026-10-23T00:51:39.507Z",
+                "updatedAt": "2026-10-23T00:52:15.079Z",
+                "acceptedAt": "2026-10-23T00:52:15.079Z",
+                "admissionPhase": "accepted_pending",
+                "recoveryCause": "quota_exhausted",
+                "recoveryObservedAt": "2026-10-23T00:51:39.507Z",
+                "recoveryTurnId": "msg_1663d6f91001c5nwpKkpbQ08aA",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_e99fdd48affeTdGxFUNdrSsYUr",
+                "cwd": "/home/roomhacker/agents-projects/agent-herder/.tmp/quota-recovery-20261022/native-glm-fallback",
+                "model": "omniroute/zc/glm-5.3-flash",
+                "title": "quota-natural-marker-working-20261023-v4",
+                "startedAt": "2026-10-22T23:47:02.672Z",
+                "updatedAt": "2026-10-22T23:47:33.546Z",
+                "acceptedAt": "2026-10-22T23:47:33.546Z",
+                "admissionPhase": "accepted_pending",
+                "recoveryCause": "quota_exhausted",
+                "recoveryObservedAt": "2026-10-22T23:47:02.672Z",
+                "recoveryTurnId": "msg_166022df9001MWnD6JQbDiAbOD",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea3bf238fffe4ezSGA5Ht2iWTX",
+                "cwd": "/home/roomhacker/ServersAdministartion",
+                "model": "omniroute/minimax/MiniMax-M3.1-Flash",
+                "title": "project-launch-ef0274f7cbae8d8d",
+                "startedAt": "2026-10-21T03:19:42.091Z",
+                "updatedAt": "2026-10-21T17:17:45.973Z",
+                "acceptedAt": "2026-10-21T03:37:00.897Z",
+                "progressObservedAt": "2026-10-21T03:37:01.102Z",
+                "admissionPhase": "in_progress",
+                "activeTurnStartedAt": "2026-10-21T17:17:45.963Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea404b58fffeN05LT3qCDLCg4g",
+                "cwd": "/home/roomhacker/PycharmProjects/account-broker",
+                "model": "omniroute/minimax-combo-m3.1",
+                "title": "rev2-contracts-sync",
+                "startedAt": "2026-10-21T03:49:17.308Z",
+                "updatedAt": "2026-10-21T03:50:11.123Z",
+                "acceptedAt": "2026-10-21T03:50:10.773Z",
+                "progressObservedAt": "2026-10-21T03:50:11.123Z",
+                "admissionPhase": "in_progress",
+                "activeTurnStartedAt": "2026-10-21T03:50:10.980Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea404b594ffegC1QgFg1ZcyHNi",
+                "cwd": "/home/roomhacker/PycharmProjects/account-broker",
+                "model": "omniroute/minimax-combo-m3.1",
+                "title": "rev1-lzt-market",
+                "startedAt": "2026-10-21T03:47:53.664Z",
+                "updatedAt": "2026-10-21T03:47:57.062Z",
+                "acceptedAt": "2026-10-21T03:47:56.793Z",
+                "progressObservedAt": "2026-10-21T03:47:57.062Z",
+                "admissionPhase": "in_progress",
+                "activeTurnStartedAt": "2026-10-21T03:47:57.032Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea49d54dfffe9g5O3XPFTCk940",
+                "cwd": "/home/roomhacker/ServersAdministartion",
+                "model": "omniroute/minimax/MiniMax-M3",
+                "title": "project-launch-ce6d06d33f55ea61",
+                "startedAt": "2026-10-21T03:48:43.807Z",
+                "updatedAt": "2026-10-21T18:32:11.612Z",
+                "acceptedAt": "2026-10-21T03:48:52.775Z",
+                "progressObservedAt": "2026-10-21T16:26:29.163Z",
+                "admissionPhase": "in_progress",
+                "activeTurnStartedAt": "2026-10-21T18:32:11.601Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea4abdcf6ffeXtvf9ugTagpBWK",
+                "cwd": "/home/roomhacker/ServersAdministartion",
+                "model": "omniroute/minimax/MiniMax-M3",
+                "title": "project-launch-ee432aa19176cf61",
+                "startedAt": "2026-10-21T03:47:01.650Z",
+                "updatedAt": "2026-10-21T18:02:29.362Z",
+                "acceptedAt": "2026-10-21T03:47:06.537Z",
+                "progressObservedAt": "2026-10-21T03:47:06.753Z",
+                "admissionPhase": "in_progress",
+                "activeTurnStartedAt": "2026-10-21T18:02:29.348Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea4e2a42cffeexJNnv5LXmMlSL",
+                "cwd": "/home/roomhacker/ServersAdministartion",
+                "model": "omniroute/mmcode/MiniMax-M3.1-Flash",
+                "title": "project-launch-602d96f9c1c088b0",
+                "startedAt": "2026-10-21T03:47:37.938Z",
+                "updatedAt": "2026-10-21T20:06:46.615Z",
+                "acceptedAt": "2026-10-21T03:47:43.762Z",
+                "progressObservedAt": "2026-10-21T16:26:10.132Z",
+                "admissionPhase": "in_progress",
+                "activeTurnStartedAt": "2026-10-21T20:06:46.594Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea50518a5ffeWQW1PcuTd6NPUF",
+                "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto",
+                "model": "omniroute/minimax/MiniMax-M3.1-Flash",
+                "title": "project-launch-abf76e5c28488d2a",
+                "startedAt": "2026-10-21T05:09:16.307Z",
+                "updatedAt": "2026-10-21T19:44:46.660Z",
+                "acceptedAt": "2026-10-21T05:09:24.823Z",
+                "progressObservedAt": "2026-10-21T17:30:17.723Z",
+                "admissionPhase": "in_progress",
+                "activeTurnStartedAt": "2026-10-21T19:44:46.643Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea51c5577ffeHO238bvFjUC70x",
+                "cwd": "/home/roomhacker/ServersAdministartion",
+                "model": "omniroute/minimax/MiniMax-M3",
+                "title": "project-launch-32bf4a1223238e28",
+                "startedAt": "2026-10-21T03:46:59.869Z",
+                "updatedAt": "2026-10-21T18:29:08.484Z",
+                "acceptedAt": "2026-10-21T03:47:03.461Z",
+                "progressObservedAt": "2026-10-21T03:47:03.685Z",
+                "admissionPhase": "in_progress",
+                "activeTurnStartedAt": "2026-10-21T18:29:08.473Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea53b3e72ffekWJyEWAvTdoSGJ",
+                "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto",
+                "model": "omniroute/minimax/MiniMax-M3",
+                "title": "project-launch-c085d2953a082235",
+                "startedAt": "2026-10-21T05:09:18.111Z",
+                "updatedAt": "2026-10-21T19:28:11.312Z",
+                "acceptedAt": "2026-10-21T05:09:40.323Z",
+                "progressObservedAt": "2026-10-21T18:02:40.686Z",
+                "admissionPhase": "in_progress",
+                "activeTurnStartedAt": "2026-10-21T19:28:11.292Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea62b2402ffeVaPgKHLGX61B9D",
+                "cwd": "/home/roomhacker/ServersAdministartion",
+                "model": "omniroute/minimax/MiniMax-M3",
+                "title": "project-launch-5f941b6544fc21ca",
+                "startedAt": "2026-10-21T03:47:36.570Z",
+                "updatedAt": "2026-10-21T18:34:33.892Z",
+                "acceptedAt": "2026-10-21T03:47:40.283Z",
+                "progressObservedAt": "2026-10-21T16:26:10.061Z",
+                "admissionPhase": "in_progress",
+                "activeTurnStartedAt": "2026-10-21T18:34:33.873Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_eaaacd771ffebkE0v5DFnYi3r6",
+                "cwd": "/home/roomhacker/ServersAdministartion",
+                "model": "omniroute/minimax/MiniMax-M3",
+                "title": "project-launch-eb9a209e179f4358",
+                "startedAt": "2026-10-21T03:47:01.023Z",
+                "updatedAt": "2026-10-21T18:28:48.027Z",
+                "acceptedAt": "2026-10-21T03:47:09.333Z",
+                "progressObservedAt": "2026-10-21T07:50:20.556Z",
+                "admissionPhase": "in_progress",
+                "activeTurnStartedAt": "2026-10-21T18:28:48.003Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_eab868028ffeyKdziy5BoKu787",
+                "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto",
+                "model": "omniroute/minimax/MiniMax-M3.1-Flash",
+                "title": "Telegram: просмотры, реакции, интеграции",
+                "startedAt": "2026-10-21T04:13:05.102Z",
+                "updatedAt": "2026-10-21T22:09:26.891Z",
+                "acceptedAt": "2026-10-21T05:45:18.383Z",
+                "progressObservedAt": "2026-10-21T18:02:40.419Z",
+                "admissionPhase": "in_progress",
+                "activeTurnStartedAt": "2026-10-21T22:09:26.871Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_eac7ce778ffeFIOQrMsi8BFRzl",
+                "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto",
+                "model": "omniroute/glm-5.3-flash-minimax-m3.1",
+                "title": "Оркестратор — закупки/просмотры/TGC 25.10",
+                "startedAt": "2026-10-28T15:48:20.570Z",
+                "updatedAt": "2026-10-28T18:37:34.493Z",
+                "activeTurnStartedAt": "2026-10-28T18:37:34.493Z",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "zcode",
+                "sessionId": "sess_482362bc-038a-4c57-b61c-306d03b11587",
+                "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto",
+                "model": "account:zai-individual-coding-plan/GLM-5.3",
+                "title": "Проверка гейтов партии 300 (19:27, одноразовый)",
+                "startedAt": "2026-10-08T15:44:40.715Z",
+                "updatedAt": "2026-10-09T02:41:21.528Z",
+                "acceptedAt": "2026-10-09T02:41:21.528Z",
+                "progressObservedAt": "2026-10-09T02:43:30.888Z",
+                "admissionPhase": "in_progress",
+                "attempts": 0,
+                "state": "active"
+              },
+              {
+                "harness": "zcode",
+                "sessionId": "sess_70a3ebe9-e9a4-475e-b14e-68b4e9b57261",
+                "cwd": "/home/roomhacker/PycharmProjects/video_watching",
+                "model": "account:zai-individual-coding-plan/GLM-5.3-Flash",
+                "title": "selfheal_1791666905_1791666905",
+                "startedAt": "2026-10-12T02:46:36.948Z",
+                "updatedAt": "2026-10-12T02:54:56.813Z",
+                "acceptedAt": "2026-10-12T02:48:57.646Z",
+                "progressObservedAt": "2026-10-12T02:49:06.501Z",
+                "admissionPhase": "terminal_observed",
+                "terminalReason": "turn.failed",
+                "terminalObservedAt": "2026-10-12T02:54:56.813Z",
+                "nonRetryableAdmission": true,
+                "attempts": 0,
+                "state": "active",
+                "lastError": "accepted turn stopped by the human before any assistant answer"
+              },
+              {
+                "harness": "zcode",
+                "sessionId": "sess_859b3eaf-15f5-4304-a4f3-3a5e1c1516dd",
+                "cwd": "/home/roomhacker/PycharmProjects/video_watching",
+                "model": "account:zai-individual-coding-plan/GLM-5.3-Flash",
+                "title": "Выпусти сабо агента, который вызовет лизинг на телефоне и...",
+                "startedAt": "2026-10-12T02:36:16.925Z",
+                "updatedAt": "2026-10-12T02:54:56.631Z",
+                "acceptedAt": "2026-10-12T02:41:50.645Z",
+                "progressObservedAt": "2026-10-12T02:42:32.652Z",
+                "admissionPhase": "terminal_observed",
+                "terminalReason": "turn.failed",
+                "terminalObservedAt": "2026-10-12T02:54:56.631Z",
+                "nonRetryableAdmission": true,
+                "attempts": 0,
+                "state": "active",
+                "lastError": "accepted turn stopped by the human before any assistant answer"
+              }
+            ],
+            "inventoryTotal": 0,
+            "inventory": []
+          }
+        },
+        "autostart": {
+          "path": "/home/roomhacker/.local/state/agent-herder/autopilot-live/session-autostart.json",
+          "exists": true,
+          "state": {
+            "version": 8,
+            "enabled": false,
+            "fallbackForQuota": false,
+            "waitForQuota": false,
+            "pinActiveSessions": true,
+            "rolloverExpiredCache": false,
+            "movePinnedOnRollover": false,
+            "inventoryWindowHours": 48,
+            "evidenceMessageCount": 200,
+            "recoverOnFailure": true,
+            "recoverOnDisconnect": true,
+            "watchdogEnabled": true,
+            "watchdogIntervalSeconds": 30,
+            "stalledTurnMinutes": 5,
+            "judgeModel": "glm-5.3-flash",
+            "autopilotJudgeModel": "glm-5.3-flash",
+            "harnesses": [
+              {
+                "harness": "codex",
+                "enabled": true,
+                "updatedAt": "2026-10-11T18:41:35.840Z"
+              },
+              {
+                "harness": "opencode",
+                "enabled": true,
+                "updatedAt": "2026-10-28T15:06:26.964Z"
+              },
+              {
+                "harness": "zcode",
+                "enabled": true,
+                "updatedAt": "2026-10-07T11:26:38.890Z"
+              }
+            ],
+            "sessions": [
+              {
+                "harness": "opencode",
+                "sessionId": "ses_e99c29993ffelr4vUdOhBZz0xs",
+                "cwd": "/home/roomhacker/agents-projects/agent-herder/.tmp/quota-recovery-20261022/native-glm-fallback",
+                "enabled": false,
+                "updatedAt": "2026-10-23T01:01:55.392Z"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_e99fdd48affeTdGxFUNdrSsYUr",
+                "cwd": "/home/roomhacker/agents-projects/agent-herder/.tmp/quota-recovery-20261022/native-glm-fallback",
+                "enabled": false,
+                "updatedAt": "2026-10-22T23:50:26.401Z"
+              }
+            ],
+            "waitForQuotaHarnesses": [
+              {
+                "harness": "opencode",
+                "waitForQuota": false,
+                "fallbackForQuota": true,
+                "updatedAt": "2026-10-27T13:04:34.004Z"
+              }
+            ],
+            "waitForQuotaSessions": [
+              {
+                "harness": "opencode",
+                "sessionId": "ses_e99c29993ffelr4vUdOhBZz0xs",
+                "cwd": "/home/roomhacker/agents-projects/agent-herder/.tmp/quota-recovery-20261022/native-glm-fallback",
+                "waitForQuota": false,
+                "fallbackForQuota": false,
+                "updatedAt": "2026-10-23T01:01:55.616Z"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_e99fdd48affeTdGxFUNdrSsYUr",
+                "cwd": "/home/roomhacker/agents-projects/agent-herder/.tmp/quota-recovery-20261022/native-glm-fallback",
+                "waitForQuota": false,
+                "fallbackForQuota": false,
+                "updatedAt": "2026-10-22T23:50:26.406Z"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea3bf238fffe4ezSGA5Ht2iWTX",
+                "cwd": "/home/roomhacker/ServersAdministartion",
+                "waitForQuota": true,
+                "fallbackForQuota": false,
+                "updatedAt": "2026-10-21T03:19:42.012Z"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea404b58fffeN05LT3qCDLCg4g",
+                "cwd": "/home/roomhacker/PycharmProjects/account-broker",
+                "waitForQuota": true,
+                "fallbackForQuota": false,
+                "updatedAt": "2026-10-21T03:49:17.306Z"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea404b594ffegC1QgFg1ZcyHNi",
+                "cwd": "/home/roomhacker/PycharmProjects/account-broker",
+                "waitForQuota": true,
+                "fallbackForQuota": false,
+                "updatedAt": "2026-10-21T03:47:53.661Z"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea49d54dfffe9g5O3XPFTCk940",
+                "cwd": "/home/roomhacker/ServersAdministartion",
+                "waitForQuota": true,
+                "fallbackForQuota": false,
+                "updatedAt": "2026-10-21T03:48:43.802Z"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea4abdcf6ffeXtvf9ugTagpBWK",
+                "cwd": "/home/roomhacker/ServersAdministartion",
+                "waitForQuota": true,
+                "fallbackForQuota": false,
+                "updatedAt": "2026-10-21T03:47:01.647Z"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea4e2a42cffeexJNnv5LXmMlSL",
+                "cwd": "/home/roomhacker/ServersAdministartion",
+                "waitForQuota": true,
+                "fallbackForQuota": false,
+                "updatedAt": "2026-10-21T03:47:37.935Z"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea50518a5ffeWQW1PcuTd6NPUF",
+                "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto",
+                "waitForQuota": true,
+                "fallbackForQuota": false,
+                "updatedAt": "2026-10-21T05:09:16.296Z"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea51c5577ffeHO238bvFjUC70x",
+                "cwd": "/home/roomhacker/ServersAdministartion",
+                "waitForQuota": true,
+                "fallbackForQuota": false,
+                "updatedAt": "2026-10-21T03:46:59.866Z"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea53b3e72ffekWJyEWAvTdoSGJ",
+                "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto",
+                "waitForQuota": true,
+                "fallbackForQuota": false,
+                "updatedAt": "2026-10-21T05:09:18.053Z"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_ea62b2402ffeVaPgKHLGX61B9D",
+                "cwd": "/home/roomhacker/ServersAdministartion",
+                "waitForQuota": true,
+                "fallbackForQuota": false,
+                "updatedAt": "2026-10-21T03:47:36.566Z"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_eaaacd771ffebkE0v5DFnYi3r6",
+                "cwd": "/home/roomhacker/ServersAdministartion",
+                "waitForQuota": true,
+                "fallbackForQuota": false,
+                "updatedAt": "2026-10-21T03:47:01.017Z"
+              },
+              {
+                "harness": "opencode",
+                "sessionId": "ses_eab868028ffeyKdziy5BoKu787",
+                "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto",
+                "waitForQuota": true,
+                "fallbackForQuota": false,
+                "updatedAt": "2026-10-21T04:13:05.083Z"
+              }
+            ],
+            "sessionOverridesTotal": 377,
+            "waitForQuotaSessionOverridesTotal": 32
+          }
+        },
+        "humanStops": {
+          "path": "/home/roomhacker/.local/state/agent-herder/human-stops.json",
+          "exists": true,
+          "state": {
+            "rootKeys": [
+              "version",
+              "sessions",
+              "generatedInputs"
+            ],
+            "sessions": [
+              {
+                "harness": "opencode",
+                "id": "ses_e99c29993ffelr4vUdOhBZz0xs",
+                "active": true,
+                "stop": {
+                  "id": "owner-scope-stop:opencode:ses_e99c29993ffelr4vUdOhBZz0xs",
+                  "at": "2026-10-26T10:11:18.071Z",
+                  "reason": "Автоматическое исполнение области остановлено владельцем."
+                },
+                "ignoredStopIds": [],
+                "cwd": "/home/roomhacker/agents-projects/agent-herder/.tmp/quota-recovery-20261022/native-glm-fallback"
+              },
+              {
+                "harness": "opencode",
+                "id": "ses_e99fdd48affeTdGxFUNdrSsYUr",
+                "active": true,
+                "stop": {
+                  "id": "owner-scope-stop:opencode:ses_e99fdd48affeTdGxFUNdrSsYUr",
+                  "at": "2026-10-26T10:11:18.258Z",
+                  "reason": "Автоматическое исполнение области остановлено владельцем."
+                },
+                "ignoredStopIds": [],
+                "cwd": "/home/roomhacker/agents-projects/agent-herder/.tmp/quota-recovery-20261022/native-glm-fallback"
+              },
+              {
+                "harness": "opencode",
+                "id": "ses_ea3bf238fffe4ezSGA5Ht2iWTX",
+                "active": true,
+                "stop": {
+                  "id": "owner-scope-stop:opencode:ses_ea3bf238fffe4ezSGA5Ht2iWTX",
+                  "at": "2026-10-26T10:11:18.375Z",
+                  "reason": "Автоматическое исполнение области остановлено владельцем."
+                },
+                "ignoredStopIds": [],
+                "cwd": "/home/roomhacker/ServersAdministartion"
+              },
+              {
+                "harness": "opencode",
+                "id": "ses_ea404b58fffeN05LT3qCDLCg4g",
+                "active": true,
+                "stop": {
+                  "id": "owner-scope-stop:opencode:ses_ea404b58fffeN05LT3qCDLCg4g",
+                  "at": "2026-10-26T10:11:18.437Z",
+                  "reason": "Автоматическое исполнение области остановлено владельцем."
+                },
+                "ignoredStopIds": [],
+                "cwd": "/home/roomhacker/PycharmProjects/account-broker"
+              },
+              {
+                "harness": "opencode",
+                "id": "ses_ea404b594ffegC1QgFg1ZcyHNi",
+                "active": true,
+                "stop": {
+                  "id": "owner-scope-stop:opencode:ses_ea404b594ffegC1QgFg1ZcyHNi",
+                  "at": "2026-10-26T10:11:18.498Z",
+                  "reason": "Автоматическое исполнение области остановлено владельцем."
+                },
+                "ignoredStopIds": [],
+                "cwd": "/home/roomhacker/PycharmProjects/account-broker"
+              },
+              {
+                "harness": "opencode",
+                "id": "ses_ea49d54dfffe9g5O3XPFTCk940",
+                "active": true,
+                "stop": {
+                  "id": "owner-scope-stop:opencode:ses_ea49d54dfffe9g5O3XPFTCk940",
+                  "at": "2026-10-26T10:11:18.568Z",
+                  "reason": "Автоматическое исполнение области остановлено владельцем."
+                },
+                "ignoredStopIds": [],
+                "cwd": "/home/roomhacker/ServersAdministartion"
+              },
+              {
+                "harness": "opencode",
+                "id": "ses_ea4abdcf6ffeXtvf9ugTagpBWK",
+                "active": true,
+                "stop": {
+                  "id": "owner-scope-stop:opencode:ses_ea4abdcf6ffeXtvf9ugTagpBWK",
+                  "at": "2026-10-26T10:11:20.223Z",
+                  "reason": "Автоматическое исполнение области остановлено владельцем."
+                },
+                "ignoredStopIds": [],
+                "cwd": "/home/roomhacker/ServersAdministartion"
+              },
+              {
+                "harness": "opencode",
+                "id": "ses_ea4e2a42cffeexJNnv5LXmMlSL",
+                "active": true,
+                "stop": {
+                  "id": "owner-scope-stop:opencode:ses_ea4e2a42cffeexJNnv5LXmMlSL",
+                  "at": "2026-10-26T10:11:21.041Z",
+                  "reason": "Автоматическое исполнение области остановлено владельцем."
+                },
+                "ignoredStopIds": [],
+                "cwd": "/home/roomhacker/ServersAdministartion"
+              },
+              {
+                "harness": "opencode",
+                "id": "ses_ea50518a5ffeWQW1PcuTd6NPUF",
+                "active": true,
+                "stop": {
+                  "id": "owner-scope-stop:opencode:ses_ea50518a5ffeWQW1PcuTd6NPUF",
+                  "at": "2026-10-26T10:11:21.879Z",
+                  "reason": "Автоматическое исполнение области остановлено владельцем."
+                },
+                "ignoredStopIds": [],
+                "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto"
+              },
+              {
+                "harness": "opencode",
+                "id": "ses_ea51c5577ffeHO238bvFjUC70x",
+                "active": true,
+                "stop": {
+                  "id": "owner-scope-stop:opencode:ses_ea51c5577ffeHO238bvFjUC70x",
+                  "at": "2026-10-26T10:11:22.218Z",
+                  "reason": "Автоматическое исполнение области остановлено владельцем."
+                },
+                "ignoredStopIds": [],
+                "cwd": "/home/roomhacker/ServersAdministartion"
+              },
+              {
+                "harness": "opencode",
+                "id": "ses_ea53b3e72ffekWJyEWAvTdoSGJ",
+                "active": true,
+                "stop": {
+                  "id": "owner-scope-stop:opencode:ses_ea53b3e72ffekWJyEWAvTdoSGJ",
+                  "at": "2026-10-26T10:11:23.233Z",
+                  "reason": "Автоматическое исполнение области остановлено владельцем."
+                },
+                "ignoredStopIds": [],
+                "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto"
+              },
+              {
+                "harness": "opencode",
+                "id": "ses_ea62b2402ffeVaPgKHLGX61B9D",
+                "active": true,
+                "stop": {
+                  "id": "owner-scope-stop:opencode:ses_ea62b2402ffeVaPgKHLGX61B9D",
+                  "at": "2026-10-26T10:11:24.358Z",
+                  "reason": "Автоматическое исполнение области остановлено владельцем."
+                },
+                "ignoredStopIds": [],
+                "cwd": "/home/roomhacker/ServersAdministartion"
+              },
+              {
+                "harness": "opencode",
+                "id": "ses_eaaacd771ffebkE0v5DFnYi3r6",
+                "active": true,
+                "stop": {
+                  "id": "owner-scope-stop:opencode:ses_eaaacd771ffebkE0v5DFnYi3r6",
+                  "at": "2026-10-26T10:11:26.334Z",
+                  "reason": "Автоматическое исполнение области остановлено владельцем."
+                },
+                "ignoredStopIds": [],
+                "cwd": "/home/roomhacker/ServersAdministartion"
+              },
+              {
+                "harness": "opencode",
+                "id": "ses_eab868028ffeyKdziy5BoKu787",
+                "active": true,
+                "stop": {
+                  "id": "owner-scope-stop:opencode:ses_eab868028ffeyKdziy5BoKu787",
+                  "at": "2026-10-26T10:11:26.815Z",
+                  "reason": "Автоматическое исполнение области остановлено владельцем."
+                },
+                "ignoredStopIds": [],
+                "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto"
+              },
+              {
+                "harness": "zcode",
+                "id": "sess_482362bc-038a-4c57-b61c-306d03b11587",
+                "active": true,
+                "stop": {
+                  "id": "owner-scope-stop:zcode:sess_482362bc-038a-4c57-b61c-306d03b11587",
+                  "at": "2026-10-26T10:11:28.358Z",
+                  "reason": "Автоматическое исполнение области остановлено владельцем."
+                },
+                "ignoredStopIds": [],
+                "cwd": "/home/roomhacker/agents-projects/agent-herder"
+              },
+              {
+                "harness": "zcode",
+                "id": "sess_70a3ebe9-e9a4-475e-b14e-68b4e9b57261",
+                "active": true,
+                "stop": {
+                  "id": "owner-scope-stop:zcode:sess_70a3ebe9-e9a4-475e-b14e-68b4e9b57261",
+                  "at": "2026-10-26T10:11:30.224Z",
+                  "reason": "Автоматическое исполнение области остановлено владельцем."
+                },
+                "ignoredStopIds": [],
+                "cwd": "/home/roomhacker/PycharmProjects/video_watching"
+              },
+              {
+                "harness": "zcode",
+                "id": "sess_859b3eaf-15f5-4304-a4f3-3a5e1c1516dd",
+                "active": true,
+                "stop": {
+                  "id": "owner-scope-stop:zcode:sess_859b3eaf-15f5-4304-a4f3-3a5e1c1516dd",
+                  "at": "2026-10-26T10:11:30.815Z",
+                  "reason": "Автоматическое исполнение области остановлено владельцем."
+                },
+                "ignoredStopIds": [],
+                "cwd": "/home/roomhacker/PycharmProjects/video_watching"
+              }
+            ],
+            "activeTotal": 259
+          }
+        }
+      },
+      "api": {
+        "sessions": {
+          "count": 100,
+          "harnessCounts": {
+            "codex": 21,
+            "opencode": 18,
+            "zcode": 18,
+            "minimax-code": 18,
+            "fast-agent": 18,
+            "claude": 7
+          }
+        },
+        "session-autostart": {
+          "version": 8,
+          "enabled": false,
+          "fallbackForQuota": false,
+          "waitForQuota": false,
+          "pinActiveSessions": true,
+          "rolloverExpiredCache": false,
+          "movePinnedOnRollover": false,
+          "inventoryWindowHours": 48,
+          "evidenceMessageCount": 200,
+          "recoverOnFailure": true,
+          "recoverOnDisconnect": true,
+          "watchdogEnabled": true,
+          "watchdogIntervalSeconds": 30,
+          "stalledTurnMinutes": 5,
+          "judgeModel": "glm-5.3-flash",
+          "autopilotJudgeModel": "glm-5.3-flash",
+          "harnesses": [
+            {
+              "harness": "codex",
+              "enabled": true,
+              "updatedAt": "2026-10-11T18:41:35.840Z"
+            },
+            {
+              "harness": "opencode",
+              "enabled": true,
+              "updatedAt": "2026-10-28T15:06:26.964Z"
+            },
+            {
+              "harness": "zcode",
+              "enabled": true,
+              "updatedAt": "2026-10-07T11:26:38.890Z"
+            }
+          ],
+          "waitForQuotaHarnesses": [
+            {
+              "harness": "opencode",
+              "waitForQuota": false,
+              "fallbackForQuota": true,
+              "updatedAt": "2026-10-27T13:04:34.004Z"
+            }
+          ],
+          "source": "persisted",
+          "waitForQuotaSource": "global"
+        }
+      }
+    }
+  },
+  "codexNativeCohort": {
+    "observedAt": "2026-10-28T20:34:12.093514+00:00",
+    "cohort": "existing Codex sessions in API100; read-only details limit1 quick1; no turns sent",
+    "sessions": [
+      {
+        "id": "01a17db0-a213-7ab2-8da1-c90eb90793b4",
+        "title": "Слушай, а у нас вот это вот разрешение, которое позволяет и…",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "running",
+        "lastActivity": "2026-10-28T20:31:47.000Z",
+        "model": "gpt-6-luna",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a18434-47a7-71e3-8ad7-9c8dc1da61d3",
+          "status": "inProgress"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a17db0-a213-7ab2-8da1-c90eb90793b4"
+        },
+        "detailsSessionStatus": "running",
+        "detailsLastActivity": "2026-10-28T20:31:47.000Z"
+      },
+      {
+        "id": "01a183a7-7b14-74e1-a104-5534205ba3fb",
+        "title": "Компактный интерфейс Автограммы",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "running",
+        "lastActivity": "2026-10-28T20:31:46.000Z",
+        "model": "gpt-6-luna",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a18434-7e15-7152-a403-f70ff3e23275",
+          "status": "inProgress"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a183a7-7b14-74e1-a104-5534205ba3fb"
+        },
+        "detailsSessionStatus": "running",
+        "detailsLastActivity": "2026-10-28T20:31:46.000Z"
+      },
+      {
+        "id": "01a1754f-0228-7553-bea6-cc89e40b5187",
+        "title": "Собрать правки Agent Herder ↔ ZCode",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "running",
+        "lastActivity": "2026-10-28T20:31:45.000Z",
+        "model": "gpt-6.1-sol",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a18432-cc55-75d0-a1e8-521b5c69f42a",
+          "status": "inProgress"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a1754f-0228-7553-bea6-cc89e40b5187"
+        },
+        "detailsSessionStatus": "running",
+        "detailsLastActivity": "2026-10-28T20:31:45.000Z"
+      },
+      {
+        "id": "01a18318-e153-7b01-927a-d151f0877087",
+        "title": "Исправить UserIO",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T20:30:52.000Z",
+        "model": "gpt-6.1-sol",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a18331-ded8-7092-8e4e-978b449ee9cc",
+          "status": "completed",
+          "completedAt": "2026-10-28T15:50:47.000Z"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a18318-e153-7b01-927a-d151f0877087"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T20:30:52.000Z"
+      },
+      {
+        "id": "01a17e2e-6dce-7870-b08c-89c092087fb5",
+        "title": "Завершить сценарий ExManager",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T20:30:23.000Z",
+        "model": "gpt-6.1-sol",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a18393-5af9-7fa3-9f2d-0954f4cfd2ba",
+          "status": "interrupted"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a17e2e-6dce-7870-b08c-89c092087fb5"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T20:30:23.000Z"
+      },
+      {
+        "id": "01a182b0-5520-7e81-8d75-51bbe361d85b",
+        "title": "Исправить дашборд планов Agent Herder",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T20:27:36.000Z",
+        "model": "gpt-6.1-sol",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a1839d-e483-7443-9922-b7978e766f0c",
+          "status": "completed",
+          "completedAt": "2026-10-28T18:02:50.000Z"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a182b0-5520-7e81-8d75-51bbe361d85b"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T20:27:36.000Z"
+      },
+      {
+        "id": "01a183d6-e4ff-7762-a3e2-45c3d96cd7e0",
+        "title": "Унифицировать подключение аккаунтов",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T19:00:41.000Z",
+        "model": "gpt-6.1-sol",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a183d6-fa04-7bb0-90a3-4a2254026916",
+          "status": "interrupted"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a183d6-e4ff-7762-a3e2-45c3d96cd7e0"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T19:00:41.000Z"
+      },
+      {
+        "id": "01a182ff-be14-7171-9b7d-a4965f7363cd",
+        "title": "Обновить Airlock и демо",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T19:00:41.000Z",
+        "model": "gpt-6.1-sol",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a183c3-e935-74e3-8a08-7aaac6367484",
+          "status": "interrupted"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a182ff-be14-7171-9b7d-a4965f7363cd"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T19:00:41.000Z"
+      },
+      {
+        "id": "01a17463-b099-7f62-b6d8-3194ce73ffe9",
+        "title": "Реализовать план Cloud Telethon",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T19:00:41.000Z",
+        "model": "gpt-6.1-sol",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a18241-662a-7533-959b-48fbed3bab2d",
+          "status": "interrupted"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a17463-b099-7f62-b6d8-3194ce73ffe9"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T19:00:41.000Z"
+      },
+      {
+        "id": "01a182fe-39b5-7730-a84b-7c484e8fc412",
+        "title": "AutoGramXAirlock",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T18:58:08.000Z",
+        "model": "gpt-6.1-sol",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a1838e-1ce0-7d51-be04-9b6e19da4dda",
+          "status": "interrupted"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a182fe-39b5-7730-a84b-7c484e8fc412"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T18:58:08.000Z"
+      },
+      {
+        "id": "01a1653b-d774-73b3-9c0a-09cced76ea9e",
+        "title": "voice exmanager notice place userio",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T18:58:08.000Z",
+        "model": "gpt-6.1-sol",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a18314-f356-7fe3-bc80-673bee7630b1",
+          "status": "interrupted"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a1653b-d774-73b3-9c0a-09cced76ea9e"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T18:58:08.000Z"
+      },
+      {
+        "id": "01a18288-c9a6-7082-b943-ab583172b7a6",
+        "title": "Установить Xerj для OpenCode и Codex",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T18:57:29.000Z",
+        "model": "gpt-6.1-sol",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a18399-b6cf-7a81-8b91-09a85afd9e89",
+          "status": "interrupted"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a18288-c9a6-7082-b943-ab583172b7a6"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T18:57:29.000Z"
+      },
+      {
+        "id": "01a17e87-1fa4-7101-a7e7-3917461a0117",
+        "title": "Проверить сохранность данных при деп",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T18:57:14.000Z",
+        "model": "gpt-6.1-sol",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a183dd-cf12-76d3-a978-404b4c70a251",
+          "status": "interrupted"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a17e87-1fa4-7101-a7e7-3917461a0117"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T18:57:14.000Z"
+      },
+      {
+        "id": "01a174a7-fa79-7d33-8bcb-0c3c2766a8a7",
+        "title": "Довести ExManager до рабочего MVP",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T18:51:23.000Z",
+        "model": "gpt-6-luna",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a183d4-3a50-73f2-9210-5d0cddf8677a",
+          "status": "completed",
+          "completedAt": "2026-10-28T18:51:23.000Z"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a174a7-fa79-7d33-8bcb-0c3c2766a8a7"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T18:51:23.000Z"
+      },
+      {
+        "id": "01a17763-c117-7f42-bc62-62d478d32a08",
+        "title": "GrepMesh remote indexes and duplicates",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T18:43:52.000Z",
+        "model": "gpt-6-luna",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a183d1-f27d-7ae2-98df-f1189fbf6ec5",
+          "status": "completed",
+          "completedAt": "2026-10-28T18:43:52.000Z"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a17763-c117-7f42-bc62-62d478d32a08"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T18:43:52.000Z"
+      },
+      {
+        "id": "01a183a9-7fc8-7163-abcc-13ba363a9a7b",
+        "title": "Никита — проверка пути интегратора",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T18:20:34.000Z",
+        "model": "gpt-6-luna",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a183ad-2253-7030-b7c4-1f2c8b0cdfce",
+          "status": "completed",
+          "completedAt": "2026-10-28T18:20:34.000Z"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a183a9-7fc8-7163-abcc-13ba363a9a7b"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T18:20:34.000Z"
+      },
+      {
+        "id": "01a17ea3-5600-7580-aba9-1badd2187dd5",
+        "title": "ШТАТНО · health launch auth repair · 27.10",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T18:17:56.000Z",
+        "model": "gpt-6.1-sol",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a183ba-fc2d-7dc1-b980-36e6fb519d7c",
+          "status": "completed",
+          "completedAt": "2026-10-28T18:17:56.000Z"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a17ea3-5600-7580-aba9-1badd2187dd5"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T18:17:56.000Z"
+      },
+      {
+        "id": "01a1748f-0acd-74b2-b495-05838ca4a070",
+        "title": "Завершить план OmniRoute Z-code",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T18:17:46.000Z",
+        "model": "gpt-6.1-sol",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a183a2-f0fe-7282-a21a-69bff693cd1f",
+          "status": "completed",
+          "completedAt": "2026-10-28T18:17:46.000Z"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a1748f-0acd-74b2-b495-05838ca4a070"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T18:17:46.000Z"
+      },
+      {
+        "id": "01a18387-7dd8-7241-a6e2-ee830bf0a4c2",
+        "title": "server100_account_broker_io_20261028_sol",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T17:41:25.000Z",
+        "model": "gpt-6.1-sol",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a18387-9a10-71b3-a839-a1faa251446d",
+          "status": "completed",
+          "completedAt": "2026-10-28T17:41:25.000Z"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a18387-7dd8-7241-a6e2-ee830bf0a4c2"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T17:41:25.000Z"
+      },
+      {
+        "id": "01a182c6-137c-7db1-bd62-2b96515e1089",
+        "title": "exmanager-luna-callback-1028",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T17:40:19.000Z",
+        "model": "gpt-6-luna",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a18399-2319-72b0-a44e-c6c1dfd33104",
+          "status": "completed",
+          "completedAt": "2026-10-28T17:40:19.000Z"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a182c6-137c-7db1-bd62-2b96515e1089"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T17:40:19.000Z"
+      },
+      {
+        "id": "01a17e06-cc6b-72f0-8635-4514a25afc96",
+        "title": "какие то проблемы с впнов и прокси , все ломается и отвалив…",
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "status": "idle",
+        "lastActivity": "2026-10-28T17:36:09.000Z",
+        "model": "gpt-6.1-sol",
+        "humanStopHeld": false,
+        "detailsStatus": 200,
+        "nativeLastTurn": {
+          "turnId": "01a18391-b5ba-70b0-b846-116765612d94",
+          "status": "completed",
+          "completedAt": "2026-10-28T17:36:09.000Z"
+        },
+        "metaIdentity": {
+          "nativeSessionId": "01a17e06-cc6b-72f0-8635-4514a25afc96"
+        },
+        "detailsSessionStatus": "idle",
+        "detailsLastActivity": "2026-10-28T17:36:09.000Z"
+      }
+    ],
+    "sessionAutostartOverrides": []
+  }
+}

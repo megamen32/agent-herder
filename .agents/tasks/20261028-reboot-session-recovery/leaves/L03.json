@@ -1,0 +1,30 @@
+{
+  "id": "L03",
+  "label": "Установить финальное восстановление на Mini через исправленную проверку готовности",
+  "status": "running",
+  "description": "Устранить преждевременный rollback после ответа старого listener и временной недоступности нового API, сохранив все process/payload/auth guards; установить уже проверенный139d877.",
+  "acceptance": "Mini исполняет139d877, все три штатных API доступны, native PID/STOP/пауза/настройки сохранены; предыдущая неуспешная попытка не скрыта.",
+  "affected_files": [
+    "deploy/fleet/rollout-node.py",
+    "tests/rollout-node-install.test.py"
+  ],
+  "owner": "roomhacker",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex",
+  "model": "gpt-6.1-sol",
+  "depends_on": [],
+  "estimate_minutes": 10,
+  "note": "Исполнитель recovery_mac_delivery; root интегрирует helper. На100/44/88 повторная установка не нужна.",
+  "updated_at": "2026-10-29T01:35:50+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-29T01:35:50+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "owner": "roomhacker"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    }
+  ]
+}

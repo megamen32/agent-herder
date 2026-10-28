@@ -1,0 +1,208 @@
+{
+  "schema_version": 2,
+  "title": "Возобновление незавершённых сессий после перезагрузки",
+  "goal": "Найти прерванные перезагрузкой сессии и вернуть штатное автовозобновление, включая текущую сессию, не затрагивая STOP и завершённую работу.",
+  "business_result": "После запуска компьютера единственный Herder обнаруживает недавние незавершённые ходы, продолжает тот же native ID ровно один раз на доказанное прерывание и объясняет конкретные пропуски. Вручную допускается максимум одна проверочная сессия.",
+  "business_results": [
+    "После запуска компьютера единственный Herder обнаруживает недавние незавершённые ходы, продолжает тот же native ID ровно один раз на доказанное прерывание и объясняет конкретные пропуски. Вручную допускается максимум одна проверочная сессия."
+  ],
+  "acceptance_scenarios": [],
+  "current_progress": "17c89a1 опубликован, runtime98caf установлен100; Herder сам продолжил4сессии00:04, реальная работа подтверждена. После следующего запуска100в01:01 эти новые ходы снова interrupted; старый in_progress admission удерживает повторное восстановление. Исправляется именно новый обрыв по свежему native terminal evidence, без повторной отправки старого accepted input.44/88уже98caf, рестарт не повторяется; Mini/M1 проверяются отдельно. Вопросы переданы native01a18444. Ручных продолжений0.",
+  "external_waits": "",
+  "slots": 1,
+  "updated_at": "2026-10-29T01:35:50+03:00",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "Исправить восстановление после перезагрузки и продолжить разрешённые сессии",
+      "status": "done",
+      "acceptance": "После установки единственный Herder сам продолжает недавние прерванные сессии; вручную допускается максимум один canary. STOP, pending questions, новый ход, finished и accepted/UNKNOWN сохраняются.",
+      "result": "acceptance.md и server100-second-install.json: автоматическое исполнение4сессий после второго reboot; old receipts сохранены",
+      "owner": "roomhacker",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "note": "17c89a1 опубликован и установлен в98caf. Первый Herder автоматически продолжил4сессии00:04, native работа подтверждена. Повторный запуск100в01:01 выявил второй обрыв: те же accepted native ходы interrupted, durable in_progress блокирует новый recovery. Исполнитель codex_self_identity исправляет точный переход без replay.44/88уже98caf, Miniустановлен; M1выявлен launcher hash/config mismatch. Questionsвnative01a18444, ручных продолжений0.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-28T23:29:48+03:00",
+          "note": "",
+          "changes": {
+            "label": "Исправить восстановление после перезагрузки и продолжить разрешённые сессии",
+            "model": "gpt-6.1-sol",
+            "estimate_minutes": 15,
+            "status": "running",
+            "owner": "root",
+            "acceptance": "Список недавних прерванных сессий с причинами; штатное продолжение без STOP/дублей и установленный fix"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T23:29:49+03:00",
+          "note": "Начал работу в текущей сессии",
+          "changes": {
+            "owner": "roomhacker"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T23:36:06+03:00",
+          "note": "",
+          "changes": {
+            "acceptance": "После установки единственный Herder сам продолжает недавние прерванные сессии; вручную допускается максимум один canary. STOP, pending questions, новый ход, finished и accepted/UNKNOWN сохраняются.",
+            "note": "Новое прямое ограничение владельца: массовое ручное продолжение запрещено. Ручных продолжений root пока0."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T23:39:10+03:00",
+          "note": "",
+          "changes": {
+            "note": "Inventory100:8interrupted/10completed/3running.44 reboot22:51;88/Mini/M1 сегодня не reboot. Ручных продолжений0. Adapter поздно подключился сам; sourcefix в cold interrupted ingestion. Native actual snapshot lacks completedAt, поэтому проверяем контракт на реальных8, а не толькоmocks."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T23:47:50+03:00",
+          "note": "",
+          "changes": {
+            "note": "Ownerявноразделилработу: questionsперенесенывnative01a18444; rootостаётсяrebootfix/install/autoresumeunfinished. Manualmax1, пока0. СамHerderпослерелизавосстанавливаетeligible, pendingquestions/STOPсохраняются."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-29T01:35:50+03:00",
+          "note": "139d877 установлен100/44/88; Herder сам продолжил4nativeсессии01:32, новые сообщения и progress подтверждены; manual0. Mini и M1 выделены в конкретные leaves.",
+          "changes": {
+            "status": "done",
+            "result": "acceptance.md и server100-second-install.json: автоматическое исполнение4сессий после второго reboot; old receipts сохранены"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-10-28T23:29:48+03:00"
+    },
+    {
+      "id": "L02",
+      "label": "Передать вопросы и разрешения в отдельную сессию по решению владельца",
+      "status": "done",
+      "acceptance": "Создана отдельная native сессия, переданы конкретные WIP пути и находки; вопросы не объявляются реализованными",
+      "result": "Создана01a18444-4ce2-70d2-a7f0-65e9fe1cbbef на104; она владеет question delivery. Здесь толькоreboot recovery; manualresume<=1.",
+      "owner": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-28T23:41:40+03:00",
+          "note": "",
+          "changes": {
+            "label": "Доставить ожидающие вопросы и запросы разрешений в Telegram через Notice Place",
+            "model": "gpt-6.1-sol",
+            "estimate_minutes": 15,
+            "status": "running",
+            "owner": "codex_tier_controls",
+            "acceptance": "Обычный вопрос и approval доставлены по существующему Telegram маршруту ровно один раз, ответ продолжает ту же сессию, pending восстановлены после restart"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T23:47:50+03:00",
+          "note": "",
+          "changes": {
+            "label": "Передать вопросы и разрешения в отдельную сессию по решению владельца",
+            "status": "done",
+            "owner": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+            "acceptance": "Создана отдельная native сессия, переданы конкретные WIP пути и находки; вопросы не объявляются реализованными",
+            "result": "Создана01a18444-4ce2-70d2-a7f0-65e9fe1cbbef на104; она владеет question delivery. Здесь толькоreboot recovery; manualresume<=1."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-10-28T23:41:40+03:00"
+    },
+    {
+      "id": "L03",
+      "label": "Установить финальное восстановление на Mini через исправленную проверку готовности",
+      "status": "running",
+      "description": "Устранить преждевременный rollback после ответа старого listener и временной недоступности нового API, сохранив все process/payload/auth guards; установить уже проверенный139d877.",
+      "acceptance": "Mini исполняет139d877, все три штатных API доступны, native PID/STOP/пауза/настройки сохранены; предыдущая неуспешная попытка не скрыта.",
+      "owner": "roomhacker",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "note": "Исполнитель recovery_mac_delivery; root интегрирует helper. На100/44/88 повторная установка не нужна.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-29T01:35:50+03:00",
+          "note": "Начал работу в текущей сессии",
+          "changes": {
+            "owner": "roomhacker"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "deploy/fleet/rollout-node.py",
+        "tests/rollout-node-install.test.py"
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 10.0
+      }
+    },
+    {
+      "id": "L04",
+      "label": "Восстановить M1 только после доказанного владения native socket",
+      "status": "blocked",
+      "description": "Два устаревших config pin исправлены штатным CAS. Текущий dangling alias не совпадает с sealed ready ownership proof; native takeover не разрешён.",
+      "acceptance": "Подтверждён владелец canonical socket и штатный native control работает; затем устанавливается финальный Herder без захвата чужого writer.",
+      "result": "Config launcher hash/sourceSha исправлены с backups; точная диагностика mac-install.json. Runtime/сессии M1 не выдаются принятыми.",
+      "owner": "root",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "blocker": "Текущий stale alias inode/target не совпадает с последней доказанной native ownership; поддержанный reset отсутствует. Неизвестный socket не удаляем.",
+      "origin": "",
+      "supersedes": [],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 10.0
+      }
+    }
+  ],
+  "leaf_count": 4,
+  "plan_origin": {
+    "at": "2026-10-28T23:29:48+03:00",
+    "source": "leaf_created_at",
+    "leaf_id": "L01",
+    "recorded_at": "2026-10-28T20:29:48.592961+00:00"
+  }
+}

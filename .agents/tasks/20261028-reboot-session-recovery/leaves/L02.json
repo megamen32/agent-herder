@@ -1,0 +1,43 @@
+{
+  "label": "Передать вопросы и разрешения в отдельную сессию по решению владельца",
+  "model": "gpt-6.1-sol",
+  "estimate_minutes": 15,
+  "status": "done",
+  "owner": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+  "acceptance": "Создана отдельная native сессия, переданы конкретные WIP пути и находки; вопросы не объявляются реализованными",
+  "id": "L02",
+  "created_at": "2026-10-28T23:41:40+03:00",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex",
+  "updated_at": "2026-10-28T23:47:50+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-28T23:41:40+03:00",
+      "note": "",
+      "changes": {
+        "label": "Доставить ожидающие вопросы и запросы разрешений в Telegram через Notice Place",
+        "model": "gpt-6.1-sol",
+        "estimate_minutes": 15,
+        "status": "running",
+        "owner": "codex_tier_controls",
+        "acceptance": "Обычный вопрос и approval доставлены по существующему Telegram маршруту ровно один раз, ответ продолжает ту же сессию, pending восстановлены после restart"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T23:47:50+03:00",
+      "note": "",
+      "changes": {
+        "label": "Передать вопросы и разрешения в отдельную сессию по решению владельца",
+        "status": "done",
+        "owner": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+        "acceptance": "Создана отдельная native сессия, переданы конкретные WIP пути и находки; вопросы не объявляются реализованными",
+        "result": "Создана01a18444-4ce2-70d2-a7f0-65e9fe1cbbef на104; она владеет question delivery. Здесь толькоreboot recovery; manualresume<=1."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    }
+  ],
+  "result": "Создана01a18444-4ce2-70d2-a7f0-65e9fe1cbbef на104; она владеет question delivery. Здесь толькоreboot recovery; manualresume<=1."
+}

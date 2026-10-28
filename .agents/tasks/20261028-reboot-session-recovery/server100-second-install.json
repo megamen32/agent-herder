@@ -1,0 +1,23 @@
+{
+  "sourceSha": "139d877ef6ce353fc9e2b2305a4f65336f49e702",
+  "bundleFingerprint": "e66c96d3f0d2d944e72b9d35db0aa8bd689331d0c6c5f7c7ee144b50b4248326",
+  "sourceDirty": false,
+  "checkoutDirty": true,
+  "buildPassed": true,
+  "releaseChecks": {"passed": 14, "total": 14},
+  "installMethod": "canonical deploy/fleet/rollout-candidate.py --node 100",
+  "runtime": {
+    "pid": 564651,
+    "startedAt": "2026-10-29T01:28:49+03:00",
+    "entrypoint": "/home/roomhacker/agents-projects/.fleet-candidate/releases/139d877ef6ce353fc9e2b2305a4f65336f49e702/dist/index.js"
+  },
+  "nativeCodexPidsBeforeAndAfter": [26565, 47482],
+  "preservedStateHashesMatch": {
+    "indexing-settings.json": true,
+    "autopilot-live/session-autostart.json": true,
+    "autopilot-live/automation-disarm.json": true,
+    "human-stops.json": true
+  },
+  "manualResumeOrSendCount": 0,
+  "acceptanceAtThisRead": "Herder itself admitted four new native turns at 01:32:17-01:32:21 MSK; new assistant commentary and later native progress independently observed; exact receipts in acceptance.md"
+}

@@ -1,0 +1,78 @@
+{
+  "label": "Исправить восстановление после перезагрузки и продолжить разрешённые сессии",
+  "model": "gpt-6.1-sol",
+  "estimate_minutes": 15,
+  "status": "done",
+  "owner": "roomhacker",
+  "acceptance": "После установки единственный Herder сам продолжает недавние прерванные сессии; вручную допускается максимум один canary. STOP, pending questions, новый ход, finished и accepted/UNKNOWN сохраняются.",
+  "id": "L01",
+  "created_at": "2026-10-28T23:29:48+03:00",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex",
+  "updated_at": "2026-10-29T01:35:50+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-28T23:29:48+03:00",
+      "note": "",
+      "changes": {
+        "label": "Исправить восстановление после перезагрузки и продолжить разрешённые сессии",
+        "model": "gpt-6.1-sol",
+        "estimate_minutes": 15,
+        "status": "running",
+        "owner": "root",
+        "acceptance": "Список недавних прерванных сессий с причинами; штатное продолжение без STOP/дублей и установленный fix"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T23:29:49+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "owner": "roomhacker"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T23:36:06+03:00",
+      "note": "",
+      "changes": {
+        "acceptance": "После установки единственный Herder сам продолжает недавние прерванные сессии; вручную допускается максимум один canary. STOP, pending questions, новый ход, finished и accepted/UNKNOWN сохраняются.",
+        "note": "Новое прямое ограничение владельца: массовое ручное продолжение запрещено. Ручных продолжений root пока0."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T23:39:10+03:00",
+      "note": "",
+      "changes": {
+        "note": "Inventory100:8interrupted/10completed/3running.44 reboot22:51;88/Mini/M1 сегодня не reboot. Ручных продолжений0. Adapter поздно подключился сам; sourcefix в cold interrupted ingestion. Native actual snapshot lacks completedAt, поэтому проверяем контракт на реальных8, а не толькоmocks."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T23:47:50+03:00",
+      "note": "",
+      "changes": {
+        "note": "Ownerявноразделилработу: questionsперенесенывnative01a18444; rootостаётсяrebootfix/install/autoresumeunfinished. Manualmax1, пока0. СамHerderпослерелизавосстанавливаетeligible, pendingquestions/STOPсохраняются."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-29T01:35:50+03:00",
+      "note": "139d877 установлен100/44/88; Herder сам продолжил4nativeсессии01:32, новые сообщения и progress подтверждены; manual0. Mini и M1 выделены в конкретные leaves.",
+      "changes": {
+        "status": "done",
+        "result": "acceptance.md и server100-second-install.json: автоматическое исполнение4сессий после второго reboot; old receipts сохранены"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    }
+  ],
+  "note": "17c89a1 опубликован и установлен в98caf. Первый Herder автоматически продолжил4сессии00:04, native работа подтверждена. Повторный запуск100в01:01 выявил второй обрыв: те же accepted native ходы interrupted, durable in_progress блокирует новый recovery. Исполнитель codex_self_identity исправляет точный переход без replay.44/88уже98caf, Miniустановлен; M1выявлен launcher hash/config mismatch. Questionsвnative01a18444, ручных продолжений0.",
+  "result": "acceptance.md и server100-second-install.json: автоматическое исполнение4сессий после второго reboot; old receipts сохранены"
+}

@@ -1,0 +1,86 @@
+{
+  "observedAt": "2026-10-28T20:50:37.791Z",
+  "scope": "One readonly summary-limit1 frozen helper call per exact interrupted cohort ID; no send/restart/resume, no rollout history reads",
+  "rows": [
+    {
+      "id": "01a17e2e-6dce-7870-b08c-89c092087fb5",
+      "available": true,
+      "status": "interrupted",
+      "userMessageCount": 1,
+      "assistantFinal": false,
+      "pendingQuestion": false,
+      "startedAt": "2026-10-28T17:33:54.000Z",
+      "completedAt": null
+    },
+    {
+      "id": "01a183d6-e4ff-7762-a3e2-45c3d96cd7e0",
+      "available": true,
+      "status": "interrupted",
+      "userMessageCount": 1,
+      "assistantFinal": false,
+      "pendingQuestion": false,
+      "startedAt": "2026-10-28T18:47:46.000Z",
+      "completedAt": null
+    },
+    {
+      "id": "01a182ff-be14-7171-9b7d-a4965f7363cd",
+      "available": true,
+      "status": "interrupted",
+      "userMessageCount": 1,
+      "assistantFinal": true,
+      "pendingQuestion": true,
+      "startedAt": "2026-10-28T18:26:56.000Z",
+      "completedAt": null
+    },
+    {
+      "id": "01a17463-b099-7f62-b6d8-3194ce73ffe9",
+      "available": true,
+      "status": "inProgress",
+      "userMessageCount": 0,
+      "assistantFinal": false,
+      "pendingQuestion": false,
+      "startedAt": "2026-10-28T20:41:57.000Z",
+      "completedAt": null
+    },
+    {
+      "id": "01a182fe-39b5-7730-a84b-7c484e8fc412",
+      "available": true,
+      "status": "interrupted",
+      "userMessageCount": 1,
+      "assistantFinal": false,
+      "pendingQuestion": false,
+      "startedAt": "2026-10-28T17:28:11.000Z",
+      "completedAt": null
+    },
+    {
+      "id": "01a1653b-d774-73b3-9c0a-09cced76ea9e",
+      "available": true,
+      "status": "inProgress",
+      "userMessageCount": 0,
+      "assistantFinal": false,
+      "pendingQuestion": false,
+      "startedAt": "2026-10-28T20:42:11.000Z",
+      "completedAt": null
+    },
+    {
+      "id": "01a18288-c9a6-7082-b943-ab583172b7a6",
+      "available": true,
+      "status": "interrupted",
+      "userMessageCount": 1,
+      "assistantFinal": false,
+      "pendingQuestion": false,
+      "startedAt": "2026-10-28T17:40:51.000Z",
+      "completedAt": null
+    },
+    {
+      "id": "01a17e87-1fa4-7101-a7e7-3917461a0117",
+      "available": true,
+      "status": "interrupted",
+      "userMessageCount": 1,
+      "assistantFinal": false,
+      "pendingQuestion": false,
+      "startedAt": "2026-10-28T18:55:14.000Z",
+      "completedAt": null
+    }
+  ]
+}
