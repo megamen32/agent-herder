@@ -144,11 +144,11 @@ export class NoticeplaceHealthObserver {
     this.targets.set(key, state);
     const refusal = await this.options.validateTarget?.(target);
     if (this.stopped || state.stopped) {
-      this.targets.delete(key);
+      if (this.targets.get(key) === state) this.targets.delete(key);
       return "refused";
     }
     if (refusal) {
-      this.targets.delete(key);
+      if (this.targets.get(key) === state) this.targets.delete(key);
       this.refuse(target, `Notice health observer refused ${target.sessionId} incident ${target.binding.incidentId}: ${refusal}`, bindingRefusalCode(refusal));
       return "refused";
     }
@@ -243,7 +243,7 @@ export class NoticeplaceHealthObserver {
         if (this.stopped || state.stopped) return;
         if (outcome && outcome !== 'working') {
           await this.publishFinal(target, outcome);
-          this.targets.delete(key);
+          if (this.targets.get(key) === state) this.targets.delete(key);
           return;
         }
       }
@@ -263,7 +263,7 @@ export class NoticeplaceHealthObserver {
         const outcome = await this.detectTerminal(target, state, summary);
         if (outcome) {
           await this.publishFinal(target, outcome);
-          this.targets.delete(key);
+          if (this.targets.get(key) === state) this.targets.delete(key);
           return;
         }
         await this.publishProgress(target, state, summary, status, details.history.complete === true);
@@ -274,7 +274,7 @@ export class NoticeplaceHealthObserver {
     }
     if (Date.now() - state.startedAt >= (this.options.maxLifetimeMs ?? DEFAULT_MAX_LIFETIME_MS)) {
       await this.publishLifetimeLimit(target, state);
-      this.targets.delete(key);
+      if (this.targets.get(key) === state) this.targets.delete(key);
       return;
     }
     this.scheduleNextTick(target, state);

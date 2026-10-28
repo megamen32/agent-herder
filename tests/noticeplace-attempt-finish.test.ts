@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { AutopilotSessionStore } from '../src/autopilot/session-store.js';
 import { createWebServer } from '../src/web/server.js';
 import { noticeplaceAttemptOutcome } from '../src/automation/noticeplace-attempt-outcome.js';
+import { NoticeplaceHealthObserver } from '../src/automation/noticeplace-health-observer.js';
 
 let root: string;
 let server: ReturnType<typeof createWebServer> | undefined;
@@ -80,4 +81,27 @@ it('rejects unavailable, wrong native identity and stale in-flight receipts with
   }));
   expect(await read('opencode', 'ses_1')).toBeNull();
   expect((await store.get('opencode', 'ses_1'))?.enabled).toBe(true);
+});
+
+it('a late final publication cannot delete the newly armed observation of the same native session', async () => {
+  let finish = true;
+  let release!: () => void;
+  let publishing = false;
+  const gate = new Promise<void>(r => { release = r; });
+  const observer = new NoticeplaceHealthObserver({
+    readAttemptOutcome: async () => finish ? 'work_finished' : null,
+    readDetails: async () => { throw new Error('isolated native read unavailable'); },
+    publish: async () => { publishing = true; await gate; },
+    intervalMs: 10,
+  });
+  const target = { harness: 'opencode', sessionId: 'ses_1', cwd: '/qa', binding: { incidentId: 'inc_1', project: 'qa', planId: 'repair' as const } };
+  try {
+    await observer.start(target);
+    await vi.waitFor(() => expect(publishing).toBe(true));
+    observer.stopTarget(target); finish = false;
+    await observer.start(target);
+    release();
+    await new Promise(r => setTimeout(r, 30));
+    expect(observer.size).toBe(1);
+  } finally { release(); observer.stop(); }
 });
