@@ -100,6 +100,7 @@ interface CodexThread {
   name?: string;
   preview?: string;
   model?: string | null;
+  reasoningEffort?: string | null;
   modelProvider?: string;
   status?: string | { type?: string; activeFlags?: string[] };
   canAcceptDirectInput?: boolean | null;
@@ -1780,6 +1781,21 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       const read = await this.request("thread/read", { threadId: sessionId, includeTurns: false }) as { thread?: CodexThread };
       if (read.thread?.id !== sessionId) throw new Error("Codex tier target identity mismatch");
       if (generation !== this.transportGeneration || !this.isReady()) throw new Error("Codex native transport changed during tier preflight");
+      if (this.serviceTierObservations.get(sessionId)?.generation !== generation) {
+        // Native loaded-thread resume is an attach/snapshot operation, not a
+        // turn. With no overrides it preserves model, effort and active work,
+        // and atomically subscribes this connection to effective settings.
+        // Never use this seam for an unloaded thread (cold resume can start a
+        // runtime). The exact loaded list and identity were checked above.
+        const attached = await this.request("thread/resume", { threadId: sessionId, excludeTurns: true }) as {
+          thread?: CodexThread; serviceTier?: string | null; model?: string; reasoningEffort?: string | null;
+        };
+        if (attached.thread?.id !== sessionId || generation !== this.transportGeneration || !this.isReady()) throw new Error("Codex attach snapshot identity or transport mismatch");
+        if (typeof read.thread.model === "string" && attached.model !== read.thread.model) throw new Error("Codex attach snapshot did not preserve the current model");
+        if (read.thread.reasoningEffort !== undefined && attached.reasoningEffort !== read.thread.reasoningEffort) throw new Error("Codex attach snapshot did not preserve the current reasoning effort");
+        if (typeof attached.serviceTier !== "string" && attached.serviceTier !== null) throw new Error("Codex attach snapshot did not report the effective service tier");
+        this.serviceTierObservations.set(sessionId, { generation, value: attached.serviceTier, observedAt: new Date().toISOString() });
+      }
       state.canSet = true;
       const observed = this.serviceTierObservations.get(sessionId);
       if (observed?.generation === this.transportGeneration) {
@@ -1819,6 +1835,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       await this.request("thread/settings/update", { threadId: sessionId, serviceTier: expected });
       const observed = await confirmation;
       if (observed !== expected || generation !== this.transportGeneration) {
+        this.serviceTierObservations.delete(sessionId);
         return { ...base, ok: false, nonRetryable: true, error: "Codex tier update outcome is unknown: no matching native settings confirmation; do not replay" };
       }
       this.emitEvent({ kind: "session.updated", harness: "codex", sessionId, nativeType: "thread/settings/updated" });
