@@ -19,7 +19,7 @@ import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { QaControlBackend } from "./qa-control.js";
 
-import { HarnessAdapter, type SendMessageResult } from "./types/index.js";
+import { HarnessAdapter, type SendMessageResult, type AgentSession } from "./types/index.js";
 import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter, ChatGptAdapter, MinimaxCodeAdapter } from "./adapters/index.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
@@ -32,9 +32,10 @@ import { AutomationDisarmStore, automationDisarmDecisionWithWork, sessionWorkKey
 import { IntegratorSessionBindingStore } from "./integrator-session-binding.js";
 import { IntegratorFleetRuntime } from "./integrator-fleet-runtime.js";
 import { dispatchProjectLaunch, namedSessionRunner, ProjectLaunchAttemptLog, type ProjectLaunchDispatcher } from "./automation/project-launch-dispatch.js";
+import {IncidentSessionRouter, incidentSourceKey} from './automation/incident-session-router.js';
 import { createAnthropicCompatibleSessionCompletionJudge, createOpenAICompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type SessionCompletionJudge, type UnfinishedSessionNotice } from "./autopilot/unfinished-session-launcher.js";
 import { applyOutboundFamilyToProcess } from "./net/outbound-family.js";
-import { createIncidentUpdateSink, deliverIncidentQuestion } from "./autopilot/notice-incident.js";
+import { createIncidentUpdateSink, deliverIncidentQuestion, readIncidentBinding } from "./autopilot/notice-incident.js";
 import { createNoticePlacePayload, createNoticePlaceSink, drainPendingNotices, loadReceiptStore, persistReceiptStore, type PendingHumanQuestion } from "./autopilot/index.js";
 import { buildAskHumanRequest } from "./human-request/notice-question.js";
 import { describeAskHumanProducer, loadAskHumanProducer, type AskHumanProducer } from "./human-request/ask-human-producer.js";
@@ -1165,6 +1166,46 @@ async function main() {
   const humanResume = (request: ResumeTransportRequest) => resumeSelectedTarget(request, processSupervisor, "human", true);
   const projectLaunchAttempts = new ProjectLaunchAttemptLog(join(autopilotStateDir, "project-launch-attempts.json"));
   const launchQuotaPreflight = createMiniMaxQuotaPreflight({ token: process.env.MINIMAX_API_KEY });
+  const incidentUnfinished = async (session: AgentSession): Promise<boolean> => {
+    if (await humanStopStore.isHeld(session.harness, session.id)) return true;
+    if (session.status === 'running' || session.status === 'needs_input') return true;
+    if (session.status === 'stopped' || session.meta?.archived === true) return false;
+    const override = await autopilotSessionStore.get(session.harness as AutopilotHarness, session.id);
+    if (!override) return true; // Native admission may precede the caller's arming request.
+    if (override.enabled !== true) return false;
+    const inventory = (await unfinishedSessionStore.listInventory()).find(item => item.harness === session.harness && item.sessionId === session.id);
+    if (inventory?.verdict?.verdict === 'completed' && inventory.verdict.confidence > 0
+      && Date.parse(inventory.verdict.judgedAt) >= Date.parse(session.lastActivity)) return false;
+    if (override.noticeIncident) {
+      try {await readIncidentBinding(override.noticeIncident);} catch (error) {
+        if (error instanceof Error && 'kind' in error && error.kind === 'rejected') return false;
+        throw error; // Unavailable evidence cannot authorize a second executor.
+      }
+    }
+    return true;
+  };
+  const incidentSessionRouter = new IncidentSessionRouter(join(autopilotStateDir, 'incident-source-sessions.json'), {
+    readSession: async (harness, id) => {
+      const adapter = adapters.get(harness);
+      if (!adapter) throw new Error('Incident harness is unavailable');
+      return adapter.getSession(id);
+    },
+    unfinished: incidentUnfinished,
+    held: session => humanStopStore.isHeld(session.harness, session.id),
+    findExisting: async (request, source) => {
+      const adapter = adapters.get(request.harness);
+      if (!adapter?.getFirstUserMessage) return;
+      const inventory = await unfinishedSessionStore.listInventory();
+      for (const item of inventory.filter(item => item.harness === request.harness && item.cwd === request.cwd)) {
+        const override = await autopilotSessionStore.get(item.harness as AutopilotHarness, item.sessionId);
+        if (!override?.noticeIncident || (!override.enabled && !await humanStopStore.isHeld(item.harness, item.sessionId))) continue;
+        const session = await adapter.getSession(item.sessionId);
+        if (!session || session.meta?.archived === true || !await incidentUnfinished(session)) continue;
+        const first = await adapter.getFirstUserMessage(session.id);
+        if (first && incidentSourceKey(first.text ?? first.parts.filter(part => part.type === 'text').map(part => part.text ?? '').join('\n')) === source) return session;
+      }
+    },
+  });
   // The one project launch consumer: an ordered route, a durable attempt log and
   // the existing named-session seam as the only place that creates an executor.
   const projectLaunchDispatch: ProjectLaunchDispatcher = async (request) => {
@@ -1178,7 +1219,7 @@ async function main() {
     return await dispatchProjectLaunch(
       { policy: loaded.policy, ...request, name },
       projectLaunchAttempts,
-      namedSessionRunner(adapters, name, launchQuotaPreflight),
+      namedSessionRunner(adapters, name, launchQuotaPreflight, incidentSessionRouter),
     );
   };
   const humanResumeQuery = (request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters);

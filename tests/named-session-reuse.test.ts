@@ -196,6 +196,31 @@ function newerNoise(cwd: string, prefix: string, count: number): FakeSession[] {
 }
 
 describe("named session reuse", () => {
+  it("delivers a new operation to the source router's existing native ID", async () => {
+    const cwd = await workspace();
+    const fake = new FakeOpenCode();
+    const url = await fake.start();
+    try {
+      fake.add({id: 'ses_source', title: 'Первоначальный инцидент', directory: cwd, created: 1, updated: 1});
+      const adapter = new OpenCodeAdapter({baseUrl: url, protocol: 'v2'});
+      await adapter.init();
+      const deliver = await restartedSeam();
+      const result = await deliver(new Map([['opencode', adapter]]), {
+        harness: 'opencode', cwd, name: 'project-launch-new-incident', existingSessionId: 'ses_source',
+        message: 'Additional incident telemetry', inputId: 'new-incident',
+      });
+      expect(result.ok).toBe(true);
+      expect(result.sessionId).toBe('ses_source');
+      expect(result.created).toBe(false);
+      expect(fake.createdCount).toBe(0);
+      const missing = await deliver(new Map([['opencode', adapter]]), {
+        harness: 'opencode', cwd, name: 'another-operation', existingSessionId: 'ses_missing',
+        message: 'Must not silently replace', inputId: 'missing-incident',
+      });
+      expect(missing.ok).toBe(false);
+      expect(fake.createdCount).toBe(0);
+    } finally {await fake.stop();}
+  });
   it("reuses a named session that the newest listing window no longer shows", async () => {
     const cwd = await workspace();
     const fake = new FakeOpenCode();

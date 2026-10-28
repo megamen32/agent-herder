@@ -41,6 +41,8 @@ export interface NamedSessionRequest {
 }
 
 export interface NewOrResumeNamedSessionRequest extends NamedSessionRequest {
+  /** Source-group router's verified native target. Never create a replacement. */
+  existingSessionId?: string;
   inputId?: string;
   humanRequested?: boolean;
   message: string;
@@ -49,6 +51,7 @@ export interface NewOrResumeNamedSessionRequest extends NamedSessionRequest {
 }
 
 export interface NamedSessionResult {
+  coalesced?: boolean;
   ok: boolean;
   created: boolean;
   harness: string;
@@ -352,7 +355,15 @@ export async function newOrResumeNamedSession(
 
     let matches: AgentSession[];
     try {
-      matches = await exactMatches(adapter, normalized.name, normalized.cwd);
+      if (request.existingSessionId) {
+        const existing = await adapter.getSession(request.existingSessionId);
+        if (!existing || isArchivedSession(existing) || !await sameCwd(existing.cwd, normalized.cwd)) {
+          return { kind: "error", result: failed(normalized, "Incident executor is unavailable; no replacement was created", "not_attempted") };
+        }
+        matches = [existing];
+      } else {
+        matches = await exactMatches(adapter, normalized.name, normalized.cwd);
+      }
     } catch (error) {
       return { kind: "error", result: failed(normalized, (error as Error).message, "not_attempted") };
     }

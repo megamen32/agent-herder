@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {projectLaunchTitle} from './project-launch-title.js';
+import type {IncidentSessionRouter} from './incident-session-router.js';
 import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import lockfile from "proper-lockfile";
@@ -103,6 +104,7 @@ export interface ProjectLaunchSourceSession {
 
 /** The actual native call. It is the only place that may create an executor. */
 export type ProjectLaunchRunner = (request: {
+  incidentRouting?: boolean;
   harness: HarnessType;
   cwd: string;
   message: string;
@@ -448,6 +450,7 @@ export async function dispatchProjectLaunch(
   }
 
   const nativeResult = await run({ harness, cwd, message: input.message, ...(model ? { model } : {}), mode, inputId,
+    ...(healthAnalysis ? {incidentRouting: true} : {}),
     ...(!healthAnalysis && input.policy.fallbackModels?.[harness as "opencode" | "zcode"]
       ? { fallbackModels: input.policy.fallbackModels[harness as "opencode" | "zcode"] }
       : healthAnalysis ? { fallbackModels: [] } : {}),
@@ -638,7 +641,7 @@ function isHumanHold(error: string | undefined): boolean {
 }
 
 /** Build the production runner over the existing named-session seam. */
-export function namedSessionRunner(adapters: Map<string, HarnessAdapter>, name: string, quotaPreflight?: MiniMaxQuotaPreflight): ProjectLaunchRunner {
+export function namedSessionRunner(adapters: Map<string, HarnessAdapter>, name: string, quotaPreflight?: MiniMaxQuotaPreflight, incidentRouter?: IncidentSessionRouter): ProjectLaunchRunner {
   return async (request) => {
     // OpenCode uses its native provider/model catalog, so an explicitly
     // configured OmniRoute candidate may follow a failure on any provider.
@@ -658,12 +661,15 @@ export function namedSessionRunner(adapters: Map<string, HarnessAdapter>, name: 
         error: "Лимит маршрута MiniMax исчерпан (4292056). Бизнес-задача не отправлена; используется следующая среда маршрута.",
       };
     }
-    return await newOrResumeNamedSession(adapters, {
+    const launch = (existingSessionId?: string) => newOrResumeNamedSession(adapters, {
+      ...(existingSessionId ? {existingSessionId} : {}),
       harness: request.harness,
       name,
       ...(name.startsWith('project-launch-') ? {displayTitle:projectLaunchTitle(request.message, request.cwd)} : {}),
       cwd: request.cwd,
-      message: request.message,
+      message: existingSessionId
+        ? 'Новый связанный инцидент передан в уже работающую сессию. Продолжай общий ремонт без второго исполнителя; учитывай исходные ID и независимую проверку каждого инцидента. Сохрани прежние результаты и публикуй прогресс по каждому исходному ID.\n\n' + request.message
+        : request.message,
       mode: request.mode,
       ...(request.model ? { model: request.model } : {}),
       ...(configuredFallbacks ? { fallbackModels: configuredFallbacks } : {}),
@@ -671,6 +677,7 @@ export function namedSessionRunner(adapters: Map<string, HarnessAdapter>, name: 
       ...(request.sourceSessions ? { sourceSessions: request.sourceSessions } : {}),
       requireSourceHostId: true,
     });
+    return request.incidentRouting && incidentRouter ? incidentRouter.run(request, launch) : launch();
   };
 }
 
