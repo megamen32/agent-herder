@@ -524,7 +524,8 @@ describe("MCP dependency wait through native adapter events",()=>{
 });
 
 describe("HumanRequest join through the resume_after MCP route",()=>{
-  it("binds a pending HumanRequest whose native target matches the owner tuple",async()=>{
+  const deadline="2027-01-01T00:00:00Z";
+  async function joinFixture(){
     const f=await nativeFixture();
     const registryRoot=await mkdtemp(join(process.cwd(),".tmp/resume-after-mcp-hr-"));
     cleanup.push(()=>rm(registryRoot,{recursive:true,force:true}));
@@ -535,30 +536,64 @@ describe("HumanRequest join through the resume_after MCP route",()=>{
     const [clientTransport,serverTransport]=InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);await client.connect(clientTransport);
     cleanup.push(async()=>{await client.close();await server.close();});
+    return {f,humanRequests,request,client};
+  }
+  it("binds a pending HumanRequest on an exact scheduled tuple matching its deadline",async()=>{
+    const {f,humanRequests,request,client}=await joinFixture();
     const call=await client.callTool({name:"resume_after",arguments:{
-      owner:ref("owner"),dependencies:[ref("a")],requestId:"hr-join",message:"apply the canonical answer",
-      humanRequestId:request.requestId,expiresAt:"2027-01-01T00:00:00Z",
+      owner:ref("owner"),requestId:"hr-join",message:"apply the canonical answer",
+      humanRequestId:request.requestId,expiresAt:deadline,trigger:{kind:"at",at:deadline},
     }});
     expect(call.isError).not.toBe(true);
     const wait=(call.structuredContent as any).wait;
-    expect(wait).toMatchObject({humanRequestId:request.requestId,state:"waiting"});
+    expect(wait).toMatchObject({humanRequestId:request.requestId,expiresAt:deadline,state:"waiting"});
+    expect(wait.trigger).toEqual({kind:"at",at:deadline});
     const durable=await humanRequests.get(request.requestId);
     expect(durable?.resumeWaitId).toBe(wait.id);
   });
-  it("rejects a foreign native target and cancels only the wait it created",async()=>{
-    const f=await nativeFixture();
-    const registryRoot=await mkdtemp(join(process.cwd(),".tmp/resume-after-mcp-hr-"));
-    cleanup.push(()=>rm(registryRoot,{recursive:true,force:true}));
-    const humanRequests=new HumanRequestRegistry(join(registryRoot,"human-requests.json"));
-    const foreign=await humanRequests.create({kind:"user",target:{harness:"codex",sessionId:"stranger-session"}});
-    const server=createAgentHerderMcpServer(undefined,{resumeAfter:f.runtime.service,humanRequests});
-    const client=new Client({name:"hr-join-foreign",version:"1"},{versionNegotiation:{mode:"auto"}});
-    const [clientTransport,serverTransport]=InMemoryTransport.createLinkedPair();
-    await server.connect(serverTransport);await client.connect(clientTransport);
-    cleanup.push(async()=>{await client.close();await server.close();});
+  it("rejects an incomplete pair before creating a wait",async()=>{
+    const {f,humanRequests,request,client}=await joinFixture();
+    const missing=await client.callTool({name:"resume_after",arguments:{
+      owner:ref("owner"),requestId:"hr-missing-expires",message:"no deadline",
+      humanRequestId:request.requestId,trigger:{kind:"at",at:deadline},
+    }});
+    expect(missing.isError).toBe(true);
+    const lonely=await client.callTool({name:"resume_after",arguments:{
+      owner:ref("owner"),requestId:"hr-missing-request",message:"no question",
+      expiresAt:deadline,trigger:{kind:"at",at:deadline},
+    }});
+    expect(lonely.isError).toBe(true);
+    expect((await f.runtime.service.list()).filter(w=>w.humanRequestId===request.requestId)).toHaveLength(0);
+  });
+  it("rejects a dependency-only HumanRequest join",async()=>{
+    const {f,humanRequests,request,client}=await joinFixture();
     const call=await client.callTool({name:"resume_after",arguments:{
-      owner:ref("owner"),dependencies:[ref("a")],requestId:"hr-foreign",message:"must not bind",
-      humanRequestId:foreign.requestId,
+      owner:ref("owner"),dependencies:[ref("a")],requestId:"hr-dependency-only",message:"dependency join",
+      humanRequestId:request.requestId,expiresAt:deadline,
+    }});
+    expect(call.isError).toBe(true);
+    expect((await f.runtime.service.list()).filter(w=>w.humanRequestId===request.requestId)).toHaveLength(0);
+  });
+  it("rejects a deadline mismatch and a delay trigger before creating a wait",async()=>{
+    const {f,humanRequests,request,client}=await joinFixture();
+    const mismatch=await client.callTool({name:"resume_after",arguments:{
+      owner:ref("owner"),requestId:"hr-mismatch",message:"off-by-one deadline",
+      humanRequestId:request.requestId,expiresAt:"2027-01-02T00:00:00Z",trigger:{kind:"at",at:deadline},
+    }});
+    expect(mismatch.isError).toBe(true);
+    const delay=await client.callTool({name:"resume_after",arguments:{
+      owner:ref("owner"),requestId:"hr-delay",message:"relative join",
+      humanRequestId:request.requestId,expiresAt:deadline,trigger:{kind:"delay",delayMs:60_000},
+    }});
+    expect(delay.isError).toBe(true);
+    expect(await f.runtime.service.list()).toHaveLength(0);
+  });
+  it("rejects a foreign native target and cancels only the wait it created",async()=>{
+    const {f,humanRequests,client}=await joinFixture();
+    const foreign=await humanRequests.create({kind:"user",target:{harness:"codex",sessionId:"stranger-session"}});
+    const call=await client.callTool({name:"resume_after",arguments:{
+      owner:ref("owner"),requestId:"hr-foreign",message:"must not bind",
+      humanRequestId:foreign.requestId,expiresAt:deadline,trigger:{kind:"at",at:deadline},
     }});
     expect(call.isError).toBe(true);
     expect(JSON.stringify(call.content)).toContain("native target does not match");

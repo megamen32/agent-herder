@@ -10,9 +10,31 @@ const trigger=z.discriminatedUnion("kind",[
   z.object({kind:z.literal("at"),at:z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/)}),
 ]);
 const rfc3339=z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/);
+const humanRequestFields={
+  humanRequestId:z.string().trim().min(1).max(128).optional(),
+  expiresAt:rfc3339.optional(),
+};
+/** A HumanRequest join is a question deadline: both fields, an absolute
+ * trigger, and the trigger time exactly equal to the registered deadline. */
+function refineHumanRequestJoin(value:{humanRequestId?:string;expiresAt?:string;trigger?:{kind:string;at?:string}},ctx:z.RefinementCtx):void{
+  if(!value.humanRequestId && !value.expiresAt)return;
+  if(!value.humanRequestId || !value.expiresAt){
+    ctx.addIssue({code:z.ZodIssueCode.custom,message:"humanRequestId and expiresAt are required together for a HumanRequest join"});
+    return;
+  }
+  if(!value.trigger || value.trigger.kind!=="at"){
+    ctx.addIssue({code:z.ZodIssueCode.custom,message:"A HumanRequest join requires a scheduled-time trigger (kind=at)"});
+    return;
+  }
+  if(value.trigger.at!==value.expiresAt){
+    ctx.addIssue({code:z.ZodIssueCode.custom,message:"expiresAt must exactly equal the registered trigger time"});
+  }
+}
 const resumeRequest=z.union([
-  z.object({owner:ref.optional(),dependencies:z.array(ref).min(1).max(32),message:z.string().trim().min(1).max(16000).optional(),requestId:z.string().trim().min(1).max(256).optional(),humanRequestId:z.string().trim().min(1).max(128).optional(),expiresAt:rfc3339.optional()}).strict(),
-  z.object({owner:ref.optional(),message:z.string().trim().min(1).max(16000),requestId:z.string().trim().min(1).max(256),trigger,humanRequestId:z.string().trim().min(1).max(128).optional(),expiresAt:rfc3339.optional()}).strict(),
+  z.object({owner:ref.optional(),dependencies:z.array(ref).min(1).max(32),message:z.string().trim().min(1).max(16000).optional(),requestId:z.string().trim().min(1).max(256).optional(),...humanRequestFields}).strict()
+    .superRefine((value,ctx)=>refineHumanRequestJoin(value,ctx)),
+  z.object({owner:ref.optional(),message:z.string().trim().min(1).max(16000),requestId:z.string().trim().min(1).max(256),trigger,...humanRequestFields}).strict()
+    .superRefine((value,ctx)=>refineHumanRequestJoin(value,ctx)),
 ]);
 /** The durable HumanRequest seam this route binds answered questions to. */
 type HumanRequestJoin = Pick<HumanRequestRegistry, "get" | "bindResumeWait">;
@@ -34,6 +56,12 @@ export function registerResumeAfterTools(server:McpServer,service?:ResumeAfterSe
         const target=request.target;
         if((target.harness??target.agent)!==owner.harness || target.sessionId!==owner.sessionId){
           throw new Error(`Human request '${args.humanRequestId}' native target does not match the owner tuple ${owner.harness}:${owner.sessionId}`);
+        }
+        // Defense in depth behind the schema: the registered deadline is the
+        // wake time, so a drift here would silently move the question's end.
+        const trigger=wait.trigger;
+        if(!trigger || trigger.kind!=="at" || trigger.at!==args.expiresAt){
+          throw new Error(`Human request '${args.humanRequestId}' wake must be scheduled exactly at its expiresAt`);
         }
         await requireHumanRequests().bindResumeWait(args.humanRequestId,wait.id);
       }catch(error){
