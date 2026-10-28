@@ -1,0 +1,84 @@
+{
+  "architecture": "x86_64",
+  "cleanup": {
+    "ownAgentBrowserSession": "miniidx28 closed",
+    "temporaryRolloutPacket": "cleaned on server-100 and Mini"
+  },
+  "currentRelease": "3d02bf47978240a7d2b817b46d86e87b0c6cca2f",
+  "hostId": "mac-mini-2012.lan",
+  "indexingPause": {
+    "settingsApi": {
+      "enabled": false,
+      "readBy": "root",
+      "status": 200
+    },
+    "settingsFileEnabled": false,
+    "settingsFileSha256": "cdad77a45c0fb0cb7a96e93287fb3e56f6d0f862a1993d7934b7a8ae90a77bcf",
+    "ui": {
+      "readBy": "root",
+      "refreshButtonClicked": true,
+      "positiveEvidence": ".agents/tasks/20261028-fleet-pause-opencode-recovery/mini-ui.json",
+      "positiveEvidenceSnapshots": ["e54", "e55"],
+      "diagnosticScreenshot": ".tmp/mini-settings-fp28.png",
+      "diagnosticScreenshotNote": "Initial guessed #/settings navigation error only; not a successful pause UI screenshot",
+      "switchAfterRefresh": false,
+      "switchBeforeRefresh": false
+    }
+  },
+  "installer": {
+    "automationLeverUnchanged": true,
+    "launchAgentDomain": "user/501",
+    "launchPolicyHttp": 200,
+    "mcpHttp": 200,
+    "nodeEntrypoint": "/Users/roomhacker/.local/share/agent-herder/fleet/releases/3d02bf47978240a7d2b817b46d86e87b0c6cca2f/dist/index.js",
+    "nodePid": 65837,
+    "nodeStarted": "Wed Oct 28 09:16:20 2026",
+    "payloadFiles": 1787,
+    "payloadVerified": true,
+    "releaseBytes": 47899648,
+    "releaseDirectories": 2,
+    "sessionsHttp": 200,
+    "status": "accepted",
+    "watchdogPid": 65791
+  },
+  "m1": {
+    "blocker": "native controller EX_CONFIG with stale source identity and dangling managed Codex socket; supported manager refuses any existing path and will not unlink or take over",
+    "herderListener": false,
+    "nextAction": "existing native Codex owner/control path restores a valid user-owned socket; then refresh managed controller through its supported CAS and pass exact owner/socket preflight",
+    "nodePaused": true
+  },
+  "machine": "Macmini6,2",
+  "priorFailedAttempts": [
+    {
+      "detail": "candidate payload 1787 exceeded prior 1024-entry watchdog cap; installer restored 9cff",
+      "result": "artifact_identity_missing",
+      "stage": "startup"
+    },
+    {
+      "detail": "no release/config switch; fresh exact LaunchAgent and native socket preflight then passed",
+      "result": "launchagent_runtime_mismatch",
+      "stage": "pre-switch"
+    }
+  ],
+  "rollbackRelease": "9cffc9efa0dfe05eed6eb67c2b9a21db877dba7e",
+  "searchReadback": {
+    "inputId": "mini-read-search-20261028-01",
+    "partial": true,
+    "query": "Herder",
+    "readOnly": true,
+    "resultCount": 2,
+    "tokenRevoked": true,
+    "tool": "session_search_local"
+  },
+  "sourceSha": "3d02bf47978240a7d2b817b46d86e87b0c6cca2f",
+  "watchdogHelperCas": {
+    "backupPath": "/Users/roomhacker/.local/state/agent-herder/rollback/mac-mini-watchdog-6b139fd",
+    "configShaAfter": "0328b4a3a89001e328f054cd9945e84cffcebadb615fac772f38c5875b37701b",
+    "configShaBefore": "6ac524021df3192f29e358bc373d6dd835655047d657ced0535c0eabc0fa4a80",
+    "launcherPinOnly": true,
+    "nativeCheckExit": 0,
+    "newSha256": "7eb9e2a6658a3f5531d7152decbe9954caf1f3b267172b3959634c291af5e9d1",
+    "oldSha256": "91a1ab64e8da2aed240ba09c76668aa1afbf2523ae913c0f7a16e597eafb7f8c",
+    "sourceCommit": "6b139fd37b1af6bdf73822b08850bb92cb36638f"
+  }
+}

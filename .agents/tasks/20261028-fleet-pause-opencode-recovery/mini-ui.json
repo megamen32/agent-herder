@@ -1,0 +1,25 @@
+{
+  "host": "mac-mini-2012.lan",
+  "runtimeSource": "3d02bf47978240a7d2b817b46d86e87b0c6cca2f",
+  "independentApiReadback": {
+    "endpoint": "http://127.0.0.1:18789/api/settings/background-indexing",
+    "status": 200,
+    "enabled": false,
+    "updatedAt": "2026-10-28T15:16:33.249214Z"
+  },
+  "browser": {
+    "owner": "root",
+    "session": "fp28",
+    "namespace": "fp28",
+    "transport": "own server-100 SSH tunnel port19988 to Mini loopback18789",
+    "path": "main page → sidebar Настройки → region Фоновая индексация",
+    "before": "switch Фоновая индексация checked=false",
+    "action": "clicked Обновить состояние индексации",
+    "after": "switch Фоновая индексация checked=false",
+    "indexingEnabledDuringQa": false,
+    "initialNavigationError": "The guessed #/settings fragment did not open settings. Missing selector was captured and inspected before navigation: .tmp/mini-settings-fp28.png. Real sidebar navigation then succeeded.",
+    "closed": true,
+    "tunnelClosed": true
+  },
+  "scope": "Confirms real installed pause control and its refresh behavior. Search/native-MCP proof belongs to the Mac installer receipt; this is not a claim for M1."
+}

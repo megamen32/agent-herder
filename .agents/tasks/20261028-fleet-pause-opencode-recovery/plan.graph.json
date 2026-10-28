@@ -10,10 +10,10 @@
     "Узлы перечислены по фактическому readback; индексаторы paused и кнопка доступна.",
     "OpenCode включён по умолчанию, recent window 24 часа, isolated quota fallback имеет нативную квитанцию либо точный внешний отказ."
   ],
-  "current_progress": "100/44/88 paused, старый поиск и UI сохранены. OpenCode100/88 enabled, bounded recovery24h установлен. Текущая MiniMax→GLM policy проверена контролируемым тестом, живой GLMcombo дал QA_BACKUP_OK отдельно; полный native429→fallback не подтверждён. Два недавних auth-error инцидента уже resolved, повторных продолжений нет. Mini штатно откатился при несовместимом лимите manifest старого watchdog, узкий launcher fix в работе; M1 остановлен штатным native ownership guard, pause сохранена, UI ещё недоступен.",
+  "current_progress": "100/44/88/Mini paused с сохранённым старым поиском. Mini установлен3d02: Root независимо подтвердил APIpausefalse и реальный UI off→refresh→off; nativeMCP200, старый FTSпоиск дал2записи partialtrue; временные ресурсы закрыты. OpenCode100/88 enabled, bounded recovery24h установлен. Текущая MiniMax→GLM policy проверена контролируемым тестом; живой GLMcombo дал QA_BACKUP_OK отдельно. Полный native429→fallback не подтверждён; на88 точного GLMcombo нет в свежем каталоге, fallback не включён без подходящей модели. Два недавних auth-error инцидента уже resolved, повторных продолжений нет. M1 остановлен штатным native ownership guard: pause сохранена, UI пока недоступен; nextaction и точный отказ записаны в mac.md/mac-mini-final.json. Полный результат не объявлен выполненным.",
   "external_waits": "",
   "slots": 3,
-  "updated_at": "2026-10-28T19:03:36+03:00",
+  "updated_at": "2026-10-28T19:34:43+03:00",
   "tasks": [
     {
       "id": "L01",
@@ -63,6 +63,20 @@
         {
           "at": "2026-10-28T19:03:36+03:00",
           "note": "100/44/88 paused с UI и старым поиском. Mini rollback сохранил рабочий9cff: старый watchdog не принимает manifest1787 при лимите1024, bounded compatibility fix в работе. M1 no listener/native ownership guard, durable pausefalse сохранена; UI пока не принят.",
+          "changes": {},
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T19:31:30+03:00",
+          "note": "Mini installed3d02: root independent API200 enabledfalse, real sidebarНастройки/switchfalse→refresh→false. Root browser/tunnel closed. Linux100/44/88 paused accepted. M1 remains separate native ownership blocker, UI not accepted; full leaf not complete.",
+          "changes": {},
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T19:34:43+03:00",
+          "note": "Mini accepted runtime3d02/nodePID65837: nativeMCP200, FTSsession_search_local returned2 hits partialtrue, ephemeral token revoked, own browsers/tunnels/packets closed. Four live nodes paused and UI available. M1 exact nativeowner/source/socket blocker remains; preserve stopped node and staged pause, no complete claim.",
           "changes": {},
           "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
           "harness": "codex"

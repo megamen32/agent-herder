@@ -9,7 +9,7 @@
   "estimate_minutes": 20,
   "id": "L01",
   "created_at": "2026-10-28T18:03:29+03:00",
-  "updated_at": "2026-10-28T19:03:36+03:00",
+  "updated_at": "2026-10-28T19:34:43+03:00",
   "progress_events": [
     {
       "at": "2026-10-28T18:03:29+03:00",
@@ -47,6 +47,20 @@
     {
       "at": "2026-10-28T19:03:36+03:00",
       "note": "100/44/88 paused с UI и старым поиском. Mini rollback сохранил рабочий9cff: старый watchdog не принимает manifest1787 при лимите1024, bounded compatibility fix в работе. M1 no listener/native ownership guard, durable pausefalse сохранена; UI пока не принят.",
+      "changes": {},
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T19:31:30+03:00",
+      "note": "Mini installed3d02: root independent API200 enabledfalse, real sidebarНастройки/switchfalse→refresh→false. Root browser/tunnel closed. Linux100/44/88 paused accepted. M1 remains separate native ownership blocker, UI not accepted; full leaf not complete.",
+      "changes": {},
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T19:34:43+03:00",
+      "note": "Mini accepted runtime3d02/nodePID65837: nativeMCP200, FTSsession_search_local returned2 hits partialtrue, ephemeral token revoked, own browsers/tunnels/packets closed. Four live nodes paused and UI available. M1 exact nativeowner/source/socket blocker remains; preserve stopped node and staged pause, no complete claim.",
       "changes": {},
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex"
