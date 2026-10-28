@@ -66,3 +66,16 @@ it("returns null when the head window carries no user message",async()=>{
  const client=new OpenCodeClient({baseUrl:"http://opencode.test",protocol:"v2"});
  expect(await client.getFirstUserMessage(sessionId)).toBeNull();
 });
+
+it("preserves the native parent id through the message projection when present",async()=>{
+ const withParent={id:"msg_child",type:"assistant",parentID:"msg_parent",sessionID:sessionId};
+ const withoutParent={id:"msg_plain",type:"assistant",sessionID:sessionId};
+ installHistoryFixture([withParent,withoutParent]);
+ const client=new OpenCodeClient({baseUrl:"http://opencode.test",protocol:"v2"});
+ const views=await client.getMessages(sessionId,10);
+ expect(views).not.toBeNull();
+ const child=views!.find(m=>m.id==="msg_child");
+ const plain=views!.find(m=>m.id==="msg_plain");
+ expect(child?.nativeParentMessageId).toBe("msg_parent");
+ expect(plain?.nativeParentMessageId).toBeUndefined();
+});

@@ -1446,12 +1446,21 @@ export class OpenCodeClient implements HarnessClient {
     const real = [...messages].reverse().filter((message) => !isOpenCodeTurnStatusFrame(message));
     const latestUser = [...real].reverse().find((message) => message.type === "user");
     const finalAssistant = [...real].reverse().find((message) => message.type === "assistant");
+    let finalAssistantNativeParentMessageId = finalAssistant?.parentID || finalAssistant?.info?.parentID;
+    // The raw final assistant is re-read by exact ID before any absence is
+    // claimed: the list window may render a message without its parent fields.
+    if (finalAssistant && !finalAssistantNativeParentMessageId && finalAssistant.id) {
+      try {
+        const raw = await this.fetchJson<OpenCodeMessagePayload>(
+          this.api(`/session/${encodeURIComponent(id)}/message/${encodeURIComponent(finalAssistant.id)}`),
+        );
+        finalAssistantNativeParentMessageId = raw?.parentID || raw?.info?.parentID;
+      } catch { /* exact re-read unavailable: absence stands, documented */ }
+    }
     return {
       ...(latestUser?.id ? { latestUserId: latestUser.id } : {}),
       ...(finalAssistant?.id ? { finalAssistantId: finalAssistant.id } : {}),
-      ...(finalAssistant?.parentID || finalAssistant?.info?.parentID
-        ? { finalAssistantNativeParentMessageId: finalAssistant.parentID ?? finalAssistant.info?.parentID }
-        : {}),
+      ...(finalAssistantNativeParentMessageId ? { finalAssistantNativeParentMessageId } : {}),
     };
   }
 

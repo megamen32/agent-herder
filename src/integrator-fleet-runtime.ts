@@ -386,11 +386,13 @@ export class IntegratorFleetRuntime {
       // persisted an explicit exact adoption for THIS operation/session, and
       // the adopted tuple still matches the live route and root identity.
       if (!attempt.scope) {
-        // Exact persisted adoption: matched on the durable native session id
-        // and the launch root of the accepted created receipt. The consumer's
-        // operationId lives in a different ID space and stays informational.
+        // Exact persisted adoption: matched on the durable journal operation
+        // id, the native session id and the launch root of the accepted
+        // created receipt. The consumer-facing operation id lives in a
+        // different ID space and stays a separate audit field.
         const adoption = (this.options.legacyScopeAdoptions ?? []).find(entry =>
-          entry.nativeSessionId === address.nativeSessionId && entry.launchCwd === launchRoot);
+          entry.operationId === binding!.operationId
+          && entry.nativeSessionId === address.nativeSessionId && entry.launchCwd === launchRoot);
         if (!adoption) {
           return { kind: "deny", reason: "project_session_scope_missing" };
         }

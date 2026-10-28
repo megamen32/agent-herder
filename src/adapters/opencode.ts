@@ -1074,6 +1074,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
         ...(message.turnId ? { turnId: message.turnId } : {}),
         ...(message.phase ? { phase: message.phase } : {}),
         ...(message.model ? { model: message.model } : {}),
+        ...(message.nativeParentMessageId ? { nativeParentMessageId: message.nativeParentMessageId } : {}),
         ...(message.timestamp ? { timestamp: message.timestamp } : {}),
         ...(text ? { text } : {}),
         parts: message.parts as SessionMessagePart[],
