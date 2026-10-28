@@ -1,0 +1,36 @@
+{
+  "id": "L02",
+  "label": "Установить и проверить реальное переключение",
+  "status": "done",
+  "owner": "root",
+  "depends_on": [
+    "L01"
+  ],
+  "estimate_minutes": 15,
+  "acceptance": "Действующий релиз установлен; разрешённая существующая QA-сессия переключается Fast/Normal без нового turn и смены модели; исходники опубликованы в main.",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex",
+  "updated_at": "2026-10-28T17:04:09+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-28T16:33:46+03:00",
+      "note": "bdb3ef2 installed PID59959, frontend published with ingress62e0a5d9; exact root session native canSet=true. Independent UI tester performs Fast→Normal→Fast; no parallel tier mutation.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T17:04:09+03:00",
+      "note": "Installed c224c7a. Exact own live session Fast/priority confirmed after resolving priorUNKNOWN by loaded-only snapshot; real MCP Normal/default→Fast/priority bothoktrue. Root browser shows Скорость: Fast, modelunchanged, globalconfighashsame. Receipt RESULT.md/installed.json; browserclosed.",
+      "changes": {
+        "status": "done",
+        "result": "RESULT.md; installed.json; final-fast.png"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    }
+  ],
+  "result": "RESULT.md; installed.json; final-fast.png"
+}

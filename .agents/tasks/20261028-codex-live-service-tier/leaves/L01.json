@@ -1,0 +1,23 @@
+{
+  "id": "L01",
+  "label": "Добавить переключение tier точной сессии",
+  "status": "done",
+  "owner": "codex_live_tier",
+  "depends_on": [],
+  "estimate_minutes": 15,
+  "acceptance": "MCP/API/UI используют native session-scoped изменение и чтение; модель, текущий turn и глобальный default сохранены.",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex",
+  "updated_at": "2026-10-28T16:29:04+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-28T16:29:04+03:00",
+      "note": "Нативный exact-thread setter и подтверждение, HTTP/MCP/UI готовы. Commit bdb3ef2, 20 native/permissions +3 controls checks, TypeScript passed. Без live mutation.",
+      "changes": {
+        "status": "done"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    }
+  ]
+}

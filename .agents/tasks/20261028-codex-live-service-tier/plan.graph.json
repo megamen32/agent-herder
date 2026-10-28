@@ -1,0 +1,92 @@
+{
+  "schema_version": 2,
+  "title": "Fast/Normal для существующей Codex-сессии",
+  "goal": "Менять скорость существующих исполнителей без смены модели и потери текущей работы.",
+  "business_result": "Herder меняет и независимо читает service tier точной Codex-сессии через штатный native контракт, без глобальной настройки или нового сообщения.",
+  "business_results": [
+    "Herder меняет и независимо читает service tier точной Codex-сессии через штатный native контракт, без глобальной настройки или нового сообщения."
+  ],
+  "acceptance_scenarios": [
+    "В существующей QA-сессии выбрать Fast, увидеть подтверждённый Fast и прежнюю модель; вернуть Normal тем же контролом без нового turn."
+  ],
+  "current_progress": "Готово: установлен c224c7a. Живой MCP Normal/default→Fast/priority подтверждён; итоговый Fast показан браузером, модель и глобальная конфигурация сохранены. Initial UNKNOWN двух Fast попыток разрешены loaded-only snapshot без повтора. RESULT.md и installed.json содержат точные квитанции и границы.",
+  "external_waits": "",
+  "slots": 2,
+  "updated_at": "2026-10-28T17:04:09+03:00",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "Добавить переключение tier точной сессии",
+      "status": "done",
+      "acceptance": "MCP/API/UI используют native session-scoped изменение и чтение; модель, текущий turn и глобальный default сохранены.",
+      "owner": "codex_live_tier",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-28T16:29:04+03:00",
+          "note": "Нативный exact-thread setter и подтверждение, HTTP/MCP/UI готовы. Commit bdb3ef2, 20 native/permissions +3 controls checks, TypeScript passed. Без live mutation.",
+          "changes": {
+            "status": "done"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      }
+    },
+    {
+      "id": "L02",
+      "label": "Установить и проверить реальное переключение",
+      "status": "done",
+      "acceptance": "Действующий релиз установлен; разрешённая существующая QA-сессия переключается Fast/Normal без нового turn и смены модели; исходники опубликованы в main.",
+      "result": "RESULT.md; installed.json; final-fast.png",
+      "owner": "root",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-28T16:33:46+03:00",
+          "note": "bdb3ef2 installed PID59959, frontend published with ingress62e0a5d9; exact root session native canSet=true. Independent UI tester performs Fast→Normal→Fast; no parallel tier mutation.",
+          "changes": {
+            "status": "running"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T17:04:09+03:00",
+          "note": "Installed c224c7a. Exact own live session Fast/priority confirmed after resolving priorUNKNOWN by loaded-only snapshot; real MCP Normal/default→Fast/priority bothoktrue. Root browser shows Скорость: Fast, modelunchanged, globalconfighashsame. Receipt RESULT.md/installed.json; browserclosed.",
+          "changes": {
+            "status": "done",
+            "result": "RESULT.md; installed.json; final-fast.png"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [
+        "L01"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      }
+    }
+  ],
+  "leaf_count": 2,
+  "plan_origin": {
+    "at": "2026-10-28T13:18:55.894894+00:00",
+    "source": "file_birthtime",
+    "leaf_id": "L01",
+    "recorded_at": "2026-10-28T13:18:58.286809+00:00"
+  }
+}
