@@ -347,7 +347,7 @@ export class SessionSupervisor {
 
   private rememberObservedPermissions(provider: string, sessions: AgentSession[]): void {
     const seen = this.permissionNoticeSeen.get(provider) ?? new Set<string>();
-    for (const session of sessions) if (session.needsPermission) seen.add(this.permissionObservationKey(session));
+    for (const session of sessions) if (session.needsPermission || session.status === "needs_input") seen.add(this.permissionObservationKey(session));
     this.permissionNoticeSeen.set(provider, seen);
   }
 
@@ -409,10 +409,10 @@ export class SessionSupervisor {
   private reconcileLatePermissionSessions(provider: string, adapter: HarnessAdapter, sessions: AgentSession[]): void {
     if (!this.permissionNoticeObserver) return;
     const seen = this.permissionNoticeSeen.get(provider) ?? new Set<string>();
-    const current = new Set(sessions.filter(session=>session.needsPermission).map(session=>this.permissionObservationKey(session)));
+    const current = new Set(sessions.filter(session=>session.needsPermission || session.status === "needs_input").map(session=>this.permissionObservationKey(session)));
     for (const key of seen) if (!current.has(key)) seen.delete(key);
     this.permissionNoticeSeen.set(provider, seen);
-    const fresh = sessions.filter(session=>session.needsPermission && !seen.has(this.permissionObservationKey(session)));
+    const fresh = sessions.filter(session=>(session.needsPermission || session.status === "needs_input") && !seen.has(this.permissionObservationKey(session)));
     // The historical startup scan can remain in flight for minutes. A fresh
     // native active ID is independently fenced by getPermissionState below.
     if (!fresh.length || this.permissionNoticePollInFlight.has(provider)) return;
@@ -1268,7 +1268,7 @@ export class SessionSupervisor {
       return;
     }
 
-    if (event.kind === "permission.requested" && this.permissionNoticeObserver) {
+    if ((event.kind === "permission.requested" || event.nativeType === "item/tool/requestUserInput") && this.permissionNoticeObserver) {
       const adapter = this.adapters.get(provider);
       if (adapter) void this.permissionNoticeObserver.onEvent(adapter, event).catch(() => undefined);
     }

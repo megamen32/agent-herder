@@ -170,7 +170,7 @@ export function createPermissionNoticeObserver(
       if (!adapter.getPermissionState) return true;
       let complete = true;
       for (const session of sessions) {
-        if (session.needsPermission !== true) continue;
+        if (session.needsPermission !== true && session.status !== "needs_input") continue;
         let state: HarnessPermissionState | null;
         try { state = await adapter.getPermissionState(session.id); } catch {
           complete = false;
@@ -250,7 +250,7 @@ function visibleMessageText(message: SessionMessageView): string {
   return message.parts.some((part) => part.type === "thinking") ? "" : message.text ?? "";
 }
 
-function safeVisibleText(value: string, limit: number): string {
+export function safeVisibleText(value: string, limit: number): string {
   return value
     .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[скрытый ключ]")
     .replace(/(authorization\s*:\s*bearer\s+|bearer\s+)[^\s,;]+/gi, "$1[скрыто]")

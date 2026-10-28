@@ -107,15 +107,15 @@ export async function deliverNoticeQuestion(
   const channel = receipt.telegram && typeof receipt.telegram === "object" && !Array.isArray(receipt.telegram)
     ? receipt.telegram as Record<string, unknown> : undefined;
   const choices = Array.isArray(receipt.choices) ? receipt.choices as Array<Record<string, unknown>> : [];
-  const exactChoices = choices.length === 2
-    && choices[0]?.value === "allow" && choices[0]?.label === "Разрешить"
-    && choices[1]?.value === "deny" && choices[1]?.label === "Запретить";
+  const expectedChoices = envelope.choices ?? [];
+  const exactChoices = choices.length === expectedChoices.length
+    && choices.every((choice, index) => choice.value === expectedChoices[index]?.value && choice.label === expectedChoices[index]?.label);
   const telegramSent = channel?.status === "sent" && typeof channel.chat_id === "string" && channel.chat_id.trim().length > 0
     && Number.isInteger(channel.message_id) && Number(channel.message_id) > 0;
   const validState = ["pending", "resolving", "resolved", "cancelled", "expired"].includes(String(receipt.state));
   if (receipt.schema !== "ask_human.response.v1" || receipt.request_id !== binding.request_id || !validState
     || receipt.project !== config.project || receipt.recipient !== config.recipient || receipt.kind !== "user"
-    || receipt.mode !== "choice" || !exactChoices
+    || receipt.mode !== envelope.mode || !exactChoices
     || receipt.native_harness !== target.harness || receipt.native_session_id !== target.session_id
     || receipt.native_cwd !== (target.cwd ?? "") || !telegramSent) {
     throw new Error("Notice human request receipt does not prove the exact bound card was sent");
