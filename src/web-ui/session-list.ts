@@ -114,7 +114,7 @@ export type SessionDeepLinkResolution =
   | {kind:'pending'|'ambiguous'|'invalid'};
 
 /** Resolve only observed exact native identities; missing partial rows prove nothing. */
-export function resolveSessionDeepLink(key:string, addresses:readonly MeshAddress[], localHostId:string, complete:boolean):SessionDeepLinkResolution {
+export function resolveSessionDeepLink(key:string, addresses:readonly MeshAddress[], localHostId:string, complete:boolean, localSessions:readonly Pick<SessionListSession,'id'|'harness'|'remote'|'hostId'>[]=[]):SessionDeepLinkResolution {
   const valid=(value:unknown):value is string=>typeof value==='string'&&value.length>0&&value.length<=512&&!/[\x00-\x1f\x7f]/.test(value);
   if(key.startsWith('mesh:')){
     try{
@@ -128,7 +128,8 @@ export function resolveSessionDeepLink(key:string, addresses:readonly MeshAddres
   const colon=key.indexOf(':');
   const harness=key.slice(0,colon),nativeSessionId=key.slice(colon+1);
   if(colon<1||!valid(harness)||!valid(nativeSessionId))return {kind:'invalid'};
-  const matches=[...new Map(addresses.filter(a=>a.harness===harness&&a.nativeSessionId===nativeSessionId).map(a=>[JSON.stringify(a),a])).values()];
+  const confirmedLocal=localHostId?localSessions.filter(row=>!row.remote&&(!row.hostId||row.hostId===localHostId)).map(row=>({hostId:localHostId,harness:row.harness,nativeSessionId:row.id})):[];
+  const matches=[...new Map([...addresses,...confirmedLocal].filter(a=>a.harness===harness&&a.nativeSessionId===nativeSessionId).map(a=>[JSON.stringify([a.hostId,a.harness,a.nativeSessionId]),a])).values()];
   if(matches.length>1)return {kind:'ambiguous'};
   if(!localHostId)return {kind:'pending'};
   if(matches.length===1&&matches[0].hostId===localHostId)return {kind:'local',key};

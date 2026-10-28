@@ -22,6 +22,14 @@ describe('exact native session deep links',()=>{
   expect(resolveSessionDeepLink('codex:native-id',[local],'100',false)).toEqual({kind:'local',key:'codex:native-id'});
   expect(resolveSessionDeepLink('codex:historical',[],'100',true)).toEqual({kind:'local',key:'codex:historical'});
  });
+ it('uses confirmed local API rows without waiting for a partial fleet inventory',()=>{
+  const localRows=[{id:'native-id',harness:'codex',remote:false}];
+  expect(resolveSessionDeepLink('codex:native-id',[],'100',false,localRows)).toEqual({kind:'local',key:'codex:native-id'});
+  expect(resolveSessionDeepLink('codex:native-id',[local],'100',false,localRows)).toEqual({kind:'local',key:'codex:native-id'});
+  expect(resolveSessionDeepLink('codex:native-id',[],'100',false,[{...localRows[0],remote:true}]).kind).toBe('pending');
+  expect(resolveSessionDeepLink('codex:native-id',[],'100',false,[{...localRows[0],hostId:'44'}]).kind).toBe('pending');
+  expect(resolveSessionDeepLink('codex:other-id',[],'100',false,localRows).kind).toBe('pending');
+ });
  it('round trips an explicitly addressed mesh link without a list click',()=>{
   const key=`mesh:${JSON.stringify(['44','codex','native-id'])}`;
   const decoded=sessionKeyFromHash(`#/session/${encodeURIComponent(key)}`)!;

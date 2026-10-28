@@ -853,7 +853,7 @@ function App() {
   const [detailsHydrating, setDetailsHydrating] = React.useState(false);
   const [detailsError, setDetailsError] = React.useState<string>();
   const linkedKey=externalSessionLink?(deepLinkKey??activeKey):(activeKey?.startsWith('mesh:')?activeKey:undefined);
-  const linkedResolution=React.useMemo(()=>linkedKey?resolveSessionDeepLink(linkedKey,directory.rows.map(row=>row.address),directory.localHostId,!directory.pending&&!directory.partial&&!directory.more):undefined,[linkedKey,directory.rows,directory.localHostId,directory.pending,directory.partial,directory.more]);
+  const linkedResolution=React.useMemo(()=>linkedKey?resolveSessionDeepLink(linkedKey,directory.rows.map(row=>row.address),directory.localHostId,!directory.pending&&!directory.partial&&!directory.more,sessions):undefined,[linkedKey,directory.rows,directory.localHostId,directory.pending,directory.partial,directory.more,sessions]);
   const linkedLocalKey=linkedResolution?(linkedResolution.kind==='local'?linkedResolution.key:undefined):activeKey;
   React.useEffect(()=>{
     if(!linkedResolution)return;
