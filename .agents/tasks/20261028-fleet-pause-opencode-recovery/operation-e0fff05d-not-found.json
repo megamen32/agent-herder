@@ -1,0 +1,38 @@
+{
+  "checkedAt": "2026-10-28T17:02:37.515571+00:00",
+  "authentication": "Authenticated local uid1000 OS access to the running service owner's canonical operation store",
+  "operationId": "e0fff05d48167299345eaaffac137ad6",
+  "result": "NOT_FOUND",
+  "matches": [],
+  "lookup": "Exact key lookup across every project in the validated version1 projects map; no HTTP404 or unsupported GET was used",
+  "runtime": {
+    "mainPid": 1080619,
+    "activeState": "active",
+    "startMsk": "2026-10-28 19:55:29",
+    "invocationId": "53c9ac70b2ec4b01affe57decfc2d88a",
+    "entry": "/home/roomhacker/agents-projects/.fleet-candidate/releases/5d76de91272f26e804f5a1f0bfbfd817be959b71/dist/index.js",
+    "sourceSha": "5d76de91272f26e804f5a1f0bfbfd817be959b71",
+    "entrySha256": "e319b85041845584965e81114860084b8d3b72d3543eb2d1f5dd97e9b14e7dbf",
+    "operationLogModuleSha256": "99fdb58ea21fef495460c1cf068a561bce211b3c68c9f52535c64cdeca295902",
+    "operationLogModuleMatchesInstalledManifest": true,
+    "uid": 1000
+  },
+  "store": {
+    "path": "/home/roomhacker/.local/state/agent-herder/autopilot-live/project-launch-attempts.json",
+    "pathBoundThrough": "Live process AGENT_HERDER_AUTOPILOT_STATE_DIR/default resolver and installed index.ts ProjectLaunchAttemptLog construction",
+    "version": 1,
+    "projectCount": 12,
+    "sha256": "4cac9588059a527d529bc78f97098380967730d3a7fb0de9c4cb3c64bd27abb9",
+    "device": 66307,
+    "inode": 25048386,
+    "bytes": 475992,
+    "mtimeNs": 1793196324906600104,
+    "sameFileBeforeAfter": true,
+    "ownerUidVerified": true,
+    "regularFileVerified": true
+  },
+  "semantics": "The installed dispatcher reserves an in_flight attempt durably before any native writer call. This is exact absence in that authoritative ledger at checkedAt, not a guarantee about future calls or merely absence of a visible session.",
+  "mutationPerformed": false,
+  "launchCalls": 0,
+  "restarts": 0
+}
