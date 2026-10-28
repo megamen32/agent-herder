@@ -19,6 +19,7 @@ import plistlib
 from pathlib import Path
 import re
 import shutil
+import shlex
 import stat
 import subprocess
 import sys
@@ -76,7 +77,52 @@ def http_status(url: str, timeout: float = 8.0):
         return 0
 
 
-def mcp_status(port: int, timeout: float = 10.0, unit: str = "agent-herder-fleet.service", input_id: str = ""):
+def canonical_mcp_bearer(unit: str) -> str:
+    """Resolve the existing runtime credential; never provision a new one.
+
+    Darwin's watchdog starts the normal runtime, whose loadSecretEnvironment
+    resolves herder.env fingerprints through the protected secret store.
+    Linux continues to use the effective running process environment.
+    """
+    if sys.platform != "darwin":
+        return process_environment_value(unit, "AGENT_HERDER_HTTP_TOKEN").strip()
+
+    def protected_text(path: Path) -> str:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd, "r", encoding="utf-8") as handle:
+            before = os.fstat(handle.fileno())
+            if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid()
+                    or before.st_mode & 0o077 or before.st_size > 65536):
+                raise ValueError("canonical_mcp_credential_unverified")
+            content = handle.read(65537)
+            after = os.fstat(handle.fileno())
+            identity = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns)
+            if identity(before) != identity(after) or len(content) > 65536:
+                raise ValueError("canonical_mcp_credential_changed")
+            return content
+
+    base = Path.home() / ".config" / "agent-herder"
+    marker = ""
+    for line in protected_text(base / "herder.env").splitlines():
+        match = re.fullmatch(r"\s*(?:export\s+)?AGENT_HERDER_HTTP_TOKEN\s*=\s*(.*?)\s*", line)
+        if match:
+            parts = shlex.split(match.group(1), comments=True, posix=True)
+            if len(parts) != 1:
+                raise ValueError("canonical_mcp_credential_invalid")
+            marker = parts[0]
+    if not marker:
+        raise ValueError("canonical_mcp_credential_missing")
+    if not re.fullmatch(r"sha256:[0-9a-f]{16}", marker):
+        return marker
+    store = json.loads(protected_text(base / "secrets.json"))
+    token = store.get("secrets", {}).get("AGENT_HERDER_HTTP_TOKEN")
+    if (not isinstance(token, str) or not token
+            or "sha256:" + hashlib.sha256(token.encode()).hexdigest()[:16] != marker):
+        raise ValueError("canonical_mcp_credential_fingerprint_mismatch")
+    return token
+
+
+def mcp_status(port: int, timeout: float = 10.0, unit: str = "agent-herder-fleet.service", input_id: str = "", canonical_bearer: str | None = None):
     """Readiness uses native owner authentication; a 401 is never success.
 
     Reuse the running unit's canonical bearer when configured. A tokenless
@@ -87,7 +133,8 @@ def mcp_status(port: int, timeout: float = 10.0, unit: str = "agent-herder-fleet
                        "params": {"protocolVersion": "2024-11-05", "capabilities": {},
                                   "clientInfo": {"name": "l", "version": "1"}}}).encode()
     origin = f"http://127.0.0.1:{port}"
-    token = process_environment_value(unit, "AGENT_HERDER_HTTP_TOKEN").strip()
+    token = (process_environment_value(unit, "AGENT_HERDER_HTTP_TOKEN")
+             if canonical_bearer is None else canonical_bearer).strip()
     issued_id = None
     status = 0
     def owner_action(payload):
@@ -171,6 +218,64 @@ def wait_port(port: int, attempts: int = 30) -> bool:
             return True
         time.sleep(2)
     return False
+
+
+def wait_release_ready(fleet: Path, sha: str, port: int, launchd_label: str,
+                       unit: str, budget_seconds: float = 210.0,
+                       canonical_bearer: str | None = None) -> dict:
+    """Wait for the selected generation, within the former 30*(5+2)s window.
+
+    An old listener cannot satisfy readiness. Retry transport/startup failures,
+    never authentication or contract refusals. Tokenless MCP issuance retains
+    its existing UNKNOWN/no-reissue boundary.
+    """
+    deadline = time.monotonic() + budget_seconds
+    result = {"live_sha": "", "sessions": 0, "policy": 0, "mcp": 0,
+              "reason": "startup_deadline"}
+    transient = {0, 408, 425, 429, 500, 502, 503, 504}
+    while time.monotonic() < deadline:
+        result["live_sha"] = running_release(fleet, launchd_label)
+        if result["live_sha"] == sha:
+            for key, path in (("sessions", "/api/sessions"),
+                              ("policy", "/api/automation/launch-policy")):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return result
+                result[key] = http_status(f"http://127.0.0.1:{port}{path}",
+                                          timeout=min(8.0, remaining))
+                if result[key] != 200:
+                    if result[key] not in transient:
+                        result["reason"] = f"{key}_refused"
+                        return result
+                    break
+            else:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return result
+                # MCP may perform initialize/issue/initialize/revoke. Divide
+                # remaining time across all four calls rather than extending
+                # the startup window with another independent timeout.
+                has_canonical_bearer = bool((process_environment_value(unit, "AGENT_HERDER_HTTP_TOKEN")
+                    if canonical_bearer is None else canonical_bearer).strip())
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return result
+                result["mcp"] = mcp_status(port, timeout=min(10.0, remaining / 4), unit=unit,
+                    input_id=f"deploy-readiness-{sha}-{unit}", canonical_bearer=canonical_bearer)
+                if result["mcp"] == 200:
+                    result["live_sha"] = running_release(fleet, launchd_label)
+                    result["reason"] = "ready" if result["live_sha"] == sha else "generation_changed"
+                    return result
+                if result["mcp"] not in transient:
+                    result["reason"] = "mcp_refused"
+                    return result
+                if not has_canonical_bearer:
+                    result["reason"] = "mcp_credential_outcome_unknown"
+                    return result
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            time.sleep(min(2.0, remaining))
+    return result
 
 
 def release_from_cmdline(cmdline: bytes, fleet: Path) -> str:
@@ -791,6 +896,11 @@ def main() -> int:
     fleet = Path(arguments.fleet_dir).expanduser()
     release = fleet / "releases" / arguments.sha
     config_path = fleet / "node-config.json"
+    try:
+        readiness_bearer = canonical_mcp_bearer(arguments.unit) if sys.platform == "darwin" else None
+    except (OSError, ValueError, TypeError):
+        print("canonical MCP credential could not be verified; nothing was switched")
+        return 1
     state_dir = arguments.state_dir or process_environment_value(arguments.unit,
                                                                  "AGENT_HERDER_AUTOPILOT_STATE_DIR")
     print("runtime state dir:", state_dir or "unknown")
@@ -910,16 +1020,14 @@ def main() -> int:
     restart_result = restart(arguments.restart_cmd.split())
     if restart_result.returncode != 0:
         print("release restart command failed:", restart_result.returncode)
-    if not wait_port(arguments.port):
-        print("the node did not come back on its port")
-    time.sleep(3)
-
-    live_sha = running_release(fleet, arguments.launchd_label)
-    sessions = http_status(f"http://127.0.0.1:{arguments.port}/api/sessions")
-    policy = http_status(f"http://127.0.0.1:{arguments.port}/api/automation/launch-policy")
-    mcp = mcp_status(arguments.port, unit=arguments.unit, input_id=f"deploy-readiness-{arguments.sha}-{arguments.unit}")
+    readiness = wait_release_ready(fleet, arguments.sha, arguments.port,
+                                   arguments.launchd_label, arguments.unit,
+                                   canonical_bearer=readiness_bearer)
+    print("release readiness:", readiness["reason"])
+    live_sha, sessions, policy, mcp = (readiness[key] for key in ("live_sha", "sessions", "policy", "mcp"))
     after = disarm_state(fleet, state_dir)
     checks = [
+        ("readiness belongs to the new generation", readiness["reason"] == "ready", readiness["reason"]),
         ("running process comes from the new release", live_sha == arguments.sha, live_sha or "unknown"),
         ("sessions answer", sessions == 200, str(sessions)),
         ("launch policy answers", policy == 200, str(policy)),
@@ -943,7 +1051,7 @@ def main() -> int:
         rollback_live = running_release(fleet, arguments.launchd_label)
         rollback_sessions = http_status(f"http://127.0.0.1:{arguments.port}/api/sessions")
         rollback_policy = http_status(f"http://127.0.0.1:{arguments.port}/api/automation/launch-policy")
-        rollback_mcp = mcp_status(arguments.port, unit=arguments.unit, input_id=f"deploy-readiness-{previous_sha}-{arguments.unit}")
+        rollback_mcp = mcp_status(arguments.port, unit=arguments.unit, input_id=f"deploy-readiness-{previous_sha}-{arguments.unit}", canonical_bearer=readiness_bearer)
         rollback_resolution = package_resolution(fleet / "releases" / previous_sha)
         print(f"rollback proof: process={rollback_live} sessions={rollback_sessions} policy={rollback_policy} mcp={rollback_mcp} agent-resume={rollback_resolution or 'UNRESOLVED'}")
         return 1

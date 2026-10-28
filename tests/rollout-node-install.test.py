@@ -21,6 +21,96 @@ SPEC_CANDIDATE.loader.exec_module(candidate)
 
 
 class RolloutNodeInstallTests(unittest.TestCase):
+    def test_darwin_canonical_secret_is_reused_without_issuing_credentials(self):
+        import hashlib
+        import json
+        token = "isolated-existing-canonical-token"
+        target = "a" * 40
+        class Reply:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, limit): return b"{}"
+        with tempfile.TemporaryDirectory() as temporary:
+            home = pathlib.Path(temporary)
+            base = home / ".config" / "agent-herder"
+            base.mkdir(parents=True)
+            env = base / "herder.env"
+            secrets = base / "secrets.json"
+            env.write_text("AGENT_HERDER_HTTP_TOKEN=sha256:" + hashlib.sha256(token.encode()).hexdigest()[:16] + "\n")
+            secrets.write_text(json.dumps({"version": 1, "secrets": {"AGENT_HERDER_HTTP_TOKEN": token}}))
+            env.chmod(0o600)
+            secrets.chmod(0o600)
+            with (patch.object(rollout.sys, "platform", "darwin"),
+                  patch.object(rollout.Path, "home", return_value=home),
+                  patch.object(rollout, "process_environment_value", side_effect=AssertionError("no /proc credential on Darwin")),
+                  patch.object(rollout, "running_release", return_value=target),
+                  patch.object(rollout, "http_status", return_value=200),
+                  patch.object(rollout.urllib.request, "urlopen", return_value=Reply()) as request):
+                bearer = rollout.canonical_mcp_bearer("label")
+                result = rollout.wait_release_ready(home, target, 18789, "label", "unit", canonical_bearer=bearer)
+                self.assertEqual(result["reason"], "ready")
+                self.assertEqual(request.call_count, 1)
+                sent = request.call_args.args[0]
+                self.assertTrue(sent.full_url.endswith("/mcp"))
+                self.assertEqual(sent.get_header("Authorization"), "Bearer " + token)
+                request.reset_mock()
+                request.side_effect = urllib.error.HTTPError(sent.full_url, 401, "unauthorized", {}, None)
+                result = rollout.wait_release_ready(home, target, 18789, "label", "unit", canonical_bearer=bearer)
+                self.assertEqual(result["reason"], "mcp_refused")
+                self.assertEqual(request.call_count, 1)  # No issue/revoke even on refusal.
+                secrets.write_text(json.dumps({"secrets": {"AGENT_HERDER_HTTP_TOKEN": "wrong-fixture"}}))
+                with self.assertRaisesRegex(ValueError, "fingerprint_mismatch"):
+                    rollout.canonical_mcp_bearer("label")
+                secrets.chmod(0o644)
+                with self.assertRaisesRegex(ValueError, "unverified"):
+                    rollout.canonical_mcp_bearer("label")
+
+    def test_release_readiness_ignores_old_listener_and_retries_transient_new_startup(self):
+        clock = [0.0]
+        target = "a" * 40
+        releases = iter(["b" * 40, target, target, target])
+        statuses = iter([0, 200, 200])
+        def sleep(seconds): clock[0] += seconds
+        with (patch.object(rollout.time, "monotonic", side_effect=lambda: clock[0]),
+              patch.object(rollout.time, "sleep", side_effect=sleep),
+              patch.object(rollout, "running_release", side_effect=lambda *args: next(releases)),
+              patch.object(rollout, "http_status", side_effect=lambda *args, **kw: next(statuses)) as http,
+              patch.object(rollout, "mcp_status", return_value=200) as mcp,
+              patch.object(rollout, "process_environment_value", return_value="")):
+            result = rollout.wait_release_ready(pathlib.Path("/fleet"), target, 18789, "label", "unit", budget_seconds=10)
+        self.assertEqual(result["reason"], "ready")
+        self.assertEqual(result["live_sha"], target)
+        self.assertEqual(http.call_count, 3)
+        self.assertEqual(mcp.call_count, 1)
+        self.assertEqual(clock[0], 4)
+
+    def test_release_readiness_bounds_persistent_failure_and_preserves_auth_refusals(self):
+        target = "a" * 40
+        for status, expected in [(0, "startup_deadline"), (503, "startup_deadline"), (401, "sessions_refused"), (409, "sessions_refused")]:
+            with self.subTest(status=status):
+                clock = [0.0]
+                def sleep(seconds): clock[0] += seconds
+                with (patch.object(rollout.time, "monotonic", side_effect=lambda: clock[0]),
+                      patch.object(rollout.time, "sleep", side_effect=sleep),
+                      patch.object(rollout, "running_release", return_value=target),
+                      patch.object(rollout, "http_status", return_value=status),
+                      patch.object(rollout, "mcp_status") as mcp,
+                      patch.object(rollout, "process_environment_value", return_value="")):
+                    result = rollout.wait_release_ready(pathlib.Path("/fleet"), target, 18789, "label", "unit", budget_seconds=6)
+                self.assertEqual(result["reason"], expected)
+                self.assertLessEqual(clock[0], 6)
+                mcp.assert_not_called()
+
+    def test_release_readiness_does_not_replay_unknown_tokenless_mcp_issue(self):
+        with (patch.object(rollout, "running_release", return_value="a" * 40),
+              patch.object(rollout, "http_status", return_value=200),
+              patch.object(rollout, "mcp_status", return_value=0) as mcp,
+              patch.object(rollout, "process_environment_value", return_value="")):
+            result = rollout.wait_release_ready(pathlib.Path("/fleet"), "a" * 40, 18789, "label", "unit")
+        self.assertEqual(result["reason"], "mcp_credential_outcome_unknown")
+        self.assertEqual(mcp.call_count, 1)
+
     def test_node_side_reuses_its_python_interpreter_for_rollout_node(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
