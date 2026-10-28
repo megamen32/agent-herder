@@ -1,0 +1,71 @@
+{
+  "checkedAt": "2026-10-28T23:03:36.178104+00:00",
+  "hostId": "mac-mini-2012.lan",
+  "status": "refused_before_switch_existing_release_restored_by_external_actor",
+  "requestedRuntimeSourceSha": "139d877ef6ce353fc9e2b2305a4f65336f49e702",
+  "helperSourceCommit": "f572760",
+  "runningRuntimeSourceSha": "98caf6270a22dc3aee2c37dff0b93858f9310383",
+  "runningNodePid": 42120,
+  "priorReceiptPreserved": ".agents/tasks/20261028-reboot-session-recovery/mac-second-install.json",
+  "attempt": {
+    "canonicalEntryPoint": "rollout-candidate.py --node-side --kind fleet",
+    "runtimeBuildRepeated": false,
+    "archiveRepackedFromVerifiedCleanServer100Artifact": true,
+    "cleanBundleFingerprint": "e66c96d3f0d2d944e72b9d35db0aa8bd689331d0c6c5f7c7ee144b50b4248326",
+    "priorInstalledBundleDelta": {"count": 58, "allInsideNodeModules": true},
+    "helperResult": 1,
+    "refusal": "launchagent_runtime_mismatch",
+    "sourceSwitchPerformed": false,
+    "helperRestartPerformed": false,
+    "waitReleaseReadyReached": false,
+    "newCredentialsIssued": 0,
+    "canonicalRawBearerReadOnlyInitializeBeforeAttempt": 200
+  },
+  "candidateChecks": {
+    "payloadFiles": 1811,
+    "payloadVerified": true,
+    "indexSha256": "dcf6192094a2d9540fcb55d69b4403fae5a837ce87837fa4cccd1c6a42166214",
+    "agentResumeResolvedInsideRelease": true,
+    "agentResumeFiles": 59,
+    "agentResumePackageSha256": "847b1993f6ca0e358195d65226cba1c343ce1cb1a7db71883c835cd213985116"
+  },
+  "failureEvidence": {
+    "watchdogObservedSourceSha": "98caf6270a22dc3aee2c37dff0b93858f9310383",
+    "watchdogObservedNodePid": 28028,
+    "reason": "observation_failed",
+    "violations": ["release_generation_changed"],
+    "childExitCode": 0,
+    "launchdStateAtRefusal": "not running",
+    "launchdExitCode": 78,
+    "listenerAtRefusal": false,
+    "cause": "Canonical node-side extraction moves and replaces the candidate release directory while the running Darwin watchdog pins inode/mtime identities of the entire releases closure. The watchdog refuses the changed closure, so the later installer proof no longer finds a running LaunchAgent.",
+    "laterRestoration": "A subsequent read-only observation found the prior 98caf runtime active as PID 42120. This worker did not start it and does not attribute the restoration to itself."
+  },
+  "finalReadback": {
+    "sessionsHttp": 200,
+    "sessionsCount": 38,
+    "launchPolicyHttp": 200,
+    "mcpHttp": 200,
+    "allowedHarnesses": ["codex"],
+    "models": {"codex": "gpt-6.1-sol"}
+  },
+  "preserved": {
+    "nativeCodexPidsAndStartTimesUnchanged": true,
+    "nativeCodexPids": [413, 6889, 71043],
+    "configAllFieldsExceptSourceShaUnchanged": true,
+    "configWithoutSourceShaHash": "7c9a652159886331c6c685c396909c8438870ecfe7d0e7ea6400481b5eb5abee",
+    "allObservedStateFileHashesUnchanged": true,
+    "indexingSettingsSha256": "cdad77a45c0fb0cb7a96e93287fb3e56f6d0f862a1993d7934b7a8ae90a77bcf",
+    "automationDisarmSha256": "959ea29934dccfe369b92d6d8decd258d3f084ec39a8436897e2bd72f285480b",
+    "watchdogSha256": "7eb9e2a6658a3f5531d7152decbe9954caf1f3b267172b3959634c291af5e9d1",
+    "nativeInputsOrResumesIssued": 0,
+    "m1Touched": false
+  },
+  "remainingBlocker": "Mini 139d877 is not installed. Correct the Darwin deployment ordering around artifact preparation and the existing release-closure guard; do not weaken the guard or automatically repeat this attempt.",
+  "evidence": [
+    ".tmp/mini-final-before.json",
+    ".tmp/mini-final-install.log",
+    ".tmp/mini-final-during.json",
+    ".tmp/mini-final-after.json"
+  ]
+}

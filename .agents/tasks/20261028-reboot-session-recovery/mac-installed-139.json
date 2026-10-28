@@ -1,0 +1,71 @@
+{
+  "checkedAt": "2026-10-28T23:11:55.175024+00:00",
+  "hostId": "mac-mini-2012.lan",
+  "status": "installed_and_independently_read_back",
+  "runtimeSourceSha": "139d877ef6ce353fc9e2b2305a4f65336f49e702",
+  "helperSourceCommit": "09686d9",
+  "previousRuntimeSourceSha": "98caf6270a22dc3aee2c37dff0b93858f9310383",
+  "nodePid": 45874,
+  "nodeStartedAtHostLocal": "Wed Oct 28 16:11:28 2026",
+  "entrypoint": "/Users/roomhacker/.local/share/agent-herder/fleet/releases/139d877ef6ce353fc9e2b2305a4f65336f49e702/dist/index.js",
+  "canonicalEntrypoint": "rollout-candidate.py --node-side --kind fleet",
+  "installerExitCode": 0,
+  "readinessReason": "ready",
+  "helperInterpreter": "/usr/local/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python",
+  "deployment": {
+    "singleAuthorizedAttemptWithCorrectedOrder": true,
+    "runtimeRebuilt": false,
+    "cleanServer100BundleFingerprint": "e66c96d3f0d2d944e72b9d35db0aa8bd689331d0c6c5f7c7ee144b50b4248326",
+    "order": "Exact old LaunchAgent proof and native config/current/process generation CAS; targeted SIGTERM; old owned watchdog/Node/listener fully stopped; candidate extraction; single-use in-process handoff; no-new-owner CAS; switch and normal launchctl restart; authenticated generation-bound readiness.",
+    "credential": "Existing protected canonical secret reused; no credential issue or auth bypass.",
+    "newCredentialsIssued": 0,
+    "watchdogSourceModified": false
+  },
+  "independentReadback": {
+    "nodeConfigSourceSha": "139d877ef6ce353fc9e2b2305a4f65336f49e702",
+    "currentSourceSha": "139d877ef6ce353fc9e2b2305a4f65336f49e702",
+    "runningProcessSourceSha": "139d877ef6ce353fc9e2b2305a4f65336f49e702",
+    "sessionsHttp": 200,
+    "sessionsCount": 38,
+    "launchPolicyHttp": 200,
+    "mcpInitializeHttp": 200,
+    "payloadFiles": 1811,
+    "missing": [],
+    "extra": [],
+    "mismatched": [],
+    "indexSha256": "dcf6192094a2d9540fcb55d69b4403fae5a837ce87837fa4cccd1c6a42166214"
+  },
+  "canonicalPackageReadback": {
+    "agentResumeResolvedInsideRelease": true,
+    "agentResumeFiles": 59,
+    "agentResumePackageSha256": "847b1993f6ca0e358195d65226cba1c343ce1cb1a7db71883c835cd213985116",
+    "postNormalizationBundleDifference": "Node-local package farm is normalized by the canonical helper; the immutable dist payload and exact runtime agent-resume package are independently verified. The clean transport bundle fingerprint is not falsely assigned to this normalized installed tree."
+  },
+  "preserved": {
+    "nativeCodexPidsAndStartTimesUnchanged": true,
+    "nativeCodexPids": [413, 6889, 71043],
+    "configAllFieldsExceptSourceShaUnchanged": true,
+    "configWithoutSourceShaHash": "7c9a652159886331c6c685c396909c8438870ecfe7d0e7ea6400481b5eb5abee",
+    "allObservedStateFileHashesUnchanged": true,
+    "indexingSettingsSha256": "cdad77a45c0fb0cb7a96e93287fb3e56f6d0f862a1993d7934b7a8ae90a77bcf",
+    "automationDisarmSha256": "959ea29934dccfe369b92d6d8decd258d3f084ec39a8436897e2bd72f285480b",
+    "watchdogSha256": "7eb9e2a6658a3f5531d7152decbe9954caf1f3b267172b3959634c291af5e9d1",
+    "allowedHarnesses": ["codex"],
+    "models": {"codex": "gpt-6.1-sol"},
+    "nativeInputsOrResumesIssued": 0,
+    "m1Touched": false,
+    "server100AndLinuxNodesTouched": false
+  },
+  "priorFailureReceiptsPreserved": [
+    ".agents/tasks/20261028-reboot-session-recovery/mac-second-install.json",
+    ".agents/tasks/20261028-reboot-session-recovery/mac-final-install.json"
+  ],
+  "remainingMiniInstallBlocker": null,
+  "claimLimit": "This proves Mini runtime installation and preserved native sessions/settings. It does not claim a fresh Mini business-session auto-resume canary; this worker sent no native prompts.",
+  "evidence": [
+    ".tmp/mini-139-before.json",
+    ".tmp/mini-139-install.log",
+    ".tmp/mini-139-during.json",
+    ".tmp/mini-139-after.json"
+  ]
+}

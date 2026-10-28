@@ -1,10 +1,11 @@
 {
   "id": "L03",
   "label": "Установить финальное восстановление на Mini через исправленную проверку готовности",
-  "status": "running",
+  "status": "done",
   "description": "Устранить преждевременный rollback после ответа старого listener и временной недоступности нового API, сохранив все process/payload/auth guards; установить уже проверенный139d877.",
   "acceptance": "Mini исполняет139d877, все три штатных API доступны, native PID/STOP/пауза/настройки сохранены; предыдущая неуспешная попытка не скрыта.",
   "affected_files": [
+    "deploy/fleet/rollout-candidate.py",
     "deploy/fleet/rollout-node.py",
     "tests/rollout-node-install.test.py"
   ],
@@ -14,8 +15,8 @@
   "model": "gpt-6.1-sol",
   "depends_on": [],
   "estimate_minutes": 10,
-  "note": "Исполнитель recovery_mac_delivery; root интегрирует helper. На100/44/88 повторная установка не нужна.",
-  "updated_at": "2026-10-29T01:35:50+03:00",
+  "note": "Исполнитель finish_mini_readiness после reboot продолжил прежний WIP. Readiness/canonical secret reuse опубликованыf572760. Preflight попытка139 не switch/restart: candidate распаковывал releases при живом watchdog, который обнаруживал release_generation_changed. Исправляется порядок first-mutation в canonical candidate: exact proof→controlledstop→prepare→switch/start, in-process handoff и CAS, без ослабления watchdog.98снова работает. На100/44/88 повторная установка не нужна;5сессий включая root сами возобновились после третьего reboot.",
+  "updated_at": "2026-10-29T02:13:49+03:00",
   "progress_events": [
     {
       "at": "2026-10-29T01:35:50+03:00",
@@ -25,6 +26,17 @@
       },
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex"
+    },
+    {
+      "at": "2026-10-29T02:13:49+03:00",
+      "note": "Mini139 установлен через09686d9, PID45874,1811SHA/all3APIs200, native/state сохранены. Root independent current/process/API readback. Старыеfailedreceipts сохранены.",
+      "changes": {
+        "status": "done",
+        "result": "mac-installed-139.json: runtime139/helper096 разделены, install blocker закрыт"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "mac-installed-139.json: runtime139/helper096 разделены, install blocker закрыт"
 }
