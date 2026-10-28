@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createAgentHerderMcpServer } from "../src/index.js";
+import { HumanRequestRegistry } from "../src/human-request/registry.js";
 import { createResumeAfterRuntime, parseResumeAfterStartupHold } from "../src/resume-after-runtime.js";
 import { SessionSupervisor } from "../src/session-supervisor.js";
 import { createFleetRecoveryAdmissionGate } from "../src/autopilot/recovery-admission.js";
@@ -518,6 +519,55 @@ describe("MCP dependency wait through native adapter events",()=>{
       .rejects.toThrow(/does not expose an exact native turn identity/i);
     expect(heldChecks).toBe(0);
     expect(await runtime.service.list()).toHaveLength(0);
+    expect(f.sent).toHaveLength(0);
+  });
+});
+
+describe("HumanRequest join through the resume_after MCP route",()=>{
+  it("binds a pending HumanRequest whose native target matches the owner tuple",async()=>{
+    const f=await nativeFixture();
+    const registryRoot=await mkdtemp(join(process.cwd(),".tmp/resume-after-mcp-hr-"));
+    cleanup.push(()=>rm(registryRoot,{recursive:true,force:true}));
+    const humanRequests=new HumanRequestRegistry(join(registryRoot,"human-requests.json"));
+    const request=await humanRequests.create({kind:"user",target:{harness:"codex",sessionId:"owner"}});
+    const server=createAgentHerderMcpServer(undefined,{resumeAfter:f.runtime.service,humanRequests});
+    const client=new Client({name:"hr-join-canary",version:"1"},{versionNegotiation:{mode:"auto"}});
+    const [clientTransport,serverTransport]=InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);await client.connect(clientTransport);
+    cleanup.push(async()=>{await client.close();await server.close();});
+    const call=await client.callTool({name:"resume_after",arguments:{
+      owner:ref("owner"),dependencies:[ref("a")],requestId:"hr-join",message:"apply the canonical answer",
+      humanRequestId:request.requestId,expiresAt:"2027-01-01T00:00:00Z",
+    }});
+    expect(call.isError).not.toBe(true);
+    const wait=(call.structuredContent as any).wait;
+    expect(wait).toMatchObject({humanRequestId:request.requestId,state:"waiting"});
+    const durable=await humanRequests.get(request.requestId);
+    expect(durable?.resumeWaitId).toBe(wait.id);
+  });
+  it("rejects a foreign native target and cancels only the wait it created",async()=>{
+    const f=await nativeFixture();
+    const registryRoot=await mkdtemp(join(process.cwd(),".tmp/resume-after-mcp-hr-"));
+    cleanup.push(()=>rm(registryRoot,{recursive:true,force:true}));
+    const humanRequests=new HumanRequestRegistry(join(registryRoot,"human-requests.json"));
+    const foreign=await humanRequests.create({kind:"user",target:{harness:"codex",sessionId:"stranger-session"}});
+    const server=createAgentHerderMcpServer(undefined,{resumeAfter:f.runtime.service,humanRequests});
+    const client=new Client({name:"hr-join-foreign",version:"1"},{versionNegotiation:{mode:"auto"}});
+    const [clientTransport,serverTransport]=InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);await client.connect(clientTransport);
+    cleanup.push(async()=>{await client.close();await server.close();});
+    const call=await client.callTool({name:"resume_after",arguments:{
+      owner:ref("owner"),dependencies:[ref("a")],requestId:"hr-foreign",message:"must not bind",
+      humanRequestId:foreign.requestId,
+    }});
+    expect(call.isError).toBe(true);
+    expect(JSON.stringify(call.content)).toContain("native target does not match");
+    const waits=(await f.runtime.service.list()).filter(w=>w.humanRequestId===foreign.requestId);
+    expect(waits).toHaveLength(1);
+    expect(waits[0]).toMatchObject({state:"cancelled"});
+    const durable=await humanRequests.get(foreign.requestId);
+    expect(durable?.resumeWaitId).toBeUndefined();
+    expect(durable?.status).toBe("pending");
     expect(f.sent).toHaveLength(0);
   });
 });

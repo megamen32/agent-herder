@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { ResumeAfterService } from "../resume-after.js";
+import type { HumanRequestRegistry } from "../human-request/registry.js";
 import { structuredResult } from "./results.js";
 import { callerSessionFromMcpContext } from "./caller-session.js";
 const ref=z.object({harness:z.enum(["opencode","claude","codex","qoder","hermes","zcode","fast-agent","chatgpt","minimax-code"]),sessionId:z.string().trim().min(1).max(512)});
@@ -8,20 +9,42 @@ const trigger=z.discriminatedUnion("kind",[
   z.object({kind:z.literal("delay"),delayMs:z.number().int().positive().max(Number.MAX_SAFE_INTEGER)}),
   z.object({kind:z.literal("at"),at:z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/)}),
 ]);
+const rfc3339=z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/);
 const resumeRequest=z.union([
-  z.object({owner:ref.optional(),dependencies:z.array(ref).min(1).max(32),message:z.string().trim().min(1).max(16000).optional(),requestId:z.string().trim().min(1).max(256).optional()}).strict(),
-  z.object({owner:ref.optional(),message:z.string().trim().min(1).max(16000),requestId:z.string().trim().min(1).max(256),trigger}).strict(),
+  z.object({owner:ref.optional(),dependencies:z.array(ref).min(1).max(32),message:z.string().trim().min(1).max(16000).optional(),requestId:z.string().trim().min(1).max(256).optional(),humanRequestId:z.string().trim().min(1).max(128).optional(),expiresAt:rfc3339.optional()}).strict(),
+  z.object({owner:ref.optional(),message:z.string().trim().min(1).max(16000),requestId:z.string().trim().min(1).max(256),trigger,humanRequestId:z.string().trim().min(1).max(128).optional(),expiresAt:rfc3339.optional()}).strict(),
 ]);
-export function registerResumeAfterTools(server:McpServer,service?:ResumeAfterService):void{
+/** The durable HumanRequest seam this route binds answered questions to. */
+type HumanRequestJoin = Pick<HumanRequestRegistry, "get" | "bindResumeWait">;
+export function registerResumeAfterTools(server:McpServer,service?:ResumeAfterService,humanRequests?:HumanRequestJoin):void{
   const requireService=()=>{if(!service)throw new Error("Resume-after requires the process-owned Herder service");return service;};
+  const requireHumanRequests=()=>{if(!humanRequests)throw new Error("Resume-after HumanRequest binding requires the durable registry");return humanRequests;};
   server.registerTool("resume_after",{
-    description:"Resume yourself once after a delay, at a scheduled time, or after ALL named dependencies finish their current native execution. Omit owner to resume YOUR CURRENT SESSION: OpenCode, Codex and ZCode supply its native ID in MCP request metadata automatically. Provide owner only to select an explicit session. session_identity() without sessionId reads your own identity the same way. Never guess your own ID from session lists. If native caller metadata is absent or invalid, the tool fails before scheduling. Scheduled resumes require an explicit message and stable requestId, with either trigger.delayMs or a timezone-qualified trigger.at; they cannot include dependencies. Exact turn joins support Codex and ZCode. A later human Stop cancels the wake. Retry an uncertain request with the same requestId; accepted/unknown delivery is never replayed. A conflicting requestId is rejected.",
+    description:"Resume yourself once after a delay, at a scheduled time, or after ALL named dependencies finish their current native execution. Omit owner to resume YOUR CURRENT SESSION: OpenCode, Codex and ZCode supply its native ID in MCP request metadata automatically. Provide owner only to select an explicit session. session_identity() without sessionId reads your own identity the same way. Never guess your own ID from session lists. If native caller metadata is absent or invalid, the tool fails before scheduling. Scheduled resumes require an explicit message and stable requestId, with either trigger.delayMs or a timezone-qualified trigger.at; they cannot include dependencies. Exact turn joins support Codex and ZCode. A later human Stop cancels the wake. Retry an uncertain request with the same requestId; accepted/unknown delivery is never replayed. A conflicting requestId is rejected. To continue an answered typed question, pass humanRequestId (and optionally expiresAt): the wait binds to that exact pending HumanRequest only when its native target matches the owner tuple, and a binding failure cancels this wait.",
     inputSchema:resumeRequest,
   },async (args,context)=>{
     const owner=args.owner ?? callerSessionFromMcpContext(context);
     if (!owner) throw new Error("resume_after requires owner or valid native MCP caller session metadata");
     const wait=await requireService().register({...args,owner});
-    return structuredResult({jobId:wait.id,...(wait.scheduledAt?{scheduledAt:wait.scheduledAt}:{}),wait});
+    if(args.humanRequestId){
+      try{
+        const request=await requireHumanRequests().get(args.humanRequestId);
+        if(!request)throw new Error(`Human request '${args.humanRequestId}' not found`);
+        if(request.status!=="pending")throw new Error(`Human request '${args.humanRequestId}' is not pending`);
+        const target=request.target;
+        if((target.harness??target.agent)!==owner.harness || target.sessionId!==owner.sessionId){
+          throw new Error(`Human request '${args.humanRequestId}' native target does not match the owner tuple ${owner.harness}:${owner.sessionId}`);
+        }
+        await requireHumanRequests().bindResumeWait(args.humanRequestId,wait.id);
+      }catch(error){
+        // A failed binding cancels only the wait this call created; the wait
+        // is cancelled, never delivered, and the durable request is untouched.
+        try{ if((await requireService().get(wait.id))?.state==="waiting") await requireService().cancel(wait.id,owner); }
+        catch{ /* keep the original binding error */ }
+        throw error;
+      }
+    }
+    return structuredResult({jobId:wait.id,...(args.humanRequestId?{humanRequestId:args.humanRequestId}:{}),...(wait.scheduledAt?{scheduledAt:wait.scheduledAt}:{}),wait});
   });
   server.registerTool("resume_after_status",{
     description:"Read pending dependency waits; this never resumes or starts a session.",

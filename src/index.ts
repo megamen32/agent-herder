@@ -656,10 +656,11 @@ function registerTools(
   userMessageDelivery?: UserMessageDelivery,
   trustedMeshIngress?: ReturnType<typeof trustedMeshIngressFromMcpAuthInfo>,
   sessionQueueControl?: SessionQueueControlGateway,
+  humanRequestsRegistry?: Pick<HumanRequestRegistry, "get" | "bindResumeWait">,
 ) {
   registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
   registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: autopilotSessionCommand } });
-  registerResumeAfterTools(server, resumeAfter);
+  registerResumeAfterTools(server, resumeAfter, humanRequestsRegistry);
   registerCadenceTools(server, cadence);
 
   // A human answer resumes its exact native session exactly once through the
@@ -737,6 +738,8 @@ export interface AgentHerderMcpServerOptions {
   userMessageDelivery?: UserMessageDelivery;
   /** Shared durable joins, never scoped to an MCP transport. */
   resumeAfter?: ResumeAfterService;
+  /** Durable HumanRequest registry for the resume_after question join. */
+  humanRequests?: Pick<HumanRequestRegistry, "get" | "bindResumeWait">;
   cadence?: CadenceScheduler;
   /** Shared domain events; transport sessions are never used as durable state. */
   events?: HerderEventBus;
@@ -876,6 +879,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     options.userMessageDelivery,
     options.trustedMeshIngress,
     options.sessionQueueControl,
+    options.humanRequests,
     );
   });
   return server;
