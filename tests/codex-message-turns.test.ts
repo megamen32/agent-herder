@@ -28,6 +28,48 @@ async function withRollout(lines: string[], test: (adapter: CodexAdapter) => Pro
 }
 
 describe("Codex native transcript turn identity", () => {
+  it("retains scalar public summaries and one identity for legacy/native activity updates", async () => {
+    await withRollout([
+      record("response_item", {type: "reasoning", id: "scalar-summary", summary: "Public legacy summary", encrypted_content: "PRIVATE_ENCRYPTED"}),
+      record("event_msg", {type: "item_completed", item: {type: "Reasoning", id: "native-summary", summary_text: "Public native summary", raw_content: "PRIVATE_RAW"}}),
+      record("response_item", {type: "function_call", id: "fc-1", call_id: "call-1", name: "command", arguments: "pwd"}),
+      record("event_msg", {type: "item_completed", item: {type: "CommandExecution", id: "call-1", command: ["pwd"], aggregated_output: "/workspace", exit_code: 0}}),
+      record("response_item", {type: "function_call_output", call_id: "call-1", output: "/workspace"}),
+    ], async adapter => {
+      const messages = await adapter.getSessionMessages("thread-1", 12);
+      expect(messages?.flatMap(m => m.parts).filter(p => p.type === "thinking").map(p => p.text)).toEqual(["Public legacy summary", "Public native summary"]);
+      expect(messages?.filter(m => m.id === "call-1")).toHaveLength(1);
+      expect(messages?.find(m => m.id === "call-1")?.parts.map(p => p.type)).toEqual(["tool_call", "tool_result"]);
+      expect(JSON.stringify(messages)).not.toMatch(/PRIVATE_RAW|PRIVATE_ENCRYPTED/);
+    });
+  });
+
+  it("shows persisted public activity before a final answer without exposing encrypted reasoning", async () => {
+    await withRollout([
+      record("event_msg", {type: "task_started", turn_id: "live-turn"}),
+      record("response_item", {type: "reasoning", id: "hidden", summary: [], encrypted_content: "PRIVATE_ENCRYPTED"}),
+      record("event_msg", {type: "item_completed", turn_id: "live-turn", item: {type: "Reasoning", id: "public-event-only", summary_text: [], raw_content: ["PRIVATE_RAW"]}}),
+      record("event_msg", {type: "item_completed", turn_id: "live-turn", item: {type: "Reasoning", id: "public-summary", summary_text: ["Checking the changed files"], raw_content: ["PRIVATE_RAW"]}}),
+      record("response_item", {type: "custom_tool_call", call_id: "call-edit", name: "apply_patch", input: "small patch"}),
+      record("response_item", {type: "custom_tool_call_output", call_id: "call-edit", output: "Success"}),
+      record("event_msg", {type: "item_completed", turn_id: "live-turn", item: {type: "CommandExecution", id: "call-command", command: ["pwd"], status: "completed", aggregated_output: "/workspace", exit_code: 0}}),
+      record("event_msg", {type: "item_completed", turn_id: "live-turn", item: {type: "SubAgentActivity", id: "collab-1", kind: "interacted", agent_thread_id: "child-1", agent_path: "/root/worker"}}),
+    ], async adapter => {
+      const messages = await adapter.getSessionMessages("thread-1", 12);
+      const parts = messages!.flatMap(m => m.parts);
+      expect(parts).toContainEqual({type: "thinking", text: "Checking the changed files"});
+      expect(parts).toContainEqual({type: "thinking"});
+      expect(parts).toContainEqual({type: "tool_call", name: "apply_patch", input: "small patch"});
+      expect(parts).toContainEqual({type: "tool_result", name: "apply_patch", output: "Success"});
+      expect(parts).toContainEqual({type: "tool_result", name: "command", output: "/workspace", error: false});
+      expect(parts.some(p => p.type === "tool_call" && p.name === "subagent" && JSON.stringify(p.input).includes("child-1"))).toBe(true);
+      expect(messages!.every(m => m.turnId === "live-turn")).toBe(true);
+      expect(JSON.stringify(messages)).not.toMatch(/PRIVATE_ENCRYPTED|PRIVATE_RAW/);
+      expect(messages!.find(m => m.id === "call-edit")?.parts.map(p => p.type)).toEqual(["tool_call", "tool_result"]);
+      expect((await adapter.getSessionMessages("thread-1", 2))!.map(m => m.id)).toEqual(["call-command", "collab-1"]);
+    });
+  });
+
   it.each(["\n", "\r\n"])("keeps fallback IDs stable across UTF-8 first/tail reads and windows with %j delimiters", async (delimiter) => {
     const header = record("session_meta", { id: "thread-1", cwd: "/workspace" });
     const prefix = record("event_msg", { type: "noise", text: "Начало истории" });

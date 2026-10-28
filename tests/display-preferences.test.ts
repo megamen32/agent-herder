@@ -24,16 +24,22 @@ describe("display preferences", () => {
     expect(readDisplayPreference(storage, TOOLS_DISPLAY_STORAGE_KEY)).toBe(false);
   });
 
-  it("defaults to hidden when local storage is invalid or unavailable", () => {
+  it("defaults reasoning and tools to visible when no preference is saved", () => {
+    const storage = memoryStorage();
+    expect(readDisplayPreference(storage, REASONING_DISPLAY_STORAGE_KEY)).toBe(true);
+    expect(readDisplayPreference(storage, TOOLS_DISPLAY_STORAGE_KEY)).toBe(true);
+  });
+
+  it("defaults to visible when local storage is invalid or unavailable", () => {
     const storage = memoryStorage();
     storage.setItem(REASONING_DISPLAY_STORAGE_KEY, "yes");
-    expect(readDisplayPreference(storage, REASONING_DISPLAY_STORAGE_KEY)).toBe(false);
+    expect(readDisplayPreference(storage, REASONING_DISPLAY_STORAGE_KEY)).toBe(true);
 
     const blockedStorage = {
       getItem: () => { throw new Error("blocked"); },
       setItem: () => { throw new Error("blocked"); },
     };
-    expect(readDisplayPreference(blockedStorage, TOOLS_DISPLAY_STORAGE_KEY)).toBe(false);
+    expect(readDisplayPreference(blockedStorage, TOOLS_DISPLAY_STORAGE_KEY)).toBe(true);
     expect(() => writeDisplayPreference(blockedStorage, TOOLS_DISPLAY_STORAGE_KEY, true)).not.toThrow();
   });
 });

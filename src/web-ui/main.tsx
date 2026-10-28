@@ -45,6 +45,7 @@ import { FleetCabinet } from "./fleet/FleetCabinet.js";
 import { RagSearchView } from "./rag-search-view.js";
 import { creationModels } from "./creation-models.js";
 import { isLongVisibleMessage, readCollapseLongMessages, writeCollapseLongMessages } from "./message-collapse.js";
+import { MessageActivityRows, groupMessagePartSegments } from "./message-activity.js";
 import { groupSessionMessages } from "./message-groups.js";
 import { projectDeliveredChat, resolveDeliveredImages } from "./delivered-chat.js";
 import {sidebarEntries, sessionPinKey, projectLocalSessionHost} from './session-pins.js';
@@ -486,16 +487,6 @@ const toolActionLabel = (name?: string) => {
   if (!name) return "Работа с инструментами";
   return TOOL_ACTION_LABELS.find(([pattern]) => pattern.test(name))?.[1] || name;
 };
-/** Несколько имён инструментов сворачиваются в одну короткую строку действий. */
-const toolActionsSummary = (names: string[]) => {
-  const labels: string[] = [];
-  for (const name of names) {
-    const label = toolActionLabel(name);
-    if (!labels.includes(label)) labels.push(label);
-  }
-  const head = labels.slice(0, 3).join(" ");
-  return labels.length > 3 ? `${head} и ещё ${labels.length - 3}` : head;
-};
 /** «12 мин 26 с» — длительность без секундной каши. */
 const formatElapsed = (ms: number) => {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -551,54 +542,28 @@ function JsonMessageBlock({ json }: { json: string }) {
   </div>;
 }
 
-type MessagePartItem = { kind: "single"; part: SessionMessage["parts"][number]; key: string } | { kind: "tools"; parts: SessionMessage["parts"]; key: string };
-
-/** Подряд идущие действия инструментов — одна приглушённая строка с маленькой иконкой;
-    каждый вызов и его вывод остаются внутри, раскрываются по клику. */
-function ToolActionsGroup({ parts, groupKey }: { parts: SessionMessage["parts"]; groupKey: string }) {
-  return <details className="tool-actions" key={groupKey}>
-    <summary><span className="tool-actions-icon" aria-hidden="true">⌘</span><span>{toolActionsSummary(parts.map((part) => part.name || ""))}</span></summary>
-    <div className="tool-actions-body">{parts.map((part, index) => <div className="tool-actions-item" key={`${groupKey}:tool:${index}`}>
-      <b>{part.name || (part.type === "tool_call" ? "Вызов инструмента" : "Результат инструмента")}{part.error === true ? " · ошибка" : ""}</b>
-      <pre>{part.output || (part.input ? JSON.stringify(part.input, null, 2) : "")}</pre>
-    </div>)}</div>
-  </details>;
-}
-
 function MessageParts({ message, showReasoning, showTools, jsonRendering }: { message: SessionMessage; showReasoning: boolean; showTools: boolean; jsonRendering: boolean }) {
   const parts: SessionMessage["parts"] = message.parts.length > 0 ? message.parts : message.text ? [{ type: "text", text: message.text }] : [];
-  const items: MessagePartItem[] = [];
-  parts.forEach((part, index) => {
-    const partKey = `${message.id}:${index}`;
-    if (part.type === "tool_call" || part.type === "tool_result") {
-      if (!showTools) return;
-      const previous = items[items.length - 1];
-      if (previous && previous.kind === "tools") { previous.parts.push(part); return; }
-      items.push({ kind: "tools", parts: [part], key: partKey });
-      return;
-    }
-    if (part.type === "thinking" && !showReasoning) return;
-    items.push({ kind: "single", part, key: partKey });
-  });
   return <>
-    {items.map((item) => {
-      if (item.kind === "tools") return <ToolActionsGroup groupKey={item.key} parts={item.parts} />;
-      const part = item.part;
-      if (part.type === "image" && part.imageUrl) return <a href={part.imageUrl} target="_blank" rel="noreferrer" key={item.key}><img className="message-image" src={part.imageUrl} alt={part.fileName || "Прикреплённое изображение"} /></a>;
+    {parts.map((part, index) => {
+      const partKey = `${message.id}:${index}`;
+      if (part.type === "tool_call" || part.type === "tool_result") return null;
+      if (part.type === "thinking") return showReasoning ? <details className="oc-disclosure" key={partKey}><summary>Размышления</summary><pre>{part.text}</pre></details> : null;
+      if (part.type === "image" && part.imageUrl) return <a href={part.imageUrl} target="_blank" rel="noreferrer" key={partKey}><img className="message-image" src={part.imageUrl} alt={part.fileName || "Прикреплённое изображение"} /></a>;
       if (part.type === "text") {
         const { text, blocks } = splitSystemBlocks(part.text || "");
         const jsonText = jsonRendering ? formatJsonPayload(text) : undefined;
-        return <div className="markdown-content" key={item.key}>
+        return <div className="markdown-content" key={partKey}>
           {jsonText ? <JsonMessageBlock json={jsonText} /> : text && <Markdown>{text}</Markdown>}
           {blocks.map((block, blockIndex) => (
-            <details className="service-note part-service-note" key={`${item.key}:sys:${blockIndex}`}>
+            <details className="service-note part-service-note" key={`${partKey}:sys:${blockIndex}`}>
               <summary className="service-note-head"><span className="service-note-label">{block.label}</span></summary>
               <pre className="service-note-body">{block.body.length > SERVICE_BLOCK_BODY_LIMIT ? `${block.body.slice(0, SERVICE_BLOCK_BODY_LIMIT)}\n… ещё ${block.body.length - SERVICE_BLOCK_BODY_LIMIT} символов` : block.body}</pre>
             </details>
           ))}
         </div>;
       }
-      return <details className="oc-disclosure" key={item.key}><summary>Размышления</summary><pre>{part.text}</pre></details>;
+      return null;
     })}
   </>;
 }
@@ -606,20 +571,28 @@ function MessageParts({ message, showReasoning, showTools, jsonRendering }: { me
 function hasVisibleMessage(message: SessionMessage, showReasoning: boolean, showTools: boolean): boolean {
   const parts = message.parts.length > 0 ? message.parts : message.text ? [{ type: "text" as const, text: message.text }] : [];
   return parts.some((part) => part.type === "image" && Boolean(part.imageUrl) || part.type === "text" && Boolean(part.text?.trim())
-    || part.type === "thinking" && showReasoning && Boolean(part.text?.trim())
+    || part.type === "thinking" && showReasoning
     || (part.type === "tool_call" || part.type === "tool_result") && showTools);
 }
 
 function CollapsibleMessage({ message, showReasoning, showTools, jsonRendering, collapseLongMessages, forceExpanded }: { message: SessionMessage; showReasoning: boolean; showTools: boolean; jsonRendering: boolean; collapseLongMessages: boolean; forceExpanded?: boolean }) {
   const [expanded, setExpanded] = React.useState(!collapseLongMessages);
   React.useEffect(() => { setExpanded(!collapseLongMessages); }, [collapseLongMessages]);
-  const isLong = isLongVisibleMessage(message, jsonRendering);
-  const collapsed = isLong && !expanded && !forceExpanded;
-  return <div className={`message-body ${collapsed ? "message-collapsed" : ""}`}>
-    <MessageParts message={message} showReasoning={showReasoning} showTools={showTools} jsonRendering={jsonRendering} />
-    {collapsed && <button type="button" className="message-expand" onClick={() => setExpanded(true)}>Показать полностью</button>}
-    {collapseLongMessages && !collapsed && isLong && !forceExpanded && <button type="button" className="message-expand" onClick={() => setExpanded(false)}>Свернуть</button>}
-  </div>;
+  const parts = message.parts.length > 0 ? message.parts : message.text ? [{ type: "text" as const, text: message.text }] : [];
+  const segments = groupMessagePartSegments(parts);
+  return <>
+    {segments.map((segment, index) => {
+      if (segment.kind === "activity") return <MessageActivityRows key={`${message.id}:activity:${index}`} parts={segment.parts} showReasoning={showReasoning} showTools={showTools} />;
+      const contentMessage: SessionMessage = { ...message, id: `${message.id}:content:${index}`, text: "", parts: segment.parts };
+      const segmentIsLong = isLongVisibleMessage(contentMessage, jsonRendering);
+      const segmentCollapsed = segmentIsLong && !expanded && !forceExpanded;
+      return <div className={`message-body ${segmentCollapsed ? "message-collapsed" : ""}`} key={contentMessage.id}>
+        <MessageParts message={contentMessage} showReasoning={false} showTools={false} jsonRendering={jsonRendering} />
+        {segmentCollapsed && <button type="button" className="message-expand" onClick={() => setExpanded(true)}>Показать полностью</button>}
+        {collapseLongMessages && !segmentCollapsed && segmentIsLong && !forceExpanded && <button type="button" className="message-expand" onClick={() => setExpanded(false)}>Свернуть</button>}
+      </div>;
+    })}
+  </>;
 }
 
 function ServiceNote({ label, message }: { label: string; message: SessionMessage }) {

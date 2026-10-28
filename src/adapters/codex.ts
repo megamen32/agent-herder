@@ -1,4 +1,4 @@
-import { HarnessAdapter, AgentSession, ControlResult, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessageView, SessionSnapshotReceipt, localSessionHostId } from "../types/index.js";
+import { HarnessAdapter, AgentSession, ControlResult, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessagePart, SessionMessageView, SessionSnapshotReceipt, localSessionHostId } from "../types/index.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createReadStream, existsSync, realpathSync } from "node:fs";
@@ -117,7 +117,7 @@ function nativeAutomationMetadataFromLines(lines: string[]): CodexNativeAutomati
 }
 
 function mapCodexMessage(id: string, item: CodexTranscriptItem & { timestamp?: string }, recordOffset: number, contextTurnId?: string): SessionMessageView | null {
-  if (item.type !== "response_item" || item.payload?.type !== "message") return null;
+  if (item.type !== "response_item" || item.payload?.type !== "message") return mapCodexActivity(id, item, recordOffset, contextTurnId);
   if (item.payload.role !== "user" && item.payload.role !== "assistant") return null;
   const parts = (item.payload.content || [])
     .filter((part) => part.type === "input_text" || part.type === "output_text")
@@ -136,6 +136,51 @@ function mapCodexMessage(id: string, item: CodexTranscriptItem & { timestamp?: s
     text: messageText,
     parts: [...parts, ...imageParts],
   };
+}
+
+/** Read only public persisted summaries and activity, never reasoning raw/encrypted content. */
+function mapCodexActivity(id: string, record: CodexTranscriptItem & {timestamp?: string}, offset: number, contextTurnId?: string): SessionMessageView | null {
+  const payload = record.payload as Record<string, unknown> | undefined;
+  if (!payload) return null;
+  const nativeEvent = record.type === "event_msg" && ["item_started", "item_completed"].includes(String(payload.type));
+  const item = nativeEvent ? payload.item as Record<string, unknown> | undefined : record.type === "response_item" ? payload : undefined;
+  if (!item || typeof item !== "object") return null;
+  const type = item.type;
+  const parts: SessionMessagePart[] = [];
+  const summary = (value: unknown): string => typeof value === "string" ? value : Array.isArray(value) ? value.map(entry => typeof entry === "string" ? entry : entry && typeof entry === "object" && typeof entry.text === "string" ? entry.text : "").filter(Boolean).join("\n") : "";
+  const output = (value: unknown): string => typeof value === "string" ? value : summary(value) || (value === undefined ? "" : JSON.stringify(value));
+  if (type === "reasoning" || type === "Reasoning") {
+    const text = summary(nativeEvent ? item.summary_text : item.summary);
+    // Empty public native Reasoning events still prove activity, not its hidden contents.
+    if (!text && !nativeEvent) return null;
+    parts.push({type: "thinking", ...(text ? {text} : {})});
+  } else if (type === "function_call" || type === "custom_tool_call") {
+    parts.push({type: "tool_call", name: typeof item.name === "string" ? item.name : "tool", input: item.arguments ?? item.input});
+  } else if (type === "function_call_output" || type === "custom_tool_call_output") {
+    const text = output(item.output);
+    if (!text) return null;
+    parts.push({type: "tool_result", output: text});
+  } else if (type === "CommandExecution") {
+    parts.push({type: "tool_call", name: "command", input: {command: item.command, cwd: item.cwd}});
+    if (payload.type === "item_completed") parts.push({type: "tool_result", name: "command", output: output(item.aggregated_output), error: typeof item.exit_code === "number" && item.exit_code !== 0 || item.status === "failed"});
+  } else if (type === "McpToolCall" || type === "DynamicToolCall") {
+    const name = [item.server, item.tool ?? item.name].filter(value => typeof value === "string").join("/") || "tool";
+    parts.push({type: "tool_call", name, input: item.arguments});
+    if (payload.type === "item_completed") parts.push({type: "tool_result", name, output: output(item.result ?? item.error), error: item.status === "failed" || Boolean(item.error)});
+  } else if (type === "SubAgentActivity") {
+    parts.push({type: "tool_call", name: "subagent", input: {kind: item.kind, agentThreadId: item.agent_thread_id, agentPath: item.agent_path, ...(item.model ? {model: item.model} : {}), ...(item.reasoning_effort ? {reasoningEffort: item.reasoning_effort} : {})}});
+  } else return null;
+  const metadata = item.internal_chat_message_metadata_passthrough as {turn_id?: string} | undefined;
+  const turnId = metadata?.turn_id || (typeof payload.turn_id === "string" ? payload.turn_id : undefined) || contextTurnId;
+  return {id: typeof item.call_id === "string" ? item.call_id : typeof item.id === "string" ? item.id : `${id}:record:${offset}`, role: "assistant", ...(turnId ? {turnId} : {}), timestamp: record.timestamp, parts};
+}
+
+function appendCodexMessage(messages: Map<string, SessionMessageView>, message: SessionMessageView): void {
+  const previous = messages.get(message.id);
+  if (previous?.parts.some(part => part.type === "tool_call") && message.parts.every(part => part.type === "tool_result")) {
+    const name = previous.parts.find(part => part.type === "tool_call")?.name;
+    messages.set(message.id, {...previous, parts: [...previous.parts.filter(part => part.type !== "tool_result"), ...message.parts.map(part => ({...part, name: part.name || name}))]});
+  } else messages.set(message.id, message);
 }
 
 /**
@@ -642,7 +687,7 @@ export class CodexAdapter implements HarnessAdapter {
           const { bytesRead } = await file.read(buffer, 0, bytesToRead, fileStat.size - bytesToRead);
           const startByte = bytesToRead === fileStat.size ? 0 : Math.max(0, buffer.subarray(0, bytesRead).indexOf(10) + 1);
           const lines = buffer.subarray(startByte, bytesRead).toString("utf8").split("\n");
-          const currentMessages: SessionMessageView[] = [];
+          const currentMessagesById = new Map<string, SessionMessageView>();
           let contextTurnId: string | undefined;
           let recordOffset = fileStat.size - bytesToRead + startByte;
           for (let index = 0; index < lines.length; index++) {
@@ -652,11 +697,12 @@ export class CodexAdapter implements HarnessAdapter {
                 contextTurnId = item.payload?.turn_id || undefined;
               }
               const message = mapCodexMessage(id, item, recordOffset, contextTurnId);
-              if (message) currentMessages.push(message);
+              if (message) appendCodexMessage(currentMessagesById, message);
               if (item.type === "event_msg" && ["task_complete", "turn_aborted"].includes(item.payload?.type || "")) contextTurnId = undefined;
             } catch { /* partial or non-message line */ }
             recordOffset += Buffer.byteLength(lines[index], "utf8") + 1;
           }
+          const currentMessages = [...currentMessagesById.values()];
           bestMessages = currentMessages;
           if (currentMessages.length >= target || bytesToRead === fileStat.size) return currentMessages.slice(-target);
           const next = Math.min(fileStat.size, bytesToRead * 2);

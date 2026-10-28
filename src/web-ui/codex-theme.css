@@ -215,14 +215,18 @@ body { font-size: 15px; -webkit-font-smoothing: antialiased; }
 .oc-disclosure > summary:hover { color: var(--text-2); }
 .oc-disclosure > pre { margin-top: 6px; border: 0; border-left: 1px solid var(--border); border-radius: 0; background: var(--surface-1); padding: 8px 10px; }
 
-/* одна приглушённая строка активности + одна свёрнутая строка действий инструментов */
+/* Компактные отдельные строки активности вне сворачиваемого текста сообщения. */
 .activity-line { min-height: 22px; margin-top: 4px; color: var(--muted); font-size: 13px; }
 .activity-line .pulse-dot { width: 5px; height: 5px; flex-basis: 5px; }
 .activity-detail { color: var(--muted); font-style: normal; }
+.message-activity-rows { display: grid; gap: 2px; margin: 0 0 6px; }
 .tool-actions { margin: 0 0 10px; }
 .tool-actions > summary { display: flex; align-items: center; gap: 7px; padding: 3px 0; color: var(--muted); font-size: 13px; line-height: 1.5; cursor: pointer; list-style: none; }
 .tool-actions > summary::-webkit-details-marker { display: none; }
 .tool-actions > summary:hover { color: var(--text-2); }
+.tool-action-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-action-status { margin-left: auto; color: var(--muted); font-size: var(--text-xs); }
+.tool-actions-failed .tool-action-status { color: var(--status-error); }
 .tool-actions-icon { display: inline-grid; place-items: center; width: 15px; height: 15px; flex: 0 0 15px; border: 1px solid var(--border-2); border-radius: 4px; color: var(--muted); font-size: 9px; }
 .tool-actions-body { display: grid; gap: 10px; margin-top: 7px; padding-left: 1px; }
 .tool-actions-item { display: grid; gap: 4px; }

@@ -5,9 +5,9 @@ export const TOOLS_DISPLAY_STORAGE_KEY = "agent-herder.show-tools";
 
 export function readDisplayPreference(storage: Storage, key: string): boolean {
   try {
-    return storage.getItem(key) === "true";
+    return storage.getItem(key) !== "false";
   } catch {
-    return false;
+    return true;
   }
 }
 
