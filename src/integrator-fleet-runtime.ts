@@ -90,7 +90,7 @@ export type IntegratorProjectReadiness = Omit<IntegratorProjectReadinessSnapshot
 
 export type IntegratorSessionAdapterResolution =
   | { kind: "ordinary" }
-  | { kind: "scoped"; adapter: CodexAppServerAdapter }
+  | { kind: "scoped"; adapter: CodexAppServerAdapter | HarnessAdapter }
   | { kind: "deny"; reason: string };
 type ScopedResolution = Exclude<IntegratorSessionAdapterResolution, { kind: "ordinary" }>;
 
