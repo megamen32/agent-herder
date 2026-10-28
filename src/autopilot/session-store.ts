@@ -5,6 +5,15 @@ import { GoalStore } from "./goal-store.js";
 import { isHealthPlanId, parseNoticeIncident, type HealthPlanId, type NoticeIncidentBinding } from "./notice-incident.js";
 
 export type AutopilotHarness = "codex" | "opencode" | "claude" | "hermes" | "zcode";
+export type NoticeAttempt = { incidentId: string; attemptId: string };
+export function parseNoticeAttempt(value: unknown): NoticeAttempt {
+  const input = value as Record<string, unknown> | null;
+  if (!input || Array.isArray(input) || ['incidentId', 'attemptId'].some(key =>
+    typeof input[key] !== 'string' || !(input[key] as string).trim() || (input[key] as string).length > 128 || /[\r\n\0]/.test(input[key] as string))) {
+    throw new Error('noticeAttempt requires bounded incidentId and attemptId');
+  }
+  return { incidentId: (input.incidentId as string).trim(), attemptId: (input.attemptId as string).trim() };
+}
 
 export type AutopilotSessionOverride = {
   harness: AutopilotHarness;
@@ -14,6 +23,8 @@ export type AutopilotSessionOverride = {
   enabled?: boolean;
   updatedAt: string;
   noticeIncident?: NoticeIncidentBinding;
+  /** Current delivery, distinct from the immutable first incident of a coalesced session. */
+  noticeAttempt?: NoticeAttempt;
 };
 
 /**
@@ -45,7 +56,7 @@ export class AutopilotSessionStore {
   }
 
   async set(
-    target: { harness: AutopilotHarness; sessionId: string; cwd: string; noticeIncident?: NoticeIncidentBinding },
+    target: { harness: AutopilotHarness; sessionId: string; cwd: string; noticeIncident?: NoticeIncidentBinding; noticeAttempt?: NoticeAttempt },
     enabled: boolean,
   ): Promise<AutopilotSessionOverride> {
     const normalized = normalizeTarget(target);
@@ -84,6 +95,7 @@ export class AutopilotSessionStore {
         ...normalized,
         enabled,
         ...(noticeIncident ? { noticeIncident } : {}),
+        ...((target.noticeAttempt ?? previous?.noticeAttempt) ? { noticeAttempt: parseNoticeAttempt(target.noticeAttempt ?? previous?.noticeAttempt) } : {}),
         updatedAt: new Date().toISOString(),
       };
       const index = file.sessions.findIndex((item) => sessionKey(item.harness, item.sessionId) === key);
@@ -98,6 +110,17 @@ export class AutopilotSessionStore {
         file.launchPlans = plans;
       }
       return { ...next };
+    });
+  }
+
+  /** Pause one completed attempt atomically; a late receipt cannot pause its successor or create HumanStop. */
+  async finishNoticeAttempt(harness: AutopilotHarness, sessionId: string, attempt: NoticeAttempt): Promise<boolean> {
+    return this.mutate(async file => {
+      const record = file.sessions.find(item => item.harness === harness && item.sessionId === sessionId);
+      if (!record || record.noticeAttempt?.incidentId !== attempt.incidentId || record.noticeAttempt?.attemptId !== attempt.attemptId) return false;
+      record.enabled = false;
+      record.updatedAt = new Date().toISOString();
+      return true;
     });
   }
 
@@ -217,6 +240,7 @@ function parseFile(value: unknown): SessionFile {
         ...(record.enabled === undefined ? {} : { enabled: record.enabled }),
         updatedAt: new Date(record.updatedAt).toISOString(),
         ...(record.noticeIncident === undefined ? {} : { noticeIncident: parseNoticeIncident(record.noticeIncident) }),
+        ...(record.noticeAttempt === undefined ? {} : { noticeAttempt: parseNoticeAttempt(record.noticeAttempt) }),
       };
     }),
     ...(launchPlans ? { launchPlans } : {}),

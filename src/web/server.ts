@@ -51,8 +51,9 @@ import { AgentResumeClient, type ResumeReceipt, type ResumeTransportRequest } fr
 import { ChoiceRegistry, ChoiceRegistryLockUnavailableError, type PendingChoice } from "../autopilot/choice-registry.js";
 import { AutopilotPolicyRevisionConflictError, AutopilotPolicyStore } from "../autopilot/policy-store.js";
 import { parseNoticeIncident, readIncidentBinding, NoticeIncidentBindingError, isHealthPlanId, HEALTH_PLAN_IDS, type HealthPlanId } from "../autopilot/notice-incident.js";
+import { noticeplaceAttemptOutcome } from '../automation/noticeplace-attempt-outcome.js';
 import { resolveAutopilotStateDir } from "../autopilot/state-dir.js";
-import { AutopilotSessionStore, type AutopilotHarness } from "../autopilot/session-store.js";
+import { AutopilotSessionStore, parseNoticeAttempt, type AutopilotHarness } from "../autopilot/session-store.js";
 import { autopilotGoalApi, recordGoalHumanInput, stopGoalForSession } from "./autopilot-goal-api.js";
 import { isMcpConnectionOwnerRequest as isGoalControlOwnerRequest } from "./fleet-wiring.js";
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
@@ -157,6 +158,8 @@ export interface WebDependencies {
   humanRequestJoin?: (requestId: string, reason: string) => Promise<number>;
   autopilotPolicyStore?: AutopilotPolicyStore;
   autopilotSessionStore?: AutopilotSessionStore;
+  /** Observation clock override for isolated factory tests; production uses its normal interval. */
+  noticeplaceHealthObservationIntervalMs?: number;
   sessionAutostartStore?: SessionAutostartStore;
   autoCompactService?: AutoCompactService;
   autoCompactStore?: AutoCompactStore;
@@ -977,6 +980,8 @@ export function createWebServer(dependencies: WebDependencies): Server {
   // The center's observer is bounded so the incident card is never held back.
   // This one keeps the same native session under observation until it ends.
   const noticeplaceHealthObserver = new NoticeplaceHealthObserver({
+    intervalMs: dependencies.noticeplaceHealthObservationIntervalMs,
+    readAttemptOutcome: noticeplaceAttemptOutcome(dependencies.autopilotSessionStore),
     readDetails: async (harness, sessionId) => {
       // The observer reads the same native session as the HTTP routes, so it
       // passes the same project-scope guard before it reads anything.
@@ -993,6 +998,9 @@ export function createWebServer(dependencies: WebDependencies): Server {
     },
     validateTarget: async (target) => {
       try {
+        // The independent source may already have resolved this incident before
+        // observation starts. Its explicit finish still pauses the executor.
+        await noticeplaceAttemptOutcome(dependencies.autopilotSessionStore)(target.harness, target.sessionId);
         await readIncidentBinding(target.binding);
         return undefined;
       } catch (error) {
@@ -1135,6 +1143,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
       const result = await recoverNoticeplaceHealthObservation({
         candidates,
         isAlive: async (candidate) => {
+          if (await noticeplaceAttemptOutcome(dependencies.autopilotSessionStore)(candidate.harness, candidate.sessionId).catch(() => null)) return false;
           const session = await supervisor.getSession(candidate.harness, candidate.sessionId).catch(() => null);
           if (!session) return false;
           return session.status !== "stopped" && session.status !== "error";
@@ -1161,12 +1170,14 @@ export function createWebServer(dependencies: WebDependencies): Server {
           }
           return planId;
         },
-        arm: async (candidate) => await noticeplaceHealthObserver.start({
-          harness: candidate.harness,
-          sessionId: candidate.sessionId,
-          cwd: candidate.cwd,
-          binding: candidate.binding,
-        }),
+        arm: async (candidate) => {
+          const record = isAutopilotHarness(candidate.harness)
+            ? await dependencies.autopilotSessionStore?.get(candidate.harness, candidate.sessionId) : undefined;
+          return await noticeplaceHealthObserver.start({
+            harness: candidate.harness, sessionId: candidate.sessionId, cwd: candidate.cwd,
+            binding: { ...candidate.binding, incidentId: record?.noticeAttempt?.incidentId ?? candidate.binding.incidentId },
+          });
+        },
       });
       console.log(`Notice health observer recovered ${result.armed} armed sessions after the restart (${result.skipped} skipped)`);
       // The refusals of the repair reach the consumer in the same trail the
@@ -2130,11 +2141,14 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         ?? previous?.noticeIncident?.planId
         ?? (requested ? await launchHealthPlans?.recall(harness, sessionId) : undefined);
       const noticeIncident = requested === undefined ? undefined : { ...requested, ...(planId ? { planId } : {}) };
-      const record = await autopilotSessionStore.set({ harness, sessionId, cwd: body.cwd, ...(noticeIncident === undefined ? {} : { noticeIncident }) }, body.enabled);
+      const record = await autopilotSessionStore.set({ harness, sessionId, cwd: body.cwd, ...(noticeIncident === undefined ? {} : { noticeIncident }),
+        ...(body.noticeAttempt === undefined ? {} : { noticeAttempt: parseNoticeAttempt(body.noticeAttempt) }) }, body.enabled);
       if (body.enabled && record.noticeIncident) {
         // The center armed this session for one original incident: watch it
         // until it ends and keep that incident's card truthful meanwhile.
-        await noticeplaceHealthObserver?.start({ harness, sessionId, cwd: body.cwd, binding: record.noticeIncident });
+        noticeplaceHealthObserver?.stopTarget({ harness, sessionId });
+        await noticeplaceHealthObserver?.start({ harness, sessionId, cwd: body.cwd,
+          binding: { ...record.noticeIncident, incidentId: record.noticeAttempt?.incidentId ?? record.noticeIncident.incidentId } });
       } else {
         // The session is not armed any more: stop watching it.
         noticeplaceHealthObserver?.stopTarget({ harness, sessionId });

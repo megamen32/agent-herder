@@ -237,6 +237,16 @@ export class NoticeplaceHealthObserver {
     if (this.stopped || state.stopped) return;
     const key = targetKey(target);
     try {
+      // Explicit receipts remain authoritative even when the native harness is unreachable.
+      if (this.options.readAttemptOutcome) {
+        const outcome = await this.options.readAttemptOutcome(target.harness, target.sessionId).catch(() => null);
+        if (this.stopped || state.stopped) return;
+        if (outcome && outcome !== 'working') {
+          await this.publishFinal(target, outcome);
+          this.targets.delete(key);
+          return;
+        }
+      }
       const details = await this.read(target);
       if (this.stopped || state.stopped) return;
       if (details) {
@@ -321,14 +331,6 @@ export class NoticeplaceHealthObserver {
    * as idle, so the status alone would end the observation of a live executor.
    */
   private async detectTerminal(target: NoticeplaceHealthTarget, state: TargetState, summary: SessionProgressSummary): Promise<"work_finished" | "aborted" | "failed" | "unknown" | undefined> {
-    if (this.options.readAttemptOutcome) {
-      try {
-        const outcome = await this.options.readAttemptOutcome(target.harness, target.sessionId);
-        if (outcome && outcome !== "working") return outcome;
-      } catch {
-        // An unavailable attempt receipt proves nothing; native observation continues.
-      }
-    }
     const status = summary.session.status;
     if (status === "error") return "failed";
     if (status === "stopped") return "unknown";

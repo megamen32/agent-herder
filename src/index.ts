@@ -1177,7 +1177,7 @@ async function main() {
     if (inventory?.verdict?.verdict === 'completed' && inventory.verdict.confidence > 0
       && Date.parse(inventory.verdict.judgedAt) >= Date.parse(session.lastActivity)) return false;
     if (override.noticeIncident) {
-      try {await readIncidentBinding(override.noticeIncident);} catch (error) {
+      try {await readIncidentBinding({ ...override.noticeIncident, incidentId: override.noticeAttempt?.incidentId ?? override.noticeIncident.incidentId });} catch (error) {
         if (error instanceof Error && 'kind' in error && error.kind === 'rejected') return false;
         throw error; // Unavailable evidence cannot authorize a second executor.
       }
@@ -1196,7 +1196,7 @@ async function main() {
       const override = await autopilotSessionStore.get(session.harness as AutopilotHarness, session.id);
       if (!override?.noticeIncident) return false;
       try {
-        await readIncidentBinding(override.noticeIncident);
+        await readIncidentBinding({ ...override.noticeIncident, incidentId: override.noticeAttempt?.incidentId ?? override.noticeIncident.incidentId });
         return true;
       } catch (error) {
         if (error instanceof Error && 'kind' in error && error.kind === 'rejected') return false;
@@ -1206,7 +1206,7 @@ async function main() {
     continuationReady: async session => {
       const override = await autopilotSessionStore.get(session.harness as AutopilotHarness, session.id);
       if (!override?.noticeIncident) return false;
-      const binding = override.noticeIncident;
+      const binding = { ...override.noticeIncident, incidentId: override.noticeAttempt?.incidentId ?? override.noticeIncident.incidentId };
       await readIncidentBinding(binding);
       const callback = await loadIncidentCallback(binding.project);
       const response = await fetch(`${callback.url}/v1/incidents/${encodeURIComponent(binding.incidentId)}`, {
@@ -1219,6 +1219,7 @@ async function main() {
       return continuation?.session_id === session.id
         && continuation.harness === session.harness
         && typeof continuation.attempt_id === "string" && continuation.attempt_id.length > 0
+        && (!override.noticeAttempt || continuation.attempt_id === override.noticeAttempt.attemptId)
         && typeof continuation.request_id === "string" && continuation.request_id.length > 0
         && typeof continuation.generation === "number";
     },
