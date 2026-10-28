@@ -1,0 +1,55 @@
+{
+  "label": "Пауза индексации и управление на всех узлах",
+  "description": "Установить совместимый Herder и сохраняемый переключатель на действующие узлы, подтвердить paused и старый поиск.",
+  "acceptance": "У каждого доступного действующего узла установлен UI/API переключатель, индексация выключена; недоступные адреса явно перечислены.",
+  "owner": "roomhacker",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex",
+  "status": "running",
+  "estimate_minutes": 20,
+  "id": "L01",
+  "created_at": "2026-10-28T18:03:29+03:00",
+  "updated_at": "2026-10-28T19:03:36+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-28T18:03:29+03:00",
+      "note": "",
+      "changes": {
+        "label": "Пауза индексации и управление на всех узлах",
+        "description": "Установить совместимый Herder и сохраняемый переключатель на действующие узлы, подтвердить paused и старый поиск.",
+        "acceptance": "У каждого доступного действующего узла установлен UI/API переключатель, индексация выключена; недоступные адреса явно перечислены.",
+        "owner": "root",
+        "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+        "harness": "codex",
+        "status": "pending",
+        "estimate_minutes": 20
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T18:04:00+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T18:15:35+03:00",
+      "note": "44/88 durablepausefalse staged; MCPreadiness401 bugfixed в463cc7b. Macs доступныпоSSH, разбирается existingwatchdogfailure. Ожидаетсяодинсовместимыйbuild безповторныхрестартов.",
+      "changes": {},
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T19:03:36+03:00",
+      "note": "100/44/88 paused с UI и старым поиском. Mini rollback сохранил рабочий9cff: старый watchdog не принимает manifest1787 при лимите1024, bounded compatibility fix в работе. M1 no listener/native ownership guard, durable pausefalse сохранена; UI пока не принят.",
+      "changes": {},
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    }
+  ]
+}

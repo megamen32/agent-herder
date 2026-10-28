@@ -1,0 +1,47 @@
+{
+  "label": "Автовосстановление OpenCode и запасная модель",
+  "description": "Включить OpenCode, безопасно подхватить прерванную работу последних 24 часов и проверить квотный fallback в изоляции.",
+  "acceptance": "OpenCode effective enabled=true, точный recent failure либо восстановлен один раз, либо честно исключён; isolated quota canary фиксирует модель и результат без production replay.",
+  "owner": "root",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex",
+  "status": "running",
+  "estimate_minutes": 20,
+  "id": "L02",
+  "created_at": "2026-10-28T18:03:29+03:00",
+  "updated_at": "2026-10-28T19:03:36+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-28T18:03:29+03:00",
+      "note": "",
+      "changes": {
+        "label": "Автовосстановление OpenCode и запасная модель",
+        "description": "Включить OpenCode, безопасно подхватить прерванную работу последних 24 часов и проверить квотный fallback в изоляции.",
+        "acceptance": "OpenCode effective enabled=true, точный recent failure либо восстановлен один раз, либо честно исключён; isolated quota canary фиксирует модель и результат без production replay.",
+        "owner": "root",
+        "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+        "harness": "codex",
+        "status": "pending",
+        "estimate_minutes": 20
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T18:15:34+03:00",
+      "note": "OpenCode harness включён existingAPI; найден source-фильтр только Codex/ZCode, исправляет existingworker. Квотный QA разрешён в isolated officialruntime/local429, безproduction replay.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T19:03:36+03:00",
+      "note": "100/88 OpenCode enabled; bounded recovery24h и paused-attempt fence установлены. Две свежие auth-error сессии исключены: source incidents уже resolved. Controlled MiniMax→GLM quota policy/no-replay PASS, живой отдельный native GLMcombo ответ QA_BACKUP_OK. Полный native429→fallback не подтверждён; QA bootstrap не имеет активного real provider, production429 не индуцируется. Финальный100 runtime05a7c03 active, receipt сохранена.",
+      "changes": {},
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    }
+  ]
+}

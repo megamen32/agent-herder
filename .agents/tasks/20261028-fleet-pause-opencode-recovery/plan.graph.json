@@ -1,0 +1,138 @@
+{
+  "schema_version": 2,
+  "title": "Пауза индексации всего флота и восстановление OpenCode",
+  "goal": "На всех действующих узлах Herder поставить индексацию на паузу с доступным переключателем; включить OpenCode и проверить продолжение недавней прерванной работы и fallback по квоте.",
+  "business_result": "Старый поиск сохранён, индексация управляется в интерфейсе каждого узла; OpenCode продолжает недавний подтверждённый сбой без дубля, Stop и устаревшие сессии исключены.",
+  "business_results": [
+    "Старый поиск сохранён, индексация управляется в интерфейсе каждого узла; OpenCode продолжает недавний подтверждённый сбой без дубля, Stop и устаревшие сессии исключены."
+  ],
+  "acceptance_scenarios": [
+    "Узлы перечислены по фактическому readback; индексаторы paused и кнопка доступна.",
+    "OpenCode включён по умолчанию, recent window 24 часа, isolated quota fallback имеет нативную квитанцию либо точный внешний отказ."
+  ],
+  "current_progress": "100/44/88 paused, старый поиск и UI сохранены. OpenCode100/88 enabled, bounded recovery24h установлен. Текущая MiniMax→GLM policy проверена контролируемым тестом, живой GLMcombo дал QA_BACKUP_OK отдельно; полный native429→fallback не подтверждён. Два недавних auth-error инцидента уже resolved, повторных продолжений нет. Mini штатно откатился при несовместимом лимите manifest старого watchdog, узкий launcher fix в работе; M1 остановлен штатным native ownership guard, pause сохранена, UI ещё недоступен.",
+  "external_waits": "",
+  "slots": 3,
+  "updated_at": "2026-10-28T19:03:36+03:00",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "Пауза индексации и управление на всех узлах",
+      "status": "running",
+      "description": "Установить совместимый Herder и сохраняемый переключатель на действующие узлы, подтвердить paused и старый поиск.",
+      "acceptance": "У каждого доступного действующего узла установлен UI/API переключатель, индексация выключена; недоступные адреса явно перечислены.",
+      "owner": "roomhacker",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-28T18:03:29+03:00",
+          "note": "",
+          "changes": {
+            "label": "Пауза индексации и управление на всех узлах",
+            "description": "Установить совместимый Herder и сохраняемый переключатель на действующие узлы, подтвердить paused и старый поиск.",
+            "acceptance": "У каждого доступного действующего узла установлен UI/API переключатель, индексация выключена; недоступные адреса явно перечислены.",
+            "owner": "root",
+            "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+            "harness": "codex",
+            "status": "pending",
+            "estimate_minutes": 20
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T18:04:00+03:00",
+          "note": "Начал работу в текущей сессии",
+          "changes": {
+            "status": "running",
+            "owner": "roomhacker"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T18:15:35+03:00",
+          "note": "44/88 durablepausefalse staged; MCPreadiness401 bugfixed в463cc7b. Macs доступныпоSSH, разбирается existingwatchdogfailure. Ожидаетсяодинсовместимыйbuild безповторныхрестартов.",
+          "changes": {},
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T19:03:36+03:00",
+          "note": "100/44/88 paused с UI и старым поиском. Mini rollback сохранил рабочий9cff: старый watchdog не принимает manifest1787 при лимите1024, bounded compatibility fix в работе. M1 no listener/native ownership guard, durable pausefalse сохранена; UI пока не принят.",
+          "changes": {},
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 20.0,
+        "maximum": 20.0
+      },
+      "created_at": "2026-10-28T18:03:29+03:00"
+    },
+    {
+      "id": "L02",
+      "label": "Автовосстановление OpenCode и запасная модель",
+      "status": "running",
+      "description": "Включить OpenCode, безопасно подхватить прерванную работу последних 24 часов и проверить квотный fallback в изоляции.",
+      "acceptance": "OpenCode effective enabled=true, точный recent failure либо восстановлен один раз, либо честно исключён; isolated quota canary фиксирует модель и результат без production replay.",
+      "owner": "root",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-28T18:03:29+03:00",
+          "note": "",
+          "changes": {
+            "label": "Автовосстановление OpenCode и запасная модель",
+            "description": "Включить OpenCode, безопасно подхватить прерванную работу последних 24 часов и проверить квотный fallback в изоляции.",
+            "acceptance": "OpenCode effective enabled=true, точный recent failure либо восстановлен один раз, либо честно исключён; isolated quota canary фиксирует модель и результат без production replay.",
+            "owner": "root",
+            "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+            "harness": "codex",
+            "status": "pending",
+            "estimate_minutes": 20
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T18:15:34+03:00",
+          "note": "OpenCode harness включён existingAPI; найден source-фильтр только Codex/ZCode, исправляет existingworker. Квотный QA разрешён в isolated officialruntime/local429, безproduction replay.",
+          "changes": {
+            "status": "running"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T19:03:36+03:00",
+          "note": "100/88 OpenCode enabled; bounded recovery24h и paused-attempt fence установлены. Две свежие auth-error сессии исключены: source incidents уже resolved. Controlled MiniMax→GLM quota policy/no-replay PASS, живой отдельный native GLMcombo ответ QA_BACKUP_OK. Полный native429→fallback не подтверждён; QA bootstrap не имеет активного real provider, production429 не индуцируется. Финальный100 runtime05a7c03 active, receipt сохранена.",
+          "changes": {},
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 20.0,
+        "maximum": 20.0
+      },
+      "created_at": "2026-10-28T18:03:29+03:00"
+    }
+  ],
+  "leaf_count": 2,
+  "plan_origin": {
+    "at": "2026-10-28T18:03:29+03:00",
+    "source": "leaf_created_at",
+    "leaf_id": "L01",
+    "recorded_at": "2026-10-28T15:03:29.787443+00:00"
+  }
+}
