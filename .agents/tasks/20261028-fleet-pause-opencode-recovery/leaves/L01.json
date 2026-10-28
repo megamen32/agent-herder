@@ -5,11 +5,11 @@
   "owner": "roomhacker",
   "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
   "harness": "codex",
-  "status": "running",
+  "status": "blocked",
   "estimate_minutes": 20,
   "id": "L01",
   "created_at": "2026-10-28T18:03:29+03:00",
-  "updated_at": "2026-10-28T19:34:43+03:00",
+  "updated_at": "2026-10-28T19:36:49+03:00",
   "progress_events": [
     {
       "at": "2026-10-28T18:03:29+03:00",
@@ -62,6 +62,15 @@
       "at": "2026-10-28T19:34:43+03:00",
       "note": "Mini accepted runtime3d02/nodePID65837: nativeMCP200, FTSsession_search_local returned2 hits partialtrue, ephemeral token revoked, own browsers/tunnels/packets closed. Four live nodes paused and UI available. M1 exact nativeowner/source/socket blocker remains; preserve stopped node and staged pause, no complete claim.",
       "changes": {},
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T19:36:49+03:00",
+      "note": "Installed/accepted:100/44/88/Mini paused, old search and per-node switch preserved. Remaining only M1: managed nativeCodex controller EX_CONFIG/source identity mismatch and dangling socket; existing no-unlink ownership guard refuses takeover. No running Herder writer. Need existing native-owner/control recovery and exact owner/socket preflight before its guarded update; do not remove socket or invent ownership. See mac.md/mac-mini-final.json.",
+      "changes": {
+        "status": "blocked"
+      },
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex"
     }

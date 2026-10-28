@@ -13,12 +13,12 @@
   "current_progress": "100/44/88/Mini paused с сохранённым старым поиском. Mini установлен3d02: Root независимо подтвердил APIpausefalse и реальный UI off→refresh→off; nativeMCP200, старый FTSпоиск дал2записи partialtrue; временные ресурсы закрыты. OpenCode100/88 enabled, bounded recovery24h установлен. Текущая MiniMax→GLM policy проверена контролируемым тестом; живой GLMcombo дал QA_BACKUP_OK отдельно. Полный native429→fallback не подтверждён; на88 точного GLMcombo нет в свежем каталоге, fallback не включён без подходящей модели. Два недавних auth-error инцидента уже resolved, повторных продолжений нет. M1 остановлен штатным native ownership guard: pause сохранена, UI пока недоступен; nextaction и точный отказ записаны в mac.md/mac-mini-final.json. Полный результат не объявлен выполненным.",
   "external_waits": "",
   "slots": 3,
-  "updated_at": "2026-10-28T19:34:43+03:00",
+  "updated_at": "2026-10-28T19:36:49+03:00",
   "tasks": [
     {
       "id": "L01",
       "label": "Пауза индексации и управление на всех узлах",
-      "status": "running",
+      "status": "blocked",
       "description": "Установить совместимый Herder и сохраняемый переключатель на действующие узлы, подтвердить paused и старый поиск.",
       "acceptance": "У каждого доступного действующего узла установлен UI/API переключатель, индексация выключена; недоступные адреса явно перечислены.",
       "owner": "roomhacker",
@@ -80,6 +80,15 @@
           "changes": {},
           "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
           "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T19:36:49+03:00",
+          "note": "Installed/accepted:100/44/88/Mini paused, old search and per-node switch preserved. Remaining only M1: managed nativeCodex controller EX_CONFIG/source identity mismatch and dangling socket; existing no-unlink ownership guard refuses takeover. No running Herder writer. Need existing native-owner/control recovery and exact owner/socket preflight before its guarded update; do not remove socket or invent ownership. See mac.md/mac-mini-final.json.",
+          "changes": {
+            "status": "blocked"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
         }
       ],
       "depends_on": [],
@@ -92,7 +101,7 @@
     {
       "id": "L02",
       "label": "Автовосстановление OpenCode и запасная модель",
-      "status": "running",
+      "status": "blocked",
       "description": "Включить OpenCode, безопасно подхватить прерванную работу последних 24 часов и проверить квотный fallback в изоляции.",
       "acceptance": "OpenCode effective enabled=true, точный recent failure либо восстановлен один раз, либо честно исключён; isolated quota canary фиксирует модель и результат без production replay.",
       "owner": "root",
@@ -130,6 +139,15 @@
           "at": "2026-10-28T19:03:36+03:00",
           "note": "100/88 OpenCode enabled; bounded recovery24h и paused-attempt fence установлены. Две свежие auth-error сессии исключены: source incidents уже resolved. Controlled MiniMax→GLM quota policy/no-replay PASS, живой отдельный native GLMcombo ответ QA_BACKUP_OK. Полный native429→fallback не подтверждён; QA bootstrap не имеет активного real provider, production429 не индуцируется. Финальный100 runtime05a7c03 active, receipt сохранена.",
           "changes": {},
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T19:36:49+03:00",
+          "note": "Installed recovery24h + OpenCodeenabled100/88 done; recent incidents already resolved and not replayed. Controlled quota decision/no-replay plus separate real native GLMcombo response proven. Full native429→fallback remains unproved: isolated official test runtime did not register the real backup provider, no quota canary dispatched there; production failure is not injected. On88 exact owner GLMcombo absent from fresh53model catalog, so its quota fallback left unchanged. Next safe step: supported isolated provider registration/readback, and exact88 catalog route from its official config; then one isolated canary, no old delivery replay.",
+          "changes": {
+            "status": "blocked"
+          },
           "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
           "harness": "codex"
         }

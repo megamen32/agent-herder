@@ -5,11 +5,11 @@
   "owner": "root",
   "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
   "harness": "codex",
-  "status": "running",
+  "status": "blocked",
   "estimate_minutes": 20,
   "id": "L02",
   "created_at": "2026-10-28T18:03:29+03:00",
-  "updated_at": "2026-10-28T19:03:36+03:00",
+  "updated_at": "2026-10-28T19:36:49+03:00",
   "progress_events": [
     {
       "at": "2026-10-28T18:03:29+03:00",
@@ -40,6 +40,15 @@
       "at": "2026-10-28T19:03:36+03:00",
       "note": "100/88 OpenCode enabled; bounded recovery24h и paused-attempt fence установлены. Две свежие auth-error сессии исключены: source incidents уже resolved. Controlled MiniMax→GLM quota policy/no-replay PASS, живой отдельный native GLMcombo ответ QA_BACKUP_OK. Полный native429→fallback не подтверждён; QA bootstrap не имеет активного real provider, production429 не индуцируется. Финальный100 runtime05a7c03 active, receipt сохранена.",
       "changes": {},
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T19:36:49+03:00",
+      "note": "Installed recovery24h + OpenCodeenabled100/88 done; recent incidents already resolved and not replayed. Controlled quota decision/no-replay plus separate real native GLMcombo response proven. Full native429→fallback remains unproved: isolated official test runtime did not register the real backup provider, no quota canary dispatched there; production failure is not injected. On88 exact owner GLMcombo absent from fresh53model catalog, so its quota fallback left unchanged. Next safe step: supported isolated provider registration/readback, and exact88 catalog route from its official config; then one isolated canary, no old delivery replay.",
+      "changes": {
+        "status": "blocked"
+      },
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex"
     }
