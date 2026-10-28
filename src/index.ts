@@ -1197,6 +1197,7 @@ async function main() {
       if (!adapter?.getFirstUserMessage) return;
       const inventory = await unfinishedSessionStore.listInventory();
       let heldMatch: AgentSession | undefined;
+      let idleMatch: AgentSession | undefined;
       for (const item of inventory.filter(item => item.harness === request.harness && item.cwd === request.cwd)) {
         const override = await autopilotSessionStore.get(item.harness as AutopilotHarness, item.sessionId);
         if (!override?.noticeIncident || (!override.enabled && !await humanStopStore.isHeld(item.harness, item.sessionId))) continue;
@@ -1205,10 +1206,11 @@ async function main() {
         const first = await adapter.getFirstUserMessage(session.id);
         if (first && incidentSourceKey(first.text ?? first.parts.filter(part => part.type === 'text').map(part => part.text ?? '').join('\n')) === source) {
           if (await humanStopStore.isHeld(session.harness, session.id)) heldMatch ??= session;
-          else return session;
+          else if (session.status === 'running' || session.status === 'needs_input') return session;
+          else idleMatch ??= session;
         }
       }
-      return heldMatch; // Preserve a hold when there is no continuing executor.
+      return idleMatch ?? heldMatch; // Prefer live work; preserve a hold if no executor can continue.
     },
   });
   // The one project launch consumer: an ordered route, a durable attempt log and
