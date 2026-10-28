@@ -14,9 +14,40 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("rollout_node", ROOT / "deploy/fleet/rollout-node.py")
 rollout = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(rollout)
+SPEC_CANDIDATE = importlib.util.spec_from_file_location(
+    "rollout_candidate", ROOT / "deploy/fleet/rollout-candidate.py")
+candidate = importlib.util.module_from_spec(SPEC_CANDIDATE)
+SPEC_CANDIDATE.loader.exec_module(candidate)
 
 
 class RolloutNodeInstallTests(unittest.TestCase):
+    def test_node_side_reuses_its_python_interpreter_for_rollout_node(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            fleet = root / "fleet"
+            previous = "af06240abbe0a9567289b40e0e44328ee49e1942"
+            target = "6549b34255adb669782f8f07f5b7b852045fd708"
+            (fleet / "releases" / previous).mkdir(parents=True)
+            source = root / "candidate"
+            (source / "dist").mkdir(parents=True)
+            (source / "dist" / "index.js").write_text("candidate\n")
+            archive = root / "candidate.tar"
+            candidate.pack_release(source, archive)
+            arguments = type("Args", (), {
+                "fleet_dir": str(fleet), "sha": target, "previous_sha": previous,
+                "archive": str(archive), "restart_cmd": "launchctl kickstart -k user/501/example",
+                "web_port": 18789, "unit": "com.bezrabotnyi.agent-herder-fleet-node",
+                "state_dir": "/state",
+            })()
+            calls = []
+            with (patch.object(candidate, "HERE", root / "tools"),
+                  patch.object(candidate.subprocess, "run", side_effect=lambda command, **kwargs: (
+                      calls.append(command) or subprocess.CompletedProcess(command, 0, "", "")))):
+                self.assertEqual(candidate.node_side_fleet(arguments), 0)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0][0], sys.executable)
+            self.assertEqual(calls[0][1], str(root / "tools" / "rollout-node.py"))
+
     def test_darwin_fleet_launcher_resolves_exact_active_user_domain_agent(self):
         with tempfile.TemporaryDirectory() as temporary:
             home = pathlib.Path(temporary)

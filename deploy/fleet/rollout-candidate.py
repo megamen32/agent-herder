@@ -244,7 +244,7 @@ def node_side_fleet(arguments) -> int:
         shutil.move(str(release), str(trash))
         print("partial release kept aside:", trash)
     unpack_release(Path(arguments.archive), release)
-    command = ["python3", str(HERE / "rollout-node.py"),
+    command = [sys.executable, str(HERE / "rollout-node.py"),
                "--kind", "fleet",
                "--fleet-dir", str(fleet),
                "--sha", sha,
