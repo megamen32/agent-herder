@@ -89,15 +89,20 @@ it("rejects an invalid request with a receipt, not an exception", async () => {
 it("gives an OpenCode target to the native client instead of a CLI process", async () => {
   const state = { launches: 0 };
   const context = deps(state);
-  const sent: Array<{ id: string; delivery: string }> = [];
-  const nativeClient = { send: async (id: string, request: { delivery: string }) => { sent.push({ id, delivery: request.delivery }); return { ok: true, admitted: true }; } };
+  const sent: Array<{ id: string; delivery: string; inputId?: string }> = [];
+  const nativeClient = { send: async (id: string, request: { delivery: string; inputId?: string }) => { sent.push({ id, delivery: request.delivery, ...(request.inputId ? { inputId: request.inputId } : {}) }); return { ok: true, admitted: true }; } };
   const receipt = await resumeBoundTarget({
+    target: { agent: "opencode", session_id: "ses_native", cwd: "/tmp" },
+    prompt: "дальше", resultRef: "result://1", idempotencyKey: "k7",
+  }, { ...context, nativeClient: nativeClient as never });
+  const replay = await resumeBoundTarget({
     target: { agent: "opencode", session_id: "ses_native", cwd: "/tmp" },
     prompt: "дальше", resultRef: "result://1", idempotencyKey: "k7",
   }, { ...context, nativeClient: nativeClient as never });
 
   expect(receipt).toMatchObject({ status: "accepted", executed: true });
-  expect(sent).toEqual([{ id: "ses_native", delivery: "queue" }]);
+  expect(replay.receipt_id).toBe(receipt.receipt_id);
+  expect(sent).toEqual([{ id: "ses_native", delivery: "queue", inputId: "herder-resume-fb848c99b9a43ec7866a23ea000c1939" }]);
   expect(state.launches).toBe(0);
 });
 

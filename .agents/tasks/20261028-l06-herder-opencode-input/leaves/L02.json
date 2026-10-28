@@ -1,0 +1,81 @@
+{
+  "id": "L02",
+  "label": "Опубликовать и штатно установить исправление",
+  "description": "Опубликовать только свои исходники и план в main; установить release штатным Agent Herder deployment path и проверить обслуживаемую revision. Не выполнять пользовательские сообщения, replay или canary — совместную приёмку делает root.",
+  "acceptance": "Scoped commit содержит только авторские файлы; origin/main совпадает с локальным main; agent-herder.service указывает на immutable release с исправленным source SHA; сервис жив и его revision/readback подтверждает установку.",
+  "affected_files": [
+    "src/resume/core-transport.ts",
+    "tests/resume-core-transport.test.ts",
+    ".agents/tasks/20261028-l06-herder-opencode-input"
+  ],
+  "status": "running",
+  "owner": "Lead",
+  "session": "01a17e2e-6dce-7870-b08c-89c092087fb5",
+  "harness": "codex",
+  "model": "gpt-6.1-sol",
+  "model_class": "frontier",
+  "tier": "frontier",
+  "complexity": "S",
+  "estimate_minutes": 15,
+  "estimate_min": 10,
+  "estimate_max": 15,
+  "token_estimate": 18000,
+  "cost_usd": 0.065,
+  "cost_source": "provisional",
+  "depends_on": [
+    "L01"
+  ],
+  "wave": 2,
+  "note": "No joint canary here; root owns consumer acceptance.",
+  "created_at": "2026-10-28T21:45:07+03:00",
+  "updated_at": "2026-10-28T21:51:11+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-28T21:45:07+03:00",
+      "note": "",
+      "changes": {
+        "id": "L02",
+        "label": "Опубликовать и штатно установить исправление",
+        "description": "Опубликовать только свои исходники и план в main; установить release штатным Agent Herder deployment path и проверить обслуживаемую revision. Не выполнять пользовательские сообщения, replay или canary — совместную приёмку делает root.",
+        "acceptance": "Scoped commit содержит только авторские файлы; origin/main совпадает с локальным main; agent-herder.service указывает на immutable release с исправленным source SHA; сервис жив и его revision/readback подтверждает установку.",
+        "affected_files": [
+          "src/resume/core-transport.ts",
+          "tests/resume-core-transport.test.ts",
+          ".agents/tasks/20261028-l06-herder-opencode-input"
+        ],
+        "status": "queued",
+        "owner": "Lead",
+        "session": "01a17e2e-6dce-7870-b08c-89c092087fb5",
+        "harness": "codex",
+        "model": "gpt-6.1-sol",
+        "model_class": "frontier",
+        "tier": "frontier",
+        "complexity": "S",
+        "estimate_minutes": 15,
+        "estimate_min": 10,
+        "estimate_max": 15,
+        "token_estimate": 18000,
+        "cost_usd": 0.065,
+        "cost_source": "provisional",
+        "depends_on": [
+          "L01"
+        ],
+        "wave": 2,
+        "note": "No joint canary here; root owns consumer acceptance."
+      },
+      "session": "01a17e2e-6dce-7870-b08c-89c092087fb5",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T21:51:11+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "started_at": "2026-10-28T18:50:07Z"
+      },
+      "session": "01a17e2e-6dce-7870-b08c-89c092087fb5",
+      "harness": "codex"
+    }
+  ],
+  "started_at": "2026-10-28T18:50:07Z"
+}

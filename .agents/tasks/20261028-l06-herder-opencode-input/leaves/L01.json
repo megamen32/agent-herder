@@ -1,0 +1,105 @@
+{
+  "id": "L01",
+  "label": "Добавить и доказать native inputId при OpenCode resume",
+  "description": "В существующем core resume пути передать native inputId herder-resume-${sha256(idempotency_key).slice(0,32)}; сохранить UUID, idempotency и receipt. Сначала выполнить focused RED, затем исправление и GREEN.",
+  "acceptance": "Изолированный тест с заранее известным idempotency_key до изменения падает, после изменения подтверждает точный inputId, а повторный resume не вызывает вторую отправку.",
+  "affected_files": [
+    "packages/agent-resume/src/resume/delivery.ts",
+    "packages/agent-resume/tests/delivery.test.ts"
+  ],
+  "status": "done",
+  "owner": "Lead",
+  "session": "01a17e2e-6dce-7870-b08c-89c092087fb5",
+  "harness": "codex",
+  "model": "gpt-6.1-sol",
+  "model_class": "frontier",
+  "tier": "frontier",
+  "complexity": "S",
+  "estimate_minutes": 15,
+  "estimate_min": 10,
+  "estimate_max": 15,
+  "token_estimate": 18000,
+  "cost_usd": 0.065,
+  "cost_source": "provisional",
+  "started_at": "2026-10-28T18:43:59Z",
+  "note": "Narrow Agent Herder dependency for ExManager L06. Parent/root owns joint canary. Preserve foreign checkout WIP.",
+  "wave": 1,
+  "created_at": "2026-10-28T21:44:42+03:00",
+  "updated_at": "2026-10-28T21:51:11+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-28T21:44:42+03:00",
+      "note": "",
+      "changes": {
+        "id": "L01",
+        "label": "RED → исправить native inputId → GREEN и штатно установить",
+        "description": "В существующем core resume пути детерминированно передать native OpenCode inputId herder-resume-${sha256(idempotency_key).slice(0,32)}; сохранить UUID, idempotency и receipt. Добавить focused regression, запустить связанные проверки и штатно установить свою версию.",
+        "acceptance": "Focused regression сначала падает без inputId, затем проходит; изолированный тест подтверждает точный native inputId; свои исходники опубликованы в main, installed runtime указывает на исправленную ревизию. Никаких реальных Human Request или внешних сообщений.",
+        "affected_files": [
+          "src/resume/core-transport.ts",
+          "tests/resume-core-transport.test.ts"
+        ],
+        "status": "running",
+        "owner": "Lead",
+        "session": "01a17e2e-6dce-7870-b08c-89c092087fb5",
+        "harness": "codex",
+        "model": "gpt-6.1-sol",
+        "model_class": "frontier",
+        "tier": "frontier",
+        "complexity": "S",
+        "estimate_minutes": 20,
+        "estimate_min": 15,
+        "estimate_max": 20,
+        "token_estimate": 24000,
+        "cost_usd": 0.086,
+        "cost_source": "provisional",
+        "started_at": "2026-10-28T18:43:59Z",
+        "note": "Narrow Agent Herder dependency for ExManager L06. Parent/root owns joint canary. Preserve foreign checkout WIP.",
+        "wave": 1
+      },
+      "session": "01a17e2e-6dce-7870-b08c-89c092087fb5",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T21:44:58+03:00",
+      "note": "",
+      "changes": {
+        "label": "Добавить и доказать native inputId при OpenCode resume",
+        "description": "В существующем core resume пути передать native inputId herder-resume-${sha256(idempotency_key).slice(0,32)}; сохранить UUID, idempotency и receipt. Сначала выполнить focused RED, затем исправление и GREEN.",
+        "acceptance": "Изолированный тест с заранее известным idempotency_key до изменения падает, после изменения подтверждает точный inputId, а повторный resume не вызывает вторую отправку.",
+        "estimate_minutes": 15,
+        "estimate_min": 10,
+        "estimate_max": 15,
+        "token_estimate": 18000,
+        "cost_usd": 0.065
+      },
+      "session": "01a17e2e-6dce-7870-b08c-89c092087fb5",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T21:46:28+03:00",
+      "note": "",
+      "changes": {
+        "affected_files": [
+          "packages/agent-resume/src/resume/delivery.ts",
+          "packages/agent-resume/tests/delivery.test.ts"
+        ]
+      },
+      "session": "01a17e2e-6dce-7870-b08c-89c092087fb5",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T21:51:11+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "RED: delivery.test.ts падал и показывал отсутствующий inputId. Добавлено вычисление SHA-256 inputId при доставке через текущий native OpenCode client. GREEN: 8/8 delivery tests, Agent Resume core TypeScript build, 5/5 Herder core transport tests.",
+        "finished_at": "2026-10-28T18:50:07Z"
+      },
+      "session": "01a17e2e-6dce-7870-b08c-89c092087fb5",
+      "harness": "codex"
+    }
+  ],
+  "result": "RED: delivery.test.ts падал и показывал отсутствующий inputId. Добавлено вычисление SHA-256 inputId при доставке через текущий native OpenCode client. GREEN: 8/8 delivery tests, Agent Resume core TypeScript build, 5/5 Herder core transport tests.",
+  "finished_at": "2026-10-28T18:50:07Z"
+}

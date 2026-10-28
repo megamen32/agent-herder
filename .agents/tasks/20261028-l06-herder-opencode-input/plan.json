@@ -1,0 +1,11 @@
+{
+  "title": "L06: передавать native inputId при продолжении OpenCode",
+  "goal": "После ответа на Human Request продолжение должно связываться с точным native-вводом в той же OpenCode-сессии.",
+  "business_result": "OpenCode получает детерминированный herder-resume inputId, сохраняя исходный idempotency key, UUID и квитанцию; установленная версия содержит исправление.",
+  "acceptance_scenarios": [
+    "Автоматический изолированный тест передаёт resume с известным idempotency_key и проверяет, что OpenCode send получает herder-resume- плюс первые 32 hex символа SHA-256 этого ключа; повторное/реальное сообщение не отправляется."
+  ],
+  "current_progress": "Brief и production path подтверждены; focused regression, исправление и установленная версия ещё не доказаны.",
+  "default_model": "gpt-6.1-sol",
+  "slots": 1
+}

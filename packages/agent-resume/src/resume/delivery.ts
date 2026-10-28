@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { mkdirSync, realpathSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import {
@@ -177,7 +177,7 @@ export async function resumeBoundTarget(request: BoundDeliveryRequest, deps: Bou
       if (request.execute === false) {
         return { receipt_id: receiptId, receipt_ref: receiptId, result_ref: resultRef, status: "accepted", reason: "prepared", target, executed: false };
       }
-      return deliver(target, prompt, { receiptId, resultRef, deps });
+      return deliver(target, prompt, { receiptId, resultRef, idempotencyKey: key, deps });
     },
   });
 }
@@ -185,7 +185,7 @@ export async function resumeBoundTarget(request: BoundDeliveryRequest, deps: Bou
 async function deliver(
   target: BoundTarget,
   prompt: string,
-  context: { receiptId: string; resultRef: string; deps: BoundDeliveryDeps },
+  context: { receiptId: string; resultRef: string; idempotencyKey: string; deps: BoundDeliveryDeps },
 ): Promise<ResumeReceiptRecord> {
   const base = {
     receipt_id: context.receiptId,
@@ -196,7 +196,8 @@ async function deliver(
   try {
     // A harness Herder can drive natively never needs a CLI process.
     if (target.agent === "opencode" && context.deps.nativeClient) {
-      const native = await context.deps.nativeClient.send(target.session_id, { message: prompt, delivery: "queue" });
+      const inputId = `herder-resume-${createHash("sha256").update(context.idempotencyKey).digest("hex").slice(0, 32)}`;
+      const native = await context.deps.nativeClient.send(target.session_id, { message: prompt, delivery: "queue", inputId });
       if (!native.ok) {
         // The standalone CLI cannot address an OpenCode 2 session, so a refused
         // native admission is terminal here rather than a second, blind attempt.
