@@ -27,10 +27,10 @@ function toolLabel(part: SessionMessagePart): { label: string; commands: boolean
   if (["read_file", "read_text_file"].includes(short)) return { label: "Прочитан файл", commands: false };
   if (short === "apply_patch") return { label: "Внесены изменения", commands: false };
   if (short === "write_stdin") return { label: "Проверено выполнение команды", commands: false };
-  const mcp = name.match(/^(?:mcp__)?(.+?)__(?:.+)$/);
+  const mcp = name.match(/^(?:mcp__)?(.+?)__(?:.+)$/) || name.match(/^([^/]+)\/(.+)$/);
   if (mcp) {
     const aliases: Record<string, string> = { agent_herder: "Agent Herder", context_mode: "Context Mode", UserIO: "UserIO", userio: "UserIO", gptadmin: "GPTAdmin", noticeplace: "Notice Place", AskSecret: "AskSecret", xerj: "XERJ", grepmesh: "GrepMesh" };
-    const integration = aliases[mcp[1]!] || mcp[1]!.replace(/^(?:codex_apps__)/, "").replace(/[_-]+/g, " ");
+    const integration = aliases[mcp[1]!.replace(/-/g, "_")] || mcp[1]!.replace(/^(?:codex_apps__)/, "").replace(/[_-]+/g, " ");
     return { label: `Использовано ${integration}`, commands: false };
   }
   return { label: name === "exec" || name === "functions.exec" ? "Выполнен сценарий" : "Использован инструмент", commands: false };
