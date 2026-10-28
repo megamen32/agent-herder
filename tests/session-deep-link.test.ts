@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {isFleetSessionLink,resolveSessionDeepLink,sessionKeyFromHash} from '../src/web-ui/session-list.js';
+import {isFleetSessionLink,localSessionReadKey,resolveSessionDeepLink,sessionKeyFromHash} from '../src/web-ui/session-list.js';
 
 const local={hostId:'100',harness:'codex',nativeSessionId:'native-id'};
 const remote={...local,hostId:'44'};
@@ -29,6 +29,15 @@ describe('exact native session deep links',()=>{
   expect(resolveSessionDeepLink('codex:native-id',[],'100',false,[{...localRows[0],remote:true}]).kind).toBe('pending');
   expect(resolveSessionDeepLink('codex:native-id',[],'100',false,[{...localRows[0],hostId:'44'}]).kind).toBe('pending');
   expect(resolveSessionDeepLink('codex:other-id',[],'100',false,localRows).kind).toBe('pending');
+ });
+ it('probes an exact local native endpoint when every list is missing the session, then accepts verified details',()=>{
+  const pending=resolveSessionDeepLink('codex:native-id',[],'100',false);
+  expect(localSessionReadKey('codex:native-id',pending)).toBe('codex:native-id');
+  const verifiedDetails={id:'native-id',harness:'codex'};
+  expect(resolveSessionDeepLink('codex:native-id',[],'100',false,[verifiedDetails])).toEqual({kind:'local',key:'codex:native-id'});
+  expect(localSessionReadKey('mesh:["44","codex","native-id"]',{kind:'pending'})).toBeUndefined();
+  expect(localSessionReadKey('codex:native-id',{kind:'remote',address:remote})).toBeUndefined();
+  expect(localSessionReadKey('codex:native-id',{kind:'ambiguous'})).toBeUndefined();
  });
  it('round trips an explicitly addressed mesh link without a list click',()=>{
   const key=`mesh:${JSON.stringify(['44','codex','native-id'])}`;

@@ -28,7 +28,7 @@ import "./interface-polish.css";
 import "./projects-screen.css";
 import { CodexNavigation } from "./codex-navigation.js";
 import {useFleetDirectory} from './fleet/use-directory.js';
-import {isFleetSessionLink,resolveSessionDeepLink} from './session-list.js';
+import {isFleetSessionLink,localSessionReadKey,resolveSessionDeepLink} from './session-list.js';
 import {mergeActiveActivity} from './active-activity.js';
 import {useActiveActivity} from './use-active-activity.js';
 import {SessionWorkTarget, SessionInspectBlock, type SessionInspectFacts} from './session-work-target.js';
@@ -853,8 +853,8 @@ function App() {
   const [detailsHydrating, setDetailsHydrating] = React.useState(false);
   const [detailsError, setDetailsError] = React.useState<string>();
   const linkedKey=externalSessionLink?(deepLinkKey??activeKey):(activeKey?.startsWith('mesh:')?activeKey:undefined);
-  const linkedResolution=React.useMemo(()=>linkedKey?resolveSessionDeepLink(linkedKey,directory.rows.map(row=>row.address),directory.localHostId,!directory.pending&&!directory.partial&&!directory.more,sessions):undefined,[linkedKey,directory.rows,directory.localHostId,directory.pending,directory.partial,directory.more,sessions]);
-  const linkedLocalKey=linkedResolution?(linkedResolution.kind==='local'?linkedResolution.key:undefined):activeKey;
+  const linkedResolution=React.useMemo(()=>linkedKey?resolveSessionDeepLink(linkedKey,directory.rows.map(row=>row.address),directory.localHostId,!directory.pending&&!directory.partial&&!directory.more,detailsVerified&&details?.session?[...sessions,details.session]:sessions):undefined,[linkedKey,directory.rows,directory.localHostId,directory.pending,directory.partial,directory.more,sessions,detailsVerified,details?.session]);
+  const linkedLocalKey=localSessionReadKey(linkedKey??activeKey,linkedResolution);
   React.useEffect(()=>{
     if(!linkedResolution)return;
     if(linkedResolution.kind==='remote'){
@@ -1275,7 +1275,7 @@ function App() {
     return () => window.removeEventListener("hashchange", followHash);
   }, []);
 
-  const loadDetails = React.useCallback(async (key: string, hydrateFull = true) => {
+  const loadDetails = React.useCallback(async (key: string, hydrateFull = true, pendingLookup = false) => {
     const requestId = detailsReadGateRef.current.begin(key, hydrateFull);
     if (requestId === undefined) return;
     const { harness, id } = splitKey(key);
@@ -1323,7 +1323,7 @@ function App() {
       if(directory.scope&&directory.localHostId)void viewCache.put(directory.scope,{hostId:directory.localHostId,harness,nativeSessionId:id},full);
     } catch (error) {
       if (!detailsReadGateRef.current.isCurrent(requestId)) return;
-      setDetailsError((error as Error).message);
+      setDetailsError(pendingLookup&&!liveLoaded?'Определяю машину сессии. Часть списка ещё не загружена.':(error as Error).message);
     } finally {
       if (detailsReadGateRef.current.isCurrent(requestId)) { setDetailsLoading(false); setDetailsHydrating(false); }
       detailsReadGateRef.current.finish(requestId);
@@ -1335,8 +1335,8 @@ function App() {
       setDetailsError(linkedResolution?.kind==='ambiguous'?'Эта сессия найдена на нескольких машинах. Нужна ссылка с точной машиной.':linkedResolution?.kind==='invalid'?'Некорректная ссылка на сессию.':linkedResolution?.kind==='pending'?'Определяю машину сессии. Часть списка ещё не загружена.':undefined);
       return;
     }
-    void loadDetails(linkedLocalKey);
-  }, [linkedLocalKey, linkedResolution?.kind, loadDetails]);
+    void loadDetails(linkedLocalKey,true,linkedResolution?.kind==='pending');
+  }, [linkedLocalKey, loadDetails]);
   React.useEffect(() => {
     let sessionTimer = 0;
     let jobTimer = 0;

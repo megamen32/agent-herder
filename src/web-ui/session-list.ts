@@ -113,6 +113,14 @@ export type SessionDeepLinkResolution =
   | {kind:'local';key:string} | {kind:'remote';address:MeshAddress}
   | {kind:'pending'|'ambiguous'|'invalid'};
 
+/** A safe exact local GET can establish identity while fleet inventory is partial. */
+export function localSessionReadKey(key:string|undefined,resolution:SessionDeepLinkResolution|undefined):string|undefined {
+  if(!resolution)return key;
+  if(resolution.kind==='local')return resolution.key;
+  if(resolution.kind==='pending'&&key&&!key.startsWith('mesh:')&&/^[^:\x00-\x1f\x7f]+:[^\x00-\x1f\x7f]+$/.test(key))return key;
+  return undefined;
+}
+
 /** Resolve only observed exact native identities; missing partial rows prove nothing. */
 export function resolveSessionDeepLink(key:string, addresses:readonly MeshAddress[], localHostId:string, complete:boolean, localSessions:readonly Pick<SessionListSession,'id'|'harness'|'remote'|'hostId'>[]=[]):SessionDeepLinkResolution {
   const valid=(value:unknown):value is string=>typeof value==='string'&&value.length>0&&value.length<=512&&!/[\x00-\x1f\x7f]/.test(value);
