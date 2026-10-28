@@ -1290,7 +1290,7 @@ export class UnfinishedSessionStore {
     return this.mutate((file) => {
       const beforeSessions = file.sessions.length;
       const beforeInventory = file.inventory?.length ?? 0;
-      file.sessions = file.sessions.filter((record) => isAutocontinueInventoryHarness(record.harness) || Boolean(record.quotaRecovery));
+      file.sessions = file.sessions.filter((record) => isNativeRecoveryHarness(record.harness) || Boolean(record.quotaRecovery));
       if (file.inventory) {
         const cutoff = inventoryCutoff.getTime();
         file.inventory = file.inventory.filter((record) => {
@@ -2484,7 +2484,7 @@ export class UnfinishedSessionLauncher {
     }
     const providerGeneration = this.providerTurnGenerations.get(provider) ?? 0;
     const eventIdentity = nativeRecoveryIdentity(event);
-    const generationKey = event.sessionId && isAutocontinueInventoryHarness(provider)
+    const generationKey = event.sessionId && isNativeRecoveryHarness(provider)
       ? nativeTurnFenceKey(provider, event.sessionId, eventIdentity) : undefined;
     if (generationKey && event.kind === "turn.completed") {
       this.turnGenerations.set(generationKey, (this.turnGenerations.get(generationKey) ?? 0) + 1);
@@ -2504,7 +2504,7 @@ export class UnfinishedSessionLauncher {
   }
 
   private async handleEventSerialized(provider: string, event: HarnessEvent, eventGeneration: number, providerGeneration = this.providerTurnGenerations.get(provider) ?? 0): Promise<void> {
-    if (!isAutocontinueInventoryHarness(provider) && !(provider === "opencode" && (event.kind === "turn.started" || event.kind === "turn.failed" || event.kind === "turn.completed"))) return;
+    if (!isNativeRecoveryHarness(provider)) return;
     if (!event.sessionId) {
       // A controller-wide transport exit can arrive after its per-session
       // event cache was lost. Use only already persisted active identities;
@@ -2722,7 +2722,7 @@ export class UnfinishedSessionLauncher {
   }
 
   async armSession(session: AgentSession, deliveryPending = false, admittedFailure?: string): Promise<boolean> {
-    if (!isAutocontinueInventoryHarness(session.harness)) return false;
+    if (!isNativeRecoveryHarness(session.harness)) return false;
     if (isSubagentSession(session)) {
       await this.options.store.excludeSession(session.harness, session.id);
       return false;
@@ -3216,6 +3216,7 @@ export class UnfinishedSessionLauncher {
     }
     await this.ingestColdZcodeFailures(runtimeSettings, lifecycleEpoch);
     await this.ingestColdCodexCapacityFailures(runtimeSettings, lifecycleEpoch);
+    await this.ingestColdOpenCodeFailures(runtimeSettings, lifecycleEpoch);
     if (!this.lifecycleActive(lifecycleEpoch)) return;
     await this.reconcileQuotaRecoveryStartup(lifecycleEpoch);
     if (!this.lifecycleActive(lifecycleEpoch)) return;
@@ -3234,7 +3235,7 @@ export class UnfinishedSessionLauncher {
         await this.processQuotaRecovery(record, lifecycleEpoch);
         continue;
       }
-      if (!isAutocontinueInventoryHarness(record.harness)) continue;
+      if (!isNativeRecoveryHarness(record.harness)) continue;
       const recordKey = unfinishedRecordKey(record);
       let recoveryFence = nativeTurnFenceKey(record.harness, record.sessionId, { turnId: record.recoveryTurnId, inputId: record.recoveryInputId });
       let observedTurnGeneration = recoveryFence ? this.turnGenerations.get(recoveryFence) ?? 0 : 0;
@@ -3839,6 +3840,43 @@ export class UnfinishedSessionLauncher {
     }
   }
 
+  private async ingestColdOpenCodeFailures(runtimeSettings: SessionAutostartFile, lifecycleEpoch: number): Promise<void> {
+    if (!runtimeSettings.recoverOnFailure) return;
+    const adapter = this.options.adapters.get("opencode");
+    if (!adapter) return;
+    let listed: AgentSession[];
+    try { listed = await adapter.listSessions({ limit: 100 }); } catch { return; }
+    const now = Date.now(), cutoff = now - 24 * 60 * 60_000;
+    let reads = 0;
+    for (const candidate of listed.sort((a, b) => Date.parse(b.lastActivity) - Date.parse(a.lastActivity))) {
+      if (!this.lifecycleActive(lifecycleEpoch) || reads >= 16) return;
+      if (candidate.harness !== "opencode" || candidate.status !== "error" || isSubagentSession(candidate)
+        || !Number.isFinite(Date.parse(candidate.lastActivity)) || Date.parse(candidate.lastActivity) < cutoff
+        || candidate.needsPermission || !await this.mayWorkOnSession("opencode", candidate.id, candidate.cwd)
+        || await this.options.humanStopStore?.isHeld("opencode", candidate.id)) continue;
+      const key = sessionSourceKey(candidate), fingerprint = JSON.stringify([candidate.lastActivity, candidate.status, candidate.model]);
+      const previous = this.coldCodexObservations.get(key);
+      if (previous?.fingerprint === fingerprint && now - previous.observedAt < 5 * 60_000) continue;
+      reads += 1;
+      let session: AgentSession | null;
+      try { session = await adapter.getSession(candidate.id); } catch { continue; }
+      if (!this.lifecycleActive(lifecycleEpoch)) return;
+      this.coldCodexObservations.set(key, { fingerprint, observedAt: now });
+      if (this.coldCodexObservations.size > 1_024) this.coldCodexObservations.delete(this.coldCodexObservations.keys().next().value!);
+      const turn = nativeLastTurn(session);
+      if (!session || session.id !== candidate.id || session.harness !== "opencode" || session.status !== "error"
+        || sessionWorkspaceIdentity(session) !== sessionWorkspaceIdentity(candidate) || !session.model
+        || !turn?.turnId || !turn.userMessageId || !turn.completedAt || !["failed", "error"].includes(turn.status ?? "")
+        || Date.parse(turn.completedAt) < cutoff || Date.parse(turn.completedAt) > now || turn.quotaFailure
+        || turn.retryable !== true || turn.pendingInput !== false || turn.userMessageMatchesLatest !== true
+        || turn.assistantSucceeded !== false || turn.progressedAfterFailure !== false || turn.cancelledByUser !== false
+        || coldFailureBlockReason(turn) || session.needsPermission || hasPendingNativePermission(session)
+        || await this.options.humanStopStore?.isHeld("opencode", session.id)
+        || !await this.mayWorkOnSession("opencode", session.id, session.cwd)) continue;
+      await this.options.store.ingestColdFailure(session, { turnId: turn.turnId, completedAt: turn.completedAt, userMessageId: turn.userMessageId });
+    }
+  }
+
   private async ingestColdCodexCapacityFailures(runtimeSettings: SessionAutostartFile, lifecycleEpoch: number): Promise<void> {
     if (!runtimeSettings.recoverOnFailure) return;
     const adapter = this.options.adapters.get("codex");
@@ -3909,6 +3947,14 @@ export class UnfinishedSessionLauncher {
     if (record.recoveryCause !== "stalled"
       && (current.status === "running" || nonEmptyText(current.meta?.activeTurnId))) return false;
     const last = nativeLastTurn(current);
+    if (record.harness === "opencode" && record.generationId === "cold-native-failure") {
+      if (!last || current.status !== "error" || current.model !== record.model
+        || last.turnId !== record.recoveryTurnId || last.userMessageId !== record.recoveryInputId
+        || last.completedAt !== record.recoveryObservedAt || !last.completedAt || Date.now() - Date.parse(last.completedAt) > 24 * 60 * 60_000
+        || last.retryable !== true || last.pendingInput !== false || last.userMessageMatchesLatest !== true
+        || last.assistantSucceeded !== false || last.progressedAfterFailure !== false || last.cancelledByUser !== false
+        || coldFailureBlockReason(last)) return false;
+    }
     if (record.harness === "codex" && record.generationId === "cold-native-failure") {
       const raw = current.meta?.nativeLastTurn as Record<string, unknown> | undefined;
       const proof = raw?.capacityFailure as Record<string, unknown> | undefined;
@@ -6498,6 +6544,11 @@ function isInventoryHarness(value: unknown): value is UnfinishedSessionInventory
 
 function isAutocontinueInventoryHarness(value: unknown): value is "codex" | "zcode" {
   return value === "codex" || value === "zcode";
+}
+
+/** Native crash recovery is distinct from semantic chat inventory planning. */
+function isNativeRecoveryHarness(value: unknown): value is "codex" | "zcode" | "opencode" {
+  return isAutocontinueInventoryHarness(value) || value === "opencode";
 }
 
 function harnessType(value: unknown): HarnessType {

@@ -889,11 +889,13 @@ export class OpenCodeClient implements HarnessClient {
     try {
       const session = await this.fetchJson<OpenCodeSessionPayload>(this.api(`/session/${encodeURIComponent(id)}`));
       if (session.id !== id || session.outcome !== "failed") return null;
-      const [active, permissions] = await Promise.all([
+      const [active, permissions, inbox] = await Promise.all([
         this.fetchJson<Record<string, { type?: string; status?: string }>>(this.api("/session/active")),
         this.readSessionPermissionRequests(id),
+        this.fetchJson<unknown>(this.api(`/session/${encodeURIComponent(id)}/inbox`)),
       ]);
-      if (!active || typeof active !== "object" || Array.isArray(active) || !Array.isArray(permissions)) return null;
+      if (!active || typeof active !== "object" || Array.isArray(active) || !Array.isArray(permissions)
+        || !Array.isArray(inbox) || inbox.length !== 0) return null;
       const activeType = active[id]?.type ?? active[id]?.status;
       if ((activeType !== undefined && activeType !== "idle") || permissions.length > 0) return null;
 

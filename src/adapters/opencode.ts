@@ -538,6 +538,15 @@ export class OpenCodeAdapter implements HarnessAdapter {
         status: nativeTurn.status,
         completedAt: nativeTurn.completedAt,
         ...(sameNativeTurn && nativeFailure ? { inputId: nativeFailure.inputId, userMessageId: nativeFailure.userMessageId } : {}),
+        ...(sameNativeTurn && nativeFailure ? {
+          // The core reader verifies exact user/assistant/failed-frame lineage,
+          // idle native runtime, permissions and an explicitly empty inbox.
+          retryable: [408, 500, 502, 503, 504].includes(nativeFailure.statusCode ?? 0),
+          pendingInput: false, cancelledByUser: false, assistantSucceeded: false,
+          progressedAfterFailure: false, userMessageMatchesLatest: true,
+          ...(nativeFailure.errorType ? { errorType: nativeFailure.errorType } : {}),
+          ...(nativeFailure.errorCode ? { errorCode: nativeFailure.errorCode } : {}),
+        } : {}),
         ...(quotaFailure ? { quotaFailure } : {}),
       };
     } else {

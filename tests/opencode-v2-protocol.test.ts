@@ -15,6 +15,7 @@ function v2Fixture(state: {
   permissions: any[];
   calls: Call[];
   models?: any[];
+  inbox?: unknown;
 }) {
   const html = (response: any, path: string) => {
     response.setHeader("content-type", "text/html");
@@ -83,6 +84,7 @@ function v2Fixture(state: {
           return json(response, { data: session });
         }
         if (!rest) return json(response, { data: session.readbackId ? { ...session, id: session.readbackId } : session });
+        if (rest === "inbox" && request.method === "GET") return json(response, { data: state.inbox ?? [] });
         if (rest === "message" && request.method === "GET") {
           if (url.searchParams.has("cursor") && session.emptyCursorTail === true) {
             return json(response, {data:[],cursor:{previous:null,next:null},...session.tailEnvelope});
@@ -1117,6 +1119,11 @@ it('reads an exact native V2 linear turn packet without inventing a parentID',as
  const server=v2Fixture(state);const baseUrl=await start(server);const client=new OpenCodeClient({baseUrl});
  try{
   await expect(client.getTerminalFailureContext(id)).resolves.toMatchObject({nativeTurnId:assistant.id,inputId:'stable_linear',statusCode:429});
+  (state as {inbox?:unknown}).inbox=[{id:'pending_input'}];
+  expect(await client.getTerminalFailureContext(id)).toBeNull();
+  (state as {inbox?:unknown}).inbox={malformed:true};
+  expect(await client.getTerminalFailureContext(id)).toBeNull();
+  (state as {inbox?:unknown}).inbox=[];
   for(const messages of [
    [user,{...assistant,parentID:'wrong_parent'},terminal],
    [user,{...assistant,parentID:'wrong_parent',inputId:'stable_linear'},terminal],
