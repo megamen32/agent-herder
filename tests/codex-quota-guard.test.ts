@@ -3,6 +3,8 @@ import {mkdtemp,readFile,writeFile,rm} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {evaluateCodexQuota,DEFAULT_CODEX_QUOTA_POLICY,validateCodexQuotaPolicy,loadCodexQuotaPolicy,saveCodexQuotaPolicy,checkCodexQuota,CodexQuotaBlockedError,assertRemoteCodexAdmission} from "../src/codex-quota-guard.js";
+import * as guardModule from "../src/codex-quota-guard.js";
+import * as quotaLensModule from "../src/web/quota-lens.js";
 import {CodexAppServerAdapter} from "../src/adapters/codex-app-server.js";
 const policy={...DEFAULT_CODEX_QUOTA_POLICY};
 const sample=(used:number)=>({rateLimits:{primary:{usedPercent:used,windowDurationMins:300}}});
@@ -125,4 +127,37 @@ it("a refused resume is not submitted and must not be replayed",async()=>{
   expect(result).toMatchObject({notSubmitted:true,admitted:false,nonRetryable:true,admissionUnknown:false});
   expect(String((result as any).error)).toContain("codex_quota_guard");
  }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+describe("Codex quota read bound versus reader deadline",()=>{
+ const isolatedState=async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"quota-bound-"));
+  vi.stubEnv("AGENT_HERDER_AUTOPILOT_STATE_DIR",dir);
+  vi.stubEnv("QUOTA_LENS_HISTORY",join(dir,"absent-history.jsonl"));
+  return dir;
+ };
+ it("admits a fresh same-account read that lands within the reader's own deadline",async()=>{
+  const dir=await isolatedState();
+  try{
+   // Observed 12:38:43Z failure class: the wham read answers after the guard
+   // race but inside the reader's own 10s deadline, with real reserve left.
+   const result=await checkCodexQuota(async()=>{await new Promise(r=>setTimeout(r,7_000));return sample(6);});
+   expect(result.decision).toMatchObject({allowed:true,reason:"reserve_available"});
+  }finally{vi.unstubAllEnvs();await rm(dir,{recursive:true,force:true});}
+ },15_000);
+ it("keeps the guard bound strictly above the reader's own deadline",()=>{
+  const bound=(guardModule as any).CODEX_QUOTA_READ_BOUND_MS;
+  const deadline=(quotaLensModule as any).CODEX_USAGE_FETCH_TIMEOUT_MS;
+  expect(bound).toBeGreaterThan(deadline);
+ });
+ it("still fails closed when the reader hangs past the bound",async()=>{
+  const dir=await isolatedState();
+  vi.useFakeTimers();
+  try{
+   const pending=checkCodexQuota(()=>new Promise(()=>{}));
+   for(let i=0;i<8;i++)await vi.advanceTimersByTimeAsync(2_000);
+   const result=await pending;
+   expect(result.decision).toMatchObject({allowed:false,reason:"quota_unknown"});
+  }finally{vi.useRealTimers();vi.unstubAllEnvs();await rm(dir,{recursive:true,force:true});}
+ });
 });

@@ -80,6 +80,10 @@ function quotaWindow(value: any): Record<string, unknown> | null {
     .map((key) => [key, value[key]]));
 }
 
+/** The reader's own bounded deadline; the guard race must stay above it so a
+ * slow-but-successful same-account read is evidence, not a discard. */
+export const CODEX_USAGE_FETCH_TIMEOUT_MS = 10_000;
+
 export async function readCodexUsage(authPath?: string): Promise<Record<string, unknown>> {
   const { token, accountId } = localCodexAuth(authPath);
   if (!token) return { error: "no local ~/.codex/auth.json" };
@@ -90,7 +94,7 @@ export async function readCodexUsage(authPath?: string): Promise<Record<string, 
         "chatgpt-account-id": accountId,
         "User-Agent": "agent-herder-quota-lens/1.0",
       },
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(CODEX_USAGE_FETCH_TIMEOUT_MS),
     });
     if (!response.ok) return { error: `HTTP ${response.status}` };
     const data = await response.json() as any;

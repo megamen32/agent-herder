@@ -103,8 +103,21 @@ describe("live provider quota reads", () => {
     expect(result.providers).toMatchObject([
       { provider: "glm", state: "unknown", error: "credential_not_configured" },
       { provider: "minimax", state: "quota_exhausted" },
-      { provider: "codex", state: "unknown", error: "codex_quota_fields_missing" },
+      { provider: "codex", state: "unknown", error: expect.stringContaining("codex_quota_fields_missing") },
     ]);
+  });
+
+  it("keeps the observed transport reason on a codex fields-missing report", async () => {
+    const result = await readModelQuotas({
+      env: {},
+      fetchImpl: vi.fn(),
+      now: () => 1792430000000,
+      codexQuota: async () => ({ error: "HTTP 403" }),
+    });
+    const codex = result.providers.find((row) => row.provider === "codex")!;
+    expect(codex.state).toBe("unknown");
+    expect(codex.error).toBe("codex_quota_fields_missing(http_403)");
+    expect(JSON.stringify(result)).not.toContain("HTTP 403");
   });
 
   it("marks explicit zero remaining quota as exhausted", async () => {

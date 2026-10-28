@@ -53,6 +53,20 @@ const safeDetails = (value: unknown, depth = 0): unknown => {
   return out;
 };
 
+/** Classified transport reason only: the reader's raw error text may embed
+ * provider payload fragments, so the report carries an enum, never the string. */
+function safeCodexTransportReason(details: Record<string, unknown>): string | undefined {
+  if (!details.error) return undefined;
+  const message = String(details.error);
+  const http = /^HTTP (\d{3})$/.exec(message);
+  if (http) return `http_${http[1]}`;
+  const lowered = message.toLowerCase();
+  if (message.includes("TimeoutError") || lowered.includes("timeout")) return "timeout";
+  if (message.includes("auth.json")) return "credential_unavailable";
+  if (message.includes("fetch failed") || lowered.includes("network") || lowered.includes("enotfound") || lowered.includes("econnrefused")) return "network";
+  return "unreadable_response";
+}
+
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const percent = (value: unknown): value is number => finite(value) && value >= 0 && value <= 100;
 const records = (value: unknown): Record<string, unknown>[] => Array.isArray(value)
@@ -154,7 +168,8 @@ export async function readModelQuotas(deps: QuotaDeps = {}): Promise<{ checkedAt
       const exhausted = details.limit_reached === true || used.some((value) => value >= 100);
       const state = details.error ? "unknown" : exhausted ? "quota_exhausted"
         : details.allowed === false || !used.length || !used.every(percent) ? "unknown" : "reported";
-      return { provider: "codex", state, checkedAt: new Date(now()).toISOString(), details: safeDetails(details), ...(state === "unknown" ? { error: "codex_quota_fields_missing" } : {}) };
+      const reason = safeCodexTransportReason(details);
+    return { provider: "codex", state, checkedAt: new Date(now()).toISOString(), details: safeDetails(details), ...(state === "unknown" ? { error: reason ? `codex_quota_fields_missing(${reason})` : "codex_quota_fields_missing" } : {}) };
     }).catch((): ProviderQuota => ({ provider: "codex", state: "unknown", checkedAt: new Date(now()).toISOString(), error: "codex_usage_unavailable" })),
   ]);
   return { checkedAt, providers: [glm, minimax, codex] };

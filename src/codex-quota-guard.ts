@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, rmdir, writeFile, lstat } from "node:fs/promis
 import { dirname, join } from "node:path";
 import { homedir, hostname } from "node:os";
 import { resolveAutopilotStateDir } from "./autopilot/state-dir.js";
-import { readCodexUsage } from "./web/quota-lens.js";
+import { readCodexUsage, CODEX_USAGE_FETCH_TIMEOUT_MS } from "./web/quota-lens.js";
 
 export interface CodexQuotaPolicy { enabled: boolean; minRemainingPercent: number; onUnknown: "block" | "allow" }
 export const DEFAULT_CODEX_QUOTA_POLICY: Readonly<CodexQuotaPolicy> = Object.freeze({ enabled: true, minRemainingPercent: 20, onUnknown: "block" });
@@ -90,9 +90,13 @@ export class CodexQuotaBlockedError extends Error {
   }
 }
 let lastDenial: {operation:string;decision:QuotaDecision}|undefined;
+/** Strictly above the reader's own deadline: a read that lands within it is
+ * fresh account evidence, and preempting it here would turn the same outage
+ * into quota_unknown on the guard while model_quotas still sees the answer. */
+export const CODEX_QUOTA_READ_BOUND_MS=CODEX_USAGE_FETCH_TIMEOUT_MS+1_500;
 async function boundedRead(reader:QuotaReader):Promise<unknown> {
   let timer:ReturnType<typeof setTimeout>|undefined;
-  try {return await Promise.race([reader(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error("quota_read_timeout")),6500);timer.unref?.();})]);}
+  try {return await Promise.race([reader(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error("quota_read_timeout")),CODEX_QUOTA_READ_BOUND_MS);timer.unref?.();})]);}
   catch{return {error:"quota_source_unavailable"};} finally {if(timer)clearTimeout(timer);}
 }
 const QUOTA_HISTORY_MAX_AGE_MS=5*60_000; // quota-lens sampler interval; no additional grace.
