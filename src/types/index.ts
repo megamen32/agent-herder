@@ -8,6 +8,8 @@ export {
   type MessageAdmissionResult,
   type CreateSessionOptions,
   type CodexServiceTier,
+  type SessionServiceTierState,
+  type SessionServiceTierResult,
   type ListSessionsOptions,
   type SetPermissionsOptions,
   type HarnessPermissionState,

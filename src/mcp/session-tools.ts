@@ -714,6 +714,38 @@ export function registerSessionTools(server: McpServer, deps: {
     if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     return { content: [{ type: "text" as const, text: await handleRespondPermission(route.adapters, route.args) }] };
   });
+  const tierTarget = z.object({
+    sessionId: z.string().trim().min(1).max(512),
+    harness: z.literal("codex").default("codex"),
+    hostId: z.string().trim().min(1).max(512).optional().describe("Exact owning machine. Omitted uses this host."),
+  });
+  const tierControl = async (args: { sessionId: string; harness: "codex"; hostId?: string; serviceTier?: "normal" | "fast" }) => {
+    const owner = normalizeHostId(args.hostId, hostname());
+    if (owner !== hostname()) {
+      const peer = selectedRemotePeer(owner);
+      if (!peer) throw new Error(`host_target_unavailable:${owner}`);
+      // One native operation on the owning machine; never fall back locally.
+      return await (peerTransport ?? new FleetDirectTransport([peer])).call(`mcp:shell:${peer.hostId}:AgentHerder`, args.serviceTier ? "set_service_tier" : "get_service_tier", { ...args, hostId: peer.hostId }) as { content: Array<{ type: "text"; text: string }> };
+    }
+    const route = await sessionRoute(args);
+    if (route.denied) throw new Error("project_session_scope_unavailable");
+    if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
+    const adapter = route.adapters.get("codex");
+    if (!adapter) throw new Error("Codex adapter unavailable");
+    const result = args.serviceTier
+      ? adapter.setServiceTier ? await adapter.setServiceTier(args.sessionId, args.serviceTier) : { ok: false, error: "Native service tier control unavailable" }
+      : adapter.getServiceTier ? await adapter.getServiceTier(args.sessionId) : { sessionId: args.sessionId, canSet: false, reason: "Native service tier read unavailable" };
+    if (args.serviceTier && "ok" in result && result.ok) publishSessionsChanged();
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  };
+  server.registerTool("get_service_tier", {
+    description: "Read the observed Fast/Normal service tier of one exact existing Codex session. Unknown is not Normal. Does not start, resume or interrupt a turn.",
+    inputSchema: tierTarget,
+  }, tierControl);
+  server.registerTool("set_service_tier", {
+    description: "Set Fast or Normal for subsequent turns of one exact existing Codex session, preserving its model and reasoning effort. Does not create, resume or interrupt work; the current turn keeps its tier. Fast may use more quota. Success requires native confirmation; unsupported or unobserved state is reported honestly.",
+    inputSchema: tierTarget.extend({ serviceTier: z.enum(["normal", "fast"]) }),
+  }, tierControl);
   server.registerTool("set_permissions", { description: "Set permissions for an agent. Claude/Codex set these at launch time.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), allowedTools: z.string().optional(), mode: z.string().optional() }) }, async (args) => {
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");

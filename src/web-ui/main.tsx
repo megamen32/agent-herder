@@ -14,6 +14,7 @@ import { LaunchPolicySettings } from "./launch-policy-settings.js";
 import { FallbackModelsSettings } from "./fallback-models-controls.js";
 import { SettingsScreen } from "./settings/settings-screen.js";
 import { SessionMetadata } from "./session-metadata.js";
+import { ServiceTierControl } from "./service-tier-control.js";
 import { AutopilotGoalPanel } from "./autopilot-goal-panel.js";
 import { NativePermissionStrip } from "./native-permission.js";
 import { ComposerQueue,canEditQueuedEntry } from "./composer-queue.js";
@@ -2547,6 +2548,7 @@ function App() {
             event.preventDefault();
             if (isResumeMode && !queueEdit) void runAction("resume"); else void sendMessage();
           }} />
+          {activeSession?.harness === "codex" && !remoteSelection && directory.localHostId && (!activeSession.hostId || activeSession.hostId === directory.localHostId) && <ServiceTierControl key={`${directory.localHostId}:${activeSession.id}`} sessionId={activeSession.id} hostId={directory.localHostId} request={api} />}
           {modelSwitchHarness && <button type="button" className={`composer-model ${modelMenuOpen ? "open" : ""}`} aria-label="Выбрать модель" aria-expanded={modelMenuOpen} aria-haspopup="listbox" disabled={modelSwitching} onClick={toggleModelMenu}>
             <span className="composer-model-name" title={composerModel ? modelOptionLabel(composerModel) : undefined}>{shortModelLabel(composerModel).replace(/\$(?:max|high|low|enabled)$/, "")}</span>
             {!activeSession?.model && <span className="composer-model-default">по умолчанию</span>}

@@ -11,6 +11,23 @@ export type AgentStatus =
   | "stopped"      // finished or aborted
   | "error";       // crashed
 
+export interface SessionServiceTierState {
+  sessionId: string;
+  scope: "session";
+  canSet: boolean;
+  serviceTier?: "normal" | "fast";
+  nativeServiceTier?: string | null;
+  observedAt?: string;
+  appliesTo: "subsequent-turns";
+  reason?: string;
+}
+
+export type SessionServiceTierResult = ControlResult & {
+  serviceTier?: "normal" | "fast";
+  nativeServiceTier?: string | null;
+  appliesTo: "subsequent-turns";
+};
+
 export type SessionLineageKind = "root" | "subagent" | "external" | "unknown";
 
 export interface SessionLineage {
@@ -462,6 +479,11 @@ export interface HarnessAdapter {
 
   /** Set permissions for a session */
   setPermissions(sessionId: string, options: SetPermissionsOptions): Promise<{ ok: boolean; error?: string }>;
+
+  /** Exact native session tier; unknown is never inferred as Normal. */
+  getServiceTier?(sessionId: string): Promise<SessionServiceTierState>;
+  /** Change subsequent-turn tier only, preserving model and current work. */
+  setServiceTier?(sessionId: string, tier: "normal" | "fast"): Promise<SessionServiceTierResult>;
 
   /** Change the model used by a session or globally for this harness */
   changeModel?(sessionId: string, model: string): Promise<{ ok: boolean; error?: string }>;

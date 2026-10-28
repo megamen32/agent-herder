@@ -41,6 +41,8 @@ import type {
   RawTranscriptExport,
   SessionMessageView,
   SessionSnapshotReceipt,
+  SessionServiceTierState,
+  SessionServiceTierResult,
 } from "../types/index.js";
 import { localSessionHostId } from "../types/index.js";
 import type { IntegratorCurrentProjectScopeEvidence } from "../integrator-session-admission.js";
@@ -307,6 +309,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly ownedPermissionThreads = new Map<string, CodexOwnedPermissionState>();
   private readonly permissionSettingsWaiters = new Map<string, CodexPermissionSettingsWaiter>();
   private readonly permissionSettingsUpdates = new Set<string>();
+  private readonly serviceTierObservations = new Map<string, { generation: number; value: string | null; observedAt: string }>();
+  private readonly serviceTierWaiters = new Map<string, { generation: number; resolve: (tier: string | null | undefined) => void; timer: NodeJS.Timeout }>();
+  private readonly serviceTierUpdates = new Set<string>();
   private transportGeneration = 0;
   private readonly projectLiveMessages = new Map<string, SessionMessageView[]>();
   private readonly projectCommandReceipts = new Map<string, CodexProjectCommandReceipt[]>();
@@ -1762,6 +1767,72 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
   }
 
+  async getServiceTier(sessionId: string): Promise<SessionServiceTierState> {
+    const state: SessionServiceTierState = { sessionId, scope: "session", canSet: false, appliesTo: "subsequent-turns" };
+    try {
+      if (!sessionId) throw new Error("An exact Codex session id is required");
+      if (this.projectRuntimePolicy) throw new Error("Project-scoped Codex tier is owned by its runtime policy");
+      await this.ensureReady();
+      const generation = this.transportGeneration;
+      const loaded = await this.request("thread/loaded/list", {}) as { data?: unknown[] };
+      if (!Array.isArray(loaded.data) || !loaded.data.every(id => typeof id === "string")) throw new Error("Codex did not return loaded thread identities");
+      if (!loaded.data.includes(sessionId)) throw new Error("Thread is not loaded in this native app-server; no resume was attempted");
+      const read = await this.request("thread/read", { threadId: sessionId, includeTurns: false }) as { thread?: CodexThread };
+      if (read.thread?.id !== sessionId) throw new Error("Codex tier target identity mismatch");
+      if (generation !== this.transportGeneration || !this.isReady()) throw new Error("Codex native transport changed during tier preflight");
+      state.canSet = true;
+      const observed = this.serviceTierObservations.get(sessionId);
+      if (observed?.generation === this.transportGeneration) {
+        state.nativeServiceTier = observed.value;
+        state.observedAt = observed.observedAt;
+        if (observed.value === "fast") state.serviceTier = "fast";
+        if (observed.value === "default") state.serviceTier = "normal";
+      }
+      return state;
+    } catch (error) { return { ...state, reason: error instanceof Error ? error.message : String(error) }; }
+  }
+
+  async setServiceTier(sessionId: string, tier: "normal" | "fast"): Promise<SessionServiceTierResult> {
+    const base = { sessionId, appliesTo: "subsequent-turns" as const };
+    if (tier !== "normal" && tier !== "fast") return { ...base, ok: false, nonRetryable: true, error: "Codex tier must be normal or fast" };
+    if (this.serviceTierUpdates.has(sessionId)) return { ...base, ok: false, nonRetryable: true, error: "A tier update is already pending for this thread" };
+    this.serviceTierUpdates.add(sessionId);
+    let sent = false;
+    try {
+      await this.ensureReady();
+      const generation = this.transportGeneration;
+      const state = await this.getServiceTier(sessionId);
+      if (!state.canSet) return { ...base, ok: false, nonRetryable: true, error: state.reason };
+      if (generation !== this.transportGeneration) return { ...base, ok: false, nonRetryable: true, error: "Codex native transport changed during tier preflight" };
+      const expected = tier === "fast" ? "fast" : "default";
+      const confirmation = new Promise<string | null | undefined>(resolve => {
+        const timer = setTimeout(() => {
+          this.serviceTierWaiters.delete(sessionId);
+          resolve(undefined);
+        }, this.requestTimeoutMs);
+        timer.unref?.();
+        this.serviceTierWaiters.set(sessionId, { generation, resolve, timer });
+      });
+      sent = true;
+      // This native method changes only defaults for subsequent turns. Never
+      // resume/interrupt a thread or send a user turn to apply a speed change.
+      await this.request("thread/settings/update", { threadId: sessionId, serviceTier: expected });
+      const observed = await confirmation;
+      if (observed !== expected || generation !== this.transportGeneration) {
+        return { ...base, ok: false, nonRetryable: true, error: "Codex tier update outcome is unknown: no matching native settings confirmation; do not replay" };
+      }
+      this.emitEvent({ kind: "session.updated", harness: "codex", sessionId, nativeType: "thread/settings/updated" });
+      return { ...base, ok: true, serviceTier: tier, nativeServiceTier: observed };
+    } catch (error) {
+      if (sent) this.serviceTierObservations.delete(sessionId);
+      return { ...base, ok: false, nonRetryable: true, error: `${sent ? "Codex tier update outcome is unknown; do not replay: " : ""}${error instanceof Error ? error.message : String(error)}` };
+    } finally {
+      const waiter = this.serviceTierWaiters.get(sessionId);
+      if (waiter) { clearTimeout(waiter.timer); waiter.resolve(undefined); this.serviceTierWaiters.delete(sessionId); }
+      this.serviceTierUpdates.delete(sessionId);
+    }
+  }
+
   async changeModel(sessionId: string, model: string): Promise<ControlResult> {
     if (!sessionId) return { ok: false, error: "Codex model changes require a session id with app-server" };
     if (this.projectRuntimePolicy && model !== this.projectRuntimePolicy.modelId) return { ok: false, nonRetryable: true, error: `project-scoped Codex is pinned to ${this.projectRuntimePolicy.modelId}` };
@@ -2033,6 +2104,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private invalidateOwnedPermissionThreads(): void {
+    for (const waiter of this.serviceTierWaiters.values()) { clearTimeout(waiter.timer); waiter.resolve(undefined); }
+    this.serviceTierWaiters.clear();
+    this.serviceTierObservations.clear();
     for (const threadId of this.ownedPermissionThreads.keys()) this.dropOwnedPermissionThread(threadId);
     for (const threadId of this.permissionSettingsWaiters.keys()) this.dropOwnedPermissionThread(threadId);
     this.permissionSettingsUpdates.clear();
@@ -2564,6 +2638,16 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (message.method === "thread/settings/updated") {
       const threadId = typeof params.threadId === "string" ? params.threadId : undefined;
       if (!threadId) return;
+      const tierSettings = params.threadSettings as { serviceTier?: unknown } | undefined;
+      if (tierSettings && (typeof tierSettings.serviceTier === "string" || tierSettings.serviceTier === null)) {
+        this.serviceTierObservations.set(threadId, { generation: this.transportGeneration, value: tierSettings.serviceTier, observedAt: new Date().toISOString() });
+        const tierWaiter = this.serviceTierWaiters.get(threadId);
+        if (tierWaiter?.generation === this.transportGeneration) {
+          clearTimeout(tierWaiter.timer);
+          this.serviceTierWaiters.delete(threadId);
+          tierWaiter.resolve(tierSettings.serviceTier);
+        }
+      }
       const ownerState = this.ownedPermissionThreads.get(threadId);
       const rawSettings = params.threadSettings;
       const settings = rawSettings && typeof rawSettings === "object" && !Array.isArray(rawSettings)
@@ -2588,6 +2672,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     if (["thread/closed", "thread/archived", "thread/deleted"].includes(message.method)) {
       const threadId = typeof params.threadId === "string" ? params.threadId : undefined;
+      if (threadId) this.serviceTierObservations.delete(threadId);
+      const tierWaiter = threadId ? this.serviceTierWaiters.get(threadId) : undefined;
+      if (tierWaiter) { clearTimeout(tierWaiter.timer); tierWaiter.resolve(undefined); this.serviceTierWaiters.delete(threadId!); }
       if (threadId) this.dropOwnedPermissionThread(threadId);
     }
     if (message.method === "serverRequest/resolved") {
@@ -2816,7 +2903,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         ...(this.unavailableNativeTurnStates.has(thread.id) ? { nativeTurnStateUnavailable: true } : {}),
         ...(typeof thread.parentThreadId === "string" && thread.parentThreadId !== thread.id ? { parentThreadId: thread.parentThreadId } : {}),
         modelProvider: thread.modelProvider,
-        ...(thread.serviceTier !== undefined ? { nativeServiceTier: thread.serviceTier } : {}),
+        ...(this.serviceTierObservations.get(thread.id)?.generation === this.transportGeneration
+          ? { nativeServiceTier: this.serviceTierObservations.get(thread.id)!.value }
+          : thread.serviceTier !== undefined ? { nativeServiceTier: thread.serviceTier } : {}),
       },
     };
   }

@@ -513,6 +513,25 @@ export const toolDefinitions: Tool[] = [
     },
   },
   {
+    name: "get_service_tier",
+    description: "Read the observed Fast/Normal tier of one exact existing Codex session. Unknown is not Normal; no turn starts.",
+    inputSchema: { type: "object" as const, properties: {
+      sessionId: { type: "string", description: "Exact existing Codex session ID" },
+      harness: { type: "string", enum: ["codex"] },
+      hostId: { type: "string", description: "Owning host; omitted uses this host" },
+    }, required: ["sessionId"] },
+  },
+  {
+    name: "set_service_tier",
+    description: "Set Fast/Normal for subsequent turns of one existing Codex session, preserving model and reasoning. No resume or interrupt; requires native confirmation.",
+    inputSchema: { type: "object" as const, properties: {
+      sessionId: { type: "string", description: "Exact existing Codex session ID" },
+      harness: { type: "string", enum: ["codex"] },
+      hostId: { type: "string", description: "Owning host; omitted uses this host" },
+      serviceTier: { type: "string", enum: ["normal", "fast"] },
+    }, required: ["sessionId", "serviceTier"] },
+  },
+  {
     name: "change_model",
     description:
       "Change the AI model for a harness. For OpenCode, changes model per-session or globally. " +

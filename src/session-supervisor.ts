@@ -742,6 +742,20 @@ export class SessionSupervisor {
     return result;
   }
 
+  async getServiceTier(harness: string, id: string) {
+    const adapter = this.requireAdapter(harness);
+    if (!adapter.getServiceTier) return { sessionId: id, scope: "session" as const, canSet: false, appliesTo: "subsequent-turns" as const, reason: `${adapter.name} does not expose service tier control` };
+    return adapter.getServiceTier(id);
+  }
+
+  async setServiceTier(harness: string, id: string, serviceTier: "normal" | "fast") {
+    const adapter = this.requireAdapter(harness);
+    if (!adapter.setServiceTier) return { ok: false, sessionId: id, appliesTo: "subsequent-turns" as const, error: `${adapter.name} does not expose service tier control` };
+    const result = await adapter.setServiceTier(id, serviceTier);
+    if (result.ok) this.publishSessionChanged(harness, id, "changed");
+    return result;
+  }
+
   async stopSession(harness: string, id: string): Promise<{ ok: boolean; error?: string }> {
     await this.holdExplicitStop(harness, id);
     const adapter = this.requireAdapter(harness);

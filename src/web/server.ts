@@ -1618,6 +1618,26 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const result=await sessionQueueControl.submit({hostId:body.hostId,harness:"zcode",sessionId,inputId:body.inputId,expectedRevision:body.expectedRevision});
     return sendJson(response,result.state==="queued"?202:200,result);
   }
+  const tierMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/service-tier$/);
+  if (tierMatch && (request.method === "GET" || request.method === "POST")) {
+    response.setHeader("cache-control", "no-store");
+    const harness = decodeURIComponent(tierMatch[1]);
+    const id = decodeURIComponent(tierMatch[2]);
+    const body = request.method === "POST" ? await readJson(request) : undefined;
+    const hostId = body?.hostId ?? url.searchParams.get("hostId");
+    if (typeof hostId !== "string" || !hostId.trim() || hostId.length > 255) return sendJson(response, 400, { ok: false, error: "Exact hostId is required." });
+    // This HTTP controller owns only local sessions. Never resolve a remote ID
+    // against an identically named local session.
+    if (hostId !== hostname()) return sendJson(response, 409, { ok: false, error: "Service tier must be controlled on the session's owning host." });
+    if (harness !== "codex") return sendJson(response, 400, { ok: false, error: "Service tier control is only supported for Codex." });
+    if (body && body.serviceTier !== "normal" && body.serviceTier !== "fast") return sendJson(response, 400, { ok: false, error: "serviceTier must be normal or fast" });
+    const route = await resolveSessionRoute(harness, id);
+    if (route.kind === "deny") return sendJson(response, 409, { ok: false, error: "Project-scoped session binding could not be verified." });
+    if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { ok: false, error: "Scoped session control is unavailable." });
+    const owner = route.kind === "scoped" ? route.supervisor! : supervisor;
+    if (body) return sendOperationResult(response, await owner.setServiceTier(harness, id, body.serviceTier as "normal" | "fast"));
+    return sendJson(response, 200, await owner.getServiceTier(harness, id));
+  }
   const permissionStateMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/permissions$/);
   if (permissionStateMatch && request.method === "GET") {
     response.setHeader("cache-control", "no-store");
