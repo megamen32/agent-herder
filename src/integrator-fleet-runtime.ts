@@ -386,9 +386,12 @@ export class IntegratorFleetRuntime {
       // persisted an explicit exact adoption for THIS operation/session, and
       // the adopted tuple still matches the live route and root identity.
       if (!attempt.scope) {
+        // Exact persisted adoption: matched on the durable native session id
+        // and the launch root of the accepted created receipt. The consumer's
+        // operationId lives in a different ID space and stays informational.
         const adoption = (this.options.legacyScopeAdoptions ?? []).find(entry =>
-          entry.operationId === binding!.operationId && entry.nativeSessionId === address.nativeSessionId);
-        if (!adoption || adoption.launchCwd !== launchRoot) {
+          entry.nativeSessionId === address.nativeSessionId && entry.launchCwd === launchRoot);
+        if (!adoption) {
           return { kind: "deny", reason: "project_session_scope_missing" };
         }
         const adopted = await this.resolveConfiguredProject(adoption.launchCwd, "opencode");
@@ -438,8 +441,8 @@ export class IntegratorFleetRuntime {
         // original durable evidence (accepted created receipt + launch root)
         // is the grant; the live route and root identity merely reconfirm it.
         console.warn(`[integrator] legacy-scope-adoption ${JSON.stringify({
-          operationId: binding!.operationId, nativeSessionId: address.nativeSessionId,
-          launchRoot: launchRoot, rootIdentity, policyRevision: configured.project.etag,
+          journalOperationId: binding!.operationId, nativeSessionId: address.nativeSessionId,
+          launchRoot, rootIdentity, policyRevision: configured.project.etag,
         })}`);
       }
       return { kind: "scoped", adapter };
