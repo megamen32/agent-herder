@@ -1827,11 +1827,14 @@ export class UnfinishedSessionStore {
 
   async ingestColdFailure(
     session: AgentSession,
-    turn: { turnId: string; completedAt: string; userMessageId: string },
+    turn: { turnId: string; completedAt: string; userMessageId?: string },
     blockedReason?: string,
     now = new Date(),
   ): Promise<UnfinishedSessionRecord> {
     const harness = harnessType(session.harness);
+    // Codex exposes exact terminal turn identity without a public user-input
+    // ID. Never invent one merely to fit the ZCode recovery record.
+    if (!turn.userMessageId && harness !== "codex") throw new Error("Cold failure requires a native user message ID");
     const workspaceIdentity = sessionWorkspaceIdentity(session);
     const normalized = normalizeRecordTarget({
       harness,
@@ -1866,7 +1869,8 @@ export class UnfinishedSessionStore {
         existing.recoveryCause = "turn.failed";
         existing.recoveryObservedAt = turn.completedAt;
         existing.recoveryTurnId = bounded(turn.turnId, "recoveryTurnId");
-        existing.recoveryInputId = bounded(turn.userMessageId, "recoveryInputId");
+        if (turn.userMessageId) existing.recoveryInputId = bounded(turn.userMessageId, "recoveryInputId");
+        else delete existing.recoveryInputId;
         existing.updatedAt = now.toISOString();
         existing.attempts = 0;
         existing.state = "active";
@@ -1890,7 +1894,7 @@ export class UnfinishedSessionStore {
         recoveryCause: "turn.failed",
         recoveryObservedAt: turn.completedAt,
         recoveryTurnId: bounded(turn.turnId, "recoveryTurnId"),
-        recoveryInputId: bounded(turn.userMessageId, "recoveryInputId"),
+        ...(turn.userMessageId ? { recoveryInputId: bounded(turn.userMessageId, "recoveryInputId") } : {}),
         ...(blockedReason ? {
           recoveryBlockedReason: bounded(blockedReason, "recoveryBlockedReason"),
           lastError: bounded(blockedReason, "lastError"),
@@ -2389,6 +2393,7 @@ export class UnfinishedSessionLauncher {
   private lifecycleEpoch = 0;
   private readonly completedSessions = new Set<string>();
   private readonly activeNativeTurns = new Map<string, { turnId?: string; inputId?: string }>();
+  private readonly coldCodexObservations = new Map<string, { fingerprint: string; observedAt: number }>();
   private readonly providerTurnGenerations = new Map<string, number>();
   private eventOperation: Promise<unknown> = Promise.resolve();
   private readonly turnGenerations = new Map<string, number>();
@@ -3210,6 +3215,7 @@ export class UnfinishedSessionLauncher {
       console.error(`[agent-herder] очищен реестр автопродолжения: ${pruned.sessions} чужих turn-записей, ${pruned.inventory} записей вне окна`);
     }
     await this.ingestColdZcodeFailures(runtimeSettings, lifecycleEpoch);
+    await this.ingestColdCodexCapacityFailures(runtimeSettings, lifecycleEpoch);
     if (!this.lifecycleActive(lifecycleEpoch)) return;
     await this.reconcileQuotaRecoveryStartup(lifecycleEpoch);
     if (!this.lifecycleActive(lifecycleEpoch)) return;
@@ -3833,6 +3839,56 @@ export class UnfinishedSessionLauncher {
     }
   }
 
+  private async ingestColdCodexCapacityFailures(runtimeSettings: SessionAutostartFile, lifecycleEpoch: number): Promise<void> {
+    if (!runtimeSettings.recoverOnFailure) return;
+    const adapter = this.options.adapters.get("codex");
+    if (!adapter) return;
+    let sessions: AgentSession[];
+    try { sessions = await adapter.listSessions(); } catch { return; }
+    const now = Date.now(), cutoff = now - 48 * 60 * 60 * 1_000;
+    let reads = 0;
+    for (const listed of sessions.sort((a, b) => Date.parse(b.lastActivity) - Date.parse(a.lastActivity))) {
+      if (!this.lifecycleActive(lifecycleEpoch) || reads >= 32) return;
+      const activity = Date.parse(listed.lastActivity);
+      if (listed.harness !== "codex" || isSubagentSession(listed) || !Number.isFinite(activity) || activity < cutoff || activity > now
+        || listed.status === "running" || listed.status === "needs_input" || listed.needsPermission) continue;
+      if (!await this.mayWorkOnSession("codex", listed.id, listed.cwd)) continue;
+      if (await this.options.humanStopStore?.isHeld("codex", listed.id)) continue;
+      const key = sessionSourceKey(listed);
+      const fingerprint = JSON.stringify([listed.lastActivity, listed.status, listed.model, listed.meta?.nativeLastTurn]);
+      const previous = this.coldCodexObservations.get(key);
+      // Read the latest exact turn, not full history, and avoid polling every
+      // unchanged native thread on each existing controller tick.
+      if (previous?.fingerprint === fingerprint && now - previous.observedAt < 5 * 60_000) continue;
+      reads += 1;
+      let session: AgentSession | null;
+      try { session = await adapter.getSession(listed.id); } catch { continue; }
+      if (!this.lifecycleActive(lifecycleEpoch)) return;
+      if (!session || session.id !== listed.id || session.harness !== "codex"
+        || sessionWorkspaceIdentity(session) !== sessionWorkspaceIdentity(listed)) continue;
+      this.coldCodexObservations.set(key, { fingerprint, observedAt: now });
+      if (this.coldCodexObservations.size > 1_024) this.coldCodexObservations.delete(this.coldCodexObservations.keys().next().value!);
+      const turn = nativeLastTurn(session);
+      const raw = session.meta?.nativeLastTurn as Record<string, unknown> | undefined;
+      const proof = raw?.capacityFailure as Record<string, unknown> | undefined;
+      const completedAt = nativeTimestamp(proof?.completedAt);
+      if (!turn?.turnId || !["failed", "error"].includes(turn.status?.toLowerCase() ?? "") || !completedAt
+        || proof?.classification !== "model_capacity" || proof.providerId !== "codex" || proof.nativeTurnId !== turn.turnId
+        || proof.errorCode !== "serverOverloaded" || !nonEmptyText(proof.modelId) || proof.modelId !== session.model || turn.completedAt !== completedAt
+        || Date.parse(completedAt) < cutoff || Date.parse(completedAt) > now
+        || session.status === "running" || session.status === "needs_input" || session.needsPermission
+        || nonEmptyText(session.meta?.activeTurnId) || hasPendingNativePermission(session) || isSubagentSession(session)
+        || turn.cancelledByUser === true || turn.requiresHuman === true || turn.pendingInput === true
+        || turn.assistantSucceeded === true || turn.progressedAfterFailure === true) continue;
+      if (!await this.mayWorkOnSession("codex", session.id, session.cwd)
+        || await this.options.humanStopStore?.isHeld("codex", session.id)) continue;
+      // The ordinary recovery loop owns questions, admission, retry budget,
+      // durable accepted/UNKNOWN receipts and a second fresh native fence.
+      await this.options.store.ingestColdFailure(session, { turnId: turn.turnId, completedAt,
+        ...(turn.userMessageId ? { userMessageId: turn.userMessageId } : {}) });
+    }
+  }
+
   private async recoveryNativeStateStillEligible(adapter: HarnessAdapter, record: UnfinishedSessionRecord): Promise<boolean> {
     if((adapter as WorkspaceLifecycleAdapter).workspaceCrashRecoveryAllowed?.(record.sessionId,record.recoveryTurnId,record.recoveryInputId)===false)return false;
     const key = sessionKey(record.harness, record.sessionId);
@@ -3853,6 +3909,16 @@ export class UnfinishedSessionLauncher {
     if (record.recoveryCause !== "stalled"
       && (current.status === "running" || nonEmptyText(current.meta?.activeTurnId))) return false;
     const last = nativeLastTurn(current);
+    if (record.harness === "codex" && record.generationId === "cold-native-failure") {
+      const raw = current.meta?.nativeLastTurn as Record<string, unknown> | undefined;
+      const proof = raw?.capacityFailure as Record<string, unknown> | undefined;
+      // A previously missed terminal failure is not permission to act on an
+      // unknown/new turn or on a model the human has since changed.
+      if (!last || last.turnId !== record.recoveryTurnId || !["failed", "error"].includes(last.status?.toLowerCase() ?? "")
+        || proof?.classification !== "model_capacity" || proof.nativeTurnId !== record.recoveryTurnId
+        || proof.providerId !== "codex" || proof.errorCode !== "serverOverloaded" || proof.modelId !== current.model
+        || nativeTimestamp(proof.completedAt) !== record.recoveryObservedAt || current.model !== record.model) return false;
+    }
     if (record.recoveryTurnId && last?.turnId) {
       const status = last.status?.toLowerCase();
       if (last.turnId !== record.recoveryTurnId
@@ -4033,12 +4099,12 @@ export class UnfinishedSessionLauncher {
       if(lifecycle.workspaceCrashRecoveryAllowed?.(record.sessionId,record.recoveryTurnId,record.recoveryInputId)===false){
         await this.options.store.cancelAttempt(attempt);return;
       }
-      const sent = await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true,
+      const sent = normalizeSendAdmission(await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true,
         ...(workspaceCrash?{workspaceCrashBoundary:workspaceCrash}:{}),
         ...(boundary?.turnId && boundary.userMessageId && boundary.completedAt ? { recoveryBoundary: {
           turnId: boundary.turnId, userMessageId: boundary.userMessageId, completedAt: Date.parse(boundary.completedAt),
         } } : {}),
-      });
+      }));
       const terminalAdmission = admittedNonRetryableFailure(sent);
       if (terminalAdmission) {
         promptAccepted = true;
@@ -4046,6 +4112,16 @@ export class UnfinishedSessionLauncher {
         await this.options.store.markStarted(trackedSession, this.generationId, new Date(), true, true, false, terminalAdmission);
         this.clearUrgentSession(unfinishedRecordKey(record));
         console.error(`[agent-herder] ${record.harness}:${record.sessionId} приняла prompt, но native turn завершился без безопасного retry: ${terminalAdmission}`);
+        return;
+      }
+      if (sent.admission === "unknown" || (!sent.ok && sent.admission !== "not_submitted")) {
+        // Missing acknowledgement is not a rejected input. Reuse the existing
+        // durable pending fence; only later native evidence may resolve it.
+        promptAccepted = true;
+        promptPending = true;
+        await this.options.store.markStarted(trackedSession, this.generationId, new Date(), false, true, true);
+        this.clearUrgentSession(unfinishedRecordKey(record));
+        console.error(`[agent-herder] исход продолжения ${record.harness}:${record.sessionId} не подтверждён; автоматический повтор запрещён`);
         return;
       }
       if (!sent.ok) throw new Error(sent.error || "команда продолжения отклонена");

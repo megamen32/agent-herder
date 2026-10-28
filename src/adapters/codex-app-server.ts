@@ -242,6 +242,29 @@ export function codexTerminalQuotaEvidence(value: unknown, model: string | null 
     errorMessage: typeof error.message === "string" ? error.message : undefined });
 }
 
+interface CodexTerminalCapacityFailure {
+  classification: "model_capacity";
+  nativeTurnId: string;
+  providerId: "codex";
+  modelId: string;
+  errorCode: "serverOverloaded";
+  message: string;
+  completedAt: string;
+}
+
+/** Provider capacity is a terminal failure reason, never exhausted user quota. */
+function codexTerminalCapacityEvidence(value: unknown, model: string | null | undefined): CodexTerminalCapacityFailure | undefined {
+  if (!value || typeof value !== "object" || !model) return undefined;
+  const turn = value as Record<string, unknown>;
+  const completedAt = threadTimestamp(turn.completedAt as string | number | undefined);
+  if (turn.status !== "failed" || typeof turn.id !== "string" || !turn.id || !completedAt) return undefined;
+  const error = turn.error && typeof turn.error === "object" ? turn.error as Record<string, unknown> : {};
+  if (error.codexErrorInfo !== "serverOverloaded" || typeof error.message !== "string"
+    || !/\bselected model is at capacity\b/i.test(error.message)) return undefined;
+  return { classification: "model_capacity", nativeTurnId: turn.id, providerId: "codex", modelId: model,
+    errorCode: "serverOverloaded", message: error.message, completedAt };
+}
+
 interface TurnCompletion {
   resolve: (result: ControlResult) => void;
   timer: NodeJS.Timeout;
@@ -326,7 +349,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly projectThreadIds = new Set<string>();
   private readonly activeTurns = new Map<string, string>();
   private readonly eventStartedTurns = new Set<string>();
-  private readonly lastNativeTurns = new Map<string, { turnId: string; status: string; completedAt?: string; inputId?: string; userMessageId?: string; quotaFailure?: TerminalQuotaFailure }>();
+  private readonly lastNativeTurns = new Map<string, { turnId: string; status: string; completedAt?: string; inputId?: string; userMessageId?: string; quotaFailure?: TerminalQuotaFailure; capacityFailure?: CodexTerminalCapacityFailure }>();
   private readonly unavailableNativeTurnStates = new Set<string>();
   private readonly completions = new Map<string, TurnCompletion>();
   private readonly internalInterrupts = new Map<string, { turnId: string; expiresAt: number }>();
@@ -809,6 +832,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   async getSession(id: string, options: { includeMetrics?: boolean } = {}): Promise<AgentSession | null> {
     if (!(await this.canReadProjectHistory(id))) return null;
     let base: AgentSession | null = null;
+    let nativeLatestTurn: unknown;
     if (this.socketPath || this.isReady()) {
       await this.ensureReady();
       // Shared-socket observations must reverify the active ID. The owned
@@ -818,7 +842,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       try {
         const result = await this.request("thread/read", { threadId: id, includeTurns: false }) as { thread?: CodexThread };
         if (result.thread?.id === id) {
-          await this.refreshActiveTurnId(id);
+          nativeLatestTurn = await this.refreshActiveTurnId(id, result.thread.model);
           const cached = this.threads.get(id);
           const thread = { ...result.thread, name: result.thread.name ?? cached?.name, cwd: result.thread.cwd ?? cached?.cwd };
           this.threads.set(id, thread);
@@ -855,6 +879,19 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       : observation;
     const automationStop = observation?.meta?.automationStop as CodexAutomationStop | undefined;
     const nativeAutomation = this.externalAutomationMetadata(id, automationStop ? { automationStop } : {});
+    if (base) {
+      // Older native thread/read responses omit model. Classify the freshly
+      // read terminal turn only after the existing archive projection resolves
+      // the authoritative session model; cold caches must not drop its reason.
+      const model = typeof base.model === "string" ? base.model : raw?.model;
+      const capacityFailure = codexTerminalCapacityEvidence(nativeLatestTurn, model);
+      const latest = this.lastNativeTurns.get(id);
+      if (capacityFailure && latest?.turnId === capacityFailure.nativeTurnId) {
+        const projected = { ...latest, capacityFailure };
+        this.lastNativeTurns.set(id, projected);
+        base = { ...base, meta: { ...base.meta, nativeLastTurn: projected } };
+      }
+    }
     if (!base) {
       if (!raw) return null;
       // A stopped owned stdio process keeps its historical idle display. The
@@ -1553,7 +1590,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
   }
 
-  private async refreshActiveTurnId(id: string): Promise<void> {
+  private async refreshActiveTurnId(id: string, model = this.threads.get(id)?.model): Promise<unknown> {
     try {
       const result = await this.request("thread/turns/list", {
         threadId: id,
@@ -1568,10 +1605,12 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       const latest = result.data?.[0];
       if (typeof latest?.id === "string" && typeof latest.status === "string") {
         const previous = this.lastNativeTurns.get(id);
-        const quotaFailure = codexTerminalQuotaEvidence(latest, this.threads.get(id)?.model)
+        const quotaFailure = codexTerminalQuotaEvidence(latest, model)
           ?? (previous?.turnId === latest.id && latest.status === "failed" ? previous.quotaFailure : undefined);
+        const capacityFailure = codexTerminalCapacityEvidence(latest, model);
         this.lastNativeTurns.set(id, {
           ...(quotaFailure ? { quotaFailure, inputId: quotaFailure.inputId, userMessageId: quotaFailure.inputId } : {}),
+          ...(capacityFailure ? { capacityFailure } : {}),
           turnId: latest.id,
           status: latest.status,
           ...(threadTimestamp(latest.completedAt ?? undefined) ? { completedAt: threadTimestamp(latest.completedAt ?? undefined) } : {}),
@@ -1579,6 +1618,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       } else this.lastNativeTurns.delete(id);
       if (turn?.id) this.activeTurns.set(id, turn.id);
       else this.activeTurns.delete(id);
+      return latest;
     } catch {
       // Do not let a stale observed turn look like the current native turn.
       // A failed read invalidates summary-only cache for every transport.
@@ -2760,8 +2800,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       if (completedTurn?.id && completedTurn.status) {
         this.unavailableNativeTurnStates.delete(threadId);
         const quotaFailure = codexTerminalQuotaEvidence(completedTurn, this.threads.get(threadId)?.model);
+        const capacityFailure = codexTerminalCapacityEvidence(completedTurn, this.threads.get(threadId)?.model);
         this.lastNativeTurns.set(threadId, {
           ...(quotaFailure ? { quotaFailure, inputId: quotaFailure.inputId, userMessageId: quotaFailure.inputId } : {}),
+          ...(capacityFailure ? { capacityFailure } : {}),
           turnId: completedTurn.id,
           status: completedTurn.status,
           ...(threadTimestamp(completedTurn.completedAt) ? { completedAt: threadTimestamp(completedTurn.completedAt) } : {}),
@@ -2788,7 +2830,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
           data: { automationStop, turnId: completedTurn.id },
         });
       } else {
-        this.emitEvent({ kind: completedTurn?.status === "failed" ? "turn.failed" : "turn.completed", harness: "codex", sessionId: threadId, nativeType: message.method, status: completedTurn?.status === "failed" ? "error" : "idle", data: { turnId: completedTurn?.id, ...(this.lastNativeTurns.get(threadId)?.quotaFailure ? { quotaFailure: this.lastNativeTurns.get(threadId)!.quotaFailure, inputId: this.lastNativeTurns.get(threadId)!.inputId } : {}) } });
+        this.emitEvent({ kind: completedTurn?.status === "failed" ? "turn.failed" : "turn.completed", harness: "codex", sessionId: threadId, nativeType: message.method, status: completedTurn?.status === "failed" ? "error" : "idle", data: { turnId: completedTurn?.id, ...(this.lastNativeTurns.get(threadId)?.quotaFailure ? { quotaFailure: this.lastNativeTurns.get(threadId)!.quotaFailure, inputId: this.lastNativeTurns.get(threadId)!.inputId } : {}), ...(this.lastNativeTurns.get(threadId)?.capacityFailure ? { capacityFailure: this.lastNativeTurns.get(threadId)!.capacityFailure } : {}) } });
       }
       const completion = this.completions.get(threadId);
       if (completion) {
