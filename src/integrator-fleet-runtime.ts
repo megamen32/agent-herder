@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { hostname, homedir } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { realpath, stat } from "node:fs/promises";
 import { AutomationLaunchPolicyStore, canonicalProjectKey, type AutomationLaunchPolicyDocument, type ProjectLaunchRoute } from "./automation-launch-policy.js";
 import { CodexAppServerAdapter } from "./adapters/codex-app-server.js";
@@ -382,7 +382,6 @@ export class IntegratorFleetRuntime {
         project: { rootPath: configured.project.rootPath, model: configured.project.model, etag: configured.project.etag },
         bindingStore: this.options.bindingStore,
       });
-      console.error("SCOPEDEBUG:", JSON.stringify({stored: attempt.scope?.policyRevision ?? null, live: configured.project.etag, rootIdMatch: attempt.scope?.rootIdentity === rootIdentity}));
       // A stored scope must prove the exact historical tuple against the live
       // route; a legacy row adopts only through its exact created receipt
       // (launchCwd), never through the currently configured root alone.
