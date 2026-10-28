@@ -315,6 +315,29 @@ type NativeLastTurn = {
   quotaFailure?: QuotaFailureEvidence;
 };
 
+type CodexLatestTurnRecoveryEvidence = {
+  available: false;
+  reason: string;
+} | {
+  available: true;
+  latest: null | {
+    turnId: string;
+    status: string;
+    startedAt: string | null;
+    completedAt: string | null;
+    userMessageId: string | null;
+    userInputId: string | null;
+    userMessageCount: number;
+    assistantFinal: boolean;
+    pendingQuestion: boolean;
+  };
+  observedAt: string;
+};
+
+type CodexLatestTurnRecoveryReader = HarnessAdapter & {
+  readLatestTurnRecoveryEvidence?: (sessionId: string) => Promise<CodexLatestTurnRecoveryEvidence>;
+};
+
 type OpenCodeNativeContinuationReader = (sessionId: string, cwd: string) => Promise<OpenCodeOperatorContinuationSnapshot | null>;
 
 export type OpenCodeOperatorContinuationSnapshot = {
@@ -1827,13 +1850,16 @@ export class UnfinishedSessionStore {
 
   async ingestColdFailure(
     session: AgentSession,
-    turn: { turnId: string; completedAt: string; userMessageId?: string },
+    turn: { turnId: string; completedAt?: string | null; observedAt?: string; userMessageId?: string; cause?: "turn.failed" | "process.disconnected" },
     blockedReason?: string,
     now = new Date(),
   ): Promise<UnfinishedSessionRecord> {
     const harness = harnessType(session.harness);
-    // Codex exposes exact terminal turn identity without a public user-input
-    // ID. Never invent one merely to fit the ZCode recovery record.
+    const recoveryObservedAt = nativeTimestamp(turn.observedAt) ?? nativeTimestamp(turn.completedAt) ?? nativeTimestamp(session.lastActivity);
+    if (!recoveryObservedAt) throw new Error("Cold failure requires a bounded native observation time");
+    const recoveryCause = turn.cause ?? "turn.failed";
+    // The native adapters may or may not expose a user-message ID. Never
+    // invent one merely to fit another harness's recovery record.
     if (!turn.userMessageId && harness !== "codex") throw new Error("Cold failure requires a native user message ID");
     const workspaceIdentity = sessionWorkspaceIdentity(session);
     const normalized = normalizeRecordTarget({
@@ -1866,8 +1892,8 @@ export class UnfinishedSessionStore {
           { turnId: existing.activeTurnId, inputId: existing.activeInputId },
           { turnId: turn.turnId, inputId: turn.userMessageId },
         )) return { ...existing };
-        existing.recoveryCause = "turn.failed";
-        existing.recoveryObservedAt = turn.completedAt;
+        existing.recoveryCause = recoveryCause;
+        existing.recoveryObservedAt = recoveryObservedAt;
         existing.recoveryTurnId = bounded(turn.turnId, "recoveryTurnId");
         if (turn.userMessageId) existing.recoveryInputId = bounded(turn.userMessageId, "recoveryInputId");
         else delete existing.recoveryInputId;
@@ -1886,13 +1912,13 @@ export class UnfinishedSessionStore {
       const record: UnfinishedSessionRecord = {
         ...normalized,
         workspaceIdentity,
-        startedAt: turn.completedAt,
+        startedAt: recoveryObservedAt,
         updatedAt: now.toISOString(),
         generationId: "cold-native-failure",
         attempts: 0,
         state: "active",
-        recoveryCause: "turn.failed",
-        recoveryObservedAt: turn.completedAt,
+        recoveryCause,
+        recoveryObservedAt,
         recoveryTurnId: bounded(turn.turnId, "recoveryTurnId"),
         ...(turn.userMessageId ? { recoveryInputId: bounded(turn.userMessageId, "recoveryInputId") } : {}),
         ...(blockedReason ? {
@@ -3215,6 +3241,7 @@ export class UnfinishedSessionLauncher {
       console.error(`[agent-herder] очищен реестр автопродолжения: ${pruned.sessions} чужих turn-записей, ${pruned.inventory} записей вне окна`);
     }
     await this.ingestColdZcodeFailures(runtimeSettings, lifecycleEpoch);
+    await this.ingestColdCodexInterruptedTurns(runtimeSettings, lifecycleEpoch);
     await this.ingestColdCodexCapacityFailures(runtimeSettings, lifecycleEpoch);
     await this.ingestColdOpenCodeFailures(runtimeSettings, lifecycleEpoch);
     if (!this.lifecycleActive(lifecycleEpoch)) return;
@@ -3927,6 +3954,75 @@ export class UnfinishedSessionLauncher {
     }
   }
 
+  private async readEligibleColdCodexInterruptedTurn(
+    adapter: HarnessAdapter,
+    session: AgentSession,
+    expected?: { turnId: string; userMessageId: string },
+  ): Promise<{ turnId: string; userMessageId: string; observedAt: string } | null> {
+    if (session.harness !== "codex" || isSubagentSession(session)
+      || session.status === "running" || session.status === "needs_input" || session.needsPermission
+      || nonEmptyText(session.meta?.activeTurnId) || hasPendingNativePermission(session)) return null;
+    const now = Date.now(), cutoff = now - 48 * 60 * 60_000;
+    const activity = Date.parse(session.lastActivity);
+    if (!Number.isFinite(activity) || activity < cutoff || activity > now) return null;
+    const read = (adapter as CodexLatestTurnRecoveryReader).readLatestTurnRecoveryEvidence;
+    if (!read) return null;
+    let snapshot: CodexLatestTurnRecoveryEvidence;
+    try { snapshot = await read.call(adapter, session.id); } catch { return null; }
+    if (!snapshot.available || !snapshot.latest) return null;
+    const snapshotCheckedAt = Date.now();
+    const latest = snapshot.latest;
+    const turnId = nonEmptyText(latest.turnId), userMessageId = nonEmptyText(latest.userMessageId);
+    const observedAt = nativeTimestamp(snapshot.observedAt);
+    const startedAt = nativeTimestamp(latest.startedAt);
+    const started = startedAt ? Date.parse(startedAt) : activity;
+    if (!turnId || !userMessageId || !observedAt || !Number.isFinite(started)
+      || Date.parse(observedAt) > snapshotCheckedAt || snapshotCheckedAt - Date.parse(observedAt) > 5 * 60_000
+      || started < cutoff || started > now || latest.status.toLowerCase() !== "interrupted"
+      || latest.userMessageCount !== 1 || latest.assistantFinal || latest.pendingQuestion
+      || (expected && (turnId !== expected.turnId || userMessageId !== expected.userMessageId))) return null;
+    const projected = nativeLastTurn(session);
+    if (projected && (projected.turnId !== turnId || projected.status?.toLowerCase() !== "interrupted")) return null;
+    return { turnId, userMessageId, observedAt };
+  }
+
+  private async ingestColdCodexInterruptedTurns(runtimeSettings: SessionAutostartFile, lifecycleEpoch: number): Promise<void> {
+    if (!runtimeSettings.recoverOnDisconnect) return;
+    const adapter = this.options.adapters.get("codex");
+    if (!adapter || !(adapter as CodexLatestTurnRecoveryReader).readLatestTurnRecoveryEvidence) return;
+    let sessions: AgentSession[];
+    try { sessions = await adapter.listSessions(); } catch { return; }
+    const now = Date.now(), cutoff = now - 48 * 60 * 60_000;
+    let reads = 0;
+    for (const listed of sessions.sort((a, b) => Date.parse(b.lastActivity) - Date.parse(a.lastActivity))) {
+      if (!this.lifecycleActive(lifecycleEpoch) || reads >= 32) return;
+      const activity = Date.parse(listed.lastActivity);
+      if (listed.harness !== "codex" || isSubagentSession(listed)
+        || !Number.isFinite(activity) || activity < cutoff || activity > now
+        || listed.status === "running" || listed.status === "needs_input" || listed.needsPermission) continue;
+      if (!await this.mayWorkOnSession("codex", listed.id, listed.cwd)
+        || await this.options.humanStopStore?.isHeld("codex", listed.id)) continue;
+      reads += 1;
+      let session: AgentSession | null;
+      try { session = await adapter.getSession(listed.id); } catch { continue; }
+      if (!this.lifecycleActive(lifecycleEpoch)) return;
+      if (!session || session.id !== listed.id || session.harness !== "codex"
+        || sessionWorkspaceIdentity(session) !== sessionWorkspaceIdentity(listed)
+        || await this.pendingQuestionBlocks("codex", session.id, session.cwd)
+        || (this.options.humanStopStore
+          ? await this.options.humanStopStore.observe(session)
+          : Boolean(session.meta?.automationStop))) continue;
+      const evidence = await this.readEligibleColdCodexInterruptedTurn(adapter, session);
+      if (!evidence || !this.lifecycleActive(lifecycleEpoch)) continue;
+      await this.options.store.ingestColdFailure(session, {
+        turnId: evidence.turnId,
+        userMessageId: evidence.userMessageId,
+        observedAt: evidence.observedAt,
+        cause: "process.disconnected",
+      });
+    }
+  }
+
   private async recoveryNativeStateStillEligible(adapter: HarnessAdapter, record: UnfinishedSessionRecord): Promise<boolean> {
     if (await this.noticeAttemptRecoveryPaused(record.harness, record.sessionId)) return false;
     if((adapter as WorkspaceLifecycleAdapter).workspaceCrashRecoveryAllowed?.(record.sessionId,record.recoveryTurnId,record.recoveryInputId)===false)return false;
@@ -3957,14 +4053,21 @@ export class UnfinishedSessionLauncher {
         || coldFailureBlockReason(last)) return false;
     }
     if (record.harness === "codex" && record.generationId === "cold-native-failure") {
-      const raw = current.meta?.nativeLastTurn as Record<string, unknown> | undefined;
-      const proof = raw?.capacityFailure as Record<string, unknown> | undefined;
-      // A previously missed terminal failure is not permission to act on an
-      // unknown/new turn or on a model the human has since changed.
-      if (!last || last.turnId !== record.recoveryTurnId || !["failed", "error"].includes(last.status?.toLowerCase() ?? "")
-        || proof?.classification !== "model_capacity" || proof.nativeTurnId !== record.recoveryTurnId
-        || proof.providerId !== "codex" || proof.errorCode !== "serverOverloaded" || proof.modelId !== current.model
-        || nativeTimestamp(proof.completedAt) !== record.recoveryObservedAt || current.model !== record.model) return false;
+      if (record.recoveryCause === "process.disconnected") {
+        if (!record.recoveryTurnId || !record.recoveryInputId
+          || !await this.readEligibleColdCodexInterruptedTurn(adapter, current, {
+            turnId: record.recoveryTurnId, userMessageId: record.recoveryInputId,
+          })) return false;
+      } else {
+        const raw = current.meta?.nativeLastTurn as Record<string, unknown> | undefined;
+        const proof = raw?.capacityFailure as Record<string, unknown> | undefined;
+        // A previously missed terminal failure is not permission to act on an
+        // unknown/new turn or on a model the human has since changed.
+        if (!last || last.turnId !== record.recoveryTurnId || !["failed", "error"].includes(last.status?.toLowerCase() ?? "")
+          || proof?.classification !== "model_capacity" || proof.nativeTurnId !== record.recoveryTurnId
+          || proof.providerId !== "codex" || proof.errorCode !== "serverOverloaded" || proof.modelId !== current.model
+          || nativeTimestamp(proof.completedAt) !== record.recoveryObservedAt || current.model !== record.model) return false;
+      }
     }
     if (record.recoveryTurnId && last?.turnId) {
       const status = last.status?.toLowerCase();

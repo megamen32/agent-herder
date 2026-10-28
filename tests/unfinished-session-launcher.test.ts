@@ -289,6 +289,113 @@ describe("unfinished session crash recovery", () => {
         expect(calls).toEqual({ resumes: 0, messages: [] });
         expect(await state.list()).toEqual([]);
     });
+    it("accepts a delayed native snapshot while discovering a cold Codex interrupted turn", async () => {
+        const root = await mkdtemp(join(tmpdir(), "cold-codex-interrupted-discovery-"));
+        const current = { ...fixture("idle", "codex", "codex-cold-interrupted"),
+            meta: { nativeLastTurn: { turnId: "native-interrupted-1", status: "interrupted" } } };
+        const calls = { resumes: 0, messages: [] as string[] };
+        const adapter = fakeAdapter(() => current, calls);
+        Object.assign(adapter, { async readLatestTurnRecoveryEvidence() {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            return { available: true, observedAt: new Date().toISOString(), latest: {
+                turnId: "native-interrupted-1", status: "interrupted",
+                startedAt: new Date(Date.now() - 10 * 60_000).toISOString(), completedAt: null,
+                userMessageId: "native-user-1", userInputId: "native-user-1", userMessageCount: 1,
+                assistantFinal: false, pendingQuestion: false,
+            } };
+        } });
+        const state = new UnfinishedSessionStore(join(root, "state.json"));
+        try {
+            const launcher = new UnfinishedSessionLauncher({ adapters: new Map([["codex", adapter]]), store: state,
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) });
+            await launcher.recoverPending();
+            expect(calls.resumes, JSON.stringify(await state.list())).toBe(1);
+            expect(calls.messages).toHaveLength(1);
+            expect(await state.list()).toEqual(expect.arrayContaining([
+                expect.objectContaining({ sessionId: current.id, recoveryCause: "process.disconnected",
+                    recoveryTurnId: "native-interrupted-1", recoveryInputId: "native-user-1" }),
+            ]));
+            await launcher.recoverPending();
+            expect(calls.resumes).toBe(1);
+            expect(calls.messages).toHaveLength(1);
+        } finally { await rm(root, { recursive: true, force: true }); }
+    });
+    it.each([
+        ["pending native question", { pendingQuestion: true }],
+        ["completed answer", { assistantFinal: true }],
+        ["multiple user items", { userMessageCount: 2 }],
+        ["a stale native turn", { startedAt: new Date(Date.now() - 49 * 60 * 60_000).toISOString() }],
+        ["a different latest turn", { turnId: "newer-turn" }],
+    ])("does not cold-resume Codex interrupted evidence with %s", async (_reason, evidence) => {
+        const root = await mkdtemp(join(tmpdir(), "cold-codex-interrupted-fence-"));
+        const current = { ...fixture("idle", "codex", "codex-cold-interrupted"),
+            meta: { nativeLastTurn: { turnId: "native-interrupted-1", status: "interrupted" } } };
+        const calls = { resumes: 0, messages: [] as string[] };
+        const adapter = fakeAdapter(() => current, calls);
+        Object.assign(adapter, { async readLatestTurnRecoveryEvidence() {
+            return { available: true, observedAt: new Date().toISOString(), latest: {
+                turnId: "native-interrupted-1", status: "interrupted",
+                startedAt: new Date(Date.now() - 10 * 60_000).toISOString(), completedAt: null,
+                userMessageId: "native-user-1", userInputId: "native-user-1", userMessageCount: 1,
+                assistantFinal: false, pendingQuestion: false, ...evidence,
+            } };
+        } });
+        try {
+            const state = new UnfinishedSessionStore(join(root, "state.json"));
+            await new UnfinishedSessionLauncher({ adapters: new Map([["codex", adapter]]), store: state,
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) }).recoverPending();
+            expect(calls).toEqual({ resumes: 0, messages: [] });
+            expect(await state.list()).toEqual([]);
+        } finally { await rm(root, { recursive: true, force: true }); }
+    });
+    it("rechecks the exact interrupted turn and pending-question fence immediately before resume", async () => {
+        const root = await mkdtemp(join(tmpdir(), "cold-codex-interrupted-recheck-"));
+        const current = { ...fixture("idle", "codex", "codex-cold-interrupted"),
+            meta: { nativeLastTurn: { turnId: "native-interrupted-1", status: "interrupted" } } };
+        const calls = { resumes: 0, messages: [] as string[] };
+        const adapter = fakeAdapter(() => current, calls);
+        let nativeReads = 0;
+        Object.assign(adapter, { async readLatestTurnRecoveryEvidence() {
+            nativeReads += 1;
+            return { available: true, observedAt: new Date().toISOString(), latest: {
+                turnId: "native-interrupted-1", status: "interrupted",
+                startedAt: new Date(Date.now() - 10 * 60_000).toISOString(), completedAt: null,
+                userMessageId: "native-user-1", userInputId: "native-user-1", userMessageCount: 1,
+                assistantFinal: false, pendingQuestion: nativeReads > 1,
+            } };
+        } });
+        try {
+            const state = new UnfinishedSessionStore(join(root, "state.json"));
+            await new UnfinishedSessionLauncher({ adapters: new Map([["codex", adapter]]), store: state,
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) }).recoverPending();
+            expect(calls).toEqual({ resumes: 0, messages: [] });
+            expect(nativeReads).toBeGreaterThanOrEqual(2);
+        } finally { await rm(root, { recursive: true, force: true }); }
+    });
+    it("keeps a cold Codex interrupted turn held by the existing human Stop store", async () => {
+        const root = await mkdtemp(join(tmpdir(), "cold-codex-interrupted-stop-"));
+        const current = { ...fixture("idle", "codex", "codex-cold-interrupted"),
+            meta: { nativeLastTurn: { turnId: "native-interrupted-1", status: "interrupted" } } };
+        const calls = { resumes: 0, messages: [] as string[] };
+        const adapter = fakeAdapter(() => current, calls);
+        Object.assign(adapter, { async readLatestTurnRecoveryEvidence() {
+            return { available: true, observedAt: new Date().toISOString(), latest: {
+                turnId: "native-interrupted-1", status: "interrupted",
+                startedAt: new Date(Date.now() - 10 * 60_000).toISOString(), completedAt: null,
+                userMessageId: "native-user-1", userInputId: "native-user-1", userMessageCount: 1,
+                assistantFinal: false, pendingQuestion: false,
+            } };
+        } });
+        try {
+            const state = new UnfinishedSessionStore(join(root, "state.json"));
+            const stops = getHumanStopStore({ AGENT_HERDER_HUMAN_STOP_STORE: join(root, "stops.json") });
+            await stops.hold(current, { id: "cold-codex-stop", at: new Date().toISOString(), reason: "human Stop", turnId: "native-interrupted-1" });
+            await new UnfinishedSessionLauncher({ humanStopStore: stops, adapters: new Map([["codex", adapter]]), store: state,
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) }).recoverPending();
+            expect(calls).toEqual({ resumes: 0, messages: [] });
+            expect(await state.list()).toEqual([]);
+        } finally { await rm(root, { recursive: true, force: true }); }
+    });
     it("gates already durable causes when recovery is disabled", async () => {
         const root = await mkdtemp(join(tmpdir(), "disabled-recovery-"));
         const state = new UnfinishedSessionStore(join(root, "state.json"));

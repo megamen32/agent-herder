@@ -2352,3 +2352,25 @@ it("recovers a durable proven pre-send refusal as failed while admitted and ambi
   await expect(adapter.getMessageAdmission("thread","unknown")).resolves.toEqual({state:"unknown",error:"ambiguous wins"});
  } finally {await adapter.dispose();}
 });
+
+it("reads bounded latest-turn recovery evidence with exact native user and nullable completion", async () => {
+ const adapter=new CodexAppServerAdapter({codexBin:"/not-started"});
+ const native=adapter as unknown as {ensureReady():Promise<void>;request(method:string,params:unknown):Promise<unknown>};
+ vi.spyOn(native,"ensureReady").mockResolvedValue();
+ const request=vi.spyOn(native,"request");
+ request.mockResolvedValue({data:[{id:"interrupted-turn",status:"interrupted",startedAt:1793212016,completedAt:null,itemsView:"summary",items:[{type:"userMessage",id:"native-user",clientId:"native-input"},{type:"agentMessage",id:"question",phase:"final_answer",text:"Choose an option",questions:[{title:"Which option?",options:["A","B"]}]}]}]});
+ try {
+  const result=await adapter.readLatestTurnRecoveryEvidence("exact-thread");
+  expect(request).toHaveBeenCalledWith("thread/turns/list",{threadId:"exact-thread",limit:1,sortDirection:"desc",itemsView:"summary"});
+  expect(result).toMatchObject({available:true,latest:{turnId:"interrupted-turn",status:"interrupted",startedAt:new Date(1793212016*1000).toISOString(),completedAt:null,userMessageId:"native-user",userInputId:"native-input",userMessageCount:1,pendingQuestion:true,assistantFinal:true}});
+  request.mockResolvedValueOnce({data:[{id:"empty-final-turn",status:"interrupted",startedAt:1793212016,completedAt:null,itemsView:"summary",items:[{type:"userMessage",id:"native-user"},{type:"agentMessage",id:"empty-final",phase:"final_answer",text:"",questions:null}]}]});
+  expect(await adapter.readLatestTurnRecoveryEvidence("exact-thread")).toMatchObject({available:true,latest:{assistantFinal:true,pendingQuestion:false}});
+  request.mockResolvedValueOnce({data:[]});
+  expect(await adapter.readLatestTurnRecoveryEvidence("exact-thread")).toMatchObject({available:true,latest:null});
+  request.mockResolvedValueOnce({data:[{id:"turn",status:"interrupted",itemsView:"notLoaded",items:[]}]});
+  expect(await adapter.readLatestTurnRecoveryEvidence("exact-thread")).toMatchObject({available:false});
+  request.mockRejectedValueOnce(new Error("native unavailable"));
+  expect(await adapter.readLatestTurnRecoveryEvidence("exact-thread")).toMatchObject({available:false});
+  expect(request.mock.calls.every(([method])=>method==='thread/turns/list')).toBe(true);
+ } finally {await adapter.dispose();}
+});

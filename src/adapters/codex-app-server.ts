@@ -95,6 +95,27 @@ interface CodexPendingPermissionRequest {
   responseTimer?: NodeJS.Timeout;
 }
 
+export interface CodexNativeUserInputQuestion {
+  id: string;
+  header: string;
+  question: string;
+  isOther: boolean;
+  isSecret: boolean;
+  options: Array<{ label: string; description: string }> | null;
+}
+
+interface CodexPendingNativeUserInput {
+  rpcId: number | string;
+  generation: number;
+  threadId: string;
+  turnId: string;
+  itemId: string;
+  questions: CodexNativeUserInputQuestion[];
+  isBlocking: boolean;
+  responded: boolean;
+  resolveResponse?: (confirmed: boolean) => void;
+}
+
 class CodexRpcError extends Error {
   constructor(message: string, readonly code?: number) { super(message); }
 }
@@ -116,6 +137,14 @@ interface CodexThread {
   /** Native thread/start or thread/resume readback; not present on every thread/read. */
   serviceTier?: string | null;
 }
+
+export type CodexLatestTurnRecoveryEvidence =
+  | {available: false; reason: string}
+  | {available: true; observedAt: string; latest: null | {
+    turnId: string; status: string; startedAt: string | null; completedAt: string | null;
+    userMessageId: string | null; userInputId: string | null; userMessageCount: number;
+    assistantFinal: boolean; pendingQuestion: boolean;
+  }};
 
 interface CodexThreadPermissionState {
   approvalPolicy?: unknown;
@@ -335,6 +364,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly pending = new Map<number, PendingRequest>();
   /** Server requests are answered only on the exact RPC connection that received them. */
   private readonly pendingPermissionRequests = new Map<string, CodexPendingPermissionRequest>();
+  private readonly pendingNativeUserInputs = new Map<string, CodexPendingNativeUserInput>();
+  private readonly seenNativeUserInputIds = new Set<string>();
   private readonly threads = new Map<string, CodexThread>();
   /** Permission-setting authority exists only for threads started by this live transport owner. */
   private readonly ownedPermissionThreads = new Map<string, CodexOwnedPermissionState>();
@@ -1590,6 +1621,40 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
   }
 
+  /** One native summary page proves the current latest turn without scanning its rollout. */
+  async readLatestTurnRecoveryEvidence(id: string): Promise<CodexLatestTurnRecoveryEvidence> {
+    if (!(await this.canReadProjectHistory(id))) return {available: false, reason: "project_history_unavailable"};
+    try {
+      await this.ensureReady();
+      const result = await this.request("thread/turns/list", {threadId: id, limit: 1, sortDirection: "desc", itemsView: "summary"}) as {data?: Array<Record<string, unknown>>};
+      if (!Array.isArray(result.data) || result.data.length > 1) return {available: false, reason: "native_latest_turn_unavailable"};
+      const observedAt = new Date().toISOString();
+      if (!result.data.length) return {available: true, observedAt, latest: null};
+      const turn = result.data[0];
+      if (typeof turn.id !== "string" || !turn.id || !["interrupted", "completed", "failed", "inProgress"].includes(String(turn.status))
+        || turn.itemsView !== "summary" || !Array.isArray(turn.items) || turn.items.length > 256
+        || turn.items.some(item => !item || typeof item !== "object" || typeof item.type !== "string")) {
+        return {available: false, reason: "native_latest_turn_summary_invalid"};
+      }
+      const items = turn.items as Array<Record<string, unknown>>;
+      const users = items.filter(item => item.type === "userMessage");
+      const user = users.length === 1 ? users[0] : undefined;
+      const assistants = items.filter(item => item.type === "agentMessage");
+      const pendingQuestion = assistants.some(item => item.questions !== undefined && item.questions !== null
+        && (!Array.isArray(item.questions) || item.questions.length > 0));
+      return {available: true, observedAt, latest: {
+        turnId: turn.id, status: String(turn.status),
+        startedAt: threadTimestamp(turn.startedAt as string | number | undefined) ?? null,
+        completedAt: threadTimestamp(turn.completedAt as string | number | undefined) ?? null,
+        userMessageId: typeof user?.id === "string" && user.id ? user.id : null,
+        userInputId: typeof user?.clientId === "string" && user.clientId ? user.clientId : null,
+        userMessageCount: users.length,
+        pendingQuestion,
+        assistantFinal: assistants.some(item => item.phase === "final_answer"),
+      }};
+    } catch { return {available: false, reason: "native_latest_turn_read_failed"}; }
+  }
+
   private async refreshActiveTurnId(id: string, model = this.threads.get(id)?.model): Promise<unknown> {
     try {
       const result = await this.request("thread/turns/list", {
@@ -1992,6 +2057,74 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     throw new Error("Native Codex model catalog exceeded bounded pagination");
   }
 
+  async readNativeUserInputState(sessionId: string) {
+    // Observing an empty queue cannot establish absence of another client's RPCs.
+    // In particular this read must not attach/resume a historical user thread.
+    if (!this.isReady() || !this.isTransportWritable()) return null;
+    return {
+      target: { hostId: localSessionHostId(), harness: "codex" as const, sessionId },
+      pendingRequests: [...this.pendingNativeUserInputs.entries()]
+        .filter(([, request]) => request.threadId === sessionId && request.generation === this.transportGeneration)
+        .map(([id, request]) => ({ id, requestId: id, threadId: request.threadId, turnId: request.turnId,
+          itemId: request.itemId, questions: structuredClone(request.questions), isBlocking: request.isBlocking,
+          canRespond: !request.responded })),
+      observedAt: new Date().toISOString(),
+      coldRestoreSupported: false as const,
+    };
+  }
+
+  async respondNativeUserInput(sessionId: string, requestId: string,
+    answers: Record<string, { answers: string[] }>): Promise<ControlResult> {
+    const request = this.pendingNativeUserInputs.get(requestId);
+    const refused = (error: string): ControlResult => ({ ok: false, nonRetryable: true, error });
+    const unknown = (): ControlResult => ({ ok: false, nonRetryable: true, admissionUnknown: true,
+      error: "Codex native input response outcome is unknown; it must not be replayed" });
+    const owned = () => this.pendingNativeUserInputs.get(requestId) === request && request
+      && request.threadId === sessionId && request.generation === this.transportGeneration
+      && !request.responded && this.isReady() && this.isTransportWritable();
+    if (!request || !owned()) return refused("Codex input is not answerable on this exact native connection and thread");
+    if (!answers || typeof answers !== "object" || Array.isArray(answers)
+      || Object.keys(answers).length !== request.questions.length
+      || !request.questions.every(question => Object.hasOwn(answers, question.id)
+        && answers[question.id] && Array.isArray(answers[question.id].answers)
+        && answers[question.id].answers.length > 0
+        && answers[question.id].answers.every(answer => typeof answer === "string" && answer.trim().length > 0))) {
+      return refused("Codex input requires one complete canonical answer set for all native question IDs");
+    }
+    // Snapshot before awaiting so callers cannot mutate canonical answers in flight.
+    const result = { answers: structuredClone(answers) };
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const latest = await this.request("thread/turns/list", {
+        threadId: sessionId, limit: 1, sortDirection: "desc", itemsView: "notLoaded",
+      }) as { data?: Array<{ id?: string; status?: string; completedAt?: unknown }> };
+      const turn = latest?.data?.[0];
+      if (!owned() || turn?.id !== request.turnId || turn.status !== "inProgress" || turn.completedAt != null) {
+        return refused("Codex input ownership or current native turn could not be verified");
+      }
+      // Write-ahead tombstone: even an exception may follow a partial transport write.
+      request.responded = true;
+      const confirmation = new Promise<boolean>(resolve => {
+        request.resolveResponse = resolve;
+        timer = setTimeout(() => resolve(false), 5_000);
+        timer.unref?.();
+      });
+      this.writeMessage({ id: request.rpcId, result });
+      return await confirmation ? { ok: true, admitted: true } : unknown();
+    } catch (error) {
+      return request.responded ? unknown() : refused(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (timer) clearTimeout(timer);
+      request.resolveResponse = undefined;
+    }
+  }
+
+  private invalidateNativeUserInputs(): void {
+    for (const request of this.pendingNativeUserInputs.values()) request.resolveResponse?.(false);
+    this.pendingNativeUserInputs.clear();
+    this.seenNativeUserInputIds.clear();
+  }
+
   async respondPermission(
     sessionId: string,
     permissionId: string,
@@ -2167,6 +2300,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private invalidateOwnedPermissionThreads(): void {
+    this.invalidateNativeUserInputs();
     for (const waiter of this.serviceTierWaiters.values()) { clearTimeout(waiter.timer); waiter.resolve(undefined); }
     this.serviceTierWaiters.clear();
     this.serviceTierObservations.clear();
@@ -2682,12 +2816,13 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     return remainder;
   }
 
-  private consumeMessage(message: RpcResponse & { method?: string; params?: Record<string, unknown> }): void {
+  private consumeMessage(message: Omit<RpcResponse, "id"> & { id?: number | string; method?: string; params?: Record<string, unknown> }): void {
     if (message.id !== undefined && message.method) {
-      this.handleServerRequest(message as RpcResponse & { method: string; params?: Record<string, unknown> });
+      this.handleServerRequest(message as Omit<RpcResponse, "id"> & { id?: number | string; method: string; params?: Record<string, unknown> });
       return;
     }
     if (message.id !== undefined) {
+      if (typeof message.id !== "number") return;
       const pending = this.pending.get(message.id);
       if (!pending) return;
       this.pending.delete(message.id);
@@ -2743,6 +2878,13 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (message.method === "serverRequest/resolved") {
       const requestId = typeof params.requestId === "number" || typeof params.requestId === "string" ? String(params.requestId) : undefined;
       const threadId = typeof params.threadId === "string" ? params.threadId : undefined;
+      const userInput = requestId ? this.pendingNativeUserInputs.get(requestId) : undefined;
+      if (userInput && userInput.threadId === threadId && userInput.generation === this.transportGeneration) {
+        this.pendingNativeUserInputs.delete(requestId!);
+        userInput.resolveResponse?.(true);
+        this.emitEvent({ kind: "message.updated", harness: "codex", sessionId: threadId!,
+          nativeType: "serverRequest/resolved", status: "running", data: { requestId, userInput: true } });
+      }
       const request = requestId ? this.pendingPermissionRequests.get(requestId) : undefined;
       if (request && request.threadId === threadId) {
         this.pendingPermissionRequests.delete(requestId!);
@@ -2852,9 +2994,36 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
   }
 
-  private handleServerRequest(message: RpcResponse & { method: string; params?: Record<string, unknown> }): void {
+  private handleServerRequest(message: Omit<RpcResponse, "id"> & { id?: number | string; method: string; params?: Record<string, unknown> }): void {
     if (!message.params) return;
     const threadId = typeof message.params.threadId === "string" ? message.params.threadId : undefined;
+    if (message.method === "item/tool/requestUserInput") {
+      const { turnId, itemId, questions, isBlocking } = message.params;
+      if (!threadId || !turnId || typeof turnId !== "string" || !itemId || typeof itemId !== "string"
+        || (typeof message.id !== "number" && typeof message.id !== "string") || typeof isBlocking !== "boolean"
+        || !Array.isArray(questions) || !questions.length) return;
+      const ids = new Set<string>();
+      for (const question of questions) {
+        if (!question || typeof question !== "object" || typeof question.id !== "string" || !question.id
+          || ids.has(question.id) || typeof question.header !== "string" || typeof question.question !== "string"
+          || typeof question.isOther !== "boolean" || typeof question.isSecret !== "boolean"
+          || (question.options !== null && (!Array.isArray(question.options)
+            || !question.options.every((option: unknown) => option && typeof option === "object"
+              && typeof (option as Record<string, unknown>).label === "string"
+              && typeof (option as Record<string, unknown>).description === "string")))) return;
+        ids.add(question.id);
+      }
+      const requestId = String(message.id);
+      if (this.seenNativeUserInputIds.has(requestId)) return;
+      this.seenNativeUserInputIds.add(requestId);
+      const copied = structuredClone(questions) as CodexNativeUserInputQuestion[];
+      this.pendingNativeUserInputs.set(requestId, { rpcId: message.id, generation: this.transportGeneration,
+        threadId, turnId, itemId, questions: copied, isBlocking, responded: false });
+      this.emitEvent({ kind: "message.updated", harness: "codex", sessionId: threadId,
+        nativeType: message.method, status: "needs_input",
+        data: { requestId, turnId, itemId, questions: structuredClone(copied), isBlocking } });
+      return;
+    }
     if (threadId && typeof message.params.thread === "object" && message.params.thread) {
       this.threads.set(threadId, message.params.thread as CodexThread);
     }
