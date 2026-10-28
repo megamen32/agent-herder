@@ -133,7 +133,7 @@ describe("human request ↔ resume_after durable join", () => {
     expect(durable?.resumeWaitWinner).toBe("timeout");
   });
 
-  it("an expired question that was already answered keeps its normal delivery path", async () => {
+  it("an expired question with a durable answer cancels its wake; delivery never fires", async () => {
     const registryInstance = await registry();
     const record = await registryInstance.create({ kind: "user", target: { harness: "zcode", sessionId: "dep" } });
     const onTimeout = vi.fn(async (wait: { humanRequestId?: string; id: string }) => {
@@ -147,8 +147,10 @@ describe("human request ↔ resume_after durable join", () => {
     await service.observe({ harness: dependency.harness, sessionId: dependency.sessionId, kind: "turn.completed", at: new Date().toISOString() });
     await service.sweep();
     expect(onTimeout).toHaveBeenCalledWith(expect.objectContaining({ id: wait.id }));
-    expect(deliver).toHaveBeenCalledTimes(1);
-    expect((await service.get(wait.id))?.state).toBe("resumed");
+    // The canonical answer wins: the timeout wake is cancelled, never delivered.
+    expect(deliver).not.toHaveBeenCalled();
+    expect((await service.get(wait.id))?.state).toBe("cancelled");
+    expect((await service.get(wait.id))?.reason).toBe("answered by human");
   });
 
   it("an expiry without a human request closes the plain question without the registry hook", async () => {
@@ -207,12 +209,49 @@ describe("human request ↔ resume_after durable join", () => {
     };
     const first = await resumeHumanRequestOnce(input);
     expect(first.status).toBe("resumed");
-    expect(invalidateResumeWaits).toHaveBeenCalledTimes(1);
     expect(invalidateResumeWaits).toHaveBeenCalledWith(record.requestId, expect.stringContaining("answered"));
     const duplicate = await resumeHumanRequestOnce(input);
     expect(duplicate.status).toBe("resumed");
     expect(duplicate.duplicate).toBe(true);
-    expect(invalidateResumeWaits).toHaveBeenCalledTimes(1);
+    // The replay re-invalidates idempotently: a cancelled wake yields 0 and a
+    // missed cancellation from an earlier crash is repaired here.
+    expect(invalidateResumeWaits.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(invalidateResumeWaits).toHaveBeenLastCalledWith(record.requestId, expect.stringContaining("answered"));
+  });
+
+  it("a throwing invalidation is repaired by the retry callback without losing the resume", async () => {
+    const registryInstance = await registry();
+    const record = await registryInstance.create({ kind: "user", target: { harness: "zcode", sessionId: "s6", cwd: "/tmp/agents/s6" } });
+    await registryInstance.bindResumeWait(record.requestId, waitId);
+    let attempts = 0;
+    const invalidateResumeWaits = vi.fn(async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("resume-after save failed");
+      return 1;
+    });
+    const input = {
+      registry: registryInstance,
+      requestId: record.requestId,
+      resultRef: "ref-answer",
+      resume: async () => ({ status: "accepted" as const, target: { agent: "zcode" as const, session_id: "s6" }, result_ref: "ref-answer", receipt_ref: "r2" }),
+      dependencies: {
+        admitResume: (requestId: string, in_?: Parameters<HumanRequestRegistry["admitResume"]>[1]) => registryInstance.admitResume(requestId, in_),
+        completeResume: (requestId: string, in_: Parameters<HumanRequestRegistry["completeResume"]>[1]) => registryInstance.completeResume(requestId, in_),
+        failResume: (requestId: string, in_: Parameters<HumanRequestRegistry["failResume"]>[1]) => registryInstance.failResume(requestId, in_),
+        invalidateResumeWaits,
+      },
+    };
+    // The crash after the durable winner must not lose the resume itself.
+    const first = await resumeHumanRequestOnce(input);
+    expect(first.status).toBe("resumed");
+    expect(first.record.resumeWaitWinner).toBe("answer");
+    // The retry callback repairs the missed cancellation; no UNKNOWN replay.
+    const retry = await resumeHumanRequestOnce(input);
+    expect(retry.status).toBe("resumed");
+    expect(attempts).toBe(2);
+    const durable = await registryInstance.get(record.requestId);
+    expect(durable?.status).toBe("resumed");
+    expect(durable?.resumeWaitWinner).toBe("answer");
   });
 
   it("rejects an invalid expiry or a conflicting fingerprint for the same requestId", async () => {

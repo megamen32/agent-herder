@@ -51,6 +51,20 @@ export async function resumeHumanRequestOnce(input: HumanRequestResumeInput): Pr
     ...(input.now ? { now: input.now } : {}),
   });
   const record = admission.record;
+  // The durable answer is the winner over any bound wake. Invalidate it on
+  // every entry (first admission, replay, lease recovery) so a cancellation
+  // that failed after the winner was persisted is repaired by the next
+  // callback; best-effort here must never lose the resume itself. The
+  // registry guarantees a timeout can then only cancel the wake, never
+  // deliver it after the answer won.
+  if (record.resumeWaitId && (admission.admitted || record.resumeWaitWinner === "answer")) {
+    try {
+      await input.dependencies.invalidateResumeWaits?.(requestId, `request ${requestId} answered`);
+    } catch {
+      // Best effort; the retry callback re-invalidates without replaying any
+      // unknown delivery.
+    }
+  }
   if (!admission.admitted) {
     if (record.status === "resumed") {
       return { status: "resumed", record, idempotencyKey: admission.idempotencyKey, duplicate: true };
@@ -75,13 +89,6 @@ export async function resumeHumanRequestOnce(input: HumanRequestResumeInput): Pr
     // exact-answer callback; this call itself performs no second transport.
     const recovered = await readAdmittedReceipt(input, record, admission.idempotencyKey, true);
     return recovered ?? { status: "in_flight", record, idempotencyKey: admission.idempotencyKey, duplicate: true };
-  }
-
-  // The admitted answer is canonical and the wait bound to this request must
-  // not fire afterwards: cancel it before any transport work so a question
-  // timeout can never race the answer.
-  if (record.resumeWaitId) {
-    await input.dependencies.invalidateResumeWaits?.(requestId, `request ${requestId} answered`);
   }
 
   const target = humanRequestResumeTarget(record);

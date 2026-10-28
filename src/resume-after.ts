@@ -310,8 +310,10 @@ export class ResumeAfterService {
         if(verdict==="closed"){
           wait.state="cancelled";wait.reason="question expired";await this.save(wait);continue;
         }
-        // The durable registry says the answer won: fall through to the normal
-        // delivery rules instead of closing the question.
+        // The durable registry says the answer won: a timeout wake must never
+        // be delivered after the canonical answer. Recovery may still cancel
+        // the wait later, but there is nothing left to deliver.
+        wait.state="cancelled";wait.reason="answered by human";await this.save(wait);continue;
       }
       if(wait.state==="dispatching" || wait.state==="delivery_unknown"){
         // A restart or a dropped receipt is not permission to replay an action.
