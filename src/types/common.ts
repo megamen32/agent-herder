@@ -39,6 +39,8 @@ export interface SessionMessageView {
   /** Native turn identity; absent when the transcript does not prove it. */
   turnId?: string;
   phase?: string;
+  /** Native input→result parent linkage; absent when the harness does not prove it. */
+  nativeParentMessageId?: string;
   timestamp?: string;
   text?: string;
   parts: SessionMessagePart[];
@@ -481,6 +483,13 @@ export interface HarnessAdapter {
 
   /** Get the earliest user-authored message without relying on a bounded transcript tail. */
   getFirstUserMessage?(id: string): Promise<SessionMessageView | null>;
+
+  /** Bounded latest-tail input→result linkage proof from the native harness. */
+  getNativeMessageLinkage?(id: string): Promise<{
+    latestUserId?: string;
+    finalAssistantId?: string;
+    finalAssistantNativeParentMessageId?: string;
+  } | null>;
 
   /** Resume a session through its owning transport, when supported. */
   resumeSession?(id: string): Promise<{

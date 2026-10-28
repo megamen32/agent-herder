@@ -122,6 +122,19 @@ export interface IntegratorFleetRuntimeOptions {
   createHarnessAdapter?: IntegratorHarnessAdapterFactory;
   /** Observed native data home of the OpenCode harness on this host (scope evidence). */
   opencodeDataHome?: string;
+  /**
+   * Explicit operator-persisted adoptions for ONE legacy OpenCode row each:
+   * the original root identity and policy revision from the owner's durable
+   * evidence, matched exactly (operation + session + launch root) before a
+   * legacy scope_missing row may join the scoped route. Never inferred.
+   */
+  legacyScopeAdoptions?: Array<{
+    operationId: string;
+    nativeSessionId: string;
+    launchCwd: string;
+    rootIdentity: string;
+    policyRevision: string;
+  }>;
 }
 
 /** Connects one explicitly routed Codex project to the existing H32/H34 owner APIs. */
@@ -345,11 +358,11 @@ export class IntegratorFleetRuntime {
     if (!lookup) return { kind: "deny", reason: "project_binding_store_unavailable" };
     if (lookup.state === "not_found") return { kind: "ordinary" };
     // A harness-first journal row without a codex scope is reported as
-    // scope_missing. Fail closed: an unknown legacy row is never authorized
-    // from the currently configured root. Only a row whose accepted created
-    // receipt carries the exact durable launch root that still resolves to the
-    // same opencode route may be adopted explicitly, and every such adoption
-    // is audited.
+    // scope_missing. Fail closed by default: no legacy row is authorized from
+    // the currently configured root alone. The only exception is an exact
+    // persisted adoption (owner-supplied evidence for ONE operation/session,
+    // including the original root identity and policy revision), which the
+    // runtime reconfirms against the live route before use.
     const legacyCandidate = lookup.state === "unresolved" && lookup.reason === "scope_missing"
       && lookup.binding?.harness === "opencode" && address.harness === "opencode"
       ? { binding: lookup.binding, attempt: lookup.binding.attempts.at(-1) } : null;
@@ -369,6 +382,29 @@ export class IntegratorFleetRuntime {
         return { kind: "deny", reason: "project_session_scope_missing" };
       }
       const launchRoot = attempt.receipt.launchCwd;
+      // A legacy row without a stored scope is denied unless the operator
+      // persisted an explicit exact adoption for THIS operation/session, and
+      // the adopted tuple still matches the live route and root identity.
+      if (!attempt.scope) {
+        const adoption = (this.options.legacyScopeAdoptions ?? []).find(entry =>
+          entry.operationId === binding!.operationId && entry.nativeSessionId === address.nativeSessionId);
+        if (!adoption || adoption.launchCwd !== launchRoot) {
+          return { kind: "deny", reason: "project_session_scope_missing" };
+        }
+        const adopted = await this.resolveConfiguredProject(adoption.launchCwd, "opencode");
+        const adoptedRootIdentity = adopted.ok ? await this.rootIdentityOf(adopted.project.rootPath) : "";
+        if (!adopted.ok || adopted.project.harness !== "opencode"
+          || adopted.project.rootPath !== adoption.launchCwd
+          || adoptedRootIdentity !== adoption.rootIdentity
+          || adopted.project.etag !== adoption.policyRevision) {
+          return { kind: "deny", reason: "project_session_adopted_scope_changed" };
+        }
+        console.warn(`[integrator] legacy-scope-adoption ${JSON.stringify({
+          operationId: binding!.operationId, nativeSessionId: address.nativeSessionId,
+          launchRoot: adoption.launchCwd, rootIdentity: adoptedRootIdentity,
+          policyRevision: adoption.policyRevision,
+        })}`);
+      }
       const configured = await this.resolveConfiguredProject(launchRoot, "opencode");
       const rootIdentity = configured.ok ? await this.rootIdentityOf(configured.project.rootPath) : "";
       if (!configured.ok || configured.project.harness !== "opencode"

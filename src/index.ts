@@ -16,6 +16,7 @@ import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { QaControlBackend } from "./qa-control.js";
 
 import { HarnessAdapter, type SendMessageResult } from "./types/index.js";
@@ -207,7 +208,21 @@ const hooksLeverStore = {
     }),
 };
 const integratorSessionBindingStore = new IntegratorSessionBindingStore({ persistencePath: join(autopilotStateDir, "integrator-session-bindings.json") });
-const integratorFleetRuntime = new IntegratorFleetRuntime({ policyStore: automationLaunchPolicyStore, bindingStore: integratorSessionBindingStore, codexBin: process.env.CODEX_BIN });
+// Explicit owner-persisted adoptions for legacy OpenCode rows: a JSON array of
+// exact tuples {operationId, nativeSessionId, launchCwd, rootIdentity,
+// policyRevision} taken from the owner's durable original-evidence readback.
+// Absent file → no adoptions; every legacy scope_missing row fails closed.
+const legacyScopeAdoptions = (() => {
+  const path = process.env.AGENT_HERDER_OPENCODE_SCOPE_ADOPTIONS?.trim()
+    || join(autopilotStateDir, "opencode-legacy-scope-adoptions.json");
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return []; // No adoption file: every legacy scope_missing row fails closed.
+  }
+})();
+const integratorFleetRuntime = new IntegratorFleetRuntime({ policyStore: automationLaunchPolicyStore, bindingStore: integratorSessionBindingStore, codexBin: process.env.CODEX_BIN, legacyScopeAdoptions });
 // The per-project model gate reads the same stored document as the launcher,
 // so a denied model is refused at every place a model can be applied.
 const readLaunchPolicyForGate = async () => {

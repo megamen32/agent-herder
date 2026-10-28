@@ -1039,9 +1039,23 @@ export class OpenCodeAdapter implements HarnessAdapter {
     return {
       id: message.id,
       role: message.role,
+      ...(message.nativeParentMessageId ? { nativeParentMessageId: message.nativeParentMessageId } : {}),
       ...(message.text ? { text: message.text } : {}),
       parts: message.parts as SessionMessagePart[],
     };
+  }
+
+  /**
+   * The bounded latest-tail linkage proof: the newest user input and the final
+   * assistant message with its native parent id, exactly as the harness reports
+   * them. Absent fields stay absent; nothing is inferred.
+   */
+  async getNativeMessageLinkage(id: string): Promise<{
+    latestUserId?: string;
+    finalAssistantId?: string;
+    finalAssistantNativeParentMessageId?: string;
+  } | null> {
+    return this.client.getNativeMessageLinkage(id);
   }
 
   async getSessionMessages(id: string, limit = 3): Promise<SessionMessageView[] | null> {

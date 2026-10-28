@@ -36,6 +36,8 @@ export interface HarnessMessage {
   turnId?: string;
   /** Native message phase/finish, preserved without reinterpretation. */
   phase?: string;
+  /** Native input→result parent linkage, preserved exactly as the harness reports it. */
+  nativeParentMessageId?: string;
   text?: string;
   timestamp?: string;
   model?: string;

@@ -48,6 +48,14 @@ export function registerHerderResources(server: McpServer, deps: {
     const message = adapter?.getFirstUserMessage ? await adapter.getFirstUserMessage(decodeResourceComponent(variables.sessionId)) : null;
     return jsonContent(events, uri, message);
   });
+  // Bounded latest-tail input→result linkage proof: the newest user input and
+  // the final assistant message with its native parent id, exactly as the
+  // harness reports them. Absent fields stay absent.
+  server.registerResource("session-native-message-linkage", new ResourceTemplate("herder://sessions/{harness}/{sessionId}/native-message-linkage", { list: undefined, complete: { harness: () => [...adapters.keys()] } }), { title: "Native message linkage", mimeType: "application/json" }, async (uri, variables) => {
+    const adapter = adapters.get(decodeResourceComponent(variables.harness));
+    const linkage = adapter?.getNativeMessageLinkage ? await adapter.getNativeMessageLinkage(decodeResourceComponent(variables.sessionId)) : null;
+    return jsonContent(events, uri, linkage);
+  });
   server.registerResource("short-message", new ResourceTemplate("herder://m/{messageId}", { list: undefined }), { title: "Full message", mimeType: "application/json" }, async (uri, variables) => {
     const messageId = decodeURIComponent(String(variables.messageId));
     const page = await readLongMessage({ messageId });

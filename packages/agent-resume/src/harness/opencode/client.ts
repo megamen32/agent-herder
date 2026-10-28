@@ -704,12 +704,14 @@ export class OpenCodeClient implements HarnessClient {
           : info.providerID && info.modelID ? `${info.providerID}/${info.modelID}` : undefined;
         const turnId = typeof message.turnId === "string" ? message.turnId : typeof info.turnId === "string" ? info.turnId : undefined;
         const phase = typeof message.finish === "string" ? message.finish : typeof info.finish === "string" ? info.finish : undefined;
+        const nativeParentMessageId = message.parentID || info.parentID;
         return {
           id: message.id || info.id || `${id}:message-${index + 1}`,
           role,
           ...(turnId ? { turnId } : {}),
           ...(phase ? { phase } : {}),
           ...(model ? { model } : {}),
+          ...(nativeParentMessageId ? { nativeParentMessageId } : {}),
           ...(typeof info.time?.created === "number" ? { timestamp: new Date(info.time.created).toISOString() } : {}),
           ...(shownText ? { text: shownText } : {}),
           parts,
@@ -1423,6 +1425,33 @@ export class OpenCodeClient implements HarnessClient {
       role,
       ...(text ? { text } : {}),
       parts,
+    };
+  }
+
+  /**
+   * Bounded latest-tail linkage proof from the supported desc window: the
+   * newest real user input and the final assistant message with its native
+   * parent id exactly as reported. Absent fields stay absent.
+   */
+  async getNativeMessageLinkage(id: string): Promise<{
+    latestUserId?: string;
+    finalAssistantId?: string;
+    finalAssistantNativeParentMessageId?: string;
+  } | null> {
+    await this.probeProtocol();
+    const messages = await this.fetchJson<OpenCodeMessagePayload[]>(
+      this.api(`/session/${encodeURIComponent(id)}/message?limit=20&order=desc`),
+    );
+    if (!Array.isArray(messages)) return null;
+    const real = [...messages].reverse().filter((message) => !isOpenCodeTurnStatusFrame(message));
+    const latestUser = [...real].reverse().find((message) => message.type === "user");
+    const finalAssistant = [...real].reverse().find((message) => message.type === "assistant");
+    return {
+      ...(latestUser?.id ? { latestUserId: latestUser.id } : {}),
+      ...(finalAssistant?.id ? { finalAssistantId: finalAssistant.id } : {}),
+      ...(finalAssistant?.parentID || finalAssistant?.info?.parentID
+        ? { finalAssistantNativeParentMessageId: finalAssistant.parentID ?? finalAssistant.info?.parentID }
+        : {}),
     };
   }
 

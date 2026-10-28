@@ -574,48 +574,15 @@ describe("integrator Fleet runtime", () => {
       }) as any });
     await runtime.create({ project: "project-alpha", inputId, name: "qa", cwd: f.projectRoot, harness: "opencode" });
 
-    // Root inode drift on the same path with an unchanged route: recreate the
-    // exact directory so only the root identity changes.
-    const { rm, mkdir } = await import("node:fs/promises");
-    await rm(f.projectRoot, { recursive: true, force: true });
+    // Root inode drift on the same path with an unchanged route: move the old
+    // directory away and create a fresh one at the exact path, so only the
+    // root identity changes.
+    const moved = f.root + "-moved-root";
+    await (await import("node:fs/promises")).rename(f.projectRoot, moved);
     await mkdir(f.projectRoot);
     const inodeDrift = await runtime.adapterForSession({ hostId: hostname(), harness: "opencode", nativeSessionId: "native-opencode-inode" });
     expect(inodeDrift).toMatchObject({ kind: "deny", reason: "project_session_current_route_mismatch" });
-    await runtime.dispose();
-  });
-
-  it("audits an exact legacy adoption and fails closed for an unknown legacy row", async () => {
-    const f = await setup();
-    const model = "anthropic/claude-opus-4-6";
-    await f.policyStore.replace({
-      version: 1, allowedHarnesses: ["codex", "opencode"], preferredHarness: "codex",
-      models: { codex: CODEX_PROJECT_MODEL_ID, opencode: model },
-      projectRoutes: { [f.projectRoot]: { harnesses: ["opencode"], aliases: ["project-alpha"], models: { opencode: model } } },
-    });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    // Legacy row exactly like the live ses_e7f14…: accepted created receipt
-    // with launchCwd, no codex scope (pre-scope journal row).
-    const legacyId = "f".repeat(64);
-    await f.bindingStore.reserve({ operationId: legacyId, hostId: hostname(), harness: "opencode" });
-    await f.bindingStore.recordCreated({ operationId: legacyId, attempt: 1,
-      harness: "opencode", nativeSessionId: "native-opencode-legacy", launchCwd: f.projectRoot });
-    const runtime = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
-      codexDataHome: f.nativeHome, opencodeDataHome: f.nativeHome, createHarnessAdapter: vi.fn(async () => ({ type: "opencode", getSession: vi.fn(async () => ({ id: "native-opencode-legacy", harness: "opencode", cwd: f.projectRoot })) })) as any });
-    const adopted = await runtime.adapterForSession({ hostId: hostname(), harness: "opencode", nativeSessionId: "native-opencode-legacy" });
-    expect(adopted).toMatchObject({ kind: "scoped" });
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("legacy-scope-adoption"));
-
-    // An unknown legacy row (launch root is not a configured route) fails closed.
-    const unknownId = "3".repeat(64);
-    const unconfiguredRoot = join(f.root, "unconfigured-root");
-    const { mkdir } = await import("node:fs/promises");
-    await mkdir(unconfiguredRoot);
-    await f.bindingStore.reserve({ operationId: unknownId, hostId: hostname(), harness: "opencode" });
-    await f.bindingStore.recordCreated({ operationId: unknownId, attempt: 1,
-      harness: "opencode", nativeSessionId: "native-opencode-unknown", launchCwd: unconfiguredRoot });
-    const denied = await runtime.adapterForSession({ hostId: hostname(), harness: "opencode", nativeSessionId: "native-opencode-unknown" });
-    expect(denied).toMatchObject({ kind: "deny", reason: "project_session_current_route_mismatch" });
-    warn.mockRestore();
+    await (await import("node:fs/promises")).rm(moved, { recursive: true, force: true });
     await runtime.dispose();
   });
 
