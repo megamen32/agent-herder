@@ -385,6 +385,7 @@ export class IntegratorFleetRuntime {
       // A legacy row without a stored scope is denied unless the operator
       // persisted an explicit exact adoption for THIS operation/session, and
       // the adopted tuple still matches the live route and root identity.
+      let adoptedProof: { etag: string; rootIdentity: string } | undefined;
       if (!attempt.scope) {
         // Exact persisted adoption: matched on the durable journal operation
         // id, the native session id and the launch root of the accepted
@@ -404,6 +405,7 @@ export class IntegratorFleetRuntime {
           || adopted.project.etag !== adoption.policyRevision) {
           return { kind: "deny", reason: "project_session_adopted_scope_changed" };
         }
+        adoptedProof = { etag: adopted.project.etag, rootIdentity: adoptedRootIdentity };
         console.warn(`[integrator] legacy-scope-adoption ${JSON.stringify({
           operationId: binding!.operationId, nativeSessionId: address.nativeSessionId,
           launchRoot: adoption.launchCwd, rootIdentity: adoptedRootIdentity,
@@ -415,6 +417,13 @@ export class IntegratorFleetRuntime {
       if (!configured.ok || configured.project.harness !== "opencode"
         || configured.project.rootPath !== launchRoot || !rootIdentity) {
         return { kind: "deny", reason: "project_session_current_route_mismatch" };
+      }
+      // The second resolve must land on the same live snapshot the adoption
+      // was proven against; a policy flip in between means the grant no
+      // longer holds.
+      if (adoptedProof && (configured.project.etag !== adoptedProof.etag
+        || rootIdentity !== adoptedProof.rootIdentity)) {
+        return { kind: "deny", reason: "project_session_adopted_scope_changed" };
       }
       const adapter = await this.createHarnessAdapter({
         harness: "opencode",

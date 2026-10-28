@@ -637,6 +637,96 @@ describe("integrator Fleet runtime", () => {
     await runtime.dispose();
   });
 
+  it("adopts a legacy OpenCode row only through its exact persisted journal entry", async () => {
+    const f = await setup();
+    const model = "anthropic/claude-opus-4-6";
+    await f.policyStore.replace({
+      version: 1, allowedHarnesses: ["codex", "opencode"], preferredHarness: "codex",
+      models: { codex: CODEX_PROJECT_MODEL_ID, opencode: model },
+      projectRoutes: { [f.projectRoot]: { harnesses: ["opencode"], aliases: ["project-alpha"], models: { opencode: model } } },
+    });
+    const { realpath, stat } = await import("node:fs/promises");
+    const adoption = {
+      operationId: "f".repeat(64), nativeSessionId: "native-opencode-legacy",
+      launchCwd: f.projectRoot,
+      rootIdentity: JSON.stringify([await realpath(f.projectRoot), (await stat(f.projectRoot)).dev, (await stat(f.projectRoot)).ino]),
+      policyRevision: (await f.policyStore.readDocument()).etag,
+    };
+    await f.bindingStore.reserve({ operationId: adoption.operationId, hostId: hostname(), harness: "opencode" });
+    await f.bindingStore.recordCreated({ operationId: adoption.operationId, attempt: 1,
+      harness: "opencode", nativeSessionId: adoption.nativeSessionId, launchCwd: f.projectRoot });
+    const adapterStub = vi.fn(async () => ({ type: "opencode",
+      getSession: vi.fn(async () => ({ id: adoption.nativeSessionId, harness: "opencode", cwd: f.projectRoot })) }));
+    // A wrong journal operation id never adopts: the entry key is the durable
+    // journal operation, not the consumer-facing audit id.
+    const wrongRuntime = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
+      codexDataHome: f.nativeHome, opencodeDataHome: f.nativeHome, createHarnessAdapter: adapterStub as any,
+      legacyScopeAdoptions: [{ ...adoption, operationId: "9".repeat(64) }] });
+    const deniedWrong = await wrongRuntime.adapterForSession({ hostId: hostname(), harness: "opencode", nativeSessionId: adoption.nativeSessionId });
+    expect(deniedWrong).toMatchObject({ kind: "deny", reason: "project_session_scope_missing" });
+    await wrongRuntime.dispose();
+    // Without any persisted entry the same row stays denied.
+    const noEntryRuntime = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
+      codexDataHome: f.nativeHome, opencodeDataHome: f.nativeHome, createHarnessAdapter: adapterStub as any });
+    const deniedNoEntry = await noEntryRuntime.adapterForSession({ hostId: hostname(), harness: "opencode", nativeSessionId: adoption.nativeSessionId });
+    expect(deniedNoEntry).toMatchObject({ kind: "deny", reason: "project_session_scope_missing" });
+    await noEntryRuntime.dispose();
+    // The exact entry adopts: journal id + native session + launch root,
+    // reconfirmed against the live route identity and policy revision.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const runtime = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
+      codexDataHome: f.nativeHome, opencodeDataHome: f.nativeHome, createHarnessAdapter: adapterStub as any,
+      legacyScopeAdoptions: [adoption] });
+    const adopted = await runtime.adapterForSession({ hostId: hostname(), harness: "opencode", nativeSessionId: adoption.nativeSessionId });
+    expect(adopted).toMatchObject({ kind: "scoped" });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("legacy-scope-adoption"));
+    warn.mockRestore();
+    await runtime.dispose();
+  });
+
+  it("denies an adopted legacy row when the policy flips between the adoption proof and the adapter resolve", async () => {
+    const f = await setup();
+    const model = "anthropic/claude-opus-4-6";
+    await f.policyStore.replace({
+      version: 1, allowedHarnesses: ["codex", "opencode"], preferredHarness: "codex",
+      models: { codex: CODEX_PROJECT_MODEL_ID, opencode: model },
+      projectRoutes: { [f.projectRoot]: { harnesses: ["opencode"], aliases: ["project-alpha"], models: { opencode: model } } },
+    });
+    const { realpath, stat } = await import("node:fs/promises");
+    const adoption = {
+      operationId: "f".repeat(64), nativeSessionId: "native-opencode-adopt",
+      launchCwd: f.projectRoot,
+      rootIdentity: JSON.stringify([await realpath(f.projectRoot), (await stat(f.projectRoot)).dev, (await stat(f.projectRoot)).ino]),
+      policyRevision: (await f.policyStore.readDocument()).etag,
+    };
+    await f.bindingStore.reserve({ operationId: adoption.operationId, hostId: hostname(), harness: "opencode" });
+    await f.bindingStore.recordCreated({ operationId: adoption.operationId, attempt: 1,
+      harness: "opencode", nativeSessionId: adoption.nativeSessionId, launchCwd: f.projectRoot });
+    // The first policy read (the adoption proof) sees revision A; the policy
+    // file is then rewritten, so the second resolve lands on revision B.
+    let firstReadSeen = false;
+    const flipStore = {
+      readDocument: async () => {
+        const document = await f.policyStore.readDocument();
+        if (!firstReadSeen) {
+          firstReadSeen = true;
+          const drifted = JSON.parse(JSON.stringify(document.policy));
+          drifted.projectRoutes[f.projectRoot].models.opencode = "other/model";
+          await f.policyStore.replace(drifted);
+        }
+        return document;
+      },
+    };
+    const runtime = new IntegratorFleetRuntime({ policyStore: flipStore as any, bindingStore: f.bindingStore,
+      codexDataHome: f.nativeHome, opencodeDataHome: f.nativeHome,
+      createHarnessAdapter: vi.fn(async () => ({ type: "opencode",
+        getSession: vi.fn(async () => ({ id: adoption.nativeSessionId, harness: "opencode", cwd: f.projectRoot })) })) as any,
+      legacyScopeAdoptions: [adoption] });
+    const flipped = await runtime.adapterForSession({ hostId: hostname(), harness: "opencode", nativeSessionId: adoption.nativeSessionId });
+    expect(flipped).toMatchObject({ kind: "deny", reason: "project_session_adopted_scope_changed" });
+    await runtime.dispose();
+  });
+
   it("never hands a scoped OpenCode adapter to a wrong host or harness address", async () => {
     const f = await setup();
     const model = "anthropic/claude-opus-4-6";
