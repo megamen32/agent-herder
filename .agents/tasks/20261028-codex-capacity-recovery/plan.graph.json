@@ -1,0 +1,92 @@
+{
+  "schema_version": 2,
+  "title": "Восстановить Codex после перегрузки модели",
+  "goal": "Сессия ExManager продолжает прерванную работу после временного serverOverloaded при включённом автовозобновлении.",
+  "business_result": "Пропущенная точная нативная ошибка перегрузки подхватывается существующим recovery controller; Stop, вопросы и квитанции accepted/UNKNOWN сохраняются.",
+  "business_results": [
+    "Пропущенная точная нативная ошибка перегрузки подхватывается существующим recovery controller; Stop, вопросы и квитанции accepted/UNKNOWN сохраняются."
+  ],
+  "acceptance_scenarios": [
+    "Exact ExManager failed turn обнаруживается без сохранённого turn.started; запускается одно продолжение той же сессии на прежней модели, новый native turn виден в интерфейсе."
+  ],
+  "current_progress": "Готово: installede85a326 PID1307687/17:25:38MSK. В17:27:44контроллер сам продолжил exactExManager, новыйturn01a182e8-e799-7642-a753-471b864124ac runningнапрежнейgpt-6.1-sol. Nativeответ ипрогресс подтверждены, реальныйbrowser показываетРаботает. Ручныхresume/send0; исходнаяработапродолжается. acceptance.json/RESULT.md сохранены.",
+  "external_waits": "",
+  "slots": 2,
+  "updated_at": "2026-10-28T17:32:19+03:00",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "Подхватить точную capacity-ошибку в existing recovery",
+      "status": "done",
+      "acceptance": "Exact native error сохранена, missed start не теряет включённую сессию, один bounded retry через существующий controller с guards и no-replay.",
+      "owner": "codex_live_tier + codex_tier_controls",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-28T17:25:39+03:00",
+          "note": "Live readonly native proof exactturn/model verified; adapter14 +recovery18 focusedchecks, tsc/fullbuildpassed. Sourcee85a326 published; installedactivation started. Unknownsendpending fence preserved.",
+          "changes": {
+            "status": "done"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      }
+    },
+    {
+      "id": "L02",
+      "label": "Установить и подтвердить продолжение ExManager",
+      "status": "done",
+      "acceptance": "Installed runtime опубликован; exact session получила одно подтверждённое native продолжение, модель сохранена, соседние сессии и внешние действия не повторены.",
+      "result": "RESULT.md; acceptance.json; resumed-exmanager.png",
+      "owner": "root",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-28T17:26:38+03:00",
+          "note": "Installed e85a326 PID1307687/17:25:38MSK; exact native capacity metadata confirmed. Waiting ordinary existing controller tick; no manualresume/send used.",
+          "changes": {
+            "status": "running"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T17:32:19+03:00",
+          "note": "Exact ExManager automatically resumed17:27:44MSK, same model/newnativeTurn and assistantreply+progress verified via API/durable receipt/browser. Manualresume/send0. RESULT.md/acceptance.json; own browserclosed; targetleftworking.",
+          "changes": {
+            "status": "done",
+            "result": "RESULT.md; acceptance.json; resumed-exmanager.png"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [
+        "L01"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      }
+    }
+  ],
+  "leaf_count": 2,
+  "plan_origin": {
+    "at": "2026-10-28T14:15:53.930501+00:00",
+    "source": "file_birthtime",
+    "leaf_id": "L01",
+    "recorded_at": "2026-10-28T14:15:56.252417+00:00"
+  }
+}

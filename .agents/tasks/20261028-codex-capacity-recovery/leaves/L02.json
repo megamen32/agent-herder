@@ -1,0 +1,36 @@
+{
+  "id": "L02",
+  "label": "Установить и подтвердить продолжение ExManager",
+  "status": "done",
+  "owner": "root",
+  "depends_on": [
+    "L01"
+  ],
+  "estimate_minutes": 15,
+  "acceptance": "Installed runtime опубликован; exact session получила одно подтверждённое native продолжение, модель сохранена, соседние сессии и внешние действия не повторены.",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex",
+  "updated_at": "2026-10-28T17:32:19+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-28T17:26:38+03:00",
+      "note": "Installed e85a326 PID1307687/17:25:38MSK; exact native capacity metadata confirmed. Waiting ordinary existing controller tick; no manualresume/send used.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T17:32:19+03:00",
+      "note": "Exact ExManager automatically resumed17:27:44MSK, same model/newnativeTurn and assistantreply+progress verified via API/durable receipt/browser. Manualresume/send0. RESULT.md/acceptance.json; own browserclosed; targetleftworking.",
+      "changes": {
+        "status": "done",
+        "result": "RESULT.md; acceptance.json; resumed-exmanager.png"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    }
+  ],
+  "result": "RESULT.md; acceptance.json; resumed-exmanager.png"
+}

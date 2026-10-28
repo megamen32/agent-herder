@@ -1,0 +1,23 @@
+{
+  "id": "L01",
+  "label": "Подхватить точную capacity-ошибку в existing recovery",
+  "status": "done",
+  "owner": "codex_live_tier + codex_tier_controls",
+  "depends_on": [],
+  "estimate_minutes": 15,
+  "acceptance": "Exact native error сохранена, missed start не теряет включённую сессию, один bounded retry через существующий controller с guards и no-replay.",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex",
+  "updated_at": "2026-10-28T17:25:39+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-28T17:25:39+03:00",
+      "note": "Live readonly native proof exactturn/model verified; adapter14 +recovery18 focusedchecks, tsc/fullbuildpassed. Sourcee85a326 published; installedactivation started. Unknownsendpending fence preserved.",
+      "changes": {
+        "status": "done"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "sessionId":"01a17e2e-6dce-7870-b08c-89c092087fb5",
+  "title":"Завершить сценарий ExManager",
+  "cwd":"/home/roomhacker/.codex/worktrees/f953/exmanager",
+  "model":"gpt-6.1-sol",
+  "status":"error",
+  "failedTurnId":"01a1829d-eeea-7761-93cf-4c4373357135",
+  "failedAt":"2026-10-28T14:01:27.000Z",
+  "nativeErrorCode":"serverOverloaded",
+  "message":"Selected model is at capacity. Please try a different model.",
+  "effectiveAutostart":true,
+  "recoverOnFailure":true,
+  "humanStopHeld":false,
+  "pendingHumanRequests":0,
+  "fleetAdmission":{"mode":"retired","allowed":true},
+  "automationDisarm":{"allowed":true},
+  "unfinishedStoreRecordPresent":false,
+  "quotaWaitRecord":null,
+  "sourceProbe":"new adapter compiled temporarily in canonical generated dist and read exact live session; fresh capacityFailure with matching model/turn/timestamp confirmed; probe removed; no LLM call or native mutation",
+  "rootCause":"Missed native start/failure events leave no recovery row; existing cold discovery covers ZCode only. Codex adapter also discarded positive capacity evidence. Capacity is not exhausted quota."
+}
