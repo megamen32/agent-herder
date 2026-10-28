@@ -878,6 +878,27 @@ describe("terminal quota recovery", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it("uses current allowed GLM combo once when the default MiniMax combo has exhausted quota", async () => {
+    const root = await mkdtemp(join(tmpdir(), "quota-live-combo-policy-"));
+    try {
+      const original = "omniroute/minimax-combo-m3.1";
+      const backup = "omniroute/glm-5.3-flash-minimax-m3.1";
+      const current = quotaSession("error", original);
+      const native = current.meta!.nativeLastTurn as {quotaFailure: {modelId: string}};
+      native.quotaFailure.modelId = "minimax-combo-m3.1";
+      const sent: Array<{model?: string; inputId?: string}> = [];
+      const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+      const settings = await optedInSettings(root);
+      await settings.setGlobal(false);
+      await settings.setSessionWaitForQuota({harness: current.harness, sessionId: current.id, cwd: current.cwd}, false, new Date(), true);
+      const launcher = new UnfinishedSessionLauncher({adapters: new Map([["opencode", quotaAdapter(() => current, sent, [original, backup])]]), store, settingsStore: settings, fallbackModelsForHarness: async () => [backup, original]});
+      await launcher.recoverPending();
+      await launcher.recoverPending();
+      expect(sent.map(item => item.model)).toEqual([backup]);
+      expect((await store.list())[0]?.quotaRecovery?.candidateModels).toEqual([backup]);
+    } finally { await rm(root, {recursive: true, force: true}); }
+  });
+
   it.each(["exact", "unverified", "foreign", "ambiguous", "missing", "late-change"])("verifies native catalog fallback dispatch identity: %s", async (kind) => {
     const root = await mkdtemp(join(tmpdir(), "quota-native-model-readback-"));
     try {

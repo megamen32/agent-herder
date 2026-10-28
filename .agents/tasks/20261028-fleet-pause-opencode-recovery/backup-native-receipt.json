@@ -1,0 +1,76 @@
+{
+  "checkedAt": "2026-10-28T15:55:49.073Z",
+  "sessionId": "ses_e7cc8fce8ffeo2SPpSIQPEcMXK",
+  "settings": {
+    "autopilot": {
+      "harness": "opencode",
+      "sessionId": "ses_e7cc8fce8ffeo2SPpSIQPEcMXK",
+      "enabled": false,
+      "source": "session",
+      "cwd": "/home/roomhacker/agents-projects/agent-herder/.tmp/opencode-recovery-qa-20261028",
+      "updatedAt": "2026-10-28T15:53:17.780Z"
+    },
+    "session-autostart": {
+      "harness": "opencode",
+      "sessionId": "ses_e7cc8fce8ffeo2SPpSIQPEcMXK",
+      "enabled": false,
+      "source": "session",
+      "cwd": "/home/roomhacker/agents-projects/agent-herder/.tmp/opencode-recovery-qa-20261028",
+      "updatedAt": "2026-10-28T15:53:18.061Z",
+      "waitForQuota": false,
+      "fallbackForQuota": false,
+      "waitForQuotaSource": "session",
+      "waitForQuotaOverride": false
+    }
+  },
+  "messages": [
+    {
+      "id": "msg_1833825df001oYxKTFummFoL62",
+      "type": "idle",
+      "time": {
+        "created": 1793202857439
+      },
+      "outcome": "succeeded"
+    },
+    {
+      "id": "msg_18337b24f0013tS613aYLDRoFd",
+      "type": "assistant",
+      "time": {
+        "created": 1793202827876,
+        "streamed": 1793202857386,
+        "completed": 1793202857420
+      },
+      "model": {
+        "id": "glm-5.3-flash-minimax-m3.1",
+        "providerID": "omniroute",
+        "variant": "default"
+      },
+      "text": "QA_BACKUP_OK",
+      "finish": "stop",
+      "files": [],
+      "toolCalls": 0,
+      "tokens": {
+        "input": 19099,
+        "output": 125,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "cost": 0
+    },
+    {
+      "id": "msg_18337b1e2001f4tEetJ7b0sisU",
+      "type": "user",
+      "time": {
+        "created": 1793202827799
+      },
+      "metadata": {
+        "agentHerderInputId": "qa-backup-response-20261028-ses-e7cc8fce8"
+      },
+      "text": "This is a response-only isolated model availability test. Do not use any tools, network, files, MCP, or external actions. Reply with exactly QA_BACKUP_OK and nothing else."
+    }
+  ],
+  "claim": "Real native backup combo answer only; controlled native quota rejection to fallback is not proven. Native receipt does not expose actual router leaf."
+}
