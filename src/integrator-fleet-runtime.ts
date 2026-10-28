@@ -377,6 +377,21 @@ export class IntegratorFleetRuntime {
         project: { rootPath: configured.project.rootPath, model: configured.project.model, etag: configured.project.etag },
         bindingStore: this.options.bindingStore,
       });
+      // A stored scope must prove the exact historical tuple against the live
+      // route; a legacy row adopts only through its exact created receipt
+      // (launchCwd), never through the currently configured root alone.
+      if (attempt.scope && (attempt.scope.projectId !== configured.project.rootPath
+        || attempt.scope.rootIdentity !== rootIdentity
+        || attempt.scope.policyRevision !== configured.project.etag
+        || attempt.scope.hostId !== attempt.hostId || attempt.scope.harness !== "opencode")) {
+        return { kind: "deny", reason: "project_session_current_route_mismatch" };
+      }
+      // The native session must actually live in the project root: cwd drift
+      // cannot inherit another project's scoped access.
+      const native = await (adapter.getSession?.(address.nativeSessionId).catch(() => null) ?? null);
+      if (!native || native.cwd !== configured.project.rootPath) {
+        return { kind: "deny", reason: "project_session_native_cwd_drift" };
+      }
       return { kind: "scoped", adapter };
     }
     if (address.harness !== "codex" || lookup.state !== "accepted") {

@@ -39,6 +39,15 @@ export function registerHerderResources(server: McpServer, deps: {
     const adapter = adapters.get(decodeResourceComponent(variables.harness));
     return jsonContent(events, uri, adapter?.getSessionMessages ? await adapter.getSessionMessages(decodeResourceComponent(variables.sessionId), 100) : []);
   });
+  // The earliest user-authored message: reaches an accepted initial input that
+  // lives beyond the bounded latest-N message tail. The consumer matches the
+  // exact message id itself; nothing is inferred or exported beyond this one
+  // bounded head-of-history read.
+  server.registerResource("session-first-user-message", new ResourceTemplate("herder://sessions/{harness}/{sessionId}/first-user-message", { list: undefined, complete: { harness: () => [...adapters.keys()] } }), { title: "First user message", mimeType: "application/json" }, async (uri, variables) => {
+    const adapter = adapters.get(decodeResourceComponent(variables.harness));
+    const message = adapter?.getFirstUserMessage ? await adapter.getFirstUserMessage(decodeResourceComponent(variables.sessionId)) : null;
+    return jsonContent(events, uri, message);
+  });
   server.registerResource("short-message", new ResourceTemplate("herder://m/{messageId}", { list: undefined }), { title: "Full message", mimeType: "application/json" }, async (uri, variables) => {
     const messageId = decodeURIComponent(String(variables.messageId));
     const page = await readLongMessage({ messageId });

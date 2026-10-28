@@ -476,7 +476,8 @@ describe("integrator Fleet runtime", () => {
       expect(harness).toBe("opencode");
       await bindingStore.recordCreated({ operationId: reservation.operationId, attempt: reservation.attempt,
         harness, nativeSessionId: "native-opencode-join", launchCwd: f.projectRoot });
-      return { type: "opencode", createSession: vi.fn(async () => ({ id: "native-opencode-join", harness: "opencode", cwd: f.projectRoot })) };
+      return { type: "opencode", createSession: vi.fn(async () => ({ id: "native-opencode-join", harness: "opencode", cwd: f.projectRoot })),
+        getSession: vi.fn(async () => ({ id: "native-opencode-join", harness: "opencode", cwd: f.projectRoot })) };
     });
     const runtime = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
       codexDataHome: f.nativeHome, createHarnessAdapter: factory as any });
@@ -489,6 +490,55 @@ describe("integrator Fleet runtime", () => {
     expect(matched, JSON.stringify(matched)).toMatchObject({ kind: "scoped" });
     expect((matched as any).adapter.type).toBe("opencode");
     expect(factory).toHaveBeenCalledTimes(1);
+    await runtime.dispose();
+  });
+
+  it("denies an OpenCode scope whose stored tuple disagrees with the live route", async () => {
+    const f = await setup();
+    const model = "anthropic/claude-opus-4-6";
+    await f.policyStore.replace({
+      version: 1, allowedHarnesses: ["codex", "opencode"], preferredHarness: "codex",
+      models: { codex: CODEX_PROJECT_MODEL_ID, opencode: model },
+      projectRoutes: { [f.projectRoot]: { harnesses: ["opencode"], aliases: ["project-alpha"], models: { opencode: model } } },
+    });
+    const inputId = "9".repeat(64);
+    // An accepted row that carries a stored scope from a different root/policy:
+    // the strict tuple comparison must deny it before any adapter is built.
+    await f.bindingStore.reserve({ operationId: inputId, hostId: hostname(), harness: "opencode",
+      scope: { projectId: "/somewhere/else", rootIdentity: JSON.stringify(["/somewhere/else", 1, 2]),
+        policyRevision: "stale-etag", hostId: hostname(), harness: "opencode", harnessVersion: "opencode 1.0.0",
+        canonicalRoot: { path: "/somewhere/else", device: 1, inode: 2 },
+        nativeDataHome: { path: "/somewhere/home", device: 1, inode: 3 } } });
+    await f.bindingStore.recordCreated({ operationId: inputId, attempt: 1,
+      harness: "opencode", nativeSessionId: "native-opencode-scope", launchCwd: f.projectRoot });
+    const runtime = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
+      codexDataHome: f.nativeHome, createHarnessAdapter: vi.fn(async () => ({ type: "opencode" })) as any });
+    const denied = await runtime.adapterForSession({ hostId: hostname(), harness: "opencode", nativeSessionId: "native-opencode-scope" });
+    expect(denied).toMatchObject({ kind: "deny", reason: "project_session_current_route_mismatch" });
+    await runtime.dispose();
+  });
+
+  it("denies an OpenCode scope whose native session lives outside the project root", async () => {
+    const f = await setup();
+    const model = "anthropic/claude-opus-4-6";
+    await f.policyStore.replace({
+      version: 1, allowedHarnesses: ["codex", "opencode"], preferredHarness: "codex",
+      models: { codex: CODEX_PROJECT_MODEL_ID, opencode: model },
+      projectRoutes: { [f.projectRoot]: { harnesses: ["opencode"], aliases: ["project-alpha"], models: { opencode: model } } },
+    });
+    const inputId = "a".repeat(64);
+    const runtime = new IntegratorFleetRuntime({ policyStore: f.policyStore, bindingStore: f.bindingStore,
+      codexDataHome: f.nativeHome, createHarnessAdapter: vi.fn(async ({ reservation, bindingStore }: any) => {
+        await bindingStore.recordCreated({ operationId: reservation.operationId, attempt: reservation.attempt,
+          harness: "opencode", nativeSessionId: "native-opencode-join", launchCwd: f.projectRoot });
+        return {
+          type: "opencode",
+          getSession: vi.fn(async () => ({ id: "native-opencode-join", harness: "opencode", cwd: "/another/project/root" })),
+        };
+      }) as any });
+    await runtime.create({ project: "project-alpha", inputId, name: "qa", cwd: f.projectRoot, harness: "opencode" });
+    const drifted = await runtime.adapterForSession({ hostId: hostname(), harness: "opencode", nativeSessionId: "native-opencode-join" });
+    expect(drifted).toMatchObject({ kind: "deny", reason: "project_session_native_cwd_drift" });
     await runtime.dispose();
   });
 

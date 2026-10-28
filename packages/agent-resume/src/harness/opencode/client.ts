@@ -1375,6 +1375,49 @@ export class OpenCodeClient implements HarnessClient {
   }
 
   /**
+   * The earliest user-authored message, read through the supported v2 query
+   * from the head of the history (type=user, order=asc, small bounded window).
+   * This reaches an accepted initial input that lives beyond the latest-N
+   * message tail without exporting arbitrary history. Null when the session
+   * has no readable user message in that window.
+   */
+  async getFirstUserMessage(id: string): Promise<HarnessMessage | null> {
+    await this.probeProtocol();
+    if (this.isV2) {
+      const messages = await this.fetchJson<OpenCodeMessagePayload[]>(
+        this.api(`/session/${encodeURIComponent(id)}/message?limit=5&type=user&order=asc`),
+      );
+      if (!Array.isArray(messages)) return null;
+      const first = messages.find((message) => (message.id || message.info?.id) && (message.type === "user"));
+      return first ? this.toConversationMessage(first, id) : null;
+    }
+    const directory = await this.resolveDirectory(id);
+    if (!directory) return null;
+    const messages = await this.fetchJson<OpenCodeMessagePayload[]>(
+      `/session/${encodeURIComponent(id)}/message?directory=${encodeURIComponent(directory)}&limit=10`,
+    );
+    if (!Array.isArray(messages)) return null;
+    const first = [...messages].reverse().find((message) => (message.info?.role || message.role) === "user"
+      && (!message.info?.sessionID || message.info.sessionID === id));
+    return first ? this.toConversationMessage(first, id) : null;
+  }
+
+  private toConversationMessage(message: OpenCodeMessagePayload, sessionId: string): HarnessMessage {
+    const parts = openCodeMessageParts(message);
+    const info = message.info || {};
+    const nativeRole = message.role || info.role || message.type;
+    const role = nativeRole === "user" || nativeRole === "system" ? nativeRole
+      : nativeRole === "tool" || (parts.length > 0 && parts.every((part) => part.type === "tool_result")) ? "tool" : "assistant";
+    const text = parts.filter((part) => part.type === "text" || part.type === "thinking").map((part) => part.text || "").join("\n").trim() || undefined;
+    return {
+      id: message.id || info.id || `${sessionId}:first-user-message`,
+      role,
+      ...(text ? { text } : {}),
+      parts,
+    };
+  }
+
+  /**
    * Identity of the live turn, or null when the session is not executing one.
    * Herder uses it to guarantee a coordination message lands in the running turn
    * and never in a later one.

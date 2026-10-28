@@ -1018,6 +1018,18 @@ export class OpenCodeAdapter implements HarnessAdapter {
     }
   }
 
+  /** The earliest user-authored message, read from the head of the native history. */
+  async getFirstUserMessage(id: string): Promise<SessionMessageView | null> {
+    const message = await this.client.getFirstUserMessage(id);
+    if (!message) return null;
+    return {
+      id: message.id,
+      role: message.role,
+      ...(message.text ? { text: message.text } : {}),
+      parts: message.parts as SessionMessagePart[],
+    };
+  }
+
   async getSessionMessages(id: string, limit = 3): Promise<SessionMessageView[] | null> {
     const messages = await this.client.getMessages(id, limit);
     if (!messages) return null;
