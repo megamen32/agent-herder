@@ -26,6 +26,7 @@ The emergency pause noticeplace-ai-pause.service is a system unit: it is
 never stopped, never changed and never disabled by this command.
 """
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -229,6 +230,26 @@ def switch_current(catalog: Path, sha: str) -> None:
 
 
 def node_side_fleet(arguments) -> int:
+    if sys.platform == "darwin":
+        # Keep the handoff in this process, never in a caller-supplied flag or
+        # proof file. Stop the exact existing owner before touching releases.
+        spec = importlib.util.spec_from_file_location("fleet_rollout_owned", HERE / "rollout-node.py")
+        rollout = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rollout)
+        label = "com.bezrabotnyi.agent-herder-fleet-node"
+        handoff = rollout.DarwinStoppedGeneration(Path(arguments.fleet_dir).expanduser(), label,
+            arguments.previous_sha, arguments.web_port, shlex.split(arguments.restart_cmd))
+        try:
+            handoff.stop()
+            return _node_side_fleet(arguments, rollout, handoff)
+        finally:
+            # Preparation or a pre-switch refusal must not leave our known
+            # previous runtime down. A new owner/configuration forbids this.
+            handoff.restore_if_still_owned()
+    return _node_side_fleet(arguments)
+
+
+def _node_side_fleet(arguments, rollout=None, handoff=None) -> int:
     fleet = Path(arguments.fleet_dir).expanduser()
     sha = arguments.sha
     release = fleet / "releases" / sha
@@ -254,6 +275,8 @@ def node_side_fleet(arguments) -> int:
                "--release-local-packages",
                "--unit", arguments.unit,
                "--state-dir", arguments.state_dir]
+    if rollout is not None:
+        return rollout.main(command[2:], stopped_generation=handoff)
     result = subprocess.run(command, check=False)
     return result.returncode
 

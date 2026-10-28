@@ -445,6 +445,109 @@ def darwin_fleet_launchd_proof(fleet: Path, label: str) -> dict:
             "entrypoint": str(watchdog)}
 
 
+class DarwinStoppedGeneration:
+    """One in-process handoff, captured before any release-tree mutation."""
+    def __init__(self, fleet: Path, label: str, previous_sha: str, port: int, restart_command: list):
+        self.fleet = fleet.resolve(strict=True)
+        self.label, self.previous_sha, self.port = label, previous_sha, port
+        self.proof = darwin_fleet_launchd_proof(fleet, label)
+        self.restart_command = ["launchctl", "kickstart", "-k", f"{self.proof['domain']}/{label}"]
+        if restart_command != self.restart_command:
+            raise ValueError("launchagent_restart_mismatch")
+        self.config_bytes = (fleet / "node-config.json").read_bytes()
+        self.current = os.readlink(fleet / "current")
+        self.plist_sha = sha256(Path(self.proof["plist"]))
+        if (json.loads(self.config_bytes).get("sourceSha") != previous_sha
+                or running_release(fleet, label) != previous_sha):
+            raise ValueError("launchagent_old_generation_mismatch")
+        processes = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], capture_output=True,
+                                   text=True, check=True, timeout=5).stdout
+        children = [line.split(None, 2)[0] for line in processes.splitlines()
+                    if len(line.split(None, 2)) == 3
+                    and line.split(None, 2)[1] == str(self.proof["pid"])
+                    and str(self.fleet / "releases" / previous_sha / "dist/index.js") in line]
+        if len(children) != 1:
+            raise ValueError("launchagent_native_child_unverified")
+        self.owned_pids = [str(self.proof["pid"]), children[0]]
+        self.generation = subprocess.run(["ps", "-p", ",".join(self.owned_pids), "-o", "pid=,uid=,lstart=,command="],
+                                        capture_output=True, text=True, check=True, timeout=5).stdout
+        self.used = False
+
+    def check_configuration(self):
+        if ((self.fleet / "node-config.json").read_bytes() != self.config_bytes
+                or os.readlink(self.fleet / "current") != self.current
+                or sha256(Path(self.proof["plist"])) != self.plist_sha):
+            raise ValueError("launchagent_configuration_changed")
+
+    def check_stopped(self):
+        self.check_configuration()
+        for domain in (f"gui/{os.getuid()}", f"user/{os.getuid()}"):
+            result = subprocess.run(["launchctl", "print", f"{domain}/{self.label}"],
+                                    capture_output=True, text=True, check=False, timeout=5)
+            if result.returncode:
+                if "Could not find service" in result.stderr:
+                    continue
+                raise ValueError("launchagent_domain_unverifiable")
+            fields = dict(re.findall(r"^\s*(path|state|pid|program)\s*=\s*(.*?)\s*$", result.stdout, re.M))
+            if fields.get("pid") and fields["pid"] != str(self.proof["pid"]):
+                raise ValueError("launchagent_owner_changed")
+            if (fields.get("path") != self.proof["plist"]
+                    or fields.get("program") != self.proof["program"]
+                    or fields.get("state") != "not running" or fields.get("pid")):
+                raise ValueError("launchagent_new_owner_or_still_running")
+        old = subprocess.run(["ps", "-p", ",".join(self.owned_pids), "-o", "pid="],
+                             capture_output=True, text=True, check=False, timeout=5)
+        listeners = subprocess.run(["/usr/sbin/lsof", "-nP", f"-iTCP:{self.port}", "-sTCP:LISTEN", "-t"],
+                                   capture_output=True, text=True, check=False, timeout=5)
+        if old.stdout.strip() or listeners.stdout.strip() or listeners.returncode not in (0, 1):
+            raise ValueError("launchagent_owned_process_or_listener_remains")
+
+    def stop(self):
+        # Recheck the exact loaded owner immediately before targeted SIGTERM.
+        self.check_configuration()
+        if darwin_fleet_launchd_proof(self.fleet, self.label) != self.proof:
+            raise ValueError("launchagent_generation_changed_before_stop")
+        generation = subprocess.run(["ps", "-p", ",".join(self.owned_pids), "-o", "pid=,uid=,lstart=,command="],
+                                    capture_output=True, text=True, check=True, timeout=5).stdout
+        if generation != self.generation:
+            raise ValueError("launchagent_process_generation_changed_before_stop")
+        result = subprocess.run(["launchctl", "kill", "SIGTERM", f"{self.proof['domain']}/{self.label}"],
+                                capture_output=True, text=True, check=False, timeout=5)
+        if result.returncode:
+            raise ValueError("launchagent_controlled_stop_failed")
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                self.check_stopped()
+                return
+            except ValueError as error:
+                if str(error) not in ("launchagent_new_owner_or_still_running", "launchagent_owned_process_or_listener_remains"):
+                    raise
+                # Never signal a replacement process; only wait for our stop.
+                if time.monotonic() >= deadline:
+                    raise ValueError("launchagent_controlled_stop_unverified") from None
+                time.sleep(.25)
+
+    def consume(self, fleet: Path, label: str, previous_sha: str):
+        if self.used or fleet.resolve() != self.fleet or label != self.label or previous_sha != self.previous_sha:
+            raise ValueError("launchagent_handoff_mismatch_or_consumed")
+        self.check_stopped()
+        self.used = True
+        return self.proof
+
+    def restore_if_still_owned(self):
+        # A running replacement, even the old SHA, must never be restarted.
+        if running_release(self.fleet, self.label):
+            return
+        self.check_stopped()
+        if restart(self.restart_command).returncode:
+            raise ValueError("launchagent_previous_restart_failed")
+        ready = wait_release_ready(self.fleet, self.previous_sha, self.port, self.label,
+            self.label, canonical_bearer=canonical_mcp_bearer(self.label))
+        if ready["reason"] != "ready":
+            raise ValueError("launchagent_previous_readiness_" + ready["reason"])
+
+
 def systemd_release_dropin_path(unit: str, home: Path | None = None) -> Path:
     if not re.fullmatch(r"[A-Za-z0-9_.@:-]+\.service", unit) or "/" in unit or ".." in unit:
         raise ValueError("unit must be a plain systemd .service name")
@@ -871,7 +974,7 @@ def wait_codex_socket(config: dict, attempts: int = 30) -> bool:
     return False
 
 
-def main() -> int:
+def main(argv=None, stopped_generation=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fleet-dir", required=True)
     parser.add_argument("--sha", required=True)
@@ -891,11 +994,15 @@ def main() -> int:
                         help="the runtime state directory of the node; read from the live process when empty")
     parser.add_argument("--pause-unit", default="noticeplace-ai-pause.service",
                         help="the system unit of the emergency pause; reported, never changed")
-    arguments = parser.parse_args()
+    arguments = parser.parse_args(argv)
 
     fleet = Path(arguments.fleet_dir).expanduser()
     release = fleet / "releases" / arguments.sha
     config_path = fleet / "node-config.json"
+    if stopped_generation is not None:
+        if sys.platform != "darwin" or type(stopped_generation) is not DarwinStoppedGeneration:
+            raise ValueError("launchagent_handoff_invalid")
+        stopped_generation.consume(fleet, arguments.launchd_label, arguments.previous_sha)
     try:
         readiness_bearer = canonical_mcp_bearer(arguments.unit) if sys.platform == "darwin" else None
     except (OSError, ValueError, TypeError):
@@ -969,7 +1076,11 @@ def main() -> int:
         # the port of the unit, which another service may own.
         if sys.platform == "darwin":
             try:
-                proof = darwin_fleet_launchd_proof(fleet, arguments.launchd_label)
+                if stopped_generation is not None:
+                    stopped_generation.check_stopped()
+                    proof = stopped_generation.proof
+                else:
+                    proof = darwin_fleet_launchd_proof(fleet, arguments.launchd_label)
             except (OSError, ValueError, subprocess.SubprocessError) as error:
                 print("the fleet LaunchAgent is not verified; nothing was switched:", str(error))
                 return 1

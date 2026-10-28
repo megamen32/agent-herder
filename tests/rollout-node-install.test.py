@@ -21,6 +21,87 @@ SPEC_CANDIDATE.loader.exec_module(candidate)
 
 
 class RolloutNodeInstallTests(unittest.TestCase):
+    def test_darwin_candidate_stops_before_release_mutation_and_restores_on_failure(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        for failure in (False, True):
+            with self.subTest(preparationFailure=failure), tempfile.TemporaryDirectory() as temporary:
+                events = []
+                fleet = pathlib.Path(temporary)
+                handoff = Mock()
+                handoff.stop.side_effect = lambda: events.append("stop")
+                handoff.restore_if_still_owned.side_effect = lambda: events.append("restore_if_still_owned")
+                def capture(*args):
+                    events.append("proof")
+                    return handoff
+                def install(argv, stopped_generation):
+                    self.assertIs(stopped_generation, handoff)
+                    events.append("switch_and_restart")
+                    return 0
+                helper = SimpleNamespace(DarwinStoppedGeneration=capture, main=install)
+                loader = Mock()
+                spec = SimpleNamespace(loader=loader)
+                args = SimpleNamespace(fleet_dir=str(fleet), sha="a"*40, previous_sha="b"*40,
+                    archive="fixture.tar", restart_cmd="launchctl kickstart -k user/501/owned",
+                    web_port=18789, unit="owned", state_dir="/state")
+                def unpack(*args):
+                    events.append("unpack")
+                    if failure: raise ValueError("isolated_preparation_failure")
+                with (patch.object(candidate.sys, "platform", "darwin"),
+                      patch.object(candidate.importlib.util, "spec_from_file_location", return_value=spec),
+                      patch.object(candidate.importlib.util, "module_from_spec", return_value=helper),
+                      patch.object(candidate, "trim_releases", side_effect=lambda *a, **kw: events.append("trim")),
+                      patch.object(candidate, "unpack_release", side_effect=unpack)):
+                    if failure:
+                        with self.assertRaisesRegex(ValueError, "isolated_preparation_failure"):
+                            candidate.node_side_fleet(args)
+                    else:
+                        self.assertEqual(candidate.node_side_fleet(args), 0)
+                self.assertEqual(events, ["proof", "stop", "trim", "unpack"] +
+                    ([] if failure else ["switch_and_restart"]) + ["restore_if_still_owned"])
+
+    def test_darwin_handoff_refuses_changed_owner_and_is_single_use(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fleet = pathlib.Path(temporary)
+            config = fleet / "node-config.json"
+            config.write_bytes(b"fixture")
+            handoff = rollout.DarwinStoppedGeneration.__new__(rollout.DarwinStoppedGeneration)
+            handoff.fleet, handoff.label, handoff.previous_sha = fleet, "owned", "b"*40
+            handoff.config_bytes, handoff.current, handoff.plist_sha = b"fixture", "releases/old", "same"
+            handoff.proof = {"pid": "123", "plist": "/owned.plist", "program": "/owned-python"}
+            handoff.owned_pids, handoff.port, handoff.used = ["123", "124"], 18789, False
+            changed = subprocess.CompletedProcess([], 0,
+                "path = /owned.plist\nstate = running\npid = 999\nprogram = /owned-python\n", "")
+            with (patch.object(rollout.os, "readlink", return_value="releases/old"),
+                  patch.object(rollout, "sha256", return_value="same"),
+                  patch.object(rollout.subprocess, "run", return_value=changed) as run):
+                with self.assertRaisesRegex(ValueError, "owner_changed"):
+                    handoff.check_stopped()
+                self.assertEqual(run.call_count, 1)
+            with patch.object(handoff, "check_stopped"):
+                handoff.consume(fleet, "owned", "b"*40)
+                with self.assertRaisesRegex(ValueError, "consumed"):
+                    handoff.consume(fleet, "owned", "b"*40)
+
+    def test_darwin_failure_restoration_targets_only_unchanged_stopped_owner(self):
+        handoff = rollout.DarwinStoppedGeneration.__new__(rollout.DarwinStoppedGeneration)
+        handoff.fleet, handoff.label, handoff.previous_sha, handoff.port = pathlib.Path("/fleet"), "owned", "b"*40, 18789
+        handoff.restart_command = ["launchctl", "kickstart", "-k", "user/501/owned"]
+        with (patch.object(rollout, "running_release", return_value=""),
+              patch.object(handoff, "check_stopped") as check,
+              patch.object(rollout, "restart", return_value=subprocess.CompletedProcess([], 0)) as restart,
+              patch.object(rollout, "canonical_mcp_bearer", return_value="isolated-existing-token"),
+              patch.object(rollout, "wait_release_ready", return_value={"reason": "ready"}) as ready):
+            handoff.restore_if_still_owned()
+            restart.assert_called_once_with(handoff.restart_command)
+            self.assertEqual(ready.call_args.args[1], "b"*40)
+            self.assertEqual(ready.call_args.kwargs["canonical_bearer"], "isolated-existing-token")
+            restart.reset_mock()
+            check.side_effect = ValueError("launchagent_owner_changed")
+            with self.assertRaisesRegex(ValueError, "owner_changed"):
+                handoff.restore_if_still_owned()
+            restart.assert_not_called()
+
     def test_darwin_canonical_secret_is_reused_without_issuing_credentials(self):
         import hashlib
         import json
