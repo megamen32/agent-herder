@@ -669,6 +669,9 @@ function registerTools(
     humanResume: humanResume ?? (async (request) => new AgentResumeClient().resume(request)),
     queryReceipt: humanResumeQuery ?? ((request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters)),
     adapters,
+    invalidateResumeWaits: resumeAfter
+      ? (requestId: string, reason: string) => resumeAfter.invalidateByHumanRequest(requestId, reason)
+      : undefined,
   });
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
   registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate, userMessageDelivery, sessionQueueControl });
@@ -1207,6 +1210,7 @@ async function main() {
       humanResume: (request: ResumeTransportRequest) => resumeSelectedTarget(request, processSupervisor, "human", true),
       projectLaunchDispatch,
       choiceQuery: (request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters),
+      humanRequestJoin: (requestId: string, reason: string) => resumeAfterRuntime.service.invalidateByHumanRequest(requestId, reason),
       adapterRegistry,
       mcpServerFactory: createHttpMcpServer,
       herderEvents,

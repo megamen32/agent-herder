@@ -41,6 +41,8 @@ export interface HumanRequestToolOptions {
   queryReceipt?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   /** Native adapters for exact permission question creation. */
   adapters?: Map<string, HarnessAdapter>;
+  /** Cancels the still-waiting resume_after wake bound to an answered request. */
+  invalidateResumeWaits?: (requestId: string, reason: string) => Promise<number>;
 }
 
 export function registerHumanRequestTools(
@@ -84,6 +86,12 @@ export function registerHumanRequestTools(
       resume: options.humanResume,
       ...(options.queryReceipt ? { queryReceipt: options.queryReceipt } : {}),
       ...(resolutionRef ? { resolutionRef } : {}),
+      dependencies: {
+        admitResume: (id, input) => humanRequests.admitResume(id, input),
+        completeResume: (id, input) => humanRequests.completeResume(id, input),
+        failResume: (id, input) => humanRequests.failResume(id, input),
+        ...(options.invalidateResumeWaits ? { invalidateResumeWaits: options.invalidateResumeWaits } : {}),
+      },
     });
     return { record: outcome.record, status: outcome.status, idempotencyKey: outcome.idempotencyKey, duplicate: outcome.duplicate, ...("receipt" in outcome ? { receipt: outcome.receipt } : {}), ...("retry" in outcome ? { retry: outcome.retry } : {}) };
   };

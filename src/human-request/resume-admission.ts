@@ -25,6 +25,8 @@ export interface HumanRequestResumeInput {
   resume: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   /** Reads the durable provider receipt for the same idempotency key without launching the session. */
   queryReceipt?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
+  /** Overrides the registry-backed join dependencies (test seam); defaults to `registry`. */
+  dependencies?: HumanRequestResumeDependencies;
   now?: Date;
 }
 
@@ -44,7 +46,8 @@ export type HumanRequestResumeOutcome =
  * provider receipt for that key or returns the in-flight state untouched.
  */
 export async function resumeHumanRequestOnce(input: HumanRequestResumeInput): Promise<HumanRequestResumeOutcome> {
-  const { registry, requestId, resultRef } = input;
+  const { registry, requestId, resultRef, dependencies } = input;
+  const join = dependencies ?? registry;
   const admission = await registry.admitResume(requestId, {
     resultRef,
     ...(input.resolutionRef ? { resolutionRef: input.resolutionRef } : {}),
@@ -59,7 +62,7 @@ export async function resumeHumanRequestOnce(input: HumanRequestResumeInput): Pr
   // deliver it after the answer won.
   if (record.resumeWaitId && (admission.admitted || record.resumeWaitWinner === "answer")) {
     try {
-      await input.dependencies.invalidateResumeWaits?.(requestId, `request ${requestId} answered`);
+      await join.invalidateResumeWaits?.(requestId, `request ${requestId} answered`);
     } catch {
       // Best effort; the retry callback re-invalidates without replaying any
       // unknown delivery.
