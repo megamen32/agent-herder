@@ -15,6 +15,7 @@ import base64
 import hashlib
 import json
 import os
+import plistlib
 from pathlib import Path
 import re
 import shutil
@@ -279,6 +280,64 @@ def unit_entrypoint(unit: str) -> str:
     result = subprocess.run(["systemctl", "--user", "show", unit, "-p", "ExecStart", "--value"],
                             capture_output=True, text=True, check=False)
     return result.stdout.strip()
+
+
+def darwin_fleet_launchd_proof(fleet: Path, label: str) -> dict:
+    """Prove the loaded LaunchAgent owns this fleet watchdog on Darwin."""
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", label):
+        raise ValueError("launchagent_label_invalid")
+    uid = os.getuid()
+    base = fleet.expanduser().resolve(strict=True)
+    watchdog = (base / "mac-node-watchdog.py").resolve(strict=True)
+    if watchdog.parent != base or not watchdog.is_file():
+        raise ValueError("launchagent_watchdog_invalid")
+
+    plist_path = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    try:
+        plist_stat = plist_path.lstat()
+        if (not stat.S_ISREG(plist_stat.st_mode) or plist_stat.st_uid != uid
+                or stat.S_IMODE(plist_stat.st_mode) & 0o022):
+            raise ValueError("launchagent_identity_mismatch")
+        plist = plistlib.loads(plist_path.read_bytes())
+    except (OSError, plistlib.InvalidFileException) as error:
+        raise ValueError("launchagent_unavailable") from error
+    if not isinstance(plist, dict):
+        raise ValueError("launchagent_format_invalid")
+    args = plist.get("ProgramArguments")
+    if (plist.get("Label") != label or not isinstance(args, list) or len(args) != 5
+            or args[1:4] != ["-I", "-S", "-B"]
+            or not isinstance(args[0], str) or not Path(args[0]).is_absolute()
+            or not Path(args[0]).is_file() or not os.access(args[0], os.X_OK)
+            or not isinstance(args[-1], str)
+            or Path(args[-1]).resolve() != watchdog
+            or plist.get("RunAtLoad") is not True or plist.get("KeepAlive") is not False):
+        raise ValueError("launchagent_program_mismatch")
+
+    plist_realpath = str(plist_path.resolve(strict=True))
+    matches = []
+    for domain in (f"gui/{uid}", f"user/{uid}"):
+        result = subprocess.run(["launchctl", "print", f"{domain}/{label}"],
+                                capture_output=True, text=True, check=False, timeout=5)
+        if result.returncode != 0:
+            # A missing service in one domain is expected when the same user
+            # has only one active LaunchAgent domain. Other failures are not.
+            if "Could not find service" in result.stderr:
+                continue
+            raise ValueError("launchagent_domain_unverifiable")
+        fields = {}
+        for line in result.stdout.splitlines():
+            match = re.match(r"\s*(path|state|pid|program)\s*=\s*(.*?)\s*$", line)
+            if match:
+                fields[match.group(1)] = match.group(2)
+        if (fields.get("path") != plist_realpath or fields.get("state") != "running"
+                or not (fields.get("pid") or "").isdigit()
+                or fields.get("program") != args[0]):
+            raise ValueError("launchagent_runtime_mismatch")
+        matches.append({"domain": domain, "pid": fields["pid"]})
+    if len(matches) != 1:
+        raise ValueError("launchagent_domain_ambiguous" if matches else "launchagent_not_loaded")
+    return {**matches[0], "plist": plist_realpath, "program": args[0],
+            "entrypoint": str(watchdog)}
 
 
 def systemd_release_dropin_path(unit: str, home: Path | None = None) -> Path:
@@ -798,12 +857,25 @@ def main() -> int:
         # release drop-in would replace the bootstrap with the release itself,
         # and the node would lose the port of its own config: it would take
         # the port of the unit, which another service may own.
-        entrypoint = unit_entrypoint(arguments.unit)
-        if "bootstrap.py" not in entrypoint:
-            print("the fleet unit does not start the node through bootstrap.py; nothing was switched:",
-                  entrypoint[:160])
-            return 1
-        print("fleet node: the release is selected by the current symlink; no release drop-in is written")
+        if sys.platform == "darwin":
+            try:
+                proof = darwin_fleet_launchd_proof(fleet, arguments.launchd_label)
+            except (OSError, ValueError, subprocess.SubprocessError) as error:
+                print("the fleet LaunchAgent is not verified; nothing was switched:", str(error))
+                return 1
+            expected_restart = ["launchctl", "kickstart", "-k",
+                                f"{proof['domain']}/{arguments.launchd_label}"]
+            if arguments.restart_cmd.split() != expected_restart:
+                print("the restart command does not target the verified fleet LaunchAgent; nothing was switched")
+                return 1
+            print("fleet node: verified LaunchAgent selects the release through node-config/current; no release drop-in is written")
+        else:
+            entrypoint = unit_entrypoint(arguments.unit)
+            if "bootstrap.py" not in entrypoint:
+                print("the fleet unit does not start the node through bootstrap.py; nothing was switched:",
+                      entrypoint[:160])
+                return 1
+            print("fleet node: the release is selected by the current symlink; no release drop-in is written")
     elif sys.platform.startswith("linux"):
         try:
             dropin_path = systemd_release_dropin_path(arguments.unit)

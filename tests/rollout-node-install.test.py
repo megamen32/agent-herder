@@ -2,6 +2,7 @@
 import importlib.util
 import os
 import pathlib
+import plistlib
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,99 @@ SPEC.loader.exec_module(rollout)
 
 
 class RolloutNodeInstallTests(unittest.TestCase):
+    def test_darwin_fleet_launcher_resolves_exact_active_user_domain_agent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = pathlib.Path(temporary)
+            fleet = home / ".local/share/agent-herder/fleet"
+            fleet.mkdir(parents=True)
+            watchdog = fleet / "mac-node-watchdog.py"
+            watchdog.write_text("# installed watchdog\n")
+            python = home / "Python"
+            python.write_text("")
+            python.chmod(0o700)
+            plist_path = home / "Library/LaunchAgents/com.bezrabotnyi.agent-herder-fleet-node.plist"
+            plist_path.parent.mkdir(parents=True)
+            plist_path.write_bytes(plistlib.dumps({
+                "Label": "com.bezrabotnyi.agent-herder-fleet-node",
+                "ProgramArguments": [str(python), "-I", "-S", "-B", str(watchdog)],
+                "RunAtLoad": True,
+                "KeepAlive": False,
+            }))
+            def launchctl(args, **kwargs):
+                if args[-1].startswith("gui/"):
+                    return subprocess.CompletedProcess(args, 113, "", "Could not find service")
+                return subprocess.CompletedProcess(args, 0,
+                    f"\tpath = {plist_path}\n\tstate = running\n\tprogram = {python}\n\tpid = 456\n", "")
+            with (patch.object(rollout.Path, "home", return_value=home),
+                  patch.object(rollout.os, "getuid", return_value=os.getuid()),
+                  patch.object(rollout.subprocess, "run", side_effect=launchctl)):
+                proof = rollout.darwin_fleet_launchd_proof(fleet, "com.bezrabotnyi.agent-herder-fleet-node")
+            self.assertEqual(proof["domain"], f"user/{os.getuid()}")
+            self.assertEqual(proof["pid"], "456")
+
+    def test_darwin_fleet_launcher_refuses_unrelated_program_arguments(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = pathlib.Path(temporary)
+            fleet = home / ".local/share/agent-herder/fleet"
+            fleet.mkdir(parents=True)
+            (fleet / "mac-node-watchdog.py").write_text("# installed watchdog\n")
+            plist_path = home / "Library/LaunchAgents/com.bezrabotnyi.agent-herder-fleet-node.plist"
+            plist_path.parent.mkdir(parents=True)
+            plist_path.write_bytes(plistlib.dumps({
+                "Label": "com.bezrabotnyi.agent-herder-fleet-node",
+                "ProgramArguments": ["/usr/bin/python3", "-I", "-S", "-B", "/tmp/other.py"],
+                "RunAtLoad": True,
+                "KeepAlive": False,
+            }))
+            with (patch.object(rollout.Path, "home", return_value=home),
+                  patch.object(rollout.os, "getuid", return_value=os.getuid())):
+                with self.assertRaisesRegex(ValueError, "launchagent_program_mismatch"):
+                    rollout.darwin_fleet_launchd_proof(fleet, "com.bezrabotnyi.agent-herder-fleet-node")
+
+    def test_darwin_fleet_install_uses_verified_launchd_domain_and_never_systemd(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            fleet = root / "fleet"
+            previous = "af06240abbe0a9567289b40e0e44328ee49e1942"
+            target = "6549b34255adb669782f8f07f5b7b852045fd708"
+            (fleet / "releases" / previous / "dist").mkdir(parents=True)
+            (fleet / "releases" / target / "dist").mkdir(parents=True)
+            (fleet / "current").symlink_to(fleet / "releases" / previous)
+            config = fleet / "node-config.json"
+            config.write_text(__import__("json").dumps({"sourceSha": previous, "nodeBin": "/usr/bin/node"}))
+            label = "com.bezrabotnyi.agent-herder-fleet-node"
+            restart_cmd = f"launchctl kickstart -k user/{os.getuid()}/{label}"
+            argv = ["rollout-node.py", "--fleet-dir", str(fleet), "--sha", target,
+                    "--port", "19091", "--restart-cmd", restart_cmd,
+                    "--previous-sha", previous, "--unit", label, "--kind", "fleet"]
+            order = []
+            with (patch.object(sys, "argv", argv),
+                  patch.object(sys, "platform", "darwin"),
+                  patch.object(rollout.Path, "home", return_value=root),
+                  patch.object(rollout, "disarm_state", return_value="armed"),
+                  patch.object(rollout, "system_pause_state", return_value="inactive"),
+                  patch.object(rollout, "process_environment_value", return_value="/state"),
+                  patch.object(rollout, "prepare_packages", return_value="unchanged"),
+                  patch.object(rollout, "verify_payload", return_value={
+                      "source_sha_ok": True, "missing": [], "extra": [], "mismatched": []}),
+                  patch.object(rollout, "release_budget", return_value=(2, 0)),
+                  patch.object(rollout, "package_resolution", return_value="resolved"),
+                  patch.object(rollout, "wait_codex_socket", return_value=True),
+                  patch.object(rollout, "darwin_fleet_launchd_proof", return_value={
+                      "domain": f"user/{os.getuid()}", "pid": "456"}),
+                  patch.object(rollout, "unit_entrypoint", side_effect=AssertionError("systemd must not be used")),
+                  patch.object(rollout, "restart", side_effect=lambda command: (
+                      order.append(command) or subprocess.CompletedProcess(command, 0, "", ""))),
+                  patch.object(rollout, "wait_port", return_value=True),
+                  patch.object(rollout, "running_release", return_value=target),
+                  patch.object(rollout, "http_status", return_value=200),
+                  patch.object(rollout, "mcp_status", return_value=200),
+                  patch.object(rollout.time, "sleep")):
+                self.assertEqual(rollout.main(), 0)
+            self.assertEqual(order, [["launchctl", "kickstart", "-k", f"user/{os.getuid()}/{label}"]])
+            self.assertEqual(__import__("json").loads(config.read_text())["sourceSha"], target)
+            self.assertEqual((fleet / "current").resolve(), fleet / "releases" / target)
+
     def test_readiness_authenticates_after_401_and_revokes_ephemeral_owner_token(self):
         calls = []
         class Reply:
