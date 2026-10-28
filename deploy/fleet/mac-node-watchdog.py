@@ -4,7 +4,7 @@
 Contract: ~/.local/share/agent-herder/fleet/{node-config.json,current/dist,
 releases}; config sourceSha/hostId/nodeBin/harnesses and native pointers match
 Linux. launcherHashes seals installed Python wrappers; every declared payload
-file is SHA-checked (<=1024 files/512MiB/5s); external deps remain owner proof.
+file is SHA-checked (<=2048 files/512MiB/5s); external deps remain owner proof.
 Codex JOIN also requires approved codexOwnerPid/codexOwnerStartedAt
 (ps lstart) /codexOwnerBin; canonical rendezvous +UID/PID/executable/listen/
 inode proof is refreshed each sample, no unknown owner/forward adoption.
@@ -61,6 +61,7 @@ SOFT_WINDOW = 30
 CPU_WINDOW = 20
 POLL_SECONDS = 2
 ARTIFACT_OBSERVATION_SECONDS = 15
+MAX_MANIFEST_FILES = 2048
 METADATA_ATTEMPT_SECONDS = 5
 METADATA_OBSERVATION_SECONDS = 10
 
@@ -836,7 +837,7 @@ def verify_manifest(base,source):
     entry=(base/'current/dist/index.js').resolve(strict=True)
     if base.resolve()/'releases' not in entry.parents:raise Refused('release_layout_invalid')
     payload=manifest.get('payload')
-    if not isinstance(payload,dict) or not 1<=len(payload)<=1024 or 'index.js' not in payload:
+    if not isinstance(payload,dict) or not 1<=len(payload)<=MAX_MANIFEST_FILES or 'index.js' not in payload:
         raise Refused('artifact_identity_missing')
     root=(base/'current/dist').resolve(strict=True);total=0;deadline=time.monotonic()+5
     for name,digest in payload.items():

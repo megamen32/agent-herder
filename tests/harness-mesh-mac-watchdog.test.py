@@ -72,20 +72,20 @@ class MacWatchdogTests(unittest.TestCase):
             for name in ('two','three'):(releases/name/'large').hardlink_to(data)
             with self.assertRaisesRegex(w.Refused,'storage_budget_exceeded'):w.release_usage(base)
 
-    def test_full_compiler_payload_of_553_files_is_admitted_and_every_hash_verified(self):
+    def test_full_compiler_payload_of_1787_files_is_admitted_and_2049_is_refused(self):
         with tempfile.TemporaryDirectory() as folder:
             base=Path(folder);dist=base/'releases'/'one'/'dist';dist.mkdir(parents=True);(base/'current').symlink_to(dist.parent)
             payload={}
-            for n in range(553):
+            for n in range(1787):
                 name='index.js' if n==0 else f'm{n}.js'
                 (dist/name).write_bytes(b'compiled');payload[name]=hashlib.sha256(b'compiled').hexdigest()
             path=dist/'fleet-deployment-manifest.json'
             manifest={'source_sha':'a'*40,'source_dirty':False,'payload':payload}
             path.write_text(json.dumps(manifest))
             self.assertEqual(w.verify_manifest(base,'a'*40),dist/'index.js')
-            (dist/'m552.js').write_bytes(b'drift')
+            (dist/'m1786.js').write_bytes(b'drift')
             with self.assertRaisesRegex(w.Refused,'artifact_identity_mismatch'):w.verify_manifest(base,'a'*40)
-            payload.update({f'extra{n}.js':'b'*64 for n in range(472)})
+            payload.update({f'extra{n}.js':'b'*64 for n in range(262)})
             path.write_text(json.dumps(manifest))
             with self.assertRaisesRegex(w.Refused,'artifact_identity_missing'):w.verify_manifest(base,'a'*40)
 
