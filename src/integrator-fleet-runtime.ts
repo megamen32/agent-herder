@@ -342,8 +342,44 @@ export class IntegratorFleetRuntime {
     const lookup = await this.options.bindingStore.findByNativeAddress(address).catch(() => null);
     if (!lookup) return { kind: "deny", reason: "project_binding_store_unavailable" };
     if (lookup.state === "not_found") return { kind: "ordinary" };
-    if (lookup.state !== "accepted") return { kind: "deny", reason: lookup.reason };
-    if (lookup.attempt.hostId !== this.hostId || address.harness !== "codex") {
+    // A harness-first journal row keeps its durable tuple in the created
+    // receipt instead of a codex scope, so the store reports it as
+    // scope_missing. Such an accepted opencode row joins the scoped route
+    // below; every other unresolved lookup is denied as before.
+    const scopeMissingJoin = lookup.state === "unresolved" && lookup.reason === "scope_missing"
+      && lookup.binding?.harness === "opencode" && address.harness === "opencode";
+    if (lookup.state !== "accepted" && !scopeMissingJoin) {
+      return { kind: "deny", reason: lookup.reason };
+    }
+    const binding = lookup.binding;
+    const attempt = lookup.state === "accepted" ? lookup.attempt : binding!.attempts.at(-1)!;
+    if (attempt.hostId !== this.hostId) {
+      return { kind: "deny", reason: "project_session_host_or_harness_mismatch" };
+    }
+    if (address.harness === "opencode") {
+      // The durable tuple of a harness-first row is the launch root of the
+      // accepted created receipt, and the current route must still designate
+      // that exact root for opencode right now.
+      if (attempt.state !== "accepted" || attempt.receipt?.state !== "created" || !attempt.receipt.launchCwd) {
+        return { kind: "deny", reason: "project_session_scope_missing" };
+      }
+      const launchRoot = attempt.receipt.launchCwd;
+      const configured = await this.resolveConfiguredProject(launchRoot, "opencode");
+      const rootIdentity = configured.ok ? await this.rootIdentityOf(configured.project.rootPath) : "";
+      if (!configured.ok || configured.project.harness !== "opencode"
+        || configured.project.rootPath !== launchRoot || !rootIdentity) {
+        return { kind: "deny", reason: "project_session_current_route_mismatch" };
+      }
+      const adapter = await this.createHarnessAdapter({
+        harness: "opencode",
+        reservation: { operationId: binding!.operationId, attempt: attempt.attempt,
+          inputId: attempt.inputId, hostId: attempt.hostId, harness: "opencode" },
+        project: { rootPath: configured.project.rootPath, model: configured.project.model, etag: configured.project.etag },
+        bindingStore: this.options.bindingStore,
+      });
+      return { kind: "scoped", adapter };
+    }
+    if (address.harness !== "codex" || lookup.state !== "accepted") {
       return { kind: "deny", reason: "project_session_host_or_harness_mismatch" };
     }
     const configured = await this.resolveConfiguredProject(lookup.attempt.scope!.projectId, "codex");
