@@ -1182,7 +1182,8 @@ export class OpenCodeClient implements HarnessClient {
   async interrupt(id: string): Promise<{ ok: boolean; error?: string }> {
     await this.probeProtocol();
     if (this.isV2) {
-      const res = await this.fetch(this.api(`/session/${encodeURIComponent(id)}/interrupt`), { method: "POST" });
+      // A user Stop must park already admitted steering/control items too.
+      const res = await this.fetch(this.api(`/session/${encodeURIComponent(id)}/interrupt?resume=false`), { method: "POST" });
       return res.ok ? { ok: true } : { ok: false, error: `HTTP ${res.status}${await this.errorHint(res)}` };
     }
     const res = await this.fetch(`/session/${id}/interrupt`, { method: "POST" });
