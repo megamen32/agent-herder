@@ -54,6 +54,7 @@ const quote=(s:string)=>"'"+s.replace(/'/g,"'\"'\"'")+"'";
 const peerFailure=(stderr:string):string=>{
  if(/Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED/.test(stderr))return 'direct_ssh_host_key_unverified';
  if(stderr.includes('native_owner_identity_mismatch'))return 'native_owner_identity_mismatch';
+ for(const reason of ['direct_mcp_credential_missing','direct_mcp_credential_unverified','direct_mcp_unauthorized','direct_mcp_forbidden','direct_mcp_http_error','direct_rpc_failed'])if(stderr.includes(reason))return reason;
  if(/ssh: connect to host .*Connection refused/.test(stderr))return 'direct_ssh_refused';
  if(/Connection timed out|Operation timed out/.test(stderr))return 'direct_ssh_connect_timeout';
  if(/ConnectionRefusedError|URLError.*Connection refused/.test(stderr))return 'direct_native_listener_unavailable';
@@ -62,7 +63,7 @@ const peerFailure=(stderr:string):string=>{
 };
 const macSessionReadTimeoutMs=20_000;
 const macSessionReadTools=new Set(['fleet_node_info','fleet_session_view']);
-const bridge=String.raw`import sys,json,socket,pwd,os,time,urllib.request,urllib.parse,urllib.error,uuid,signal
+const bridge=String.raw`import sys,json,socket,pwd,os,time,urllib.request,urllib.parse,urllib.error,uuid,signal,stat,re,shlex
 body=sys.stdin.buffer.read(16385)
 if len(body)>16384:raise RuntimeError('request_limit')
 r=json.loads(body)
@@ -76,15 +77,50 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 opener=urllib.request.build_opener(NoRedirect())
 session=None
 url='http://127.0.0.1:'+str(r['port'])+'/mcp'
+bearer=None
+def mcp_bearer():
+ global bearer
+ if bearer is not None:return bearer
+ value=os.environ.get('AGENT_HERDER_HTTP_TOKEN','').strip()
+ if not value:
+  path=os.path.join(pwd.getpwuid(os.getuid()).pw_dir,'.config','agent-herder','herder.env')
+  try:
+   fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
+   with os.fdopen(fd,'r',encoding='utf8') as handle:
+    proof=os.fstat(handle.fileno())
+    if not stat.S_ISREG(proof.st_mode) or proof.st_uid!=os.geteuid() or proof.st_mode&0o077 or proof.st_size>65536:raise RuntimeError('direct_mcp_credential_unverified')
+    content=handle.read(65537);after=os.fstat(handle.fileno())
+    if (proof.st_dev,proof.st_ino,proof.st_size,proof.st_mtime_ns)!=(after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns):raise RuntimeError('direct_mcp_credential_unverified')
+   for line in content.splitlines():
+    match=re.fullmatch(r'\s*(?:export\s+)?AGENT_HERDER_HTTP_TOKEN\s*=\s*(.*?)\s*',line)
+    if match:
+     parts=shlex.split(match.group(1),comments=True,posix=True)
+     if len(parts)!=1:raise RuntimeError('direct_mcp_credential_unverified')
+     value=parts[0]
+  except FileNotFoundError:raise RuntimeError('direct_mcp_credential_missing') from None
+  except Exception:raise RuntimeError('direct_mcp_credential_unverified') from None
+ if not value:raise RuntimeError('direct_mcp_credential_missing')
+ if len(value)>4096 or not re.fullmatch(r'[A-Za-z0-9._~+/-]+=*',value):raise RuntimeError('direct_mcp_credential_unverified')
+ bearer=value
+ return bearer
+def checked(value,identity):
+ if not isinstance(value,dict) or value.get('id')!=identity:raise RuntimeError('direct_rpc_identity_mismatch')
+ if value.get('error'):raise RuntimeError('direct_rpc_failed')
+ return value
 def rpc(method,params):
  global session
  identity=str(uuid.uuid4());headers={'Content-Type':'application/json','Accept':'application/json, text/event-stream','MCP-Protocol-Version':'2025-11-25'}
+ headers['Authorization']='Bearer '+mcp_bearer()
  if session:headers['Mcp-Session-Id']=session
  data={'jsonrpc':'2.0','method':method,'params':params}
  if not method.startswith('notifications/'):data['id']=identity
  remaining=deadline-time.monotonic()
  if remaining<=0:raise RuntimeError('direct_deadline')
- with opener.open(urllib.request.Request(url,json.dumps(data).encode(),headers),timeout=remaining) as response:
+ try:response=opener.open(urllib.request.Request(url,json.dumps(data).encode(),headers),timeout=remaining)
+ except urllib.error.HTTPError as error:
+  code=error.code;error.close()
+  raise RuntimeError('direct_mcp_unauthorized' if code==401 else 'direct_mcp_forbidden' if code==403 else 'direct_mcp_http_error') from None
+ with response:
   if method.startswith('notifications/'):return {}
   if method=='initialize':session=response.headers.get('Mcp-Session-Id')
   buf=b''
@@ -99,10 +135,9 @@ def rpc(method,params):
      text='\n'.join(line[5:].lstrip() for line in frame.split('\n') if line.startswith('data:'))
      try:value=json.loads(text)
      except ValueError:continue
-     if value.get('id')==identity:return value
+     if value.get('id')==identity:return checked(value,identity)
   value=json.loads(buf)
-  if value.get('id')!=identity:raise RuntimeError('direct_rpc_identity_mismatch')
-  return value
+  return checked(value,identity)
 # Exact read-only inventory path: reuse the existing owner API and materialized
 # backend, avoiding per-query MCP initialization and native-provider discovery.
 if r['method']=='tools/call' and r['params']=={'name':'list_active_sessions_local','arguments':{}}:
@@ -116,18 +151,12 @@ if r['method']=='herder_runtime_probe':
  # Answer whether this node runs a herder runtime at all. A node that answers
  # and is not one cannot initiate a launch, so it needs no copy of the owner
  # state. A node that does not answer in time leaves the state unknown.
- try:
-  rpc('initialize',{'protocolVersion':'2025-11-25','capabilities':{},'clientInfo':{'name':'herder-fleet-direct','version':'1'}})
-  rpc('notifications/initialized',{})
- except TimeoutError:
-  raise
- except Exception:
-  print(json.dumps({'hasRuntime':False,'reason':'not_a_herder_runtime'}))
-  raise SystemExit(0)
+ # Authentication/transport/protocol failure is unknown, never proof that the
+ # runtime does not exist. Let the transport return its fixed error code.
+ rpc('initialize',{'protocolVersion':'2025-11-25','capabilities':{},'clientInfo':{'name':'herder-fleet-direct','version':'1'}})
+ rpc('notifications/initialized',{})
  listed=rpc('tools/list',{})
- if listed.get('error'):
-  print(json.dumps({'hasRuntime':False,'reason':'mcp_tools_list_failed'}))
-  raise SystemExit(0)
+ if not isinstance(listed.get('result',{}).get('tools'),list):raise RuntimeError('direct_rpc_failed')
  names=[t.get('name') for t in ((listed.get('result') or {}).get('tools') or []) if isinstance(t,dict)]
  print(json.dumps({'hasRuntime':True,'hasDisarmTool':'automation_disarm' in names,'tools':[n for n in names if isinstance(n,str)]}))
  raise SystemExit(0)

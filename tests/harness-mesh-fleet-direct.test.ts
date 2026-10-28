@@ -172,7 +172,9 @@ describe('owner direct route local logic only',()=>{
   const response={writeHead:vi.fn(),end:vi.fn()};const guard=createManagedFleetHttpGuard('owned-secret');
   const req=(url:string,authorization:string)=>({url,method:'POST',socket:{remoteAddress:'192.168.2.75'},headers:{host:'agent44.bezrabotnyi.com',authorization}} as IncomingMessage);
   expect(await guard(req('/mcp','Bearer owned-secret'),response as any)).toBe(false);
-  expect(await guard(req('/mcp','Bearer wrong'),response as any)).toBe(true);
+  // The MCP resource server rejects this bearer with its OAuth challenge;
+  // the public fleet guard leaves that exact route to its downstream check.
+  expect(await guard(req('/mcp','Bearer wrong'),response as any)).toBe(false);
   expect(await guard(req('/api/sessions','Bearer owned-secret'),response as any)).toBe(true);
   expect(await guard(req('/api/fleet/hosts','Bearer downstream-verified'),response as any)).toBe(false);
  });
@@ -189,6 +191,7 @@ describe('owner direct route local logic only',()=>{
   const program=readFileSync('src/mesh/fleet-direct-transport.ts','utf8').split('const bridge=String.raw`')[1]!.split('`;')[0]!;
   const fixture=String.raw`import sys,json,io,socket,pwd,os,urllib.request
 source=json.loads(sys.stdin.read())['program']
+os.environ['AGENT_HERDER_HTTP_TOKEN']='isolated-fixture-token'
 class Response:
  def __init__(self,request):
   r=json.loads(request.data);self.headers={'Content-Type':'text/event-stream'}
@@ -210,6 +213,7 @@ exec(compile(source,'owned-http-bridge','exec'))`;
   const program=readFileSync('src/mesh/fleet-direct-transport.ts','utf8').split('const bridge=String.raw`')[1]!.split('`;')[0]!;
   const fixture=String.raw`import sys,json,io,socket,pwd,os,urllib.request,urllib.error
 packet=json.loads(sys.stdin.read());source=packet['program'];mode=packet['mode']
+os.environ['AGENT_HERDER_HTTP_TOKEN']='isolated-fixture-token'
 class Response:
  def __init__(self,value):self.headers={'Content-Type':'application/json'};self.body=io.BytesIO(json.dumps(value).encode())
  def __enter__(self):return self
