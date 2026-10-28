@@ -104,6 +104,19 @@ export interface CodexNativeUserInputQuestion {
   options: Array<{ label: string; description: string }> | null;
 }
 
+export interface CodexAsyncUserInputQuestion {
+  title: string;
+  options: string[] | null;
+}
+
+function codexAsyncUserInputQuestions(value: unknown): CodexAsyncUserInputQuestion[] | null {
+  if (!Array.isArray(value) || !value.length || !value.every(question => question
+    && typeof question === "object" && typeof question.title === "string" && question.title.trim()
+    && (question.options === null || (Array.isArray(question.options)
+      && question.options.every((option: unknown) => typeof option === "string" && option.trim()))))) return null;
+  return value.map(question => ({ title: question.title, options: question.options === null ? null : [...question.options] }));
+}
+
 interface CodexPendingNativeUserInput {
   rpcId: number | string;
   generation: number;
@@ -2057,6 +2070,44 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     throw new Error("Native Codex model catalog exceeded bounded pagination");
   }
 
+  async readAsyncUserInputState(sessionId: string) {
+    if (!(await this.canReadProjectHistory(sessionId))) return null;
+    try {
+      await this.ensureReady();
+      const generation = this.transportGeneration;
+      const params = { threadId: sessionId, limit: 1, sortDirection: "desc" };
+      const read = async (itemsView: "summary" | "full") => {
+        const result = await this.request("thread/turns/list", { ...params, itemsView }) as { data?: Array<Record<string, unknown>> };
+        return Array.isArray(result?.data) && result.data.length === 1 ? result.data[0] : undefined;
+      };
+      let latest = await read("summary");
+      if (!latest || typeof latest.id !== "string" || !latest.id
+        || !["interrupted", "completed"].includes(String(latest.status))) return null;
+      const turnId = latest.id;
+      const summaryItems = Array.isArray(latest.items) ? latest.items : [];
+      const lastSummaryItem = summaryItems.at(-1) as Record<string, unknown> | undefined;
+      // Hydrate only the latest turn when summary omitted the native question fields.
+      // Never fall back to scanning old turns or infer a question from prose.
+      if (!Array.isArray(latest.items) || latest.itemsView === "notLoaded"
+        || (lastSummaryItem?.type === "agentMessage" && (!Object.hasOwn(lastSummaryItem, "questions")
+          || !Object.hasOwn(lastSummaryItem, "phase") || !Object.hasOwn(lastSummaryItem, "id")))) {
+        latest = await read("full");
+      }
+      if (generation !== this.transportGeneration || !latest || latest.id !== turnId
+        || !["interrupted", "completed"].includes(String(latest.status))
+        || !Array.isArray(latest.items) || !latest.items.length
+        || latest.items.some(item => !item || typeof item !== "object" || typeof item.type !== "string")) return null;
+      const items = latest.items as Array<Record<string, unknown>>;
+      const last = items.at(-1)!;
+      if (last.type !== "agentMessage" || last.phase !== "final_answer" || typeof last.id !== "string" || !last.id
+        || !items.slice(0, -1).some(item => item.type === "userMessage")) return null;
+      const questions = codexAsyncUserInputQuestions(last.questions);
+      if (!questions) return null;
+      return { target: { hostId: localSessionHostId(), harness: "codex" as const, sessionId },
+        turnId, itemId: last.id, questions, observedAt: new Date().toISOString(), canRespond: true };
+    } catch { return null; }
+  }
+
   async readNativeUserInputState(sessionId: string) {
     // Observing an empty queue cannot establish absence of another client's RPCs.
     // In particular this read must not attach/resume a historical user thread.
@@ -2922,6 +2973,17 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         this.recordProjectAssistantDelta(threadId, turnId, itemId, params.delta);
       }
       this.emitEvent({ kind: "message.updated", harness: "codex", sessionId: threadId, nativeType: message.method });
+    }
+    if (message.method === "item/completed" && threadId && typeof params.turnId === "string"
+      && params.item && typeof params.item === "object") {
+      const item = params.item as Record<string, unknown>;
+      const questions = item.type === "agentMessage" && item.phase === "final_answer"
+        ? codexAsyncUserInputQuestions(item.questions) : null;
+      if (questions && typeof item.id === "string" && item.id) {
+        this.emitEvent({ kind: "message.updated", harness: "codex", sessionId: threadId,
+          nativeType: "agentMessage/questions", status: "needs_input",
+          data: { turnId: params.turnId, itemId: item.id, questions } });
+      }
     }
     if (threadId && this.projectRuntimePolicy && this.projectThreadIds.has(threadId)) {
       const turnId = typeof params.turnId === "string" ? params.turnId : undefined;
