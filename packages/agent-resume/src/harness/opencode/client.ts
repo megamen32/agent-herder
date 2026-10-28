@@ -650,9 +650,10 @@ export class OpenCodeClient implements HarnessClient {
   /** Native metadata update only: never submits input or changes execution. */
   async renameSession(id: string, title: string): Promise<void> {
     await this.probeProtocol();
-    await this.fetchJson(this.isV2 ? this.api(`/session/${encodeURIComponent(id)}`) : `/session/${encodeURIComponent(id)}`, {
+    const response = await this.fetch(this.isV2 ? this.api(`/session/${encodeURIComponent(id)}`) : `/session/${encodeURIComponent(id)}`, {
       method: 'PATCH', body: JSON.stringify({title}),
     });
+    if (!response.ok) throw new Error(`OpenCode session title update: HTTP ${response.status}`);
   }
 
   async getMessages(id: string, limit = 3): Promise<HarnessMessage[] | null> {

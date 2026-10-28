@@ -11,3 +11,8 @@ it('renames the exact native session through PATCH without a turn or recreation'
   await c.renameSession('ses_exact','Проверить доступность сайта');
   expect(calls).toEqual([{url:'http://native.test/api/session/ses_exact',method:'PATCH',body:JSON.stringify({title:'Проверить доступность сайта'})}]);
 });
+it('accepts the native 204 response without parsing a JSON body',async()=>{
+  vi.stubGlobal('fetch',vi.fn(async()=>new Response(null,{status:204})));
+  const c=new OpenCodeClient({baseUrl:'http://native.test',protocol:'v2'});
+  await expect(c.renameSession('ses_exact','Понятное название')).resolves.toBeUndefined();
+});
