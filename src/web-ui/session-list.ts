@@ -1,3 +1,6 @@
+import {fleetHarnesses} from '../mesh/fleet-contract.js';
+import type {MeshAddress} from '../mesh/protocol.js';
+
 export type SessionListSort = "created" | "activity" | "status" | "harness" | "title" | "cwd";
 
 const STATUS_RU: Record<string, string> = {
@@ -100,6 +103,41 @@ export function sessionKeyFromHash(hash: string): string | undefined {
 }
 
 export type SessionTurnLink = Readonly<{ sessionKey: string; turnId?: string }>;
+
+/** Ordinary historical local links keep their direct local reader. */
+export function isFleetSessionLink(search:string, key:string|undefined):boolean {
+  return new URLSearchParams(search).get('from')==='lhc'||Boolean(key?.startsWith('mesh:'));
+}
+
+export type SessionDeepLinkResolution =
+  | {kind:'local';key:string} | {kind:'remote';address:MeshAddress}
+  | {kind:'pending'|'ambiguous'|'invalid'};
+
+/** Resolve only observed exact native identities; missing partial rows prove nothing. */
+export function resolveSessionDeepLink(key:string, addresses:readonly MeshAddress[], localHostId:string, complete:boolean):SessionDeepLinkResolution {
+  const valid=(value:unknown):value is string=>typeof value==='string'&&value.length>0&&value.length<=512&&!/[\x00-\x1f\x7f]/.test(value);
+  if(key.startsWith('mesh:')){
+    try{
+      const parts:unknown=JSON.parse(key.slice(5));
+      if(!Array.isArray(parts)||parts.length!==3||!parts.every(valid)||!fleetHarnesses.includes(parts[1] as any))return {kind:'invalid'};
+      const [hostId,harness,nativeSessionId]=parts as string[];
+      if(!localHostId)return {kind:'pending'};
+      return hostId===localHostId?{kind:'local',key:`${harness}:${nativeSessionId}`}:{kind:'remote',address:{hostId,harness,nativeSessionId}};
+    }catch{return {kind:'invalid'};}
+  }
+  const colon=key.indexOf(':');
+  const harness=key.slice(0,colon),nativeSessionId=key.slice(colon+1);
+  if(colon<1||!valid(harness)||!valid(nativeSessionId))return {kind:'invalid'};
+  const matches=[...new Map(addresses.filter(a=>a.harness===harness&&a.nativeSessionId===nativeSessionId).map(a=>[JSON.stringify(a),a])).values()];
+  if(matches.length>1)return {kind:'ambiguous'};
+  if(!localHostId)return {kind:'pending'};
+  if(matches.length===1&&matches[0].hostId===localHostId)return {kind:'local',key};
+  if(matches.length===1)return fleetHarnesses.includes(harness as any)?{kind:'remote',address:matches[0]}:{kind:'invalid'};
+  if(!complete)return {kind:'pending'};
+  // Historical local sessions may be absent from the list: the existing detail
+  // reader independently verifies harness/id before rendering their messages.
+  return {kind:'local',key};
+}
 
 /** A turn deep link is only a locator; it carries no author or access claim. */
 export function sessionTurnLinkFromHash(hash: string): SessionTurnLink | undefined {

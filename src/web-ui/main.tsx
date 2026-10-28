@@ -28,6 +28,7 @@ import "./interface-polish.css";
 import "./projects-screen.css";
 import { CodexNavigation } from "./codex-navigation.js";
 import {useFleetDirectory} from './fleet/use-directory.js';
+import {isFleetSessionLink,resolveSessionDeepLink} from './session-list.js';
 import {mergeActiveActivity} from './active-activity.js';
 import {useActiveActivity} from './use-active-activity.js';
 import {SessionWorkTarget, SessionInspectBlock, type SessionInspectFacts} from './session-work-target.js';
@@ -809,7 +810,8 @@ function App() {
   // переносятся в ссылки, по которым сервер отбирает сессии: выбор владельца
   // должен менять запрос, а не только подсветку чипа.
   React.useEffect(() => { listHarnessRef.current = listSettings.harness; }, [listSettings.harness]);
-  const directory=useFleetDirectory(listSettings.hostId);
+  const externalSessionLink=isFleetSessionLink(window.location.search,readSessionFromHash());
+  const directory=useFleetDirectory(externalSessionLink?undefined:listSettings.hostId);
   // The catalog of the sessions says which sessions exist; the inventory of the
   // activity says which of them are working right now.
   const activity=useActiveActivity();
@@ -850,6 +852,21 @@ function App() {
   const [detailsLoading, setDetailsLoading] = React.useState(false);
   const [detailsHydrating, setDetailsHydrating] = React.useState(false);
   const [detailsError, setDetailsError] = React.useState<string>();
+  const linkedKey=externalSessionLink?(deepLinkKey??activeKey):(activeKey?.startsWith('mesh:')?activeKey:undefined);
+  const linkedResolution=React.useMemo(()=>linkedKey?resolveSessionDeepLink(linkedKey,directory.rows.map(row=>row.address),directory.localHostId,!directory.pending&&!directory.partial&&!directory.more):undefined,[linkedKey,directory.rows,directory.localHostId,directory.pending,directory.partial,directory.more]);
+  const linkedLocalKey=linkedResolution?(linkedResolution.kind==='local'?linkedResolution.key:undefined):activeKey;
+  React.useEffect(()=>{
+    if(!linkedResolution)return;
+    if(linkedResolution.kind==='remote'){
+      const address=linkedResolution.address;
+      setRemoteSelection(current=>current&&JSON.stringify(current)===JSON.stringify(address)?current:address);
+      const key=`mesh:${JSON.stringify([address.hostId,address.harness,address.nativeSessionId])}`;
+      writeSessionToHash(key);setDeepLinkKey(key);setActiveKey(key);setMobileView('chat');
+    }else{
+      setRemoteSelection(undefined);
+      if(linkedResolution.kind==='local'&&linkedResolution.key!==activeKey){setDeepLinkKey(linkedResolution.key);setActiveKey(linkedResolution.key);}
+    }
+  },[linkedResolution,activeKey]);
   const detailsReadGateRef = React.useRef(new DetailsReadGate());
   const [mobileView, setMobileView] = React.useState<"sessions" | "chat">(() => readPage() !== "chat" || readSessionFromHash() ? "chat" : "sessions");
   // На телефоне панель открывается тем, чем владелец закончил: открытая
@@ -1250,6 +1267,7 @@ function App() {
       setLinkedTurnId(readTurnFromHash());
       setDeepLinkKey(key);
       setActiveKey(key);
+      setRemoteSelection(undefined);
       setMobileView(key ? "chat" : "sessions");
     };
     window.addEventListener("hashchange", followHash);
@@ -1311,9 +1329,13 @@ function App() {
     }
   }, [directory.scope,directory.localHostId,viewCache]);
   React.useEffect(() => {
-    if (!activeKey) { detailsReadGateRef.current.invalidate(); setDetails(null); setDetailsFullVerified(false); setDetailsLoading(false); setDetailsHydrating(false); setLatestTimingMs(undefined); setHydrateTimingMs(undefined); return; }
-    void loadDetails(activeKey);
-  }, [activeKey, loadDetails]);
+    if (!linkedLocalKey) {
+      detailsReadGateRef.current.invalidate();setDetails(null);setDetailsFullVerified(false);setDetailsLoading(false);setDetailsHydrating(false);setLatestTimingMs(undefined);setHydrateTimingMs(undefined);
+      setDetailsError(linkedResolution?.kind==='ambiguous'?'Эта сессия найдена на нескольких машинах. Нужна ссылка с точной машиной.':linkedResolution?.kind==='invalid'?'Некорректная ссылка на сессию.':linkedResolution?.kind==='pending'?'Определяю машину сессии. Часть списка ещё не загружена.':undefined);
+      return;
+    }
+    void loadDetails(linkedLocalKey);
+  }, [linkedLocalKey, linkedResolution?.kind, loadDetails]);
   React.useEffect(() => {
     let sessionTimer = 0;
     let jobTimer = 0;
@@ -1335,8 +1357,8 @@ function App() {
       jobTimer = window.setTimeout(() => { jobTimer = 0; void loadJobs(); }, 120);
     };
     const scheduleDetails = () => {
-      if (!activeKey || detailTimer) return;
-      detailTimer = window.setTimeout(() => { detailTimer = 0; void loadDetails(activeKey, false); }, 90);
+      if (!linkedLocalKey || detailTimer) return;
+      detailTimer = window.setTimeout(() => { detailTimer = 0; void loadDetails(linkedLocalKey, false); }, 90);
     };
     const storedCursor = Number.parseInt(window.localStorage.getItem("agent-herder.event-cursor") || "0", 10);
     const cursor = Number.isFinite(storedCursor) && storedCursor > 0 ? storedCursor : 0;
@@ -1364,7 +1386,7 @@ function App() {
       if (jobTimer) window.clearTimeout(jobTimer);
       if (detailTimer) window.clearTimeout(detailTimer);
     };
-  }, [activeKey, loadDetails, loadJobs, loadSessions]);
+  }, [linkedLocalKey, loadDetails, loadJobs, loadSessions]);
   React.useLayoutEffect(() => {
     const element = chatScrollRef.current;
     if (!element || !shouldFollowRef.current) return;
