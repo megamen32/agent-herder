@@ -80,6 +80,7 @@ import { registerCadenceTools } from "./mcp/cadence-tools.js";
 import { registerHumanRequestTools } from "./mcp/human-request-tools.js";
 import { createPermissionNoticeObserver } from "./permission-control/notice-bridge.js";
 import { createNativeUserInputNoticeObserver } from "./human-request/native-user-input-notice.js";
+import { createAsyncUserInputNoticeObserver } from "./human-request/async-user-input-notice.js";
 import { registerCdpTools } from "./mcp/cdp-tools.js";
 import { registerSessionTools } from "./mcp/session-tools.js";
 import {withCatalogProjection} from "./mcp/catalog-projection.js";
@@ -173,17 +174,20 @@ const autopilotStateReady = adoptLegacyAutopilotState(autopilotStateDir);
 const humanRequests = new HumanRequestRegistry(resolveHumanRequestStorePath(autopilotStateDir));
 const permissionObserver = createPermissionNoticeObserver(humanRequests);
 const nativeInputObserver = createNativeUserInputNoticeObserver(humanRequests);
+const asyncInputObserver = createAsyncUserInputNoticeObserver(humanRequests);
 const permissionNoticeObserver = {
   async onEvent(adapter: HarnessAdapter, event: import("./types/index.js").HarnessEvent) {
-    await Promise.all([permissionObserver.onEvent(adapter, event), nativeInputObserver.onEvent(adapter, event)]);
+    await Promise.all([permissionObserver.onEvent(adapter, event), nativeInputObserver.onEvent(adapter, event), asyncInputObserver.onEvent(adapter, event)]);
   },
   async reconcileInitialSnapshot(adapter: HarnessAdapter, sessions: AgentSession[]) {
     const results = await Promise.all([
       permissionObserver.reconcileInitialSnapshot(adapter, sessions),
       nativeInputObserver.reconcileInitialSnapshot(adapter, sessions),
+      asyncInputObserver.reconcileInitialSnapshot(adapter, sessions),
     ]);
     return results.every(Boolean);
   },
+  reconcileSessionSnapshot: asyncInputObserver.reconcileInitialSnapshot,
 };
 const choiceRegistry = new ChoiceRegistry(process.env.AGENT_HERDER_AUTOPILOT_CHOICE_STORE || join(autopilotStateDir, "choices.json"));
 const autopilotPolicyStore = new AutopilotPolicyStore(resolveAutopilotPolicyStorePath(autopilotStateDir));

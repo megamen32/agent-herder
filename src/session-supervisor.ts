@@ -401,6 +401,7 @@ export class SessionSupervisor {
       const observedAt=Date.now();const receipt=adapter.getSessionSnapshotReceipt?.()??{exhaustive:false,observedAt:new Date(observedAt).toISOString(),source:'native-adapter',reason:'native_enumeration_coverage_unknown'};
       this.nativeProviderSnapshots.set(provider,{sessions,observedAt,receipt});this.inventoryFailures.delete(provider);
       this.reconcileLatePermissionSessions(provider, adapter, sessions);
+      void this.permissionNoticeObserver?.reconcileSessionSnapshot?.(adapter, sessions).catch(() => undefined);
       return sessions;
     }).catch(()=>{this.inventoryFailures.set(provider,'native_enumeration_failed');return this.nativeProviderSnapshots.get(provider)?.sessions??[];}).finally(()=>{this.nativeProviderRefreshes.delete(provider);});
     this.nativeProviderRefreshes.set(provider,read);return read;
@@ -1268,7 +1269,8 @@ export class SessionSupervisor {
       return;
     }
 
-    if ((event.kind === "permission.requested" || event.nativeType === "item/tool/requestUserInput") && this.permissionNoticeObserver) {
+    if ((event.kind === "permission.requested" || event.nativeType === "item/tool/requestUserInput"
+      || event.nativeType === "agentMessage/questions" || event.nativeType === "turn/completed") && this.permissionNoticeObserver) {
       const adapter = this.adapters.get(provider);
       if (adapter) void this.permissionNoticeObserver.onEvent(adapter, event).catch(() => undefined);
     }

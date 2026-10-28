@@ -38,6 +38,8 @@ import { loadAskHumanProducer, type AskHumanProducer } from "../human-request/as
 import { hasPermissionReplyContextRef, parsePermissionReplyContextRef, readCanonicalNoticePermissionAnswer } from "../permission-control/notice-bridge.js";
 import { hasNativeUserInputContextRef, parseNativeUserInputContextRef } from "../human-request/native-user-input-notice.js";
 import { completeNativeUserInputNotice } from "../human-request/native-user-input-completion.js";
+import { hasAsyncUserInputContextRef, parseAsyncUserInputContextRef } from "../human-request/async-user-input-notice.js";
+import { completeAsyncUserInputNotice } from "../human-request/async-user-input-completion.js";
 import { respondToNativePermission } from "../permission-control/reply.js";
 import { sessionInspectFacts, type SessionInspectFacts } from "../session-visualization.js";
 // РЕШЕНО 24.10.2026 слиянием (лист L19): его WIP добавил `reportStaleRunningSession` (устаревшая сессия -> ровно один вопрос оператору) и импорты `buildIntegratorProgress` / `deliverStaleRunningQuestion` / `loadAskHumanProducer` / `lifecycleEntryFor` — всё это сохранено автослиянием без конфликта; спорный хунк — только импорт нашего инспектора сессии `sessionInspectFacts` (L68), он нужен инспектору.
@@ -2951,6 +2953,22 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const pending = await humanRequests.get(body.request_id);
     if (!pending || pending.kind !== expectedKind) {
       return sendJson(response, 409, { error: "completion does not match the pending human request kind" });
+    }
+    if (hasAsyncUserInputContextRef(pending.contextRef)) {
+      const target = parseAsyncUserInputContextRef(pending.contextRef);
+      const adapter = target && adapters.get(target.harness);
+      if (!target || expectedKind !== "user") return sendJson(response, 409, { error: "typed async question binding is invalid" });
+      if (!adapter) return sendJson(response, 503, { request_id: pending.requestId, status: "pending", retry: true, error: "native harness is unavailable" });
+      try {
+        const outcome = await completeAsyncUserInputNotice(humanRequests, pending, adapter,
+          humanResume ?? ((input) => resumeSelectedTarget(input, supervisor, "human", true)), { fetchImpl: noticeAnswerFetch ?? fetch });
+        if (outcome.pending) return sendJson(response, 503, { request_id: pending.requestId, status: outcome.record.status, retry: true, continuation: "async_user_input" });
+        return sendJson(response, outcome.record.status === "resumed" ? 202 : 502, {
+          request_id: pending.requestId, status: outcome.record.status, continuation: "async_user_input", duplicate: !outcome.admitted, retry: false,
+        });
+      } catch {
+        return sendJson(response, 503, { request_id: pending.requestId, status: "pending", retry: true, error: "canonical async question answers are not available" });
+      }
     }
     if (hasNativeUserInputContextRef(pending.contextRef)) {
       const target = parseNativeUserInputContextRef(pending.contextRef);

@@ -107,7 +107,7 @@ export function createNativeUserInputNoticeObserver(registry: HumanRequestRegist
   };
 }
 
-async function canonicalAnswer(record: HumanRequestRecord, target: NativeUserInputTarget, producer: AskHumanProducer, fetchImpl: typeof fetch) {
+export async function readCanonicalNativeUserAnswer(record: HumanRequestRecord, target: Pick<NativeUserInputTarget, "hostId" | "harness" | "sessionId">, producer: AskHumanProducer, fetchImpl: typeof fetch) {
   if (record.notify?.project !== producer.project || record.notify.recipient !== producer.recipient || record.kind !== "user"
     || (record.target.agent ?? record.target.harness) !== target.harness || record.target.sessionId !== target.sessionId) throw new Error("native input Notice routing mismatch");
   const url = new URL(producer.endpoint);
@@ -139,7 +139,7 @@ export async function collectCanonicalNativeUserInputAnswers(registry: HumanRequ
     const context = nativeUserInputContextRef({ ...target, questionId: question.id });
     const sibling = records.find(r => r.contextRef === context);
     if (!sibling) return null;
-    const resolved = await canonicalAnswer(sibling, target, producer, dependencies.fetchImpl ?? fetch);
+    const resolved = await readCanonicalNativeUserAnswer(sibling, target, producer, dependencies.fetchImpl ?? fetch);
     if (!resolved) return null;
     const choices = questionChoices(question);
     const optionIndex = choices?.findIndex(choice => choice.choice_id === resolved.answer);

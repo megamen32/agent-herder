@@ -9,6 +9,7 @@ import { structuredResult } from "./results.js";
 import type { HarnessAdapter } from "../types/index.js";
 import { createPermissionHumanQuestion, hasPermissionReplyContextRef } from "../permission-control/notice-bridge.js";
 import { hasNativeUserInputContextRef } from "../human-request/native-user-input-notice.js";
+import { hasAsyncUserInputContextRef } from "../human-request/async-user-input-notice.js";
 
 const humanRequestSchema = z.object({
   requestId: z.string(), kind: z.enum(["user", "secret"]),
@@ -61,7 +62,7 @@ export function registerHumanRequestTools(
   }> => {
     const record = await humanRequests.get(requestId);
     if (!record) throw new Error(`Human request '${requestId}' not found`);
-    if (hasPermissionReplyContextRef(record.contextRef) || hasNativeUserInputContextRef(record.contextRef)) {
+    if (hasPermissionReplyContextRef(record.contextRef) || hasNativeUserInputContextRef(record.contextRef) || hasAsyncUserInputContextRef(record.contextRef)) {
       throw new Error("native permission answers must be dispatched by the canonical Notice completion path; generic session resume is forbidden");
     }
     const retryableFailure = record.status === "resume_failed"

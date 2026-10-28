@@ -34,7 +34,7 @@ function nativePermissionReceipt(requestId: string, session: AgentSession, overr
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
   await Promise.all(connected.splice(0).map(async ({ client, server }) => { await client.close(); await server.close(); }));
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })));
   if (oldAskHumanEnvFile === undefined) delete process.env.ASK_HUMAN_ENV_FILE;
   else process.env.ASK_HUMAN_ENV_FILE = oldAskHumanEnvFile;
   if (oldNoticeProducerBindingsFile === undefined) delete process.env.AGENT_HERDER_NOTICE_PRODUCER_BINDINGS_FILE;

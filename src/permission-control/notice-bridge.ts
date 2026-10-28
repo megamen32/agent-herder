@@ -34,6 +34,8 @@ export interface PreparedPermissionQuestion {
 export interface PermissionNoticeObserver {
   onEvent(adapter: HarnessAdapter, event: HarnessEvent): Promise<void>;
   reconcileInitialSnapshot(adapter: HarnessAdapter, sessions: AgentSession[]): Promise<boolean>;
+  /** Typed persisted input can be checked independently of global inventory coverage. */
+  reconcileSessionSnapshot?(adapter: HarnessAdapter, sessions: AgentSession[]): Promise<boolean>;
 }
 
 export interface PermissionNoticeObserverDependencies {
