@@ -1,0 +1,51 @@
+{
+  "label": "Восстановить достоверное fleet STOP чтение после MCP401",
+  "description": "Исправить ложный no_runtime при отказе MCP auth и штатную owner-auth bridge без изменения STOP; разрешить единственный ожидающий QA до admission.",
+  "acceptance": "Authoritative disarmGET возвращает ровно confirmed100/44/88 с фактическим ownerSTOP, без нового native launch и без снятия защит.",
+  "owner": "roomhacker",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex",
+  "model": "gpt-6.1-sol",
+  "estimate_minutes": 15,
+  "status": "done",
+  "id": "L03",
+  "created_at": "2026-10-28T19:44:19+03:00",
+  "updated_at": "2026-10-28T19:59:37+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-28T19:44:19+03:00",
+      "note": "",
+      "changes": {
+        "label": "Восстановить достоверное fleet STOP чтение после MCP401",
+        "description": "Исправить ложный no_runtime при отказе MCP auth и штатную owner-auth bridge без изменения STOP; разрешить единственный ожидающий QA до admission.",
+        "acceptance": "Authoritative disarmGET возвращает ровно confirmed100/44/88 с фактическим ownerSTOP, без нового native launch и без снятия защит.",
+        "owner": "root",
+        "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+        "harness": "codex",
+        "model": "gpt-6.1-sol",
+        "estimate_minutes": 15,
+        "status": "running"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T19:44:19+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "owner": "roomhacker"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T19:59:37+03:00",
+      "note": "Installed1005d76de9 PID1080619/start19:55:29MSK, one coordinated restart; source49/49/TS/build/exact14PASS. Authenticated live owner-disarmGET confirms100/44/88/Mini; each existing globalSTOPfalse, records unchanged. M1 remains honestunknown/credentialmissing, not no_runtime. PeerPIDs/model/auto/indexing flags preserved, zero native/project-launchcalls. NoticePlace owner received authoritative receipt and owns its one new attempt sameinc_c109; no businessQAcompletion claimed. Evidence disarm-auth-receipt.json.",
+      "changes": {
+        "status": "done"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    }
+  ]
+}

@@ -13,7 +13,7 @@
   "current_progress": "100/44/88/Mini paused с сохранённым старым поиском. Mini установлен3d02: Root независимо подтвердил APIpausefalse и реальный UI off→refresh→off; nativeMCP200, старый FTSпоиск дал2записи partialtrue; временные ресурсы закрыты. OpenCode100/88 enabled, bounded recovery24h установлен. Текущая MiniMax→GLM policy проверена контролируемым тестом; живой GLMcombo дал QA_BACKUP_OK отдельно. Полный native429→fallback не подтверждён; на88 точного GLMcombo нет в свежем каталоге, fallback не включён без подходящей модели. Два недавних auth-error инцидента уже resolved, повторных продолжений нет. M1 остановлен штатным native ownership guard: pause сохранена, UI пока недоступен; nextaction и точный отказ записаны в mac.md/mac-mini-final.json. Полный результат не объявлен выполненным.",
   "external_waits": "",
   "slots": 3,
-  "updated_at": "2026-10-28T19:36:49+03:00",
+  "updated_at": "2026-10-28T19:59:37+03:00",
   "tasks": [
     {
       "id": "L01",
@@ -158,9 +158,65 @@
         "maximum": 20.0
       },
       "created_at": "2026-10-28T18:03:29+03:00"
+    },
+    {
+      "id": "L03",
+      "label": "Восстановить достоверное fleet STOP чтение после MCP401",
+      "status": "done",
+      "description": "Исправить ложный no_runtime при отказе MCP auth и штатную owner-auth bridge без изменения STOP; разрешить единственный ожидающий QA до admission.",
+      "acceptance": "Authoritative disarmGET возвращает ровно confirmed100/44/88 с фактическим ownerSTOP, без нового native launch и без снятия защит.",
+      "owner": "roomhacker",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-28T19:44:19+03:00",
+          "note": "",
+          "changes": {
+            "label": "Восстановить достоверное fleet STOP чтение после MCP401",
+            "description": "Исправить ложный no_runtime при отказе MCP auth и штатную owner-auth bridge без изменения STOP; разрешить единственный ожидающий QA до admission.",
+            "acceptance": "Authoritative disarmGET возвращает ровно confirmed100/44/88 с фактическим ownerSTOP, без нового native launch и без снятия защит.",
+            "owner": "root",
+            "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+            "harness": "codex",
+            "model": "gpt-6.1-sol",
+            "estimate_minutes": 15,
+            "status": "running"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T19:44:19+03:00",
+          "note": "Начал работу в текущей сессии",
+          "changes": {
+            "owner": "roomhacker"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T19:59:37+03:00",
+          "note": "Installed1005d76de9 PID1080619/start19:55:29MSK, one coordinated restart; source49/49/TS/build/exact14PASS. Authenticated live owner-disarmGET confirms100/44/88/Mini; each existing globalSTOPfalse, records unchanged. M1 remains honestunknown/credentialmissing, not no_runtime. PeerPIDs/model/auto/indexing flags preserved, zero native/project-launchcalls. NoticePlace owner received authoritative receipt and owns its one new attempt sameinc_c109; no businessQAcompletion claimed. Evidence disarm-auth-receipt.json.",
+          "changes": {
+            "status": "done"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-10-28T19:44:19+03:00"
     }
   ],
-  "leaf_count": 2,
+  "leaf_count": 3,
   "plan_origin": {
     "at": "2026-10-28T18:03:29+03:00",
     "source": "leaf_created_at",

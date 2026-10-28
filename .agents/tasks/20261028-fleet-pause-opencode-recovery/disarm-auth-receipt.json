@@ -1,0 +1,74 @@
+{
+  "scope": "L03: достоверное чтение STOP для NoticePlace до native admission",
+  "incidentHeldByNoticePlace": "inc_c1092c3c91514485a0617072e87a7727",
+  "before": {
+    "endpoint": "/api/settings/automation/disarm",
+    "server100": "confirmed",
+    "server44": "no_runtime",
+    "server88": "no_runtime",
+    "mini": "no_runtime",
+    "cause": "MCP initialize lacked Authorization. The runtime probe converted authentication errors into false absence of a Herder runtime."
+  },
+  "source": "5d76de91272f26e804f5a1f0bfbfd817be959b71",
+  "checks": {
+    "red": "6 actual-Python bridge regression failures against the original source",
+    "green": "49/49 tests in fleet-direct-auth.test.ts and harness-mesh-fleet-direct.test.ts",
+    "typescript": "PASS",
+    "productionBuild": "PASS",
+    "exactReleaseChecks": "14/14"
+  },
+  "installed100": {
+    "entry": "/home/roomhacker/agents-projects/.fleet-candidate/releases/5d76de91272f26e804f5a1f0bfbfd817be959b71/dist/index.js",
+    "bundleFingerprint": "7ee46126d0ed425afc79d0c96607cd62d59b3324238cc6f919e3d03bb91d5aa8",
+    "pid": 1080619,
+    "startMsk": "2026-10-28 19:55:29",
+    "active": true,
+    "nRestarts": 0,
+    "coordinatedRestarts": 1,
+    "publicUiPin": "3d02bf47978240a7d2b817b46d86e87b0c6cca2f, unchanged"
+  },
+  "authenticatedPeerReadback": [
+    {"hostId":"server-44","mcpStatus":200,"ownerReadOk":true,"disarmed":false,"globalForbidden":false,"pidUnchanged":2460257},
+    {"hostId":"roomhacker-server-88","mcpStatus":200,"ownerReadOk":true,"disarmed":false,"globalForbidden":false,"pidUnchanged":3664122},
+    {"hostId":"mac-mini-2012.lan","mcpStatus":200,"ownerReadOk":true,"disarmed":false,"globalForbidden":false,"pidUnchanged":65837}
+  ],
+  "authoritativeInstalledApi": {
+    "status": 200,
+    "ok": true,
+    "globalForbidden": false,
+    "disarmed": false,
+    "ownerDecisionCreatedAt": "2026-10-26T21:05:17.485Z",
+    "etag": "2dabb08e4e2c4cd1434e7923ed8d6856",
+    "nodes": [
+      {"hostId":"roomhacker-server-100","status":"confirmed"},
+      {"hostId":"server-44","status":"confirmed"},
+      {"hostId":"roomhacker-server-88","status":"confirmed"},
+      {"hostId":"mac-mini-2012.lan","status":"confirmed"},
+      {"hostId":"MacBook-Pro-User.local","status":"unreachable","reason":"direct_mcp_credential_missing"}
+    ]
+  },
+  "credentialProvisioning": {
+    "api": "existing owner /api/mcp-connection issue",
+    "storage": "native user's canonical .config/agent-herder/herder.env; uid-owned mode0600",
+    "credentialPrinted": false,
+    "separateSecretStoreCreated": false,
+    "records": [
+      {"hostId":"server-44","inputId":"fleet-direct-owner-20261028-server44-01","credentialId":"af67eef1-59ca-4491-993b-b5ad44bb1136"},
+      {"hostId":"roomhacker-server-88","inputId":"fleet-direct-owner-20261028-server88-01","credentialId":"d3f2db92-c48d-42dc-9c33-b123dac8384c"},
+      {"hostId":"mac-mini-2012.lan","inputId":"fleet-direct-owner-20261028-mini-01","credentialId":"d1b1bc0e-a67a-4033-b157-10bcfaca27f4"}
+    ]
+  },
+  "preserved": {
+    "stopWrites": 0,
+    "nativeLaunchesByThisTask": 0,
+    "sourceBlockedJobReplays": 0,
+    "projectLaunchCallsByThisTask": 0,
+    "modelChanges": 0,
+    "automationFlagChanges": 0,
+    "peerRestarts": 0,
+    "backgroundIndexing100": false,
+    "openCode100Enabled": true,
+    "openCode100QuotaFallback": true
+  },
+  "remaining": "The existing NoticePlace owner received this installed receipt and owns the one new attempt of the same muted incident; this is not its native/business completion receipt. M1 remains unknown. Older peer runtimes have not received this source update; this acceptance covers the installed100 coordinator transport."
+}
