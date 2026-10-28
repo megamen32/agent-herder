@@ -81,6 +81,36 @@ it("recovers the effective tier using only a loaded-thread attach snapshot, with
   } finally { await adapter.dispose(); }
 });
 
+it("normalizes native priority as Fast in snapshots and settings confirmations while preserving the native value", async () => {
+  const { adapter, native, calls } = fixture();
+  const request = native.request;
+  native.request = async (method: string, params: any) => {
+    if (method === "thread/settings/update") {
+      calls.push({ method, params });
+      native.consumeMessage({ method: "thread/settings/updated", params: { threadId: "target", threadSettings: { serviceTier: "priority" } } });
+      return {};
+    }
+    const result = await request(method, params);
+    return method === "thread/resume" ? { ...result, serviceTier: "priority" } : result;
+  };
+  try {
+    expect(await native.getServiceTier("target")).toMatchObject({ serviceTier: "fast", nativeServiceTier: "priority" });
+    expect(await native.setServiceTier("target", "fast")).toMatchObject({ ok: true, serviceTier: "fast", nativeServiceTier: "priority" });
+  } finally { await adapter.dispose(); }
+});
+
+it("reports native unset/default tier as Normal without inventing a native value", async () => {
+  const { adapter, native } = fixture();
+  const request = native.request;
+  native.request = async (method: string, params: any) => {
+    const result = await request(method, params);
+    return method === "thread/resume" ? { ...result, serviceTier: null } : result;
+  };
+  try {
+    expect(await native.getServiceTier("target")).toMatchObject({ serviceTier: "normal", nativeServiceTier: null });
+  } finally { await adapter.dispose(); }
+});
+
 it("rejects a transport replacement during native preflight before sending any update", async () => {
   const { adapter, native, calls } = fixture();
   const request = native.request;

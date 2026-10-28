@@ -52,6 +52,13 @@ import type { ProjectExecutionBinding } from "../project-execution-scope.js";
 
 const execFileAsync = promisify(execFile);
 
+/** Codex accepts Fast as `fast` but reports its canonical native `priority`. */
+function codexSessionServiceTier(value: string | null | undefined): "normal" | "fast" | undefined {
+  if (value === "fast" || value === "priority") return "fast";
+  if (value === "default" || value === null) return "normal";
+  return undefined;
+}
+
 /**
  * The names that the app-server child inherits from the address of the caller.
  *
@@ -1801,8 +1808,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       if (observed?.generation === this.transportGeneration) {
         state.nativeServiceTier = observed.value;
         state.observedAt = observed.observedAt;
-        if (observed.value === "fast") state.serviceTier = "fast";
-        if (observed.value === "default") state.serviceTier = "normal";
+        state.serviceTier = codexSessionServiceTier(observed.value);
       }
       return state;
     } catch (error) { return { ...state, reason: error instanceof Error ? error.message : String(error) }; }
@@ -1834,7 +1840,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       // resume/interrupt a thread or send a user turn to apply a speed change.
       await this.request("thread/settings/update", { threadId: sessionId, serviceTier: expected });
       const observed = await confirmation;
-      if (observed !== expected || generation !== this.transportGeneration) {
+      if (codexSessionServiceTier(observed) !== tier || generation !== this.transportGeneration) {
         this.serviceTierObservations.delete(sessionId);
         return { ...base, ok: false, nonRetryable: true, error: "Codex tier update outcome is unknown: no matching native settings confirmation; do not replay" };
       }
