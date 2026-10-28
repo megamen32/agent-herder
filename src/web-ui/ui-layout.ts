@@ -23,6 +23,16 @@ export type PanelLayout = {
 
 export const PANEL_LAYOUT_STORAGE_KEY = "agent-herder.layout";
 
+export function isEmbeddedLhc(search:string, framed:boolean):boolean {
+  return framed&&new URLSearchParams(search).get('from')==='lhc';
+}
+
+/** An embedded plan starts at its chat; the ordinary browser keeps its choice. */
+export function initialPanelLayout(search:string, framed:boolean, storage?:Storage):PanelLayout {
+  const base=readPanelLayout(storage);
+  return isEmbeddedLhc(search,framed)?{...base,chatListOpen:false,headerOpen:false,inspectorOpen:false}:base;
+}
+
 /** The layout a browser that never chose anything gets. */
 export function defaultPanelLayout(): PanelLayout {
   // The list shows the working sessions by default: the counter above it

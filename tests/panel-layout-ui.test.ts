@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PANEL_LAYOUT_STORAGE_KEY, defaultPanelLayout, readPanelLayout, writePanelLayout } from "../src/web-ui/ui-layout.js";
+import { PANEL_LAYOUT_STORAGE_KEY, defaultPanelLayout, initialPanelLayout, isEmbeddedLhc, readPanelLayout, writePanelLayout } from "../src/web-ui/ui-layout.js";
 
 /** A browser storage that keeps the choice of the owner. */
 function storage(): Storage {
@@ -15,6 +15,18 @@ function storage(): Storage {
 }
 
 describe("the layout of the panel", () => {
+  it("starts an LHC iframe at the chat without replacing the owner's stored layout", () => {
+    const store=storage();
+    const owner={chatListOpen:true,headerOpen:true,inspectorOpen:true,listFilter:'waiting' as const};
+    writePanelLayout(owner,store);
+    expect(initialPanelLayout('?from=lhc',true,store)).toEqual({...owner,chatListOpen:false,headerOpen:false,inspectorOpen:false});
+    expect(readPanelLayout(store)).toEqual(owner);
+    expect(isEmbeddedLhc('?from=lhc',true)).toBe(true);
+    expect(initialPanelLayout('?from=lhc',false,store)).toEqual(owner);
+    expect(initialPanelLayout('',true,store)).toEqual(owner);
+    expect(isEmbeddedLhc('?from=lhc',false)).toBe(false);
+    expect(isEmbeddedLhc('',true)).toBe(false);
+  });
   it("folds the header of the session by default", () => {
     const layout = defaultPanelLayout();
     expect(layout.headerOpen).toBe(false);

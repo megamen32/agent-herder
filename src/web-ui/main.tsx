@@ -36,7 +36,7 @@ import {SessionQuickFilters, type SessionStatusFilter, type SessionQuickFilterCo
 import { mergeScopeAnswers, sessionScopeQuery, sliceScopeQueries, statusInSlice, useSessionScope } from './session-list-scope.js';
 import {useSessionFacts} from './use-session-facts.js';
 import {SessionActivityPanel} from './session-activity-panel.js';
-import {readPanelLayout, writePanelLayout, type PanelLayout} from './ui-layout.js';
+import {initialPanelLayout, isEmbeddedLhc, writePanelLayout, type PanelLayout} from './ui-layout.js';
 import {directorySession} from './fleet/session-directory.js';
 import {RemoteSessionView,TranscriptRequestOwner,fetchIntegratorTranscriptPage,firstEventIndexForTurn,integratorEventDisplay,localTranscriptAddressFor,mergeTranscriptPageIfCurrent,readSessionQueueProcessing,submitSessionQueueProcessing,transcriptForAddress,transcriptValueIfCurrent,type TranscriptView} from './fleet/RemoteSessionView.js';
 import {SessionViewCache,indexedViewCacheStore,readViewCacheSettings,writeViewCacheSettings,type ViewCacheSettings} from './fleet/view-cache.js';
@@ -895,7 +895,8 @@ function App() {
   const [deliveryModePinned, setDeliveryModePinned] = React.useState(() => readDeliveryModePinned(window.localStorage));
   // Раскладка панели: список чатов, шапка сессии и правая панель. Владелец
   // выбирает, что он видит, и выбор переживает перезагрузку страницы.
-  const [layout, setLayout] = React.useState(() => readPanelLayout());
+  const embeddedLhc=isEmbeddedLhc(window.location.search,window.self!==window.top);
+  const [layout, setLayout] = React.useState(() => initialPanelLayout(window.location.search,window.self!==window.top));
   const showInspector = layout.inspectorOpen;
   const setShowInspector = React.useCallback((next: boolean | ((current: boolean) => boolean)) => {
     setLayout((current) => ({ ...current, inspectorOpen: typeof next === "function" ? next(current.inspectorOpen) : next }));
@@ -909,7 +910,7 @@ function App() {
   const listStatusFilter = layout.listFilter;
   const setListStatusFilter = (status: SessionStatusFilter) => setLayoutField("listFilter", status);
   React.useEffect(() => { listSliceRef.current = listStatusFilter; }, [listStatusFilter]);
-  React.useEffect(() => { writePanelLayout(layout); }, [layout]);
+  React.useEffect(() => { if(!embeddedLhc)writePanelLayout(layout); }, [layout,embeddedLhc]);
   const [sessionSettingsReturn, setSessionSettingsReturn] = React.useState<"autocontinue" | "autopilot">();
   const automationDialogRef = React.useRef<HTMLDivElement>(null);
   const [showStatistics, setShowStatistics] = React.useState(() => readPage() === "statistics");
