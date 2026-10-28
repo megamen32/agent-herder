@@ -670,7 +670,9 @@ export function namedSessionRunner(adapters: Map<string, HarnessAdapter>, name: 
       message: existingSessionId
         ? 'Новый связанный инцидент передан в уже работающую сессию. Продолжай общий ремонт без второго исполнителя; учитывай исходные ID и независимую проверку каждого инцидента. Сохрани прежние результаты и публикуй прогресс по каждому исходному ID.\n\n' + request.message
         : request.message,
-      mode: request.mode,
+      // OpenCode 2 can inject related telemetry into the current native turn.
+      // Queueing it behind the repair would hide the new symptom until later.
+      mode: existingSessionId ? "sync" : request.mode,
       ...(request.model ? { model: request.model } : {}),
       ...(configuredFallbacks ? { fallbackModels: configuredFallbacks } : {}),
       ...(request.inputId ? { inputId: request.inputId } : {}),
