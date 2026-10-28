@@ -75,21 +75,60 @@ def http_status(url: str, timeout: float = 8.0):
         return 0
 
 
-def mcp_status(port: int, timeout: float = 10.0):
+def mcp_status(port: int, timeout: float = 10.0, unit: str = "agent-herder-fleet.service", input_id: str = ""):
+    """Readiness uses native owner authentication; a 401 is never success.
+
+    Reuse the running unit's canonical bearer when configured. A tokenless
+    managed node can issue one ephemeral token through its existing local
+    owner API. Keep it in memory and revoke it before returning.
+    """
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize",
                        "params": {"protocolVersion": "2024-11-05", "capabilities": {},
                                   "clientInfo": {"name": "l", "version": "1"}}}).encode()
-    request = urllib.request.Request(f"http://127.0.0.1:{port}/mcp", data=body, method="POST",
-                                     headers={"Content-Type": "application/json",
-                                              "Accept": "application/json, text/event-stream"})
-    try:
+    origin = f"http://127.0.0.1:{port}"
+    token = process_environment_value(unit, "AGENT_HERDER_HTTP_TOKEN").strip()
+    issued_id = None
+    status = 0
+    def owner_action(payload):
+        request = urllib.request.Request(origin + "/api/mcp-connection", data=json.dumps(payload).encode(), method="POST",
+                                         headers={"Content-Type": "application/json", "Origin": origin})
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read(16384))
+    def initialize(bearer):
+        headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+        if bearer:
+            headers["Authorization"] = "Bearer " + bearer
+        request = urllib.request.Request(origin + "/mcp", data=body, method="POST", headers=headers)
         with urllib.request.urlopen(request, timeout=timeout) as response:
             response.read(256)
             return response.status
+    try:
+        try:
+            status = initialize(token)
+        except urllib.error.HTTPError as error:
+            status = error.code
+        if status == 401 and not token:
+            # The deployment identity is durable across a lost issue reply:
+            # another invocation cannot silently issue a second credential.
+            issued = owner_action({"action": "issue", "name": "Herder deploy readiness", "inputId": input_id or f"deploy-readiness-{unit}-{port}"})
+            issued_id = issued.get("record", {}).get("id")
+            token = issued.get("token", "")
+            if not issued_id or not token:
+                return 0
+            status = initialize(token)
+        return status
     except urllib.error.HTTPError as error:
         return error.code
     except Exception:
         return 0
+    finally:
+        if issued_id:
+            try:
+                owner_action({"action": "revoke", "id": issued_id})
+            except Exception:
+                # Do not hide an orphaned deploy token behind a successful
+                # readiness response. No automatic reissue/retry occurs here.
+                return 0
 
 
 def switch_current(fleet: Path, sha: str):
@@ -806,7 +845,7 @@ def main() -> int:
     live_sha = running_release(fleet, arguments.launchd_label)
     sessions = http_status(f"http://127.0.0.1:{arguments.port}/api/sessions")
     policy = http_status(f"http://127.0.0.1:{arguments.port}/api/automation/launch-policy")
-    mcp = mcp_status(arguments.port)
+    mcp = mcp_status(arguments.port, unit=arguments.unit, input_id=f"deploy-readiness-{arguments.sha}-{arguments.unit}")
     after = disarm_state(fleet, state_dir)
     checks = [
         ("running process comes from the new release", live_sha == arguments.sha, live_sha or "unknown"),
@@ -832,7 +871,7 @@ def main() -> int:
         rollback_live = running_release(fleet, arguments.launchd_label)
         rollback_sessions = http_status(f"http://127.0.0.1:{arguments.port}/api/sessions")
         rollback_policy = http_status(f"http://127.0.0.1:{arguments.port}/api/automation/launch-policy")
-        rollback_mcp = mcp_status(arguments.port)
+        rollback_mcp = mcp_status(arguments.port, unit=arguments.unit, input_id=f"deploy-readiness-{previous_sha}-{arguments.unit}")
         rollback_resolution = package_resolution(fleet / "releases" / previous_sha)
         print(f"rollback proof: process={rollback_live} sessions={rollback_sessions} policy={rollback_policy} mcp={rollback_mcp} agent-resume={rollback_resolution or 'UNRESOLVED'}")
         return 1

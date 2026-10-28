@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -15,6 +16,30 @@ SPEC.loader.exec_module(rollout)
 
 
 class RolloutNodeInstallTests(unittest.TestCase):
+    def test_readiness_authenticates_after_401_and_revokes_ephemeral_owner_token(self):
+        calls = []
+        class Reply:
+            status = 200
+            def __init__(self, body): self.body = body
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, limit): return self.body
+        def respond(request, **kwargs):
+            import json
+            calls.append(request)
+            if request.full_url.endswith('/mcp'):
+                if request.get_header('Authorization') != 'Bearer isolated-fixture-token':
+                    raise urllib.error.HTTPError(request.full_url, 401, 'unauthorized', {}, None)
+                return Reply(b'{}')
+            payload = json.loads(request.data)
+            if payload['action'] == 'issue': return Reply(b'{"token":"isolated-fixture-token","record":{"id":"fixture-token-id"}}')
+            self.assertEqual(payload, {'action':'revoke','id':'fixture-token-id'})
+            return Reply(b'{"record":{"id":"fixture-token-id","revokedAt":"now"}}')
+        with patch.object(rollout, 'process_environment_value', return_value=''), patch.object(rollout.urllib.request, 'urlopen', side_effect=respond):
+            self.assertEqual(rollout.mcp_status(18791), 200)
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(calls[1].get_header('Origin'), 'http://127.0.0.1:18791')
+
     def test_linux_release_identity_comes_from_absolute_entrypoint_argument(self):
         with tempfile.TemporaryDirectory() as temporary:
             fleet = pathlib.Path(temporary) / "fleet"
