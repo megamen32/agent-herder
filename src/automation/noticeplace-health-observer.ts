@@ -23,6 +23,8 @@ export interface NoticeplaceHealthObserverOptions {
    * working. An active turn is the only positive proof that work is running.
    */
   readActiveTurn?: (harness: string, sessionId: string) => Promise<string | null>;
+  /** Explicit attempt receipt; native session status is never a completion receipt. */
+  readAttemptOutcome?: (harness: string, sessionId: string) => Promise<"working" | "work_finished" | "aborted" | "failed" | "unknown" | null>;
   /** Override the sink in tests; production posts into the original incident. */
   publish?: (update: IncidentProgressUpdate) => Promise<void>;
   /** Operational receipt after a successful publication. */
@@ -47,19 +49,15 @@ export interface NoticeplaceHealthObserverOptions {
 }
 
 /**
- * Statuses that mean the executor is gone for good.
- *
- * Herder's own status vocabulary is "running" (working), "idle" (waiting, no
- * prompt pending), "needs_input" (blocked), "stopped" (finished or aborted)
- * and "error" (crashed). Only the last two end the observation: "idle" is
- * waiting, and a busy executor is reported as idle while it keeps working.
+ * Terminal transport statuses are evidence that observation should end, but
+ * not that the attempt succeeded. Only an explicit attempt receipt can say
+ * work_finished; stopped and prolonged idle remain unknown.
  */
-const TERMINAL_STATUS = new Set(["stopped", "error"]);
 const DEFAULT_INTERVAL_MS = 15_000;
 const DEFAULT_MAX_LIFETIME_MS = 45 * 60_000;
 const DEFAULT_MAX_TARGETS = 8;
 const DEFAULT_MAX_CONCURRENT_READS = 4;
-/** An idle executor with no active turn and no progress for this long is done. */
+/** An idle executor with no active turn and no progress this long is unobserved. */
 const DEFAULT_IDLE_FINISHED_AFTER_MS = 3 * 60_000;
 /** A refused publication is retried at most once per this window. */
 const DEFAULT_RETRY_INTERVAL_MS = 60_000;
@@ -252,8 +250,9 @@ export class NoticeplaceHealthObserver {
         }
         // The terminal stream is decided first and fails on its own: a refused
         // progress must never keep a finished executor from being reported.
-        if (await this.detectTerminal(target, state, summary)) {
-          await this.publishFinal(target, status);
+        const outcome = await this.detectTerminal(target, state, summary);
+        if (outcome) {
+          await this.publishFinal(target, outcome);
           this.targets.delete(key);
           return;
         }
@@ -321,24 +320,33 @@ export class NoticeplaceHealthObserver {
    * observed progress moved for the idle window: a busy executor is reported
    * as idle, so the status alone would end the observation of a live executor.
    */
-  private async detectTerminal(target: NoticeplaceHealthTarget, state: TargetState, summary: SessionProgressSummary): Promise<boolean> {
+  private async detectTerminal(target: NoticeplaceHealthTarget, state: TargetState, summary: SessionProgressSummary): Promise<"work_finished" | "aborted" | "failed" | "unknown" | undefined> {
+    if (this.options.readAttemptOutcome) {
+      try {
+        const outcome = await this.options.readAttemptOutcome(target.harness, target.sessionId);
+        if (outcome && outcome !== "working") return outcome;
+      } catch {
+        // An unavailable attempt receipt proves nothing; native observation continues.
+      }
+    }
     const status = summary.session.status;
-    if (TERMINAL_STATUS.has(status)) return true;
-    if (status !== "idle") return false;
+    if (status === "error") return "failed";
+    if (status === "stopped") return "unknown";
+    if (status !== "idle") return undefined;
     const readActiveTurn = this.options.readActiveTurn;
-    if (!readActiveTurn) return false;
+    if (!readActiveTurn) return undefined;
     let activeTurn: string | null;
     try {
       activeTurn = await readActiveTurn(target.harness, target.sessionId);
     } catch {
       // An unreadable native status proves nothing; keep observing.
-      return false;
+      return undefined;
     }
-    if (activeTurn) return false;
+    if (activeTurn) return undefined;
     const idleFinishedAfterMs = this.options.idleFinishedAfterMs ?? DEFAULT_IDLE_FINISHED_AFTER_MS;
     const lastActivity = Date.parse(summary.session.lastActivity);
     const since = Math.max(state.lastProgressAt, Number.isFinite(lastActivity) ? lastActivity : 0);
-    return Date.now() - since >= idleFinishedAfterMs;
+    return Date.now() - since >= idleFinishedAfterMs ? "unknown" : undefined;
   }
 
   private async publish(target: NoticeplaceHealthTarget, summary: SessionProgressSummary, status: string, historyComplete: boolean): Promise<void> {
@@ -359,7 +367,7 @@ export class NoticeplaceHealthObserver {
     });
   }
 
-  private async publishFinal(target: NoticeplaceHealthTarget, status: string): Promise<void> {
+  private async publishFinal(target: NoticeplaceHealthTarget, outcome: "work_finished" | "aborted" | "failed" | "unknown"): Promise<void> {
     const planId = target.binding.planId;
     if (!planId) {
       this.refuseWithoutPlan(target);
@@ -372,10 +380,16 @@ export class NoticeplaceHealthObserver {
         // Two executors of one incident can finish with the same status; the
         // session identity keeps the second final from being swallowed as an
         // idempotent repeat of the first.
-        idempotencyKey: `noticeplace-health:${target.binding.incidentId}:final:${target.harness}:${target.sessionId}:${status}`,
-        step: `Исполнитель закончил работу (статус ${status}); ждём независимую проверку источника.`,
+        idempotencyKey: `noticeplace-health:${target.binding.incidentId}:final:${target.harness}:${target.sessionId}:${outcome}`,
+        step: outcome === "work_finished"
+          ? "Исполнитель объявил завершение попытки; ожидается независимая проверка источника."
+          : outcome === "failed"
+            ? "Исполнитель завершился с ошибкой; результат работы не подтверждён."
+            : outcome === "aborted"
+              ? "Исполнитель прервал попытку; результат работы не подтверждён."
+              : "Наблюдение исполнителя завершилось без подтверждения результата; требуется независимая проверка.",
         evidenceRefs: [],
-        fingerprint: `final:${target.harness}:${target.sessionId}:${status}`,
+        fingerprint: `final:${target.harness}:${target.sessionId}:${outcome}`,
       });
     } catch (error) {
       this.reportError(target, error);

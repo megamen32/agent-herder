@@ -45,7 +45,7 @@ function details(status: AgentStatus = "idle", lastActivity = new Date().toISOSt
 }
 
 describe("Notice Place health observer", () => {
-  it("keeps watching an idle executor and ends the observation only on a terminal status", async () => {
+  it("keeps watching idle and labels stopped status uncertain instead of successful", async () => {
     const published: IncidentProgressUpdate[] = [];
     let status: AgentStatus = "idle";
     const observer = new NoticeplaceHealthObserver({
@@ -61,7 +61,21 @@ describe("Notice Place health observer", () => {
     status = "stopped";
     await vi.waitFor(() => expect(published.some(update => update.idempotencyKey.includes(":final:"))).toBe(true));
     const final = published.find(update => update.idempotencyKey.includes(":final:"))!;
-    expect(final.step).toContain("Исполнитель закончил работу");
+    expect(final.step).toContain("без подтверждения результата");
+    expect(final.step).not.toContain("объявил завершение попытки");
+  });
+
+  it("labels prolonged idle without an active turn as uncertain", async () => {
+    const published: IncidentProgressUpdate[] = [];
+    const observer = new NoticeplaceHealthObserver({
+      readDetails: async () => details("idle", "Жду"),
+      readActiveTurn: async () => null,
+      idleFinishedAfterMs: 0,
+      publish: async update => { published.push(update); },
+    });
+    await observer.start(target());
+    await vi.waitFor(() => expect(published.some(update => update.idempotencyKey.includes(":final:"))).toBe(true));
+    expect(published.find(update => update.idempotencyKey.includes(":final:"))?.step).toContain("без подтверждения результата");
   });
 
   it("sends the selected plan of the launch in the progress body", async () => {

@@ -5,18 +5,58 @@ import lockfile from 'proper-lockfile';
 import type {AgentSession} from '../types/common.js';
 import type {NamedSessionResult} from '../named-session.js';
 
-/** Source identity deliberately excludes incident ID, correlation and sample fingerprint. */
-export function incidentSourceKey(message: string): string | undefined {
+type IncidentFacts = {project: string; sourceId?: string; consumerId?: string; hostId: string; signalType?: string; problemType?: string};
+
+const PROBLEM_TYPE_ALIASES: Record<string, string[]> = {
+  cpu: ['load', 'loadavg', 'cpu_load', 'cpu'],
+  disk: ['disk', 'disk_space', 'disk_full', 'inodes'],
+};
+
+function canonicalProblemType(facts: IncidentFacts): string | undefined {
+  if (facts.problemType) return facts.problemType;
+  if (!facts.signalType) return undefined;
+  const raw = facts.signalType.trim();
+  const aliasGroup = Object.entries(PROBLEM_TYPE_ALIASES).find(([, aliases]) => aliases.includes(raw.toLowerCase()));
+  return aliasGroup?.[0] ?? raw;
+}
+
+function incidentFacts(message: string): IncidentFacts | undefined {
   for (const line of message.slice(-65536).split('\n').reverse()) {
     if (!line.trim().startsWith('{')) continue;
     try {
       const facts = JSON.parse(line);
       if (typeof facts.id !== 'string' || !facts.id.startsWith('inc_')) continue;
-      const keys = ['project', 'source_id', 'host_id', 'signal_type'];
-      if (keys.some(key => typeof facts[key] !== 'string' || !facts[key].trim() || facts[key].length > 256)) return;
-      return createHash('sha256').update(JSON.stringify(keys.map(key => facts[key].trim()))).digest('hex');
+      const required = ['project', 'host_id'] as const;
+      if (required.some(key => typeof facts[key] !== 'string' || !facts[key].trim() || facts[key].length > 256)) return;
+      if (facts.consumer_id !== undefined && facts.consumer_id !== null && typeof facts.consumer_id !== 'string') return;
+      if (facts.problem_type !== undefined && facts.problem_type !== null && typeof facts.problem_type !== 'string') return;
+      const sourceId = typeof facts.source_id === 'string' && facts.source_id.trim() ? facts.source_id.trim() : undefined;
+      const consumerId = typeof facts.consumer_id === 'string' && facts.consumer_id.trim() ? facts.consumer_id.trim() : undefined;
+      const signalType = typeof facts.signal_type === 'string' && facts.signal_type.trim() ? facts.signal_type.trim() : undefined;
+      const problemType = typeof facts.problem_type === 'string' && facts.problem_type.trim() ? facts.problem_type.trim() : undefined;
+      return {project: facts.project.trim(), sourceId, consumerId, hostId: facts.host_id.trim(), signalType, problemType};
     } catch { /* Bounded telemetry, never executable instructions. */ }
   }
+}
+
+/** Source identity deliberately excludes incident ID, correlation and sample fingerprint. */
+export function incidentSourceKey(message: string): string | undefined {
+  const facts = incidentFacts(message);
+  if (facts) {
+    const consumer = facts.consumerId ?? facts.sourceId;
+    const problem = canonicalProblemType(facts);
+    if (!consumer || !problem || [consumer, problem].some(value => value.length > 256)) return;
+    const identity = [facts.project, consumer, facts.hostId, problem];
+    return createHash('sha256').update(JSON.stringify(identity)).digest('hex');
+  }
+}
+
+/** Old registry keys used source_id and signal_type; retain a narrow upgrade bridge. */
+export function incidentLegacySourceKeys(message: string): string[] {
+  const facts = incidentFacts(message);
+  if (!facts?.sourceId || !facts.signalType) return [];
+  const aliases = facts.problemType ? [facts.signalType] : (PROBLEM_TYPE_ALIASES[canonicalProblemType(facts)?.toLowerCase() ?? ''] ?? [facts.signalType]);
+  return [...new Set(aliases.map(signal => createHash('sha256').update(JSON.stringify([facts.project, facts.sourceId, facts.hostId, signal])).digest('hex')))];
 }
 
 type Binding = {sessionId?: string; pending?: string};
@@ -26,6 +66,10 @@ export type IncidentSessionRouterPorts = {
   readSession(harness: string, sessionId: string): Promise<AgentSession | null>;
   unfinished(session: AgentSession): Promise<boolean>;
   held?(session: AgentSession): Promise<boolean>;
+  /** Confirm that the original bound incident is still open before continuation. */
+  boundIncidentOpen?(session: AgentSession): Promise<boolean>;
+  /** Confirm a durable degraded/work-finished receipt for a stopped attempt. */
+  continuationReady?(session: AgentSession): Promise<boolean>;
   /** Adopt a pre-upgrade executor only after matching its original native facts. */
   findExisting?(request: Request, sourceKey: string): Promise<AgentSession | undefined>;
 };
@@ -45,7 +89,31 @@ export class IncidentSessionRouter {
     const release = await lockfile.lock(target, {realpath: false, stale: 120000, retries: {retries: 120, minTimeout: 100, maxTimeout: 500}});
     try {
       const state = await this.read();
-      const prior = state.groups[key];
+      let prior = state.groups[key];
+      {
+        const legacy = incidentLegacySourceKeys(request.message)
+          .map(oldSource => state.groups[createHash('sha256').update(JSON.stringify([request.harness, request.cwd, oldSource])).digest('hex')])
+          .filter((binding): binding is Binding => Boolean(binding));
+        if (legacy.some(binding => binding.pending) || prior?.pending) return {
+          ok: false, created: false, name: 'incident-source-pending', cwd: request.cwd, harness: request.harness,
+          inputId: request.inputId, admissionUnknown: true, nonRetryable: true, delivery: 'admission_unknown',
+          error: 'У старой привязки источника есть отправка с неизвестным результатом; второй исполнитель не создан.',
+        };
+        const sessionIds = [...new Set([...legacy, ...(prior ? [prior] : [])].map(binding => binding.sessionId).filter((id): id is string => Boolean(id)))];
+        if (sessionIds.length > 1) {
+          const preferred = this.ports.findExisting ? await this.ports.findExisting(request, source) : undefined;
+          if (!preferred) return {
+            ok: false, created: false, name: 'incident-session-ambiguous', cwd: request.cwd, harness: request.harness,
+            inputId: request.inputId, delivery: 'not_attempted', nonRetryable: true,
+            error: 'Старые привязки источника указывают на несколько сессий; автоматическое продолжение остановлено.',
+          };
+          prior = {sessionId: preferred.id};
+        }
+        if (!prior && sessionIds.length === 1) {
+          const adopted = [...legacy, ...(prior ? [prior] : [])].find(binding => binding.sessionId === sessionIds[0]);
+          if (adopted) prior = adopted;
+        }
+      }
       if (prior?.pending) return {
         ok: false, created: false, name: 'incident-source-pending', cwd: request.cwd, harness: request.harness,
         inputId: request.inputId, admissionUnknown: true, nonRetryable: true, delivery: 'admission_unknown',
@@ -53,19 +121,46 @@ export class IncidentSessionRouter {
         error: 'Предыдущая отправка по этому источнику имеет неизвестный результат; второй исполнитель не создан.',
       };
       let existing = prior?.sessionId ? await this.ports.readSession(request.harness, prior.sessionId) : undefined;
+      if (prior?.sessionId && !existing) return {
+        ok: false, created: false, name: 'incident-session-unavailable', cwd: request.cwd, harness: request.harness,
+        inputId: request.inputId, delivery: 'not_attempted', nonRetryable: true, sessionId: prior.sessionId,
+        error: 'Исходная сессия ремонта недоступна; новая сессия не создана.',
+      };
       // A human hold stays attached to the source group. Let the existing
       // admission gate reject it; never escape the hold through a fresh ID.
-      if (existing && !await this.ports.held?.(existing)
+      if (prior?.sessionId && existing) {
+        if (existing.cwd !== request.cwd || existing.meta?.archived === true) return {
+          ok: false, created: false, name: 'incident-session-unavailable', cwd: request.cwd, harness: request.harness,
+          inputId: request.inputId, delivery: 'not_attempted', nonRetryable: true, sessionId: existing.id,
+          error: 'Исходная сессия ремонта архивирована или сменила рабочую директорию; новая сессия не создана.',
+        };
+        if (!await this.ports.held?.(existing)) {
+          if (this.ports.boundIncidentOpen && !await this.ports.boundIncidentOpen(existing)) existing = undefined;
+          else if (!await this.ports.unfinished(existing)) {
+            if (!this.ports.continuationReady || !await this.ports.continuationReady(existing)) return {
+              ok: false, created: false, name: 'incident-continuation-unconfirmed', cwd: request.cwd, harness: request.harness,
+              inputId: request.inputId, delivery: 'not_attempted', nonRetryable: true, sessionId: existing.id,
+              error: 'Исходная сессия завершила попытку, но актуальная квитанция продолжения не подтверждена; новая сессия не создана.',
+            };
+          }
+        }
+        // A finished attempt resumes the exact bound ID only with a durable
+        // continuation receipt. HumanStop remains with the ordinary admission gate.
+      } else if (existing && !await this.ports.held?.(existing)
         && (existing.cwd !== request.cwd || existing.meta?.archived === true || !await this.ports.unfinished(existing))) existing = undefined;
       if (!prior && this.ports.findExisting) existing = await this.ports.findExisting(request, source);
       const binding: Binding = {...(existing ? {sessionId: existing.id} : {}), pending: request.inputId};
       await this.update(key, binding); // Crash/timeout cannot silently fall through to a new executor.
       const result = await launch(existing?.id);
+      if (existing && result.sessionId && result.sessionId !== existing.id) return {
+        ...result, ok: false, created: false, sessionId: existing.id, delivery: 'not_attempted', nonRetryable: true,
+        error: 'Исполнитель вернул другой ID вместо исходной сессии; замена не принята.',
+      };
       const unknown = result.admissionUnknown || result.pending || result.delivery === 'accepted_unconfirmed';
       await this.update(key, {
         ...(result.sessionId ? {sessionId: result.sessionId} : existing ? {sessionId: existing.id} : {}),
-        // A known session ID is safe to reuse; an unknown creation must stay fenced.
-        ...(unknown && !result.sessionId ? {pending: request.inputId} : {}),
+        // A known session ID does not resolve an unknown input admission.
+        ...(unknown ? {pending: request.inputId} : {}),
       });
       return {...result, ...(existing && result.sessionId === existing.id ? {coalesced: true} : {})};
     } finally {

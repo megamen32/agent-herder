@@ -20,7 +20,7 @@ function details(status: string, text: string): SessionDetails {
 }
 
 describe("NoticeplaceHealthObserver", () => {
-  it("publishes the live executor step and reports the end of the session", async () => {
+  it("does not report stopped status as successful work completion", async () => {
     // An idle executor is waiting, not finished: only an explicit terminal
     // status ends the observation.
     const states = [details("running", "Читаю состояние сторожа"), details("running", "Читаю состояние сторожа"), details("idle", "Жду"), details("stopped", "Проверка завершена")];
@@ -37,7 +37,33 @@ describe("NoticeplaceHealthObserver", () => {
     await new Promise((resolve) => setTimeout(resolve, 150));
     observer.stop();
     expect(published[0]).toContain("Исполнитель работает");
-    expect(published.some((step) => step.includes("закончил работу"))).toBe(true);
+    expect(published.some((step) => step.includes("без подтверждения результата"))).toBe(true);
+    expect(published.some((step) => step.includes("объявил завершение попытки"))).toBe(false);
+  });
+
+  it("reports work_finished only from an explicit attempt receipt", async () => {
+    const published: string[] = [];
+    const observer = new NoticeplaceHealthObserver({
+      readDetails: async () => details("stopped", "Stopped"),
+      readAttemptOutcome: async () => "work_finished",
+      publish: async (update) => { published.push(update.step); },
+    });
+    await observer.start({ harness: "opencode", sessionId: "ses_finished", cwd: "/tmp", binding });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    observer.stop();
+    expect(published).toContain("Исполнитель объявил завершение попытки; ожидается независимая проверка источника.");
+  });
+
+  it("reports a failed session as failed, without a success claim", async () => {
+    const published: string[] = [];
+    const observer = new NoticeplaceHealthObserver({
+      readDetails: async () => details("error", "Runner crashed"),
+      publish: async (update) => { published.push(update.step); },
+    });
+    await observer.start({ harness: "opencode", sessionId: "ses_failed", cwd: "/tmp", binding });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    observer.stop();
+    expect(published).toContain("Исполнитель завершился с ошибкой; результат работы не подтверждён.");
   });
 
   it("keeps one observation per session and never resolves the incident", async () => {
