@@ -1,0 +1,109 @@
+{
+  "scope": "88 only; 44 not restarted",
+  "fallbackConfigurationFollowup": {
+    "requestedRoute": "omniroute/glm-5.3-flash-minimax-m3.1",
+    "catalog": {
+      "endpoint": "/api/models?harness=opencode",
+      "stale": false,
+      "refreshedAt": "2026-10-28T15:52:50.402Z",
+      "modelsCount": 53,
+      "requestedRoutePresent": false,
+      "otherGlmModelsPresent": true
+    },
+    "policy": {
+      "endpoint": "/api/automation/launch-policy",
+      "etag": "24f8dd577eb0c9f2b36bb1daeca9e2d7",
+      "defaultOpenCodeModel": "omniroute/minimax-combo-m3.1",
+      "fallbackModels": [
+        "omniroute/minimax-combo-m3.1",
+        "minimax-coding-plan/MiniMax-M3.1-Flash"
+      ]
+    },
+    "effective": {
+      "enabled": true,
+      "recoverOnFailure": true,
+      "waitForQuota": false,
+      "fallbackForQuota": false,
+      "openCodeHarnessEnabled": true,
+      "waitForQuotaHarnessOverrides": []
+    },
+    "changesApplied": false,
+    "reason": "Requested GLM combo is absent from the fresh native model catalog and existing fallback policy. Root's conditional authorization prohibits extending registry/auth or substituting another GLM route.",
+    "smallestNextAction": "Owner of node88 model-provider configuration must expose/authorize the exact GLM combo through the existing native catalog; then set OpenCode-only fallbackForQuota and CAS fallback priority without changing default MiniMax.",
+    "nativeTurns": 0,
+    "restarts": 0,
+    "browserReplays": 0
+  },
+  "expectedSource": "cd2bb9f13f6ec5ded079ef59b71d5e350bec2cf7",
+  "bundleFingerprint": "5fc89b49cc8a2702656ccb3eec6d32cdd0021c64dbfe20b2d036e4593df7d622",
+  "helperSource": "git archive cd2bb9f13f6ec5ded079ef59b71d5e350bec2cf7 deploy/fleet",
+  "rolloutExitCode": 0,
+  "readback": [
+    {
+      "host": "roomhacker-server-88",
+      "pid": 3664122,
+      "unit": "NRestarts=0\nExecMainStartTimestamp=Wed 2026-10-28 18:37:45 MSK\nActiveState=active",
+      "current": "/home/roomhacker/.local/share/agent-herder/fleet/releases/cd2bb9f13f6ec5ded079ef59b71d5e350bec2cf7",
+      "cmdline": "/usr/bin/node /home/roomhacker/.local/share/agent-herder/fleet/releases/cd2bb9f13f6ec5ded079ef59b71d5e350bec2cf7/dist/index.js ",
+      "indexingPath": "/home/roomhacker/.local/state/agent-herder/indexing-settings.json",
+      "indexDb": "/home/roomhacker/.local/state/agent-herder/session-search/index.sqlite",
+      "ragState": "/home/roomhacker/.local/state/agent-herder/rag.json",
+      "indexingPathState": {
+        "enabled": false,
+        "updatedAt": "2026-10-28T15:07:39.388Z"
+      },
+      "counts": {
+        "sessions": 898,
+        "chunks": 5611
+      },
+      "indexRun": [
+        [
+          "complete",
+          "2026-10-28T15:25:46.053Z",
+          898
+        ]
+      ],
+      "/api/settings/background-indexing": {
+        "status": 200,
+        "preview": "{\"enabled\":false,\"updatedAt\":\"2026-10-28T15:07:39.388Z\"}"
+      },
+      "/api/rag/settings": {
+        "status": 200,
+        "preview": "{\"enabled\":false,\"backgroundIndexing\":false,\"harnesses\":{\"codex\":true,\"zcode\":true,\"opencode\":true},\"collection\":\"agent_"
+      },
+      "/": {
+        "status": 200,
+        "preview": "<!doctype html>\n<html lang=\"ru\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-w"
+      }
+    },
+    {
+      "/api/session-autostart": {
+        "enabled": true,
+        "harnesses": [
+          {
+            "harness": "opencode",
+            "enabled": true,
+            "updatedAt": "2026-10-28T15:28:25.754Z"
+          }
+        ],
+        "recoverOnFailure": true
+      },
+      "/api/adapters": [
+        {
+          "id": "opencode",
+          "active": true
+        }
+      ],
+      "configSourceSha": "cd2bb9f13f6ec5ded079ef59b71d5e350bec2cf7"
+    }
+  ],
+  "readiness": {
+    "authenticatedMcp": 200,
+    "temporaryTokenRevoked": true,
+    "automationDisarmUnchanged": true
+  },
+  "manualNativeResumes": 0,
+  "providerCanaries": 0,
+  "browserClicksReplayed": 0,
+  "resources": "no browsers/tunnels opened for final 88-only delta"
+}

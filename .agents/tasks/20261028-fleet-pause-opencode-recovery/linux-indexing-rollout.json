@@ -1,0 +1,304 @@
+{
+  "phase": "installed-accepted",
+  "final": {
+    "44": {
+      "installed": {
+        "host": "server-44",
+        "pid": 2460257,
+        "unit": "NRestarts=0\nExecMainStartTimestamp=Wed 2026-10-28 18:26:01 MSK\nActiveState=active",
+        "current": "/home/roomhacker/.local/share/agent-herder/fleet/releases/3d02bf47978240a7d2b817b46d86e87b0c6cca2f",
+        "cmdline": "/usr/bin/node /home/roomhacker/.local/share/agent-herder/fleet/releases/3d02bf47978240a7d2b817b46d86e87b0c6cca2f/dist/index.js ",
+        "indexingPath": "/home/roomhacker/.local/state/agent-herder/indexing-settings.json",
+        "indexDb": "/home/roomhacker/.local/state/agent-herder/session-search/index.sqlite",
+        "ragState": "/home/roomhacker/.local/state/agent-herder/rag.json",
+        "indexingPathState": {
+          "enabled": false,
+          "updatedAt": "2026-10-28T15:07:00.950Z"
+        },
+        "counts": {
+          "sessions": 87,
+          "chunks": 170
+        },
+        "indexRun": [
+          [
+            "complete",
+            "2026-10-28T15:25:18.213Z",
+            87
+          ]
+        ],
+        "/api/settings/background-indexing": {
+          "status": 200,
+          "preview": "{\"enabled\":false,\"updatedAt\":\"2026-10-28T15:07:00.950Z\"}"
+        },
+        "/api/rag/settings": {
+          "status": 200,
+          "preview": "{\"enabled\":false,\"backgroundIndexing\":false,\"harnesses\":{\"codex\":true,\"zcode\":true,\"opencode\":true},\"collection\":\"agent_"
+        },
+        "/": {
+          "status": 200,
+          "preview": "<!doctype html>\n<html lang=\"ru\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-w"
+        }
+      },
+      "stable": {
+        "host": "server-44",
+        "pid": 2460257,
+        "unit": "NRestarts=0\nExecMainStartTimestamp=Wed 2026-10-28 18:26:01 MSK\nActiveState=active",
+        "current": "/home/roomhacker/.local/share/agent-herder/fleet/releases/3d02bf47978240a7d2b817b46d86e87b0c6cca2f",
+        "cmdline": "/usr/bin/node /home/roomhacker/.local/share/agent-herder/fleet/releases/3d02bf47978240a7d2b817b46d86e87b0c6cca2f/dist/index.js ",
+        "indexingPath": "/home/roomhacker/.local/state/agent-herder/indexing-settings.json",
+        "indexDb": "/home/roomhacker/.local/state/agent-herder/session-search/index.sqlite",
+        "ragState": "/home/roomhacker/.local/state/agent-herder/rag.json",
+        "indexingPathState": {
+          "enabled": false,
+          "updatedAt": "2026-10-28T15:07:00.950Z"
+        },
+        "counts": {
+          "sessions": 87,
+          "chunks": 170
+        },
+        "indexRun": [
+          [
+            "complete",
+            "2026-10-28T15:25:18.213Z",
+            87
+          ]
+        ],
+        "/api/settings/background-indexing": {
+          "status": 200,
+          "preview": "{\"enabled\":false,\"updatedAt\":\"2026-10-28T15:07:00.950Z\"}"
+        },
+        "/api/rag/settings": {
+          "status": 200,
+          "preview": "{\"enabled\":false,\"backgroundIndexing\":false,\"harnesses\":{\"codex\":true,\"zcode\":true,\"opencode\":true},\"collection\":\"agent_"
+        },
+        "/": {
+          "status": 200,
+          "preview": "<!doctype html>\n<html lang=\"ru\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-w"
+        }
+      },
+      "search": [
+        {
+          "host": "server-44",
+          "tool": "session_search_local",
+          "isError": false,
+          "results": 1,
+          "querySha256": "f8aac527f9c928fcec7b1d67c73839a57741bf86271b16731e01d75bba683c53",
+          "pause": {
+            "enabled": false,
+            "updatedAt": "2026-10-28T15:07:00.950Z"
+          }
+        },
+        {
+          "acceptanceTokenRevoked": true
+        }
+      ],
+      "ui": {
+        "url": "http://127.0.0.1:34844/?page=settings",
+        "switchChecked": false,
+        "refreshClicked": true,
+        "reloadPreserved": true,
+        "screenshot": "/tmp/herder-fleet44-indexing-control.png"
+      },
+      "opencode": {
+        "connected": false,
+        "changed": false
+      }
+    },
+    "88": {
+      "installed": {
+        "host": "roomhacker-server-88",
+        "pid": 3587405,
+        "unit": "NRestarts=0\nExecMainStartTimestamp=Wed 2026-10-28 18:26:12 MSK\nActiveState=active",
+        "current": "/home/roomhacker/.local/share/agent-herder/fleet/releases/3d02bf47978240a7d2b817b46d86e87b0c6cca2f",
+        "cmdline": "/usr/bin/node /home/roomhacker/.local/share/agent-herder/fleet/releases/3d02bf47978240a7d2b817b46d86e87b0c6cca2f/dist/index.js ",
+        "indexingPath": "/home/roomhacker/.local/state/agent-herder/indexing-settings.json",
+        "indexDb": "/home/roomhacker/.local/state/agent-herder/session-search/index.sqlite",
+        "ragState": "/home/roomhacker/.local/state/agent-herder/rag.json",
+        "indexingPathState": {
+          "enabled": false,
+          "updatedAt": "2026-10-28T15:07:39.388Z"
+        },
+        "counts": {
+          "sessions": 898,
+          "chunks": 5611
+        },
+        "indexRun": [
+          [
+            "complete",
+            "2026-10-28T15:25:46.053Z",
+            898
+          ]
+        ],
+        "/api/settings/background-indexing": {
+          "status": 200,
+          "preview": "{\"enabled\":false,\"updatedAt\":\"2026-10-28T15:07:39.388Z\"}"
+        },
+        "/api/rag/settings": {
+          "status": 200,
+          "preview": "{\"enabled\":false,\"backgroundIndexing\":false,\"harnesses\":{\"codex\":true,\"zcode\":true,\"opencode\":true},\"collection\":\"agent_"
+        },
+        "/": {
+          "status": 200,
+          "preview": "<!doctype html>\n<html lang=\"ru\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-w"
+        }
+      },
+      "stable": {
+        "host": "roomhacker-server-88",
+        "pid": 3587405,
+        "unit": "NRestarts=0\nExecMainStartTimestamp=Wed 2026-10-28 18:26:12 MSK\nActiveState=active",
+        "current": "/home/roomhacker/.local/share/agent-herder/fleet/releases/3d02bf47978240a7d2b817b46d86e87b0c6cca2f",
+        "cmdline": "/usr/bin/node /home/roomhacker/.local/share/agent-herder/fleet/releases/3d02bf47978240a7d2b817b46d86e87b0c6cca2f/dist/index.js ",
+        "indexingPath": "/home/roomhacker/.local/state/agent-herder/indexing-settings.json",
+        "indexDb": "/home/roomhacker/.local/state/agent-herder/session-search/index.sqlite",
+        "ragState": "/home/roomhacker/.local/state/agent-herder/rag.json",
+        "indexingPathState": {
+          "enabled": false,
+          "updatedAt": "2026-10-28T15:07:39.388Z"
+        },
+        "counts": {
+          "sessions": 898,
+          "chunks": 5611
+        },
+        "indexRun": [
+          [
+            "complete",
+            "2026-10-28T15:25:46.053Z",
+            898
+          ]
+        ],
+        "/api/settings/background-indexing": {
+          "status": 200,
+          "preview": "{\"enabled\":false,\"updatedAt\":\"2026-10-28T15:07:39.388Z\"}"
+        },
+        "/api/rag/settings": {
+          "status": 200,
+          "preview": "{\"enabled\":false,\"backgroundIndexing\":false,\"harnesses\":{\"codex\":true,\"zcode\":true,\"opencode\":true},\"collection\":\"agent_"
+        },
+        "/": {
+          "status": 200,
+          "preview": "<!doctype html>\n<html lang=\"ru\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-w"
+        }
+      },
+      "search": [
+        {
+          "host": "roomhacker-server-88",
+          "tool": "session_search_local",
+          "isError": false,
+          "results": 1,
+          "querySha256": "238fa28a94976c7da14563bc873c2729bd5cd325389085bb4c6dd0de28923590",
+          "pause": {
+            "enabled": false,
+            "updatedAt": "2026-10-28T15:07:39.388Z"
+          }
+        },
+        {
+          "acceptanceTokenRevoked": true
+        }
+      ],
+      "ui": {
+        "url": "http://127.0.0.1:18888/?page=settings",
+        "switchChecked": false,
+        "refreshClicked": true,
+        "reloadPreserved": true,
+        "screenshot": "/tmp/herder-fleet88-indexing-control.png"
+      },
+      "opencode": {
+        "connected": true,
+        "enabled": true,
+        "updatedAt": "2026-10-28T15:28:25.754Z",
+        "changedKeys": [
+          "harnesses"
+        ],
+        "globalEnabledBefore": true,
+        "globalEnabledAfter": true
+      }
+    },
+    "cleanup": {
+      "browser": "fp44/fp44 closed",
+      "tunnels": "own SSH tunnels PIDs 2453447 and 2459292 terminated",
+      "acceptanceTokens": "both revoked",
+      "readinessTokens": "both revoked",
+      "nativeResumes": 0,
+      "quotaChanges": 0
+    }
+  },
+  "nodes": {
+    "44": {
+      "host": "server-44",
+      "pid": 108533,
+      "unit": "NRestarts=0\nExecMainStartTimestamp=Mon 2026-10-26 01:56:02 MSK\nActiveState=active",
+      "current": "/home/roomhacker/.local/share/agent-herder/fleet/releases/0cdb7fb43c30a04a8ecf75f98c3c90dc3ce0be58",
+      "cmdline": "/usr/bin/node /home/roomhacker/.local/share/agent-herder/fleet/releases/0cdb7fb43c30a04a8ecf75f98c3c90dc3ce0be58/dist/index.js ",
+      "indexingPath": "/home/roomhacker/.local/state/agent-herder/indexing-settings.json",
+      "indexDb": "/home/roomhacker/.local/state/agent-herder/session-search/index.sqlite",
+      "ragState": "/home/roomhacker/.local/state/agent-herder/rag.json",
+      "counts": {
+        "sessions": 87,
+        "chunks": 170
+      },
+      "indexRun": [
+        [
+          "complete",
+          "2026-10-28T15:05:28.591Z",
+          87
+        ]
+      ],
+      "/api/settings/background-indexing": "HTTP Error 405: Method Not Allowed",
+      "/api/rag/settings": {
+        "status": 200,
+        "preview": "{\"enabled\":false,\"harnesses\":{\"codex\":true,\"zcode\":true,\"opencode\":true},\"collection\":\"agent_herder_sessions_v1\",\"dimens"
+      },
+      "/": {
+        "status": 200,
+        "preview": "<!doctype html>\n<html lang=\"ru\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-w"
+      }
+    },
+    "88": {
+      "host": "roomhacker-server-88",
+      "pid": 1814237,
+      "unit": "NRestarts=0\nExecMainStartTimestamp=Mon 2026-10-26 01:57:04 MSK\nActiveState=active",
+      "current": "/home/roomhacker/.local/share/agent-herder/fleet/releases/0cdb7fb43c30a04a8ecf75f98c3c90dc3ce0be58",
+      "cmdline": "/usr/bin/node /home/roomhacker/.local/share/agent-herder/fleet/releases/0cdb7fb43c30a04a8ecf75f98c3c90dc3ce0be58/dist/index.js ",
+      "indexingPath": "/home/roomhacker/.local/state/agent-herder/indexing-settings.json",
+      "indexDb": "/home/roomhacker/.local/state/agent-herder/session-search/index.sqlite",
+      "ragState": "/home/roomhacker/.local/state/agent-herder/rag.json",
+      "counts": {
+        "sessions": 898,
+        "chunks": 5611
+      },
+      "indexRun": [
+        [
+          "complete",
+          "2026-10-28T15:05:25.463Z",
+          898
+        ]
+      ],
+      "/api/settings/background-indexing": "HTTP Error 405: Method Not Allowed",
+      "/api/rag/settings": {
+        "status": 200,
+        "preview": "{\"enabled\":false,\"harnesses\":{\"codex\":true,\"zcode\":true,\"opencode\":true},\"collection\":\"agent_herder_sessions_v1\",\"dimens"
+      },
+      "/": {
+        "status": 200,
+        "preview": "<!doctype html>\n<html lang=\"ru\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-w"
+      }
+    }
+  },
+  "attempt44": {
+    "candidate": "3d02bf47978240a7d2b817b46d86e87b0c6cca2f",
+    "outcome": "rolled_back",
+    "failedTransition": "anonymous MCP initialize 401 in readiness",
+    "rollbackRelease": "0cdb7fb43c30a04a8ecf75f98c3c90dc3ce0be58"
+  },
+  "pausePrestage": {
+    "44": {
+      "enabled": false,
+      "updatedAt": "2026-10-28T15:07:00.950Z"
+    },
+    "88": {
+      "enabled": false,
+      "updatedAt": "2026-10-28T15:07:39.388Z"
+    }
+  },
+  "remaining": "Linux 44/88 indexing pause accepted. Source OpenCode recovery fix and its consumer acceptance remain owned by Root; no manual native resume or quota canary executed here."
+}
