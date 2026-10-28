@@ -37,8 +37,6 @@ export function noticeplaceGroupContinuationPorts(store: AutopilotSessionStore):
       const { record, current, read } = ctx;
       const attempt = record.noticeAttempt;
       if (!attempt || !request) return 'blocked';
-      if (current.lifecycle?.attempt_id !== attempt.attemptId || current.lifecycle?.session_id !== session.id
-        || current.lifecycle?.harness !== session.harness) return 'blocked';
       const requestedId = incidentRequestId(request.message);
       if (!requestedId) return 'blocked';
       const incoming = requestedId === current.id ? current : await read(requestedId);
@@ -49,8 +47,10 @@ export function noticeplaceGroupContinuationPorts(store: AutopilotSessionStore):
       const continuation = current.lifecycle?.continuation;
       if (!continuation) {
         // An ordinary new episode has never belonged to this finished attempt.
-        return incoming.lifecycle?.attempt_id || incoming.lifecycle?.session_id ? 'blocked' : false;
+        return incoming.id === attempt.incidentId || incoming.lifecycle?.attempt_id || incoming.lifecycle?.session_id ? 'blocked' : false;
       }
+      if (current.lifecycle?.attempt_id !== attempt.attemptId || current.lifecycle?.session_id !== session.id
+        || current.lifecycle?.harness !== session.harness) return 'blocked';
       const keys = ['incident_id', 'session_id', 'harness', 'attempt_id', 'request_id', 'generation'] as const;
       if (continuation.session_id !== session.id || continuation.harness !== session.harness
         || continuation.attempt_id !== attempt.attemptId || typeof continuation.incident_id !== 'string'

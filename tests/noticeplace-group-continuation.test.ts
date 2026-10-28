@@ -63,11 +63,21 @@ it.each(['closed-origin', 'missing-ledger', 'wrong-group', 'wrong-session', 'wro
 it('preserves a legitimate new generation after the entire old group is healthy', async () => {
   const f = await fixture();
   delete f.documents.inc_B.lifecycle.continuation;
+  f.documents.inc_B.lifecycle.attempt_id = null;
+  f.documents.inc_B.lifecycle.session_id = null; // A source can recover before the executor sends finish.
   f.documents.inc_A.state = 'resolved';
   f.documents.inc_new = { id: 'inc_new', project: 'qa', state: 'open', lifecycle: {
     group_key: 'group_1', group: f.documents.inc_B.lifecycle.group, attempt_id: null, session_id: null } };
   expect(await f.router().run(f.request('inc_new'), f.launch)).toMatchObject({ ok: true, created: true });
   expect(f.launches).toEqual([undefined]);
+});
+
+it('a replay of the closed latest incident does not count as a fresh ordinary episode', async () => {
+  const f = await fixture();
+  delete f.documents.inc_B.lifecycle.continuation;
+  f.documents.inc_B.lifecycle.attempt_id = null; f.documents.inc_B.lifecycle.session_id = null;
+  expect(await f.router().run(f.request('inc_B'), f.launch)).toMatchObject({ ok: false, created: false, delivery: 'not_attempted' });
+  expect(f.launches).toEqual([]);
 });
 
 it('does not escape HumanStop through the sibling origin or a new session', async () => {
