@@ -142,6 +142,47 @@ describe("resume after exact sessions", () => {
     expect(deliver).not.toHaveBeenCalled();
     await done(service,a);expect(deliver).toHaveBeenCalledTimes(1);
   });
+
+  /**
+   * A startup hold must not outlive the wait's own deadline.
+   *
+   * The hold exists to protect specific old expectations during a rollout: a
+   * wait that was already `waiting` when the process started stays untouched.
+   * But a wait carries its own schedule, and that schedule keeps running while
+   * the process lives. A delay wake whose deadline passed *after* the restart
+   * was therefore held forever and never fired, even though its owner sat idle
+   * and the wait was long due.
+   *
+   * The live defect: `wait_313f407ec732f2a8beb36fb0d33700d8` (owner
+   * `ses_e783d3ac0ffegdglHA2p8k3wls`, delay 600000, due 2026-10-29T19:37:19Z)
+   * stayed `waiting` forever because Herder restarted at 19:44:35Z, after the
+   * wait was registered, and the startup hold captured it. A wait registered
+   * after that same restart fired normally — the hold was the only difference.
+   */
+  it("releases a held wait once its own scheduled time has passed", async () => {
+    await mkdir(join(process.cwd(), ".tmp"), {recursive:true});
+    const directory = await mkdtemp(join(process.cwd(), ".tmp/resume-after-hold-deadline-")); dirs.push(directory);
+    const deliver = vi.fn(async () => ({status:"accepted" as const}));
+    let now = Date.parse("2026-10-29T19:27:00.000Z");
+    const service = new ResumeAfterService({directory, deliver, isHeld:async()=>false, isBusy:async()=>false,
+      holdExistingWaitingAtStartup:true, now:()=>now});
+
+    // The wait is registered before the restart and comes due after it.
+    // A delay wake, exactly like the live defect: no dependency, its own
+    // deadline decides when it is due.
+    const wait = await service.register({owner,trigger:{kind:"delay",delayMs:600_000},message:"delayed wake",requestId:"held-deadline"});
+
+    // The process starts: the wait exists and is captured by the hold.
+    expect(await service.captureStartupHold()).toBe(1);
+    await service.sweep();
+    expect(deliver).not.toHaveBeenCalled();
+
+    // Its own deadline passes. The hold protects the rollout, not the clock.
+    now = Date.parse("2026-10-29T20:00:00.000Z");
+    await service.sweep();
+    expect(deliver).toHaveBeenCalledTimes(1);
+    expect((await service.get(wait.id))?.state).toBe("resumed");
+  });
   it("rejects a dependency whose harness cannot prove native completion", async () => {
     const {service}=await fixture({validateDependency:async(ref)=>{
       if(ref.harness!=="codex") throw new Error(`Harness ${ref.harness} does not publish native turn events, so a resume-after dependency on it can never confirm completion`);

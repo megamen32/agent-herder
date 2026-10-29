@@ -111,7 +111,18 @@ export class ResumeAfterService {
     });
   }
   private isMaintenanceHeld(wait:ResumeAfterWait):boolean{
-    return this.options.holdExistingWaitingAtStartup===true && this.startupHeldWaitIds.has(wait.id);
+    if(this.options.holdExistingWaitingAtStartup!==true || !this.startupHeldWaitIds.has(wait.id))return false;
+    // The hold protects one rollout, not the clock of a wait. A wait carries
+    // its own schedule, and that schedule keeps running while the process
+    // lives: a delay wake whose deadline passes after the restart is due, and
+    // holding it forever silently swallowed it — the owner sat idle and the
+    // wake never arrived. The hold therefore ends for a wait once its own
+    // scheduled time has passed; until then it stays untouched.
+    if(wait.scheduledAt){
+      const due=Date.parse(wait.scheduledAt);
+      if(Number.isFinite(due) && (this.options.now?.()??Date.now())>=due)return false;
+    }
+    return true;
   }
   register(input: ResumeAfterRequest): Promise<ResumeAfterWait> {
     return this.serialized(async()=>{
