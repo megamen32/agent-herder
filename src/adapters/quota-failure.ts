@@ -1,13 +1,12 @@
-/** A quota failure tied to one observed, terminal native turn. */
-export interface TerminalQuotaFailure {
-  classification: "quota_exhausted";
+/** A provider failure tied to one observed, terminal native turn. */
+export type TerminalQuotaFailure = {
   status: "error" | "failed";
   nativeTurnId: string;
   inputId: string;
   providerId: string;
   modelId: string;
   resetAt?: string;
-}
+} & ({classification: "quota_exhausted"} | {classification: "provider_unavailable"});
 
 export interface TerminalQuotaFailureEvidence {
   terminal: boolean;
@@ -25,6 +24,7 @@ export interface TerminalQuotaFailureEvidence {
 }
 
 const explicitQuotaCode = /^(?:insufficient[_-]quota|quota[_-](?:exhausted|exceeded)|usage[_-]limit[_-](?:exceeded|exhausted))$/i;
+const explicitProviderCircuitOpen = /^Provider [A-Za-z0-9][A-Za-z0-9._:-]* circuit breaker is open$/;
 const explicitQuotaMessage = /(?:\b(?:quota|usage)\s+(?:limit\s+)?(?:has\s+been\s+)?(?:exhausted|exceeded)\b|\b(?:daily|weekly|monthly)(?:\s*\/\s*(?:daily|weekly|monthly))*\s+limit\s+(?:has\s+been\s+)?(?:exhausted|exceeded)\b|\binsufficient[_ -]quota\b|\bquota[_ -](?:exhausted|exceeded)\b)/i;
 const unsafeFailure = /(?:unauthori[sz]ed|forbidden|authentication|bad[ _-]?gateway|network|timed?\s*out|connection\s+(?:reset|refused|failed)|admission[ _-]+(?:unknown|uncertain)|unknown[ _-]+(?:error|failure))/i;
 
@@ -42,8 +42,8 @@ export function normalizeQuotaResetAt(value: unknown): string | undefined {
 }
 
 /**
- * Classify only explicit provider quota exhaustion after exact terminal-native
- * correlation. Generic rate limits, auth failures, transport errors and
+ * Classify explicit quota exhaustion or an exact open provider circuit after
+ * terminal-native correlation. Generic rate limits, auth failures, transport errors and
  * incomplete identities intentionally produce no recovery candidate.
  */
 export function terminalQuotaFailure(evidence: TerminalQuotaFailureEvidence): TerminalQuotaFailure | undefined {
@@ -55,6 +55,15 @@ export function terminalQuotaFailure(evidence: TerminalQuotaFailureEvidence): Te
   if (!nativeTurnId || !inputId || !providerId || !modelId) return undefined;
 
   const statusCode = evidence.statusCode;
+  const message = nonEmpty(evidence.errorMessage);
+  // The named failing provider can be a component behind the selected route.
+  // Preserve the native route identity, never replace it with the message ID.
+  if (message && explicitProviderCircuitOpen.test(message)) {
+    if (statusCode !== undefined && statusCode !== 503) return undefined;
+    if (/^(?:HTTP[_ -]?)?(?:401|403|502)$/i.test(nonEmpty(evidence.errorCode) ?? "")
+      || unsafeFailure.test(`${evidence.errorCode ?? ""} ${evidence.errorType ?? ""} ${evidence.modelErrorType ?? ""}`)) return undefined;
+    return {classification:"provider_unavailable",status:evidence.status,nativeTurnId,inputId,providerId,modelId};
+  }
   if (statusCode === 401 || statusCode === 403 || statusCode === 502) return undefined;
   if (/^(?:HTTP[_ -]?)?(?:401|403|502)$/i.test(nonEmpty(evidence.errorCode) ?? "")) return undefined;
   if (statusCode !== undefined && (!Number.isInteger(statusCode) || statusCode < 200 || statusCode >= 500)) return undefined;
@@ -62,7 +71,6 @@ export function terminalQuotaFailure(evidence: TerminalQuotaFailureEvidence): Te
   const errorCode = nonEmpty(evidence.errorCode);
   const errorType = nonEmpty(evidence.errorType);
   const modelErrorType = nonEmpty(evidence.modelErrorType);
-  const message = nonEmpty(evidence.errorMessage);
   // Native ZCode wraps this exact ZAI provider payload in UNKNOWN_ERROR.
   // The wrapper is not the provider classification; retain all auth/transport
   // exclusions and require both native model lineage and the provider code.

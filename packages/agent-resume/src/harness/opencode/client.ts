@@ -945,7 +945,12 @@ export class OpenCodeClient implements HarnessClient {
       const proofInputId = typeof sessionProof?.inputId === "string" ? sessionProof.inputId : undefined;
       const knownInputIds = [persistedInputId, observedInputId, userInputId, proofInputId].filter((value): value is string => Boolean(value));
       if (new Set(knownInputIds).size > 1) return null;
-      const inputId = stringValue(persistedInputId, observedInputId, userInputId, proofInputId);
+      // Ordinary UI submissions have no Herder-issued input ID. In that case
+      // only a fully verified linear failed packet may use its actual native
+      // user message ID as the input boundary; this is not an issued app ID.
+      const nativeInputBoundary = knownInputIds.length === 0;
+      const inputId = stringValue(persistedInputId, observedInputId, userInputId, proofInputId,
+        nativeInputBoundary ? openCodeMessageId(user.message) : undefined);
       if (!inputId) return null;
       const persistedTurnId = stringValue(latest.message.turnId, latest.message.info?.turnId, statusMetadata?.turnId);
       if (persistedTurnId && observedTurnId && persistedTurnId !== observedTurnId) return null;
@@ -992,6 +997,7 @@ export class OpenCodeClient implements HarnessClient {
         && sessionProof.inputId === inputId;
       const assistantMetadata = failedAssistant.metadata ?? failedAssistant.info?.metadata;
       const assistantInputId = stringValue(failedAssistant.inputId, failedAssistant.info?.inputId, assistantMetadata?.agentHerderInputId);
+      if (nativeInputBoundary && assistantInputId) return null;
       if (assistantInputId && assistantInputId !== inputId) return null;
       const assistantParentId = stringValue(failedAssistant.parentID, failedAssistant.info?.parentID, assistantMetadata?.parentID);
       if (assistantParentId && assistantParentId !== userMessageId) return null;
@@ -1004,13 +1010,37 @@ export class OpenCodeClient implements HarnessClient {
       // V2 also emits a linear user/assistant/idle packet without parentID.
       // This binds terminal evidence only; it never establishes pre-admission refusal.
       const linearLinked = (() => {
-        if (assistantParentId || !userInputId || userInputId !== inputId) return false;
+        if (assistantParentId || (!nativeInputBoundary && (!userInputId || userInputId !== inputId))) return false;
         if (incompleteTranscript || fetched.length >= 150) return false;
         const boundary = statusFrames.filter((frame) => frame.index < user.index).at(-1);
         if (boundary && (boundary.message.type !== "idle"
           || !["succeeded", "failed", "interrupted"].includes(boundary.message.outcome ?? ""))) return false;
         const start = boundary ? boundary.index + 1 : 0;
-        const packet = messages.slice(start, latest.index + 1);
+        const unsafe = (value: unknown): boolean => {
+          if (!value || typeof value !== "object") return false;
+          if (Array.isArray(value)) return value.some(unsafe);
+          return Object.entries(value).some(([key, item]) =>
+            /tool|action|approval|permission/i.test(key)
+              ? item !== undefined && item !== null && item !== false
+                && !(Array.isArray(item) && item.length === 0)
+              : (key === "type" && typeof item === "string" && /tool|action|approval|permission/i.test(item)) || unsafe(item));
+        };
+        const rawPacket = messages.slice(start, latest.index + 1);
+        const instructionAudit = (frame: OpenCodeMessagePayload): boolean => {
+          const raw = frame as unknown as Record<string, unknown>;
+          const metadata = frame.metadata;
+          return frame.type === "system" && Object.keys(raw).every(key => ["id","type","text","description","metadata","time"].includes(key))
+            && typeof raw.description === "string" && raw.description.startsWith("Instructions updated:")
+            && typeof raw.text === "string" && /^The instructions from .+ changed\. Here's the diff:\n```diff\n/.test(raw.text)
+            && metadata?.notice === "instructions" && Object.keys(metadata).every(key => ["notice","instructionSources"].includes(key))
+            && Array.isArray(metadata.instructionSources) && metadata.instructionSources.length > 0
+            && metadata.instructionSources.every((source: unknown) => typeof source === "string" && source.length > 0)
+            && !unsafe(frame) && typeof frame.time?.created === "number" && Number.isFinite(frame.time.created)
+            && Object.keys(frame.time).every(key => key === "created")
+            && typeof user.message.time?.created === "number" && typeof latest.message.time?.created === "number"
+            && frame.time.created >= user.message.time.created && frame.time.created <= latest.message.time.created;
+        };
+        const packet = rawPacket.filter(frame => !instructionAudit(frame));
         if (packet.length !== 3 || packet[0] !== user.message || packet[1] !== failedAssistant
           || packet[2] !== latest.message || user.message.type !== "user"
           || failedAssistant.type !== "assistant" || latest.message.type !== "idle") return false;
@@ -1039,15 +1069,6 @@ export class OpenCodeClient implements HarnessClient {
         }
         // Empty assistant output is the only currently supported linear failure packet.
         // Reject unknown parts, tools/actions/approvals and changed snapshots fail closed.
-        const unsafe = (value: unknown): boolean => {
-          if (!value || typeof value !== "object") return false;
-          if (Array.isArray(value)) return value.some(unsafe);
-          return Object.entries(value).some(([key, item]) =>
-            /tool|action|approval|permission/i.test(key)
-              ? item !== undefined && item !== null && item !== false
-                && !(Array.isArray(item) && item.length === 0)
-              : (key === "type" && typeof item === "string" && /tool|action|approval|permission/i.test(item)) || unsafe(item));
-        };
         if (packet.some(unsafe)) return false;
         if ((failedAssistant.parts?.length ?? 0) > 0 || (failedAssistant.content?.length ?? 0) > 0) return false;
         const snapshot = (failedAssistant as unknown as { snapshot?: { files?: unknown[] } }).snapshot;
@@ -1066,6 +1087,7 @@ export class OpenCodeClient implements HarnessClient {
           (assistantError as Record<string, unknown>)[key] === (terminalError as Record<string, unknown>)[key])
           && typeof assistantError.message === "string" && assistantError.message.length > 0;
       })();
+      if (nativeInputBoundary && !linearLinked) return null;
       if (!parentLinked && !inputLinked && !proofLinked && !linearLinked) return null;
       const assistantTurnId = stringValue(failedAssistant.turnId, failedAssistant.info?.turnId, assistantMetadata?.turnId);
       if (persistedTurnId && assistantTurnId && persistedTurnId !== assistantTurnId) return null;

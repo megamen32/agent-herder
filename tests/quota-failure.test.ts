@@ -13,6 +13,20 @@ describe("terminal quota evidence", () => {
     errorMessage: "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-10-24 02:06:22",
   };
 
+  it("classifies exact terminal provider circuit-open evidence separately from quota", () => {
+    const circuit = {...exact,statusCode:503,modelErrorType:undefined,errorMessage:"Provider zcode circuit breaker is open"};
+    expect(terminalQuotaFailure(circuit)).toEqual({classification:"provider_unavailable",status:"error",nativeTurnId:exact.nativeTurnId,inputId:exact.inputId,providerId:"omniroute",modelId:exact.modelId});
+    expect(terminalQuotaFailure({...circuit,statusCode:undefined})).toMatchObject({classification:"provider_unavailable"});
+    for(const invalid of [
+      {terminal:false},{status:"running"},{nativeTurnId:undefined},{inputId:undefined},{providerId:undefined},{modelId:undefined},
+      {statusCode:401},{statusCode:403},{statusCode:502},{statusCode:500},
+      {errorCode:"HTTP_401"},{errorType:"authentication_error"},{errorType:"network_error"},{errorCode:"UNKNOWN_ERROR"},
+      {errorMessage:"network failed; Provider zcode circuit breaker is open"},
+      {errorMessage:"Provider zcode circuit breaker is open; unknown admission"},
+      {errorMessage:"Provider zcode circuit breaker might be open"},
+    ]) expect(terminalQuotaFailure({...circuit,...invalid})).toBeUndefined();
+  });
+
   it("requires exact terminal identities and explicit provider quota exhaustion", () => {
     expect(terminalQuotaFailure(exact)).toEqual({
       classification: "quota_exhausted",

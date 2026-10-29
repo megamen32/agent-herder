@@ -1185,6 +1185,51 @@ describe("terminal quota recovery", () => {
     };
   }
 
+  it.each(["accepted", "unknown", "fallback-disabled", "auth", "changed-input", "pending-question"])("handles exact OpenCode provider unavailable without original-provider retry: %s", async mode => {
+    const root = await mkdtemp(join(tmpdir(), "provider-unavailable-fallback-"));
+    try {
+      const original = "omniroute/openai/current", backup = "omniroute/anthropic/fallback";
+      const current = quotaSession("error", original);
+      const last = current.meta!.nativeLastTurn as Record<string, unknown>;
+      last.quotaFailure = mode === "auth" ? undefined : {
+        classification: "provider_unavailable", nativeTurnId: "native-failed-1", inputId: "native-input-1",
+        providerId: "omniroute", modelId: "openai/current",
+      };
+      if (mode === "auth") last.errorCode = "401";
+      if (mode === "changed-input") last.inputId = "newer-native-input";
+      if (mode === "pending-question") current.needsPermission = true;
+      const sent: Array<{model?: string; inputId?: string}> = [];
+      const probes: string[] = [];
+      const adapter = quotaAdapter(() => current, sent, [original, backup]);
+      if (mode === "unknown") adapter.sendMessage = async (_id, input) => {
+        sent.push({model: input.model, inputId: input.inputId});
+        return {ok: false, admission: "unknown", error: "provider execution unknown"};
+      };
+      const settings = await optedInSettings(root);
+      await settings.setGlobal(false);
+      await settings.setSessionWaitForQuota({harness: current.harness, sessionId: current.id, cwd: current.cwd}, true, new Date(), mode !== "fallback-disabled");
+      const path = join(root, "unfinished.json");
+      const run = () => new UnfinishedSessionLauncher({adapters: new Map([["opencode", adapter]]),
+        store: new UnfinishedSessionStore(path), settingsStore: settings,
+        fallbackModelsForHarness: async () => [backup, original],
+        probeRecoveryQuota: async model => { probes.push(model); return {state: "available", source: "provider", checkedAt: new Date().toISOString()}; },
+      }).recoverPending();
+      await run();
+      await run();
+      if (["fallback-disabled", "auth", "changed-input", "pending-question"].includes(mode)) {
+        expect(sent).toEqual([]);
+        expect(probes).toEqual([]);
+      } else {
+        expect(sent.map(item => item.model)).toEqual([backup]);
+        expect(probes).toEqual([backup]);
+        expect(sent[0]?.inputId).toMatch(/^herder-quota:/);
+        const [reloaded] = await new UnfinishedSessionStore(path).list();
+        expect(reloaded.quotaRecovery).toMatchObject({ evidence: {classification: "provider_unavailable"},
+          state: mode === "unknown" ? "held" : "accepted", candidateModels: [backup], waitForOriginal: false });
+      }
+    } finally { await rm(root, {recursive: true, force: true}); }
+  });
+
   it.each(["wait", "fallback", "accepted-reload", "unknown-reload"])("keeps ordinary native quota recovery separate from incident allowlists: %s", async mode => {
     const root = await mkdtemp(join(tmpdir(), "quota-purpose-boundary-"));
     try {

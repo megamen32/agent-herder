@@ -185,7 +185,7 @@ export function isArchivedSessionFailure(error: unknown): boolean {
 }
 
 export type QuotaFailureEvidence = {
-  classification: "quota_exhausted";
+  classification: "quota_exhausted" | "provider_unavailable";
   nativeTurnId: string;
   inputId: string;
   providerId: string;
@@ -258,7 +258,7 @@ export type QuotaRecoveryWaitStatus = {
   sessionId: string;
   cwd: string;
   state: QuotaRecoveryState;
-  origin: "native_quota" | "operator_cohort";
+  origin: "native_quota" | "native_provider" | "operator_cohort";
   reason: string;
   nextAttemptAt?: string;
   resetAt?: string;
@@ -406,7 +406,7 @@ function nativeLastTurn(session: AgentSession | null | undefined): NativeLastTur
 function normalizeQuotaFailureEvidence(value: unknown): QuotaFailureEvidence | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const input = value as Record<string, unknown>;
-  if (input.classification !== "quota_exhausted") return undefined;
+  if (input.classification !== "quota_exhausted" && input.classification !== "provider_unavailable") return undefined;
   const nativeTurnId = nonEmptyText(input.nativeTurnId);
   const inputId = nonEmptyText(input.inputId);
   const providerId = nonEmptyText(input.providerId);
@@ -415,7 +415,8 @@ function normalizeQuotaFailureEvidence(value: unknown): QuotaFailureEvidence | u
     || [nativeTurnId, inputId, providerId, modelId].some((part) => /[\u0000-\u001f\u007f]/u.test(part) || part.length > 512)) return undefined;
   const resetAt = input.resetAt === undefined ? undefined : nativeTimestamp(input.resetAt);
   if (input.resetAt !== undefined && !resetAt) return undefined;
-  return { classification: "quota_exhausted", nativeTurnId, inputId, providerId, modelId, ...(resetAt ? { resetAt } : {}) };
+  return { classification: input.classification, nativeTurnId, inputId, providerId, modelId,
+    ...(input.classification === "quota_exhausted" && resetAt ? { resetAt } : {}) };
 }
 
 function normalizeOperatorCohortEvidence(value: unknown): OperatorCohortEvidence | undefined {
@@ -465,21 +466,21 @@ function recoveryEvidenceTurnId(evidence: QuotaRecoveryEvidence): string | undef
   return evidence.classification === "operator_continuation" ? undefined : evidence.nativeTurnId;
 }
 function recoveryEvidenceInputId(evidence: QuotaRecoveryEvidence): string | undefined {
-  return evidence.classification === "quota_exhausted" ? evidence.inputId
+  return !isOperatorRecoveryEvidence(evidence) ? evidence.inputId
     : evidence.classification === "operator_continuation" ? evidence.priorDispatchInputId : undefined;
 }
 function recoveryEvidenceModelId(evidence: QuotaRecoveryEvidence): string {
-  return evidence.classification === "quota_exhausted" ? quotaModelId(evidence) ?? evidence.modelId
+  return !isOperatorRecoveryEvidence(evidence) ? quotaModelId(evidence) ?? evidence.modelId
     : evidence.classification === "operator_continuation" ? evidence.priorSelectedModel : evidence.modelId;
 }
 
 function isOperatorRecoveryEvidence(evidence: QuotaRecoveryEvidence): evidence is OperatorCohortEvidence | OperatorContinuationEvidence {
-  return evidence.classification !== "quota_exhausted";
+  return evidence.classification === "operator_cohort" || evidence.classification === "operator_continuation";
 }
 
 function sameRecoveryEvidence(left: QuotaRecoveryEvidence | undefined, right: QuotaRecoveryEvidence | undefined): boolean {
   if (!left || !right || left.classification !== right.classification) return false;
-  if (left.classification === "quota_exhausted" && right.classification === "quota_exhausted") return sameQuotaFailure(left, right);
+  if (!isOperatorRecoveryEvidence(left) && !isOperatorRecoveryEvidence(right)) return sameQuotaFailure(left, right);
   if (left.classification === "operator_cohort" && right.classification === "operator_cohort") {
     return left.nativeTurnId === right.nativeTurnId && left.authorizationId === right.authorizationId
       && left.assistantMessageId === right.assistantMessageId && left.providerId === right.providerId
@@ -495,6 +496,7 @@ function sameRecoveryEvidence(left: QuotaRecoveryEvidence | undefined, right: Qu
 
 function sameQuotaFailure(left: QuotaFailureEvidence | undefined, right: QuotaFailureEvidence | undefined): boolean {
   return Boolean(left && right
+    && left.classification === right.classification
     && left.nativeTurnId === right.nativeTurnId
     && left.inputId === right.inputId
     && left.providerId === right.providerId
@@ -518,7 +520,7 @@ function exactTerminalQuotaSnapshot(session: AgentSession | null | undefined, ev
 
 function exactTerminalRecoverySnapshot(session: AgentSession | null | undefined, evidence: QuotaRecoveryEvidence): boolean {
   if (evidence.classification === "operator_continuation") return false;
-  if (evidence.classification === "quota_exhausted") return exactTerminalQuotaSnapshot(session, evidence);
+  if (!isOperatorRecoveryEvidence(evidence)) return exactTerminalQuotaSnapshot(session, evidence);
   const last = nativeLastTurn(session);
   return Boolean(session && last && last.sessionId === session.id
     && (last.status === "failed" || last.status === "error") && last.cancelledByUser !== true
@@ -678,6 +680,7 @@ function confirmedQuotaFailureText(value: unknown): boolean {
 }
 
 function quotaNextAttemptAt(evidence: QuotaFailureEvidence, now: Date): Date {
+  if (evidence.classification === "provider_unavailable") return now;
   const resetAt = evidence.resetAt ? Date.parse(evidence.resetAt) : Number.NaN;
   if (Number.isFinite(resetAt)) return resetAt > now.getTime() ? new Date(resetAt) : now;
   return new Date(now.getTime() + quotaBackoffMs(0));
@@ -698,6 +701,9 @@ function quotaRecoveryReason(quota: QuotaRecoveryRecord): string {
   }
   if (quota.evidence.classification === "operator_cohort" && quota.state === "waiting") {
     return "Ожидает разрешённого продолжения; перед отправкой Herder повторно проверит точный завершённый сбой и ограничения сессии.";
+  }
+  if (quota.evidence.classification === "provider_unavailable" && quota.state === "waiting") {
+    return "Провайдер временно недоступен; Herder проверит разрешённую запасную модель без повторного вызова отказавшего маршрута.";
   }
   if (quota.state === "waiting") return quota.evidence.classification === "quota_exhausted" && quota.evidence.resetAt
     ? "Ожидает срока сброса квоты; затем проверит точную нативную сессию перед продолжением."
@@ -1481,6 +1487,10 @@ export class UnfinishedSessionStore {
     const evidence = normalizeQuotaFailureEvidence(rawEvidence);
     const currentModel = evidence ? quotaModelId(evidence) : undefined;
     if (!evidence || !currentModel || !["opencode", "zcode", "codex"].includes(session.harness)) throw new Error("invalid terminal quota recovery evidence");
+    if (evidence.classification === "provider_unavailable") {
+      if (session.harness !== "opencode") throw new Error("provider fallback requires an OpenCode terminal failure");
+      waitForOriginal = false;
+    }
     const normalized = normalizeRecordTarget({ harness: harnessType(session.harness), sessionId: session.id, cwd: session.cwd,
       model: session.model, title: session.title, threadSource: nonEmptyText(session.meta?.threadSource) });
     const candidates = quotaCandidateModels(fallbackModels, currentModel).filter(model => waitForOriginal || model !== currentModel);
@@ -1493,7 +1503,7 @@ export class UnfinishedSessionStore {
       const index = file.sessions.findIndex((record) => unfinishedRecordKey(record) === key);
       const existing = index < 0 ? undefined : file.sessions[index];
       if (existing?.quotaRecovery
-        && existing.quotaRecovery.evidence.classification === "quota_exhausted"
+        && !isOperatorRecoveryEvidence(existing.quotaRecovery.evidence)
         && existing.quotaRecovery.evidence.nativeTurnId === evidence.nativeTurnId
         && existing.quotaRecovery.evidence.inputId === evidence.inputId) return { ...existing };
       const quotaRecovery: QuotaRecoveryRecord = {
@@ -1521,7 +1531,7 @@ export class UnfinishedSessionStore {
         workspaceIdentity,
         updatedAt: nowIso,
         state: "active",
-        recoveryCause: "quota_exhausted",
+        recoveryCause: evidence.classification === "provider_unavailable" ? "turn.failed" : "quota_exhausted",
         recoveryObservedAt: nowIso,
         recoveryTurnId: evidence.nativeTurnId,
         recoveryInputId: evidence.inputId,
@@ -1866,7 +1876,8 @@ export class UnfinishedSessionStore {
       sessionId: record.sessionId,
       cwd: record.cwd,
       state: quota.state,
-      origin: quota.evidence.classification === "quota_exhausted" ? "native_quota" : "operator_cohort",
+      origin: quota.evidence.classification === "provider_unavailable" ? "native_provider"
+        : quota.evidence.classification === "quota_exhausted" ? "native_quota" : "operator_cohort",
       reason: quotaRecoveryReason(quota),
       ...(quota.state === "waiting" && quota.nextAttemptAt ? { nextAttemptAt: quota.nextAttemptAt } : {}),
       ...(quota.evidence.classification === "quota_exhausted" && quota.evidence.resetAt ? { resetAt: quota.evidence.resetAt } : {}),
@@ -2759,6 +2770,8 @@ export class UnfinishedSessionLauncher {
       const settings = await this.options.settingsStore.getSettings();
       const quotaEvidence = event.kind === "turn.failed" ? normalizeQuotaFailureEvidence(event.data?.quotaFailure) : undefined;
       if (quotaEvidence) {
+        const providerUnavailable = quotaEvidence.classification === "provider_unavailable";
+        if (providerUnavailable && provider !== "opencode") return;
         const eventMatches = identity.turnId === quotaEvidence.nativeTurnId && identity.inputId === quotaEvidence.inputId
           && activeIdentity.turnId === quotaEvidence.nativeTurnId && (activeIdentity.inputId === quotaEvidence.inputId || provider === "codex" && !activeIdentity.inputId);
         if (!eventMatches || !quotaModelId(quotaEvidence)) return;
@@ -2769,10 +2782,11 @@ export class UnfinishedSessionLauncher {
           || session.needsPermission || session.status === "needs_input"
           || await this.suppressIfHumanStopped(provider, event.sessionId, session.cwd, session)) return;
         const effective = await this.options.settingsStore.getEffective(provider, session.id, session.cwd);
-        if ((!effective.waitForQuota && !effective.fallbackForQuota) || await this.pendingQuestionBlocks(provider, session.id, session.cwd)) return;
+        if ((providerUnavailable ? !effective.fallbackForQuota : !effective.waitForQuota && !effective.fallbackForQuota)
+          || await this.pendingQuestionBlocks(provider, session.id, session.cwd)) return;
         const fallbackModels = effective.fallbackForQuota && provider !== "codex" ? await this.options.fallbackModelsForHarness?.(provider as "opencode" | "zcode", session) ?? [] : [];
-        if (!effective.waitForQuota && !fallbackModels.length) return;
-        await this.options.store.markQuotaRecoveryEligible(session, quotaEvidence, fallbackModels, this.generationId, new Date(), effective.waitForQuota);
+        if ((providerUnavailable || !effective.waitForQuota) && !fallbackModels.length) return;
+        await this.options.store.markQuotaRecoveryEligible(session, quotaEvidence, fallbackModels, this.generationId, new Date(), !providerUnavailable && effective.waitForQuota);
         this.queueUrgentSession(sessionSourceKey(session));
         this.scheduleUrgentRecovery(0);
         return;
@@ -3631,11 +3645,13 @@ export class UnfinishedSessionLauncher {
         let fresh: AgentSession | null;
         try { fresh = await adapter.getSession(listed.id); } catch { continue; }
         const evidence = nativeLastTurn(fresh)?.quotaFailure;
+        const providerUnavailable = evidence?.classification === "provider_unavailable";
+        if (providerUnavailable && (harness !== "opencode" || !effective.fallbackForQuota)) continue;
         if (!evidence || !quotaModelId(evidence) || !exactTerminalQuotaSnapshot(fresh, evidence) || fresh?.needsPermission
           || fresh?.status === "needs_input" || await this.suppressIfHumanStopped(harness, listed.id, listed.cwd, fresh)) continue;
         const fallbacks = effective.fallbackForQuota && harness !== "codex" ? await this.options.fallbackModelsForHarness?.(harness, fresh!) ?? [] : [];
-        if (!effective.waitForQuota && !fallbacks.length) continue;
-        await this.options.store.markQuotaRecoveryEligible(fresh!, evidence, fallbacks, this.generationId, new Date(), effective.waitForQuota);
+        if ((providerUnavailable || !effective.waitForQuota) && !fallbacks.length) continue;
+        await this.options.store.markQuotaRecoveryEligible(fresh!, evidence, fallbacks, this.generationId, new Date(), !providerUnavailable && effective.waitForQuota);
       }
     }
   }
@@ -3666,6 +3682,8 @@ export class UnfinishedSessionLauncher {
     if (!quota || snapshot.harness !== "opencode" && snapshot.harness !== "zcode" && snapshot.harness !== "codex") return;
     const harness = snapshot.harness;
     const operatorIntent = isOperatorRecoveryEvidence(quota.evidence);
+    const providerUnavailable = quota.evidence.classification === "provider_unavailable";
+    if (providerUnavailable && harness !== "opencode") return;
     const operatorContinuation = quota.evidence.classification === "operator_continuation" ? quota.evidence : undefined;
     if (operatorContinuation && (!this.options.humanStopStore || !this.pendingQuestions || !this.options.admissionGate)) {
       await this.options.store.holdQuotaRecovery(snapshot, "native_snapshot_changed");
@@ -3695,7 +3713,8 @@ export class UnfinishedSessionLauncher {
       const effective = await this.options.settingsStore.getEffective(harness, snapshot.sessionId, snapshot.workspaceIdentity || snapshot.cwd);
       // This is a one-shot operator authorization, not persistent auto-wait
       // enrollment; do not mutate or require the independent waitForQuota flag.
-      return Boolean(operatorContinuation) || (operatorIntent ? effective.waitForQuota : effective.waitForQuota || Boolean(effective.fallbackForQuota));
+      return Boolean(operatorContinuation) || (providerUnavailable ? Boolean(effective.fallbackForQuota)
+        : operatorIntent ? effective.waitForQuota : effective.waitForQuota || Boolean(effective.fallbackForQuota));
     };
     if (!await enabled()) {
       if (operatorContinuation) {
@@ -3748,6 +3767,10 @@ export class UnfinishedSessionLauncher {
     if (!await this.admissionAllowed(session, "resume")) return;
     const models = await adapter.listModels();
     const selectedModel = quota.candidateModels[quota.candidateIndex]!;
+    if (providerUnavailable && [recoveryEvidenceModelId(quota.evidence), snapshot.model].includes(selectedModel)) {
+      await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
+      return;
+    }
     const modelAllowed = async (currentSession: AgentSession) => {
       // The original model used by wait-for-quota is not in the fallback list,
       // so apply project policy independently before either candidate branch.
@@ -3755,7 +3778,7 @@ export class UnfinishedSessionLauncher {
       const fallbacks = harness !== "codex" ? await this.options.fallbackModelsForHarness?.(harness, currentSession) ?? [] : [];
       const effective = await this.options.settingsStore.getEffective(harness, snapshot.sessionId, snapshot.workspaceIdentity || snapshot.cwd);
       return (operatorIntent || effective.fallbackForQuota) && fallbacks.includes(selectedModel)
-        || !operatorIntent && effective.waitForQuota && selectedModel === recoveryEvidenceModelId(quota.evidence);
+        || !operatorIntent && !providerUnavailable && effective.waitForQuota && selectedModel === recoveryEvidenceModelId(quota.evidence);
     };
     if (!await modelAllowed(session) || !models.includes(selectedModel)
       || operatorIntent && !await this.operatorProjectModelAllowed(session, selectedModel)) {
@@ -3832,7 +3855,7 @@ export class UnfinishedSessionLauncher {
     }
     const last = nativeLastTurn(verified);
     if ((!operatorContinuation && (!last || !last.completedAt))
-      || (quota.evidence.classification === "quota_exhausted" && (!last || !last.userMessageId))
+      || (!isOperatorRecoveryEvidence(quota.evidence) && (!last || !last.userMessageId))
       || operatorContinuation && (!operatorContinuation.terminalAt || operatorContinuation.providerExecution !== "unknown")) {
       await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
       return;

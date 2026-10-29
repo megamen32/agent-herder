@@ -1109,6 +1109,30 @@ it("keeps a combo route verifiable when another enabled mapping serves the same 
   }
 });
 
+it('uses the real native user boundary for an ordinary UI failed packet without app input IDs',async()=>{
+ const {OpenCodeClient}=await import('../packages/agent-resume/src/harness/opencode/client.js');
+ const state=sessionFixture();const id='ses_ui_native';
+ const error={type:'provider.internal',status:503,message:'Provider zcode circuit breaker is open'};
+ const user={id:'user_ui',type:'user',time:{created:100}};
+ const assistant={id:'assistant_ui',type:'assistant',content:[],model:{providerID:'omniroute-zcode-anthropic',id:'zc/glm-5.3-flash'},time:{created:110,completed:120},finish:'error',error};
+ const audit={id:'instruction_audit',type:'system',description:'Instructions updated: core/instructions',text:"The instructions from /tmp/instructions/AGENTS.md changed. Here's the diff:\n```diff\n+instruction\n```",metadata:{notice:'instructions',instructionSources:['core/instructions']},time:{created:105}};
+ const terminal={id:'idle_ui',type:'idle',outcome:'failed',time:{created:130},error};
+ state.sessions[id]={id,title:'ordinary UI',location:{directory:'/tmp/project'},outcome:'failed',messages:[user,assistant,audit,terminal]};state.active[id]={type:'idle'};
+ const server=v2Fixture(state);const baseUrl=await start(server);const client=new OpenCodeClient({baseUrl});
+ try{
+  await expect(client.getTerminalFailureContext(id)).resolves.toMatchObject({nativeTurnId:assistant.id,inputId:user.id,userMessageId:user.id,statusCode:503,providerId:'omniroute-zcode-anthropic'});
+  for(const messages of [
+   [user,assistant,{...audit,action:{name:'execute'}},terminal],
+   [user,assistant,{...audit,type:'unknown'},terminal],
+   [user,assistant,{...audit,metadata:{tool:'execute'}},terminal],
+   [user,assistant,{...audit,time:{created:90}},terminal],
+   [user,{...assistant,inputId:'conflicting-app-id'},audit,terminal],
+   [user,{...assistant,content:[{type:'text',text:'already did work'}]},audit,terminal],
+   [user,{...user,id:'another-user'},assistant,audit,terminal],
+  ]) {state.sessions[id].messages=messages;expect(await client.getTerminalFailureContext(id)).toBeNull();}
+ }finally{server.close();}
+});
+
 it('reads an exact native V2 linear turn packet without inventing a parentID',async()=>{
  const {OpenCodeClient}=await import('../packages/agent-resume/src/harness/opencode/client.js');
  const state=sessionFixture();const id='ses_linear_native';const error={type:'provider.quota',status:429,message:'[1310][Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-10-24 02:06:22]'};
@@ -1130,7 +1154,6 @@ it('reads an exact native V2 linear turn packet without inventing a parentID',as
    [user,{...user,id:'same_input_again'},assistant,terminal],
    [user,{...user,id:'second_user',metadata:{agentHerderInputId:'different'}},assistant,terminal],
    [user,{...assistant,id:'earlier_assistant'},assistant,terminal],
-   [{...user,metadata:{}},assistant,terminal],
    [{id:'unknown_earlier_actor',type:'assistant'},user,assistant,terminal],
    [{id:'unknown_boundary',type:'action',outcome:'failed',time:{created:90}},user,assistant,terminal],
    [user,assistant,{...terminal,error:{...error,status:401}}],
