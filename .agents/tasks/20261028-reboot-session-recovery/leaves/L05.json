@@ -1,0 +1,32 @@
+{
+  "id": "L05",
+  "label": "Восстановить полноту обнаружения незавершённых Airlock-сессий",
+  "status": "done",
+  "description": "По новому прямому сообщению владельца сверить весь Airlock cohort и исправить пропуск AutoGramXAirlock в существующем Herder. Нельзя считать пять успешных возобновлений доказательством полноты.",
+  "acceptance": "Установленный Herder сам продолжает подходящие незавершённые Airlock-сессии; для каждой иной сессии есть точный актуальный STOP/question/completed/old/new-running reason. Нулевые native summary items не считаются доказательством отсутствия final/question. Старые accepted/UNKNOWN не повторяются.",
+  "affected_files": [
+    "src/adapters/codex-app-server.ts",
+    "src/autopilot/unfinished-session-launcher.ts",
+    "tests/codex-app-server.test.ts",
+    "tests/unfinished-session-launcher.test.ts"
+  ],
+  "owner": "roomhacker",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex",
+  "model": "gpt-6.1-sol",
+  "estimate_minutes": 15,
+  "note": "Исправлены zero-user continuation и native pagination. Source43fcf5e установлен100/44/88/Mini. Herder сам продолжил AutoGram03:08:28МСК: native01a184fc-967f-7311-9b9e-e8a867b5400a, новое commentary и реальные commandExecution/mcpToolCall. Ручных sends/resumes0. Остальные recent Airlock: pending question, явная человеческая пауза или completed; причины и отдельный unknown-delivery остаток в airlock-coverage-acceptance.md. M1 прежний blockerL04 не скрыт.",
+  "result": "AutoGramXAirlock автоматически работает после восстановления; отсутствие нового user item больше не исключает доказанный оборванный continuation. Пауза индексации и STOP сохранены.",
+  "updated_at": "2026-10-29T02:51:19+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-29T02:51:19+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "owner": "roomhacker"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    }
+  ]
+}

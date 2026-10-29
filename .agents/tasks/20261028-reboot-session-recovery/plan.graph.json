@@ -10,7 +10,7 @@
   "current_progress": "139d877 установлен100/44/88/Mini. После второго reboot Herder сам продолжил4сессии01:32; после третьего reboot01:46 он сам продолжил5сессий01:52, включая эту ведущую. Реальное native исполнение подтверждено, ручных продолжений0; STOP/пауза/модели сохранены. Mini принят: PID45874,1811SHA/all3APIs200, installer09686d9 исправляет readiness/secretreuse/ownedstop-before-mutation. Старыеfailedreceipts сохранены. Единственный внешний остатокM1: config pins исправлены, но current dangling native socket inode177527201 не совпадает с ownership proof; финальным чтением blocker подтверждён. Вопросы отдельно native01a18444. Весь fleet целиком выполненным не объявляется из-заM1.",
   "external_waits": "",
   "slots": 1,
-  "updated_at": "2026-10-29T02:13:49+03:00",
+  "updated_at": "2026-10-29T02:51:19+03:00",
   "tasks": [
     {
       "id": "L01",
@@ -208,9 +208,46 @@
         "minimum": 10.0,
         "maximum": 10.0
       }
+    },
+    {
+      "id": "L05",
+      "label": "Восстановить полноту обнаружения незавершённых Airlock-сессий",
+      "status": "done",
+      "description": "По новому прямому сообщению владельца сверить весь Airlock cohort и исправить пропуск AutoGramXAirlock в существующем Herder. Нельзя считать пять успешных возобновлений доказательством полноты.",
+      "acceptance": "Установленный Herder сам продолжает подходящие незавершённые Airlock-сессии; для каждой иной сессии есть точный актуальный STOP/question/completed/old/new-running reason. Нулевые native summary items не считаются доказательством отсутствия final/question. Старые accepted/UNKNOWN не повторяются.",
+      "result": "AutoGramXAirlock автоматически работает после восстановления; отсутствие нового user item больше не исключает доказанный оборванный continuation. Пауза индексации и STOP сохранены.",
+      "owner": "roomhacker",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "note": "Исправлены zero-user continuation и native pagination. Source43fcf5e установлен100/44/88/Mini. Herder сам продолжил AutoGram03:08:28МСК: native01a184fc-967f-7311-9b9e-e8a867b5400a, новое commentary и реальные commandExecution/mcpToolCall. Ручных sends/resumes0. Остальные recent Airlock: pending question, явная человеческая пауза или completed; причины и отдельный unknown-delivery остаток в airlock-coverage-acceptance.md. M1 прежний blockerL04 не скрыт.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-29T02:51:19+03:00",
+          "note": "Начал работу в текущей сессии",
+          "changes": {
+            "owner": "roomhacker"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/adapters/codex-app-server.ts",
+        "src/autopilot/unfinished-session-launcher.ts",
+        "tests/codex-app-server.test.ts",
+        "tests/unfinished-session-launcher.test.ts"
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      }
     }
   ],
-  "leaf_count": 4,
+  "leaf_count": 5,
   "plan_origin": {
     "at": "2026-10-28T23:29:48+03:00",
     "source": "leaf_created_at",
