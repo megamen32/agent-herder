@@ -13,7 +13,7 @@ Source: adapter 3 focused tests PASS; launcher 9 continuation cases PASS и 16 �
 - 29.10.2026 **03:08:28 МСК**: journal PID1611485 сообщает автоматическое продолжение именно AutoGramXAirlock.
 - Durable `acceptedAt=2026-10-29T00:08:28.796Z`, native turn **`01a184fc-967f-7311-9b9e-e8a867b5400a`**, admission `in_progress`.
 - Независимый native items readback: новое commentary «Проверю сохранённые изменения, отчёты и тестовый стенд…», два commandExecution, два mcpToolCall и reasoning. Не только HTTP200 или admission.
-- Ручных resume/send от root и исполнителей: **0**. Повторного продолжения этой принятой отправки нет.
+- Ручных resume/send для AutoGram и остальных Airlock-сессий от root и исполнителей: **0**. Повторного продолжения этой принятой отправки нет.
 - Окончательный runtime100: **43fcf5e**, PID1699196, начало **03:09:32 МСК**, hardpinned ExecStart на соответствующий release/dist/index.js. Canonical installer exit0. Второй install не остановил native Codex-сессию.
 - Fingerprint окончательного assembled transport bundle: `57b627c2a124cb8b7eec4d969668b5c4f5338e342c6671d415b5ccdbfe161ff1`.
 - Другие установленные узлы и сохранённые настройки: `airlock-linux-install.json`, `airlock-mini-install.json`. M1 не менялся: прежний отдельный unknown socket owner blocker остаётся.
@@ -35,6 +35,8 @@ Source: adapter 3 focused tests PASS; launcher 9 continuation cases PASS и 16 �
 
 У `01a182ff…` Human Request `bfd790f2-c08d-4bd2-b2ee-c2dd96a792f1` pending; noticeDelivery=unknown, claim `908f48f0-a8a3-4c61-afb0-9e30899a18fc`. Notice MCP question_result вернул not found; это не доказательство отсутствия внешней доставки на canonical writer. Не повторять карточку вслепую и не отвечать за человека.
 
-Эту область владелец ранее выделил native сессии **`01a18444-4ce2-70d2-a7f0-65e9fe1cbbef`**. Её latest continuation содержит224 items, но native API отдаёт по100. После pagination fix независимый adapter читает полную boundary, pendingQuestion=false/final=false, без поддельного user ID. Её автоматическое продолжение и точная передача unknown reconciliation проверяются отдельно; новая сессия и параллельный исполнитель доставки не создаются.
+Эту область владелец ранее выделил native сессии **`01a18444-4ce2-70d2-a7f0-65e9fe1cbbef`**. Её latest continuation содержит224 items, но native API отдаёт по100. После pagination fix независимый adapter читает полную boundary, pendingQuestion=false/final=false, без поддельного user ID.
+
+В **03:13:13МСК** root передал точный UNKNOWN reconciliation существующему исполнителю одним штатным resume через Herder, без humanRequested override: inputId `reboot-root-question-handoff-bfd790f2-20261029-v1`, admitted turn `01a18500-ef22-7fe1-9482-0f5f6f0e53d2`. В03:14:10МСК независимо прочитаны новое commentary о canonical8091/no-replay и реальные commandExecution/mcpToolCall. Это **единственное ручное возобновление отдельного question-исполнителя**, в пределах ранее разрешённой одной ручной операции; его автоматическое cold recovery не объявляется доказанным. Новая сессия и параллельный исполнитель доставки не создавались. Само исправление UNKNOWN-доставки остаётся результатом этой отдельной задачи, а не данной квитанции.
 
 Полная пересылка/ответ Telegram и снятие человеческой CRM-паузы здесь не объявляются выполненными.
