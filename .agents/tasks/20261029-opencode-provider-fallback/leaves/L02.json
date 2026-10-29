@@ -1,0 +1,13 @@
+{
+  "id": "L02",
+  "label": "Доставить последний срез на недоступный Mini",
+  "status": "blocked",
+  "description": "Установить тот же проверенный runtime 28fcd27 после восстановления штатной доступности Mini. Не повторять принятый ввод OpenCode.",
+  "acceptance": "Штатный installer и независимый readback release/PID/start на Mini.",
+  "owner": "roomhacker",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex",
+  "model": "gpt-6.1-sol",
+  "estimate_minutes": 5,
+  "note": "SSH 192.168.2.4 в 04:01 и 04:06 МСК вернул No route to host. Последняя историческая квитанция Mini — f020a4b, не 28fcd27. Готовый transport tar: .tmp/provider-distribution/rel-28fcd27c1779cb2b04ebc8de04d689f3ecd9d0e9.tar; artifact 14/14. Нового автоматического таймера не создавали."
+}

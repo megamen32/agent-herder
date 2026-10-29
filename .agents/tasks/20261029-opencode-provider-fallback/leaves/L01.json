@@ -1,0 +1,14 @@
+{
+  "id": "L01",
+  "label": "Исправить и установить fallback при открытом circuit breaker",
+  "status": "done",
+  "description": "Минимально расширить существующий exact terminal recovery отдельной честной классификацией provider_unavailable; использовать действующий opt-in и project model priority. Не называть этот отказ квотой, не повторять accepted/UNKNOWN.",
+  "acceptance": "RED→GREEN на точном сообщении скриншота; установленный Herder автоматически продолжил указанную владельцем сессию на разрешённом combo, получены новый native input и полезные исполнения инструментов. STOP, pending question, auth и native identity fences сохранены. Изолированный dummy canary не дал terminal failure и не считается положительной приёмкой.",
+  "owner": "roomhacker",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex",
+  "model": "gpt-6.1-sol",
+  "estimate_minutes": 20,
+  "affected_files": ["src/adapters/quota-failure.ts", "src/autopilot/unfinished-session-launcher.ts", "packages/agent-resume/src/harness/opencode/client.ts", "tests/opencode-v2-protocol.test.ts", "tests/quota-failure.test.ts", "tests/unfinished-session-launcher.test.ts"],
+  "note": "Runtime 28fcd27 установлен на 100/44/88. 29.10.2026 04:03:58 МСК реальная ses_e7c7f9007ffeZgr4F03k3dax0M автоматически продолжена на omniroute/glm-5.3-flash-minimax-m3.1: accepted, attempts=1, native input msg_1852f64b3001y7qMmF0O7tbWFw. Независимый readback подтвердил новые tools/shell; повторный readback сохранил одну отправку. См. acceptance.md. Последняя доставка Mini выделена в L02."
+}
