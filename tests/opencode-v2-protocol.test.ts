@@ -1121,6 +1121,19 @@ it('uses the real native user boundary for an ordinary UI failed packet without 
  const server=v2Fixture(state);const baseUrl=await start(server);const client=new OpenCodeClient({baseUrl});
  try{
   await expect(client.getTerminalFailureContext(id)).resolves.toMatchObject({nativeTurnId:assistant.id,inputId:user.id,userMessageId:user.id,statusCode:503,providerId:'omniroute-zcode-anthropic'});
+  const switched={id:'switch_ui',type:'model-switched',time:{created:140},model:{providerID:'omniroute',id:'glm-5.3-flash-minimax-m3.1'}};
+  state.sessions[id].model={...switched.model,variant:'default'};
+  state.sessions[id].messages=[user,assistant,audit,terminal,switched];
+  await expect(client.getTerminalFailureContext(id)).resolves.toMatchObject({nativeTurnId:assistant.id,inputId:user.id,providerId:'omniroute-zcode-anthropic',modelId:assistant.model.id});
+  for(const control of [
+   {...switched,previous:{providerID:'foreign',id:'wrong'}},
+   {...switched,previous:null},
+   {...switched,action:{name:'execute'}},
+   {...switched,model:{providerID:'foreign',id:'wrong'}},
+   {...switched,time:{created:129}},
+  ]) {state.sessions[id].messages=[user,assistant,audit,terminal,control];expect(await client.getTerminalFailureContext(id)).toBeNull();}
+  state.sessions[id].messages=[user,assistant,audit,terminal,switched,{...switched,id:'another_switch'}];
+  expect(await client.getTerminalFailureContext(id)).toBeNull();
   for(const messages of [
    [user,assistant,{...audit,action:{name:'execute'}},terminal],
    [user,assistant,{...audit,type:'unknown'},terminal],
@@ -1200,6 +1213,9 @@ it('reads an exact native V2 linear turn packet without inventing a parentID',as
   await expect(client.getTerminalFailureContext(id)).resolves.toMatchObject({inputId:'stable_linear',userMessageId:user.id});
   const adapter=new OpenCodeAdapter({baseUrl});
   expect((await adapter.getSession(id))?.meta?.nativeLastTurn).toMatchObject({inputId:'stable_linear',userMessageId:user.id});
+  const {previous:_previous,...missingPrevious}=switched;
+  state.sessions[id].messages=[user,assistant,terminal,missingPrevious];
+  expect(await client.getTerminalFailureContext(id)).toBeNull();
 
   for (const control of [{...switched,previous:{providerID:'foreign',id:'wrong'}},{...switched,model:{providerID:'foreign',id:'wrong'}},{...switched,tool_calls:[{id:'x'}]},{...switched,time:{created:90}},{...switched,sessionID:'foreign'},{...switched,model:{...switched.model,variant:{tool:'bad'}}}]) {
     state.sessions[id].messages=[user,assistant,terminal,control];

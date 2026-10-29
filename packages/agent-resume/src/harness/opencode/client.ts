@@ -981,10 +981,14 @@ export class OpenCodeClient implements HarnessClient {
           && typeof (value as Record<string, unknown>).providerID === "string"
           && typeof (value as Record<string, unknown>).id === "string"
           && ((value as Record<string, unknown>).variant === undefined || typeof (value as Record<string, unknown>).variant === "string"));
+        // UI turns can select a per-turn model without persisting session.model.
+        // The first supported switch then has no previous session model. Only
+        // the fully verified ordinary-UI linear packet below permits that absence.
+        const previousMatches = nativeInputBoundary && !Object.hasOwn(control, "previous")
+          || safeModel(control.previous) && modelEqual(control.previous, failedAssistant.model);
         if (control.type !== "model-switched" || Object.keys(control).some((key) => !allowedKeys.has(key))
           || !control.id || messages.filter((frame) => openCodeMessageId(frame) === control.id).length !== 1
-          || !safeModel(control.model) || !safeModel(control.previous)
-          || !modelEqual(control.previous, failedAssistant.model)
+          || !safeModel(control.model) || !previousMatches
           || !modelEqual(control.model, typeof session.model === "object" ? session.model : undefined)
           || !control.time || Object.keys(control.time).some((key) => key !== "created")
           || typeof control.time.created !== "number" || !Number.isFinite(control.time.created)
