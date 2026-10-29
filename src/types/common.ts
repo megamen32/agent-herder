@@ -58,6 +58,12 @@ export interface SessionMessageView {
   phase?: string;
   /** Native input→result parent linkage; absent when the harness does not prove it. */
   nativeParentMessageId?: string;
+  /**
+   * The admitted input identity of a user message; absent when the harness
+   * does not prove it. It is what binds one native message to the delivery
+   * that caused it.
+   */
+  inputId?: string;
   timestamp?: string;
   text?: string;
   parts: SessionMessagePart[];

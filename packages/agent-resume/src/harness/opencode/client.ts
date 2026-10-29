@@ -707,6 +707,12 @@ export class OpenCodeClient implements HarnessClient {
         const turnId = typeof message.turnId === "string" ? message.turnId : typeof info.turnId === "string" ? info.turnId : undefined;
         const phase = typeof message.finish === "string" ? message.finish : typeof info.finish === "string" ? info.finish : undefined;
         const nativeParentMessageId = message.parentID || info.parentID;
+        // The admitted input identity of a user message. It is the only field
+        // that ties one native message to the exact resume that delivered it,
+        // so it must survive into the message view instead of staying inside
+        // the provider payload.
+        const inputId = stringValue(message.inputId, info.inputId,
+          message.metadata?.agentHerderInputId, info.metadata?.agentHerderInputId);
         return {
           id: message.id || info.id || `${id}:message-${index + 1}`,
           role,
@@ -714,6 +720,7 @@ export class OpenCodeClient implements HarnessClient {
           ...(phase ? { phase } : {}),
           ...(model ? { model } : {}),
           ...(nativeParentMessageId ? { nativeParentMessageId } : {}),
+          ...(inputId ? { inputId } : {}),
           ...(typeof info.time?.created === "number" ? { timestamp: new Date(info.time.created).toISOString() } : {}),
           ...(shownText ? { text: shownText } : {}),
           parts,

@@ -38,6 +38,12 @@ export interface HarnessMessage {
   phase?: string;
   /** Native input→result parent linkage, preserved exactly as the harness reports it. */
   nativeParentMessageId?: string;
+  /**
+   * The admitted input identity of a user message. It names the exact input
+   * that was accepted for this message, so a consumer can bind one native
+   * message to the delivery that caused it.
+   */
+  inputId?: string;
   text?: string;
   timestamp?: string;
   model?: string;
