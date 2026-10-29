@@ -2129,12 +2129,25 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         || !["interrupted", "completed"].includes(String(latest.status))) return null;
       const turnId = latest.id;
       const summaryItems = Array.isArray(latest.items) ? latest.items : [];
-      const lastSummaryItem = summaryItems.at(-1) as Record<string, unknown> | undefined;
+      // Native completion may append empty assistant envelopes after the question.
+      // Omitted text/questions are not proof of emptiness; hydrate before skipping.
+      const meaningfulTailIndex = (items: Array<Record<string, unknown>>) => {
+        let index = items.length - 1;
+        while (index >= 0) {
+          const item = items[index];
+          if (!item || item.type !== "agentMessage" || typeof item.text !== "string" || item.text.trim()
+            || !(item.questions === null || (Array.isArray(item.questions) && item.questions.length === 0))) break;
+          index--;
+        }
+        return index;
+      };
+      const lastSummaryItem = summaryItems[meaningfulTailIndex(summaryItems)] as Record<string, unknown> | undefined;
       // Hydrate only the latest turn when summary omitted the native question fields.
       // Never fall back to scanning old turns or infer a question from prose.
       if (!Array.isArray(latest.items) || latest.itemsView === "notLoaded"
         || (lastSummaryItem?.type === "agentMessage" && (!Object.hasOwn(lastSummaryItem, "questions")
-          || !Object.hasOwn(lastSummaryItem, "phase") || !Object.hasOwn(lastSummaryItem, "id")))) {
+          || !Object.hasOwn(lastSummaryItem, "phase") || !Object.hasOwn(lastSummaryItem, "id")
+          || !Object.hasOwn(lastSummaryItem, "text")))) {
         latest = await read("full");
       }
       if (generation !== this.transportGeneration || !latest || latest.id !== turnId
@@ -2142,9 +2155,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         || !Array.isArray(latest.items) || !latest.items.length
         || latest.items.some(item => !item || typeof item !== "object" || typeof item.type !== "string")) return null;
       const items = latest.items as Array<Record<string, unknown>>;
-      const last = items.at(-1)!;
-      if (last.type !== "agentMessage" || last.phase !== "final_answer" || typeof last.id !== "string" || !last.id
-        || !items.slice(0, -1).some(item => item.type === "userMessage")) return null;
+      const lastIndex = meaningfulTailIndex(items);
+      const last = items[lastIndex];
+      if (!last || last.type !== "agentMessage" || last.phase !== "final_answer" || typeof last.id !== "string" || !last.id
+        || !items.slice(0, lastIndex).some(item => item.type === "userMessage")) return null;
       const questions = codexAsyncUserInputQuestions(last.questions);
       if (!questions) return null;
       return { target: { hostId: localSessionHostId(), harness: "codex" as const, sessionId },

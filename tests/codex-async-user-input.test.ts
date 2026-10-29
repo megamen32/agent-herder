@@ -15,6 +15,34 @@ function fixture(value: unknown = { data: [turn()] }) {
   return { adapter, internal, events };
 }
 describe("Codex persisted async input", () => {
+  it("reads the real completed question followed by an explicit empty final message", async () => {
+    const empty = { type: "agentMessage", id: "empty-final", phase: "final_answer", text: "", questions: null };
+    for (const text of ["", " \n\t "]) {
+      const { adapter } = fixture({ data: [turn([user,
+        { type: "agentMessage", id: "commentary", phase: "commentary", text: "Choosing a route", questions: null },
+        question, { ...empty, text }, empty], "completed")] });
+      expect(await adapter.readAsyncUserInputState("thread")).toMatchObject({ itemId: "question", questions });
+    }
+  });
+  it("does not skip later user, tool, opaque, malformed or nonempty assistant items", async () => {
+    const empty = { type: "agentMessage", id: "empty", phase: "final_answer", text: "", questions: null };
+    for (const blocker of [user, { type: "commandExecution", id: "cmd" }, { type: "unknown", id: "opaque" },
+      { ...empty, text: "Finished" }, { ...empty, questions: [{ invalid: true }] }]) {
+      const { adapter } = fixture({ data: [turn([user, question, blocker, empty], "completed")] });
+      expect(await adapter.readAsyncUserInputState("thread")).toBeNull();
+    }
+  });
+  it("hydrates omitted tail text before deciding whether it is empty", async () => {
+    for (const text of ["", "Already answered"]) {
+      const summary = turn([user, question, { type: "agentMessage", id: "tail", phase: "final_answer", questions: null }], "completed");
+      const { adapter, internal } = fixture();
+      internal.request.mockResolvedValueOnce({ data: [summary] }).mockResolvedValueOnce({ data: [{ ...summary, itemsView: "full",
+        items: [user, question, { ...summary.items[2] as object, text }],
+      }] });
+      expect(Boolean(await adapter.readAsyncUserInputState("thread"))).toBe(text === "");
+      expect(internal.request).toHaveBeenCalledTimes(2);
+    }
+  });
   it("reads interrupted native typed questions even without completedAt", async () => {
     const { adapter, internal } = fixture();
     expect(await adapter.readAsyncUserInputState("thread")).toMatchObject({ target: { harness: "codex", sessionId: "thread" }, turnId: "turn", itemId: "question", questions, canRespond: true });
