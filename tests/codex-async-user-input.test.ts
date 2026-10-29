@@ -15,6 +15,14 @@ function fixture(value: unknown = { data: [turn()] }) {
   return { adapter, internal, events };
 }
 describe("Codex persisted async input", () => {
+  it("hydrates a native summary that retained only the empty final envelope", async () => {
+    const empty = { type: "agentMessage", id: "empty-final", phase: "final_answer", text: "", questions: null };
+    const { adapter, internal } = fixture();
+    internal.request.mockResolvedValueOnce({ data: [turn([user, empty], "completed")] })
+      .mockResolvedValueOnce({ data: [{ ...turn([user, question, empty], "completed"), itemsView: "full" }] });
+    expect(await adapter.readAsyncUserInputState("thread")).toMatchObject({ itemId: "question", questions });
+    expect(internal.request).toHaveBeenLastCalledWith("thread/turns/list", { threadId: "thread", limit: 1, sortDirection: "desc", itemsView: "full" });
+  });
   it("reads the real completed question followed by an explicit empty final message", async () => {
     const empty = { type: "agentMessage", id: "empty-final", phase: "final_answer", text: "", questions: null };
     for (const text of ["", " \n\t "]) {

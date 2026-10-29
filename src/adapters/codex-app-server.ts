@@ -2145,6 +2145,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       // Hydrate only the latest turn when summary omitted the native question fields.
       // Never fall back to scanning old turns or infer a question from prose.
       if (!Array.isArray(latest.items) || latest.itemsView === "notLoaded"
+        || meaningfulTailIndex(summaryItems) < summaryItems.length - 1
         || (lastSummaryItem?.type === "agentMessage" && (!Object.hasOwn(lastSummaryItem, "questions")
           || !Object.hasOwn(lastSummaryItem, "phase") || !Object.hasOwn(lastSummaryItem, "id")
           || !Object.hasOwn(lastSummaryItem, "text")))) {
