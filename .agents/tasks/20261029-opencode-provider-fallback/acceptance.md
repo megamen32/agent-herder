@@ -29,8 +29,8 @@ Runtime commit: `28fcd27c1779cb2b04ebc8de04d689f3ecd9d0e9`; включает п�
 | 100 | 194291 | 04:00:32 | 28fcd27, hardpinned ExecStart |
 | 44 | 1000858 | 04:04:45 | 28fcd27, installer + независимый readback |
 | 88 | 3326323 | 04:04:54 | 28fcd27, installer + независимый readback |
-| Mini | не подтверждён | — | SSH No route to host; последняя историческая установка f020a4b |
+| Mini | 53935 | 29.10 04:10 UTC (время процесса) | 28fcd27, installer и независимый readback |
 
 Логи установки: `.tmp/provider-fallback-28fcd27-install.log`, `.tmp/provider-28fcd27-44-final.log`, `.tmp/provider-28fcd27-88-final.log`. Transport artifact fingerprint: `eec961cf1a5b142a6e8d14bae455c40914783d80ac65c553bee3395a9a1c0c29`.
 
-Пауза индексирования, STOP и действующие приоритеты проекта сохранены. Единственный оставшийся deploy blocker: доступность Mini; установка 28fcd27 на нём не заявляется.
+Пауза индексирования, STOP и действующие приоритеты проекта сохранены. Mini доступен по Tailscale: SSH host key совпал с закреплённым. При первой попытке watchdog отказал из-за изменившегося hostname; installer вернул f020a4b. Штатное имя mac-mini-2012.lan закреплено через scutil, после чего установлен 28fcd27; installer подтвердил readiness и 200 для sessions, policy, MCP. Независимый readback подтвердил hostname, sourceSha, current и процесс PID 53935. Это не отдельный OpenCode canary Mini.

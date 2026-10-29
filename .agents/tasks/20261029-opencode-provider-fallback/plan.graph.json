@@ -9,7 +9,7 @@
   "acceptance_scenarios": [
     "Красный регрессионный тест на Provider zcode circuit breaker is open становится зелёным; установленный Herder автоматически продолжает указанную владельцем native OpenCode сессию на разрешённом combo с одной отправкой и полезными инструментами. Ограничение dummy fixture отражено отдельно."
   ],
-  "current_progress": "Реальное автоматическое продолжение принято: 04:03:58 МСК, owner combo, attempts=1, новые инструменты. Runtime 28fcd27 на 100/44/88; ebd2fe8 включён. Осталась доставка последнего среза на недоступный Mini (No route to host). Core OpenCode/OmniRoute не изменялись.",
+  "current_progress": "Реальное автоматическое продолжение принято: 04:03:58 МСК, owner combo, attempts=1, новые инструменты. Runtime 28fcd27 на 100/44/88 и Mini; ebd2fe8 включён. Core OpenCode/OmniRoute не изменялись.",
   "external_waits": "",
   "slots": 2,
   "updated_at": "",
@@ -44,14 +44,14 @@
     {
       "id": "L02",
       "label": "Доставить последний срез на недоступный Mini",
-      "status": "blocked",
+      "status": "done",
       "description": "Установить тот же проверенный runtime 28fcd27 после восстановления штатной доступности Mini. Не повторять принятый ввод OpenCode.",
       "acceptance": "Штатный installer и независимый readback release/PID/start на Mini.",
       "owner": "roomhacker",
       "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
       "harness": "codex",
       "model": "gpt-6.1-sol",
-      "note": "SSH 192.168.2.4 в 04:01 и 04:06 МСК вернул No route to host. Последняя историческая квитанция Mini — f020a4b, не 28fcd27. Готовый transport tar: .tmp/provider-distribution/rel-28fcd27c1779cb2b04ebc8de04d689f3ecd9d0e9.tar; artifact 14/14. Нового автоматического таймера не создавали.",
+      "note": "Доступ через Tailscale подтверждён SSH-ключом Mini. Восстановлено штатное имя mac-mini-2012.lan, затем штатный установщик подтвердил readiness, sessions, policy и MCP; sourceSha/current и работающий PID 53935 независимо подтверждают 28fcd27. Native input не повторяли.",
       "origin": "",
       "supersedes": [],
       "depends_on": [],

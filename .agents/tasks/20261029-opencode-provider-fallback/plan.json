@@ -4,6 +4,6 @@
   "business_result": "Herder распознаёт точный terminal circuit-breaker отказ и продолжает ту же сессию на следующей разрешённой модели без повторной отправки принятого или UNKNOWN ввода.",
   "acceptance_scenarios": ["Красный регрессионный тест на Provider zcode circuit breaker is open становится зелёным; установленный Herder автоматически продолжает указанную владельцем native OpenCode сессию на разрешённом combo с одной отправкой и полезными инструментами. Ограничение dummy fixture отражено отдельно."],
   "default_model": "gpt-6.1-sol",
-  "current_progress": "Реальное автоматическое продолжение принято: 04:03:58 МСК, owner combo, attempts=1, новые инструменты. Runtime 28fcd27 на 100/44/88; ebd2fe8 включён. Осталась доставка последнего среза на недоступный Mini (No route to host). Core OpenCode/OmniRoute не изменялись.",
+  "current_progress": "Реальное автоматическое продолжение принято: 04:03:58 МСК, owner combo, attempts=1, новые инструменты. Runtime 28fcd27 на 100/44/88 и Mini; ebd2fe8 включён. Core OpenCode/OmniRoute не изменялись.",
   "slots": 2
 }

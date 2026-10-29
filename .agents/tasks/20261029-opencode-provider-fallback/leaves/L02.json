@@ -1,7 +1,7 @@
 {
   "id": "L02",
   "label": "Доставить последний срез на недоступный Mini",
-  "status": "blocked",
+  "status": "done",
   "description": "Установить тот же проверенный runtime 28fcd27 после восстановления штатной доступности Mini. Не повторять принятый ввод OpenCode.",
   "acceptance": "Штатный installer и независимый readback release/PID/start на Mini.",
   "owner": "roomhacker",
@@ -9,5 +9,5 @@
   "harness": "codex",
   "model": "gpt-6.1-sol",
   "estimate_minutes": 5,
-  "note": "SSH 192.168.2.4 в 04:01 и 04:06 МСК вернул No route to host. Последняя историческая квитанция Mini — f020a4b, не 28fcd27. Готовый transport tar: .tmp/provider-distribution/rel-28fcd27c1779cb2b04ebc8de04d689f3ecd9d0e9.tar; artifact 14/14. Нового автоматического таймера не создавали."
+  "note": "Доступ через Tailscale подтверждён SSH-ключом Mini. Восстановлено штатное имя mac-mini-2012.lan, затем штатный установщик подтвердил readiness, sessions, policy и MCP; sourceSha/current и работающий PID 53935 независимо подтверждают 28fcd27. Native input не повторяли."
 }
