@@ -37,7 +37,10 @@ export function registerHerderResources(server: McpServer, deps: {
     jsonContent(events, uri, await adapters.get(decodeResourceComponent(variables.harness))?.getSession(decodeResourceComponent(variables.sessionId)) ?? null));
   server.registerResource("session-messages", new ResourceTemplate("herder://sessions/{harness}/{sessionId}/messages", { list: undefined, complete: { harness: () => [...adapters.keys()] } }), { title: "Agent session messages", mimeType: "application/json" }, async (uri, variables) => {
     const adapter = adapters.get(decodeResourceComponent(variables.harness));
-    return jsonContent(events, uri, adapter?.getSessionMessages ? await adapter.getSessionMessages(decodeResourceComponent(variables.sessionId), 100) : []);
+    // A consumer binds a message by its identity, so the window has to reach
+    // the whole session the harness still serves. Ask for the native maximum
+    // instead of a window that silently drops the oldest turns.
+    return jsonContent(events, uri, adapter?.getSessionMessages ? await adapter.getSessionMessages(decodeResourceComponent(variables.sessionId), 200) : []);
   });
   // The earliest user-authored message: reaches an accepted initial input that
   // lives beyond the bounded latest-N message tail. The consumer matches the
