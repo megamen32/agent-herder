@@ -36,6 +36,13 @@ export interface NoticeQuestionDeliveryReceipt {
   deliveryStatus: "sent";
 }
 
+/** Keep a definite HTTP rejection observable without reopening the send fence. */
+export class NoticeQuestionDeliveryError extends Error {
+  constructor(readonly httpStatus: number) {
+    super(`Notice human request rejected with HTTP ${httpStatus}`);
+  }
+}
+
 /** The minimal question shape a delivery needs; a binding also satisfies it. */
 export type DeliverableHumanQuestion = Omit<HumanQuestionBinding, "record" | "answer"> & { answer?: HumanQuestionBinding["answer"]; noticeIncident?: NoticeIncidentBinding };
 
@@ -96,7 +103,7 @@ export async function deliverNoticeQuestion(
     signal: AbortSignal.timeout(10_000),
     body: JSON.stringify(envelope),
   });
-  if (!response.ok) throw new Error(`Notice human request rejected with HTTP ${response.status}`);
+  if (!response.ok) throw new NoticeQuestionDeliveryError(response.status);
   if (!config.requireExactTelegramReceipt) return undefined;
   if (response.status !== 200 && response.status !== 201) throw new Error("Notice human request returned an unexpected success status");
   let raw: unknown;

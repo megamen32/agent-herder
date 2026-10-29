@@ -75,6 +75,16 @@ it("preserves UNKNOWN no-replay across observer restarts", async () => {
   expect((await f.registry.list()).every(r => r.noticeDelivery?.state === "unknown")).toBe(true);
 });
 
+it("retains the definite HTTP rejection status without reopening its delivery fence", async () => {
+  const f = await fixture();
+  const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ error: "invalid bearer token" }), { status: 401 })) as unknown as typeof fetch;
+  const deps = { ...f.deps, fetchImpl };
+  await createNativeUserInputNoticeObserver(f.registry, deps).reconcileInitialSnapshot(f.adapter, [f.session]);
+  await createNativeUserInputNoticeObserver(f.registry, deps).reconcileInitialSnapshot(f.adapter, [f.session]);
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
+  expect((await f.registry.list()).every(record => record.noticeDelivery?.state === "unknown" && record.noticeDelivery.httpStatus === 401)).toBe(true);
+});
+
 it("does not expose secret questions or deliver a stale/cross-host binding", async () => {
   const f = await fixture(); f.state.pendingRequests[0]!.questions.forEach(q => { q.isSecret = true; });
   expect(await createNativeUserInputNoticeObserver(f.registry, f.deps).reconcileInitialSnapshot(f.adapter, [f.session])).toBe(true);

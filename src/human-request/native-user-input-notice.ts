@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { AgentSession, HarnessAdapter, HarnessEvent } from "../types/index.js";
 import { safeVisibleText, withPermissionQuestionCreationLock, type PermissionNoticeObserverDependencies } from "../permission-control/notice-bridge.js";
 import { loadAskHumanProducerForTarget, type AskHumanProducer } from "./ask-human-producer.js";
-import { buildAskHumanRequest, deliverNoticeQuestion } from "./notice-question.js";
+import { buildAskHumanRequest, deliverNoticeQuestion, NoticeQuestionDeliveryError } from "./notice-question.js";
 import { nativeTarget, type HumanQuestionBinding } from "./question-binding.js";
 import type { HumanRequestRecord, HumanRequestRegistry } from "./registry.js";
 
@@ -82,9 +82,10 @@ export function createNativeUserInputNoticeObserver(registry: HumanRequestRegist
         try {
           const receipt = await deliverNoticeQuestion(bound.binding, { ...config, endpoint: producer.endpoint, token: producer.token, fetchImpl: dependencies.fetchImpl, requireExactTelegramReceipt: true });
           await registry.completeNoticeDelivery(bound.record.requestId, claim.claimId, { state: "accepted", httpStatus: receipt.httpStatus, noticeRequestId: receipt.requestId, deliveryStatus: receipt.deliveryStatus });
-        } catch {
+        } catch (error) {
           // Ambiguous POST admission is durable and is never sent again after boot.
-          await registry.completeNoticeDelivery(bound.record.requestId, claim.claimId, { state: "unknown" });
+          await registry.completeNoticeDelivery(bound.record.requestId, claim.claimId, { state: "unknown",
+            ...(error instanceof NoticeQuestionDeliveryError ? { httpStatus: error.httpStatus } : {}) });
         }
       }
     }

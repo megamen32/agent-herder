@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { AgentSession, HarnessAdapter, HarnessEvent } from "../types/index.js";
 import { safeVisibleText, withPermissionQuestionCreationLock, type PermissionNoticeObserverDependencies } from "../permission-control/notice-bridge.js";
 import { loadAskHumanProducerForTarget } from "./ask-human-producer.js";
-import { buildAskHumanRequest, deliverNoticeQuestion } from "./notice-question.js";
+import { buildAskHumanRequest, deliverNoticeQuestion, NoticeQuestionDeliveryError } from "./notice-question.js";
 import { nativeTarget, type HumanQuestionBinding } from "./question-binding.js";
 import { readCanonicalNativeUserAnswer } from "./native-user-input-notice.js";
 import type { HumanRequestRecord, HumanRequestRegistry } from "./registry.js";
@@ -91,8 +91,9 @@ export function createAsyncUserInputNoticeObserver(registry: HumanRequestRegistr
         if (latest.session.cwd !== bound.record.target.cwd) throw new Error("async question cwd changed before delivery");
         const receipt = await deliverNoticeQuestion(bound.binding, { ...config, endpoint: producer.endpoint, token: producer.token, fetchImpl: dependencies.fetchImpl, requireExactTelegramReceipt: true });
         await registry.completeNoticeDelivery(bound.record.requestId, claim.claimId, { state: "accepted", httpStatus: receipt.httpStatus, noticeRequestId: receipt.requestId, deliveryStatus: receipt.deliveryStatus });
-      } catch {
-        await registry.completeNoticeDelivery(bound.record.requestId, claim.claimId, { state: "unknown" });
+      } catch (error) {
+        await registry.completeNoticeDelivery(bound.record.requestId, claim.claimId, { state: "unknown",
+          ...(error instanceof NoticeQuestionDeliveryError ? { httpStatus: error.httpStatus } : {}) });
       }
     }
     return true;

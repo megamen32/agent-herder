@@ -91,6 +91,7 @@ export interface NoticeDeliveryClaim {
   payloadFingerprint: string;
   claimedAt: string;
   settledAt?: string;
+  reconciledAt?: string;
   httpStatus?: number;
   noticeRequestId?: string;
   deliveryStatus?: "sent";
@@ -235,6 +236,7 @@ function validateRecord(record: HumanRequestRecord): HumanRequestRecord {
       || !/^[a-f0-9]{64}$/.test(delivery.payloadFingerprint)
       || !delivery.claimId || delivery.claimId.length > 128 || !delivery.claimedAt) throw new Error("invalid Notice delivery claim");
     if (delivery.settledAt !== undefined && !Number.isFinite(Date.parse(delivery.settledAt))) throw new Error("invalid Notice delivery settlement time");
+    if (delivery.reconciledAt !== undefined && !Number.isFinite(Date.parse(delivery.reconciledAt))) throw new Error("invalid Notice delivery reconciliation time");
     if (delivery.httpStatus !== undefined && (!Number.isInteger(delivery.httpStatus) || delivery.httpStatus < 100 || delivery.httpStatus > 599)) throw new Error("invalid Notice delivery HTTP status");
     if (delivery.noticeRequestId !== undefined && delivery.noticeRequestId !== record.requestId) throw new Error("Notice receipt request id does not match the Human Request");
     if (delivery.deliveryStatus !== undefined && delivery.deliveryStatus !== "sent") throw new Error("invalid Notice channel delivery status");
@@ -369,6 +371,39 @@ export class HumanRequestRegistry {
       } else {
         record.noticeDelivery = { ...current, state: "unknown", settledAt, ...(outcome.httpStatus ? { httpStatus: outcome.httpStatus } : {}) };
       }
+      await this.write(file);
+      this.publishRequest(record.requestId, "updated");
+      return cloneRecord(record);
+    });
+  }
+
+  /** Record a caller-verified canonical sent receipt without admitting another POST. */
+  async reconcileNoticeDeliveryReceipt(
+    requestId: string,
+    claimId: string,
+    payloadFingerprint: string,
+    receipt: { httpStatus: 200 | 201; noticeRequestId: string; deliveryStatus: "sent" },
+  ): Promise<HumanRequestRecord> {
+    if (!/^[a-f0-9]{64}$/.test(payloadFingerprint)) throw new Error("payloadFingerprint must be a SHA-256 hex digest");
+    if ((receipt.httpStatus !== 200 && receipt.httpStatus !== 201)
+      || receipt.noticeRequestId !== requestId || receipt.deliveryStatus !== "sent") {
+      throw new Error("Notice reconciliation requires an exact sent receipt");
+    }
+    return this.mutate(async () => {
+      const file = await this.read();
+      const record = file.requests.find((item) => item.requestId === requestId);
+      if (!record) throw new Error(`Human request '${requestId}' not found`);
+      const current = record.noticeDelivery;
+      if (!current || current.claimId !== claimId || current.payloadFingerprint !== payloadFingerprint) {
+        throw new Error(`Notice delivery claim and fingerprint for '${requestId}' do not match`);
+      }
+      if (current.state === "accepted") {
+        if (current.httpStatus !== receipt.httpStatus || current.noticeRequestId !== receipt.noticeRequestId
+          || current.deliveryStatus !== receipt.deliveryStatus) throw new Error("Notice reconciliation conflicts with the accepted receipt");
+        return cloneRecord(record);
+      }
+      const reconciledAt = new Date().toISOString();
+      record.noticeDelivery = { ...current, ...receipt, state: "accepted", settledAt: current.settledAt ?? reconciledAt, reconciledAt };
       await this.write(file);
       this.publishRequest(record.requestId, "updated");
       return cloneRecord(record);

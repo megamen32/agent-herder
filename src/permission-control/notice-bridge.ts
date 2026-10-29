@@ -4,7 +4,7 @@ import { mkdir, open } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
 import lockfile from "proper-lockfile";
-import { buildAskHumanRequest, deliverNoticeQuestion, type DeliverableHumanQuestion } from "../human-request/notice-question.js";
+import { buildAskHumanRequest, deliverNoticeQuestion, NoticeQuestionDeliveryError, type DeliverableHumanQuestion } from "../human-request/notice-question.js";
 import { nativeTarget, type HumanQuestionBinding } from "../human-request/question-binding.js";
 import { loadAskHumanProducerForTarget, type AskHumanProducer, type NoticeProducerTarget } from "../human-request/ask-human-producer.js";
 import type { HumanRequestRecord, HumanRequestRegistry } from "../human-request/registry.js";
@@ -143,10 +143,11 @@ export function createPermissionNoticeObserver(
           state: "accepted", httpStatus: receipt.httpStatus, noticeRequestId: receipt.requestId, deliveryStatus: receipt.deliveryStatus,
         });
         return true;
-      } catch {
+      } catch (error) {
         // A POST may already have reached Notice. Even if recording UNKNOWN
         // fails, this observer must never reissue the same external action.
-        try { await registry.completeNoticeDelivery(record.requestId, claim.claimId, { state: "unknown" }); }
+        try { await registry.completeNoticeDelivery(record.requestId, claim.claimId, { state: "unknown",
+          ...(error instanceof NoticeQuestionDeliveryError ? { httpStatus: error.httpStatus } : {}) }); }
         catch { reportOnce(harness, "delivery_unknown_receipt_unavailable_no_replay"); }
         reportOnce(harness, "delivery_unknown_no_replay");
         return true;
