@@ -2353,6 +2353,32 @@ it("recovers a durable proven pre-send refusal as failed while admitted and ambi
  } finally {await adapter.dispose();}
 });
 
+it("reads complete bounded continuation recovery evidence without inventing a user message", async () => {
+ const adapter=new CodexAppServerAdapter({codexBin:"/not-started"});
+ const native=adapter as unknown as {ensureReady():Promise<void>;request(method:string,params:unknown):Promise<unknown>};
+ vi.spyOn(native,"ensureReady").mockResolvedValue();
+ const request=vi.spyOn(native,"request");
+ const turn={id:"continuation-turn",rootTurnId:"chain-root",status:"interrupted",startedAt:1793212016,completedAt:null,itemsView:"summary",items:[]};
+ const items=[{turnId:turn.id,item:{type:"agentMessage",id:"native-commentary",phase:"commentary",questions:null}}];
+ const run=async (entries=items,nextCursor:string|null=null,latest=turn) => {
+  request.mockReset().mockResolvedValueOnce({data:[turn]}).mockResolvedValueOnce({data:entries,nextCursor}).mockResolvedValueOnce({data:[latest]});
+  return adapter.readLatestTurnRecoveryEvidence("exact-thread");
+ };
+ try {
+  expect(await run()).toMatchObject({available:true,latest:{turnId:turn.id,userMessageCount:0,userMessageId:null,continuationRootTurnId:"chain-root",continuationActivityItemId:"native-commentary",assistantFinal:false,pendingQuestion:false}});
+  expect(request.mock.calls.map(([method])=>method)).toEqual(["thread/turns/list","thread/items/list","thread/turns/list"]);
+  expect(request).toHaveBeenNthCalledWith(2,"thread/items/list",{threadId:"exact-thread",turnId:turn.id,limit:257,sortDirection:"desc"});
+  expect(await run(items,"more")).toMatchObject({available:false});
+  expect(await run([{...items[0],turnId:"other-turn"}])).toMatchObject({available:false});
+  expect(await run(items,null,{...turn,id:"newer-turn"})).toMatchObject({available:false});
+  const final=await run([{...items[0],item:{...items[0].item,phase:"final_answer"}}]);
+  expect(final).toMatchObject({available:true,latest:{assistantFinal:true}});
+  if(final.available) expect(final.latest).not.toHaveProperty("continuationActivityItemId");
+  expect(await run(Array.from({length:257},()=>items[0]))).toMatchObject({available:false});
+  expect(await run([{...items[0],item:{...items[0].item,questions:[{title:"Choose"}]}}] as typeof items)).toMatchObject({available:true,latest:{pendingQuestion:true}});
+ } finally {await adapter.dispose();}
+});
+
 it("reads bounded latest-turn recovery evidence with exact native user and nullable completion", async () => {
  const adapter=new CodexAppServerAdapter({codexBin:"/not-started"});
  const native=adapter as unknown as {ensureReady():Promise<void>;request(method:string,params:unknown):Promise<unknown>};

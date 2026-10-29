@@ -328,6 +328,8 @@ type CodexLatestTurnRecoveryEvidence = {
     userMessageId: string | null;
     userInputId: string | null;
     userMessageCount: number;
+    continuationRootTurnId?: string;
+    continuationActivityItemId?: string;
     assistantFinal: boolean;
     pendingQuestion: boolean;
   };
@@ -1106,6 +1108,9 @@ export interface UnfinishedSessionRecord {
   recoveryObservedAt?: string;
   recoveryTurnId?: string;
   recoveryInputId?: string;
+  /** Exact native activity boundary for a continuation which has no user item of its own. */
+  recoveryContinuationRootTurnId?: string;
+  recoveryContinuationActivityItemId?: string;
   /** One new, idempotent continuation authorized by a later process generation's exact interrupted turn. */
   rebootRecovery?: CodexRebootRecoveryMarker;
   /** Prior reboot-continuation admissions retained when a later exact turn is interrupted. */
@@ -1387,6 +1392,8 @@ export class UnfinishedSessionStore {
           ...(existing.recoveryObservedAt ? { recoveryObservedAt: existing.recoveryObservedAt } : {}),
           ...(existing.recoveryTurnId ? { recoveryTurnId: existing.recoveryTurnId } : {}),
           ...(existing.recoveryInputId ? { recoveryInputId: existing.recoveryInputId } : {}),
+          ...(existing.recoveryContinuationRootTurnId ? { recoveryContinuationRootTurnId: existing.recoveryContinuationRootTurnId } : {}),
+          ...(existing.recoveryContinuationActivityItemId ? { recoveryContinuationActivityItemId: existing.recoveryContinuationActivityItemId } : {}),
         } : {}),
         ...(existing?.quotaRecovery ? { quotaRecovery: cloneQuotaRecovery(existing.quotaRecovery) } : {}),
         ...(existing?.rebootRecovery ? { rebootRecovery: { ...existing.rebootRecovery } } : {}),
@@ -1452,6 +1459,8 @@ export class UnfinishedSessionStore {
       record.recoveryObservedAt = now.toISOString();
       if (identity.turnId) record.recoveryTurnId = bounded(identity.turnId, "recoveryTurnId");
       if (identity.inputId) record.recoveryInputId = bounded(identity.inputId, "recoveryInputId");
+      delete record.recoveryContinuationRootTurnId;
+      delete record.recoveryContinuationActivityItemId;
       delete record.activeTurnStartedAt;
       delete record.activeTurnId;
       delete record.activeInputId;
@@ -1588,6 +1597,8 @@ export class UnfinishedSessionStore {
       delete record.recoveryCause;
       delete record.recoveryTurnId;
       delete record.recoveryInputId;
+      delete record.recoveryContinuationRootTurnId;
+      delete record.recoveryContinuationActivityItemId;
       delete record.recoveryObservedAt;
       delete record.recoveryBlockedReason;
       delete record.lastError;
@@ -1675,6 +1686,8 @@ export class UnfinishedSessionStore {
       delete record.recoveryCause;
       delete record.recoveryTurnId;
       delete record.recoveryInputId;
+      delete record.recoveryContinuationRootTurnId;
+      delete record.recoveryContinuationActivityItemId;
       delete record.recoveryObservedAt;
       delete record.recoveryBlockedReason;
       delete record.lastError;
@@ -1832,6 +1845,8 @@ export class UnfinishedSessionStore {
       delete record.recoveryCause;
       delete record.recoveryTurnId;
       delete record.recoveryInputId;
+      delete record.recoveryContinuationRootTurnId;
+      delete record.recoveryContinuationActivityItemId;
       delete record.recoveryObservedAt;
       delete record.nextAttemptAt;
       record.state = "active";
@@ -1869,7 +1884,8 @@ export class UnfinishedSessionStore {
 
   async ingestColdFailure(
     session: AgentSession,
-    turn: { turnId: string; completedAt?: string | null; observedAt?: string; userMessageId?: string; cause?: "turn.failed" | "process.disconnected" },
+    turn: { turnId: string; completedAt?: string | null; observedAt?: string; userMessageId?: string;
+      continuationRootTurnId?: string; continuationActivityItemId?: string; cause?: "turn.failed" | "process.disconnected" },
     blockedReason?: string,
     now = new Date(),
   ): Promise<UnfinishedSessionRecord> {
@@ -1916,6 +1932,10 @@ export class UnfinishedSessionStore {
         existing.recoveryTurnId = bounded(turn.turnId, "recoveryTurnId");
         if (turn.userMessageId) existing.recoveryInputId = bounded(turn.userMessageId, "recoveryInputId");
         else delete existing.recoveryInputId;
+        if (turn.continuationRootTurnId) existing.recoveryContinuationRootTurnId = bounded(turn.continuationRootTurnId, "recoveryContinuationRootTurnId");
+        else delete existing.recoveryContinuationRootTurnId;
+        if (turn.continuationActivityItemId) existing.recoveryContinuationActivityItemId = bounded(turn.continuationActivityItemId, "recoveryContinuationActivityItemId");
+        else delete existing.recoveryContinuationActivityItemId;
         existing.updatedAt = now.toISOString();
         existing.attempts = 0;
         existing.state = "active";
@@ -1940,6 +1960,8 @@ export class UnfinishedSessionStore {
         recoveryObservedAt,
         recoveryTurnId: bounded(turn.turnId, "recoveryTurnId"),
         ...(turn.userMessageId ? { recoveryInputId: bounded(turn.userMessageId, "recoveryInputId") } : {}),
+        ...(turn.continuationRootTurnId ? { recoveryContinuationRootTurnId: bounded(turn.continuationRootTurnId, "recoveryContinuationRootTurnId") } : {}),
+        ...(turn.continuationActivityItemId ? { recoveryContinuationActivityItemId: bounded(turn.continuationActivityItemId, "recoveryContinuationActivityItemId") } : {}),
         ...(blockedReason ? {
           recoveryBlockedReason: bounded(blockedReason, "recoveryBlockedReason"),
           lastError: bounded(blockedReason, "lastError"),
@@ -4106,8 +4128,9 @@ export class UnfinishedSessionLauncher {
   private async readEligibleColdCodexInterruptedTurn(
     adapter: HarnessAdapter,
     session: AgentSession,
-    expected?: { turnId: string; userMessageId: string },
-  ): Promise<{ turnId: string; userMessageId: string; startedAt: string; observedAt: string } | null> {
+    expected?: { turnId: string; userMessageId?: string; continuationRootTurnId?: string; continuationActivityItemId?: string },
+  ): Promise<{ turnId: string; userMessageId?: string; continuationRootTurnId?: string; continuationActivityItemId?: string;
+    startedAt: string; observedAt: string } | null> {
     if (session.harness !== "codex" || isSubagentSession(session)
       || session.status === "running" || session.status === "needs_input" || session.needsPermission
       || nonEmptyText(session.meta?.activeTurnId) || hasPendingNativePermission(session)) return null;
@@ -4122,18 +4145,28 @@ export class UnfinishedSessionLauncher {
     const snapshotCheckedAt = Date.now();
     const latest = snapshot.latest;
     const turnId = nonEmptyText(latest.turnId), userMessageId = nonEmptyText(latest.userMessageId);
+    const continuationRootTurnId = nonEmptyText(latest.continuationRootTurnId);
+    const continuationActivityItemId = nonEmptyText(latest.continuationActivityItemId);
+    // A native continuation does not contain a new user input. Its independently
+    // verified activity boundary must never be replaced by a previous user's ID.
+    const continuation = latest.userMessageCount === 0 && !latest.userMessageId && !latest.userInputId
+      && Boolean(continuationRootTurnId && continuationRootTurnId !== turnId && continuationActivityItemId);
+    const userTurn = latest.userMessageCount === 1 && Boolean(userMessageId);
     const observedAt = nativeTimestamp(snapshot.observedAt);
     const startedAt = nativeTimestamp(latest.startedAt);
     const started = startedAt ? Date.parse(startedAt) : activity;
-    if (!turnId || !userMessageId || !observedAt || !Number.isFinite(started)
+    if (!turnId || (!userTurn && !continuation) || !observedAt || !Number.isFinite(started)
       || Date.parse(observedAt) > snapshotCheckedAt || snapshotCheckedAt - Date.parse(observedAt) > 5 * 60_000
       || started < cutoff || started > now || latest.status.toLowerCase() !== "interrupted"
-      || latest.userMessageCount !== 1 || latest.assistantFinal || latest.pendingQuestion
-      || (expected && (turnId !== expected.turnId || userMessageId !== expected.userMessageId))) return null;
+      || latest.assistantFinal || latest.pendingQuestion
+      || (expected && (turnId !== expected.turnId || userMessageId !== expected.userMessageId
+        || (continuation ? continuationRootTurnId : undefined) !== expected.continuationRootTurnId
+        || (continuation ? continuationActivityItemId : undefined) !== expected.continuationActivityItemId))) return null;
     const projected = nativeLastTurn(session);
     if (projected && (projected.turnId !== turnId || projected.status?.toLowerCase() !== "interrupted")) return null;
     if (!startedAt) return null;
-    return { turnId, userMessageId, startedAt, observedAt };
+    return { turnId, ...(userTurn ? { userMessageId: userMessageId! }
+      : { continuationRootTurnId: continuationRootTurnId!, continuationActivityItemId: continuationActivityItemId! }), startedAt, observedAt };
   }
 
   private async ingestColdCodexInterruptedTurns(runtimeSettings: SessionAutostartFile, lifecycleEpoch: number): Promise<void> {
@@ -4164,13 +4197,15 @@ export class UnfinishedSessionLauncher {
           : Boolean(session.meta?.automationStop))) continue;
       const evidence = await this.readEligibleColdCodexInterruptedTurn(adapter, session);
       if (!evidence || !this.lifecycleActive(lifecycleEpoch)) continue;
-      const rebootRecovery = await this.options.store.markCodexRebootRecoveryEligible(session, {
+      const rebootRecovery = evidence.userMessageId && await this.options.store.markCodexRebootRecoveryEligible(session, {
         turnId: evidence.turnId, userMessageId: evidence.userMessageId, startedAt: evidence.startedAt,
       }, this.generationId);
       if (rebootRecovery) continue;
       await this.options.store.ingestColdFailure(session, {
         turnId: evidence.turnId,
         userMessageId: evidence.userMessageId,
+        continuationRootTurnId: evidence.continuationRootTurnId,
+        continuationActivityItemId: evidence.continuationActivityItemId,
         observedAt: evidence.observedAt,
         cause: "process.disconnected",
       });
@@ -4212,9 +4247,12 @@ export class UnfinishedSessionLauncher {
           turnId: record.rebootRecovery.turnId, userMessageId: record.rebootRecovery.userMessageId,
         })) return false;
       } else if (record.recoveryCause === "process.disconnected") {
-        if (!record.recoveryTurnId || !record.recoveryInputId
+        if (!record.recoveryTurnId || (!record.recoveryInputId
+            && !(record.recoveryContinuationRootTurnId && record.recoveryContinuationActivityItemId))
           || !await this.readEligibleColdCodexInterruptedTurn(adapter, current, {
             turnId: record.recoveryTurnId, userMessageId: record.recoveryInputId,
+            continuationRootTurnId: record.recoveryContinuationRootTurnId,
+            continuationActivityItemId: record.recoveryContinuationActivityItemId,
           })) return false;
       } else {
         const raw = current.meta?.nativeLastTurn as Record<string, unknown> | undefined;
@@ -4417,8 +4455,14 @@ export class UnfinishedSessionLauncher {
         }
         rebootDispatchInputId = record.rebootRecovery.dispatchInputId;
       }
+      const continuationDispatchInputId = record.harness === "codex" && record.recoveryTurnId
+        && record.recoveryContinuationRootTurnId && record.recoveryContinuationActivityItemId
+        ? `herder-continuation-${createHash("sha256").update(JSON.stringify([
+          record.sessionId, record.recoveryTurnId, record.recoveryContinuationRootTurnId, record.recoveryContinuationActivityItemId,
+        ])).digest("hex").slice(0, 48)}` : undefined;
+      const dispatchInputId = rebootDispatchInputId ?? continuationDispatchInputId;
       const sent = normalizeSendAdmission(await adapter.sendMessage(record.sessionId, { message: this.continuationMessage, queue: true,
-        ...(rebootDispatchInputId ? { inputId: rebootDispatchInputId } : {}),
+        ...(dispatchInputId ? { inputId: dispatchInputId } : {}),
         ...(workspaceCrash?{workspaceCrashBoundary:workspaceCrash}:{}),
         ...(boundary?.turnId && boundary.userMessageId && boundary.completedAt ? { recoveryBoundary: {
           turnId: boundary.turnId, userMessageId: boundary.userMessageId, completedAt: Date.parse(boundary.completedAt),
@@ -6732,6 +6776,8 @@ function parseRecord(value: unknown): UnfinishedSessionRecord {
     ...(record.recoveryObservedAt ? { recoveryObservedAt: isoDate(record.recoveryObservedAt, "recoveryObservedAt") } : {}),
     ...(record.recoveryTurnId ? { recoveryTurnId: bounded(record.recoveryTurnId, "recoveryTurnId") } : {}),
     ...(record.recoveryInputId ? { recoveryInputId: bounded(record.recoveryInputId, "recoveryInputId") } : {}),
+    ...(record.recoveryContinuationRootTurnId ? { recoveryContinuationRootTurnId: bounded(record.recoveryContinuationRootTurnId, "recoveryContinuationRootTurnId") } : {}),
+    ...(record.recoveryContinuationActivityItemId ? { recoveryContinuationActivityItemId: bounded(record.recoveryContinuationActivityItemId, "recoveryContinuationActivityItemId") } : {}),
     ...(parseCodexRebootRecoveryMarker(record.rebootRecovery)
       ? { rebootRecovery: parseCodexRebootRecoveryMarker(record.rebootRecovery)! } : {}),
     ...(Array.isArray(record.rebootRecoveryHistory)

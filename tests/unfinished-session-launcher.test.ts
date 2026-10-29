@@ -320,6 +320,116 @@ describe("unfinished session crash recovery", () => {
             expect(calls.messages).toHaveLength(1);
         } finally { await rm(root, { recursive: true, force: true }); }
     });
+    it("recovers a proven zero-user Codex continuation and preserves its boundary across reload without replay", async () => {
+        const root = await mkdtemp(join(tmpdir(), "cold-codex-continuation-"));
+        const path = join(root, "state.json");
+        const current = { ...fixture("idle", "codex", "codex-continuation"),
+            meta: { nativeLastTurn: { turnId: "continuation-turn", status: "interrupted" } } };
+        const calls = { resumes: 0, messages: [] as string[] };
+        const adapter = fakeAdapter(() => current, calls);
+        Object.assign(adapter, { async readLatestTurnRecoveryEvidence() {
+            return { available: true, observedAt: new Date().toISOString(), latest: {
+                turnId: "continuation-turn", status: "interrupted", startedAt: new Date(Date.now() - 60_000).toISOString(),
+                completedAt: null, userMessageId: null, userInputId: null, userMessageCount: 0,
+                continuationRootTurnId: "original-turn", continuationActivityItemId: "native-commentary-item",
+                assistantFinal: false, pendingQuestion: false,
+            } };
+        } });
+        try {
+            const state = new UnfinishedSessionStore(path);
+            await new UnfinishedSessionLauncher({ adapters: new Map([["codex", adapter]]), store: state,
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) }).recoverPending();
+            expect(calls.resumes).toBe(1);
+            expect(calls.messages).toHaveLength(1);
+            const reloaded = new UnfinishedSessionStore(path);
+            const [record] = await reloaded.list();
+            expect(record).toMatchObject({ recoveryTurnId: "continuation-turn",
+                recoveryContinuationRootTurnId: "original-turn", recoveryContinuationActivityItemId: "native-commentary-item" });
+            expect(record.recoveryInputId).toBeUndefined();
+            await new UnfinishedSessionLauncher({ adapters: new Map([["codex", adapter]]), store: reloaded,
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) }).recoverPending();
+            expect(calls.resumes).toBe(1);
+            expect(calls.messages).toHaveLength(1);
+        } finally { await rm(root, { recursive: true, force: true }); }
+    });
+    it("uses a stable input ID for zero-user Codex continuation after a pre-admission crash and a different ID for a new boundary", async () => {
+        const root = await mkdtemp(join(tmpdir(), "continuation-input-id-"));
+        const path = join(root, "state.json");
+        let activityId = "activity-1";
+        const current = { ...fixture("idle", "codex", "codex-continuation-input-id"),
+            meta: { nativeLastTurn: { turnId: "continuation-turn", status: "interrupted" } } };
+        const calls = { resumes: 0, messages: [] as string[] };
+        const adapter = fakeAdapter(() => current, calls);
+        const inputIds: Array<string | undefined> = [];
+        let beforeSend = "";
+        adapter.sendMessage = async (_id, input) => {
+            inputIds.push(input.inputId);
+            return { ok: true };
+        };
+        Object.assign(adapter, { async readLatestTurnRecoveryEvidence() {
+            return { available: true, observedAt: new Date().toISOString(), latest: {
+                turnId: "continuation-turn", status: "interrupted", startedAt: new Date(Date.now() - 60_000).toISOString(),
+                completedAt: null, userMessageId: null, userInputId: null, userMessageCount: 0,
+                continuationRootTurnId: "original-turn", continuationActivityItemId: activityId,
+                assistantFinal: false, pendingQuestion: false,
+            } };
+        } });
+        const recover = () => {
+            const store = new UnfinishedSessionStore(path);
+            const beginAttempt = store.beginAttempt.bind(store);
+            store.beginAttempt = async (...args: Parameters<typeof store.beginAttempt>) => {
+                beforeSend = await readFile(path, "utf8");
+                return beginAttempt(...args);
+            };
+            return new UnfinishedSessionLauncher({ adapters: new Map([["codex", adapter]]), store,
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) }).recoverPending();
+        };
+        try {
+            await recover();
+            expect(inputIds[0]).toMatch(/^herder-continuation-[a-f0-9]{48}$/);
+            // Reconstructed recovery state for the same native boundary must
+            // still address the adapter's original durable admission receipt.
+            await writeFile(path, beforeSend);
+            await recover();
+            expect(inputIds).toEqual([inputIds[0], inputIds[0]]);
+            activityId = "activity-2";
+            await rm(path);
+            await recover();
+            expect(inputIds).toHaveLength(3);
+            expect(inputIds[2]).not.toBe(inputIds[0]);
+        } finally { await rm(root, { recursive: true, force: true }); }
+    });
+    it.each([
+        ["changed activity boundary", { continuationActivityItemId: "different-item" }],
+        ["changed root boundary", { continuationRootTurnId: "different-root" }],
+        ["new final", { assistantFinal: true }],
+        ["new pending question", { pendingQuestion: true }],
+        ["missing continuation proof", { continuationActivityItemId: undefined }],
+        ["stale continuation", { startedAt: new Date(Date.now() - 49 * 60 * 60_000).toISOString() }],
+        ["new latest turn", { turnId: "newer-continuation" }],
+    ])("rejects a zero-user Codex continuation with %s on its fresh recheck", async (_reason, changed) => {
+        const root = await mkdtemp(join(tmpdir(), "cold-codex-continuation-fence-"));
+        const current = { ...fixture("idle", "codex", "codex-continuation"),
+            meta: { nativeLastTurn: { turnId: "continuation-turn", status: "interrupted" } } };
+        const calls = { resumes: 0, messages: [] as string[] };
+        const adapter = fakeAdapter(() => current, calls);
+        let reads = 0;
+        Object.assign(adapter, { async readLatestTurnRecoveryEvidence() {
+            reads += 1;
+            return { available: true, observedAt: new Date().toISOString(), latest: {
+                turnId: "continuation-turn", status: "interrupted", startedAt: new Date(Date.now() - 60_000).toISOString(),
+                completedAt: null, userMessageId: null, userInputId: null, userMessageCount: 0,
+                continuationRootTurnId: "original-turn", continuationActivityItemId: "native-commentary-item",
+                assistantFinal: false, pendingQuestion: false, ...(reads > 1 ? changed : {}),
+            } };
+        } });
+        try {
+            await new UnfinishedSessionLauncher({ adapters: new Map([["codex", adapter]]), store: new UnfinishedSessionStore(join(root, "state.json")),
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}) }).recoverPending();
+            expect(reads).toBeGreaterThanOrEqual(2);
+            expect(calls).toEqual({ resumes: 0, messages: [] });
+        } finally { await rm(root, { recursive: true, force: true }); }
+    });
     it.each([
         ["pending native question", { pendingQuestion: true }],
         ["completed answer", { assistantFinal: true }],

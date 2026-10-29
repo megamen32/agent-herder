@@ -157,6 +157,7 @@ export type CodexLatestTurnRecoveryEvidence =
     turnId: string; status: string; startedAt: string | null; completedAt: string | null;
     userMessageId: string | null; userInputId: string | null; userMessageCount: number;
     assistantFinal: boolean; pendingQuestion: boolean;
+    continuationRootTurnId?: string; continuationActivityItemId?: string;
   }};
 
 interface CodexThreadPermissionState {
@@ -1641,21 +1642,48 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       await this.ensureReady();
       const result = await this.request("thread/turns/list", {threadId: id, limit: 1, sortDirection: "desc", itemsView: "summary"}) as {data?: Array<Record<string, unknown>>};
       if (!Array.isArray(result.data) || result.data.length > 1) return {available: false, reason: "native_latest_turn_unavailable"};
-      const observedAt = new Date().toISOString();
-      if (!result.data.length) return {available: true, observedAt, latest: null};
+      if (!result.data.length) return {available: true, observedAt: new Date().toISOString(), latest: null};
       const turn = result.data[0];
       if (typeof turn.id !== "string" || !turn.id || !["interrupted", "completed", "failed", "inProgress"].includes(String(turn.status))
         || turn.itemsView !== "summary" || !Array.isArray(turn.items) || turn.items.length > 256
         || turn.items.some(item => !item || typeof item !== "object" || typeof item.type !== "string")) {
         return {available: false, reason: "native_latest_turn_summary_invalid"};
       }
-      const items = turn.items as Array<Record<string, unknown>>;
+      let items = turn.items as Array<Record<string, unknown>>;
+      let continuationActivityItemId: string | undefined;
+      // A native continuation can have no user item of its own. Summary omits
+      // commentary/tools, so it cannot prove that such a turn is empty or safe.
+      if (!items.some(item => item.type === "userMessage") && typeof turn.rootTurnId === "string"
+        && turn.rootTurnId && turn.rootTurnId !== turn.id) {
+        const generation = this.transportGeneration;
+        const page = await this.request("thread/items/list", {
+          threadId: id, turnId: turn.id, limit: 257, sortDirection: "desc",
+        }) as {data?: Array<{turnId?: unknown; item?: Record<string, unknown>}>; nextCursor?: unknown};
+        if (!Array.isArray(page.data) || page.data.length > 256 || page.nextCursor !== null
+          || page.data.some(entry => entry.turnId !== turn.id || !entry.item
+            || typeof entry.item.type !== "string")) return {available: false, reason: "native_continuation_items_incomplete"};
+        items = page.data.map(entry => entry.item!);
+        const fresh = await this.request("thread/turns/list", {
+          threadId: id, limit: 1, sortDirection: "desc", itemsView: "notLoaded",
+        }) as {data?: Array<Record<string, unknown>>};
+        const latest = fresh.data?.length === 1 ? fresh.data[0] : undefined;
+        if (generation !== this.transportGeneration || !latest || latest.id !== turn.id
+          || latest.rootTurnId !== turn.rootTurnId || latest.status !== turn.status
+          || latest.startedAt !== turn.startedAt || latest.completedAt !== turn.completedAt) {
+          return {available: false, reason: "native_continuation_changed"};
+        }
+        if (!items.some(item => item.type === "userMessage")) {
+          const activity = items.find(item => item.type === "agentMessage" && item.phase === "commentary"
+            && typeof item.id === "string" && item.id);
+          continuationActivityItemId = activity?.id as string | undefined;
+        }
+      }
       const users = items.filter(item => item.type === "userMessage");
       const user = users.length === 1 ? users[0] : undefined;
       const assistants = items.filter(item => item.type === "agentMessage");
       const pendingQuestion = assistants.some(item => item.questions !== undefined && item.questions !== null
         && (!Array.isArray(item.questions) || item.questions.length > 0));
-      return {available: true, observedAt, latest: {
+      return {available: true, observedAt: new Date().toISOString(), latest: {
         turnId: turn.id, status: String(turn.status),
         startedAt: threadTimestamp(turn.startedAt as string | number | undefined) ?? null,
         completedAt: threadTimestamp(turn.completedAt as string | number | undefined) ?? null,
@@ -1664,6 +1692,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         userMessageCount: users.length,
         pendingQuestion,
         assistantFinal: assistants.some(item => item.phase === "final_answer"),
+        ...(continuationActivityItemId ? {continuationRootTurnId: turn.rootTurnId as string, continuationActivityItemId} : {}),
       }};
     } catch { return {available: false, reason: "native_latest_turn_read_failed"}; }
   }
