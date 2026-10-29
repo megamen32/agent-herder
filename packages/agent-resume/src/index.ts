@@ -51,6 +51,7 @@ export {
 } from "./resume/receipts.js";
 export {
   buildResumeCommand,
+  nativeInputId,
   resolveBoundTarget,
   resumeBoundTarget,
   type BoundDeliveryDeps,

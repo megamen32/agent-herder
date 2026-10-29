@@ -72,6 +72,8 @@ export type ResumeReceipt =
       readonly result_ref: string;
       readonly reason: string;
       readonly idempotency_key?: string;
+      /** The exact cause behind the reason, when the provider named one. */
+      readonly detail?: string;
     };
 
 type ResumeFailureReason = "unavailable" | "unsupported" | "invalid" | "failed";
@@ -83,6 +85,13 @@ export interface ResumeTransport {
 export interface AgentResumeClientOptions {
   /** Ledger the shared core reads and writes; defaults to the legacy state file. */
   coreLedgerPath?: string;
+  /**
+   * Transport that owns native admission.
+   *
+   * It defaults to the in-process core. A test or a trusted caller may inject
+   * its own to exercise a refusal without reaching the native server.
+   */
+  readonly coreTransport?: ResumeTransport;
   /** Override the machine entrypoint for tests or an installed agent-resume package. */
   readonly command?: string;
   readonly args?: readonly string[];
@@ -120,10 +129,11 @@ export class AgentResumeClient implements ResumeTransport {
     this.queryOverride = options.query;
     // An injected transport owns admission in tests; otherwise the core does it
     // in-process whenever it can reach the target natively.
-    this.coreLedger = new ReceiptLedger({ path: defaultResumeLedgerPath() });
-    this.coreTransport = process.env.AGENT_HERDER_CORE_RESUME === "false"
-      ? { resume: async (request) => ({ status: "rejected", target: request.target, result_ref: request.result_ref, reason: "core_resume_disabled" }) }
-      : createCoreResumeTransport();
+    this.coreLedger = new ReceiptLedger({ path: options.coreLedgerPath ?? defaultResumeLedgerPath() });
+    this.coreTransport = options.coreTransport
+      ?? (process.env.AGENT_HERDER_CORE_RESUME === "false"
+        ? { resume: async (request) => ({ status: "rejected", target: request.target, result_ref: request.result_ref, reason: "core_resume_disabled" }) }
+        : createCoreResumeTransport());
   }
 
   async resume(input: ResumeTransportRequest): Promise<ResumeReceipt> {
@@ -138,6 +148,21 @@ export class AgentResumeClient implements ResumeTransport {
         if (admitted.status === "accepted") return admitted;
         if (admitted.reason === "idempotency_key_required" || admitted.reason === "unsupported") {
           // Not a delivery attempt: the legacy service may still handle it.
+        } else if (request.target.agent === "opencode") {
+          // A native OpenCode target must not fall back to the legacy service.
+          // That service cannot address an OpenCode 2 session inbox, so it
+          // delivers the goal blind: the native message carries no
+          // `metadata.agentHerderInputId` and the receipt cannot name the
+          // message that carried the goal. The refusal is reported instead of
+          // being hidden behind an unbound delivery.
+          return {
+            status: "failed",
+            target: request.target,
+            result_ref: request.result_ref,
+            reason: admitted.reason,
+            ...(admitted.detail === undefined ? {} : { detail: admitted.detail }),
+            ...(request.idempotency_key === undefined ? {} : { idempotency_key: request.idempotency_key }),
+          };
         } else {
           // The service shares the ledger: a key the core already admitted is
           // replayed there instead of being delivered a second time.

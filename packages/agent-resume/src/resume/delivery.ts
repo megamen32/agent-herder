@@ -135,6 +135,19 @@ function isWorktree(cwd: string): boolean {
 }
 
 /**
+ * The deterministic identity of one admitted native input.
+ *
+ * The same idempotency key always yields the same identity, so a retry, a
+ * replay and a fallback that hands the request to another transport all bind
+ * the same native input. The provider stores it on the admitted message as
+ * `metadata.agentHerderInputId`, which is how a consumer names the message
+ * that carried the goal.
+ */
+export function nativeInputId(idempotencyKey: string): string {
+  return `herder-resume-${createHash("sha256").update(idempotencyKey).digest("hex").slice(0, 32)}`;
+}
+
+/**
  * Admit one goal exactly once and return its durable receipt.
  *
  * A rejection is also recorded: the answer for an idempotency key must not
@@ -196,7 +209,7 @@ async function deliver(
   try {
     // A harness Herder can drive natively never needs a CLI process.
     if (target.agent === "opencode" && context.deps.nativeClient) {
-      const inputId = `herder-resume-${createHash("sha256").update(context.idempotencyKey).digest("hex").slice(0, 32)}`;
+      const inputId = nativeInputId(context.idempotencyKey);
       const native = await context.deps.nativeClient.send(target.session_id, { message: prompt, delivery: "queue", inputId });
       if (!native.ok) {
         // The standalone CLI cannot address an OpenCode 2 session, so a refused

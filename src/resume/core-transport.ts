@@ -99,6 +99,9 @@ function toHerderReceipt(receipt: ResumeReceiptRecord, request: ResumeTransportR
     target: request.target,
     result_ref: receipt.result_ref ?? request.result_ref,
     reason: receipt.reason ?? receipt.error ?? "resume_rejected",
+    // The provider named the exact cause of the refusal; keep it next to the
+    // reason so a refused delivery is diagnosable without the raw receipt.
+    ...(receipt.reason && receipt.error ? { detail: receipt.error } : {}),
     ...(receipt.idempotency_key ? { idempotency_key: receipt.idempotency_key } : {}),
   };
 }
