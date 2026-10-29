@@ -30,6 +30,8 @@ export interface ResumeReceiptRecord {
   idempotency_key?: string;
   fingerprint?: string;
   result_ref?: string;
+  input_id?: string | null;
+  native_input_message_id?: string | null;
   status: ReceiptStatus;
   reason?: string;
   target?: BoundTarget | null;

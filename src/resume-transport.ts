@@ -63,6 +63,8 @@ export type ResumeReceipt =
       readonly result_ref: string;
       readonly receipt_ref?: string;
       readonly idempotency_key?: string;
+      readonly input_id?: string | null;
+      readonly native_input_message_id?: string | null;
     }
   | {
       readonly status: "failed" | "rejected" | "ambiguous";
@@ -181,22 +183,7 @@ export class AgentResumeClient implements ResumeTransport {
     if (this.queryOverride === undefined && this.coreTransport !== undefined) {
       const stored = this.coreLedger.read(request.idempotency_key);
       if (stored) {
-        const target = request.target;
-        return stored.status === "accepted"
-          ? {
-              status: "accepted",
-              target,
-              result_ref: typeof stored.result_ref === "string" ? stored.result_ref : request.result_ref,
-              ...(typeof stored.receipt_ref === "string" ? { receipt_ref: stored.receipt_ref } : {}),
-              idempotency_key: request.idempotency_key,
-            }
-          : {
-              status: stored.status,
-              target,
-              result_ref: typeof stored.result_ref === "string" ? stored.result_ref : request.result_ref,
-              reason: stored.reason ?? stored.error ?? "resume_rejected",
-              idempotency_key: request.idempotency_key,
-            };
+        return parseReceipt(stored, request);
       }
     }
     const raw = this.queryOverride
@@ -276,6 +263,10 @@ function parseReceipt(raw: unknown, request: ResumeTransportRequest): ResumeRece
       result_ref: request.result_ref,
       receipt_ref: receiptRef,
       ...(request.idempotency_key === undefined ? {} : { idempotency_key: request.idempotency_key }),
+      ...(request.target.agent === "opencode" ? {
+        input_id: typeof receipt.input_id === "string" ? receipt.input_id : null,
+        native_input_message_id: typeof receipt.native_input_message_id === "string" ? receipt.native_input_message_id : null,
+      } : {}),
     };
   }
   if (receipt.status === "failed" || receipt.status === "rejected" || receipt.status === "ambiguous") {

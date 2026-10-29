@@ -201,9 +201,9 @@ async function deliver(
       if (!native.ok) {
         // The standalone CLI cannot address an OpenCode 2 session, so a refused
         // native admission is terminal here rather than a second, blind attempt.
-        return { ...base, status: "failed", reason: "native_admission_refused", executed: true, ...(native.error ? { error: native.error } : {}) };
+        return { ...base, input_id: inputId, native_input_message_id: native.nativeInputMessageId ?? null, status: "failed", reason: "native_admission_refused", executed: true, ...(native.error ? { error: native.error } : {}) };
       }
-      return { ...base, status: "accepted", reason: "prepared", executed: true, command: [], log_file: "" };
+      return { ...base, input_id: inputId, native_input_message_id: native.nativeInputMessageId ?? null, status: "accepted", reason: "prepared", executed: true, command: [], log_file: "" };
     }
     const command = buildResumeCommand(target, prompt);
     const logDir = context.deps.logDir ?? join(process.cwd(), "runs");

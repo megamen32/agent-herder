@@ -91,6 +91,7 @@ function toHerderReceipt(receipt: ResumeReceiptRecord, request: ResumeTransportR
       result_ref: receipt.result_ref ?? request.result_ref,
       ...(receipt.receipt_ref ? { receipt_ref: receipt.receipt_ref } : {}),
       ...(receipt.idempotency_key ? { idempotency_key: receipt.idempotency_key } : {}),
+      ...(request.target.agent === "opencode" ? { input_id: receipt.input_id ?? null, native_input_message_id: receipt.native_input_message_id ?? null } : {}),
     };
   }
   return {

@@ -177,10 +177,22 @@ export function registerHumanRequestTools(
   });
 
   server.registerTool("human_request_get", {
-    description: "Read opaque Human Request lifecycle and routing metadata.",
+    description: "Read opaque Human Request lifecycle, routing metadata and its bound durable resume receipt when available.",
     inputSchema: z.object({ requestId: z.string().uuid() }),
-    outputSchema: z.object({ request: humanRequestSchema.nullable() }),
-  }, async (args) => structuredResult({ request: await humanRequests.get(args.requestId) }));
+    outputSchema: z.object({ request: humanRequestSchema.nullable(), resumeReceipt: z.unknown().nullable().optional() }),
+  }, async (args) => {
+    const record = await humanRequests.get(args.requestId);
+    const target = record && humanRequestResumeTarget(record);
+    if (!record || !target || !record.idempotencyKey || !record.resultRef || !options.queryReceipt) {
+      return structuredResult({ request: record, resumeReceipt: null });
+    }
+    try {
+      const receipt = await options.queryReceipt({ target, result_ref: record.resultRef, idempotency_key: record.idempotencyKey });
+      return structuredResult({ request: record, resumeReceipt: receipt });
+    } catch {
+      return structuredResult({ request: record, resumeReceipt: null });
+    }
+  });
 
   server.registerTool("human_request_bind_notify_incident", {
     description: "Persist the opaque incident identifier returned by Notify for a Human Request with explicit notification routing.",
