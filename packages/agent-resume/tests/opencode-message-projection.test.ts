@@ -55,3 +55,30 @@ it("preserves the admitted input identity of a user message",async()=>{
  // A message without a proven binding must not carry one.
  expect(messages?.[0]?.inputId).toBeUndefined();
 });
+
+it("reads the full requested message window instead of truncating it at fifty",async()=>{
+ // The consumer binds an earlier question/answer turn by message identity. A
+ // silent cap below the requested window hides that turn from the board, so
+ // the requested window must reach the native endpoint unchanged.
+ const fetch=vi.fn(async()=>new Response(JSON.stringify({data:[]}),{headers:{"content-type":"application/json"}}));
+ vi.stubGlobal("fetch",fetch);
+ const client=new OpenCodeClient({baseUrl:"http://opencode.test",protocol:"v2"});
+
+ await client.getMessages("ses_window",100);
+
+ const requested=new URL(fetch.mock.calls[0]?.[0] as string);
+ expect(Number(requested.searchParams.get("limit"))).toBe(200);
+});
+
+it("never asks the native endpoint for more messages than it accepts",async()=>{
+ // The native endpoint rejects a limit above 200. The overfetch that drops
+ // status frames must stay inside that bound.
+ const fetch=vi.fn(async()=>new Response(JSON.stringify({data:[]}),{headers:{"content-type":"application/json"}}));
+ vi.stubGlobal("fetch",fetch);
+ const client=new OpenCodeClient({baseUrl:"http://opencode.test",protocol:"v2"});
+
+ await client.getMessages("ses_window",100);
+
+ const requested=new URL(fetch.mock.calls[0]?.[0] as string);
+ expect(Number(requested.searchParams.get("limit"))).toBeLessThanOrEqual(200);
+});

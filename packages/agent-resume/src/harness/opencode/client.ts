@@ -661,10 +661,17 @@ export class OpenCodeClient implements HarnessClient {
   async getMessages(id: string, limit = 3): Promise<HarnessMessage[] | null> {
     await this.probeProtocol();
     try {
-      const bounded = Math.max(1, Math.min(limit, 50));
+      // The native v2 endpoint accepts up to 200 messages per read. A window
+      // smaller than that silently truncates the newest tail, which hides an
+      // earlier question/answer turn from any consumer that binds a message by
+      // identity. Keep the read bounded, but never below the window the caller
+      // asked for.
+      const bounded = Math.max(1, Math.min(limit, 200));
       // v2 interleaves execution-status frames with real messages, so overfetch
       // and drop them before the bounded slice keeps the requested window real.
-      const fetchLimit = this.isV2 ? bounded * 3 : bounded;
+      // The native endpoint rejects a limit above 200, so the overfetch is
+      // clamped to what it accepts.
+      const fetchLimit = this.isV2 ? Math.min(bounded * 3, 200) : bounded;
       const endpoint = this.isV2
         ? this.api(`/session/${encodeURIComponent(id)}/message?limit=${fetchLimit}&order=desc`)
         : this.api(`/session/${encodeURIComponent(id)}/message?limit=${bounded}`);
