@@ -510,11 +510,18 @@ function quotaModelId(evidence: QuotaFailureEvidence): string | undefined {
 
 function exactTerminalQuotaSnapshot(session: AgentSession | null | undefined, evidence: QuotaFailureEvidence): boolean {
   const last = nativeLastTurn(session);
+  const completedAt = last?.completedAt ? Date.parse(last.completedAt) : Number.NaN;
+  const now = Date.now();
   return Boolean(session && last
     && (last.status === "failed" || last.status === "error")
     && last.cancelledByUser !== true
     && last.turnId === evidence.nativeTurnId
     && last.inputId === evidence.inputId
+    // Provider recovery inherits the OpenCode 24-hour crash-recovery window.
+    // This exact snapshot is checked at discovery, events and before dispatch;
+    // persisted observation time must not renew an old terminal failure.
+    && (evidence.classification !== "provider_unavailable" || session.harness === "opencode"
+      && Number.isFinite(completedAt) && completedAt <= now && now - completedAt <= 24 * 60 * 60_000)
     && sameQuotaFailure(last.quotaFailure, evidence));
 }
 

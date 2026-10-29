@@ -133,6 +133,8 @@ export interface OpenCodeTerminalFailureContext {
   nativeTurnId: string;
   assistantMessageId: string;
   userMessageId?: string;
+  /** Persisted app input ID, or the real native user message ID for a verified
+   * ordinary-UI linear failure with no app input identities. Never fabricated. */
   inputId: string;
   providerId: string;
   modelId: string;

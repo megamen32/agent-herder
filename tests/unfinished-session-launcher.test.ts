@@ -1185,7 +1185,7 @@ describe("terminal quota recovery", () => {
     };
   }
 
-  it.each(["accepted", "unknown", "fallback-disabled", "auth", "changed-input", "pending-question"])("handles exact OpenCode provider unavailable without original-provider retry: %s", async mode => {
+  it.each(["accepted", "unknown", "fallback-disabled", "auth", "changed-input", "pending-question", "old-terminal"])("handles exact OpenCode provider unavailable without original-provider retry: %s", async mode => {
     const root = await mkdtemp(join(tmpdir(), "provider-unavailable-fallback-"));
     try {
       const original = "omniroute/openai/current", backup = "omniroute/anthropic/fallback";
@@ -1198,6 +1198,7 @@ describe("terminal quota recovery", () => {
       if (mode === "auth") last.errorCode = "401";
       if (mode === "changed-input") last.inputId = "newer-native-input";
       if (mode === "pending-question") current.needsPermission = true;
+      if (mode === "old-terminal") last.completedAt = Date.now() - 25 * 60 * 60_000;
       const sent: Array<{model?: string; inputId?: string}> = [];
       const probes: string[] = [];
       const adapter = quotaAdapter(() => current, sent, [original, backup]);
@@ -1216,7 +1217,7 @@ describe("terminal quota recovery", () => {
       }).recoverPending();
       await run();
       await run();
-      if (["fallback-disabled", "auth", "changed-input", "pending-question"].includes(mode)) {
+      if (["fallback-disabled", "auth", "changed-input", "pending-question", "old-terminal"].includes(mode)) {
         expect(sent).toEqual([]);
         expect(probes).toEqual([]);
       } else {
