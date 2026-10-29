@@ -25,6 +25,9 @@ type StoredState = {
 
 export class McpClientTokenStore {
   private state?: StoredState;
+  // The registry is shared with out-of-process issuers (CLI, other services):
+  // the cache is valid only while the file on disk is the one it was read from.
+  private stateStamp?: string;
   private operation: Promise<unknown> = Promise.resolve();
 
   constructor(readonly path = join(SETTINGS_STATE_DIR, "mcp-client-tokens.json")) {}
@@ -90,15 +93,18 @@ export class McpClientTokenStore {
   }
 
   private async load(): Promise<StoredState> {
-    if (this.state) return this.state;
     let raw: string;
     try {
       const metadata = await stat(this.path);
+      const stamp = registryStamp(metadata);
+      if (this.state && this.stateStamp === stamp) return this.state;
       if ((metadata.mode & 0o077) !== 0) throw new Error("token_registry_permissions_invalid");
       raw = await readFile(this.path, "utf8");
+      this.stateStamp = stamp;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         this.state = { schemaVersion: 1, tokens: [] };
+        this.stateStamp = undefined;
         return this.state;
       }
       throw error;
@@ -133,6 +139,7 @@ export class McpClientTokenStore {
       await chmod(temporary, 0o600);
       await rename(temporary, this.path);
       committed = true;
+      this.stateStamp = registryStamp(await stat(this.path));
       this.state = state;
     } finally {
       await handle.close().catch(() => undefined);
@@ -145,6 +152,10 @@ export class McpClientTokenStore {
     this.operation = current.then(() => undefined, () => undefined);
     return current;
   }
+}
+
+function registryStamp(metadata: { ino: number | bigint; size: number | bigint; mtimeMs: number }): string {
+  return String(metadata.ino) + ":" + String(metadata.size) + ":" + String(metadata.mtimeMs);
 }
 
 function hash(value: string): string {
