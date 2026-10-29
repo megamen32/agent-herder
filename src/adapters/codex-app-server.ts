@@ -1656,13 +1656,28 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       if (!items.some(item => item.type === "userMessage") && typeof turn.rootTurnId === "string"
         && turn.rootTurnId && turn.rootTurnId !== turn.id) {
         const generation = this.transportGeneration;
-        const page = await this.request("thread/items/list", {
-          threadId: id, turnId: turn.id, limit: 257, sortDirection: "desc",
-        }) as {data?: Array<{turnId?: unknown; item?: Record<string, unknown>}>; nextCursor?: unknown};
-        if (!Array.isArray(page.data) || page.data.length > 256 || page.nextCursor !== null
-          || page.data.some(entry => entry.turnId !== turn.id || !entry.item
-            || typeof entry.item.type !== "string")) return {available: false, reason: "native_continuation_items_incomplete"};
-        items = page.data.map(entry => entry.item!);
+        items = [];
+        let cursor: string | undefined;
+        let complete = false;
+        const cursors = new Set<string>();
+        // Native servers may cap each page below the requested limit.
+        for (let pageIndex = 0; pageIndex < 4; pageIndex++) {
+          const page = await this.request("thread/items/list", {
+            threadId: id, turnId: turn.id, limit: 257 - items.length, sortDirection: "desc",
+            ...(cursor ? {cursor} : {}),
+          }) as {data?: Array<{turnId?: unknown; item?: Record<string, unknown>}>; nextCursor?: unknown};
+          if (!Array.isArray(page.data) || page.data.length + items.length > 256
+            || page.data.some(entry => !entry || entry.turnId !== turn.id || !entry.item
+              || typeof entry.item.type !== "string")) return {available: false, reason: "native_continuation_items_incomplete"};
+          items.push(...page.data.map(entry => entry.item!));
+          if (page.nextCursor === null) { complete = true; break; }
+          if (typeof page.nextCursor !== "string" || !page.nextCursor || cursors.has(page.nextCursor)) {
+            return {available: false, reason: "native_continuation_cursor_invalid"};
+          }
+          cursor = page.nextCursor;
+          cursors.add(cursor);
+        }
+        if (!complete) return {available: false, reason: "native_continuation_items_incomplete"};
         const fresh = await this.request("thread/turns/list", {
           threadId: id, limit: 1, sortDirection: "desc", itemsView: "notLoaded",
         }) as {data?: Array<Record<string, unknown>>};

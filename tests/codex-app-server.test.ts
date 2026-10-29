@@ -2353,6 +2353,37 @@ it("recovers a durable proven pre-send refusal as failed while admitted and ambi
  } finally {await adapter.dispose();}
 });
 
+it("pages native continuation items through the server page cap and retains later final/question fences", async () => {
+ const adapter=new CodexAppServerAdapter({codexBin:"/not-started"});
+ const native=adapter as unknown as {ensureReady():Promise<void>;request(method:string,params:unknown):Promise<unknown>};
+ vi.spyOn(native,"ensureReady").mockResolvedValue();
+ const request=vi.spyOn(native,"request");
+ const turn={id:"continuation-turn",rootTurnId:"chain-root",status:"interrupted",startedAt:1793212016,completedAt:null,itemsView:"summary",items:[]};
+ const entry=(index:number)=>({turnId:turn.id,item:{type:"agentMessage",id:`commentary-${index}`,phase:"commentary",questions:null as unknown}});
+ const run=async (hasFinal:boolean) => {
+  const entries=Array.from({length:224},(_,i)=>entry(i));
+  if(hasFinal) entries[223].item={...entries[223].item,phase:"final_answer",questions:[{title:"Choose"}]};
+  request.mockReset().mockResolvedValueOnce({data:[turn]})
+   .mockResolvedValueOnce({data:entries.slice(0,100),nextCursor:"page-2"})
+   .mockResolvedValueOnce({data:entries.slice(100,200),nextCursor:"page-3"})
+   .mockResolvedValueOnce({data:entries.slice(200),nextCursor:null})
+   .mockResolvedValueOnce({data:[turn]});
+  return adapter.readLatestTurnRecoveryEvidence("exact-thread");
+ };
+ try {
+  expect(await run(false)).toMatchObject({available:true,latest:{continuationActivityItemId:"commentary-0",assistantFinal:false,pendingQuestion:false}});
+  expect(request).toHaveBeenNthCalledWith(3,"thread/items/list",{threadId:"exact-thread",turnId:turn.id,limit:157,sortDirection:"desc",cursor:"page-2"});
+  expect(await run(true)).toMatchObject({available:true,latest:{assistantFinal:true,pendingQuestion:true}});
+  request.mockReset().mockResolvedValueOnce({data:[turn]}).mockResolvedValue({data:[entry(0)],nextCursor:"repeated"});
+  expect(await adapter.readLatestTurnRecoveryEvidence("exact-thread")).toMatchObject({available:false});
+  expect(request.mock.calls).toHaveLength(3);
+  request.mockReset().mockResolvedValueOnce({data:[turn]});
+  for(let page=0;page<4;page++) request.mockResolvedValueOnce({data:[entry(page)],nextCursor:`page-${page}`});
+  expect(await adapter.readLatestTurnRecoveryEvidence("exact-thread")).toMatchObject({available:false});
+  expect(request.mock.calls).toHaveLength(5);
+ } finally {await adapter.dispose();}
+});
+
 it("reads complete bounded continuation recovery evidence without inventing a user message", async () => {
  const adapter=new CodexAppServerAdapter({codexBin:"/not-started"});
  const native=adapter as unknown as {ensureReady():Promise<void>;request(method:string,params:unknown):Promise<unknown>};
