@@ -88,11 +88,14 @@ async function authorize(request: IncomingMessage, response: ServerResponse, url
   }
   if (one(url.searchParams, "resource") !== options.resource) return authorizationError(response, options.issuer, callback, state, "invalid_target");
   const requested = one(url.searchParams, "scope");
-  const scopes = url.searchParams.has("scope") ? (requested ?? "").split(/\s+/).filter(Boolean) : [MCP_OAUTH_OWNER_SCOPE, MCP_OAUTH_OFFLINE_SCOPE];
+  // ChatGPT connector requests only the owner scope; refresh-token grants are
+  // always added server-side, so partial subsets must not fail with invalid_scope.
+  let scopes = url.searchParams.has("scope") ? (requested ?? "").split(/\s+/).filter(Boolean) : [MCP_OAUTH_OWNER_SCOPE, MCP_OAUTH_OFFLINE_SCOPE];
   if (new Set(scopes).size !== scopes.length || scopes.some((scope) => !MCP_OAUTH_SCOPES.includes(scope as typeof MCP_OAUTH_SCOPES[number]))
-    || !scopes.includes(MCP_OAUTH_OWNER_SCOPE) || !scopes.includes(MCP_OAUTH_OFFLINE_SCOPE)) {
+    || !scopes.includes(MCP_OAUTH_OWNER_SCOPE)) {
     return authorizationError(response, options.issuer, callback, state, "invalid_scope");
   }
+  if (!scopes.includes(MCP_OAUTH_OFFLINE_SCOPE)) scopes = [...scopes, MCP_OAUTH_OFFLINE_SCOPE];
   if (!await options.isOwnerRequest(request)) return json(response, 401, { error: "owner_sso_required" });
   try {
     const transaction = await options.store.createAuthorizationTransaction({
