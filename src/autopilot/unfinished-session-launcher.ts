@@ -3647,6 +3647,11 @@ export class UnfinishedSessionLauncher {
       try { sessions = await adapter.listSessions(); } catch { continue; }
       for (const listed of sessions) {
         if (!this.lifecycleActive(epoch) || listed.harness !== harness || isSubagentSession(listed)) continue;
+        // Listing metadata is only a cheap candidate filter; exact native
+        // terminal proof is still required below. Do not serially fetch every
+        // idle/completed session before dispatching an actual failed one.
+        if (harness !== "codex" && listed.status !== "error"
+          && !["failed", "error"].includes(nativeLastTurn(listed)?.status?.toLowerCase() ?? "")) continue;
         const effective = await this.options.settingsStore.getEffective(harness, listed.id, listed.cwd);
         if ((!effective.waitForQuota && !effective.fallbackForQuota) || await this.pendingQuestionBlocks(harness, listed.id, listed.cwd)) continue;
         let fresh: AgentSession | null;
@@ -3792,14 +3797,18 @@ export class UnfinishedSessionLauncher {
       await this.options.store.holdQuotaRecovery(snapshot, "model_unavailable");
       return;
     }
-    // Unknown quota is an explicit bounded admission trial of this candidate.
-    // It never relaxes the exact native delivery boundary after send.
-    let probe: RecoveryModelQuota;
-    try { probe = await (this.options.probeRecoveryQuota ?? probeRecoveryModelQuota)(selectedModel); }
-    catch { return; }
-    if (probe.state === "exhausted") {
-      await this.options.store.deferQuotaRecoveryProbe(snapshot, probe.resetAt);
-      return;
+    // Provider unavailability is not quota exhaustion. Its separately opted-in
+    // fallback uses the fresh catalog/project policy above, then one ordinary
+    // native admission; an unresolved combo quota is not relabelled available.
+    if (!providerUnavailable) {
+      // Preserve existing quota-wait/admission semantics for every other path.
+      let probe: RecoveryModelQuota;
+      try { probe = await (this.options.probeRecoveryQuota ?? probeRecoveryModelQuota)(selectedModel); }
+      catch { return; }
+      if (probe.state === "exhausted") {
+        await this.options.store.deferQuotaRecoveryProbe(snapshot, probe.resetAt);
+        return;
+      }
     }
     const selectedModelMatches = async (observed: string | undefined): Promise<boolean> => {
       if (observed === selectedModel) return true;
