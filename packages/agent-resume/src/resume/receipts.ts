@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, rmdirSync, writeFileSync, unlinkSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 /**
@@ -15,6 +16,13 @@ import { dirname, join } from "node:path";
  * by this core unchanged, and vice versa.
  */
 export type ReceiptStatus = "accepted" | "rejected" | "ambiguous" | "failed";
+
+/**
+ * How long an admission waits for the ledger lock before it gives up. The
+ * Agent Resume service takes the same lock for the duration of one admission,
+ * so this is the longest a competing writer may legitimately hold it.
+ */
+const LOCK_WAIT_MS = 30_000;
 
 export interface BoundTarget {
   agent: string;
@@ -256,25 +264,57 @@ export function nativeAdmissionVerified(proof: unknown, target: BoundTarget): bo
 /**
  * Cross-process exclusive lock on the ledger.
  *
- * `mkdir` is atomic on POSIX and is released by the owner only, which keeps the
- * ledger single-writer without a native flock binding.
+ * The Agent Resume service guards this very ledger with an advisory `flock`
+ * on `<ledger>.lock` and leaves that file behind, so the lock file itself is
+ * never removed by either side. Node has no flock binding, so the lock is
+ * taken by a small `flock` helper process that holds the same kernel lock for
+ * as long as this core holds it. Both sides then exclude each other on exactly
+ * one lock.
+ *
+ * The earlier `mkdir` protocol could not interoperate at all: the service
+ * creates a regular file there, so `mkdir` failed with EEXIST forever and the
+ * core could never admit anything. Every resume then fell back to the service,
+ * which records no native input binding — so the durable receipt could not
+ * prove which native message carried the admitted goal.
  */
 async function acquireLock(lockPath: string): Promise<() => void> {
   mkdirSync(dirname(lockPath), { recursive: true });
-  const deadline = Date.now() + 30_000;
-  for (;;) {
-    try {
-      mkdirSync(lockPath);
-      const owner = join(lockPath, "owner");
-      writeFileSync(owner, String(process.pid), "utf8");
-      return () => {
-        try { unlinkSync(owner); } catch { /* lock may already be gone */ }
-        try { rmdirSync(lockPath); } catch { /* another owner may have taken over */ }
+  const holder = spawn(
+    "flock",
+    ["-w", String(Math.ceil(LOCK_WAIT_MS / 1000)), "-x", lockPath, "-c", "echo ready; cat > /dev/null"],
+    // stdin stays an open pipe: the helper holds the lock for as long as it
+    // can read, and this process keeps that pipe open until it releases.
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  let released = false;
+  const release = (): void => {
+    if (released) return;
+    released = true;
+    try { holder.kill("SIGKILL"); } catch { /* already gone */ }
+  };
+  try {
+    await new Promise<void>((resolve, reject) => {
+      let ready = "";
+      const onError = (error: Error): void => {
+        release();
+        reject(new Error(`receipt ledger lock is unavailable: ${lockPath}: ${error.message}`));
       };
-    } catch (error) {
-      if ((error as { code?: string }).code !== "EEXIST") throw error;
-      if (Date.now() > deadline) throw new Error(`receipt ledger is locked: ${lockPath}`);
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    }
+      holder.once("error", onError);
+      holder.stdout?.on("data", (chunk: Buffer) => {
+        ready += chunk.toString("utf8");
+        if (!ready.includes("ready")) return;
+        holder.off("error", onError);
+        resolve();
+      });
+      holder.once("exit", (code) => {
+        if (ready.includes("ready")) return;
+        release();
+        reject(new Error(`receipt ledger lock is unavailable: ${lockPath}: flock exited with ${code}`));
+      });
+    });
+  } catch (error) {
+    release();
+    throw error;
   }
+  return release;
 }

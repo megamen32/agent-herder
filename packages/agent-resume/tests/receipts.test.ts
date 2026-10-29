@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -145,4 +146,57 @@ it("refuses to guess when the ledger is corrupt", () => {
   const ledger = new ReceiptLedger({ path: ledgerPath });
   expect(() => ledger.read("key-1")).toThrow(/unreadable/);
   expect(readFileSync(ledgerPath, "utf8")).toBe("{not json");
+});
+
+it("admits while the Agent Resume service keeps its own lock file", async () => {
+  // The service guards this ledger with an advisory flock on the same path and
+  // leaves that file behind forever. The core must take the same kernel lock
+  // instead of needing a directory there: a `mkdir` protocol could never
+  // interoperate, and every admission would fall back to the service, which
+  // records no native input binding.
+  mkdirSync(join(dir, "state"), { recursive: true });
+  writeFileSync(`${ledgerPath}.lock`, "", "utf8");
+  const ledger = new ReceiptLedger({ path: ledgerPath });
+  const receipt = await ledger.admit({
+    idempotencyKey: "key-service-lock",
+    fingerprint: fingerprint(),
+    target,
+    execute: async (): Promise<ResumeReceiptRecord> => ({
+      receipt_id: "resume-native",
+      receipt_ref: "resume-native",
+      status: "accepted",
+      reason: "prepared",
+      target,
+      input_id: "herder-resume-abc",
+      native_input_message_id: "msg_native",
+    }),
+  });
+  expect(receipt.status).toBe("accepted");
+  expect(receipt.input_id).toBe("herder-resume-abc");
+  expect(receipt.native_input_message_id).toBe("msg_native");
+  expect(ledger.read("key-service-lock")?.native_input_message_id).toBe("msg_native");
+});
+
+it("excludes a second writer that already holds the ledger lock", async () => {
+  mkdirSync(join(dir, "state"), { recursive: true });
+  const lockPath = `${ledgerPath}.lock`;
+  // The service holds the same advisory lock; a second admission must wait
+  // for it instead of reading a half-written ledger.
+  const holder = spawn("flock", ["-x", lockPath, "-c", "echo ready; cat > /dev/null"], { stdio: ["pipe", "pipe", "pipe"] });
+  await new Promise<void>((resolve) => holder.stdout?.once("data", () => resolve()));
+  const ledger = new ReceiptLedger({ path: ledgerPath });
+  const pending = ledger.admit({
+    idempotencyKey: "key-contended",
+    fingerprint: fingerprint(),
+    target,
+    execute: async (): Promise<ResumeReceiptRecord> => ({
+      receipt_id: "resume-contended",
+      receipt_ref: "resume-contended",
+      status: "accepted",
+      target,
+    }),
+  });
+  holder.kill("SIGKILL");
+  const receipt = await pending;
+  expect(receipt.status).toBe("accepted");
 });
