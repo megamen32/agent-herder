@@ -1,5 +1,11 @@
 # Notice Place incident route: owner-selected GLM + MiniMax combo
 
+## 29 October 2026 subscription readback
+
+At 2026-10-29 20:28:53 UTC one read-only GET used the single effective native OpenCode `minimax-coding-plan` SQLite credential without printing it. HTTP 200, provider status code 0; the returned `general` entry reported total count 0 and usage count 0. This does not establish remaining quota greater than zero; active-and-positive gate remains unconfirmed. Do not repeat this request within an hour or replay earlier accepted operations. Owner-selected combo remains independent of this gate.
+
+The next wake was not registered: this session has no Agent Herder MCP tools, and the live local `/mcp` initialization returned HTTP 401 even when using the running service's HTTP token, without exposing the token. Existing initial wait `wait_896ac6f6a785452b9bbda5ba9122dd84` is already `resumed`; it is not a future schedule. No automatic hourly continuation is claimed. The earliest next permitted status read is 2026-10-29 21:28:53 UTC; intended stable request ID is `notice-token-plan-hourly-20261029T21Z`.
+
 ## Owner correction and scheduled subscription check
 
 Owner confirms the combo installation is correct; the previous instruction
