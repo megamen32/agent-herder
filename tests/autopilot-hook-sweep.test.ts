@@ -103,9 +103,26 @@ describe("autopilot policy hook and timeout sweep", () => {
     const notify = { send: vi.fn(async () => undefined) };
     const base = { judge, notify, allowSessions: new Set([input.session_id]), receiptStore: new Map(), maxContinuationsPerSession: 2 };
     await expect(createAutopilotCore({ ...base, effectivePolicy: resolveEffectivePolicy({ env: {} }) }).handleStop(input)).resolves.toEqual({});
-    await expect(createAutopilotCore({ ...base, effectivePolicy: effective({ ...policy(), enabled: false }), policyBypassSessionId: input.session_id }).handleStop(input)).resolves.toEqual({});
     await expect(createAutopilotCore({ ...base, effectivePolicy: effective(policy()) }).handleStop({ ...input, session_id: "other-session" })).resolves.toEqual({});
     expect(judge.decide).not.toHaveBeenCalled();
+  });
+
+  it("admits the exact session that carries its own opt-in while the master policy is off", async () => {
+    const judge = { decide: vi.fn(async () => ({ kind: "done", summary: "nothing left" })) };
+    const notify = { send: vi.fn(async () => undefined) };
+    const base = { judge, notify, allowSessions: new Set([input.session_id]), receiptStore: new Map(), maxContinuationsPerSession: 2 };
+    // The master policy is off, but this exact session carries the owner's own
+    // durable opt-in, so the session is judged. The owner-facing setting says
+    // exactly this: with the master off, new completions are not evaluated
+    // "except explicitly enabled sessions".
+    await createAutopilotCore({ ...base, effectivePolicy: effective({ ...policy(), enabled: false }), policyBypassSessionId: input.session_id }).handleStop(input);
+    expect(judge.decide).toHaveBeenCalled();
+
+    // The opt-in belongs to one exact session and never widens to another.
+    const other = { decide: vi.fn(async () => ({ kind: "done", summary: "nothing left" })) };
+    await expect(createAutopilotCore({ ...base, judge: other, effectivePolicy: effective({ ...policy(), enabled: false }), policyBypassSessionId: input.session_id })
+      .handleStop({ ...input, session_id: "other-session" })).resolves.toEqual({});
+    expect(other.decide).not.toHaveBeenCalled();
   });
 
   it("snapshots the matching policy revision, selector-derived timeout target and context switches", async () => {

@@ -139,11 +139,28 @@ describe("autopilot runner", () => {
     await expect(runAutopilotCommand({ command: "status", harness: "opencode", sessionId: "open-global", cwd: "/workspace/app" })).resolves.toMatchObject({ enabled: false, source: "persisted" });
   });
 
-  it("lets master off override a saved enabled session", async () => {
+  it("lets the master off override a session that carries no switch of its own", async () => {
     const { AutopilotPolicyStore } = await import("../src/autopilot/policy-store.js");
     const { createDefaultAutopilotPolicy } = await import("../src/autopilot/policy.js");
     const { runAutopilotCommand } = await import("../src/autopilot-runner.js");
     const target = { harness: "codex" as const, sessionId: "master-off", cwd: "/workspace/app" };
+    const root = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR!;
+    await new AutopilotPolicyStore(join(root, "autopilot-policy.json")).replacePolicy({
+      ...createDefaultAutopilotPolicy(),
+      enabled: false,
+    }, null);
+
+    // A session that was never switched on follows the global policy: with the
+    // master off it is not judged.
+    await expect(runAutopilotCommand({ ...target, command: "status" })).resolves.toMatchObject({ enabled: false });
+    await expect(runAutopilotCommand({ ...target, command: "stop", turnId: "turn-1" })).resolves.toMatchObject({ enabled: false, decision: "disabled" });
+  });
+
+  it("keeps an explicitly enabled session judged while the master policy is off", async () => {
+    const { AutopilotPolicyStore } = await import("../src/autopilot/policy-store.js");
+    const { createDefaultAutopilotPolicy } = await import("../src/autopilot/policy.js");
+    const { runAutopilotCommand } = await import("../src/autopilot-runner.js");
+    const target = { harness: "codex" as const, sessionId: "master-off-opted-in", cwd: "/workspace/app" };
     await runAutopilotCommand({ ...target, command: "on" });
     const root = process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR!;
     await new AutopilotPolicyStore(join(root, "autopilot-policy.json")).replacePolicy({
@@ -151,8 +168,11 @@ describe("autopilot runner", () => {
       enabled: false,
     }, null);
 
-    await expect(runAutopilotCommand({ ...target, command: "status" })).resolves.toMatchObject({ enabled: false, source: "session" });
-    await expect(runAutopilotCommand({ ...target, command: "stop", turnId: "turn-1" })).resolves.toMatchObject({ enabled: false, decision: "disabled" });
+    // The owner switched this exact session on, so the global default does not
+    // silence it. The owner-facing setting says exactly this: with the master
+    // off, new completions are not evaluated "except explicitly enabled
+    // sessions".
+    await expect(runAutopilotCommand({ ...target, command: "status" })).resolves.toMatchObject({ enabled: true, source: "session" });
   });
 
   it("does not enable or judge a human-stopped session until explicit release", async () => {

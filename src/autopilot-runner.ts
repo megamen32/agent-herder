@@ -108,7 +108,13 @@ async function evaluateAutopilotCommand(input: AutopilotRunnerInput, background 
     const goal = await readGoalSnapshot(goalStore, { harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) });
     const effectivePolicy = await policyStore.readEffective();
     const policyEnabled = effectivePolicyAllowsTarget(effectivePolicy, { harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) });
-    const sessionEnabled = record?.enabled === true && (effectivePolicy.source !== "persisted" || effectivePolicy.policy.enabled);
+    // A per-session switch is the owner's explicit decision for one exact
+    // session, so it decides that session on its own. The global policy only
+    // decides the sessions that carry no switch of their own. ANDing the two
+    // made `on` answer true and `status` answer false for the same session,
+    // and every native turn of OpenCode reaches the bridge through this
+    // status, so an armed session was never continued.
+    const sessionEnabled = record?.enabled === true;
     const goalOptIn = record?.enabled !== false && goal?.armed === true;
     const enabled = record?.enabled === false ? false : goalOptIn || sessionEnabled || policyEnabled;
     return { ok: true, command, harness: input.harness, session_id: input.sessionId, enabled, goal_opt_in: goalOptIn,
@@ -126,7 +132,9 @@ async function evaluateAutopilotCommand(input: AutopilotRunnerInput, background 
   const effectivePolicy = await policyStore.readEffective();
   const runtimeSettings = await new SessionAutostartStore(join(stateDir, "session-autostart.json")).getSettings();
   const policyEnabled = effectivePolicyAllowsTarget(effectivePolicy, { harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) });
-  const sessionEnabled = record?.enabled === true && (effectivePolicy.source !== "persisted" || effectivePolicy.policy.enabled);
+  // The per-session switch decides that session on its own; the global policy
+  // only decides the sessions that carry no switch of their own.
+  const sessionEnabled = record?.enabled === true;
   const goalIdentity = { harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) };
   const armedGoal = await readGoalSnapshot(goalStore, goalIdentity);
   const goalOptIn = record?.enabled !== false && armedGoal?.armed === true;

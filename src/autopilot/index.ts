@@ -406,10 +406,12 @@ export function createAutopilotCore(options: {
       const notification = { ...notificationConfig, execution_identity: executionMetadata(input, options.harness ?? input.harness ?? "codex") };
 
       if (options.effectivePolicy) {
-        // A per-session opt-in can widen the selector, but never bypasses the
-        // global master switch. Turning the master off is an immediate stop.
-        const explicitSessionOverride = options.policyBypassSessionId === input.session_id
-          && (options.effectivePolicy.source !== "persisted" || options.effectivePolicy.policy.enabled);
+        // A per-session opt-in is the owner's explicit decision for one exact
+        // session, so it decides that session on its own: the global policy
+        // governs the sessions that carry no opt-in of their own. The
+        // override is only ever handed out for a session whose own durable
+        // switch is on, so it can never widen the policy to another session.
+        const explicitSessionOverride = options.policyBypassSessionId === input.session_id;
         if (!explicitSessionOverride && !effectivePolicyAllowsTarget(options.effectivePolicy, {
           harness: options.harness ?? input.harness ?? "codex",
           sessionId: input.session_id,
