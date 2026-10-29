@@ -1252,13 +1252,24 @@ async function main() {
   const humanResumeQuery = (request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters);
   // Both seams are process-owned: the fleet inventory view and the single
   // human-answer and project-launch consumer.
-  const createHttpMcpServer = (context?: { authInfo?: unknown }) => createAgentHerderMcpServer(cdpChatDriver, {
+  // The durable HumanRequest registry is the one authority for the
+  // resume_after question join. Without it on this factory the tool exists but
+  // every live join fails with "requires the durable registry". Both
+  // transports share one option set, so neither can lose the join alone.
+  const sharedMcpServerOptions = {
     cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery,
     inventorySupervisor: processSupervisor, userMessageDelivery, resumeAfter: resumeAfterRuntime.service, cadence,
-    sessionQueueControl,
+    sessionQueueControl, humanRequests,
+  };
+  const createHttpMcpServer = (context?: { authInfo?: unknown }) => createAgentHerderMcpServer(cdpChatDriver, {
+    ...sharedMcpServerOptions,
     trustedMeshIngress: trustedMeshIngressFromMcpAuthInfo(context?.authInfo),
   });
-  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, { cdpAccountArchive, cdpHistoryArchive, events: herderEvents, notifyDomainEvents: true, humanResume, humanResumeQuery, inventorySupervisor: processSupervisor, userMessageDelivery, resumeAfter: resumeAfterRuntime.service, cadence, sessionQueueControl, trustedMeshIngress: trustedMeshIngressForOwnerStdio() });
+  const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, {
+    ...sharedMcpServerOptions,
+    notifyDomainEvents: true,
+    trustedMeshIngress: trustedMeshIngressForOwnerStdio(),
+  });
   let shuttingDown = false;
   const shutdown = () => {
     if (shuttingDown) return; shuttingDown = true;
