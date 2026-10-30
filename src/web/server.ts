@@ -28,6 +28,7 @@ import { SessionNotFoundError, SessionSupervisor } from "../session-supervisor.j
 import type { AgentSession, HarnessAdapter, SessionDetails } from "../types/index.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "../session-convert.js";
 import { askHuman, HumanRequestLockUnavailableError, HumanRequestRegistry, resumeHumanRequestOnce } from "../human-request/index.js";
+import { boundedHumanAnswer } from "../human-request/resume-admission.js";
 import type { ProjectLaunchDispatcher } from "../automation/project-launch-dispatch.js";
 import type { IntegratorFleetRuntime } from "../integrator-fleet-runtime.js";
 import { NOTICEPLACE_HEALTH_AUTHORIZED, NOTICEPLACE_HEALTH_PURPOSE, hasNoticeplaceHealthBearer, qualifyNoticeplaceHealthModel, validateNoticeplaceHealthLaunch } from "../automation/noticeplace-health-launch.js";
@@ -3032,6 +3033,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         registry: humanRequests,
         requestId: body.request_id,
         resultRef: body.result_ref,
+        ...(boundedHumanAnswer(body.answer) ? { answer: boundedHumanAnswer(body.answer) } : {}),
         // The same canonical human transport as the native MCP resolve: one
         // answer, one bound session, one explicit-stop fence.
         resume: humanResume ?? ((input) => resumeSelectedTarget(input, supervisor, "human", true)),

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { HumanRequestRegistry, resumeHumanRequestOnce } from "../src/human-request/index.js";
-import { continuationPrompt } from "../src/human-request/resume-admission.js";
+import { boundedHumanAnswer, continuationPrompt } from "../src/human-request/resume-admission.js";
 import type { ResumeReceipt, ResumeTransportRequest } from "../src/resume-transport.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -204,5 +204,34 @@ describe("single human-request admission", () => {
     expect(outcome.status).toBe("unsupported_target");
     expect(provider.calls).toHaveLength(0);
     await expect(store.get(created.requestId)).resolves.toMatchObject({ status: "resume_failed", receipt: "resume-target-unsupported" });
+  });
+});
+
+describe("human answer in the continuation prompt", () => {
+  it("names the bounded chosen answer before the continuation sentence", async () => {
+    const store = await registry();
+    const created = await store.create({ kind: "user", target: { agent: "opencode", sessionId: "ses_open", cwd: "/workspace/app" } });
+    await store.admitResume(created.requestId, { resultRef: "result://answer/1" });
+    const record = (await store.get(created.requestId))!;
+    const prompt = continuationPrompt(record, "result://answer/1", boundedHumanAnswer({ value: "yes\u0007", label: "Да" }));
+    expect(prompt.startsWith("Ответ человека: «Да» (value: yes).")).toBe(true);
+    expect(prompt).toContain("continue the same task on this exact session");
+  });
+
+  it("keeps the existing prompt when no answer is present", async () => {
+    const store = await registry();
+    const created = await store.create({ kind: "user", target: { agent: "opencode", sessionId: "ses_open", cwd: "/workspace/app" } });
+    await store.admitResume(created.requestId, { resultRef: "result://answer/1" });
+    const record = (await store.get(created.requestId))!;
+    const prompt = continuationPrompt(record, "result://answer/1");
+    expect(prompt).not.toContain("Ответ человека");
+    expect(prompt).toContain("use the human message above it as the answer");
+  });
+
+  it("bounds value and label to 512 characters and drops an answer without a value", () => {
+    const bounded = boundedHumanAnswer({ value: "a".repeat(600), label: "b".repeat(600) });
+    expect(bounded?.value).toHaveLength(512);
+    expect(bounded?.label).toHaveLength(512);
+    expect(boundedHumanAnswer({ label: "Да" })).toBeUndefined();
   });
 });
