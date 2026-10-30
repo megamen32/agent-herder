@@ -182,6 +182,15 @@ export function continuationPrompt(record: HumanRequestRecord, canonicalResultRe
   const answerLine = answer
     ? "Ответ человека: «" + (answer.label ?? answer.value) + "» (value: " + answer.value + ")."
     : undefined;
+  // Only an answer that arrived through the Notice completion is read from Notice.
+  if (record.completionSource === "notice") {
+    return [
+      ...(answerLine ? [answerLine] : []),
+      `Human Request ${record.requestId} is answered; continue the same task on this exact session.`,
+      `Read the canonical answer with noticeplace_question_result(request_id="${record.requestId}") and apply it.`,
+      `Answer reference: ${canonicalResultRef}. Do not invent an answer and do not start a different task.`,
+    ].join(" ");
+  }
   return [
     ...(answerLine ? [answerLine] : []),
     `Human Request ${record.requestId} is answered; continue the same task on this exact session.`,

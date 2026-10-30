@@ -3029,6 +3029,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     // same attempt and idempotency key instead of launching the session again.
     let outcome: Awaited<ReturnType<typeof resumeHumanRequestOnce>>;
     try {
+      // The Notice completion marks the request before any admission, so the
+      // resumed session reads the answer from Notice whichever path admits it.
+      if (url.pathname === "/internal/human-requests/ask-user-completion") await humanRequests.markNoticeCompletion(pending.requestId);
       outcome = await resumeHumanRequestOnce({
         registry: humanRequests,
         requestId: body.request_id,

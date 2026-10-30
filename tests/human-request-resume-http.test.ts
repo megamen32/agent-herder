@@ -105,6 +105,7 @@ describe("human-request completion resume", () => {
     expect(sent[0]?.id).toBe(session.id);
     expect(sent[0]?.message).toContain(request.requestId);
     expect(sent[0]?.message).toContain("noticeplace_question_result");
+    await expect(humanRequests.get(request.requestId)).resolves.toMatchObject({ completionSource: "notice" });
     await expect(unfinishedStore.list()).resolves.toMatchObject([{ harness: "zcode", sessionId: session.id, state: "active" }]);
   });
 

@@ -226,6 +226,40 @@ describe("human answer in the continuation prompt", () => {
     const prompt = continuationPrompt(record, "result://answer/1");
     expect(prompt).not.toContain("Ответ человека");
     expect(prompt).toContain("use the human message above it as the answer");
+    expect(prompt).not.toContain("noticeplace_question_result");
+  });
+
+  it("keeps a secret continuation opaque", async () => {
+    const store = await registry();
+    const created = await store.create({ kind: "secret", target: { agent: "opencode", sessionId: "ses_open", cwd: "/workspace/app" } });
+    await store.admitResume(created.requestId, { resultRef: "secret://ref/1" });
+    const record = (await store.get(created.requestId))!;
+    const prompt = continuationPrompt(record, "secret://ref/1");
+    expect(prompt).toContain("never print the secret");
+    expect(prompt).not.toContain("noticeplace_question_result");
+  });
+
+  it("reads a Notice-completed human_channel answer on a late admission without an answer", async () => {
+    const store = await registry();
+    const provider = ledger();
+    const created = await store.create({ kind: "user", target: { agent: "opencode", sessionId: "ses_open", cwd: "/workspace/app" } });
+    await store.markNoticeCompletion(created.requestId);
+    await resumeHumanRequestOnce({ registry: store, requestId: created.requestId, resultRef: "result://answer/1", resume: provider.resume });
+    expect(provider.calls).toHaveLength(1);
+    expect(provider.calls[0]!.prompt).toContain(`Read the canonical answer with noticeplace_question_result(request_id="${created.requestId}") and apply it.`);
+    expect(provider.calls[0]!.prompt).not.toContain("use the human message above it");
+  });
+
+  it("stores only the completion marker and never marks a secret or a settled request", async () => {
+    const store = await registry();
+    const secret = await store.create({ kind: "secret", target: { agent: "opencode", sessionId: "ses_open", cwd: "/workspace/app" } });
+    await store.markNoticeCompletion(secret.requestId);
+    expect((await store.get(secret.requestId))!.completionSource).toBeUndefined();
+    const user = await store.create({ kind: "user", target: { agent: "opencode", sessionId: "ses_open", cwd: "/workspace/app" } });
+    await store.markNoticeCompletion(user.requestId);
+    expect((await store.get(user.requestId))!.completionSource).toBe("notice");
+    await store.admitResume(user.requestId, { resultRef: "result://answer/1" });
+    await expect(store.markNoticeCompletion(user.requestId)).resolves.toMatchObject({ status: "resuming", completionSource: "notice" });
   });
 
   it("bounds value and label to 512 characters and drops an answer without a value", () => {
