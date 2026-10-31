@@ -19,6 +19,7 @@ export class BrowserChatHistoryCache {
   private dir = "";
   private cached = new Map<string, { messages: SessionMessageView[]; at: number }>();
   private inFlight = new Map<string, Promise<SessionMessageView[] | null>>();
+  private readonly lastFailureAt = new Map<string, number>();
   private queue: string[] = [];
   private queued = new Set<string>();
   private running = false;
@@ -40,6 +41,7 @@ export class BrowserChatHistoryCache {
       this.scope = "";
       this.dir = "";
       this.cached.clear();
+      this.lastFailureAt.clear();
       this.queued.clear();
       this.queue.length = 0;
       return;
@@ -48,6 +50,7 @@ export class BrowserChatHistoryCache {
     this.scope = scope;
     this.dir = join(this.root, this.provider, scope);
     this.cached.clear();
+    this.lastFailureAt.clear();
     this.queued.clear();
     this.queue.length = 0;
   }
@@ -107,10 +110,16 @@ export class BrowserChatHistoryCache {
     const task = (async () => {
       try {
         const fresh = await this.fetchMessages(id);
-        if (this.scope !== scope || !fresh) return null;
+        if (this.scope !== scope) return null;
+        if (!fresh) {
+          this.lastFailureAt.set(id, Date.now());
+          return null;
+        }
+        this.lastFailureAt.delete(id);
         await this.save(id, fresh, scope);
         return fresh;
       } catch {
+        this.lastFailureAt.set(id, Date.now());
         return null; // stale cache remains available after a network failure
       }
     })();
@@ -187,8 +196,12 @@ export class BrowserChatHistoryCache {
       return saved.messages.slice(-Math.max(1,limit));
     }
     // Don't wait behind the whole 100-chat warmup when a user opens a chat.
-    if (this.inFlight.has(id)) return (await this.inFlight.get(id)!)?.slice(-Math.max(1,limit)) ?? null;
-    const fresh = await this.refresh(id);
-    return fresh?.slice(-Math.max(1,limit)) ?? null;
+    // A cold cache must never block an HTTP details request for 30+ seconds
+    // when one site's authenticated API stalls. Start the fetch immediately,
+    // return a recognizable empty loading state, and let the UI poll for data.
+    // Concurrent callers are deduplicated by inFlight.
+    if (!this.inFlight.has(id) &&
+      Date.now() - (this.lastFailureAt.get(id) || 0) > 30_000) void this.refresh(id);
+    return [];
   }
 }

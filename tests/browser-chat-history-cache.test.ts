@@ -28,7 +28,8 @@ describe("durable browser chat history",()=>{
     let reads=0;
     const first=new BrowserChatHistoryCache("chatgpt",async()=>{reads++;return messages},root);
     first.setAccountScope(ACCOUNT_A);
-    expect(await first.messages("conversation-id")).toEqual(messages);
+    expect(await first.messages("conversation-id")).toEqual([]); // cold miss responds immediately
+    await vi.waitFor(async () => expect(await first.messages("conversation-id")).toEqual(messages));
     expect(reads).toBe(1);
     const persisted=new BrowserChatHistoryCache("chatgpt",async()=>{throw Error("offline")},root);
     persisted.setAccountScope(ACCOUNT_A);
@@ -46,13 +47,14 @@ describe("durable browser chat history",()=>{
     const a=new BrowserChatHistoryCache("chatgpt",async()=>messages,root);
     a.setAccountScope(ACCOUNT_A);
     await a.messages("identical");
+    await vi.waitFor(async () => expect(await a.messages("identical")).toEqual(messages));
     const other=new BrowserChatHistoryCache("zai",async()=>null,root);
     other.setAccountScope(ACCOUNT_A);
-    expect(await other.messages("identical")).toBeNull();
+    expect(await other.messages("identical")).toEqual([]);
     a.setAccountScope(ACCOUNT_B);
     const b=new BrowserChatHistoryCache("chatgpt",async()=>null,root);
     b.setAccountScope(ACCOUNT_B);
-    expect(await b.messages("identical")).toBeNull();
+    expect(await b.messages("identical")).toEqual([]);
     a.setAccountScope(undefined);
     expect(a.available).toBe(false);
     expect(await a.messages("identical")).toBeNull();
@@ -85,8 +87,8 @@ describe("durable browser chat history",()=>{
     const sessions=await adapter.listSessions();
     expect(sessions).toHaveLength(101);
     expect((await adapter.getSession("chatgpt::native-0"))?.title).toBe("Chat 0");
-    expect((await adapter.getSessionMessages("chatgpt::native-0",20))?.map(x=>x.text))
-      .toEqual(messages.map(x=>x.text));
+    await vi.waitFor(async()=>expect((await adapter.getSessionMessages("chatgpt::native-0",20))?.map(x=>x.text))
+      .toEqual(messages.map(x=>x.text)));
     expect(adapter.controlCapabilities.resume).toBe(true);
   });
 });

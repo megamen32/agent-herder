@@ -140,3 +140,13 @@ For smoke testing with a few conversations, set
 If the site's private API changes, the last verified cache remains
 readable and the UI reports the unavailable refresh rather than inventing
 a transcript.
+
+### Cold-cache behavior
+
+Opening a never-cached chat is deliberately **nonblocking**: the details
+endpoint responds with a loading history immediately and starts a
+deduplicated background fetch. A selection of another chat never waits
+behind its predecessor. When the fetch completes, the web UI's 8-second
+refresh makes its messages visible without discarding any previously
+shown content. A failed request is throttled for 30 seconds so an
+unreachable private API cannot keep hammering Chrome or the site.

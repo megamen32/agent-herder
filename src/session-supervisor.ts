@@ -1153,13 +1153,16 @@ export class SessionSupervisor {
         if (provider === "opencode" && Array.isArray(liveMessages) && liveMessages.length === 0) {
           return { messages: [], info: { source: "acp-load", complete: true } };
         }
-        if (liveMessages && liveMessages.length > 0) {
+        if (Array.isArray(liveMessages) && (liveMessages.length > 0 ||
+          provider === "chatgpt" || provider === "zai")) {
           return {
             messages: tailLogicalTurns(liveMessages, limit),
             info: {
               source: provider === "chatgpt" || provider === "zai" ? "live-cache"
                 : provider === "hermes" ? "observed-cli-output" : "acp-load",
               complete: false,
+              ...(liveMessages.length === 0 && (provider === "chatgpt" || provider === "zai")
+                ? { warning: "История загружается в фоне; сохранённой копии пока нет." } : {}),
             },
           };
         }

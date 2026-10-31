@@ -2478,7 +2478,9 @@ function App() {
       {cachedDetails&&<p className="cached-view-notice" role="status">Сохранённая переписка. Обновляем сообщения с сайта; отправка станет доступна после проверки соединения.</p>}
       {!cachedDetails && ["chatgpt", "zai"].includes(activeSession?.harness || "") && (
         detailsLoading || detailsHydrating || details?.history?.source === "live-cache"
-      ) && <p className="cached-view-notice" role="status">История отображается из локального кэша, новые сообщения синхронизируются в фоне.</p>}
+      ) && <p className="cached-view-notice" role="status">{details?.messages?.length
+        ? "Показываем сохранённую переписку; новые сообщения синхронизируются в фоне."
+        : "Подождите, загружаем историю этого чата и сохраняем её локально. Остальные чаты доступны."}</p>}
       {!detailsLoading && !cachedDetails && ["chatgpt", "zai"].includes(activeSession?.harness || "")
         && details?.history?.source === "unavailable"
         && <p className="cached-view-notice" role="status">История этого чата ещё не сохранена или сайт недоступен. <button type="button" onClick={()=>activeKey&&void loadDetails(activeKey)}>Обновить</button></p>}
