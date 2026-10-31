@@ -8000,7 +8000,9 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
       if (!response.ok) throw new Error(`MiniMax judge rejected with HTTP ${response.status}`);
       const body = await request.json(response);
       const choices = Array.isArray(body.choices) ? body.choices : [];
-      const message = choices[0] && typeof choices[0] === "object" ? (choices[0] as Record<string, unknown>).message : undefined;
+      const choice = choices[0] && typeof choices[0] === "object" ? choices[0] as Record<string, unknown> : undefined;
+      if (choice?.finish_reason === "length") throw request.truncatedOutput("length");
+      const message = choice?.message;
       const content = message && typeof message === "object" ? (message as Record<string, unknown>).content : undefined;
       if (typeof content !== "string") throw new Error("MiniMax judge returned no content");
       const json = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
@@ -8040,7 +8042,9 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
       if (!response.ok) throw new Error(`MiniMax batch planner rejected with HTTP ${response.status}`);
       const body = await request.json(response);
       const choices = Array.isArray(body.choices) ? body.choices : [];
-      const message = choices[0] && typeof choices[0] === "object" ? (choices[0] as Record<string, unknown>).message : undefined;
+      const choice = choices[0] && typeof choices[0] === "object" ? choices[0] as Record<string, unknown> : undefined;
+      if (choice?.finish_reason === "length") throw request.truncatedOutput("length");
+      const message = choice?.message;
       const content = message && typeof message === "object" ? (message as Record<string, unknown>).content : undefined;
       if (typeof content !== "string") throw new BatchPlanValidationError("MiniMax batch planner returned no content");
       const result = normalizeBatchPlanText(content, sessions);
@@ -8070,13 +8074,12 @@ export function createOpenAICompatibleSessionCompletionJudge(config: {
         }),
       });
       if (!response.ok) throw new Error(`MiniMax reconciliation rejected with HTTP ${response.status}`);
-      let body: Record<string, unknown>;
-      try {
-        body = await request.json(response);
-      } catch (error) {
-        if (error instanceof SyntaxError || (error instanceof JudgeRequestError && error.diagnostic.kind === "invalid_json")) throw new BatchReconciliationValidationError(`MiniMax reconciliation returned invalid JSON: ${error.message}`);
-        throw error;
-      }
+      const firstBody = await request.json(response);
+      const firstChoice = Array.isArray(firstBody.choices) && firstBody.choices[0] && typeof firstBody.choices[0] === "object"
+        ? firstBody.choices[0] as Record<string, unknown>
+        : undefined;
+      if (firstChoice?.finish_reason === "length") throw request.truncatedOutput("length");
+      let body: Record<string, unknown> = firstBody;
       const choices = Array.isArray(body.choices) ? body.choices : [];
       const message = choices[0] && typeof choices[0] === "object" ? (choices[0] as Record<string, unknown>).message : undefined;
       const content = message && typeof message === "object" ? (message as Record<string, unknown>).content : undefined;
