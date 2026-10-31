@@ -34,7 +34,16 @@ export function unwrapResult(value:unknown): Record<string,unknown> {
   for(let depth=0;depth<8;depth++) {
     if(!result || typeof result!=="object") return {};
     const r=result as Record<string,unknown>;
-    if(r.isError===true || r.status==="failed") throw new Error("Remote MCP operation failed");
+    if(r.isError===true || r.status==="failed"){
+    // The fleet page shows this text verbatim: an opaque reason hides which
+    // host, credential or tool actually failed, so carry the first readable
+    // detail of the rejected envelope (tool error text, message or error field).
+    const parts:unknown[]=[r.message,r.error];
+    if(Array.isArray(r.content))for(const block of r.content){if(block&&typeof block.text==="string")parts.push(block.text);}
+    if(r.structuredContent)parts.push(r.structuredContent);
+    const detail=parts.map(p=>typeof p==="string"?p.trim():p&&typeof p==="object"?JSON.stringify(p):"").find(p=>p&&p.length>0);
+    throw new Error("Remote MCP operation failed: "+(detail?detail.slice(0,240):"no detail in envelope"));
+  }
     if(r.structuredContent) {result=r.structuredContent;continue;}
     if(r.result && typeof r.result==="object") {result=r.result;continue;}
     if(r.response && typeof r.response==="object") {result=r.response;continue;}
