@@ -65,8 +65,12 @@ export class FleetGptAdminTransport implements GptAdminTransport {
  async call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
   if(idempotencyKey&&idempotencyKey.length>200)throw new Error('gptadmin_idempotency_key_too_long');
   await assertRemoteCodexAdmission(tool,args,()=>this.call(target,"model_quotas",{}));
-  // Programmatic consumers require the native DTO, not GPTAdmin's human preview envelope.
-  return this.facade('execute',{target,tool,args,...(idempotencyKey?{idempotency_key:idempotencyKey}:{}),detail:'full'},Date.now()+(tool==='create_session'?this.options.createDeadlineMs??30000:this.options.readDeadlineMs??10000));
+  // The hub retired its direct execute facade for programmatic callers: the
+  // native tool DTO is reached through the exec sandbox's mcp.call bridge,
+  // and mutation idempotency stays with the native inputId admission.
+  const deadline=Date.now()+(tool==='create_session'?this.options.createDeadlineMs??30000:this.options.readDeadlineMs??10000);
+  const code=`return await mcp.call(${JSON.stringify(target)},${JSON.stringify(tool)},${JSON.stringify(args)});`;
+  return this.facade('exec',{code,timeout_ms:Math.min(60000,Math.max(1,deadline-Date.now())),max_output_bytes:65536},deadline);
  }
 }
 

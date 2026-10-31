@@ -109,7 +109,10 @@ export function createConfiguredFleetApiHandler(options: {
       const service = new FleetCabinetService({rustCore,
         hosts: fleetHosts, scope: {profileId, userId}, credentialGeneration: binding.generation,
         journalPath: join(stateRoot, `create-${journalKey}.json`),
-        transportFactory: () => new FleetGptAdminTransport({endpoint: binding.endpoint, headersProvider: () => ({...binding.headers})}),
+        // Hub-routed mesh reads answer after the peer herder's own snapshot
+        // work (measured ~9s on a busy daemon), so they keep discovery headroom
+        // instead of the 10s interactive read deadline.
+        transportFactory: () => new FleetGptAdminTransport({endpoint: binding.endpoint, headersProvider: () => ({...binding.headers}), readDeadlineMs: 20_000}),
       });
       return active = {...binding, service};
     })().finally(() => { connecting = undefined; });

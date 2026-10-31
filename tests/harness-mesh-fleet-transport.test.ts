@@ -5,17 +5,17 @@ import {FleetGptAdminTransport} from '../src/mesh/fleet-gptadmin-transport.js';
 describe('GPTAdmin tenant fleet transport (focused integration; expected 2s, maximum 20s)',()=>{
  beforeEach(()=>vi.stubEnv('AGENT_HERDER_AUTOPILOT_STATE_DIR',POLICY_DIR));
  afterEach(()=>vi.unstubAllEnvs());
- it('requests full native DTOs and schemas rather than human compact previews (regression; expected 1s, maximum 5s)',async()=>{
+ it('reaches native DTOs through the exec sandbox and full schemas rather than human compact previews (regression; expected 1s, maximum 5s)',async()=>{
   const requests:any[]=[];
   const fake=vi.fn(async(_url:any,init:any)=>{
    const r=JSON.parse(init.body);
    if(r.method==='notifications/initialized')return new Response(null,{status:202});
    let result:any={protocolVersion:'2025-11-25'};
    if(r.method==='tools/call'){
-    requests.push(r.params);const full=r.params.arguments.detail==='full';
+    requests.push(r.params);
     // The fleet guard reads the recipient's own Codex quota before an admission.
-    if(r.params.name==='execute'&&r.params.arguments.tool==='model_quotas')result={structuredContent:{checkedAt:new Date().toISOString(),providers:[{provider:'codex',state:'reported',checkedAt:new Date().toISOString(),details:{primary_used:10,secondary_used:10,allowed:true,limit_reached:false}}]}};
-    else result=r.params.name==='schema'?(full?{tools:[{name:'mesh_snapshot',inputSchema:{type:'object'}}]}:{preview:'schema preview'}):(full?{hostId:'roomhacker-server-100',sessions:[]}:{bytes:128,preview:'native snapshot preview',status:'completed'});
+    if(r.params.name==='exec')result=String(r.params.arguments.code).includes('"model_quotas"')?{structuredContent:{checkedAt:new Date().toISOString(),providers:[{provider:'codex',state:'reported',checkedAt:new Date().toISOString(),details:{primary_used:10,secondary_used:10,allowed:true,limit_reached:false}}]}}:{structuredContent:{hostId:'roomhacker-server-100',sessions:[]}};
+    else result=r.params.name==='schema'?(r.params.arguments.detail==='full'?{tools:[{name:'mesh_snapshot',inputSchema:{type:'object'}}]}:{preview:'schema preview'}):{structuredContent:{servers:[]}};
    }
    return new Response(JSON.stringify({id:r.id,result}));
   });
@@ -23,24 +23,25 @@ describe('GPTAdmin tenant fleet transport (focused integration; expected 2s, max
   expect(await t.call('peer','mesh_snapshot',{limit:1})).toEqual({hostId:'roomhacker-server-100',sessions:[]});
   expect((await t.schema('peer') as any).tools[0].inputSchema).toEqual({type:'object'});
   for(const tool of ['fleet_node_info','fleet_session_page','fleet_session_view','create_session'])await t.call('peer',tool,{},tool==='create_session'?'stable-once':undefined);
-  expect(requests.every(r=>r.arguments.detail==='full')).toBe(true);
-  expect(requests.filter(r=>r.arguments.tool==='create_session')).toHaveLength(1);
-  expect(requests.find(r=>r.arguments.tool==='create_session').arguments.idempotency_key).toBe('stable-once');
+  expect(requests.filter(r=>r.name==='schema').every(r=>r.arguments.detail==='full')).toBe(true);
+  const create=requests.filter(r=>r.name==='exec'&&String(r.arguments.code).includes('"create_session"'));
+  expect(create).toHaveLength(1);
+  expect(String(create[0].arguments.code)).toContain('mcp.call("peer","create_session",{})');
  });
- it('uses initialize/discover/schema/execute/job facade, schema response unwrap and one mutation even with async job',async()=>{
+ it('uses initialize/discover/schema/exec/job facade, schema response unwrap and one mutation even with async job',async()=>{
   const calls:any[]=[];const fake=vi.fn(async(_url:any,init:any)=>{const request=JSON.parse(init.body);calls.push(request);expect(init.redirect).toBe('error');expect(init.headers.Authorization).toBe('protected-memory-only');
    const tool=request.params?.name;let result:any={protocolVersion:'2025-11-25',capabilities:{},serverInfo:{name:'hub',version:'1'}};
    if(tool==='discover')result={structuredContent:{status:'completed',response:{servers:[]}}};
    if(tool==='schema')result={content:[{type:'text',text:JSON.stringify({status:'completed',server_id:'mcp:shell:88:AgentHerder',response:{tools:[{name:'create_session'}]}})}]};
-   if(tool==='execute')result=request.params.arguments.tool==='model_quotas'?{structuredContent:{checkedAt:new Date().toISOString(),providers:[{provider:'codex',state:'reported',checkedAt:new Date().toISOString(),details:{primary_used:10,secondary_used:10,allowed:true,limit_reached:false}}]}}:{structuredContent:{status:'running',job_id:'j',owner_target:'shell:88'}};
+   if(tool==='exec')result=String(request.params.arguments.code).includes('"model_quotas"')?{structuredContent:{checkedAt:new Date().toISOString(),providers:[{provider:'codex',state:'reported',checkedAt:new Date().toISOString(),details:{primary_used:10,secondary_used:10,allowed:true,limit_reached:false}}]}}:{structuredContent:{status:'running',job_id:'j',owner_target:'shell:88'}};
    if(tool==='job'){expect(request.params.arguments.id).toBe('j');result={structuredContent:{status:'completed',result:{content:[{type:'text',text:JSON.stringify({ok:true,created:true,harness:'codex',sessionId:'native',cwd:'/work'})}]}}};}
    return new Response(JSON.stringify({jsonrpc:'2.0',id:request.id,result}),{headers:{'Content-Type':'application/json','Mcp-Session-Id':'owned-session'}});
   });
   const transport=new FleetGptAdminTransport({endpoint:'https://hub.test/mcp/tenant',headersProvider:()=>({Authorization:'protected-memory-only'}),fetch:fake as any});
   await transport.discover();expect((await transport.schema('mcp:shell:88:AgentHerder') as any).tools[0].name).toBe('create_session');
   expect((await transport.call('mcp:shell:88:AgentHerder','create_session',{harness:'codex'},'digest') as any).sessionId).toBe('native');
-  // The quota preflight is one more execute; the mutation itself stays single.
-  expect(calls.filter(r=>r.params?.name==='execute'&&r.params.arguments.tool==='create_session')).toHaveLength(1);expect(calls.filter(r=>r.method==='initialize')).toHaveLength(1);
+  // The quota preflight is one more exec; the mutation itself stays single.
+  expect(calls.filter(r=>r.params?.name==='exec'&&String(r.params.arguments.code).includes('"create_session"'))).toHaveLength(1);expect(calls.filter(r=>r.method==='initialize')).toHaveLength(1);
  });
  it('does not retry a lost mutation response and never shares session headers with another transport',async()=>{
   const first=vi.fn(async(_url:any,init:any)=>{const r=JSON.parse(init.body);if(r.method==='initialize')return new Response(JSON.stringify({id:r.id,result:{protocolVersion:'2025-11-25'}}),{headers:{'Mcp-Session-Id':'one'}});if(r.method==='notifications/initialized')return new Response(null,{status:202});throw new Error('lost after mutation');});
