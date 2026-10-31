@@ -40,6 +40,7 @@ export function harnessLabel(harness: string): string {
     opencode: "OpenCode",
     "minimax-code": "MiniMax Code",
     chatgpt: "ChatGPT",
+    "browser-chat": "Browser chats (ZAI)",
     hermes: "Hermes",
     fastagent: "Fast Agent",
     qoder: "Qoder",

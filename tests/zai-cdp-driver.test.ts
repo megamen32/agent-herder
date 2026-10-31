@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ZaiCdpDriver, parseZaiPages } from "../src/adapters/zai-cdp-driver.js";
+import { ListAgentsSchema, AgentInfoSchema } from "../src/mcp-tools/definitions.js";
 import { parseChromeEvaluation, type ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
 
 const route = "/c/123e4567-e89b-12d3-a456-426614174000";
@@ -63,5 +64,12 @@ describe("Mac mini CDP ZAI provider", () => {
     const wrongOrigin = new MockChromeTools();
     wrongOrigin.page = { ...state(), origin: "https://fake.z.ai" };
     await expect(new ZaiCdpDriver(wrongOrigin).listChats()).rejects.toThrow(/not a logged-in/);
+  });
+});
+
+describe("browser-chat API schema compatibility", () => {
+  it("accepts browser-chat in filtered and exact agent tools", () => {
+    expect(ListAgentsSchema.safeParse({ harness: "browser-chat", limit: 2 }).success).toBe(true);
+    expect(AgentInfoSchema.safeParse({ sessionId: "zai::sidebar%3ATest", harness: "browser-chat" }).success).toBe(true);
   });
 });

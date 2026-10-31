@@ -23,7 +23,7 @@ const hostTarget = (description: string) => hostIdentity.optional().describe(des
 
 export const ListAgentsSchema = z.object({
   harness: z
-    .enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"])
+    .enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code", "browser-chat"])
     .optional()
     .default("all")
     .describe("Filter by harness. 'all' lists from every connected harness."),
@@ -58,7 +58,7 @@ export const AuditWorktreesSchema = z.object({
 export const AgentInfoSchema = z.object({
   sessionId: z.string().describe("The session ID to inspect."),
   harness: z
-    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"])
+    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code", "browser-chat"])
     .optional()
     .describe("Which harness the session belongs to. If omitted, searches all."),
   hostId: hostTarget(HOST_TARGET_DESCRIPTION),
@@ -67,7 +67,7 @@ export const AgentInfoSchema = z.object({
 export const FindParentSchema = z.object({
   sessionId: z.string().describe("The child session ID whose parent should be found."),
   harness: z
-    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"])
+    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code", "browser-chat"])
     .optional()
     .describe("Which harness owns the session. If omitted, searches all."),
 });
@@ -75,7 +75,7 @@ export const FindParentSchema = z.object({
 export const ListChildrenSchema = z.object({
   sessionId: z.string().describe("The parent session ID whose children should be listed."),
   harness: z
-    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"])
+    .enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code", "browser-chat"])
     .optional()
     .describe("Which harness owns the session. If omitted, searches all."),
 });
@@ -342,7 +342,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Session ID to inspect" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"], description: "Harness (required for a remote host)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code", "browser-chat"], description: "Harness (required for a remote host)" },
         hostId: { type: "string", description: "Machine the work runs on; defaults to localhost (this Agent Herder host)" },
       },
       required: ["sessionId"],
@@ -446,7 +446,7 @@ export const toolDefinitions: Tool[] = [
       type: "object" as const,
       properties: {
         sessionId: { type: "string", description: "Exact native session ID" },
-        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"], description: "Harness (optional if the ID is unique)" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code", "browser-chat"], description: "Harness (optional if the ID is unique)" },
         hostId: { type: "string", description: "Work machine the session runs on; defaults to the current machine of that session" },
         cwd: { type: "string", description: "Work directory on the target machine" },
       },

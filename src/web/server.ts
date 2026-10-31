@@ -2531,7 +2531,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const harness = url.searchParams.get("harness")?.trim();
     const sessionId = url.searchParams.get("sessionId")?.trim();
     if (!harness || !sessionId) return sendJson(response, 400, { error: "harness and sessionId are required" });
-    if (!["opencode", "zcode", "codex", "claude", "qoder", "hermes", "fast-agent", "chatgpt", "minimax-code"].includes(harness)) return sendJson(response, 400, { error: "unknown harness" });
+    if (!["opencode", "zcode", "codex", "claude", "qoder", "hermes", "fast-agent", "chatgpt", "minimax-code", "browser-chat"].includes(harness)) return sendJson(response, 400, { error: "unknown harness" });
     return sendJson(response, 200, { harness, sessionId, held: await getHumanStopStore().isHeld(harness, sessionId) });
   }
   if (url.pathname === "/api/human-stop/generated-prompt" && request.method === "POST") {

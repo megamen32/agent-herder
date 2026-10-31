@@ -74,7 +74,7 @@ export function sidebarEntries(sessions: SessionListSession[], settings: Session
 }
 
 export type SidebarSession = SessionListSession & {project?: ProjectObservation};
-const harnessLabels: Record<string, string> = {codex:'Codex', zcode:'ZCode', opencode:'OpenCode', hermes:'Hermes', claude:'Claude', fastagent:'FastAgent', chatgpt:'ChatGPT', zed:'Zed'};
+const harnessLabels: Record<string, string> = {codex:'Codex', zcode:'ZCode', opencode:'OpenCode', hermes:'Hermes', claude:'Claude', fastagent:'FastAgent', chatgpt:'ChatGPT', 'browser-chat':'Browser chats (ZAI)', zed:'Zed'};
 const hostLabels: Record<string, string> = {'roomhacker-server-100':'100', 'server-100':'100', 'roomhacker-server-44':'44', 'server-44':'44', 'roomhacker-server-88':'88', 'server-88':'88', 'mac-m1':'M1', 'mac-mini':'Mini'};
 const statuses: Record<string, string> = {running:'Выполняет задачу', idle:'Ожидает задачи', needs_input:'Ждёт ответа', stopped:'Остановлена', error:'Ошибка сессии'};
 
