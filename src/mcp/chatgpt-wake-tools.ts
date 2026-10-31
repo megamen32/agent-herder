@@ -38,7 +38,7 @@ export function registerChatGptWakeTools(server: McpServer, deps: {
       bindingId: z.string().trim().min(1).max(128),
       secret: z.string().min(16).max(256).describe("Shared secret; keep it in a protected store, never in chat text."),
       owner: ownerSchema,
-      maxUses: z.number().int().min(1).max(200).optional(),
+      maxUses: z.number().int().min(1).max(50).optional(),
     }).strict(),
     outputSchema: z.object({ bindingId: z.string(), owner: ownerSchema, createdAt: z.string(), maxUses: z.number() }),
   }, async (rawArgs) => {

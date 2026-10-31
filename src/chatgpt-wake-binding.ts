@@ -50,7 +50,12 @@ interface WakeBindingFile {
 }
 
 const DEFAULT_MAX_BINDINGS = 64;
-const DEFAULT_MAX_USES = 200;
+/**
+ * A binding secret normally travels through a chat transcript, so its budget
+ * is small by default: enough for one registration handshake and a handful of
+ * verifications, not an open-ended credential.
+ */
+const DEFAULT_MAX_USES = 8;
 
 function digestSecret(salt: string, secret: string): string {
   return createHash("sha256").update(`${salt}:${secret}`).digest("hex");
