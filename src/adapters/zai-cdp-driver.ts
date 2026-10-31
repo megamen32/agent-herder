@@ -262,16 +262,33 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       if (!ROUTE_PATTERN.test(route)) return "missing";
       const before = await this.snapshot(pageId);
       if (this.busy(before)) return "busy";
-      await this.tools.call("navigate_page", { pageId, type: "url", url: ZAI_ORIGIN + route });
+      // chat.z.ai serves /c/<uuid> only through its client router: a full
+      // page load of the route redirects back to home. Drive the app's own
+      // history instead; a wrong uuid then simply fails confirmation below.
+      const outcome = parseChromeEvaluation<{ pushed?: string; error?: string }>(
+        await this.tools.call("evaluate_script", { pageId, function: `async () => {
+          const route = ${JSON.stringify(route)};
+          if (location.origin !== ${JSON.stringify(ZAI_ORIGIN)}) return { error: "wrong_origin" };
+          history.pushState({}, "", route);
+          dispatchEvent(new PopStateEvent("popstate"));
+          return { pushed: location.pathname };
+        }` }),
+      );
+      if (outcome.error || outcome.pushed !== route) return "missing";
       return "selected";
     }
     return "missing";
   }
 
   private async confirmTarget(pageId: number, id: string, known: BrowserChat): Promise<ZaiSnapshot> {
-    for (let i = 0; i < 4; i++) {
-      const state = await this.snapshot(pageId);
-      if (this.isSelected(id, known, state)) return state;
+    for (let i = 0; i < 6; i++) {
+      // The client router loads the conversation asynchronously: mid-route
+      // the page may briefly have no composer at all, which is transient.
+      try {
+        const state = await this.snapshot(pageId);
+        if (this.isSelected(id, known, state)) return state;
+      } catch { /* transient during the route transition */ }
+      await new Promise(resolve => setTimeout(resolve, 600));
     }
     throw new Error("ZAI conversation identity not confirmed; message not sent");
   }

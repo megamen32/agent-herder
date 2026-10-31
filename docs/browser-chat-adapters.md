@@ -42,9 +42,11 @@ No fallback to the last active browser or a different provider is allowed.
 
 A `zai::route%3A<uuid>` target is an exact native route identity: it resolves,
 resumes and delivers even when the chat is not currently rendered in the
-bounded sidebar. The driver navigates the owned tab to the exact `/c/<uuid>`
-route only while that tab is idle and re-confirms the route before any
-composer action; a wrong route fails identity confirmation and nothing is sent.
+bounded sidebar. chat.z.ai serves `/c/<uuid>` only through its client router
+(a full page load of the route redirects back to home), so the driver drives
+the app's own history while the owned tab is idle and re-confirms the exact
+route before any composer action; a wrong route fails identity confirmation
+and nothing is sent.
 
 Both browser drivers check generation/activity in the live page and confirm
 the exact intended conversation and composer before Send. A visible Stop

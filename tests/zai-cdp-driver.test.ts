@@ -30,6 +30,10 @@ class MockChromeTools implements ChromePageTools {
       this.page = state(route, ["Test fixture", "Another fixture"], "Test fixture");
       return "ok";
     }
+    if (name === "evaluate_script" && String(args.function).includes("history.pushState")) {
+      this.page = state(route, ["Test fixture", "Another fixture"], "Test fixture");
+      return evalJson({ pushed: route });
+    }
     if (name !== "evaluate_script") throw new Error("unexpected tool: " + name);
     const fn = String(args.function);
     if (fn.includes("const title =")) {
@@ -235,14 +239,18 @@ describe("Mac mini CDP ZAI provider", () => {
     const driver = new ZaiCdpDriver(tools);
     const chat = await driver.getChat("route:" + route.slice(3));
     expect(chat).toMatchObject({ id: "route:" + route.slice(3), title: "Test fixture", working: false });
-    expect(tools.actions.find(x => x.name === "navigate_page")?.args.url).toBe("https://chat.z.ai" + route);
+    expect(tools.actions.some(x => x.name === "navigate_page")).toBe(false);
+    expect(String(tools.actions.find(x => String(x.args.function).includes("history.pushState"))?.args.function))
+      .toContain(JSON.stringify(route));
   });
   it("delivers to an exact route target without prior sidebar observation", async () => {
     const tools = new MockChromeTools();
     const driver = new ZaiCdpDriver(tools);
     await driver.sendMessage({ chatId: "route:" + route.slice(3), text: "route-exact" });
     expect(tools.sent).toEqual(["route-exact"]);
-    expect(tools.actions.find(x => x.name === "navigate_page")?.args.url).toBe("https://chat.z.ai" + route);
+    expect(tools.actions.some(x => x.name === "navigate_page")).toBe(false);
+    expect(String(tools.actions.find(x => String(x.args.function).includes("history.pushState"))?.args.function))
+      .toContain(JSON.stringify(route));
     expect((await driver.getChat("route:" + route.slice(3)))?.title).toBe("Test fixture");
   });
   it("rejects malformed route identities without any navigation", async () => {
@@ -250,6 +258,7 @@ describe("Mac mini CDP ZAI provider", () => {
     const driver = new ZaiCdpDriver(tools);
     expect(await driver.getChat("route:not-a-uuid")).toBeNull();
     await expect(driver.sendMessage({ chatId: "route:not-a-uuid", text: "no" })).rejects.toThrow(/not in/);
+    expect(tools.actions.some(x => String(x.args.function || "").includes("history.pushState"))).toBe(false);
     expect(tools.actions.some(x => x.name === "navigate_page")).toBe(false);
   });
 });
