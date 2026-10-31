@@ -18,7 +18,10 @@ function configuredProviders(raw: string): Config[] {
     if (typeof value.id !== "string" || !/^[a-z][a-z0-9-]{0,47}$/.test(value.id)) throw new Error("Invalid browser provider ID");
     if (typeof value.name !== "string" || !value.name.trim()) throw new Error("Browser provider name required");
     if (typeof value.cwd !== "string" || !isAbsolute(value.cwd)) throw new Error("Browser provider CWD must be absolute");
-    if (typeof value.module !== "string" || !isAbsolute(value.module)) throw new Error("Browser driver module must be an absolute local path");
+    if (typeof value.module !== "string" ||
+      (value.module !== "builtin:zai-cdp" && !isAbsolute(value.module))) {
+      throw new Error("Browser driver module must be an absolute local path or an allowed built-in");
+    }
     return { id: value.id, name: value.name, cwd: value.cwd, module: value.module };
   });
 }
@@ -35,7 +38,9 @@ export async function loadBrowserChatAdapter(raw = process.env[BROWSER_CHAT_PROV
     seen.add(config.id);
   }
   for (const config of configs) {
-    const exports = await import(pathToFileURL(config.module).href);
+    const exports = config.module === "builtin:zai-cdp"
+      ? await import("./zai-cdp-driver.js")
+      : await import(pathToFileURL(config.module).href);
     if (typeof exports.createBrowserChatDriver !== "function") {
       throw new Error(`Browser provider '${config.id}' must export createBrowserChatDriver`);
     }

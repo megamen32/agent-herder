@@ -90,6 +90,10 @@ export class BrowserChatRouter implements BrowserChatDriver {
     return provider.driver.sendMessage({ ...input, chatId: nativeId }, signal);
   }
 
+  supportsModelSwitch(): boolean {
+    return [...this.providers.values()].some(provider => typeof provider.driver.changeModel === "function");
+  }
+
   async listModels(signal?: AbortSignal): Promise<string[]> {
     const results = await Promise.allSettled([...this.providers.values()].map(async provider =>
       ({ provider, models: provider.driver.listModels ? await provider.driver.listModels(signal) : [] })));

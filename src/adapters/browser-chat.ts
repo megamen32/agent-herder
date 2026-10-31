@@ -23,6 +23,7 @@ export interface BrowserChatDriver {
   ): Promise<{ assistantText?: string }>;
   createChat?(input: { title?: string }, signal?: AbortSignal): Promise<BrowserChat>;
   listModels?(signal?: AbortSignal): Promise<string[]>;
+  supportsModelSwitch?(): boolean;
   changeModel?(input: { chatId: string; model: string }, signal?: AbortSignal): Promise<{ ok: boolean; error?: string }>;
 }
 export interface BrowserChatProvider { id: string; name: string; harness: HarnessType; cwd: string }
@@ -38,14 +39,15 @@ export interface BrowserChatProvider { id: string; name: string; harness: Harnes
 export class BrowserChatAdapter implements HarnessAdapter {
   readonly type: HarnessType;
   readonly name: string;
-  readonly controlCapabilities: HarnessCapabilities = {
+  readonly controlCapabilities: HarnessCapabilities;
+  private static readonly browserCapabilities: HarnessCapabilities = {
     cancelTurn: false,
     detach: false,
     resume: true,
     terminate: false,
     recover: false,
     fork: false,
-    modelSwitch: true,
+    modelSwitch: false,
     subagents: false,
     events: false,
   };
@@ -55,7 +57,12 @@ export class BrowserChatAdapter implements HarnessAdapter {
     private readonly driver: BrowserChatDriver,
     private readonly provider: BrowserChatProvider,
     private readonly cwd = provider.cwd,
-  ) { this.type = provider.harness; this.name = provider.name; }
+  ) {
+    this.type = provider.harness;
+    this.name = provider.name;
+    this.controlCapabilities = { ...BrowserChatAdapter.browserCapabilities,
+      modelSwitch: driver.supportsModelSwitch?.() ?? typeof driver.changeModel === "function" };
+  }
 
   async init(): Promise<void> {
     await this.driver.listChats();
@@ -77,7 +84,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
   /** Launch one ChatGPT session: a new disposable chat becomes the session. */
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
     if (!this.driver.createChat) {
-      throw new Error("This ChatGPT driver does not create chats");
+      throw new Error("This browser provider does not create chats");
     }
     const chat = await this.driver.createChat({ title: options.name });
     return {
@@ -97,7 +104,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
   /** Select one model for one chat through the page's own picker. */
   async changeModel(sessionId: string, model: string): Promise<{ ok: boolean; error?: string }> {
     if (!this.driver.changeModel) {
-      return { ok: false, error: "This ChatGPT driver does not expose a model picker" };
+      return { ok: false, error: "This browser provider does not expose a model picker" };
     }
     return this.driver.changeModel({ chatId: sessionId, model });
   }
@@ -125,7 +132,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
   /** ChatGPT conversations are already resumable; a message is the resume action. */
   async resumeSession(id: string): Promise<ControlResult> {
     const session = await this.getSession(id);
-    return session ? { ok: true, sessionId: id } : { ok: false, error: `ChatGPT chat '${id}' not found` };
+    return session ? { ok: true, sessionId: id } : { ok: false, error: `Browser chat '${id}' not found` };
   }
 
   async stopSession(): Promise<ControlResult> {
