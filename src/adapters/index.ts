@@ -11,3 +11,5 @@ export { ZcodeAppServerClient } from "./zcode-protocol.js";
 export { FastAgentFileAdapter } from "./fast-agent.js";
 export { ChatGptAdapter, CHATGPT_HARNESS_CWD } from "./chatgpt.js";
 export { MinimaxCodeAdapter, MINIMAX_CODE_HARNESS_CWD, MINIMAX_CODE_SESSION_STORE } from "./minimax-code.js";
+export { BrowserChatAdapter } from "./browser-chat.js";
+export type { BrowserChat, BrowserChatDriver, BrowserChatProvider } from "./browser-chat.js";
