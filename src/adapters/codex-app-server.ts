@@ -4,7 +4,7 @@ import { execFile, type ChildProcessWithoutNullStreams } from "node:child_proces
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { isAbsolute, join, resolve } from "node:path";
-import { realpath, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { assertCodexQuota, codexQuotaExemptModel, CodexQuotaBlockedError, type QuotaReader } from "../codex-quota-guard.js";
 import { CodexDeliveryReceipts } from "./codex-delivery-receipts.js";
@@ -2859,6 +2859,25 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     return { ok: false, notSubmitted: true, admitted: false, nonRetryable: true, admissionUnknown: false, error: error.message };
   }
 
+  /** The top-level default model of the native config, as a fresh thread/start
+   * without an explicit model inherits it. Only the keys before the first
+   * table header are top-level. */
+  private defaultModelCache?: { model: string | undefined; readAt: number };
+  private async defaultCodexModel(): Promise<string | undefined> {
+    if (this.defaultModelCache && Date.now() - this.defaultModelCache.readAt < 60_000) return this.defaultModelCache.model;
+    let model: string | undefined;
+    try {
+      const text = await readFile(join(this.appServerDataHome, "config.toml"), "utf8");
+      for (const line of text.split("\n")) {
+        if (line.trimStart().startsWith("[")) break;
+        const match = /^\s*model\s*=\s*"([^"]+)"/.exec(line);
+        if (match) { model = match[1]; break; }
+      }
+    } catch { /* an unreadable config keeps the guard fully applied */ }
+    this.defaultModelCache = { model, readAt: Date.now() };
+    return model;
+  }
+
   private async request(method: string, params: unknown, stage = method): Promise<unknown> {
     try { this.assertLifecycleActive(); }
     catch (error) { return Promise.reject(error); }
@@ -2868,7 +2887,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       // non-OpenAI model route (e.g. OmniRoute zc/glm-*) never draws on it.
       const scoped = params as { model?: unknown; threadId?: unknown };
       const model = typeof scoped?.model === "string" ? scoped.model
-        : typeof scoped?.threadId === "string" ? this.threads.get(scoped.threadId)?.model : undefined;
+        : typeof scoped?.threadId === "string" ? this.threads.get(scoped.threadId)?.model
+        : method === "thread/start" ? await this.defaultCodexModel() : undefined;
       if (!codexQuotaExemptModel(model)) {
         await assertCodexQuota(method, this.quotaReader ?? (() => this.request("account/rateLimits/read", {})));
       }

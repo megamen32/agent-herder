@@ -10,6 +10,9 @@ const root = mkdtempSync(join(realpathSync("/tmp"), "agent-herder-vitest-"));
 process.on("exit", () => { try { rmSync(root, { recursive: true, force: true }); } catch { /* best effort */ } });
 
 process.env.AGENT_HERDER_DEFERRED_MESSAGES ??= join(root, "deferred-messages.json");
+// The native Codex config of the host is live operator state (its default
+// model decides quota-guard exemptions); a test reads its own empty home.
+process.env.CODEX_HOME ??= join(root, "codex-home");
 process.env.AGENT_HERDER_INDEXING_SETTINGS ??= join(root, "indexing-settings.json");
 process.env.AGENT_HERDER_HUMAN_STOP_STORE ??= join(root, "human-stops.json");
 process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR ??= root;
