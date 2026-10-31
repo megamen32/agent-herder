@@ -1,0 +1,64 @@
+{
+  "label": "Опубликовать slice: интегрировать origin/main и отправить в main",
+  "status": "running",
+  "description": "Свести локальные коммиты сессии (пробуждение доставки, сборщик отложенных сообщений, квотный охранник) с двумя чужими коммитами origin/main по human-request, прогнать точечные тесты и отправить main в origin/main без дивергенции.",
+  "acceptance": "git fetch; rev-list origin/main...HEAD пуст; status --porcelain чист по авторским файлам; точечные тесты зелёные.",
+  "affected_files": [
+    "src/deferred-delivery-sweeper.ts",
+    "src/adapters/opencode.ts",
+    "src/adapters/codex-app-server.ts",
+    "src/mcp-tools/handlers.ts",
+    "src/human-request/registry.ts"
+  ],
+  "owner": "roomhacker",
+  "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+  "harness": "zcode",
+  "model": "minimax/MiniMax-M3.1-Flash",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "note": "Merge origin/main уже выполнен (ab8eec2); осталось тесты и push.",
+  "id": "L01",
+  "created_at": "2026-10-31T03:46:54+03:00",
+  "updated_at": "2026-10-31T03:47:25+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-31T03:46:54+03:00",
+      "note": "",
+      "changes": {
+        "label": "Опубликовать slice: интегрировать origin/main и отправить в main",
+        "status": "running",
+        "description": "Свести локальные коммиты сессии (пробуждение доставки, сборщик отложенных сообщений, квотный охранник) с двумя чужими коммитами origin/main по human-request, прогнать точечные тесты и отправить main в origin/main без дивергенции.",
+        "acceptance": "git fetch; rev-list origin/main...HEAD пуст; status --porcelain чист по авторским файлам; точечные тесты зелёные.",
+        "affected_files": [
+          "src/deferred-delivery-sweeper.ts",
+          "src/adapters/opencode.ts",
+          "src/adapters/codex-app-server.ts",
+          "src/mcp-tools/handlers.ts",
+          "src/human-request/registry.ts"
+        ],
+        "owner": "lead",
+        "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+        "harness": "zcode",
+        "model": "minimax/MiniMax-M3.1-Flash",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Merge origin/main уже выполнен (ab8eec2); осталось тесты и push."
+      },
+      "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+      "harness": "zcode"
+    },
+    {
+      "at": "2026-10-31T03:47:25+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "owner": "roomhacker"
+      },
+      "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+      "harness": "zcode"
+    }
+  ]
+}

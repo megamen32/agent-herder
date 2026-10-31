@@ -1,0 +1,53 @@
+{
+  "label": "Пересобрать release-candidate из финального коммита и поставить на node 100",
+  "status": "queued",
+  "description": "Собрать release-candidate из финального коммита main штатным builder (15/15 acceptance), переключить юнит на новый release, daemon-reload + restart, снять receipt и живой readback: сервис активен, listener 18787 отвечает, releaseSha совпадает с опубликованным коммитом.",
+  "acceptance": "release-candidate собран с acceptance 15/15; agent-herder.service активен с новым release в cmdline; receipt releaseSha равен коммиту origin/main; MCP отвечает, ошибок в журнале после рестарта нет.",
+  "affected_files": [
+    "deploy/fleet/build-release-candidate.py"
+  ],
+  "owner": "lead",
+  "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+  "harness": "zcode",
+  "model": "minimax/MiniMax-M3.1-Flash",
+  "estimate_minutes": {
+    "minimum": 15,
+    "maximum": 30
+  },
+  "depends_on": [
+    "L01",
+    "L02"
+  ],
+  "id": "L03",
+  "created_at": "2026-10-31T03:47:05+03:00",
+  "updated_at": "2026-10-31T03:47:05+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-31T03:47:05+03:00",
+      "note": "",
+      "changes": {
+        "label": "Пересобрать release-candidate из финального коммита и поставить на node 100",
+        "status": "queued",
+        "description": "Собрать release-candidate из финального коммита main штатным builder (15/15 acceptance), переключить юнит на новый release, daemon-reload + restart, снять receipt и живой readback: сервис активен, listener 18787 отвечает, releaseSha совпадает с опубликованным коммитом.",
+        "acceptance": "release-candidate собран с acceptance 15/15; agent-herder.service активен с новым release в cmdline; receipt releaseSha равен коммиту origin/main; MCP отвечает, ошибок в журнале после рестарта нет.",
+        "affected_files": [
+          "deploy/fleet/build-release-candidate.py"
+        ],
+        "owner": "lead",
+        "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+        "harness": "zcode",
+        "model": "minimax/MiniMax-M3.1-Flash",
+        "estimate_minutes": {
+          "minimum": 15,
+          "maximum": 30
+        },
+        "depends_on": [
+          "L01",
+          "L02"
+        ]
+      },
+      "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+      "harness": "zcode"
+    }
+  ]
+}

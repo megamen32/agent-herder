@@ -1,0 +1,51 @@
+{
+  "label": "Записать каноническую задачу и закрыть план",
+  "status": "queued",
+  "description": "Записать .agents/tasks/20261031-delivery-wake-stranded-inbox/task.md: дефект, фикс, тесты, живая проба пробуждения, публикация и границы; синхронизировать план (leaves → graph → page → отчёт) и проверить check-plan.",
+  "acceptance": "task.md описывает дефект, изменение, проверку и границы; check-plan проходит; план и запись закоммичены и отправлены в origin/main.",
+  "affected_files": [
+    ".agents/tasks/20261031-delivery-wake-stranded-inbox"
+  ],
+  "owner": "lead",
+  "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+  "harness": "zcode",
+  "model": "minimax/MiniMax-M3.1-Flash",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "L03"
+  ],
+  "id": "L04",
+  "created_at": "2026-10-31T03:47:05+03:00",
+  "updated_at": "2026-10-31T03:47:05+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-31T03:47:05+03:00",
+      "note": "",
+      "changes": {
+        "label": "Записать каноническую задачу и закрыть план",
+        "status": "queued",
+        "description": "Записать .agents/tasks/20261031-delivery-wake-stranded-inbox/task.md: дефект, фикс, тесты, живая проба пробуждения, публикация и границы; синхронизировать план (leaves → graph → page → отчёт) и проверить check-plan.",
+        "acceptance": "task.md описывает дефект, изменение, проверку и границы; check-plan проходит; план и запись закоммичены и отправлены в origin/main.",
+        "affected_files": [
+          ".agents/tasks/20261031-delivery-wake-stranded-inbox"
+        ],
+        "owner": "lead",
+        "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+        "harness": "zcode",
+        "model": "minimax/MiniMax-M3.1-Flash",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "L03"
+        ]
+      },
+      "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+      "harness": "zcode"
+    }
+  ]
+}

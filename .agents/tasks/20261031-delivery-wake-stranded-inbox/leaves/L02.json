@@ -1,0 +1,49 @@
+{
+  "label": "Покрыть тестами сборщик отложенных сообщений и пробуждение stranded-инбокса",
+  "status": "queued",
+  "description": "Новый src/deferred-delivery-sweeper.ts (146 строк) добавлен без тестов. Написать точечные тесты: парк с harness-тегом доставляется простаивающей цели; парк без тега (legacy) не разбуживается; парк не тратит бюджет цикла, если не проходит проверку пригодности; отложенное сообщение не дублируется.",
+  "acceptance": "RED подтверждён против исходного кода, GREEN с фиксом; новый файл тестов проходит точечно; регрессии по затронутым файлам нет.",
+  "affected_files": [
+    "src/deferred-delivery-sweeper.ts",
+    "tests/deferred-delivery-sweeper.test.ts"
+  ],
+  "owner": "lead",
+  "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+  "harness": "zcode",
+  "model": "minimax/MiniMax-M3.1-Flash",
+  "estimate_minutes": {
+    "minimum": 15,
+    "maximum": 25
+  },
+  "depends_on": [],
+  "id": "L02",
+  "created_at": "2026-10-31T03:47:05+03:00",
+  "updated_at": "2026-10-31T03:47:05+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-31T03:47:05+03:00",
+      "note": "",
+      "changes": {
+        "label": "Покрыть тестами сборщик отложенных сообщений и пробуждение stranded-инбокса",
+        "status": "queued",
+        "description": "Новый src/deferred-delivery-sweeper.ts (146 строк) добавлен без тестов. Написать точечные тесты: парк с harness-тегом доставляется простаивающей цели; парк без тега (legacy) не разбуживается; парк не тратит бюджет цикла, если не проходит проверку пригодности; отложенное сообщение не дублируется.",
+        "acceptance": "RED подтверждён против исходного кода, GREEN с фиксом; новый файл тестов проходит точечно; регрессии по затронутым файлам нет.",
+        "affected_files": [
+          "src/deferred-delivery-sweeper.ts",
+          "tests/deferred-delivery-sweeper.test.ts"
+        ],
+        "owner": "lead",
+        "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+        "harness": "zcode",
+        "model": "minimax/MiniMax-M3.1-Flash",
+        "estimate_minutes": {
+          "minimum": 15,
+          "maximum": 25
+        },
+        "depends_on": []
+      },
+      "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+      "harness": "zcode"
+    }
+  ]
+}
