@@ -155,7 +155,11 @@ export function createConfiguredFleetApiHandler(options: {
           if(cached)service=cached;
           else{
             if(directServices.size>=2)throw new Error('fleet_direct_scope_limit');
-            service=new FleetCabinetService({rustCore,hosts:fleetHosts,scope:{profileId,userId},transportFactory:()=>new FleetOwnerHttpTransport({ownerContext:()=>publicOwnerContext.getStore()})});
+            // The public vhost strips SSO cookies on /mcp, so the owner TLS
+            // route can only serve peers. The local machine answers through the
+            // same in-process bridge the loopback owner uses; remote machines
+            // keep the cookie-faithful owner HTTP transport.
+            service=new FleetCabinetService({rustCore,hosts:fleetHosts,scope:{profileId,userId},transportFactory:(context)=>context.hostId===hostname()?new FleetDirectTransport():new FleetOwnerHttpTransport({ownerContext:()=>publicOwnerContext.getStore()})});
             directServices.set(key,service);
           }
         }else service=direct('roomhacker','haos-sso-owner');
