@@ -1162,7 +1162,7 @@ export class SessionSupervisor {
       }
     }
 
-    if (session.harness !== "qoder" && session.harness !== "hermes" && session.harness !== "zcode" && session.harness !== "fast-agent" && session.harness !== "chatgpt" && session.harness !== "minimax-code" && mode !== "acp" && this.converter.read) {
+    if (session.harness !== "qoder" && session.harness !== "hermes" && session.harness !== "zcode" && session.harness !== "fast-agent" && session.harness !== "chatgpt" && session.harness !== "browser-chat" && session.harness !== "minimax-code" && mode !== "acp" && this.converter.read) {
       try {
         const conversation = await this.converter.read({
           sessionId: nativeId,

@@ -20,7 +20,7 @@ import { readFileSync } from "node:fs";
 import { QaControlBackend } from "./qa-control.js";
 
 import { HarnessAdapter, type SendMessageResult, type AgentSession } from "./types/index.js";
-import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter, ChatGptAdapter, MinimaxCodeAdapter } from "./adapters/index.js";
+import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter, ChatGptAdapter, MinimaxCodeAdapter, loadBrowserChatAdapter } from "./adapters/index.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
@@ -332,6 +332,7 @@ function configureAdapterRegistry(): void {
     ["zcode", "ZCode", "ZCode app-server adapter", ENABLE_ZCODE],
     ["fast-agent", "Fast Agent", "Fast Agent persisted session observer and launcher", ENABLE_FAST_AGENT],
     ["chatgpt", "ChatGPT", "Existing ChatGPT conversations on the one owned BrowserClaw page", true],
+    ["browser-chat", "Browser chats", "Provider-neutral authenticated browser conversations", true],
     ["minimax-code", "MiniMax Code", "MiniMax Code local-runtime session observer", ENABLE_MINIMAX_CODE],
   ] as const) {
     const [id, name, description, defaultEnabled] = definition;
@@ -694,7 +695,12 @@ function registerTools(
   sessionQueueControl?: SessionQueueControlGateway,
   humanRequestsRegistry?: Pick<HumanRequestRegistry, "get" | "bindResumeWait">,
 ) {
-  registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
+  // Archive/debug helpers remain available for existing callers. All normal
+  // chat control uses the shared HarnessAdapter tools; this optional legacy
+  // extension can be disabled when the old archive clients have migrated.
+  if (process.env.AGENT_HERDER_CHATGPT_LEGACY_TOOLS !== "false") {
+    registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
+  }
   registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: autopilotSessionCommand } });
   registerResumeAfterTools(server, resumeAfter, humanRequestsRegistry);
   registerCadenceTools(server, cadence);
@@ -954,6 +960,35 @@ async function main() {
   }
   await adapterRegistry.load();
   await initAdapters();
+  // Browser providers are optional, configured local driver modules. A missing
+  // browser lease never blocks the coding-agent control plane.
+  if (process.env.AGENT_HERDER_BROWSER_CHAT_PROVIDERS && adapterRegistry.shouldEnable("browser-chat", true)) {
+    try {
+      const browser = await loadBrowserChatAdapter();
+      if (browser) {
+        let browserRetryTimer: NodeJS.Timeout | undefined;
+        const activateBrowser = async (): Promise<boolean> => {
+          try {
+            await browser.init();
+            adapterRegistry.registerActive(browser);
+            console.error("[agent-herder] provider-neutral browser chat adapter initialized");
+            if (browserRetryTimer) clearInterval(browserRetryTimer);
+            return true;
+          } catch (error) {
+            console.error(`[agent-herder] browser chat providers unavailable: ${error instanceof Error ? error.message : String(error)}`);
+            return false;
+          }
+        };
+        if (!await activateBrowser()) {
+          browserRetryTimer = setInterval(() => { void activateBrowser(); }, 30_000);
+          browserRetryTimer.unref();
+          process.once("exit", () => { if (browserRetryTimer) clearInterval(browserRetryTimer); });
+        }
+      }
+    } catch (error) {
+      console.error(`[agent-herder] invalid browser provider configuration: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   let cdpChatDriver: CdpChatDriver | undefined;
   let cdpAccountArchive: ChatGptAccountArchive | undefined;
   let cdpHistoryArchive = new ChatGptHistoryArchive(undefined, {

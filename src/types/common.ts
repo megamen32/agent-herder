@@ -2,7 +2,7 @@
 
 import { hostname } from "node:os";
 
-export type HarnessType = "opencode" | "claude" | "codex" | "qoder" | "hermes" | "zcode" | "fast-agent" | "chatgpt" | "minimax-code";
+export type HarnessType = "opencode" | "claude" | "codex" | "qoder" | "hermes" | "zcode" | "fast-agent" | "chatgpt" | "browser-chat" | "minimax-code";
 
 export type AgentStatus =
   | "running"      // actively processing

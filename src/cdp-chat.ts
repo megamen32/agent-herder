@@ -86,26 +86,9 @@ export const ALL_CDP_CHAT_CAPABILITIES: CdpChatCapabilities = {
 };
 
 /** Acquires the one authenticated page owned by this MCP process. */
-export interface ChatGptHarnessChat {
-  id: string;
-  title: string;
-  unread: boolean;
-  working: boolean;
-  updatedAt: string;
-  sourceRoute?: string;
-  updatedAtSemantics?: string;
-}
-
-export interface ChatGptHarnessDriver {
-  listChats(signal?: AbortSignal): Promise<readonly ChatGptHarnessChat[]>;
-  sendMessage(input: { chatId: string; text: string; waitForCompletion?: boolean }, signal?: AbortSignal): Promise<{ assistantText?: string }>;
-  /** Create one disposable chat, used when the harness launches a session. */
-  createChat?(input: { title?: string }, signal?: AbortSignal): Promise<ChatGptHarnessChat>;
-  /** Models the page's own model picker offers. */
-  listModels?(signal?: AbortSignal): Promise<string[]>;
-  /** Select one model for one chat through the page's own picker. */
-  changeModel?(input: { chatId: string; model: string }, signal?: AbortSignal): Promise<{ ok: boolean; error?: string }>;
-}
+/** Compatibility aliases: browser chat drivers share the provider-neutral contract. */
+export type ChatGptHarnessChat = import("./adapters/browser-chat.js").BrowserChat;
+export type ChatGptHarnessDriver = import("./adapters/browser-chat.js").BrowserChatDriver;
 
 export interface CdpChatDriver {
   acquirePage(): Promise<CdpChatPage>;

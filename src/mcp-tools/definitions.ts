@@ -82,7 +82,7 @@ export const ListChildrenSchema = z.object({
 
 export const ExportTranscriptSchema = z.object({
   sessionId: z.string().describe("The session ID whose raw source should be exported."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().describe("Which harness owns the session. If omitted, searches all."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code", "browser-chat"]).optional().describe("Which harness owns the session. If omitted, searches all."),
 });
 
 const meshIdentity = (max:number) => z.string().min(1).max(max).regex(/^[^\x00-\x1f\x7f]*$/);
@@ -96,11 +96,11 @@ export const SendMessageSchema = z.object({
   inputId: z.string().min(1).max(256).optional().describe("Stable delivery ID. Retry with the same ID; Codex deduplicates native admission for 24 hours."),
   humanRequested: z.boolean().optional().describe("True only for an explicit human new task/send/resume. Otherwise coordination is active-turn-only and never wakes or defers to an inactive chat."),
   sessionId: z.string().describe("Target session ID."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().describe("Harness (optional if ID is unique)."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code", "browser-chat"]).optional().describe("Harness (optional if ID is unique)."),
   hostId: hostTarget(HOST_TARGET_DESCRIPTION),
   message: z.string().describe("Message to send to the agent."),
   fromSessionId: z.string().optional().describe("Supply your full native sender session ID for AI messages. Herder checks that session for reply attribution; this does not authenticate the caller. Omitted/unverified sources are labelled unknown."),
-  fromHarness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().describe("Declared sender harness for checked reply attribution, not caller authentication."),
+  fromHarness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code", "browser-chat"]).optional().describe("Declared sender harness for checked reply attribution, not caller authentication."),
   meshSender: MeshSenderSchema.optional().describe("Declared remote mesh sender for the full-address automatic budget and attribution; not authentication. Takes precedence over legacy sender fields without local sender lookup. Cannot claim humanRequested."),
   mode: z.enum(["queue", "steer", "sync"]).optional().default("steer").describe(
     "For ordinary inter-agent exchange use explicit mode:\"steer\" (default): redirect the current active turn. queue is only intentional deferred work after current work finishes; it may wait hours and is not immediate exchange. sync waits for a response."
@@ -111,7 +111,7 @@ const NamedSessionBaseSchema = z.object({
   sourceSessions: z.array(z.object({ harness: z.enum(["codex", "zcode", "opencode", "fast-agent"]), sessionId: z.string().min(1).max(512) })).max(32).optional().describe("All verified native source/ancestor receipts for an automatic continuation. Any stopped source prohibits launch."),
   sourceSessionId: z.string().min(1).optional().describe("Original session ID when this creation is a continuation/replacement; a stopped source prohibits automatic creation."),
   sourceHarness: z.enum(["codex", "zcode", "opencode", "fast-agent"]).optional(),
-  harness: z.enum(["opencode", "codex", "zcode", "fast-agent", "chatgpt"]).describe("Harness that owns the named session."),
+  harness: z.enum(["opencode", "codex", "zcode", "fast-agent", "chatgpt", "browser-chat"]).describe("Harness that owns the named session."),
   name: z.string().trim().min(1).max(128).describe("Stable session name, for example repair_100."),
   cwd: z.string().min(1).describe("Absolute working directory. It is canonicalized before identity matching."),
   hostId: hostTarget(HOST_TARGET_DESCRIPTION),
@@ -138,7 +138,7 @@ export const DeliverSchema = z.object({
   sourceSessionId: z.string().min(1).max(512).optional().describe("Original native ID for an automatic continuation/replacement; stopped sources prohibit it."),
   sourceHarness: z.enum(["codex", "zcode", "opencode", "fast-agent"]).optional(),
   sessionId: z.string().optional().describe("Exact target session ID. Use either sessionId or harness+name+cwd."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional(),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code", "browser-chat"]).optional(),
   hostId: hostTarget(HOST_TARGET_DESCRIPTION),
   name: z.string().trim().min(1).max(128).optional(),
   cwd: z.string().min(1).optional(),
@@ -156,7 +156,7 @@ export const DeliverSchema = z.object({
 /** Override the work machine and/or work directory of an already live session. */
 export const SetSessionTargetSchema = z.object({
   sessionId: z.string().trim().min(1).max(512).describe("Exact native session ID whose work target is overridden."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().describe("Harness (optional if the ID is unique)."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code", "browser-chat"]).optional().describe("Harness (optional if the ID is unique)."),
   hostId: hostTarget("Work machine the session runs on; defaults to the current machine of that session."),
   cwd: z.string().trim().min(1).max(4096).optional().describe("Work directory on the target machine."),
 }).superRefine((v,ctx)=>{
@@ -176,13 +176,13 @@ export const SetSessionTargetResultSchema = z.object({
 
 export const StopAgentSchema = z.object({
   sessionId: z.string().describe("Session ID to stop."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code"]).optional().describe("Harness (optional if ID is unique)."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "minimax-code", "browser-chat"]).optional().describe("Harness (optional if ID is unique)."),
   hostId: z.string().trim().min(1).max(512).optional().describe("Machine that owns the session. Omitted stops a session of this machine; another machine is stopped through its own native session."),
 });
 
 export const RespondPermissionSchema = z.object({
   sessionId: z.string().describe("Session with pending permission."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional(),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "browser-chat"]).optional(),
   permissionId: z.string().describe("The permission request ID."),
   response: z.enum(["allow", "deny"]).describe("Whether to allow or deny."),
   remember: z.boolean().optional().describe("Remember this decision for future requests."),
@@ -190,7 +190,7 @@ export const RespondPermissionSchema = z.object({
 
 export const SetPermissionsSchema = z.object({
   sessionId: z.string().describe("Target session ID."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional(),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "browser-chat"]).optional(),
   allowedTools: z.string().optional().describe("Comma-separated list of allowed tools (e.g. 'Read,Edit,Bash')."),
   mode: z.string().optional().describe("Permission mode (e.g. 'fullAuto', 'plan', 'default')."),
 });
@@ -198,7 +198,7 @@ export const SetPermissionsSchema = z.object({
 export const ResumeAgentSchema = z.object({
   humanRequested: z.boolean().optional().describe("Required true to release an explicit stop, only when the human explicitly requested it. Automatic recovery must omit it."),
   sessionId: z.string().describe("Session ID to resume."),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional(),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "browser-chat"]).optional(),
   message: z.string().optional().describe("Optional message to send when resuming."),
 });
 
@@ -206,12 +206,12 @@ export const ChangeModelSchema = z.object({
   sessionId: z.string().optional().describe(
     "Session ID to change model for. If omitted, changes the global default for the harness."
   ),
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).describe("Which harness to change model for."),
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "browser-chat"]).describe("Which harness to change model for."),
   model: z.string().describe("The model name to use (e.g. 'claude-sonnet-4-20250514', 'gpt-4o', 'o4-mini')."),
 });
 
 export const ListModelsSchema = z.object({
-  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"]).optional().describe(
+  harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "browser-chat"]).optional().describe(
     "Which harness to list models for. If omitted, lists models from all harnesses."
   ),
 });

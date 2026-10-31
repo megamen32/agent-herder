@@ -13,3 +13,6 @@ export { ChatGptAdapter, CHATGPT_HARNESS_CWD } from "./chatgpt.js";
 export { MinimaxCodeAdapter, MINIMAX_CODE_HARNESS_CWD, MINIMAX_CODE_SESSION_STORE } from "./minimax-code.js";
 export { BrowserChatAdapter } from "./browser-chat.js";
 export type { BrowserChat, BrowserChatDriver, BrowserChatProvider } from "./browser-chat.js";
+export { BrowserChatRouter } from "./browser-chat-router.js";
+export type { BrowserChatEndpoint, BrowserProviderState } from "./browser-chat-router.js";
+export { loadBrowserChatAdapter, BROWSER_CHAT_PROVIDERS_ENV } from "./browser-chat-loader.js";

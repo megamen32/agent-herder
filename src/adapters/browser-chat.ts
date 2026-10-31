@@ -1,22 +1,39 @@
 import type { AgentSession, ControlResult, CreateSessionOptions, HarnessAdapter, HarnessCapabilities, HarnessType, ListSessionsOptions, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
 import { localSessionHostId } from "../types/index.js";
-export interface BrowserChat { id: string; title: string; unread: boolean; working: boolean; updatedAt: string; sourceRoute?: string; updatedAtSemantics?: string }
+/** Normalized browser chat; native IDs belong to their provider driver. */
+export interface BrowserChat {
+  id: string;
+  title: string;
+  unread: boolean;
+  working: boolean;
+  updatedAt: string;
+  sourceRoute?: string;
+  updatedAtSemantics?: string;
+  providerId?: string;
+  cwd?: string;
+}
+
+/** A browser transport owns its authenticated page and implements these operations. */
 export interface BrowserChatDriver {
- listChats(signal?: AbortSignal): Promise<readonly BrowserChat[]>;
- sendMessage(input: { chatId: string; text: string; waitForCompletion?: boolean }, signal?: AbortSignal): Promise<{ assistantText?: string }>;
- createChat?(input: { title?: string }, signal?: AbortSignal): Promise<BrowserChat>;
- listModels?(signal?: AbortSignal): Promise<string[]>;
- changeModel?(input: { chatId: string; model: string }, signal?: AbortSignal): Promise<{ ok: boolean; error?: string }>;
+  listChats(signal?: AbortSignal): Promise<readonly BrowserChat[]>;
+  getChat?(chatId: string, signal?: AbortSignal): Promise<BrowserChat | null>;
+  sendMessage(
+    input: { chatId: string; text: string; waitForCompletion?: boolean },
+    signal?: AbortSignal,
+  ): Promise<{ assistantText?: string }>;
+  createChat?(input: { title?: string }, signal?: AbortSignal): Promise<BrowserChat>;
+  listModels?(signal?: AbortSignal): Promise<string[]>;
+  changeModel?(input: { chatId: string; model: string }, signal?: AbortSignal): Promise<{ ok: boolean; error?: string }>;
 }
 export interface BrowserChatProvider { id: string; name: string; harness: HarnessType; cwd: string }
 
 
 /**
- * ChatGPT adapter over Agent Herder's already-owned ChatGPT browser driver.
+ * One HarnessAdapter for a browser-owned conversation provider.
  *
- * Existing ChatGPT conversations are sessions, and the adapter can create one
- * more disposable chat when a session is launched. It never opens a second
- * browser lease: the chat page belongs to the driver.
+ * Keeps authentication, Chrome profile, selectors and page leases in the
+ * provider driver. Never starts an independent browser or silently creates
+ * a chat while trying to resume an existing one.
  */
 export class BrowserChatAdapter implements HarnessAdapter {
   readonly type: HarnessType;
@@ -86,7 +103,9 @@ export class BrowserChatAdapter implements HarnessAdapter {
   }
 
   async getSession(id: string): Promise<AgentSession | null> {
-    const chat = (await this.driver.listChats()).find((entry) => entry.id === id);
+    const chat = this.driver.getChat
+      ? await this.driver.getChat(id)
+      : (await this.driver.listChats()).find((entry) => entry.id === id);
     return chat ? this.toSession(chat) : null;
   }
 
@@ -127,7 +146,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
       harness: this.type,
       status: chat.working ? "running" : "idle",
       title: chat.title,
-      cwd: this.cwd,
+      cwd: chat.cwd ?? this.cwd,
       hostId: localSessionHostId(),
       lastActivity: chat.updatedAt,
       needsPermission: false,
@@ -135,7 +154,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
         unread: chat.unread,
         sourceRoute: chat.sourceRoute,
         transport: chat.sourceRoute ? "browser-owned-page" : "owned-chat-page",
-        browserProvider: this.provider.id,
+        browserProvider: chat.providerId ?? this.provider.id,
         timestampSemantics: chat.updatedAtSemantics ?? "native-or-visible-order",
       },
     };

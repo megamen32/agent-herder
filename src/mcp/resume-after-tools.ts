@@ -4,7 +4,7 @@ import type { ResumeAfterService } from "../resume-after.js";
 import type { HumanRequestRegistry } from "../human-request/registry.js";
 import { structuredResult } from "./results.js";
 import { callerSessionFromMcpContext } from "./caller-session.js";
-const ref=z.object({harness:z.enum(["opencode","claude","codex","qoder","hermes","zcode","fast-agent","chatgpt","minimax-code"]),sessionId:z.string().trim().min(1).max(512)});
+const ref=z.object({harness:z.enum(["opencode","claude","codex","qoder","hermes","zcode","fast-agent","chatgpt","minimax-code", "browser-chat"]),sessionId:z.string().trim().min(1).max(512)});
 const trigger=z.discriminatedUnion("kind",[
   z.object({kind:z.literal("delay"),delayMs:z.number().int().positive().max(Number.MAX_SAFE_INTEGER)}),
   z.object({kind:z.literal("at"),at:z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/)}),
