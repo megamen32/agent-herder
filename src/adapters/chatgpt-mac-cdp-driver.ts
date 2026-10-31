@@ -175,6 +175,16 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     return this.exclusive(() => this.listUnlocked());
   }
 
+  getKnownChat(id: string): BrowserChat | null {
+    if (!NATIVE_CHAT_ID.test(id)) return null;
+    return this.cache.get(id) ?? {
+      id, title: "ChatGPT conversation", working: false, stopVisible: false,
+      unread: false, updatedAt: new Date(0).toISOString(),
+      sourceRoute: ORIGIN + "/c/" + id,
+      updatedAtSemantics: "deep-link-unverified",
+    };
+  }
+
   async getChat(id: string): Promise<BrowserChat | null> {
     return this.exclusive(async () => {
       if (!NATIVE_CHAT_ID.test(id)) return null;

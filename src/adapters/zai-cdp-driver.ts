@@ -148,6 +148,13 @@ export class ZaiCdpDriver implements BrowserChatDriver {
    * target even when the chat is not currently rendered in the bounded
    * sidebar. Selecting it navigates the owned tab to the exact route; a
    * wrong route simply fails identity confirmation and nothing is sent. */
+  /** Exact route metadata for a read-only deep link; never clicks the browser.
+   * The private HTTP history endpoint will separately verify its existence.
+   */
+  getKnownChat(id: string): BrowserChat | null {
+    return this.routeRecord(id);
+  }
+
   private routeRecord(id: string): BrowserChat | null {
     if (!id.startsWith("route:")) return null;
     const route = "/c/" + id.slice(6);

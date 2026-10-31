@@ -20,6 +20,11 @@ export interface BrowserChat {
 export interface BrowserChatDriver {
   listChats(signal?: AbortSignal): Promise<readonly BrowserChat[]>;
   getChat?(chatId: string, signal?: AbortSignal): Promise<BrowserChat | null>;
+  /** Pure exact-link metadata without browser navigation. Allows opening an
+   * older chat outside the current 100-item inventory from an existing URL.
+   * This is NOT proof that a send would be accepted by the remote site.
+   */
+  getKnownChat?(chatId: string): BrowserChat | null;
   /** Authenticated read-only owner API; no navigation or model turn. */
   getMessages?(chatId: string): Promise<SessionMessageView[] | null>;
   /** SHA-256 browser account ID; never a token, cookie or display name. */
@@ -187,6 +192,10 @@ export class BrowserChatAdapter implements HarnessAdapter {
     // Never navigate the user's browser merely to display history metadata.
     const observed = this.inventory.get(native);
     if (observed) return this.toSession(observed);
+    // An exact deep link outside the current 100 chats must not switch the
+    // user's browser tab just to resolve the frontend's session header.
+    const known = this.driver.getKnownChat?.(native);
+    if (known) return this.toSession(known);
     const chat = this.driver.getChat
       ? await this.driver.getChat(native)
       : (await this.driver.listChats()).find((entry) => entry.id === native);

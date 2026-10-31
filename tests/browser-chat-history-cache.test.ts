@@ -92,3 +92,32 @@ describe("durable browser chat history",()=>{
     expect(adapter.controlCapabilities.resume).toBe(true);
   });
 });
+
+describe("read-only deep-link details outside 100 cached chats", () => {
+  it("never navigates a remote browser when an exact old chat is opened", async () => {
+    const root=await dir();
+    vi.stubEnv("AGENT_HERDER_BROWSER_CHAT_CACHE_ROOT",root);
+    let browserWrites=0;
+    const driver:BrowserChatDriver={
+      listChats:async()=>[],
+      getKnownChat:(id)=>id==="route:123e4567-e89b-12d3-a456-426614174000"
+        ?{id,title:"Older Z.ai chat",unread:false,working:false,
+          updatedAt:"2026-10-31T19:00:00Z"}:null,
+      getChat:async()=>{browserWrites++;throw Error("read must not navigate browser")},
+      getAccountScope:()=>"b".repeat(64),
+      getMessages:async()=>[{id:"m",role:"user",text:"Older text",
+        parts:[{type:"text",text:"Older text"}]}],
+      sendMessage:async()=>({}),
+    };
+    const adapter=new BrowserChatAdapter(driver,
+      {id:"zai",name:"Z.ai",harness:"zai",cwd:"/browser/zai"},"/browser/zai",true);
+    await adapter.init();
+    const id="zai::"+encodeURIComponent("route:123e4567-e89b-12d3-a456-426614174000");
+    expect((await adapter.getSession(id))?.title).toBe("Older Z.ai chat");
+    expect(browserWrites).toBe(0);
+    expect(await adapter.getSessionMessages(id,10)).toEqual([]);
+    await vi.waitFor(async()=>expect(await adapter.getSessionMessages(id,10))
+      .toMatchObject([{role:"user",text:"Older text"}]));
+    expect(browserWrites).toBe(0);
+  });
+});
