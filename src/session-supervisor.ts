@@ -1155,7 +1155,11 @@ export class SessionSupervisor {
         if (liveMessages && liveMessages.length > 0) {
           return {
             messages: tailLogicalTurns(liveMessages, limit),
-            info: { source: provider === "hermes" ? "observed-cli-output" : "acp-load", complete: false },
+            info: {
+              source: provider === "chatgpt" || provider === "zai" ? "live-cache"
+                : provider === "hermes" ? "observed-cli-output" : "acp-load",
+              complete: false,
+            },
           };
         }
       } catch (error) {

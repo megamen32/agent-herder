@@ -1,5 +1,6 @@
 import type { AgentSession, ControlResult, CreateSessionOptions, HarnessAdapter, HarnessCapabilities, HarnessType, ListSessionsOptions, SendMessageOptions, SendMessageResult, SetPermissionsOptions } from "../types/index.js";
-import { localSessionHostId } from "../types/index.js";
+import { localSessionHostId, type SessionMessageView } from "../types/index.js";
+import { BrowserChatHistoryCache } from "./browser-chat-history-cache.js";
 /** Normalized browser chat; native IDs belong to their provider driver. */
 export interface BrowserChat {
   id: string;
@@ -19,6 +20,10 @@ export interface BrowserChat {
 export interface BrowserChatDriver {
   listChats(signal?: AbortSignal): Promise<readonly BrowserChat[]>;
   getChat?(chatId: string, signal?: AbortSignal): Promise<BrowserChat | null>;
+  /** Authenticated read-only owner API; no navigation or model turn. */
+  getMessages?(chatId: string): Promise<SessionMessageView[] | null>;
+  /** SHA-256 browser account ID; never a token, cookie or display name. */
+  getAccountScope?(): string | undefined;
   sendMessage(
     input: { chatId: string; text: string; waitForCompletion?: boolean },
     signal?: AbortSignal,
@@ -66,6 +71,11 @@ export class BrowserChatAdapter implements HarnessAdapter {
     events: false,
   };
   readonly lazyDiscovery = true;
+  private readonly inventory = new Map<string, BrowserChat>();
+  private inventoryAt = 0;
+  private inventoryRefresh: Promise<void> | undefined;
+  private readonly historyCache: BrowserChatHistoryCache;
+
 
   constructor(
     private readonly driver: BrowserChatDriver,
@@ -73,6 +83,10 @@ export class BrowserChatAdapter implements HarnessAdapter {
     private readonly cwd = provider.cwd,
     private readonly scopedIds = false,
   ) {
+    this.historyCache = new BrowserChatHistoryCache(
+      provider.id === "zai" ? "zai" : "chatgpt",
+      nativeId => this.driver.getMessages?.(nativeId) ?? Promise.resolve(null),
+    );
     this.type = provider.harness;
     this.name = provider.name;
     this.controlCapabilities = {
@@ -103,13 +117,33 @@ export class BrowserChatAdapter implements HarnessAdapter {
     return nativeId;
   }
 
+  private updateInventory(chats: readonly BrowserChat[]): void {
+    this.inventory.clear();
+    for (const chat of chats) this.inventory.set(chat.id, chat);
+    this.inventoryAt = Date.now();
+    this.historyCache.setAccountScope(this.driver.getAccountScope?.());
+    this.historyCache.prewarm(chats.map(chat => chat.id));
+  }
+
   async init(): Promise<void> {
-    await this.driver.listChats();
+    this.updateInventory(await this.driver.listChats());
   }
 
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
     void options;
-    return (await this.driver.listChats()).map((chat) => this.toSession(chat));
+    if (this.inventory.size) {
+      // Cached titles and session identity are also stale-while-revalidate.
+      // Never block selected-chat details on an unrelated 100-chat API list.
+      if (Date.now() - this.inventoryAt > 30_000 && !this.inventoryRefresh) {
+        this.inventoryRefresh = this.driver.listChats().then(chats => {
+          this.updateInventory(chats);
+        }).catch(() => undefined).finally(() => { this.inventoryRefresh = undefined; });
+      }
+      return [...this.inventory.values()].map(chat => this.toSession(chat));
+    }
+    const chats = await this.driver.listChats();
+    this.updateInventory(chats);
+    return chats.map(chat => this.toSession(chat));
   }
 
   async findNamedSessions(name: string, cwd: string): Promise<AgentSession[]> {
@@ -150,10 +184,21 @@ export class BrowserChatAdapter implements HarnessAdapter {
 
   async getSession(id: string): Promise<AgentSession | null> {
     const native = this.nativeId(id);
+    // Never navigate the user's browser merely to display history metadata.
+    const observed = this.inventory.get(native);
+    if (observed) return this.toSession(observed);
     const chat = this.driver.getChat
       ? await this.driver.getChat(native)
       : (await this.driver.listChats()).find((entry) => entry.id === native);
     return chat ? this.toSession(chat) : null;
+  }
+
+  async getSessionMessages(id: string, limit = 100): Promise<SessionMessageView[] | null> {
+    const native = this.nativeId(id);
+    if (!this.driver.getMessages) return null;
+    if (this.historyCache.available) return this.historyCache.messages(native, limit);
+    const live = await this.driver.getMessages(native);
+    return live?.slice(-Math.max(1, limit)) ?? null;
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {

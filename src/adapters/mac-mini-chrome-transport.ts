@@ -78,7 +78,10 @@ export class MacMiniChromeTransport implements ChromePageTools {
 
 /** The established DevTools MCP returns a fenced JSON result for evaluate_script. */
 export function parseChromeEvaluation<T>(text: string): T {
-  const match = text.match(/```json\s*([\s\S]*?)\s*```/);
-  if (!match) throw new Error("Chrome evaluation did not return a JSON value");
-  return JSON.parse(match[1]!) as T;
+  // Message histories may contain Markdown code fences INSIDE JSON strings.
+  // Use the final closing fence, never the first fence inside a message.
+  const fence = "```", start = text.indexOf(fence + "json");
+  const end = text.lastIndexOf(fence);
+  if (start < 0 || end <= start + 7) throw new Error("Chrome evaluation did not return a JSON value");
+  return JSON.parse(text.slice(start + 7, end).trim()) as T;
 }

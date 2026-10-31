@@ -1,4 +1,6 @@
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
+import type { SessionMessageView } from "../types/index.js";
+import { ZAI_LIST_API_SCRIPT, zaiMessagesApiScript } from "./browser-chat-api-scripts.js";
 import { MacMiniChromeTransport, parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
 
 type ZaiPhase = "generating" | "idle" | "unknown";
@@ -84,6 +86,9 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   private readonly cache = new Map<string, BrowserChat>();
   private operation: Promise<void> = Promise.resolve();
   private lastSubmittedAt = 0;
+  private accountScope: string | undefined;
+  getAccountScope(): string | undefined { return this.accountScope; }
+
 
   constructor(private readonly tools: ChromePageTools, private readonly pinnedPageId?: number) {}
 
@@ -158,6 +163,43 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     const page = await this.page();
     const state = await this.snapshot(page.id);
     const observedAt = new Date().toISOString();
+    // Native Z.ai HTTP listing: two pages, 100 stable IDs, no sidebar clicks.
+    try {
+      const data = parseChromeEvaluation<{
+        scope?: string; error?: string;
+        chats?: Array<{ id: string; title: string; updatedAt?: number; unread?: boolean;
+          lastRunStatus?: string }>;
+      }>(await this.tools.call("evaluate_script", { pageId: page.id, function: ZAI_LIST_API_SCRIPT }));
+      if (data.scope && /^[a-f0-9]{64}$/.test(data.scope) && Array.isArray(data.chats)) {
+        this.accountScope = data.scope;
+        const chats: BrowserChat[] = [];
+        for (const item of data.chats) {
+          if (!/^[a-f0-9-]{12,80}$/i.test(item.id) || !item.title) continue;
+          const selected = state.path === "/c/" + item.id;
+          const updatedAt = typeof item.updatedAt === "number" && item.updatedAt > 0
+            ? new Date(item.updatedAt < 1e12 ? item.updatedAt * 1000 : item.updatedAt).toISOString()
+            : observedAt;
+          const chat = this.recordChat("route:" + item.id, item.title, updatedAt,
+            selected ? state.path : undefined);
+          chat.working = selected && this.busy(state);
+          chat.stopVisible = selected && state.phase === "generating";
+          chat.unread = item.unread === true;
+          chats.push(chat);
+          this.cache.set(chat.id, chat);
+        }
+        const current = state.path.match(/^\/c\/([a-f0-9-]{12,80})$/i)?.[1];
+        if (current && !chats.some(chat => chat.id === "route:" + current)) {
+          const chat = this.recordChat("route:" + current,
+            state.selectedTitle || "Z.ai conversation", observedAt, state.path);
+          chat.working = this.busy(state);
+          chat.stopVisible = state.phase === "generating";
+          chats.unshift(chat);
+          this.cache.set(chat.id, chat);
+        }
+        return chats.slice(0,101);
+      }
+    } catch { /* Fallback to the verified sidebar, without writing to the page. */ }
+    this.accountScope = undefined;
     const counts = new Map<string, number>();
     for (const title of state.titles) counts.set(title, (counts.get(title) || 0) + 1);
     const result: BrowserChat[] = [];
@@ -273,6 +315,35 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       if (refined !== known) this.cache.set(id, refined);
       return { ...refined, working: this.busy(state), stopVisible: state.phase === "generating" };
     });
+  }
+
+  /** Read normalized history from Z.ai's own messages/batch API, without
+   * selecting or reloading the user's currently open conversation.
+   */
+  async getMessages(chatId: string): Promise<SessionMessageView[] | null> {
+    let nativeId = chatId.startsWith("route:") ? chatId.slice(6) : "";
+    if (!nativeId && chatId.startsWith("sidebar:")) {
+      const title = parseTitleId(chatId);
+      const candidates = [...this.cache.values()].filter(chat =>
+        chat.title === title && chat.id.startsWith("route:"));
+      if (candidates.length === 1) nativeId = candidates[0]!.id.slice(6);
+    }
+    if (!/^[a-f0-9-]{12,80}$/i.test(nativeId)) return null;
+    const page = await this.page();
+    const result = parseChromeEvaluation<{
+      error?: string; messages?: Array<{ id: string; role: string; text: string;
+        timestamp?: string; model?: string }>;
+    }>(await this.tools.call("evaluate_script",
+      { pageId: page.id, function: zaiMessagesApiScript(nativeId) }));
+    if (result.error || !Array.isArray(result.messages))
+      throw new Error("Z.ai history unavailable: " + (result.error || "unexpected response"));
+    return result.messages.filter(message => ["user", "assistant"].includes(message.role) &&
+      typeof message.id === "string" && typeof message.text === "string").map(message => ({
+      id: message.id, role: message.role as "user" | "assistant",
+      text: message.text, parts: [{ type: "text" as const, text: message.text }],
+      ...(message.timestamp ? { timestamp: message.timestamp } : {}),
+      ...(message.model ? { model: message.model } : {}),
+    }));
   }
 
   async sendMessage(input: { chatId: string; text: string; waitForCompletion?: boolean }): Promise<{ assistantText?: string }> {

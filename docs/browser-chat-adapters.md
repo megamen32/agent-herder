@@ -94,3 +94,49 @@ cookies or model names; each site retains its own browser ownership.
 A real Stop requires a dedicated test account with an actively generating
 chat. Live personal conversation sends/stops were deliberately not used
 in acceptance; read-only model discovery was verified against both sites.
+
+## Fast history and durable 100-chat cache
+
+Both browser site drivers read conversation history through the already
+authenticated, same-origin site APIs. They **do not** navigate away from the
+current Chrome tab to fetch histories. ChatGPT obtains its account-scoped
+bearer from `/api/auth/session` **inside the browser only**, uses it for
+the ChatGPT conversation API, and returns normalized text messages only.
+Z.ai uses `/api/v1/chats/{id}` and `messages/batch`. Neither token nor
+cookie value crosses the browser transport or gets logged or cached.
+
+The driver list APIs return up to **100 latest native chat IDs** per account.
+ChatGPT lists with `/backend-api/conversations` and Z.ai requests the first
+two pages of `/api/v1/chats/`. The previous sidebar snapshots remain a
+read-only discovery fallback if a private API is unavailable. Z.ai now
+uses stable `route:<uuid>` IDs for listed chats; legacy
+`sidebar:<title>` links can resolve their native IDs by unique title.
+
+The server maintains per-account SHA-256 namespaced compressed files under
+`~/.local/state/agent-herder/browser-chat-history/{chatgpt,zai}/<accountHash>/`.
+Each message file is mode 0600, parent folders 0700, with an upper bound of
+400 KB compressed or 500 KB JSON. Up to 100 most recent chats are retained
+per site/account; the account hash is generated inside Chrome from the
+account ID, not the access token. Older cache entries outside the current
+window are pruned.
+
+On startup the latest 100 histories are queued for **bounded sequential**
+background warming, rather than blocking the chat list. A user opening
+an uncached conversation gets a high-priority remote history read; afterward
+reopening returns the local history immediately. Existing cache is served
+before a background refresh, and an HTTP error cannot replace it with an
+empty transcript. The frontend keeps its own previously loaded view and
+polls the selected browser chat every 8 seconds for fresh replies; a subtle
+message shows that it is updating.
+
+History is deliberately a bounded recent text tail (up to 180 nonempty
+user/assistant messages, ~210 KB of text) rather than an unrestricted
+download of all media or reasoning traces. ChatGPT uses up to 60 recent
+turns; Z.ai fetches up to 180 recent message IDs in batches. Media binaries
+and authentication material are **not** cached.
+
+For smoke testing with a few conversations, set
+`AGENT_HERDER_BROWSER_CHAT_PREWARM_LIMIT=1`; production defaults to 100.
+If the site's private API changes, the last verified cache remains
+readable and the UI reports the unavailable refresh rather than inventing
+a transcript.

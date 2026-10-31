@@ -1302,6 +1302,15 @@ function App() {
       detailsReadGateRef.current.finish(requestId);
     }
   }, [directory.scope,directory.localHostId,viewCache]);
+  // Browser histories are stale-while-revalidate in Agent Herder. A cached
+  // transcript is shown immediately; this light poll paints newer replies
+  // without reloading the remote Chrome tab or clearing the old messages.
+  React.useEffect(() => {
+    if (!activeKey || !/^(chatgpt|zai):/.test(activeKey)) return;
+    const timer = window.setInterval(() => { void loadDetails(activeKey, false); }, 8_000);
+    return () => window.clearInterval(timer);
+  }, [activeKey, loadDetails]);
+
   React.useEffect(() => {
     if (!linkedLocalKey) {
       detailsReadGateRef.current.invalidate();setDetails(null);setDetailsFullVerified(false);setDetailsLoading(false);setDetailsHydrating(false);setLatestTimingMs(undefined);setHydrateTimingMs(undefined);
@@ -2466,7 +2475,13 @@ function App() {
 {showFleet && <div className="fleet-overlay" role="region" aria-label="Машины флота"><div className="fleet-overlay-panel"><button className="fleet-overlay-close quiet-button" aria-label="Закрыть машины флота" onClick={() => setShowFleet(false)}>Закрыть</button><FleetCabinet creationMode={fleetCreationMode} defaultHostId={selectedCreationHostId} onSelectedHostChange={setSelectedCreationHostId} activityRows={activity.snapshot.confirmed} /></div></div>}
     {remoteSelection&&directory.hosts.find(h=>h.hostId===remoteSelection.hostId)&&<RemoteSessionView key={JSON.stringify(remoteSelection)+cacheEpoch} renderMessage={message=>!hasVisibleMessage(message,showReasoning,showTools)?null:serviceNoteLabel(message)?<ServiceNote label={serviceNoteLabel(message)!} message={message}/>:<CollapsibleMessage message={message} showReasoning={showReasoning} showTools={showTools} jsonRendering={jsonRendering} collapseLongMessages={collapseLongMessages}/>} address={remoteSelection} host={directory.hosts.find(h=>h.hostId===remoteSelection.hostId)!} scope={directory.scope} cache={viewCache} onClose={()=>{setRemoteSelection(undefined);setMobileView("sessions");}}/>}
     <section className="chat-pane" style={remoteSelection||showSearch||showProjects?{display:'none'}:undefined}>
-      {cachedDetails&&<p className="cached-view-notice" role="status">Сохранённый просмотр. Отправка станет доступна после загрузки свежих данных.</p>}
+      {cachedDetails&&<p className="cached-view-notice" role="status">Сохранённая переписка. Обновляем сообщения с сайта; отправка станет доступна после проверки соединения.</p>}
+      {!cachedDetails && ["chatgpt", "zai"].includes(activeSession?.harness || "") && (
+        detailsLoading || detailsHydrating || details?.history?.source === "live-cache"
+      ) && <p className="cached-view-notice" role="status">История отображается из локального кэша, новые сообщения синхронизируются в фоне.</p>}
+      {!detailsLoading && !cachedDetails && ["chatgpt", "zai"].includes(activeSession?.harness || "")
+        && details?.history?.source === "unavailable"
+        && <p className="cached-view-notice" role="status">История этого чата ещё не сохранена или сайт недоступен. <button type="button" onClick={()=>activeKey&&void loadDetails(activeKey)}>Обновить</button></p>}
       <header className="chat-header">
         <button className="mobile-back" onClick={() => { setLayoutField("chatListOpen", true); setMobileView("sessions"); }} aria-label="К списку сессий">← <span>Сессии</span></button>
         <div className="chat-heading">{showCreateSession ? <><h2>Новый чат</h2><small>Выберите среду, модель и каталог проекта.</small></> : showJobs ? <><span className="eyebrow">AGENT HERDER</span><h2>Фоновые операции</h2><small>Запуски и запланированные действия Herder: состояние, результат и отмена. Это не доска задач проекта.</small></> : showStatistics ? <><span className="eyebrow">AGENT HERDER</span><h2>Статистика</h2><small>Реальные паттерны активности недавних сессий</small></> : showQuota ? <><span className="eyebrow">AGENT HERDER</span><h2>Квота</h2><small>Окна Codex, расход моделей, потребители</small></> : <><span className="eyebrow">{activeSession?.harness || "HERDER"}</span><h2 title={activeSession ? `${activeSession.title || activeSession.id}\n${activeSession.cwd || ""}` : undefined}>{activeSession ? (cleanSessionTitle(activeSession.title) || activeSession.id) : loading ? "Загрузка сессий…" : "Выберите сессию"}{(detailsLoading || detailsHydrating) && <span className="inline-loading-dot chat-loading-dot" role="status" aria-label="Загрузка сессии" />}</h2><small className="chat-session-state"><span>{activeSession?.harness || ""}</span>{activeSession && <><span aria-hidden="true"> · </span><span className={`status-label status-${statusClass(activeSession.status)}`}>{statusLabel(activeSession.status)}</span></>}</small>{SHOW_DEBUG_TIMINGS && <div className="load-timings" role="status" aria-label="Тайминги загрузки в браузере"><span title="Страница → список сессий готов">sessions <b>{formatLoadTiming(sessionsTimingMs)}</b></span>{activeKey && <><span title="Запрос свежих ходов">latest <b>{detailsLoading ? "…" : formatLoadTiming(latestTimingMs)}</b></span><span title="Фоновая история и метрики">hydrate <b>{detailsHydrating ? "…" : formatLoadTiming(hydrateTimingMs)}</b></span></>}</div>}</>}</div>

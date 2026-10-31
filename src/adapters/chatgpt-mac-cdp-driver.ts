@@ -1,4 +1,6 @@
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
+import type { SessionMessageView } from "../types/index.js";
+import { CHATGPT_LIST_API_SCRIPT, chatgptMessagesApiScript } from "./browser-chat-api-scripts.js";
 import { MacMiniChromeTransport, parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
 
 const ORIGIN = "https://chatgpt.com";
@@ -73,6 +75,9 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   private readonly cache = new Map<string, BrowserChat>();
   private operation: Promise<void> = Promise.resolve();
   private lastSubmittedAt = 0;
+  private accountScope: string | undefined;
+  getAccountScope(): string | undefined { return this.accountScope; }
+
 
   constructor(private readonly tools: ChromePageTools, private readonly pinnedPageId?: number) {}
 
@@ -110,10 +115,11 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS;
   }
 
-  private toChat(id: string, title: string, s: Snapshot): BrowserChat {
+  private toChat(id: string, title: string, s: Snapshot, at?: number): BrowserChat {
     const selected = s.path === "/c/" + id;
     return {
-      id, title, updatedAt: new Date().toISOString(),
+      id, title, updatedAt: typeof at === "number" && at > 0
+        ? new Date(at < 1e12 ? at * 1000 : at).toISOString() : new Date().toISOString(),
       working: selected && this.busy(s),
       stopVisible: selected && s.phase === "generating",
       unread: false, updatedAtSemantics: "observed-sidebar-order",
@@ -124,6 +130,31 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   private async listUnlocked(): Promise<BrowserChat[]> {
     const page = await this.page();
     const s = await this.snapshot(page.id);
+    // The real authenticated list API returns 100 native IDs immediately.
+    // It does not navigate or change the user's selected chat.
+    try {
+      const data = parseChromeEvaluation<{
+        scope?: string; error?: string;
+        chats?: Array<{ id: string; title: string; updatedAt?: number }>;
+      }>(await this.tools.call("evaluate_script", { pageId: page.id, function: CHATGPT_LIST_API_SCRIPT }));
+      if (data.scope && /^[a-f0-9]{64}$/.test(data.scope) && Array.isArray(data.chats)) {
+        this.accountScope = data.scope;
+        const seen = new Set<string>();
+        const chats: BrowserChat[] = [];
+        for (const entry of data.chats) {
+          if (!NATIVE_CHAT_ID.test(entry.id) || seen.has(entry.id) || !entry.title) continue;
+          seen.add(entry.id);
+          chats.push(this.toChat(entry.id, entry.title, s, entry.updatedAt));
+        }
+        const selected = s.path.match(/^\/c\/([a-f0-9-]{28,80})$/i)?.[1];
+        if (selected && NATIVE_CHAT_ID.test(selected) && !seen.has(selected)) {
+          chats.unshift(this.toChat(selected, this.cache.get(selected)?.title || "ChatGPT conversation", s));
+        }
+        for (const chat of chats) this.cache.set(chat.id, chat);
+        return chats;
+      }
+    } catch { /* The site may change its private API; retain the DOM fallback. */ }
+    this.accountScope = undefined;
     const seen = new Set<string>();
     const chats: BrowserChat[] = [];
     for (const { id, title } of s.chats) {
@@ -149,6 +180,27 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       if (!NATIVE_CHAT_ID.test(id)) return null;
       return (await this.listUnlocked()).find(c => c.id === id) ?? null;
     });
+  }
+
+  /** Authenticated read-only conversation API; never navigate to load history. */
+  async getMessages(chatId: string): Promise<SessionMessageView[] | null> {
+    if (!NATIVE_CHAT_ID.test(chatId)) return null;
+    const page = await this.page();
+    const result = parseChromeEvaluation<{
+      error?: string; messages?: Array<{ id: string; role: string; text: string;
+        timestamp?: string; model?: string }>;
+    }>(await this.tools.call("evaluate_script",
+      { pageId: page.id, function: chatgptMessagesApiScript(chatId) }));
+    if (result.error || !Array.isArray(result.messages)) {
+      throw new Error("ChatGPT history unavailable: " + (result.error || "unexpected response"));
+    }
+    return result.messages.filter(message => ["user", "assistant"].includes(message.role) &&
+      typeof message.text === "string" && typeof message.id === "string").map(message => ({
+      id: message.id, role: message.role as "user" | "assistant",
+      text: message.text, parts: [{ type: "text" as const, text: message.text }],
+      ...(message.timestamp ? { timestamp: message.timestamp } : {}),
+      ...(message.model ? { model: message.model } : {}),
+    }));
   }
 
   async sendMessage(input: { chatId: string; text: string; waitForCompletion?: boolean }): Promise<{ assistantText?: string }> {
