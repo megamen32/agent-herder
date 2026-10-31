@@ -62,3 +62,29 @@ and existing stored queued deliveries are not replayed during migration.
 The frontend shows `ChatGPT` and `Z.ai` as distinct harnesses and adapter
 cards. Browser-only adapters without native chat creation do not appear in
 the new-session dialog.
+
+## Stop generation and model selection (ChatGPT and Z.ai)
+
+Both provider instances expose `cancelTurn: true` and `modelSwitch: true`
+via their shared `BrowserChatAdapter`, backed by **site-specific** native
+controls. A successful Stop means the exact selected chat's visible Stop
+button was clicked; the conversation is not deleted. Stop never navigates
+to another chat, presses Enter, sends a prompt, or retries an uncertain click.
+
+`list_models(harness="chatgpt"|"zai")` reads models directly from the
+authenticated site's picker. The supported names depend on the account and
+page: example observed values were `GPT-6`, `GPT-5.6 Sol` for ChatGPT,
+and `GLM-5.3-Flash`, `GLM-5.3`, `GLM-5.2` for Z.ai. These are observed
+examples, not hard-coded allowed lists. Reasoning effort sliders are a
+separate feature; they are **not** claimed as model names.
+
+`change_model` targets one exact provider-scoped conversation. Both drivers
+require an idle composer without a personal draft, reject unknown/unlisted
+models, click only one exact option and require a readback from the site.
+If a click may have occurred but its outcome is unclear, the failure is
+not replayed automatically. The unified adapter contains no site selectors,
+cookies or model names; each site retains its own browser ownership.
+
+A real Stop requires a dedicated test account with an actively generating
+chat. Live personal conversation sends/stops were deliberately not used
+in acceptance; read-only model discovery was verified against both sites.

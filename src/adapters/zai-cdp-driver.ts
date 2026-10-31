@@ -154,6 +154,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       const id = "sidebar:" + encodeURIComponent(title);
       const chat = this.recordChat(id, title, observedAt, selected ? state.path : undefined);
       chat.working = selected && this.busy(state);
+      chat.stopVisible = selected && state.phase === "generating";
       result.push(chat);
     }
     // The current chat may be open but missing from the bounded sidebar.
@@ -162,6 +163,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
         ...this.recordChat("route:" + state.path.slice(3),
           state.selectedTitle || "ZAI conversation", observedAt, state.path),
         working: this.busy(state),
+        stopVisible: state.phase === "generating",
       });
     }
     for (const chat of result) this.cache.set(chat.id, chat);
@@ -240,13 +242,13 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       }
       if (!this.isSelected(id, known, state)) {
         // Never leave a currently generating conversation to inspect another.
-        if (this.busy(state)) return { ...known, working: true };
+        if (this.busy(state)) return { ...known, working: true, stopVisible: false };
         const selected = await this.selectChat(page.id, id, known);
-        if (selected === "busy") return { ...known, working: true };
+        if (selected === "busy") return { ...known, working: true, stopVisible: false };
         if (selected === "missing") return null;
         state = await this.confirmTarget(page.id, id, known);
       }
-      return { ...known, working: this.busy(state) };
+      return { ...known, working: this.busy(state), stopVisible: state.phase === "generating" };
     });
   }
 
@@ -358,6 +360,148 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       return {};
     });
   }
+
+  supportsModelSwitch(): boolean { return true; }
+
+  /** Read the Z.ai model menu on the existing authenticated tab. */
+  async listModels(): Promise<string[]> {
+    return this.exclusive(async () => {
+      const page = await this.page();
+      await this.snapshot(page.id);
+      const menu = parseChromeEvaluation<{ models: string[]; error?: string }>(
+        await this.tools.call("evaluate_script", { pageId: page.id, function: `async () => {
+          const visible = element => !!element && element.getClientRects().length > 0;
+          if (location.origin !== 'https://chat.z.ai') return {models:[],error:'wrong_origin'};
+          const buttons = [...document.querySelectorAll('button[aria-label="Select a model"]')].filter(visible);
+          if (buttons.length !== 1) return {models:[],error:'model_picker_unavailable'};
+          const button = buttons[0];
+          const wasOpen = button.getAttribute('data-state') === 'open';
+          if (!wasOpen) button.click();
+          try {
+            await new Promise(resolve => setTimeout(resolve, 160));
+            const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')]
+              .find(element => visible(element) && element.querySelector('button'));
+            if (!menu) return {models:[],error:'model_menu_unavailable'};
+            const models = [...menu.querySelectorAll('button')].filter(visible)
+              .map(option => (option.textContent || '').trim())
+              .filter(label => /^GLM-[A-Za-z0-9.-]+$/i.test(label) && label.length <= 100);
+            return {models:[...new Set(models)]};
+          } finally {
+            if (!wasOpen && button.getAttribute('data-state') === 'open') button.click();
+          }
+        }` }),
+      );
+      if (menu.error) throw new Error("Z.ai model discovery failed: " + menu.error);
+      return menu.models;
+    });
+  }
+
+  /** A model is selected only for the verified, idle target conversation. */
+  async changeModel(input: { chatId: string; model: string }): Promise<{ ok: boolean; error?: string }> {
+    return this.exclusive(async () => {
+      const { chatId, model } = input;
+      if (!/^[\w.\-]{3,110}$/.test(model) || !model.startsWith("GLM-")) {
+        return { ok: false, error: "Invalid Z.ai model name" };
+      }
+      const known = this.cache.get(chatId) ?? (await this.listUnlocked()).find(chat => chat.id === chatId);
+      if (!known) return { ok: false, error: "Z.ai chat is not in the authenticated inventory" };
+      const page = await this.page();
+      let state = await this.snapshot(page.id);
+      if (this.busy(state)) return { ok: false, error: "Z.ai model switch requires an idle chat without a personal draft" };
+      if (!this.isSelected(chatId, known, state)) {
+        const selection = await this.selectChat(page.id, chatId, known);
+        if (selection !== "selected") return { ok: false, error: "Z.ai chat could not be selected safely" };
+        state = await this.confirmTarget(page.id, chatId, known);
+      }
+      if (this.busy(state)) return { ok: false, error: "Z.ai chat became busy before model selection" };
+      try {
+        const receipt = parseChromeEvaluation<{ ok: boolean; reason?: string }>(
+          await this.tools.call("evaluate_script", { pageId: page.id, function: `async () => {
+            const model = ${JSON.stringify(model)};
+            const route = ${JSON.stringify(chatId.startsWith("route:") ? "/c/" + chatId.slice(6) : "")};
+            const title = ${JSON.stringify(chatId.startsWith("sidebar:") ? known.title : "")};
+            const visible = element => !!element && element.getClientRects().length > 0;
+            const stopped = () => [...document.querySelectorAll('button')].some(button => visible(button) &&
+              !!button.querySelector(':scope > span.block.size-3.rounded-xs.bg-text-inverted'));
+            const selectedTitle = () => {
+              const selected = document.querySelector('button[data-selected="true"]');
+              return selected?.querySelector('div[dir="auto"]')?.textContent?.trim()
+                || selected?.textContent?.trim() || '';
+            };
+            const editor = document.querySelector('textarea[placeholder="Send a Message"]');
+            const send = document.querySelector('#send-message-button');
+            const safe = () => location.origin === 'https://chat.z.ai'
+              && (route ? location.pathname === route :
+                new RegExp('^/c/[a-f0-9-]{12,80}$', 'i').test(location.pathname) && selectedTitle() === title)
+              && visible(send) && !!editor && !editor.value && !stopped();
+            if (!safe()) return {ok:false,reason:'target_not_idle'};
+            const buttons = [...document.querySelectorAll('button[aria-label="Select a model"]')].filter(visible);
+            if (buttons.length !== 1) return {ok:false,reason:'picker_missing'};
+            const button = buttons[0];
+            const wasOpen = button.getAttribute('data-state') === 'open';
+            if (!wasOpen) button.click();
+            try {
+              await new Promise(resolve => setTimeout(resolve, 160));
+              const option = () => [...document.querySelectorAll('[role="menu"][data-state="open"] button')]
+                .filter(visible).filter(item => (item.textContent || '').trim() === model);
+              const matches = option();
+              if (matches.length !== 1) return {ok:false,reason:'model_not_in_live_menu'};
+              if ((button.textContent || '').trim() === model) return {ok:true};
+              if (!safe()) return {ok:false,reason:'target_changed_before_click'};
+              matches[0].click();
+              await new Promise(resolve => setTimeout(resolve, 180));
+              return {ok:safe() && (button.textContent || '').trim() === model,
+                reason:'model_selection_readback_unconfirmed'};
+            } finally {
+              if (!wasOpen && button.getAttribute('data-state') === 'open') button.click();
+            }
+          }` }),
+        );
+        return receipt.ok ? { ok: true } :
+          { ok: false, error: "Z.ai model change not confirmed: " + (receipt.reason || "unknown") };
+      } catch {
+        return { ok: false, error: "Z.ai model change outcome unknown; do not retry automatically" };
+      }
+    });
+  }
+
+  /** Clicking Stop never navigates to or changes a different chat. */
+  async stopTurn(chatId: string): Promise<{ stopped: boolean; error?: string }> {
+    return this.exclusive(async () => {
+      const page = await this.page();
+      const known = this.cache.get(chatId) ?? (await this.listUnlocked()).find(chat => chat.id === chatId);
+      if (!known) return { stopped: false, error: "Z.ai chat not in authenticated inventory" };
+      const current = await this.snapshot(page.id);
+      if (!this.isSelected(chatId, known, current)) {
+        return { stopped: false, error: "Z.ai Stop requires the exact currently selected chat" };
+      }
+      if (current.phase !== "generating") return { stopped: false, error: "Z.ai is not generating in that chat" };
+      try {
+        return parseChromeEvaluation<{ stopped: boolean; error?: string }>(
+          await this.tools.call("evaluate_script", { pageId: page.id, function: `() => {
+            const route = ${JSON.stringify(chatId.startsWith("route:") ? "/c/" + chatId.slice(6) : "")};
+            const title = ${JSON.stringify(chatId.startsWith("sidebar:") ? known.title : "")};
+            const selected = document.querySelector('button[data-selected="true"]');
+            const selectedTitle = selected?.querySelector('div[dir="auto"]')?.textContent?.trim()
+              || selected?.textContent?.trim() || '';
+            const matches = location.origin === 'https://chat.z.ai' && (route
+              ? location.pathname === route
+              : new RegExp('^/c/[a-f0-9-]{12,80}$', 'i').test(location.pathname) && selectedTitle === title);
+            if (!matches) return {stopped:false,error:'target_changed'};
+            const stop = [...document.querySelectorAll('button')].filter(button =>
+              button.getClientRects().length > 0 && !button.disabled
+              && !!button.querySelector(':scope > span.block.size-3.rounded-xs.bg-text-inverted'));
+            if (stop.length !== 1) return {stopped:false,error:'stop_control_not_unique'};
+            stop[0].click();
+            return {stopped:true};
+          }` }),
+        );
+      } catch {
+        return { stopped: false, error: "Z.ai Stop click outcome unknown; do not retry automatically" };
+      }
+    });
+  }
+
 }
 
 /** Provider module loaded by the shared BrowserChatAdapter. No new Chrome instance. */

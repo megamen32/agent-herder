@@ -11,6 +11,8 @@ export interface BrowserChat {
   updatedAtSemantics?: string;
   providerId?: string;
   cwd?: string;
+  /** Only a currently selected generating chat has a real Stop control. */
+  stopVisible?: boolean;
 }
 
 /** A browser transport owns its authenticated page and implements these operations. */
@@ -21,6 +23,10 @@ export interface BrowserChatDriver {
     input: { chatId: string; text: string; waitForCompletion?: boolean },
     signal?: AbortSignal,
   ): Promise<{ assistantText?: string }>;
+  /** Stop only the actively generating turn of this exact conversation.
+   * Never navigates to another chat to find a Stop button.
+   */
+  stopTurn?(chatId: string, signal?: AbortSignal): Promise<{ stopped: boolean; error?: string }>;
   createChat?(input: { title?: string }, signal?: AbortSignal): Promise<BrowserChat>;
   listModels?(signal?: AbortSignal): Promise<string[]>;
   supportsModelSwitch?(): boolean;
@@ -69,8 +75,11 @@ export class BrowserChatAdapter implements HarnessAdapter {
   ) {
     this.type = provider.harness;
     this.name = provider.name;
-    this.controlCapabilities = { ...BrowserChatAdapter.browserCapabilities,
-      modelSwitch: driver.supportsModelSwitch?.() ?? typeof driver.changeModel === "function" };
+    this.controlCapabilities = {
+      ...BrowserChatAdapter.browserCapabilities,
+      cancelTurn: typeof driver.stopTurn === "function",
+      modelSwitch: driver.supportsModelSwitch?.() ?? typeof driver.changeModel === "function",
+    };
     this.browserFeatures = driver.browserFeatures ?? {
       nativeConversationIds: false,
       queueAfterGeneration: false,
@@ -173,8 +182,24 @@ export class BrowserChatAdapter implements HarnessAdapter {
     return session ? { ok: true, sessionId: id } : { ok: false, error: `Browser chat '${id}' not found` };
   }
 
-  async stopSession(): Promise<ControlResult> {
-    return { ok: false, error: "This browser provider does not expose native turn cancellation" };
+  /** Stop and cancel both map to the site's own Stop-generation control.
+   * The native chat stays alive and can accept subsequent human messages.
+   */
+  async stopSession(id: string): Promise<ControlResult> {
+    return this.cancelTurn(id);
+  }
+
+  async cancelTurn(id: string): Promise<ControlResult> {
+    if (!this.driver.stopTurn) {
+      return { ok: false, error: `${this.provider.name} does not expose a verified Stop control` };
+    }
+    try {
+      const receipt = await this.driver.stopTurn(this.nativeId(id));
+      return receipt.stopped ? { ok: true, sessionId: id } :
+        { ok: false, error: receipt.error || "No running turn to stop in the selected conversation" };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   async respondPermission(): Promise<{ ok: boolean; error?: string }> {
@@ -200,6 +225,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
         sourceRoute: chat.sourceRoute,
         transport: chat.sourceRoute ? "browser-owned-page" : "owned-chat-page",
         browserProvider: chat.providerId ?? this.provider.id,
+        stopVisible: chat.stopVisible === true,
         timestampSemantics: chat.updatedAtSemantics ?? "native-or-visible-order",
       },
     };

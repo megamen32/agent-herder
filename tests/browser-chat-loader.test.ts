@@ -25,8 +25,8 @@ describe("separate site adapters sharing one browser base class", () => {
     expect(zai.browserFeatures).toMatchObject({
       nativeConversationIds: false, accountArchiveViaCdp: false, queueAfterGeneration: true,
     });
-    expect(chatgpt.controlCapabilities).toMatchObject({ cancelTurn: false, modelSwitch: false });
-    expect(zai.controlCapabilities).toMatchObject({ cancelTurn: false, modelSwitch: false });
+    expect(chatgpt.controlCapabilities).toMatchObject({ cancelTurn: true, modelSwitch: true });
+    expect(zai.controlCapabilities).toMatchObject({ cancelTurn: true, modelSwitch: true });
   });
 
   it("scopes native chat IDs without mixing sessions or sending to another provider", async () => {

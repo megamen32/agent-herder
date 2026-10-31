@@ -114,7 +114,8 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     const selected = s.path === "/c/" + id;
     return {
       id, title, updatedAt: new Date().toISOString(),
-      working: selected ? this.busy(s) : s.phase !== "idle",
+      working: selected && this.busy(s),
+      stopVisible: selected && s.phase === "generating",
       unread: false, updatedAtSemantics: "observed-sidebar-order",
       sourceRoute: ORIGIN + "/c/" + id,
     };
@@ -230,6 +231,139 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       return {};
     });
   }
+
+  /** Read the site's model menu, leaving an already-open human menu untouched. */
+  async listModels(): Promise<string[]> {
+    return this.exclusive(async () => {
+      const page = await this.page();
+      await this.snapshot(page.id);
+      const models = parseChromeEvaluation<{ models: string[]; error?: string }>(
+        await this.tools.call("evaluate_script", { pageId: page.id, function: `async () => {
+          const buttons = [...document.querySelectorAll('button[aria-label="Выбрать модель ChatGPT"],button[aria-label="Select a ChatGPT model"]')]
+            .filter(button => button.getClientRects().length > 0);
+          if (buttons.length !== 1) return {models:[],error:'model_picker_unavailable'};
+          const button = buttons[0];
+          const alreadyOpen = button.getAttribute('data-state') === 'open';
+          if (!alreadyOpen) button.click();
+          try {
+            await new Promise(resolve => setTimeout(resolve, 160));
+            const options = [...document.querySelectorAll('[role="menuitemradio"]')]
+              .filter(option => option.getClientRects().length > 0);
+            return {models:[...new Set(options.map(option => (option.textContent || '').trim())
+              .filter(label => label && label.length <= 100))]};
+          } finally {
+            if (!alreadyOpen && button.getAttribute('data-state') === 'open') button.click();
+          }
+        }` }),
+      );
+      if (models.error) throw new Error("ChatGPT model discovery failed: " + models.error);
+      return models.models;
+    });
+  }
+
+  supportsModelSwitch(): boolean { return true; }
+
+  /** Model selection changes this *specific chat* only, not a global default.
+   * The browser-side transaction verifies the exact route, idle state, model
+   * item and checked state. An uncertain click is never retried.
+   */
+  async changeModel(input: { chatId: string; model: string }): Promise<{ ok: boolean; error?: string }> {
+    return this.exclusive(async () => {
+      const { chatId, model } = input;
+      if (!NATIVE_CHAT_ID.test(chatId) || !model.trim() || model.length > 100) {
+        return { ok: false, error: "Invalid ChatGPT chat ID or model name" };
+      }
+      const chat = this.cache.get(chatId) ?? (await this.listUnlocked()).find(item => item.id === chatId);
+      if (!chat) return { ok: false, error: "ChatGPT chat not in authenticated inventory" };
+      const page = await this.page();
+      let state = await this.snapshot(page.id);
+      if (this.busy(state)) return { ok: false, error: "ChatGPT model switch requires an idle chat without a personal draft" };
+      if (state.path !== "/c/" + chatId) {
+        await this.tools.call("navigate_page", { pageId: page.id, type: "url", url: ORIGIN + "/c/" + chatId });
+        let selected = false;
+        for (let i = 0; i < 5; i++) {
+          state = await this.snapshot(page.id);
+          if (state.path === "/c/" + chatId && !this.busy(state)) { selected = true; break; }
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        if (!selected) return { ok: false, error: "ChatGPT target model switch not verified" };
+      }
+      try {
+        const result = parseChromeEvaluation<{ ok: boolean; reason?: string }>(
+          await this.tools.call("evaluate_script", { pageId: page.id, function: `async () => {
+            const model = ${JSON.stringify(model)};
+            const chatPath = ${JSON.stringify("/c/" + chatId)};
+            const visible = element => !!element && element.getClientRects().length > 0;
+            const editor = document.querySelector('div[contenteditable="true"][role="textbox"][data-composer-markdown]');
+            const stop = () => [...document.querySelectorAll('button')].some(button => visible(button)
+              && (button.getAttribute('data-testid') === 'stop-button'
+              || /^(Stop generating|Stop response|Остановить генерацию|Остановить ответ|Остановить)$/i.test(button.getAttribute('aria-label') || '')));
+            const safe = () => location.origin === 'https://chatgpt.com' && location.pathname === chatPath
+              && visible(editor) && !(editor.textContent || '').trim() && !stop();
+            if (!safe()) return {ok:false,reason:'chat_not_idle_or_target_changed'};
+            const buttons = [...document.querySelectorAll('button[aria-label="Выбрать модель ChatGPT"],button[aria-label="Select a ChatGPT model"]')].filter(visible);
+            if (buttons.length !== 1) return {ok:false,reason:'model_picker_unavailable'};
+            const button = buttons[0];
+            const wasOpen = button.getAttribute('data-state') === 'open';
+            if (!wasOpen) button.click();
+            try {
+              await new Promise(resolve => setTimeout(resolve, 160));
+              const find = () => [...document.querySelectorAll('[role="menuitemradio"]')].filter(visible)
+                .filter(option => (option.textContent || '').trim() === model);
+              const options = find();
+              if (options.length !== 1) return {ok:false,reason:'model_not_in_live_menu'};
+              if (options[0].getAttribute('aria-checked') === 'true') return {ok:true};
+              if (!safe()) return {ok:false,reason:'target_changed_before_model_click'};
+              options[0].click();
+              await new Promise(resolve => setTimeout(resolve, 200));
+              if (!safe()) return {ok:false,reason:'post_click_target_unknown'};
+              if (button.getAttribute('data-state') !== 'open') button.click();
+              await new Promise(resolve => setTimeout(resolve, 160));
+              return {ok:find().length === 1 && find()[0].getAttribute('aria-checked') === 'true',
+                reason:'model_selection_readback_unconfirmed'};
+            } finally {
+              if (!wasOpen && button.getAttribute('data-state') === 'open') button.click();
+            }
+          }` }),
+        );
+        return result.ok ? { ok: true } :
+          { ok: false, error: "ChatGPT model change not confirmed: " + (result.reason || "unknown") };
+      } catch {
+        return { ok: false, error: "ChatGPT model selection outcome unknown; do not retry automatically" };
+      }
+    });
+  }
+
+  /** Only Stop for the exact *currently selected and generating* conversation. */
+  async stopTurn(chatId: string): Promise<{ stopped: boolean; error?: string }> {
+    return this.exclusive(async () => {
+      if (!NATIVE_CHAT_ID.test(chatId)) return { stopped: false, error: "Invalid ChatGPT chat ID" };
+      const page = await this.page();
+      const state = await this.snapshot(page.id);
+      if (state.path !== "/c/" + chatId) {
+        return { stopped: false, error: "ChatGPT Stop requires the exact currently selected chat" };
+      }
+      if (state.phase !== "generating") return { stopped: false, error: "ChatGPT is not generating in that chat" };
+      try {
+        const receipt = parseChromeEvaluation<{ stopped: boolean; error?: string }>(
+          await this.tools.call("evaluate_script", { pageId: page.id, function: `() => {
+            if (location.origin !== 'https://chatgpt.com' || location.pathname !== ${JSON.stringify("/c/" + chatId)})
+              return {stopped:false,error:'target_changed'};
+            const stop = [...document.querySelectorAll('button')].filter(button => button.getClientRects().length > 0
+              && !button.disabled && (button.getAttribute('data-testid') === 'stop-button'
+              || /^(Stop generating|Stop response|Остановить генерацию|Остановить ответ|Остановить)$/i.test(button.getAttribute('aria-label') || '')));
+            if (stop.length !== 1) return {stopped:false,error:'stop_control_not_unique'};
+            stop[0].click();
+            return {stopped:true};
+          }` }),
+        );
+        return receipt;
+      } catch {
+        return { stopped: false, error: "ChatGPT Stop click outcome unknown; do not retry automatically" };
+      }
+    });
+  }
+
 }
 
 /** One built-in authenticated ChatGPT instance on the existing Mac mini CDP owner. */
