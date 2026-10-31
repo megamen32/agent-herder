@@ -74,20 +74,13 @@ export class DeferredDeliverySweeper {
     if (this.timer) { clearInterval(this.timer); this.timer = undefined; }
   }
 
-  /** The adapter that owns one parked session: the stored harness first, then a bounded probe. */
+  /** The adapter of one parked session. Legacy parks made before the harness
+   * tag existed are never swept: waking sessions with weeks-old automatic
+   * handoffs is a decision for the owner, not a background reconciliation. */
   private async adapterFor(message: DeferredMessage): Promise<HarnessAdapter | undefined> {
-    if (message.harness) {
-      const adapter = this.adapters.get(message.harness);
-      return adapter?.getSession ? adapter : undefined;
-    }
-    for (const adapter of this.adapters.values()) {
-      if (!adapter.getSession || !this.harnesses.has(adapter.type)) continue;
-      try {
-        const session = await adapter.getSession(message.sessionId);
-        if (session && session.id === message.sessionId && session.harness === adapter.type) return adapter;
-      } catch { /* this adapter does not own the session */ }
-    }
-    return undefined;
+    if (!message.harness) return undefined;
+    const adapter = this.adapters.get(message.harness);
+    return adapter?.getSession ? adapter : undefined;
   }
 
   async sweep(now = Date.now()): Promise<DeferredSweepOutcome> {
