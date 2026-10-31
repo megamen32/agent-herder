@@ -43,3 +43,6 @@ integrations/opencode/*.release-*.js
 .agents/tasks/*/.lhc-publication/
 .agents/tasks/*/.lhc-leaves.lock
 .agents/tasks/*/.lhc-graph-publication-*/
+
+# Generated index allowlist of the fleet indexer (ServersAdministartion).
+.xerjignore
