@@ -17,8 +17,9 @@ const compact=(notes:any[])=>notes.slice(0,64).map(n=>({id:n.id,hostId:n.hostId,
 
 /** Explicit workspace state is separate from the native session's routing address.
  * Peer operations use the existing authenticated transport, never shell-derived CWD guesses. */
-export function registerWorkspaceTools(server:McpServer,deps:{hostId?:string;coordination?:CoordinationNoteStore;transport:GptAdminTransport}):void{
+export function registerWorkspaceTools(server:McpServer,deps:{hostId?:string;coordination?:CoordinationNoteStore;transport:GptAdminTransport;locateTransport?:GptAdminTransport}):void{
  const local=deps.hostId??hostname(),store=deps.coordination??coordinationNotes;
+ const locateTransport=deps.locateTransport??deps.transport;
  const peer=async(hostId:string,tool:string,args:Record<string,unknown>)=>{
   const value=unwrapResult(await deps.transport.call(`mcp:shell:${hostId}:AgentHerder`,tool,args));
   if(value.hostId!==hostId)throw new Error('workspace_peer_identity_mismatch');
@@ -29,6 +30,27 @@ export function registerWorkspaceTools(server:McpServer,deps:{hostId?:string;coo
   return {hostId:local,cwd:canonical};
  };
  server.registerTool('workspace_probe',{description:'Verify a directory on this actual host; returns canonical path and host identity. Does not execute commands.',inputSchema:z.object({cwd}).strict()},async a=>reply(await probe(a.cwd)));
+ server.registerTool('workspace_locate',{description:'Locate one project directory across the fleet machines: every reachable host answers whether it holds this exact path, with its own canonical path. A reachable host without the path answers not_present; an unreachable host answers host_unreachable. Use this before steering or moving work between machines.',inputSchema:z.object({cwd}).strict()},async a=>{
+  const hosts:Array<Record<string,unknown>>=[];
+  try{hosts.push({...await probe(a.cwd),present:true});}catch{hosts.push({hostId:local,present:false,reason:'not_present'});}
+  let servers:unknown[]=[];
+  try{const registry=unwrapResult(await locateTransport.discover());if(Array.isArray(registry.servers))servers=registry.servers;}catch{/* the registry is unreadable: the local answer still stands */}
+  const targets=servers.map(entry=>String((entry as {server_id?:unknown}).server_id??'')).filter(id=>id.startsWith('mcp:shell:')&&id.endsWith(':AgentHerder'));
+  await Promise.all(targets.map(async target=>{
+   const hostId=target.split(':')[2]!;
+   if(!hostId||hostId===local)return;
+   try{hosts.push({...await locateTransport.call(target,'workspace_probe',{cwd:a.cwd}).then(value=>{const checked=unwrapResult(value);if(checked.hostId!==hostId)throw new Error('workspace_peer_identity_mismatch');return checked;}),present:true});}
+   catch{
+    // The probe failed: a host that still answers fleet_node_info is reachable,
+    // so the directory simply is not there; anything else is an unreachable host.
+    let reason='not_present';
+    try{const info=unwrapResult(await locateTransport.call(target,'fleet_node_info',{}));if(info.hostId!==hostId)throw new Error('workspace_peer_identity_mismatch');}
+    catch{reason='host_unreachable';}
+    hosts.push({hostId,present:false,reason});
+   }
+  }));
+  return reply({cwd:a.cwd,localHostId:local,hosts});
+ });
  server.registerTool('workspace_reserve',{description:'Reserve paths on this workspace host for a fully addressed session. Owner identity is attribution, not caller authentication.',inputSchema:z.object({owner,cwd,paths,ttlSeconds:ttl}).strict()},async a=>{
   const verified=await probe(a.cwd);
   // Full owner identity prevents equal native IDs on different machines colliding.

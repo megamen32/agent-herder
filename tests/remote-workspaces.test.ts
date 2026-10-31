@@ -41,6 +41,20 @@ describe('actual host workspace MCP',()=>{
   await local.call('workspace_release',id);expect(await local.store.activeWorkspaceObservation(id.sessionId)).not.toMatchObject({source:'declared'});
   expect(requests.every(r=>r.target==='mcp:shell:host88:AgentHerder')).toBe(true);
  });
+ it('locates one project across the fleet with explicit absent and unreachable hosts',async()=>{
+  root=await mkdtemp(join(tmpdir(),'herder-locate-'));const work=join(root,'project');await mkdir(work);
+  const remote=await node('host88',{call:async(_target:string,name:string,args:any)=>{if(name==='workspace_probe')return {hostId:'host88',cwd:(args as {cwd:string}).cwd};return {hostId:'host88'};}});
+  const transport={discover:async()=>({servers:[{kind:'child_mcp',server_id:'mcp:shell:host100:AgentHerder',status:'online'},{kind:'child_mcp',server_id:'mcp:shell:host88:AgentHerder',status:'online'},{kind:'child_mcp',server_id:'mcp:shell:host44:AgentHerder',status:'online'}]}),call:async(target:string,name:string,args:any)=>{if(target.includes(':host88:'))return remote.call(name,args);throw new Error('ssh: connect to host host44 port 22: Connection refused');}};
+  const local=await node('host100',transport);
+  const answer=await local.call('workspace_locate',{cwd:work});
+  expect(answer).toMatchObject({cwd:work,localHostId:'host100'});
+  const hosts=(answer.hosts as Array<Record<string,unknown>>).slice().sort((a,b)=>String(a.hostId).localeCompare(String(b.hostId)));
+  expect(hosts).toEqual([
+   {hostId:'host100',cwd:work,present:true},
+   {hostId:'host44',present:false,reason:'host_unreachable'},
+   {hostId:'host88',cwd:work,present:true},
+  ]);
+ });
  it('refuses nonexistent directories and wrong peer host without persisting a declaration',async()=>{
   root=await mkdtemp(join(tmpdir(),'herder-workspace-'));const local=await node('host100',{call:async()=>({hostId:'wrong',cwd:'/unverified'})});
   await expect(local.call('workspace_declare',{sessionId:'s',harness:'codex',hostId:'host88',cwd:'/repo'})).rejects.toThrow('workspace_peer_identity_mismatch');

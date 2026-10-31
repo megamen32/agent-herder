@@ -718,7 +718,7 @@ function registerTools(
   registerSessionWorkspaceTools(server);
   registerSessionSearchTools(server,{transport:new FleetDirectTransport(fleetPeers()),peers:fleetPeers().map(peer=>({hostId:peer.hostId,target:`mcp:shell:${peer.hostId}:AgentHerder`}))});
   registerHarnessMeshTools(server, { adapters, gptadmin: new FleetDirectTransport(fleetPeers()), deliveryPolicy: readLaunchPolicyStateForGate, userMessageDelivery, trustedIngress: trustedMeshIngress, ...(inventorySupervisor?{supervisor:inventorySupervisor}:{}) });
-  registerWorkspaceTools(server, { transport: workspaceTransport });
+  registerWorkspaceTools(server, { transport: workspaceTransport, locateTransport: new FleetDirectTransport(fleetPeers()) });
   registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, launchPolicyRevision: readLaunchPolicyRevision, fleetTransport: workspaceTransport, fleetPeers: fleetPeers().filter(peer => peer.hostId !== "MacBook-Pro-User.local").map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), sessionReadTransport: new FleetDirectTransport(fleetPeers()), sessionReadPeers: fleetPeers().map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), policyRevisionLedgerPath: fleetPolicyRevisionLedgerPath(autopilotStateDir) });
   // The common settings of the fleet: a node that has no owner of the document
   // named in its environment registers no tool and claims nothing.
