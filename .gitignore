@@ -37,3 +37,9 @@ dist.pre-*/
 *.bak-*
 *.bak.mavis-*
 integrations/opencode/*.release-*.js
+
+# Generated plan bookkeeping of the LHC tooling: mirror snapshots, locks and
+# revision bundles are machine state of one publication, not source work.
+.agents/tasks/*/.lhc-publication/
+.agents/tasks/*/.lhc-leaves.lock
+.agents/tasks/*/.lhc-graph-publication-*/
