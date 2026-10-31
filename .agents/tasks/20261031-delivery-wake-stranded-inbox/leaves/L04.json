@@ -1,6 +1,6 @@
 {
   "label": "Записать каноническую задачу и закрыть план",
-  "status": "queued",
+  "status": "done",
   "description": "Записать .agents/tasks/20261031-delivery-wake-stranded-inbox/task.md: дефект, фикс, тесты, живая проба пробуждения, публикация и границы; синхронизировать план (leaves → graph → page → отчёт) и проверить check-plan.",
   "acceptance": "task.md описывает дефект, изменение, проверку и границы; check-plan проходит; план и запись закоммичены и отправлены в origin/main.",
   "affected_files": [
@@ -19,7 +19,7 @@
   ],
   "id": "L04",
   "created_at": "2026-10-31T03:47:05+03:00",
-  "updated_at": "2026-10-31T03:47:05+03:00",
+  "updated_at": "2026-10-31T04:06:45+03:00",
   "progress_events": [
     {
       "at": "2026-10-31T03:47:05+03:00",
@@ -46,6 +46,33 @@
       },
       "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
       "harness": "zcode"
+    },
+    {
+      "at": "2026-10-31T04:05:08+03:00",
+      "note": "Каноническая запись задачи пишется.",
+      "changes": {
+        "status": "running",
+        "started_at": "2026-10-31T04:05:00+03:00"
+      },
+      "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+      "harness": "zcode"
+    },
+    {
+      "at": "2026-10-31T04:06:45+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "actual_minutes": 12,
+        "finished_at": "2026-10-31T04:12:00+03:00",
+        "result": "Каноническая запись task.md с планом, дефектами, тестами, публикацией и живым подтверждением; check-plan проходит.",
+        "updated_at": "2026-10-31T04:12:00+03:00"
+      },
+      "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+      "harness": "zcode"
     }
-  ]
+  ],
+  "started_at": "2026-10-31T04:05:00+03:00",
+  "actual_minutes": 12,
+  "finished_at": "2026-10-31T04:12:00+03:00",
+  "result": "Каноническая запись task.md с планом, дефектами, тестами, публикацией и живым подтверждением; check-plan проходит."
 }

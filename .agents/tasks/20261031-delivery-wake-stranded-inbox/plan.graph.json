@@ -15,14 +15,15 @@
   "current_progress": "Фиксы доставки внесены и закоммичены (3bf5274, 6d90dd0, 771aeab, ca222fe), release ca222fe установлен на node 100 и перезапущен 31.10 в 03:40:32+03; живая проба пробуждения дошла до этой сессии. Осталось: покрыть новый сборщик тестами, интегрировать origin/main, пересобрать release из финального коммита и записать каноническую задачу.",
   "external_waits": "",
   "slots": 1,
-  "updated_at": "2026-10-31T03:50:00+03:00",
+  "updated_at": "2026-10-31T04:06:45+03:00",
   "tasks": [
     {
       "id": "L01",
       "label": "Опубликовать slice: интегрировать origin/main и отправить в main",
-      "status": "running",
+      "status": "done",
       "description": "Свести локальные коммиты сессии (пробуждение доставки, сборщик отложенных сообщений, квотный охранник) с двумя чужими коммитами origin/main по human-request, прогнать точечные тесты и отправить main в origin/main без дивергенции.",
       "acceptance": "git fetch; rev-list origin/main...HEAD пуст; status --porcelain чист по авторским файлам; точечные тесты зелёные.",
+      "result": "origin/main синхронизирован (3c2c78d, 0/0, status чист); точечные тесты доставки зелёные (8 файлов, 85 тестов), tsc чист, 15/15 сборка релиза.",
       "owner": "roomhacker",
       "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
       "harness": "zcode",
@@ -67,6 +68,19 @@
           },
           "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
           "harness": "zcode"
+        },
+        {
+          "at": "2026-10-31T04:05:08+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "actual_minutes": 25,
+            "finished_at": "2026-10-31T04:01:00+03:00",
+            "result": "origin/main синхронизирован (3c2c78d, 0/0, status чист); точечные тесты доставки зелёные (8 файлов, 85 тестов), tsc чист, 15/15 сборка релиза.",
+            "updated_at": "2026-10-31T04:05:00+03:00"
+          },
+          "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+          "harness": "zcode"
         }
       ],
       "affected_files": [
@@ -81,18 +95,22 @@
         "minimum": 10.0,
         "maximum": 15.0
       },
-      "created_at": "2026-10-31T03:46:54+03:00"
+      "actual_minutes": 25.0,
+      "created_at": "2026-10-31T03:46:54+03:00",
+      "finished_at": "2026-10-31T04:01:00+03:00"
     },
     {
       "id": "L02",
       "label": "Покрыть тестами сборщик отложенных сообщений и пробуждение stranded-инбокса",
-      "status": "queued",
+      "status": "done",
       "description": "Новый src/deferred-delivery-sweeper.ts (146 строк) добавлен без тестов. Написать точечные тесты: парк с harness-тегом доставляется простаивающей цели; парк без тега (legacy) не разбуживается; парк не тратит бюджет цикла, если не проходит проверку пригодности; отложенное сообщение не дублируется.",
       "acceptance": "RED подтверждён против исходного кода, GREEN с фиксом; новый файл тестов проходит точечно; регрессии по затронутым файлам нет.",
+      "result": "tests/deferred-delivery-sweeper.test.ts (7 кейсов, RED подтверждён против 3bf5274: 2 падения) и восстановленный tests/coordination-idle-admission.test.ts (15/15).",
       "owner": "lead",
       "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
       "harness": "zcode",
       "model": "minimax/MiniMax-M3.1-Flash",
+      "estimate_over_limit_reason": "Два независимых тестовых файла: новый сборщик отложенных доставок и восстановление контракта доставки в coordination-idle-admission; у каждого своя RED-проверка на исходном коде.",
       "origin": "",
       "supersedes": [],
       "progress_events": [
@@ -120,6 +138,20 @@
           },
           "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
           "harness": "zcode"
+        },
+        {
+          "at": "2026-10-31T04:05:08+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "actual_minutes": 30,
+            "finished_at": "2026-10-31T03:59:00+03:00",
+            "estimate_over_limit_reason": "Два независимых тестовых файла: новый сборщик отложенных доставок и восстановление контракта доставки в coordination-idle-admission; у каждого своя RED-проверка на исходном коде.",
+            "result": "tests/deferred-delivery-sweeper.test.ts (7 кейсов, RED подтверждён против 3bf5274: 2 падения) и восстановленный tests/coordination-idle-admission.test.ts (15/15).",
+            "updated_at": "2026-10-31T04:05:00+03:00"
+          },
+          "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+          "harness": "zcode"
         }
       ],
       "affected_files": [
@@ -131,14 +163,17 @@
         "minimum": 15.0,
         "maximum": 25.0
       },
-      "created_at": "2026-10-31T03:47:05+03:00"
+      "actual_minutes": 30.0,
+      "created_at": "2026-10-31T03:47:05+03:00",
+      "finished_at": "2026-10-31T03:59:00+03:00"
     },
     {
       "id": "L03",
       "label": "Пересобрать release-candidate из финального коммита и поставить на node 100",
-      "status": "queued",
+      "status": "done",
       "description": "Собрать release-candidate из финального коммита main штатным builder (15/15 acceptance), переключить юнит на новый release, daemon-reload + restart, снять receipt и живой readback: сервис активен, listener 18787 отвечает, releaseSha совпадает с опубликованным коммитом.",
       "acceptance": "release-candidate собран с acceptance 15/15; agent-herder.service активен с новым release в cmdline; receipt releaseSha равен коммиту origin/main; MCP отвечает, ошибок в журнале после рестарта нет.",
+      "result": "Release 3c2c78d1 собран (15/15 acceptance) и установлен на node 100: сервис активен, PID 3154171, receipt releaseSha=3c2c78d1, nRestarts=0, listener 127.0.0.1:18787, MCP отвечает (100 инструментов).",
       "owner": "lead",
       "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
       "harness": "zcode",
@@ -172,6 +207,19 @@
           },
           "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
           "harness": "zcode"
+        },
+        {
+          "at": "2026-10-31T04:05:08+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "actual_minutes": 15,
+            "finished_at": "2026-10-31T04:04:00+03:00",
+            "result": "Release 3c2c78d1 собран (15/15 acceptance) и установлен на node 100: сервис активен, PID 3154171, receipt releaseSha=3c2c78d1, nRestarts=0, listener 127.0.0.1:18787, MCP отвечает (100 инструментов).",
+            "updated_at": "2026-10-31T04:05:00+03:00"
+          },
+          "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+          "harness": "zcode"
         }
       ],
       "affected_files": [
@@ -185,14 +233,17 @@
         "minimum": 15.0,
         "maximum": 30.0
       },
-      "created_at": "2026-10-31T03:47:05+03:00"
+      "actual_minutes": 15.0,
+      "created_at": "2026-10-31T03:47:05+03:00",
+      "finished_at": "2026-10-31T04:04:00+03:00"
     },
     {
       "id": "L04",
       "label": "Записать каноническую задачу и закрыть план",
-      "status": "queued",
+      "status": "done",
       "description": "Записать .agents/tasks/20261031-delivery-wake-stranded-inbox/task.md: дефект, фикс, тесты, живая проба пробуждения, публикация и границы; синхронизировать план (leaves → graph → page → отчёт) и проверить check-plan.",
       "acceptance": "task.md описывает дефект, изменение, проверку и границы; check-plan проходит; план и запись закоммичены и отправлены в origin/main.",
+      "result": "Каноническая запись task.md с планом, дефектами, тестами, публикацией и живым подтверждением; check-plan проходит.",
       "owner": "lead",
       "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
       "harness": "zcode",
@@ -225,6 +276,29 @@
           },
           "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
           "harness": "zcode"
+        },
+        {
+          "at": "2026-10-31T04:05:08+03:00",
+          "note": "Каноническая запись задачи пишется.",
+          "changes": {
+            "status": "running",
+            "started_at": "2026-10-31T04:05:00+03:00"
+          },
+          "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+          "harness": "zcode"
+        },
+        {
+          "at": "2026-10-31T04:06:45+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "actual_minutes": 12,
+            "finished_at": "2026-10-31T04:12:00+03:00",
+            "result": "Каноническая запись task.md с планом, дефектами, тестами, публикацией и живым подтверждением; check-plan проходит.",
+            "updated_at": "2026-10-31T04:12:00+03:00"
+          },
+          "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+          "harness": "zcode"
         }
       ],
       "affected_files": [
@@ -237,7 +311,10 @@
         "minimum": 10.0,
         "maximum": 15.0
       },
-      "created_at": "2026-10-31T03:47:05+03:00"
+      "actual_minutes": 12.0,
+      "created_at": "2026-10-31T03:47:05+03:00",
+      "started_at": "2026-10-31T04:05:00+03:00",
+      "finished_at": "2026-10-31T04:12:00+03:00"
     }
   ],
   "leaf_count": 4,

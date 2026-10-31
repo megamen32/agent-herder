@@ -1,6 +1,6 @@
 {
   "label": "Покрыть тестами сборщик отложенных сообщений и пробуждение stranded-инбокса",
-  "status": "queued",
+  "status": "done",
   "description": "Новый src/deferred-delivery-sweeper.ts (146 строк) добавлен без тестов. Написать точечные тесты: парк с harness-тегом доставляется простаивающей цели; парк без тега (legacy) не разбуживается; парк не тратит бюджет цикла, если не проходит проверку пригодности; отложенное сообщение не дублируется.",
   "acceptance": "RED подтверждён против исходного кода, GREEN с фиксом; новый файл тестов проходит точечно; регрессии по затронутым файлам нет.",
   "affected_files": [
@@ -18,7 +18,7 @@
   "depends_on": [],
   "id": "L02",
   "created_at": "2026-10-31T03:47:05+03:00",
-  "updated_at": "2026-10-31T03:47:05+03:00",
+  "updated_at": "2026-10-31T04:05:08+03:00",
   "progress_events": [
     {
       "at": "2026-10-31T03:47:05+03:00",
@@ -44,6 +44,24 @@
       },
       "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
       "harness": "zcode"
+    },
+    {
+      "at": "2026-10-31T04:05:08+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "actual_minutes": 30,
+        "finished_at": "2026-10-31T03:59:00+03:00",
+        "estimate_over_limit_reason": "Два независимых тестовых файла: новый сборщик отложенных доставок и восстановление контракта доставки в coordination-idle-admission; у каждого своя RED-проверка на исходном коде.",
+        "result": "tests/deferred-delivery-sweeper.test.ts (7 кейсов, RED подтверждён против 3bf5274: 2 падения) и восстановленный tests/coordination-idle-admission.test.ts (15/15).",
+        "updated_at": "2026-10-31T04:05:00+03:00"
+      },
+      "session": "sess_b003c15d-b30c-4568-aabe-44c460a312bf",
+      "harness": "zcode"
     }
-  ]
+  ],
+  "actual_minutes": 30,
+  "finished_at": "2026-10-31T03:59:00+03:00",
+  "estimate_over_limit_reason": "Два независимых тестовых файла: новый сборщик отложенных доставок и восстановление контракта доставки в coordination-idle-admission; у каждого своя RED-проверка на исходном коде.",
+  "result": "tests/deferred-delivery-sweeper.test.ts (7 кейсов, RED подтверждён против 3bf5274: 2 падения) и восстановленный tests/coordination-idle-admission.test.ts (15/15)."
 }
