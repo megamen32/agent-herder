@@ -107,6 +107,31 @@ function stubScopedCollectionReads(adapter: CodexAppServerAdapter, options: {
 }
 
 describe("Codex app-server adapter", () => {
+  it("a busy app-server thread/list page falls back to the persisted state index", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-thread-list-deadline-"));
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", cwd: root });
+    const { internals } = stubScopedCollectionReads(adapter, { root, ready: true, listedThreads: [] });
+    const originalRequest = internals.request;
+    internals.request = async (method: string, params?: Record<string, unknown>) => {
+      if (method === "thread/list") throw new Error("Codex app-server timed out during thread/list");
+      return originalRequest(method, params);
+    };
+    internals.rawTranscriptAdapter.listSessions = async () => [
+      { id: "index-a", harness: "codex", status: "idle", cwd: root, lastActivity: "2026-10-31T00:00:00.000Z" },
+      { id: "index-b", harness: "codex", status: "idle", cwd: root, lastActivity: "2026-10-30T00:00:00.000Z" },
+      { id: "index-c", harness: "codex", status: "idle", cwd: root, lastActivity: "2026-10-29T00:00:00.000Z" },
+    ];
+    try {
+      await expect(adapter.listSessions({ limit: 2 })).resolves.toMatchObject([{ id: "index-a" }, { id: "index-b" }]);
+      const receipt = adapter.getSessionSnapshotReceipt();
+      expect(receipt.reason).toBe("app_server_thread_list_deadline");
+      expect(receipt.exhaustive).toBe(false);
+      expect(receipt.source).toBe("codex-state-index");
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it("aborts a project factory during deferred discovery init and awaits every registered adapter disposal", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-abort-factory-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "abort-factory", projectRoot: root });

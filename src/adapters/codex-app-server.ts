@@ -683,7 +683,26 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       let sessions: CodexThread[];
       if (options.limit) {
         const limit = Math.max(1, Math.min(Math.floor(options.limit), 100));
-        const page = await this.request("thread/list", {limit, archived:false, sortKey:"updated_at", sortDirection:"desc"}) as {data?:CodexThread[];nextCursor?:string|null};
+        // A daemon that is inside one giant rollout answers its control RPC
+        // only after the turn. The persisted state index serves the same
+        // bounded page without the native controller, and the receipt says so.
+        const requestedThreadListDeadlineMs = Number(process.env.AGENT_HERDER_CODEX_THREAD_LIST_DEADLINE_MS || 5000);
+        const threadListDeadlineMs = Number.isFinite(requestedThreadListDeadlineMs) && requestedThreadListDeadlineMs >= 500 ? requestedThreadListDeadlineMs : 5000;
+        let page: {data?: CodexThread[]; nextCursor?: string | null} | undefined;
+        try {
+          page = await this.request("thread/list", {limit, archived:false, sortKey:"updated_at", sortDirection:"desc"}, "thread/list", threadListDeadlineMs) as {data?:CodexThread[];nextCursor?:string|null};
+        } catch (error) {
+          if (!(error instanceof Error && error.message.startsWith("Codex app-server timed out during"))) throw error;
+          const fallback = await this.rawTranscriptAdapter.listSessions();
+          const rawReceipt = this.rawTranscriptAdapter.getSessionSnapshotReceipt();
+          this.sessionSnapshotReceipt = {
+            exhaustive: fallback.length > limit ? false : rawReceipt.exhaustive === true,
+            observedAt: new Date().toISOString(),
+            source: rawReceipt.source || "codex-state-index",
+            reason: "app_server_thread_list_deadline",
+          };
+          return fallback.length > limit ? fallback.slice(0, limit) : fallback;
+        }
         sessions = page.data || [];
         bounded = Boolean(page.nextCursor);
         const indexed = await this.rawTranscriptAdapter.getNativeUnmaterializedThreadIds(limit);
@@ -2878,7 +2897,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     return model;
   }
 
-  private async request(method: string, params: unknown, stage = method): Promise<unknown> {
+  private async request(method: string, params: unknown, stage = method, timeoutMs = this.requestTimeoutMs): Promise<unknown> {
     try { this.assertLifecycleActive(); }
     catch (error) { return Promise.reject(error); }
     if (!this.isTransportWritable()) return Promise.reject(new Error("Codex app-server is not connected"));
@@ -2900,7 +2919,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`Codex app-server timed out during ${stage}${this.stderrTail ? `; stderr: ${this.stderrTail}` : ""}`));
-      }, this.requestTimeoutMs);
+      }, Math.max(1, timeoutMs));
       timer.unref?.();
       this.pending.set(id, { resolve, reject, timer });
       try {
