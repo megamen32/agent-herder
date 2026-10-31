@@ -3,6 +3,7 @@ import { hostname } from "node:os";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { HarnessAdapter } from "../types/index.js";
+import type { ResumeAfterService } from "../resume-after.js";
 import { sessionIdentity } from "../session-identity.js";
 import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
@@ -37,6 +38,7 @@ import {
   handleCreateSession,
   handleNewOrResume,
   handleDeliver,
+  scheduleDeliver,
   handleStopAgent,
   handleRespondPermission,
   handleSetPermissions,
@@ -100,6 +102,8 @@ export function registerSessionTools(server: McpServer, deps: {
   userMessageDelivery?: UserMessageDelivery;
   /** Owner-routed explicit ZCode queue processing, backed by its native owner's durable job registry. */
   sessionQueueControl?: SessionQueueControlGateway;
+  /** Durable resume-after service backing scheduled deliveries. */
+  resumeAfter?: ResumeAfterService;
 }): void {
   const { adapters, jobs, events } = deps;
   const userMessageDelivery = deps.userMessageDelivery ?? new UserMessageDelivery(adapters, {
@@ -693,7 +697,7 @@ export function registerSessionTools(server: McpServer, deps: {
     const result = await handleNewOrResume(adapters, args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
-  server.registerTool("deliver", { description: "Deliver a message to an agent. Existing targets default to current-turn-only delivery; idle/completed targets are skipped without deferred debt. Newly created named targets receive their initial task. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed.", inputSchema: DeliverSchema }, async(args)=>{ const route=await sessionRoute(args);if(route.denied)throw new Error("project_session_scope_unavailable");if(route.hostTargetUnavailable)throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);await assertDeliveryModelAllowed(route.adapters,{sessionId:args.sessionId,harness:args.harness,cwd:args.cwd,model:args.model});const result=await handleDeliver(route.adapters,route.args);publishSessionsChanged();return {content:[{type:"text" as const,text:result}]}; });
+  server.registerTool("deliver", { description: "Deliver a message to an agent. Existing targets default to current-turn-only delivery; idle/completed targets are skipped without deferred debt. Newly created named targets receive their initial task. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed. deliverIn (seconds) or deliverAt (RFC3339) schedules the message through the durable resume-after service: exact sessionId targets of this machine, the target must exist, a model override is refused, busy sessions queue the message at fire time; status via resume_after_status, cancel via resume_after_cancel with the owner from the schedule receipt. Omit both to deliver immediately.", inputSchema: DeliverSchema }, async(args)=>{ const route=await sessionRoute(args);if(route.denied)throw new Error("project_session_scope_unavailable");if(route.hostTargetUnavailable)throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);await assertDeliveryModelAllowed(route.adapters,{sessionId:args.sessionId,harness:args.harness,cwd:args.cwd,model:args.model});if(args.deliverIn!==undefined||args.deliverAt!==undefined){const result=await scheduleDeliver(route.adapters,deps.resumeAfter,route.args);return {content:[{type:"text" as const,text:result}]};}const result=await handleDeliver(route.adapters,route.args);publishSessionsChanged();return {content:[{type:"text" as const,text:result}]}; });
   server.registerTool("stop_agent", { description: "Stop / abort a running agent session. A session of another machine is stopped there, through its own native session.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional().describe("Machine that owns the session. Omitted stops a session of this machine.") }) }, async (args) => {
     const owner = typeof args.hostId === "string" ? normalizeHostId(args.hostId, hostname()) : hostname();
     // Another machine owns its own native session, so the stop runs there.

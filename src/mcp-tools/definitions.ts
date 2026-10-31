@@ -147,10 +147,14 @@ export const DeliverSchema = z.object({
   activation: z.enum(["always", "if_running", "defer"]).optional().describe("Omitted: active-turn-only for existing targets; initial task starts a newly created named target. Explicit always starts/wakes a task; if_running never wakes/defers; defer explicitly retains input for later."),
   mode: z.enum(["queue", "sync"]).optional().default("queue"),
   model: z.string().trim().min(1).max(MAX_MODEL_LENGTH).regex(/^[^\u0000-\u001f\u007f]*$/).optional(),
+  deliverIn: z.number().int().min(1).max(30 * 24 * 3600).optional().describe("Delay in seconds before delivery (600 = in 10 minutes). Omit for immediate delivery. Exactly one of deliverIn/deliverAt."),
+  deliverAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/).optional().describe("Absolute RFC3339 delivery time instead of a delay. Exactly one of deliverIn/deliverAt."),
 }).superRefine((v,ctx)=>{
   const named=Boolean(v.harness && v.name && v.cwd);
   if (!v.sessionId && !named) ctx.addIssue({code:z.ZodIssueCode.custom,message:"Provide sessionId or harness+name+cwd"});
   if (v.sessionId && (v.name || v.cwd)) ctx.addIssue({code:z.ZodIssueCode.custom,message:"Use either sessionId or named target fields, not both"});
+  if (v.deliverIn !== undefined && v.deliverAt !== undefined) ctx.addIssue({code:z.ZodIssueCode.custom,message:"Use either deliverIn or deliverAt, not both"});
+  if ((v.deliverIn !== undefined || v.deliverAt !== undefined) && v.model) ctx.addIssue({code:z.ZodIssueCode.custom,message:"A scheduled delivery cannot preserve a model override; select it explicitly at delivery time"});
 });
 
 /** Override the work machine and/or work directory of an already live session. */

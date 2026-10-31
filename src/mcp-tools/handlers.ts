@@ -1,4 +1,5 @@
 import {meshDiscoveryTimeoutMs} from "../mesh/discovery-timeout.js";
+import type { ResumeAfterService } from "../resume-after.js";
 import { HarnessAdapter, AgentSession } from "../types/index.js";
 import { z } from "zod";
 import {
@@ -687,6 +688,7 @@ export async function handleNewOrResume(
 
 export async function handleDeliver(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
   const parsed = DeliverSchema.parse(args);
+  if (parsed.deliverIn !== undefined || parsed.deliverAt !== undefined) throw new Error("scheduled_delivery_wrong_path: scheduled delivery is executed by the deliver tool path, which persists the schedule durably; direct handleDeliver calls must omit deliverIn/deliverAt");
   return deliveryBudgetFor(adapters).run({target: `${parsed.harness || "auto"}:${parsed.sessionId || `${parsed.name}:${parsed.cwd}`}`,
     inputId: parsed.inputId, message: parsed.message}, () => deliverOnce(adapters, parsed));
 }
@@ -966,4 +968,63 @@ function formatDuration(seconds: number): string {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   return `${days}d${hours}h`;
+}
+
+
+/**
+ * Schedule a delivery through the durable resume-after service.
+ *
+ * The schedule is registered, not delayed in-process: a restart re-arms the
+ * timer, the wait fires exactly once and is visible through resume_after_status,
+ * and resume_after_cancel removes it. The target is resolved to an exact
+ * native session at registration time, so a schedule can never fire into a
+ * guessed or newly created session.
+ */
+export async function scheduleDeliver(
+  adapters: Map<string, HarnessAdapter>,
+  resumeAfter: ResumeAfterService | undefined,
+  args: unknown,
+): Promise<string> {
+  if (!resumeAfter) throw new Error("scheduled_delivery_unavailable: this runtime has no durable resume-after service");
+  const parsed = DeliverSchema.parse(args);
+  if (parsed.deliverIn === undefined && parsed.deliverAt === undefined) {
+    throw new Error("scheduled_delivery_needs_trigger: provide deliverIn (seconds) or deliverAt (RFC3339)");
+  }
+  if (parsed.hostId) {
+    const owner = normalizeHostId(parsed.hostId, hostname());
+    if (owner !== hostname()) {
+      throw new Error(`scheduled_delivery_remote_host:${owner}: scheduled delivery supports sessions of this machine; schedule on the owning host instead`);
+    }
+  }
+  if (!parsed.sessionId) {
+    throw new Error("scheduled_delivery_needs_session_id: schedule deliveries with an exact sessionId target; named targets are resolved only at immediate delivery time");
+  }
+  const found = await findSession(adapters, parsed.sessionId, parsed.harness);
+  if (!found) throw new Error(`scheduled_delivery_target_missing: session '${parsed.sessionId}' not found`);
+  const ref = { harness: found.session.harness, sessionId: found.session.id };
+  if (parsed.message.length > 16000) {
+    throw new Error("scheduled_delivery_message_too_long: scheduled messages are limited to 16000 characters");
+  }
+  const trigger = parsed.deliverIn !== undefined
+    ? { kind: "delay" as const, delayMs: parsed.deliverIn * 1000 }
+    : { kind: "at" as const, at: parsed.deliverAt as string };
+  // Stable retry identity: an explicit inputId, otherwise the exact schedule
+  // fingerprint. A retried call re-reads the same durable wait instead of
+  // scheduling a second copy of the message.
+  const requestId = parsed.inputId
+    ?? `deliver-scheduled:${createHash("sha256").update(JSON.stringify([ref.harness, ref.sessionId, parsed.message, trigger])).digest("hex").slice(0, 40)}`;
+  const wait = await resumeAfter.register({ owner: ref, message: parsed.message, requestId, trigger });
+  if (wait.state !== "waiting") {
+    return JSON.stringify({ ok: false, scheduled: false, waitId: wait.id, state: wait.state, reason: wait.reason ?? "the wait did not enter the waiting state" });
+  }
+  return JSON.stringify({
+    ok: true,
+    scheduled: true,
+    waitId: wait.id,
+    owner: wait.owner,
+    deliverAt: wait.scheduledAt ?? null,
+    requestId,
+    status: "resume_after_status",
+    cancel: "resume_after_cancel",
+  });
 }
