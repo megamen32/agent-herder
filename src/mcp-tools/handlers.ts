@@ -41,7 +41,7 @@ import { unwrapResult } from "../mesh/protocol.js";
 import type { GptAdminTransport } from "../mesh/gptadmin.js";
 import { fleetDirectTransport } from "../mesh/fleet-direct-transport.js";
 import { isCoordinationActive, sendCurrentTurnOnly, skippedCoordination, previousCoordinationReceipt } from "../coordination-active-delivery.js";
-import { deferredMessages, isBusyCodexWriter, withDeferred } from "../deferred-messages.js";
+import { deferredMessages, isBusyCodexWriter, parkForDelivery, withDeferred } from "../deferred-messages.js";
 import { respondToNativePermission } from "../permission-control/reply.js";
 import {
   buildTranscriptArchiveCard,
@@ -579,7 +579,15 @@ async function sendMessageOnce(
     : await buildMessageProvenanceHeader(adapters, parsed, found.session);
   const deliveredBody = parsed.message;
   const baseMessage = `${provenanceHeader}\n\n${deliveredBody}`;
-  const pending = await withDeferred(parsed.sessionId, baseMessage);
+  // Human queue-mode sends wait for the current turn and are the deliveries a
+  // Herder restart can interrupt hours later: park durably first, so the deferred
+  // sweeper still delivers the message if this job dies before admission. Paths
+  // without the shared durable delivery must not park.
+  const parksQueueMessage = parsed.humanRequested === true && parsed.mode === "queue"
+    && found.session.harness !== "minimax-code" && Boolean(userMessageDelivery);
+  const pending = parksQueueMessage
+    ? await parkForDelivery(found.session.harness, parsed.sessionId, baseMessage)
+    : await withDeferred(parsed.sessionId, baseMessage);
   const injected = await coordinationNotes.inject(found.session, pending.message);
   const injectedMessage = parsed.humanRequested ? injected : await compactAutomaticMessage(injected, parsed.message);
   if (await automaticDeliveryHeld(found.session, false, found.adapter)) return HUMAN_STOP_MESSAGE;
@@ -700,7 +708,12 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
     if (activation === "defer" && fresh.status !== "running") { await deferredMessages.add(fresh.id, await compactAutomaticMessage(deliveredMessage)); return JSON.stringify({ ok:true, sessionId:fresh.id, harness:fresh.harness, sessionStatus:fresh.status, delivery:"deferred", activated:false }); }
     const modelError = await selectDeliveryModel(found.adapter,fresh,parsed.model);
     if (modelError) return JSON.stringify({ok:false,sessionId:fresh.id,delivery:"not_attempted",activated:false,error:modelError});
-    const pending = await withDeferred(fresh.id, deliveredMessage);
+    // A delivery that may wake or start the target parks durably first, so an
+    // interrupted job never loses the message; current-turn-only delivery keeps
+    // its no-deferred-debt contract.
+    const pending = activation !== "if_running"
+      ? await parkForDelivery(fresh.harness, fresh.id, deliveredMessage)
+      : await withDeferred(fresh.id, deliveredMessage);
     const injected = await compactAutomaticMessage(await coordinationNotes.inject(fresh, pending.message), parsed.message);
     if (await automaticDeliveryHeld(fresh, false, found.adapter)) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: HUMAN_STOP_MESSAGE });
     const options = {message:injected,model:parsed.model,retainedInboxIds:pending.ids,queue:parsed.mode==="queue",inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),origin:"automation" as const};

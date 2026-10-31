@@ -421,7 +421,7 @@ export const toolDefinitions: Tool[] = [
   },
   {
     name: "deliver",
-    description: "High-level agent delivery. Target by sessionId or harness+name+cwd. create controls whether a missing named session is created. Omitted activation is active-turn-only for existing targets; a newly created named target receives its initial task. Explicit activation=always may wake/start the agent; if_running only delivers while currently running; defer stores for the next Agent Herder-delivered turn without waking an inactive target. Herder evaluates activity at delivery time, so callers should not pre-check with list_agents.",
+    description: "High-level agent delivery. Target by sessionId or harness+name+cwd. create controls whether a missing named session is created. Omitted activation is active-turn-only for existing targets (idle targets answer skipped_inactive with a nextAction hint); a newly created named target receives its initial task. Explicit activation=always may wake/start the agent; if_running only delivers while currently running; defer stores for the next Agent Herder-delivered turn without waking an inactive target. Deliveries that may wake a target park durably first, and a background sweeper delivers parked messages once the target is idle, so interrupted jobs do not lose them. Herder evaluates activity at delivery time, so callers should not pre-check with list_agents.",
     inputSchema: {
       type: "object" as const,
       properties: {

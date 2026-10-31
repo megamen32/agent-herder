@@ -22,7 +22,8 @@ export async function sendCurrentTurnOnly(adapter: HarnessAdapter, id: string, o
 
 export function skippedCoordination(session: AgentSession): string {
   if (session.meta?.nativeStateObserved === false || session.meta?.nativeLoaded === false) return JSON.stringify({ok:false,sessionId:session.id,harness:session.harness,delivery:'not_attempted',activated:false,error:'Текущая native-активность не установлена.'});
-  return JSON.stringify({ok:true,sessionId:session.id,harness:session.harness,sessionStatus:session.status,delivery:'skipped_inactive',activated:false});
+  return JSON.stringify({ok:true,sessionId:session.id,harness:session.harness,sessionStatus:session.status,delivery:'skipped_inactive',activated:false,
+    nextAction:{activation:'always',instruction:'Re-send with activation=always to wake this inactive target and deliver the message, or activation=defer to park it for the next delivered turn.'}});
 }
 
 /** Previously accepted/unknown input identities are receipt-only, even after

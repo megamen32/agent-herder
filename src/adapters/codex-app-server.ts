@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { isAbsolute, join, resolve } from "node:path";
 import { realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { assertCodexQuota, CodexQuotaBlockedError, type QuotaReader } from "../codex-quota-guard.js";
+import { assertCodexQuota, codexQuotaExemptModel, CodexQuotaBlockedError, type QuotaReader } from "../codex-quota-guard.js";
 import { CodexDeliveryReceipts } from "./codex-delivery-receipts.js";
 import WebSocket from "ws";
 import { getHumanStopStore } from "../human-stop-store.js";
@@ -2864,7 +2864,14 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     catch (error) { return Promise.reject(error); }
     if (!this.isTransportWritable()) return Promise.reject(new Error("Codex app-server is not connected"));
     if (["thread/start", "thread/fork", "thread/resume", "turn/start", "turn/steer"].includes(method)) {
-      await assertCodexQuota(method, this.quotaReader ?? (() => this.request("account/rateLimits/read", {})));
+      // The quota guard protects the OpenAI Codex account. A thread pinned to a
+      // non-OpenAI model route (e.g. OmniRoute zc/glm-*) never draws on it.
+      const scoped = params as { model?: unknown; threadId?: unknown };
+      const model = typeof scoped?.model === "string" ? scoped.model
+        : typeof scoped?.threadId === "string" ? this.threads.get(scoped.threadId)?.model : undefined;
+      if (!codexQuotaExemptModel(model)) {
+        await assertCodexQuota(method, this.quotaReader ?? (() => this.request("account/rateLimits/read", {})));
+      }
       this.assertLifecycleActive();
       if (!this.isTransportWritable()) throw new Error("Codex app-server disconnected during quota check");
     }

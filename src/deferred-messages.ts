@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 
-export interface DeferredMessage { id: string; sessionId: string; message: string; createdAt: string;
+export interface DeferredMessage { id: string; sessionId: string; message: string; createdAt: string; harness?: string;
   activeTurn?: {harness:string;identity:string;inputId:string;digest:string;expiresAt:number;state:'pending'|'offered'|'hook_returned'|'expired';deferredIds?:string[]};
 }
 type State = { version: 1; messages: DeferredMessage[] };
@@ -11,7 +11,9 @@ type State = { version: 1; messages: DeferredMessage[] };
 export class DeferredMessageStore {
   private chain: Promise<unknown> = Promise.resolve();
   constructor(private readonly filePath = process.env.AGENT_HERDER_DEFERRED_MESSAGES || resolve(homedir(), ".local/state/agent-herder/deferred-messages.json")) {}
-  async add(sessionId: string, message: string): Promise<DeferredMessage> { return this.serial(async () => { const s=await this.read(); const prior=s.messages.find(m=>!m.activeTurn && m.sessionId===sessionId && m.message===message); if (prior) return prior; const m={id:randomUUID(),sessionId,message,createdAt:new Date().toISOString()}; s.messages.push(m); await this.write(s); return m; }); }
+  async add(sessionId: string, message: string, harness?: string): Promise<DeferredMessage> { return this.serial(async () => { const s=await this.read(); const prior=s.messages.find(m=>!m.activeTurn && m.sessionId===sessionId && m.message===message); if (prior) return prior; const m={id:randomUUID(),sessionId,message,createdAt:new Date().toISOString(),...(harness?{harness}:{})}; s.messages.push(m); await this.write(s); return m; }); }
+  /** Every durably parked regular (non active-turn) message across all sessions. */
+  async listAll(): Promise<DeferredMessage[]> { return this.serial(async () => (await this.read()).messages.filter(m=>!m.activeTurn)); }
   async list(sessionId: string): Promise<DeferredMessage[]> { return this.serial(async () => (await this.read()).messages.filter(m=>!m.activeTurn && m.sessionId===sessionId)); }
   async take(sessionId: string): Promise<DeferredMessage[]> { return this.serial(async () => { const s=await this.read(); const messages=s.messages.filter(m=>!m.activeTurn && m.sessionId===sessionId); if (!messages.length) return []; const ids=new Set(messages.map(m=>m.id)); s.messages=s.messages.filter(m=>!ids.has(m.id)); await this.write(s); return messages; }); }
   async remove(ids: string[]): Promise<void> { if (!ids.length) return; await this.serial(async()=>{ const s=await this.read(); const set=new Set(ids); s.messages=s.messages.filter(m=>m.activeTurn || !set.has(m.id)); await this.write(s); }); }
@@ -77,6 +79,17 @@ export function renderDeferredMessages(messages: DeferredMessage[]): string | nu
 
 export function isBusyCodexWriter(harness: string, error?: string): boolean {
   return harness === "codex" && /already has an active writer/i.test(error || "");
+}
+
+/** Park one delivery durably before its native dispatch and return its store id.
+ * A crash between parking and admission leaves the message parked, so the deferred
+ * sweeper can still deliver it when the target is idle. The envelope is never
+ * extended with other parked messages: every parked message is dispatched by its
+ * own delivery (which removes it on admission) or by the sweeper, so piggy-backing
+ * would duplicate concurrently in-flight work. */
+export async function parkForDelivery(harness:string, sessionId:string, message:string):Promise<{message:string; ids:string[]}> {
+  const parked=await deferredMessages.add(sessionId,message,harness);
+  return {message,ids:[parked.id]};
 }
 
 export async function withDeferred(sessionId:string, message:string):Promise<{message:string; ids:string[]}> {

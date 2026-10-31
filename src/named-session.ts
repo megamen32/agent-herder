@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import lockfile from "proper-lockfile";
 import type { AgentSession, CodexServiceTier, HarnessAdapter } from "./types/index.js";
 import { coordinationNotes } from "./coordination-notes.js";
-import { deferredMessages, isBusyCodexWriter, withDeferred } from "./deferred-messages.js";
+import { deferredMessages, isBusyCodexWriter, parkForDelivery, withDeferred } from "./deferred-messages.js";
 import { getHumanStopStore } from "./human-stop-store.js";
 import { automaticDeliveryHeld, HUMAN_STOP_MESSAGE } from "./human-stop-actions.js";
 import { isCoordinationActive, sendCurrentTurnOnly, previousCoordinationReceipt } from "./coordination-active-delivery.js";
@@ -427,7 +427,10 @@ export async function newOrResumeNamedSession(
       };
     }
   }
-  const pending = await withDeferred(resolved.target.id, agentRelayEnvelope(request.message));
+  // Queue-mode continuation parks durably before dispatch for restart safety.
+  const pending = (request.mode ?? "sync") === "queue"
+    ? await parkForDelivery(resolved.adapter.type, resolved.target.id, agentRelayEnvelope(request.message))
+    : await withDeferred(resolved.target.id, agentRelayEnvelope(request.message));
   const injectedMessage = await coordinationNotes.inject(resolved.target, pending.message);
   if (await sourceHeldNow(request) || await automaticDeliveryHeld(resolved.target, false, resolved.adapter)) return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created, ...createdServiceTier };
   const inputId = request.inputId ?? (request.humanRequested ? undefined : createHash("sha256").update(request.message).digest("hex"));
@@ -809,7 +812,11 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
     if (activation==="defer" && fresh.status!=="running") { await deferredMessages.add(fresh.id,request.message); return {ok:true,created,sessionId:fresh.id,sessionStatus:fresh.status,delivery:"deferred",activated:false,...normalized}; }
     const modelError = await selectDeliveryModel(adapter,fresh,request.model);
     if (modelError) return {...failed(normalized,modelError,"not_attempted"),sessionId:fresh.id,activated:false};
-    const pending=await withDeferred(fresh.id,agentRelayEnvelope(request.message, "deliver")); const injected=await coordinationNotes.inject(fresh,pending.message);
+    // A delivery that may wake or start the target parks durably first; the
+    // deferred sweeper delivers it if this attempt is interrupted.
+    const pending=activation!=='if_running'
+      ? await parkForDelivery(adapter.type, fresh.id, agentRelayEnvelope(request.message, "deliver"))
+      : await withDeferred(fresh.id,agentRelayEnvelope(request.message, "deliver")); const injected=await coordinationNotes.inject(fresh,pending.message);
     if (await sourceHeldNow(request) || await automaticDeliveryHeld(fresh, false, adapter)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: fresh.id, activated: false };
     const options={message:injected,model:request.model,retainedInboxIds:pending.ids,queue:(request.mode||"queue")==="queue",inputId:request.inputId ?? createHash("sha256").update(request.message).digest("hex"),origin:"automation" as const};
     const sent=activation==='if_running'?await sendCurrentTurnOnly(adapter,fresh.id,options):await adapter.sendMessage(fresh.id,options);

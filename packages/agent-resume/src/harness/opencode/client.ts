@@ -1215,6 +1215,24 @@ export class OpenCodeClient implements HarnessClient {
     }
   }
 
+  /** Wake one stranded queued inbox item: steering it starts session execution.
+   * OpenCode only auto-drains the inbox of a cleanly idle session, so a prompt
+   * admitted while no turn executes (after an interrupted or failed turn) would
+   * otherwise wait forever. No-op when a turn is already running. */
+  async wakeInboxItem(id: string, inboxId: string): Promise<boolean> {
+    await this.probeProtocol();
+    if (!this.isV2 || !inboxId) return false;
+    try { if (await this.getActiveTurnId(id)) return false; } catch { return false; }
+    try {
+      const res = await this.fetch(this.api(`/session/${encodeURIComponent(id)}/inbox/${encodeURIComponent(inboxId)}`), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ delivery: "steer" }),
+      });
+      return res.ok;
+    } catch { return false; }
+  }
+
   async waitForIdle(id: string, signal?: AbortSignal): Promise<void> {
     await this.probeProtocol();
     const wait = this.isV2

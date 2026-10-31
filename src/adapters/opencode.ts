@@ -349,6 +349,9 @@ export class OpenCodeAdapter implements HarnessAdapter {
     modelSwitch: true,
     subagents: true,
     events: true,
+    // Native v2 supports steering a running turn (sendActiveMessage); a v1
+    // server degrades to a durable current-turn context reservation.
+    steer: true,
   };
 
   private readonly client: OpenCodeClient;
@@ -740,7 +743,15 @@ export class OpenCodeAdapter implements HarnessAdapter {
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
-    return normalizeSendAdmission(await this.client.send(id, { message: options.message, delivery: options.queue ? "queue" : "steer", ...(options.inputId ? { inputId: options.inputId } : {}) }));
+    const result = normalizeSendAdmission(await this.client.send(id, { message: options.message, delivery: options.queue ? "queue" : "steer", ...(options.inputId ? { inputId: options.inputId } : {}) }));
+    // A prompt admitted while no turn executes strands in the native inbox
+    // after an interrupted/failed turn: steering the admitted item wakes
+    // execution, so the message is delivered now instead of waiting forever.
+    if (result.ok && result.nativeInputMessageId && !options.activeTurnOnly) {
+      try { await this.client.wakeInboxItem(id, result.nativeInputMessageId); }
+      catch { /* best effort: the item stays queued for the next native boundary */ }
+    }
+    return result;
   }
 
   async stopSession(id: string): Promise<{ ok: boolean; error?: string }> {

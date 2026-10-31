@@ -120,7 +120,9 @@ describe("registered Codex communication delivery", () => {
       expect(methods.filter(m => m === "turn/start")).toHaveLength(1);
       expect(accepted.filter(x => x === "wake idle once")).toHaveLength(1);
       expect(accepted.filter(x => x === "second distinct idle input")).toHaveLength(1);
-      expect(deferred).not.toHaveBeenCalled();
+      // Wake deliveries park durably before dispatch and remove the parked id on admission.
+      expect(deferred).toHaveBeenCalled();
+      expect(removeInbox).toHaveBeenCalledWith(["fixture-deferred"]);
     } finally {
       await client.close(); await server.close(); await adapter.dispose();
       for (const socket of ws.clients) socket.terminate();

@@ -85,6 +85,7 @@ import { registerCdpTools } from "./mcp/cdp-tools.js";
 import { registerSessionTools } from "./mcp/session-tools.js";
 import {withCatalogProjection} from "./mcp/catalog-projection.js";
 import { UserMessageDelivery } from "./user-message-delivery.js";
+import { DeferredDeliverySweeper } from "./deferred-delivery-sweeper.js";
 import {SessionQueueControl} from "./session-queue-control.js";
 import {SessionQueueControlGateway} from "./session-queue-control-gateway.js";
 import { registerResourceOwnershipTools } from "./mcp/resource-ownership-tools.js";
@@ -1091,6 +1092,10 @@ async function main() {
     permissionNoticeObserver,
   });
   const userMessageDelivery = new UserMessageDelivery(adapters,processSupervisor,herderJobs);
+  // Deliver durably parked deferred messages once their target is idle; see
+  // src/deferred-delivery-sweeper.ts. AGENT_HERDER_DEFERRED_SWEEP_INTERVAL_MS=0 disables it.
+  const deferredDeliverySweeper = new DeferredDeliverySweeper(adapters);
+  deferredDeliverySweeper.start();
   const localSessionQueueControl=new SessionQueueControl({jobs:herderJobs,humanStops:humanStopStore,
     readTarget:async target=>{
       if(target.hostId.toLowerCase()!==hostname().toLowerCase()||target.harness!=="zcode")return null;

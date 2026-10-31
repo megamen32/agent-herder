@@ -136,6 +136,11 @@ export async function checkCodexQuota(reader:QuotaReader=readCodexUsage,path=cod
     return {policy:{...DEFAULT_CODEX_QUOTA_POLICY},revision:"",decision:{allowed:false,reason:"quota_policy_unavailable",remainingPercent:null,windows:[],checkedAt:new Date().toISOString()} as QuotaDecision,lastDenial};
   }
 }
+/** A model route that never draws on the OpenAI Codex account (e.g. OmniRoute zc/glm-*). */
+export function codexQuotaExemptModel(model: string | null | undefined): boolean {
+  return typeof model === "string" && /^(zc\/|glm[-_.0-9])/i.test(model.trim());
+}
+
 export async function assertCodexQuota(operation:string,reader:QuotaReader=readCodexUsage,allowLocalHistory=true):Promise<void> {
   const {decision}=await checkCodexQuota(reader,codexQuotaPolicyPath(),allowLocalHistory);
   if(!decision.allowed){lastDenial={operation,decision};throw new CodexQuotaBlockedError(decision,operation);}
