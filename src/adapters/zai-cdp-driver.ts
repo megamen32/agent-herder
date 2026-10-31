@@ -1,6 +1,7 @@
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import { MacMiniChromeTransport, parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
 
+type ZaiPhase = "generating" | "idle" | "unknown";
 type ZaiSnapshot = {
   origin: string;
   path: string;
@@ -8,14 +9,17 @@ type ZaiSnapshot = {
   selectedTitle?: string;
   titles: string[];
   composer: boolean;
+  phase: ZaiPhase;
+  draftPresent: boolean;
 };
 type BrowserPage = { id: number; url: string };
 
 const ZAI_ORIGIN = "https://chat.z.ai";
 const MAX_MESSAGE_CHARS = 16_000;
 const ROUTE_PATTERN = /^\/c\/[a-f0-9-]{12,80}$/i;
+const POST_SEND_GUARD_MS = 1_800;
 
-/** Extract only tab IDs and origins from the shared Chrome owner's page list. */
+/** Extract only tab IDs and exact ZAI origins from the shared Chrome owner's page list. */
 export function parseZaiPages(text: string): BrowserPage[] {
   return text.split("\n").flatMap(line => {
     const match = line.match(/^\s*(\d+):.*?\((https:\/\/chat\.z\.ai(?:\/[^)]*)?)\)/);
@@ -36,24 +40,44 @@ function parseTitleId(id: string): string {
   return title;
 }
 
-const LIST_SCRIPT = `() => {
+/**
+ * Real ZAI buttons:
+ *  - generating: button > span.block.size-3.rounded-xs.bg-text-inverted (square Stop)
+ *  - idle: #send-message-button (may be disabled with an empty composer!)
+ * Never interpret a missing Stop as idle unless Send actually exists.
+ */
+export const ZAI_ACTIVITY_SCRIPT = `() => {
   const buttons = [...document.querySelectorAll('button[data-selected]')];
   const titles = buttons.map(button => button.querySelector('div[dir="auto"]')?.textContent?.trim()
     || button.textContent?.trim() || '').filter(Boolean);
   const selected = buttons.find(button => button.getAttribute('data-selected') === 'true');
+  const visible = element => !!element && element.getClientRects().length > 0;
+  const stop = [...document.querySelectorAll('button')].some(button =>
+    visible(button) && !!button.querySelector(':scope > span.block.size-3.rounded-xs.bg-text-inverted')
+  );
+  const send = document.querySelector('#send-message-button');
+  const composer = document.querySelector('textarea[placeholder="Send a Message"]');
   return {
     origin: location.origin, path: location.pathname,
     loggedIn: !!document.querySelector('#chat-group-tab-zai-web'),
     titles: titles.slice(0, 300),
     selectedTitle: selected?.querySelector('div[dir="auto"]')?.textContent?.trim()
       || selected?.textContent?.trim() || undefined,
-    composer: !!document.querySelector('textarea[placeholder="Send a Message"]'),
+    composer: !!composer,
+    phase: stop ? 'generating' : (visible(send) && !!composer ? 'idle' : 'unknown'),
+    draftPresent: !!composer?.value,
   };
 }`;
 
+/**
+ * One owned ZAI tab over the existing Mac mini Chrome CDP gateway.
+ * Exact reads can select the requested chat only when the current tab is idle.
+ * An unknown UI state is always busy, never permission to submit a message.
+ */
 export class ZaiCdpDriver implements BrowserChatDriver {
   private readonly cache = new Map<string, BrowserChat>();
   private operation: Promise<void> = Promise.resolve();
+  private lastSubmittedAt = 0;
 
   constructor(private readonly tools: ChromePageTools, private readonly pinnedPageId?: number) {}
 
@@ -78,38 +102,60 @@ export class ZaiCdpDriver implements BrowserChatDriver {
 
   private async snapshot(pageId: number): Promise<ZaiSnapshot> {
     const data = parseChromeEvaluation<ZaiSnapshot>(
-      await this.tools.call("evaluate_script", { pageId, function: LIST_SCRIPT }),
+      await this.tools.call("evaluate_script", { pageId, function: ZAI_ACTIVITY_SCRIPT }),
     );
     if (data.origin !== ZAI_ORIGIN || !data.loggedIn || !data.composer) {
       throw new Error("ZAI Chrome tab is not a logged-in chat page; sign in in Mac mini Chrome");
     }
+    // A renderer/transport that omits phase must never be interpreted as idle.
+    if (!["idle", "generating", "unknown"].includes(data.phase)) {
+      throw new Error("ZAI Chrome activity state unavailable; message not sent");
+    }
     return data;
+  }
+
+  private busy(state: ZaiSnapshot): boolean {
+    return state.phase !== "idle" || state.draftPresent ||
+      Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS;
+  }
+
+  private isSelected(id: string, known: BrowserChat, state: ZaiSnapshot): boolean {
+    if (id.startsWith("route:")) return state.path === "/c/" + id.slice(6);
+    return id.startsWith("sidebar:") && ROUTE_PATTERN.test(state.path) &&
+      state.selectedTitle === known.title;
+  }
+
+  private recordChat(id: string, title: string, observedAt: string, selectedRoute?: string): BrowserChat {
+    return {
+      id, title, unread: false, working: false, updatedAt: observedAt,
+      ...(selectedRoute ? { sourceRoute: ZAI_ORIGIN + selectedRoute } : {}),
+      updatedAtSemantics: "observed-sidebar-order",
+    };
   }
 
   private async listUnlocked(): Promise<BrowserChat[]> {
     const page = await this.page();
-    const snapshot = await this.snapshot(page.id);
+    const state = await this.snapshot(page.id);
     const observedAt = new Date().toISOString();
     const counts = new Map<string, number>();
-    for (const title of snapshot.titles) counts.set(title, (counts.get(title) || 0) + 1);
+    for (const title of state.titles) counts.set(title, (counts.get(title) || 0) + 1);
     const result: BrowserChat[] = [];
-    for (const title of snapshot.titles) {
+    for (const title of state.titles) {
       // Duplicate titles cannot be safely selected by name.
       if (counts.get(title) !== 1 || title === "New Chat") continue;
-      const selected = title === snapshot.selectedTitle && ROUTE_PATTERN.test(snapshot.path);
-      const id = selected ? "route:" + snapshot.path.slice(3) : "sidebar:" + encodeURIComponent(title);
-      result.push({
-        id, title, unread: false, working: false, updatedAt: observedAt,
-        ...(selected ? { sourceRoute: ZAI_ORIGIN + snapshot.path } : {}),
-        updatedAtSemantics: "observed-sidebar-order",
-      });
+      const selected = title === state.selectedTitle && ROUTE_PATTERN.test(state.path);
+      // The sidebar title ID stays stable when a chat becomes selected.
+      const id = "sidebar:" + encodeURIComponent(title);
+      const chat = this.recordChat(id, title, observedAt, selected ? state.path : undefined);
+      chat.working = selected && this.busy(state);
+      result.push(chat);
     }
-    // Current chat can be open even when its title is not visible in the sidebar.
-    if (ROUTE_PATTERN.test(snapshot.path) && !result.some(c => c.id === "route:" + snapshot.path.slice(3))) {
+    // The current chat may be open but missing from the bounded sidebar.
+    if (ROUTE_PATTERN.test(state.path) && (!state.selectedTitle || counts.get(state.selectedTitle) !== 1)) {
       result.unshift({
-        id: "route:" + snapshot.path.slice(3), title: snapshot.selectedTitle || "ZAI conversation",
-        unread: false, working: false, updatedAt: observedAt,
-        sourceRoute: ZAI_ORIGIN + snapshot.path, updatedAtSemantics: "observed-page",
+        ...this.recordChat("route:" + state.path.slice(3),
+          state.selectedTitle || "ZAI conversation", observedAt, state.path),
+        working: this.busy(state),
       });
     }
     for (const chat of result) this.cache.set(chat.id, chat);
@@ -120,10 +166,81 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     return this.exclusive(() => this.listUnlocked());
   }
 
+  /** Switches only when the currently selected page is safely idle. */
+  private async selectChat(pageId: number, id: string, known: BrowserChat): Promise<"selected" | "busy" | "missing"> {
+    if (id.startsWith("sidebar:")) {
+      const title = parseTitleId(id);
+      if (title !== known.title) return "missing";
+      const outcome = parseChromeEvaluation<{ selected: boolean; busy?: boolean }>(
+        await this.tools.call("evaluate_script", { pageId, function: `() => {
+          const title = ${JSON.stringify(title)};
+          const stop = [...document.querySelectorAll('button')].some(button =>
+            button.getClientRects().length > 0 &&
+            !!button.querySelector(':scope > span.block.size-3.rounded-xs.bg-text-inverted')
+          );
+          const send = document.querySelector('#send-message-button');
+          const editor = document.querySelector('textarea[placeholder="Send a Message"]');
+          if (stop || !send || !send.getClientRects().length || !editor || editor.value)
+            return { selected: false, busy: true };
+          const matches = [...document.querySelectorAll('button[data-selected]')].filter(
+            button => (button.querySelector('div[dir="auto"]')?.textContent?.trim()
+              || button.textContent?.trim() || '') === title
+          );
+          if (matches.length !== 1) return { selected: false };
+          matches[0].click(); return { selected: true };
+        }` }),
+      );
+      return outcome.selected ? "selected" : outcome.busy ? "busy" : "missing";
+    }
+    if (id.startsWith("route:")) {
+      const route = "/c/" + id.slice(6);
+      if (!ROUTE_PATTERN.test(route)) return "missing";
+      const before = await this.snapshot(pageId);
+      if (this.busy(before)) return "busy";
+      await this.tools.call("navigate_page", { pageId, type: "url", url: ZAI_ORIGIN + route });
+      return "selected";
+    }
+    return "missing";
+  }
+
+  private async confirmTarget(pageId: number, id: string, known: BrowserChat): Promise<ZaiSnapshot> {
+    for (let i = 0; i < 4; i++) {
+      const state = await this.snapshot(pageId);
+      if (this.isSelected(id, known, state)) return state;
+    }
+    throw new Error("ZAI conversation identity not confirmed; message not sent");
+  }
+
   async getChat(id: string): Promise<BrowserChat | null> {
     return this.exclusive(async () => {
-      if (this.cache.has(id)) return this.cache.get(id)!;
-      return (await this.listUnlocked()).find(chat => chat.id === id) ?? null;
+      // Don't return the old cached working=false value: a queued delivery
+      // polls this method until the site's square Stop disappears.
+      const page = await this.page();
+      let state = await this.snapshot(page.id);
+      let known = this.cache.get(id);
+      if (!known) {
+        known = (await this.listUnlocked()).find(entry => entry.id === id);
+        if (!known && id.startsWith("sidebar:")) {
+          const title = parseTitleId(id);
+          if (state.titles.filter(entry => entry === title).length === 1 && title !== "New Chat") {
+            known = this.recordChat(id, title, new Date().toISOString());
+            this.cache.set(id, known);
+          }
+        }
+      }
+      if (!known) return null;
+      if (id.startsWith("sidebar:") && state.titles.filter(entry => entry === known.title).length !== 1) {
+        return null; // Deleted/renamed or now ambiguous.
+      }
+      if (!this.isSelected(id, known, state)) {
+        // Never leave a currently generating conversation to inspect another.
+        if (this.busy(state)) return { ...known, working: true };
+        const selected = await this.selectChat(page.id, id, known);
+        if (selected === "busy") return { ...known, working: true };
+        if (selected === "missing") return null;
+        state = await this.confirmTarget(page.id, id, known);
+      }
+      return { ...known, working: this.busy(state) };
     });
   }
 
@@ -134,55 +251,104 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       const known = this.cache.get(chatId) ?? (await this.listUnlocked()).find(chat => chat.id === chatId);
       if (!known) throw new Error("ZAI chat is not in the authenticated browser inventory");
       const page = await this.page();
-      if (chatId.startsWith("sidebar:")) {
-        const title = parseTitleId(chatId);
-        if (title !== known.title) throw new Error("ZAI chat title changed: refusing to guess");
-        const selection = parseChromeEvaluation<{ selected: boolean }>(
-          await this.tools.call("evaluate_script", { pageId: page.id, function: `() => {
-            const title = ${JSON.stringify(title)};
-            const matches = [...document.querySelectorAll('button[data-selected]')].filter(
-              button => (button.querySelector('div[dir="auto"]')?.textContent?.trim()
-                || button.textContent?.trim() || '') === title
-            );
-            if (matches.length !== 1) return {selected: false};
-            matches[0].click(); return {selected: true};
-          }` }),
-        );
-        if (!selection.selected) throw new Error("ZAI sidebar title is missing or ambiguous");
-      } else if (chatId.startsWith("route:")) {
-        const route = "/c/" + chatId.slice(6);
-        if (!ROUTE_PATTERN.test(route)) throw new Error("Invalid ZAI chat route");
-        await this.tools.call("navigate_page", { pageId: page.id, type: "url", url: ZAI_ORIGIN + route });
-      } else {
-        throw new Error("Unknown ZAI conversation ID");
-      }
-      // Prove navigation before writing. A stale title, redirect, or missing
-      // composer must fail closed, never create a different conversation.
-      let ready = false;
-      for (let i = 0; i < 3; i++) {
-        const state = await this.snapshot(page.id);
-        if (ROUTE_PATTERN.test(state.path) && (chatId.startsWith("route:")
-          ? state.path === "/c/" + chatId.slice(6) : state.selectedTitle === known.title)) {
-          ready = true; break;
+      let state = await this.snapshot(page.id);
+      if (this.busy(state)) {
+        if (state.phase === "generating" || Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS) {
+          throw new Error("prompt is already running; ZAI queue must wait");
         }
+        throw new Error("ZAI composer is unavailable or has an existing draft; message not sent");
       }
-      if (!ready) throw new Error("ZAI conversation identity not confirmed; message not sent");
+      if (!this.isSelected(chatId, known, state)) {
+        const outcome = await this.selectChat(page.id, chatId, known);
+        if (outcome === "busy") throw new Error("prompt is already running; ZAI queue must wait");
+        if (outcome === "missing") throw new Error("ZAI conversation is missing or ambiguous; message not sent");
+        state = await this.confirmTarget(page.id, chatId, known);
+      }
+      if (this.busy(state)) {
+        if (state.phase === "generating") throw new Error("prompt is already running; ZAI queue must wait");
+        throw new Error("ZAI composer not ready; message not sent");
+      }
+      // Last read before composing: a human may have started another turn.
+      const latest = await this.snapshot(page.id);
+      if (!this.isSelected(chatId, known, latest) || this.busy(latest)) {
+        throw new Error("prompt is already running; ZAI queue must wait");
+      }
       const snapshot = await this.tools.call("take_snapshot", { pageId: page.id });
       const uid = snapshot.match(/uid=([\w-]+) textbox "Send a Message"/)?.[1];
       if (!uid) throw new Error("ZAI message composer not found; message not sent");
       await this.tools.call("fill", { pageId: page.id, uid, value: text });
+
+      // ONE atomic browser-side preflight+click: re-check Stop, exact target,
+      // actual filled textarea and enabled Send immediately before the click.
+      // Neither a second MCP command nor an Enter key can accidentally select
+      // Stop while the UI transitions into the generating state.
+      const submission = `async () => {
+        await new Promise(resolve => setTimeout(resolve, 80));
+        const expected = ${JSON.stringify(text)};
+        const targetTitle = ${JSON.stringify(known.title)};
+        const targetPath = ${JSON.stringify(chatId.startsWith("route:") ? "/c/" + chatId.slice(6) : "")};
+        const editor = document.querySelector('textarea[placeholder="Send a Message"]');
+        // A queue race may start generation after our native fill. Clear only
+        // the exact draft we supplied when the Send click was not attempted.
+        const clearOwnedDraft = () => {
+          if (!editor || editor.value !== expected) return;
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+          if (setter) setter.call(editor, ''); else editor.value = '';
+          editor.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        const stop = [...document.querySelectorAll('button')].some(button =>
+          button.getClientRects().length > 0 &&
+          !!button.querySelector(':scope > span.block.size-3.rounded-xs.bg-text-inverted')
+        );
+        if (stop) {
+          clearOwnedDraft();
+          return {submitted:false,reason:'busy'};
+        }
+        const send = document.querySelector('#send-message-button');
+        const selected = [...document.querySelectorAll('button[data-selected]')]
+          .find(button => button.getAttribute('data-selected') === 'true');
+        const selectedTitle = selected?.querySelector('div[dir="auto"]')?.textContent?.trim()
+          || selected?.textContent?.trim();
+        if (location.origin !== 'https://chat.z.ai' ||
+          !new RegExp("^/c/[a-f0-9-]{12,80}$", "i").test(location.pathname) ||
+          (targetPath ? location.pathname !== targetPath : selectedTitle !== targetTitle)) {
+          clearOwnedDraft();
+          return {submitted:false,reason:'target_changed'};
+        }
+        if (!editor || editor.value !== expected) return {submitted:false,reason:'draft_changed'};
+        if (!send || !send.getClientRects().length || send.disabled) {
+          clearOwnedDraft();
+          return {submitted:false,reason:'send_not_ready'};
+        }
+        send.click();
+        return {submitted:true};
+      }`;
+      let receipt: { submitted: boolean; reason?: string };
       try {
-        await this.tools.call("press_key", { pageId: page.id, key: "Enter" });
+        receipt = parseChromeEvaluation<{ submitted: boolean; reason?: string }>(
+          await this.tools.call("evaluate_script", { pageId: page.id, function: submission }),
+        );
       } catch {
-        throw new Error("ZAI submission outcome unknown: do not automatically retry");
+        throw new Error("ZAI submission outcome unknown: do not retry automatically");
       }
-      const remaining = parseChromeEvaluation<{ text: string }>(
+      if (!receipt.submitted) {
+        if (receipt.reason === "busy") throw new Error("prompt is already running; ZAI queue must wait");
+        throw new Error("ZAI submission blocked before click: " + (receipt.reason || "unknown"));
+      }
+      this.lastSubmittedAt = Date.now();
+      // A successful click is an attempt, not a receipt. When the site gives no
+      // observable admission, fail closed without resubmitting.
+      const confirmation = parseChromeEvaluation<{ remaining: string; origin: string; path: string }>(
         await this.tools.call("evaluate_script", {
           pageId: page.id,
-          function: ` () => ({text: document.querySelector('textarea[placeholder="Send a Message"]')?.value || ''})`,
+          function: `() => ({remaining:document.querySelector('textarea[placeholder="Send a Message"]')?.value || '',
+             origin:location.origin,path:location.pathname})`,
         }),
       );
-      if (remaining.text === text) throw new Error("ZAI send not confirmed; do not automatically retry");
+      if (confirmation.remaining === text || confirmation.origin !== ZAI_ORIGIN ||
+        !ROUTE_PATTERN.test(confirmation.path)) {
+        throw new Error("ZAI submission admission unknown: do not retry automatically");
+      }
       return {};
     });
   }

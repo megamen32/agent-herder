@@ -294,14 +294,16 @@ export class UserMessageDelivery {
           let nativeSend: Promise<SendMessageResult> | undefined;
           let responseContext:UserMessageDeliveryResponseHookInput|undefined;
           try {
-            waiting(actor.kind === "human" && input.mode === "queue" ? "Ожидает окончания ответа" : "Вставляется в текущий ход");
+            waiting(input.mode === "queue" && (actor.kind === "human" || input.harness === "browser-chat")
+              ? "Ожидает окончания ответа" : "Вставляется в текущий ход");
             if (previous) await Promise.race([previous, delay(this.options.maxWaitMs, undefined, { signal: combined })]);
             const adapter = targetAdapter;
             while (true) {
               combined.throwIfAborted();
               const session = await this.withSlot(combined, () => adapter.getSession(input.sessionId));
               if (!session) return { ok: false, nonRetryable: true, inputId: input.inputId, error: "Сессия недоступна" };
-              if (actor.kind === "human" && input.mode === "queue" && (session.status === "running" || session.status === "needs_input")) {
+              if (input.mode === "queue" && (actor.kind === "human" || input.harness === "browser-chat")
+                && (session.status === "running" || session.status === "needs_input")) {
                 await delay(this.options.pollMs, undefined, { signal: combined });
                 continue;
               }

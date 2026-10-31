@@ -85,3 +85,38 @@ and never creates a missing chat. An uncertain submission is **not retried**.
 The adapter currently does not claim model switching, chat creation, historical
 native timestamps, or reliable completion waits. Live sends require a separate
 test-account acceptance; inventory reads alone do not prove sending.
+
+
+## Native ZAI queue (CDP, no steer)
+
+`send_message(harness="browser-chat", mode="queue")` uses the shared
+`UserMessageDelivery` FIFO lane. The Herder's next exact-session read now
+checks the **live page** rather than trusting a previous cached idle value.
+
+The inspected ZAI editor has these two distinctive controls:
+
+- **generating**: visible Stop button with
+  `button > span.block.size-3.rounded-xs.bg-text-inverted`
+- **idle**: visible `#send-message-button` (the button may be disabled until
+  text is typed, so disabled does **not** mean the chat is generating)
+
+If both controls are missing, the activity state is unknown and admission
+waits rather than sending. An unsent personal draft also blocks queue
+admission. An exact chat read may select a different conversation only when
+the currently displayed chat is idle; it never leaves a generating chat.
+
+Human **and** authenticated agent queues wait until the exact chat is idle.
+There is a 1.8-second post-submit guard to avoid overlapping UI transitions.
+The driver verifies the exact chat after selection, then uses a single
+browser-side preflight followed by the Send button click. That preflight checks
+the Stop marker again, the route or selected title, the filled textarea, and
+whether Send is enabled. Pre-click activity rejection is retryable for queue;
+unknown submission outcome is non-retryable, without automatic replay.
+When the queue race blocks submission, only the driver's exact unsent draft
+is cleared. A native ZAI steer is **not** provided: Stop + Continue is a
+separate, explicitly disruptive operation and is never used for queue.
+
+The queue and CDP DOM behavior have fixture tests. Read-only Mac mini CDP
+validation confirms the real idle Send button can be disabled when empty.
+No live personal chat sends should be used as acceptance tests: a dedicated
+test account/chat is required before claiming live message delivery.

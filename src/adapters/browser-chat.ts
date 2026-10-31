@@ -1,4 +1,4 @@
-import type { AgentSession, ControlResult, CreateSessionOptions, HarnessAdapter, HarnessCapabilities, HarnessType, ListSessionsOptions, SendMessageOptions, SetPermissionsOptions } from "../types/index.js";
+import type { AgentSession, ControlResult, CreateSessionOptions, HarnessAdapter, HarnessCapabilities, HarnessType, ListSessionsOptions, SendMessageOptions, SendMessageResult, SetPermissionsOptions } from "../types/index.js";
 import { localSessionHostId } from "../types/index.js";
 /** Normalized browser chat; native IDs belong to their provider driver. */
 export interface BrowserChat {
@@ -116,7 +116,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
     return chat ? this.toSession(chat) : null;
   }
 
-  async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
+  async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
     try {
       await this.driver.sendMessage({
         chatId: id,
@@ -125,11 +125,23 @@ export class BrowserChatAdapter implements HarnessAdapter {
       });
       return { ok: true };
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      const message = error instanceof Error ? error.message : String(error);
+      if (this.type === "browser-chat") {
+        // The only retryable case is a PROVEN pre-click busy state. Once a
+        // click may have happened, never let queue admission replay it.
+        if (/prompt is already running/i.test(message)) {
+          return { ok: false, error: message };
+        }
+        if (/ZAI submission (outcome|admission) unknown/i.test(message)) {
+          return { ok: false, error: message, admissionUnknown: true, nonRetryable: true };
+        }
+        return { ok: false, error: message, notSubmitted: true, nonRetryable: true };
+      }
+      return { ok: false, error: message };
     }
   }
 
-  /** ChatGPT conversations are already resumable; a message is the resume action. */
+  /** Browser conversations are resumable; a message is the resume action. */
   async resumeSession(id: string): Promise<ControlResult> {
     const session = await this.getSession(id);
     return session ? { ok: true, sessionId: id } : { ok: false, error: `Browser chat '${id}' not found` };
