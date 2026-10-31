@@ -23,6 +23,7 @@ import type {
 } from "./types/index.js";
 import { throwIfAborted } from "./abort-utils.js";
 import { createNamedSession, newOrResumeNamedSession, type NamedSessionRequest, type NamedSessionResult, type NewOrResumeNamedSessionRequest } from "./named-session.js";
+import { deliverChatMcpIntroForSession } from "./chat-mcp-intro-delivery.js";
 import { automationDisarmDecisionWithWork, sessionWorkKey, AutomationDisarmStore } from "./automation-disarm/index.js";
 import { getHarnessCapabilities } from "./types/index.js";
 import { localSessionHostId } from "./types/index.js";
@@ -261,7 +262,10 @@ export class SessionSupervisor {
 
   async createNamedSession(request: NamedSessionRequest): Promise<NamedSessionResult> {
     const result = await createNamedSession(this.adapters, request);
-    if (result.ok && result.sessionId) this.publishSessionChanged(result.harness, result.sessionId, "created");
+    if (result.ok && result.sessionId) {
+      this.publishSessionChanged(result.harness, result.sessionId, "created");
+      this.maybeDeliverChatMcpIntro(result.harness, result.sessionId, "human");
+    }
     return result;
   }
 
@@ -271,8 +275,15 @@ export class SessionSupervisor {
       const session = await this.adapters.get(result.harness)?.getSession(result.sessionId);
       if (session) await this.unfinishedSessions?.armSession(session);
       this.publishSessionChanged(result.harness, result.sessionId, result.created ? "created" : "changed");
+      if (result.created) this.maybeDeliverChatMcpIntro(result.harness, result.sessionId, request.humanRequested === false ? "automation" : "human");
     }
     return result;
+  }
+
+  /** Owner-configured MCP intro for a freshly created chat. Fire-and-forget:
+   * a refused or failed intro must never fail the creation that caused it. */
+  private maybeDeliverChatMcpIntro(harness: string, sessionId: string, origin: "human" | "automation"): void {
+    void deliverChatMcpIntroForSession(this, harness, sessionId, origin).catch(() => undefined);
   }
 
   /** Observe native harness events immediately while keeping snapshot polling as a correctness fallback. */
