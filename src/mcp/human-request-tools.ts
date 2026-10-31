@@ -6,6 +6,7 @@ import { resumeHumanRequestOnce, humanRequestResumeTarget } from "../human-reque
 import { resolveMcpClientFeatures } from "../mcp-client-features.js";
 import type { ResumeReceipt, ResumeTransportRequest } from "../resume-transport.js";
 import { structuredResult } from "./results.js";
+import { createHash } from "node:crypto";
 import type { HarnessAdapter } from "../types/index.js";
 import { createPermissionHumanQuestion, hasPermissionReplyContextRef } from "../permission-control/notice-bridge.js";
 import { hasNativeUserInputContextRef } from "../human-request/native-user-input-notice.js";
@@ -188,6 +189,32 @@ export function registerHumanRequestTools(
     }
     try {
       const receipt = await options.queryReceipt({ target, result_ref: record.resultRef, idempotency_key: record.idempotencyKey });
+      // A legacy accepted receipt may predate native message-ID persistence.
+      // Recover identifiers only from OpenCode's exact, unique input metadata
+      // in the SAME session. Never infer from message order, text, or elapsed time,
+      // and never re-admit an answer just to get a new receipt.
+      if (record.status === "resumed" && target.agent === "opencode" && receipt.status === "accepted"
+        && (!receipt.input_id || !receipt.native_input_message_id)) {
+        const client = options.adapters?.get("opencode");
+        // Same deterministic identity as agent-resume nativeInputId, without importing its CLI package.
+        const expectedInputId = "herder-resume-" + createHash("sha256").update(record.idempotencyKey).digest("hex").slice(0, 32);
+        try {
+          const messages = typeof client?.getSessionMessages === "function"
+            ? await client.getSessionMessages(target.session_id, 200) : null;
+          const matches = messages?.filter(message => message.role === "user"
+            && message.inputId === expectedInputId
+            && /^msg_[A-Za-z0-9]+$/.test(message.id)) ?? [];
+          if (matches.length === 1 && (!receipt.input_id || receipt.input_id === expectedInputId)
+            && (!receipt.native_input_message_id || receipt.native_input_message_id === matches[0]!.id)) {
+            return structuredResult({ request: record, resumeReceipt: {
+              ...receipt, input_id: expectedInputId, native_input_message_id: matches[0]!.id,
+            } });
+          }
+        } catch {
+          // Read-only enrichment is optional; a native outage cannot alter the
+          // durable acceptance state or turn an existing receipt into a failure.
+        }
+      }
       return structuredResult({ request: record, resumeReceipt: receipt });
     } catch {
       return structuredResult({ request: record, resumeReceipt: null });
