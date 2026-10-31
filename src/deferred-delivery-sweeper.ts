@@ -98,11 +98,14 @@ export class DeferredDeliverySweeper {
       }
       let budget = this.maxSessionsPerCycle;
       for (const [sessionId, messages] of bySession) {
-        if (budget <= 0) break;
-        budget--;
         messages.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
         const adapter = await this.adapterFor(messages[0]!);
+        // Ineligible sessions (legacy parks without a harness tag) never
+        // consume the cycle budget: hundreds of them would otherwise starve
+        // every eligible park behind them forever.
         if (!adapter || !this.harnesses.has(adapter.type)) { outcome.skipped += messages.length; continue; }
+        if (budget <= 0) break;
+        budget--;
         let session;
         try { session = await adapter.getSession(sessionId); } catch { session = null; }
         if (!session || session.id !== sessionId || session.harness !== adapter.type) { outcome.skipped += messages.length; continue; }
