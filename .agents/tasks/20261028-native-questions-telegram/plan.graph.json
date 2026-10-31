@@ -1,0 +1,163 @@
+{
+  "schema_version": 2,
+  "title": "Вопросы агентов и разрешения в Telegram",
+  "goal": "Все ожидающие native-вопросы и approval доставляются через Herder → Notice Place → UserIO; канонический ответ возвращается в исходный запрос без повторной отправки.",
+  "business_result": "",
+  "business_results": [],
+  "acceptance_scenarios": [
+    "Новый запрос немедленно создаёт карточку",
+    "После рестарта pending обнаружен без дублей",
+    "Ответы всех вопросов возвращаются в ту же native-сессию"
+  ],
+  "current_progress": "Подхвачен WIP; reboot recovery и ближайший runtime restart принадлежат исходной сессии.",
+  "external_waits": "",
+  "slots": 1,
+  "updated_at": "2026-10-29T03:39:25+03:00",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "Подключить native-вопросы и точные ответы",
+      "status": "done",
+      "acceptance": "Typed native запрос создаёт одну карточку на вопрос, canonical ответы возвращаются exact RPC без дублей",
+      "result": "Blocking и persisted async observers/completion установлены в43fcf5e; exact pending вопрос Airlock доставлен в Telegram после доказанного отсутствия прежнего admission. UNKNOWN fence не переоткрывался. Receipt-only repair6fa2a28 опубликован;10focused checks прошли.",
+      "owner": "roomhacker",
+      "session": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+      "harness": "codex",
+      "model": "gpt-6",
+      "estimate_over_limit_reason": "Единый связанный протокол native observer, canonical siblings и completion требует согласованной интеграции.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-28T23:48:48+03:00",
+          "note": "",
+          "changes": {
+            "label": "Подключить native-вопросы и точные ответы",
+            "model": "gpt-6",
+            "estimate_minutes": 30,
+            "acceptance": "Typed native запрос создаёт одну карточку на вопрос, canonical ответы возвращаются exact RPC без дублей",
+            "owner": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef"
+          },
+          "session": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T23:48:50+03:00",
+          "note": "Начал работу в текущей сессии",
+          "changes": {
+            "status": "running",
+            "owner": "roomhacker"
+          },
+          "session": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-29T00:01:35+03:00",
+          "note": "Blocking RPC срез b3609c6 и read-only async reader98caf62 опубликованы. Реальный Airlock pending подтверждён как typed persisted async question; добавляем отдельный exact latest-turn continuation, а не ответ потерянному RPC. Parent единственный restart100 текущего совместимого source. Проверено26+4+15 source tests; business acceptance пока не заявлена.",
+          "changes": {},
+          "session": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-29T03:14:08+03:00",
+          "note": "Продолжение после runtime recovery: код вопросов опубликован и установлен43fcf5e владельцем runtime. Ближайший бизнес-шаг — read-only reconciliation Airlock bfd790f2 UNKNOWN на точном canonical writer8091; повторный POST и ответ за человека запрещены. Задержка: прежняя сессия прерывалась, не успешная приёмка. АвтоGram accepted не повторять.",
+          "changes": {},
+          "session": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-29T03:24:09+03:00",
+          "note": "L01 source завершён. Airlock provider message8483 подтверждён UserIO; root runtime ownership сохранено, restart не выполнялся. Независимый QA ответ отдельным service actor8810909089 — L02.",
+          "changes": {
+            "status": "done",
+            "result": "Blocking и persisted async observers/completion установлены в43fcf5e; exact pending вопрос Airlock доставлен в Telegram после доказанного отсутствия прежнего admission. UNKNOWN fence не переоткрывался. Receipt-only repair6fa2a28 опубликован;10focused checks прошли.",
+            "estimate_over_limit_reason": "Единый связанный протокол native observer, canonical siblings и completion требует согласованной интеграции."
+          },
+          "session": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 30.0,
+        "maximum": 30.0
+      },
+      "created_at": "2026-10-28T23:48:48+03:00"
+    },
+    {
+      "id": "L02",
+      "label": "Установить и проверить реальную доставку и возврат ответа",
+      "status": "waiting",
+      "acceptance": "Установленный Herder доставляет актуальный pending вопрос один раз; QA canonical Telegram answer возвращается exact native session; принятое/UNKNOWN не повторено",
+      "owner": "roomhacker",
+      "session": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+      "harness": "codex",
+      "model": "gpt-6",
+      "estimate_over_limit_reason": "Единственная согласованная установка другим владельцем runtime и независимый provider/native readback.",
+      "wait_reason": "Root единолично собирает и устанавливает ebd2fe8 после собственного fallback/recovery slice; QA ждёт установленного reader и не создаёт новых native inputs.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-29T00:01:39+03:00",
+          "note": "",
+          "changes": {
+            "label": "Установить и проверить реальную доставку и возврат ответа",
+            "model": "gpt-6",
+            "estimate_minutes": 20,
+            "depends_on": [
+              "L01"
+            ],
+            "acceptance": "Установленный Herder доставляет актуальный pending вопрос один раз; QA canonical Telegram answer возвращается exact native session; принятое/UNKNOWN не повторено",
+            "owner": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef"
+          },
+          "session": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-29T03:24:12+03:00",
+          "note": "Начал работу в текущей сессии",
+          "changes": {
+            "status": "running",
+            "owner": "roomhacker"
+          },
+          "session": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-29T03:28:00+03:00",
+          "note": "Airlock карточка8483 реальна и независимо прочитана UserIO, accepted exact claim preserved. Native QA service actor8810909089 без owner participation воспроизвёл explicit empty final tail: f020a4b main опубликован,9/9 +tsc green. Root собирает/устанавливает совместимый main единолично; параллельного restart/deploy нет. Продолжить тот жеQA вопрос после runtime readback, не отправлять новый input.",
+          "changes": {},
+          "session": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-29T03:39:25+03:00",
+          "note": "Source ebd2fe8 опубликован,10/10+tsc PASS; root получил SHA через один accepted turn/steer. Airlock карта8483 реально доставлена и independently read. Не выдаём установку/QA за completion; exact continuation и cleanup в runtime-handoff.md. Параллельный deploy не выполнялся.",
+          "changes": {
+            "status": "waiting",
+            "wait_reason": "Root единолично собирает и устанавливает ebd2fe8 после собственного fallback/recovery slice; QA ждёт установленного reader и не создаёт новых native inputs.",
+            "estimate_over_limit_reason": "Единственная согласованная установка другим владельцем runtime и независимый provider/native readback."
+          },
+          "session": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [
+        "L01"
+      ],
+      "estimate_minutes": {
+        "minimum": 20.0,
+        "maximum": 20.0
+      },
+      "created_at": "2026-10-29T00:01:39+03:00"
+    }
+  ],
+  "leaf_count": 2,
+  "plan_origin": {
+    "at": "2026-10-28T23:48:48+03:00",
+    "source": "leaf_created_at",
+    "leaf_id": "L01",
+    "recorded_at": "2026-10-28T20:48:48.113962+00:00"
+  }
+}

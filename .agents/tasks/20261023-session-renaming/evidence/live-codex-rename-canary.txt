@@ -1,0 +1,34 @@
+# Живая проверка нативного переименования (canary)
+
+Хост: roomhacker-server-100
+Сокет: ~/.codex/app-server-control/app-server-control.sock (живой Codex app-server 0.162.1, pid 79966)
+Дата: 2026-10-23 15:15 MSK
+
+```
+initialized {"ok":true}
+thread_start {"threadId":"01a168b0-0cc4-71a2-ab16-fbd5df2edf6d","ephemeral":false}
+title_before {"name":null,"preview":""}
+title_after {"name":"Проверка переименования | кириллица | canary","sameThread":true}
+history_after {"turns":0}
+title_in_list {"found":false,"name":null}
+canary failed: thread not loaded: 01a168b0-0cc4-71a2-ab16-fbd5df2edf6d (-32600)
+```
+
+## След в нативном индексе Codex после canary
+
+```
+thread 01a168af-3cb9-77f2-b335-c1d112423aeb:
+  session_index.jsonl: 0 совпадений
+  state_5.sqlite threads: 0 совпадений
+thread 01a168b0-0cc4-71a2-ab16-fbd5df2edf6d:
+  session_index.jsonl: 0 совпадений
+  state_5.sqlite threads: 0 совпадений
+```
+
+## Что это доказывает
+
+- Нативный API thread/name/set принимает кириллицу без искажений.
+- thread/read возвращает тот же thread id и новое название.
+- Модель не запускалась: ходов 0, квота не тронута.
+- Поток сессий владельца не изменён: тред canary не попал в нативный индекс.
+- Тред canary без ходов не удаляется нативно (no rollout found) и не виден в thread/list: в списке сессий владельца следа нет.

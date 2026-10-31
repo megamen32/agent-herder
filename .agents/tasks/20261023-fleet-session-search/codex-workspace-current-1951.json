@@ -1,0 +1,554 @@
+{
+  "sessions": [
+    {
+      "id": "01a16564-ca5b-7702-b7df-09f5f715a9f9",
+      "harness": "codex",
+      "title": "Untitled session",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "parentSessionId": "01a16563-0dfa-7a53-a040-7f7e3ab1aa86",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.306Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.306Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a1658b-3ccf-7d93-a698-b7db1521d591",
+      "harness": "codex",
+      "title": "Untitled session",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "parentSessionId": "01a16563-0dfa-7a53-a040-7f7e3ab1aa86",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.306Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.306Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a1653b-d774-73b3-9c0a-09cced76ea9e",
+      "harness": "codex",
+      "title": "voice exmanager notice place userio",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.306Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.306Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a16587-8440-7962-b22f-5e6a12f4abdd",
+      "harness": "codex",
+      "title": "gptadmin",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.306Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.307Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a16563-0dfa-7a53-a040-7f7e3ab1aa86",
+      "harness": "codex",
+      "title": "exmanager workspace",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.307Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.307Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a16843-ffd5-7c53-bf67-06110d9a4ac7",
+      "harness": "codex",
+      "title": "account broker",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.307Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.307Z"
+      },
+      "workspaces": [
+        {
+          "hostId": "roomhacker-server-100",
+          "absolutePath": "/home/roomhacker/PycharmProjects/account-broker/.worktrees/review-fixes-20261023",
+          "source": "declared",
+          "observedAt": "2026-10-23T19:20:31.000Z",
+          "evidence": "Сохранённый выделенный пользователем worktree; текущие audit/plan артефакты и будущая изолированная работа после согласования."
+        }
+      ]
+    },
+    {
+      "id": "01a16863-be58-75a3-8ac9-989652d8dc27",
+      "harness": "codex",
+      "title": "Untitled session",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "parentSessionId": "01a16563-0dfa-7a53-a040-7f7e3ab1aa86",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.317Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.317Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a16891-f3ad-7fd1-acd6-61f4dc43b9c0",
+      "harness": "codex",
+      "title": "Untitled session",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "parentSessionId": "01a16587-8440-7962-b22f-5e6a12f4abdd",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.317Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.317Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a16938-5314-7150-a996-2168c80471e3",
+      "harness": "codex",
+      "title": "Ускорить загрузку сайта",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.317Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.317Z"
+      },
+      "workspaces": [
+        {
+          "hostId": "roomhacker-server-100",
+          "absolutePath": "/home/roomhacker/PycharmProjects/AutoFindClient",
+          "source": "observed",
+          "observedAt": "2026-10-23T19:43:00.000Z",
+          "evidence": "pwd and clean diff on assigned chat.py/chat.j2"
+        }
+      ]
+    },
+    {
+      "id": "01a16987-f6fd-7351-b61d-a3647396a867",
+      "harness": "codex",
+      "title": "Починить доступ к Mavis-сессиям",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.317Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.317Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a16939-ae62-7852-ab74-0b13f96246dc",
+      "harness": "codex",
+      "title": "Подключить AutoFindClient к AirLock",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.318Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.318Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a169f0-b84a-7503-8e7f-0ccccac36e9d",
+      "harness": "codex",
+      "title": "Untitled session",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "parentSessionId": "01a16987-f6fd-7351-b61d-a3647396a867",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.326Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.326Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a169f1-3736-78b0-8fec-cff070468c0e",
+      "harness": "codex",
+      "title": "Untitled session",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "parentSessionId": "01a16987-f6fd-7351-b61d-a3647396a867",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.327Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.327Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a16a10-fe09-7db0-a39e-0ca1c89d6119",
+      "harness": "codex",
+      "title": "Untitled session",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "parentSessionId": "01a16987-f6fd-7351-b61d-a3647396a867",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.330Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.330Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a16a32-9f3e-7ef2-af79-3265b93a7c12",
+      "harness": "codex",
+      "title": "Untitled session",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "parentSessionId": "01a1653b-d774-73b3-9c0a-09cced76ea9e",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.330Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.330Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a16a31-ed85-7c40-9d1c-9ade7a395f7d",
+      "harness": "codex",
+      "title": "Untitled session",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "parentSessionId": "01a1653b-d774-73b3-9c0a-09cced76ea9e",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.330Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.330Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a16a22-48b6-7402-ba2a-daf8ec50dbea",
+      "harness": "codex",
+      "title": "Untitled session",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "parentSessionId": "01a16843-ffd5-7c53-bf67-06110d9a4ac7",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.331Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.331Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a16a34-355f-7be3-ba12-492eb28c20ce",
+      "harness": "codex",
+      "title": "Untitled session",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "parentSessionId": "01a16843-ffd5-7c53-bf67-06110d9a4ac7",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.331Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.331Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a16a34-9b67-74c2-895f-661719d79f14",
+      "harness": "codex",
+      "title": "Untitled session",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "parentSessionId": "01a16843-ffd5-7c53-bf67-06110d9a4ac7",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.331Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.331Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a16a44-d011-79e1-93b2-7fec74bdc7b5",
+      "harness": "codex",
+      "title": "Untitled session",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "parentSessionId": "01a16587-8440-7962-b22f-5e6a12f4abdd",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.334Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.334Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a16a3b-cc08-7e82-b410-c2bb3c44ce29",
+      "harness": "codex",
+      "title": "afc_critical_delivery_20261023",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.334Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.334Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a16a43-33f4-7413-a3de-b7046146ba67",
+      "harness": "codex",
+      "title": "afc_mcp_parity_delivery_20261023",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.335Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.335Z"
+      },
+      "workspaces": []
+    },
+    {
+      "id": "01a16a47-00a3-7a23-a282-d7afa06c0355",
+      "harness": "codex",
+      "title": "afc_lazy_chat_delivery_20261023",
+      "runtimeHostId": "roomhacker-server-100",
+      "status": "running",
+      "activity": {
+        "state": "active",
+        "observedAt": "2026-10-23T19:51:30.335Z",
+        "evidence": "codex-loaded-native-runtime",
+        "expiresAt": "2026-10-23T19:52:00.335Z"
+      },
+      "workspaces": []
+    }
+  ],
+  "hosts": [
+    {
+      "hostId": "roomhacker-server-100",
+      "ownerPid": 2455492,
+      "state": "available",
+      "observedAt": "2026-10-23T19:51:31.300Z",
+      "sources": [
+        {
+          "harness": "opencode",
+          "exhaustive": true,
+          "source": "opencode-native-active-status",
+          "observedAt": "2026-10-23T19:51:30.310Z",
+          "refreshDurationMs": 95
+        },
+        {
+          "harness": "claude",
+          "exhaustive": false,
+          "source": "native-adapter",
+          "reason": "native_enumeration_coverage_unknown"
+        },
+        {
+          "harness": "codex",
+          "exhaustive": true,
+          "source": "codex-loaded-native-runtime",
+          "observedAt": "2026-10-23T19:51:30.490Z",
+          "candidateCount": 49,
+          "failedCandidateCount": 0,
+          "pages": 1,
+          "expiresAt": "2026-10-23T19:52:00.490Z",
+          "refreshDurationMs": 275
+        },
+        {
+          "harness": "hermes",
+          "exhaustive": false,
+          "source": "native-adapter",
+          "reason": "native_enumeration_coverage_unknown"
+        },
+        {
+          "harness": "zcode",
+          "exhaustive": false,
+          "source": "zcode-existing-native-runtime+official-supervisor",
+          "observedAt": "2026-10-23T19:51:30.295Z",
+          "refreshDurationMs": 79,
+          "reason": "known_task_candidates_only_loaded_identity_coverage_unknown"
+        },
+        {
+          "harness": "minimax-code",
+          "exhaustive": true,
+          "source": "native_active_turn",
+          "observedAt": "2026-10-23T19:51:31.300Z",
+          "activityCoverage": "native_active_turn",
+          "metadataEnumerationExhaustive": true,
+          "candidateCount": 4,
+          "failedCandidateCount": 0,
+          "totalSessions": 5193,
+          "pages": 29,
+          "expiresAt": "2026-10-23T19:51:46.300Z",
+          "stageTimingsMs": {
+            "metadata": 1065,
+            "candidate_seed": 7,
+            "controller_validation": 12
+          },
+          "refreshDurationMs": 1085
+        },
+        {
+          "harness": "fast-agent",
+          "exhaustive": false,
+          "source": "native-adapter",
+          "reason": "native_enumeration_coverage_unknown"
+        }
+      ]
+    },
+    {
+      "hostId": "server-44",
+      "ownerPid": 847893,
+      "state": "available",
+      "observedAt": "2026-10-23T19:51:29.044Z",
+      "sources": [
+        {
+          "harness": "codex",
+          "exhaustive": true,
+          "source": "codex-loaded-native-runtime",
+          "observedAt": "2026-10-23T19:51:28.889Z",
+          "candidateCount": 0,
+          "failedCandidateCount": 0,
+          "pages": 1,
+          "expiresAt": "2026-10-23T19:51:58.889Z",
+          "refreshDurationMs": 1
+        }
+      ]
+    },
+    {
+      "hostId": "roomhacker-server-88",
+      "ownerPid": 3039044,
+      "state": "available",
+      "observedAt": "2026-10-23T19:51:31.380Z",
+      "sources": [
+        {
+          "harness": "opencode",
+          "exhaustive": true,
+          "source": "opencode-native-active-status",
+          "observedAt": "2026-10-23T19:51:31.380Z",
+          "refreshDurationMs": 17
+        },
+        {
+          "harness": "codex",
+          "exhaustive": true,
+          "source": "codex-loaded-native-runtime",
+          "observedAt": "2026-10-23T19:51:31.365Z",
+          "candidateCount": 0,
+          "failedCandidateCount": 0,
+          "pages": 1,
+          "expiresAt": "2026-10-23T19:52:01.365Z",
+          "refreshDurationMs": 2
+        },
+        {
+          "harness": "zcode",
+          "exhaustive": false,
+          "source": "zcode-existing-native-runtime+official-supervisor",
+          "observedAt": "2026-10-23T19:51:31.375Z",
+          "refreshDurationMs": 11,
+          "reason": "official_supervisor_unavailable"
+        }
+      ]
+    },
+    {
+      "hostId": "mac-mini-2012.lan",
+      "ownerPid": 41599,
+      "state": "available",
+      "observedAt": "2026-10-23T19:51:28.366Z",
+      "sources": [
+        {
+          "harness": "codex",
+          "exhaustive": true,
+          "source": "codex-loaded-native-runtime",
+          "observedAt": "2026-10-23T19:51:28.366Z",
+          "candidateCount": 1,
+          "failedCandidateCount": 0,
+          "pages": 1,
+          "expiresAt": "2026-10-23T19:51:58.366Z",
+          "refreshDurationMs": 3
+        }
+      ]
+    },
+    {
+      "hostId": "MacBook-Pro-User.local",
+      "ownerPid": 88827,
+      "state": "available",
+      "observedAt": "2026-10-23T19:51:31.084Z",
+      "sources": [
+        {
+          "harness": "codex",
+          "exhaustive": true,
+          "source": "codex-loaded-native-runtime",
+          "observedAt": "2026-10-23T19:51:31.084Z",
+          "candidateCount": 0,
+          "failedCandidateCount": 0,
+          "pages": 1,
+          "expiresAt": "2026-10-23T19:52:01.084Z",
+          "refreshDurationMs": 2
+        },
+        {
+          "harness": "minimax-code",
+          "exhaustive": true,
+          "source": "native_active_turn",
+          "observedAt": "2026-10-23T19:51:27.951Z",
+          "activityCoverage": "native_active_turn",
+          "metadataEnumerationExhaustive": true,
+          "candidateCount": 17,
+          "failedCandidateCount": 0,
+          "totalSessions": 1214,
+          "pages": 12,
+          "expiresAt": "2026-10-23T19:51:42.951Z",
+          "stageTimingsMs": {
+            "metadata": 24383,
+            "candidate_seed": 50,
+            "controller_validation": 266
+          },
+          "refreshDurationMs": 24699
+        }
+      ]
+    }
+  ],
+  "partial": true,
+  "unassignedWorkspaceCount": 21,
+  "total": 23,
+  "activeCount": 23,
+  "activeRunningCount": 23,
+  "activeWaitingCount": 0,
+  "activeCountExact": null,
+  "activeRootCount": 10,
+  "activeChildCount": 13,
+  "unknownActivityCount": 0,
+  "countIsLowerBound": true,
+  "limited": false,
+  "unknownWorkspaceCount": 21,
+  "filters": {
+    "harness": "codex"
+  }
+}

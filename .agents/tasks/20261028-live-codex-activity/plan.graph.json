@@ -1,0 +1,214 @@
+{
+  "schema_version": 2,
+  "title": "Показывать живую работу Codex в переписке Herder",
+  "goal": "Пользователь видит доступные размышления, вызовы и результаты инструментов, события сабагентов по мере работы Codex, а не только статус «Работает». Последняя поправка пользователя: по умолчанию всё показано в свёрнутом виде, как в Codex, с названиями действий и раскрытием подробностей нажатием.",
+  "business_result": "В реальном чате Herder ход работы отображается в том же порядке и с тем же доступным содержимым, что в Codex; переключатели работают и сохраняются после обновления страницы.",
+  "business_results": [
+    "В реальном чате Herder ход работы отображается в том же порядке и с тем же доступным содержимым, что в Codex; переключатели работают и сохраняются после обновления страницы."
+  ],
+  "acceptance_scenarios": [
+    "Текущий ход Codex передаёт размышления, инструменты и события агентов в history/details до финального ответа.",
+    "Чистые настройки браузера показывают размышления и инструменты включёнными, со свёрнутыми подробностями и видимыми названиями действий, как в Codex; раскрытие и явное скрытие работают.",
+    "Установленный интерфейс проверен браузером на desktop и mobile; текущая работа пользователя не перезапускается и сообщения не повторяются."
+  ],
+  "current_progress": "Подтверждены скрытые по умолчанию display preferences и свёрнутые details-компоненты; исследуется потеря живых событий между Codex history и интерфейсом.",
+  "external_waits": "",
+  "slots": 3,
+  "updated_at": "2026-10-28T21:44:28+03:00",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "Сохранить живые события Codex в истории и API",
+      "status": "running",
+      "description": "Исправить потерю доступных reasoning/tool/collab событий текущего хода между нативной историей, details и обновлением чата.",
+      "acceptance": "Точный ход Codex содержит доступные reasoning/tool/collab части до финального ответа без дублей.",
+      "result": "c1e920a: native public activity parsing, exact session probe and selected regression tests PASS",
+      "owner": "roomhacker",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "note": "Проверяем потерю commentary при насыщенном activity tail реальной root-сессии; bounded IO сохранить.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-28T21:14:25+03:00",
+          "note": "",
+          "changes": {
+            "label": "Сохранить живые события Codex в истории и API",
+            "description": "Исправить потерю доступных reasoning/tool/collab событий текущего хода между нативной историей, details и обновлением чата.",
+            "acceptance": "Точный ход Codex содержит доступные reasoning/tool/collab части до финального ответа без дублей.",
+            "owner": "codex_live_tier",
+            "model": "gpt-6.1-sol",
+            "estimate_minutes": 15,
+            "status": "running"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T21:14:26+03:00",
+          "note": "Начал работу в текущей сессии",
+          "changes": {
+            "owner": "roomhacker"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T21:40:07+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "c1e920a: native public activity parsing, exact session probe and selected regression tests PASS"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T21:44:28+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "note": "Проверяем потерю commentary при насыщенном activity tail реальной root-сессии; bounded IO сохранить."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-10-28T21:14:25+03:00"
+    },
+    {
+      "id": "L02",
+      "label": "Показывать свёрнутые события как в Codex",
+      "status": "running",
+      "description": "Размышления и инструменты по умолчанию включены и видимы как последовательность компактных свёрнутых строк с названиями действий, статусом и раскрытием.",
+      "acceptance": "Новый браузер видит reasoning/tools включёнными и свёрнутыми, отдельные названия действий и состояния доступны; переключатели и раскрытие работают.",
+      "result": "Предыдущая приёмка недостаточна: владелец показал сырые названия и пропавшие текстовые реплики. Исправляем semantic activity rendering под Codex reference.",
+      "owner": "codex_self_identity",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-28T21:14:25+03:00",
+          "note": "",
+          "changes": {
+            "label": "Показывать свёрнутые события как в Codex",
+            "description": "Размышления и инструменты по умолчанию включены и видимы как последовательность компактных свёрнутых строк с названиями действий, статусом и раскрытием.",
+            "acceptance": "Новый браузер видит reasoning/tools включёнными и свёрнутыми, отдельные названия действий и состояния доступны; переключатели и раскрытие работают.",
+            "owner": "codex_self_identity",
+            "model": "gpt-6.1-sol",
+            "estimate_minutes": 15,
+            "status": "running"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T21:40:07+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "c1e920a: ordered collapsed activity rows; defaults visible; 8 UI tests PASS"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T21:43:46+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "result": "Предыдущая приёмка недостаточна: владелец показал сырые названия и пропавшие текстовые реплики. Исправляем semantic activity rendering под Codex reference."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-10-28T21:14:25+03:00"
+    },
+    {
+      "id": "L03",
+      "label": "Установить исправление и проверить реальную переписку",
+      "status": "running",
+      "description": "Интегрировать и выпустить совместимый срез, проверить живое отображение desktop/mobile через интерфейс.",
+      "acceptance": "Установленная версия и браузерная проверка обновления реального чата без повторения пользовательского ввода.",
+      "owner": "root",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "note": "Счётчики событий не равны визуальной приёмке. Требуется сравнение одного участка этой root-сессии с Codex.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-28T21:14:25+03:00",
+          "note": "",
+          "changes": {
+            "label": "Установить исправление и проверить реальную переписку",
+            "description": "Интегрировать и выпустить совместимый срез, проверить живое отображение desktop/mobile через интерфейс.",
+            "acceptance": "Установленная версия и браузерная проверка обновления реального чата без повторения пользовательского ввода.",
+            "owner": "root",
+            "model": "gpt-6.1-sol",
+            "estimate_minutes": 15,
+            "depends_on": [
+              "L01",
+              "L02"
+            ],
+            "status": "queued"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T21:40:07+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "note": "100/44/88 runtime c1e920a installed; public frontend c1e920a; browser acceptance in progress"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-28T21:43:47+03:00",
+          "note": "",
+          "changes": {
+            "note": "Счётчики событий не равны визуальной приёмке. Требуется сравнение одного участка этой root-сессии с Codex."
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [
+        "L01",
+        "L02"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-10-28T21:14:25+03:00"
+    }
+  ],
+  "leaf_count": 3,
+  "plan_origin": {
+    "at": "2026-10-28T21:14:25+03:00",
+    "source": "leaf_created_at",
+    "leaf_id": "L01",
+    "recorded_at": "2026-10-28T18:14:25.465591+00:00"
+  }
+}

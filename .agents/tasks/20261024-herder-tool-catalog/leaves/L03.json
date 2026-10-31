@@ -1,0 +1,20 @@
+{
+  "id": "L03",
+  "label": "Сократить advertisement 85 → 79 через sync aliases",
+  "status": "queued",
+  "description": "Скрыть шесть sync aliases: browser_wake, export_transcript, cdp_export_chat, cdp_export_visible_chats, cdp_reconcile_known_routes, cdp_reconcile_visible_chats. Показывать их async пары без изменения sync/async семантики.",
+  "acceptance": "Подключённый MCP показывает 79 tools; sync endpoints сохраняют прежний результат и права, async возвращает job receipt, reconnect/readback не повторяет принятую операцию.",
+  "affected_files": [
+    "src/mcp/catalog-policy.ts",
+    "tests/mcp-catalog-policy.test.ts",
+    "tests/mcp-catalog-contract.test.ts",
+    "docs/mcp-catalog-migration.md"
+  ],
+  "owner": "implementation-owner-to-be-assigned",
+  "depends_on": [
+    "L02"
+  ],
+  "estimate_unknown_reason": "Длительность не измерена; зависит от SDK, текущих прав и deployment contract.",
+  "note": "Handlers не менять; UNKNOWN/accepted не повторять.",
+  "updated_at": "2026-10-24T15:28:01+03:00"
+}

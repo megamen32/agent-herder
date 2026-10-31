@@ -1,0 +1,15 @@
+{
+  "id": "L07",
+  "label": "Выполнить контролируемый релиз и consumer acceptance",
+  "status": "queued",
+  "description": "Один назначенный release executor устанавливает проверенную ревизию; новый каталог проверяется на реальном подключённом MCP с отдельными метриками и обратимым выбором legacy профиля.",
+  "acceptance": "Есть runtime revision и полный tools/list с пагинацией; доказаны 87→85→79→76, optional 42, размеры схем и отдельный callable count; тестовая сессия подтверждает steer/queue, async reconnect, legacy sync и отрицательную авторизацию без повторов UNKNOWN/accepted.",
+  "affected_files": [],
+  "owner": "release-executor-to-be-assigned",
+  "depends_on": [
+    "L06"
+  ],
+  "estimate_unknown_reason": "Длительность не измерена; зависит от SDK, текущих прав и deployment contract.",
+  "note": "Release paths и исполнитель определяются по актуальному deployment contract перед действием. Сейчас release файлы и runtime не назначены этому artifact writer; телефонные тесты запрещены.",
+  "updated_at": "2026-10-24T15:28:01+03:00"
+}

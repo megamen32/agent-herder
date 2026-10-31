@@ -1,0 +1,19 @@
+# Готовый source и продолжение приёмки
+
+Source **ebd2fe865e8ae6ddb76fc3afd596c3e7d4f982a2**, main/origin синхронизированы. 10/10 focused tests, TypeScript и diff-check PASS. Изменены только readAsyncUserInputState и его scoped test; соседние recovery helpers не трогались. В f020a4b было недостаточно skip empty tail: реальный summary содержит только user+empty final и полностью скрывает question. ebd2fe8 запрашивает full latest turn при таком хвосте.
+
+Новый root input native-questions-ready-source-ebd2fe8 принят один раз через активный turn/steer; root сообщил, что учитывает SHA в текущем исправлении. Повторять сообщение, restart/deploy или принятые native inputs не нужно. Runtime устанавливает только исходная сессия01a1754f-0228-7553-bea6-cc89e40b5187.
+
+Рабочий Airlock запрос **bfd790f2-c08d-4bd2-b2ee-c2dd96a792f1** уже доставлен в Telegram, message8483, существующий thread6030; independently read через UserIO. Старый token исправлен в существующем herder.env; canonical404 + independentmesh0 + source durability-before-send доказали отсутствие прежнего admission перед одной same-ID/same-envelope доставкой. Registry accepted сохраняет claim908f48f0 и fingerprint3d73ee1a…. Реального ответа владельца/resume Airlock не было. Скрипт repair-airlock-question повторять нельзя; guard и accepted state это запрещают.
+
+## Тот же изолированный QA, без новых сессий/input
+
+Fixture **01a18509-00e9-7492-863e-4ad93855d065**, cwd .tmp/native-question-qa-20261029. Нативные ready/question prompts уже accepted; raw inject_items также accepted, но сам по себе UI question не создал, повторять его нельзя. Реальный native request_user_input_async создал **call_50dcbe6af03a4f45b71c87aa336d4350**, turn01a1850a-f9b6-7892-aed6-79c8fbb34da2, question options QA_NATIVE_REPLY_OK/QA_NATIVE_REPLY_NO. Последующий empty final объясняет исходный RED. После установки ebd2fe8 observer должен обнаружить ЭТОТ ЖЕ pending вопрос.
+
+Точный QA producer scope noticeplace-qa-stop-20261023b и существующий маршрут chat -1004308060380 подтверждены. В notice-producer-bindings.qa.json добавлен только exact fixture target, используется прежний qa-20261026.env. В allowedActors QA-файла добавлен существующий сервисный actor telegram:8810909089; исходная строка сохранена в .tmp/native-question-qa-state.json. Личный owner actor не подменял тестового и не использовался для тестового ответа.
+
+Важно: read-only проверка показала, что глобальная Telegram callback allowlist Notice содержит только прежнего оператора, service881 туда НЕ входит. Её не расширяли; кнопку от неразрешённого actor не нажимали. Поэтому Telegram button-click acceptance не подтверждена. Разрешённый per-request QA actor можно проверить через штатный scoped Notice API /resolve, отдельно от Telegram callback (не выдавать это за button-click). Подготовлен .tmp/resolve-native-question-qa.mjs: dry-run требует exact accepted QA card, session, project, chat и allowedActor; --apply-api-answer имеет одноразовый guard. На момент handoff ответа НЕТ, скрипт resolve не запускался.
+
+Дальнейшее чтение: .tmp/read-installed-question-qa.mjs импортирует именно установленный release; после runtime readback проверить typed question/registry/provider card. После единственного QA ответа сверить canonical result, registry resumed и native QA_NATIVE_REPLY_OK в той же fixture. Затем архивировать только fixture, удалить только её exact binding и восстановить previousActorLine с проверкой отсутствия чужих изменений. Никаких звонков/реальных контактов/ответов за владельца.
+
+Дополнительный read-only finding: OpenCode ordinary question.asked пока не поддержан этим Codex slice (approval поддержан прежним observer). Для общего cross-harness расширения потребуются client GET/POST question API, adapter и multi/custom-answer semantics. Клиент OpenCode сейчас в ownership root fallback task; чужой scope/code не менялся. Не объявлять all-harness ordinary-question acceptance из результата Codex.

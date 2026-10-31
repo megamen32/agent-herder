@@ -1,0 +1,203 @@
+{
+  "step": "L30-4",
+  "setting": "launch policy / incidentExecution.reasoning",
+  "nodes": {
+    "first": "100",
+    "second": "44"
+  },
+  "first_before": {
+    "etag": "\"48a29fc081dd537eafae590718336696\"",
+    "status": 200
+  },
+  "second_before": {
+    "etag": "\"56af90a72135a26290a33849488c169f\"",
+    "status": 200
+  },
+  "change": {
+    "kind": "projectRoutes",
+    "added": "/home/roomhacker/PycharmProjects/__l30_step4_probe__",
+    "value": {
+      "harnesses": [
+        "opencode"
+      ]
+    },
+    "why": "no project of the fleet has this path: the behaviour does not change, the revision does"
+  },
+  "first_write": {
+    "status": 200,
+    "etag": "\"9ec98c482d02740dc7bd12c0273e4abb\"",
+    "body": "{\"version\":1,\"allowedHarnesses\":[\"codex\",\"zcode\",\"opencode\"],\"preferredHarness\":\"codex\",\"models\":{\"codex\":\"gpt-6.1-sol\",\"zcode\":\"account:zai-individual-coding-plan/GLM-5.3-Flash$high\",\"opencode\":\"omni"
+  },
+  "second_write": {
+    "status": 200,
+    "etag": "\"9ec98c482d02740dc7bd12c0273e4abb\"",
+    "body": "{\"version\":1,\"allowedHarnesses\":[\"codex\",\"zcode\",\"opencode\"],\"preferredHarness\":\"codex\",\"models\":{\"codex\":\"gpt-6.1-sol\",\"zcode\":\"account:zai-individual-coding-plan/GLM-5.3-Flash$high\",\"opencode\":\"omni"
+  },
+  "revision_new": "\"9ec98c482d02740dc7bd12c0273e4abb\"",
+  "revision_second": "\"9ec98c482d02740dc7bd12c0273e4abb\"",
+  "revision_shared": true,
+  "confirmation_from_second": {
+    "ok": true,
+    "desiredRevision": "\"9ec98c482d02740dc7bd12c0273e4abb\"",
+    "state": "Применено частично",
+    "confirmed": 2,
+    "total": 4,
+    "unconfirmed": [
+      "roomhacker-server-88",
+      "mac-mini-2012.lan"
+    ],
+    "nodes": [
+      {
+        "hostId": "server-44",
+        "status": "подтвердил",
+        "appliedRevision": "\"9ec98c482d02740dc7bd12c0273e4abb\"",
+        "confirmedAt": "2026-10-22T19:43:29.338Z",
+        "reason": null
+      },
+      {
+        "hostId": "roomhacker-server-100",
+        "status": "подтвердил",
+        "appliedRevision": "\"9ec98c482d02740dc7bd12c0273e4abb\"",
+        "confirmedAt": "2026-10-22T19:43:29.991Z",
+        "reason": null
+      },
+      {
+        "hostId": "roomhacker-server-88",
+        "status": "расходится",
+        "appliedRevision": "\"24f8dd577eb0c9f2b36bb1daeca9e2d7\"",
+        "confirmedAt": "2026-10-22T19:43:30.239Z",
+        "reason": "Нода держит другую версию политики (\"24f8dd577eb0c9f2b36bb1daeca9e2d7\"), а задана \"9ec98c482d02740dc7bd12c0273e4abb\"."
+      },
+      {
+        "hostId": "mac-mini-2012.lan",
+        "status": "не подтвердил",
+        "appliedRevision": null,
+        "confirmedAt": null,
+        "reason": "direct_ssh_host_key_unverified"
+      }
+    ],
+    "source": "живой опрос флота",
+    "checkedAt": "2026-10-22T19:43:29.338Z"
+  },
+  "confirmation_from_first": {
+    "ok": true,
+    "desiredRevision": "\"9ec98c482d02740dc7bd12c0273e4abb\"",
+    "state": "Применено частично",
+    "confirmed": 2,
+    "total": 4,
+    "unconfirmed": [
+      "roomhacker-server-88",
+      "mac-mini-2012.lan"
+    ],
+    "nodes": [
+      {
+        "hostId": "roomhacker-server-100",
+        "status": "подтвердил",
+        "appliedRevision": "\"9ec98c482d02740dc7bd12c0273e4abb\"",
+        "confirmedAt": "2026-10-22T19:43:30.973Z",
+        "reason": null
+      },
+      {
+        "hostId": "server-44",
+        "status": "подтвердил",
+        "appliedRevision": "\"9ec98c482d02740dc7bd12c0273e4abb\"",
+        "confirmedAt": "2026-10-22T19:43:32.014Z",
+        "reason": null
+      },
+      {
+        "hostId": "roomhacker-server-88",
+        "status": "расходится",
+        "appliedRevision": "\"24f8dd577eb0c9f2b36bb1daeca9e2d7\"",
+        "confirmedAt": "2026-10-22T19:43:31.624Z",
+        "reason": "Нода держит другую версию политики (\"24f8dd577eb0c9f2b36bb1daeca9e2d7\"), а задана \"9ec98c482d02740dc7bd12c0273e4abb\"."
+      },
+      {
+        "hostId": "mac-mini-2012.lan",
+        "status": "не подтвердил",
+        "appliedRevision": null,
+        "confirmedAt": null,
+        "reason": "Нода не отдала свою версию политики."
+      }
+    ],
+    "source": "живой опрос флота",
+    "checkedAt": "2026-10-22T19:43:30.973Z"
+  },
+  "file_sha_first": {
+    "action": "sha",
+    "path": "/home/roomhacker/.local/state/agent-herder/autopilot-live/automation-launch-policy.json",
+    "sha256": "9ec98c482d02740dc7bd12c0273e4abbef1467958ed391c7f2310ede65bad83a"
+  },
+  "file_sha_second": {
+    "action": "sha",
+    "path": "/home/roomhacker/.local/state/agent-herder/fleet-node/autopilot/automation-launch-policy.json",
+    "sha256": "9ec98c482d02740dc7bd12c0273e4abbef1467958ed391c7f2310ede65bad83a"
+  },
+  "restore": {
+    "first": {
+      "status": 200,
+      "etag": "\"48a29fc081dd537eafae590718336696\"",
+      "expected": "\"48a29fc081dd537eafae590718336696\"",
+      "restored": true
+    },
+    "second": {
+      "status": 200,
+      "etag": "\"795e0fea7627013588cec2f8fb706640\"",
+      "expected": "\"56af90a72135a26290a33849488c169f\"",
+      "restored": false
+    }
+  },
+  "file_sha_after_restore_first": {
+    "action": "sha",
+    "path": "/home/roomhacker/.local/state/agent-herder/autopilot-live/automation-launch-policy.json",
+    "sha256": "48a29fc081dd537eafae590718336696316c8a0b0608ce52fd0a624063cdcdcc"
+  },
+  "file_sha_after_restore_second": {
+    "action": "sha",
+    "path": "/home/roomhacker/.local/state/agent-herder/fleet-node/autopilot/automation-launch-policy.json",
+    "sha256": "795e0fea7627013588cec2f8fb706640baa7a8b549da832f2b91df383b55bcf6"
+  },
+  "confirmation_after_restore": {
+    "ok": true,
+    "desiredRevision": "\"48a29fc081dd537eafae590718336696\"",
+    "state": "Применено частично",
+    "confirmed": 1,
+    "total": 4,
+    "unconfirmed": [
+      "server-44",
+      "roomhacker-server-88",
+      "mac-mini-2012.lan"
+    ],
+    "nodes": [
+      {
+        "hostId": "roomhacker-server-100",
+        "status": "подтвердил",
+        "appliedRevision": "\"48a29fc081dd537eafae590718336696\"",
+        "confirmedAt": "2026-10-22T19:43:35.934Z",
+        "reason": null
+      },
+      {
+        "hostId": "server-44",
+        "status": "расходится",
+        "appliedRevision": "\"795e0fea7627013588cec2f8fb706640\"",
+        "confirmedAt": "2026-10-22T19:43:36.542Z",
+        "reason": "Нода держит другую версию политики (\"795e0fea7627013588cec2f8fb706640\"), а задана \"48a29fc081dd537eafae590718336696\"."
+      },
+      {
+        "hostId": "roomhacker-server-88",
+        "status": "расходится",
+        "appliedRevision": "\"24f8dd577eb0c9f2b36bb1daeca9e2d7\"",
+        "confirmedAt": "2026-10-22T19:43:36.544Z",
+        "reason": "Нода держит другую версию политики (\"24f8dd577eb0c9f2b36bb1daeca9e2d7\"), а задана \"48a29fc081dd537eafae590718336696\"."
+      },
+      {
+        "hostId": "mac-mini-2012.lan",
+        "status": "не подтвердил",
+        "appliedRevision": null,
+        "confirmedAt": null,
+        "reason": "Нода не отдала свою версию политики."
+      }
+    ],
+    "source": "живой опрос флота",
+    "checkedAt": "2026-10-22T19:43:35.934Z"
+  }
+}

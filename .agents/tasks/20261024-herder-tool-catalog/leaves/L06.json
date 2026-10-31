@@ -1,0 +1,20 @@
+{
+  "id": "L06",
+  "label": "Уточнить descriptions и мигрировать потребителей",
+  "status": "queued",
+  "description": "Уточнить active inventory versus history search, steer versus queue, create/resume guards, sync result versus async receipt, workspace и human resolve. Exact endpoint names сохраняются, кроме двух новых read names.",
+  "acceptance": "Descriptions и migration guide отражают реальные контракты; существующие callers проверены, aliases сохраняются до инвентаризации и согласованного периода без legacy вызовов. HumanStop, queued delivery и active-session lifecycle проходят регрессионную проверку.",
+  "affected_files": [
+    "src/mcp/control-plane-tools.ts",
+    "src/common-settings/tools.ts",
+    "docs/mcp-catalog-migration.md",
+    "src/mcp/session-tools.ts"
+  ],
+  "owner": "implementation-owner-to-be-assigned",
+  "depends_on": [
+    "L05"
+  ],
+  "estimate_unknown_reason": "Длительность не измерена; зависит от SDK, текущих прав и deployment contract.",
+  "note": "session-tools.ts — только после назначения владения. Dirty src/mcp-tools/definitions.ts — отдельная согласованная интеграция, не owned path этого цикла без назначения. Не присваивать foreign WIP.",
+  "updated_at": "2026-10-24T15:28:01+03:00"
+}

@@ -1,0 +1,44 @@
+{
+  "sourceSha": "f020a4b4a102d1eeb02f784be0204235e59c078c",
+  "previousSha": "43fcf5e711cf46f630374d31296f357db64b6dcb",
+  "bundleFingerprint": "076a1f2911df47137ba2aa18a2f96a7c38dba096eeaf2212a4b30ee11f6150f5",
+  "method": "canonical rollout-candidate.py once for node44, then once for node88; both exit0",
+  "nativeInputsSent": 0,
+  "manualResumes": 0,
+  "openCodeCoreUpdated": false,
+  "nodes": {
+    "44": {
+      "current": "/home/roomhacker/.local/share/agent-herder/fleet/releases/f020a4b4a102d1eeb02f784be0204235e59c078c",
+      "processEntrypoint": "/home/roomhacker/.local/share/agent-herder/fleet/releases/f020a4b4a102d1eeb02f784be0204235e59c078c/dist/index.js",
+      "pid": 867501,
+      "startTime": "2026-10-29 03:29:42 MSK",
+      "activeState": "active",
+      "readiness": "ready; belongs to new generation",
+      "payloadFilesVerified": 1811,
+      "sessionsHttp": 200,
+      "launchPolicyHttp": 200,
+      "mcpHttp": 200,
+      "indexingEnabled": false,
+      "indexingSha256": "713b3b0fd7130cfcc6241d519a7937f123559b896ff2e7b500a1e1e57e2bede6",
+      "stopSha256": "7eb64d5faf64468137b1724d6434798461c0f648dc2397ce236dadef6aa757b9",
+      "indexingAndStopUnchangedFromPriorReceipt": true
+    },
+    "88": {
+      "current": "/home/roomhacker/.local/share/agent-herder/fleet/releases/f020a4b4a102d1eeb02f784be0204235e59c078c",
+      "processEntrypoint": "/home/roomhacker/.local/share/agent-herder/fleet/releases/f020a4b4a102d1eeb02f784be0204235e59c078c/dist/index.js",
+      "pid": 3063277,
+      "startTime": "2026-10-29 03:29:59 MSK",
+      "activeState": "active",
+      "readiness": "ready; belongs to new generation",
+      "payloadFilesVerified": 1811,
+      "sessionsHttp": 200,
+      "launchPolicyHttp": 200,
+      "mcpHttp": 200,
+      "indexingEnabled": false,
+      "indexingSha256": "9879d8cce6382426813e0a330248432640c807f507edf630192f006951c18bee",
+      "stopSha256": "7708307b65dc42c72a6595cef1cd46295aab7c92293dbc55c89130b84f41d832",
+      "indexingAndStopUnchangedFromPriorReceipt": true
+    }
+  },
+  "scope": "Installed Herder runtime and readiness only. No native provider fallback canary claimed on these nodes. Server100, Mini and M1 untouched by this installer."
+}

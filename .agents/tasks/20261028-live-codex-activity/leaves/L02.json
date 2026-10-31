@@ -1,0 +1,52 @@
+{
+  "label": "Показывать свёрнутые события как в Codex",
+  "description": "Размышления и инструменты по умолчанию включены и видимы как последовательность компактных свёрнутых строк с названиями действий, статусом и раскрытием.",
+  "acceptance": "Новый браузер видит reasoning/tools включёнными и свёрнутыми, отдельные названия действий и состояния доступны; переключатели и раскрытие работают.",
+  "owner": "codex_self_identity",
+  "model": "gpt-6.1-sol",
+  "estimate_minutes": 15,
+  "status": "running",
+  "id": "L02",
+  "created_at": "2026-10-28T21:14:25+03:00",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex",
+  "updated_at": "2026-10-28T21:43:46+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-28T21:14:25+03:00",
+      "note": "",
+      "changes": {
+        "label": "Показывать свёрнутые события как в Codex",
+        "description": "Размышления и инструменты по умолчанию включены и видимы как последовательность компактных свёрнутых строк с названиями действий, статусом и раскрытием.",
+        "acceptance": "Новый браузер видит reasoning/tools включёнными и свёрнутыми, отдельные названия действий и состояния доступны; переключатели и раскрытие работают.",
+        "owner": "codex_self_identity",
+        "model": "gpt-6.1-sol",
+        "estimate_minutes": 15,
+        "status": "running"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T21:40:07+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "c1e920a: ordered collapsed activity rows; defaults visible; 8 UI tests PASS"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T21:43:46+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "result": "Предыдущая приёмка недостаточна: владелец показал сырые названия и пропавшие текстовые реплики. Исправляем semantic activity rendering под Codex reference."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    }
+  ],
+  "result": "Предыдущая приёмка недостаточна: владелец показал сырые названия и пропавшие текстовые реплики. Исправляем semantic activity rendering под Codex reference."
+}

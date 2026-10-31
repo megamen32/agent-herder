@@ -1,0 +1,21 @@
+{
+  "id": "L05",
+  "label": "Проверить профили 76 и optional 42-agent-profile",
+  "status": "queued",
+  "description": "Реализовать полный профиль 76, legacy и peer; optional обычный профиль 42 с 34 дополнительными инструментами в явных тематических наборах через конфигурацию подключения.",
+  "acceptance": "Полный профиль показывает 76, legacy сохраняет исходные 87 имён, peer сохраняет внутренние exact endpoints. При включении optional профиля он показывает ровно 42; reconnect/обновление каталога подтверждены клиентом, скрытие не меняет authorization.",
+  "affected_files": [
+    "src/mcp/catalog-policy.ts",
+    "src/mcp/catalog-projection.ts",
+    "tests/mcp-catalog-policy.test.ts",
+    "tests/mcp-catalog-contract.test.ts",
+    "docs/mcp-catalog-migration.md"
+  ],
+  "owner": "implementation-owner-to-be-assigned",
+  "depends_on": [
+    "L04"
+  ],
+  "estimate_unknown_reason": "Длительность не измерена; зависит от SDK, текущих прав и deployment contract.",
+  "note": "42-agent-profile optional; его невключение не блокирует базовую приёмку 76. Новый универсальный execute/discovery endpoint не добавлять.",
+  "updated_at": "2026-10-24T15:28:01+03:00"
+}

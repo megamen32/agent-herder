@@ -1,0 +1,62 @@
+{
+  "label": "Сохранить живые события Codex в истории и API",
+  "description": "Исправить потерю доступных reasoning/tool/collab событий текущего хода между нативной историей, details и обновлением чата.",
+  "acceptance": "Точный ход Codex содержит доступные reasoning/tool/collab части до финального ответа без дублей.",
+  "owner": "roomhacker",
+  "model": "gpt-6.1-sol",
+  "estimate_minutes": 15,
+  "status": "running",
+  "id": "L01",
+  "created_at": "2026-10-28T21:14:25+03:00",
+  "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+  "harness": "codex",
+  "updated_at": "2026-10-28T21:44:28+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-28T21:14:25+03:00",
+      "note": "",
+      "changes": {
+        "label": "Сохранить живые события Codex в истории и API",
+        "description": "Исправить потерю доступных reasoning/tool/collab событий текущего хода между нативной историей, details и обновлением чата.",
+        "acceptance": "Точный ход Codex содержит доступные reasoning/tool/collab части до финального ответа без дублей.",
+        "owner": "codex_live_tier",
+        "model": "gpt-6.1-sol",
+        "estimate_minutes": 15,
+        "status": "running"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T21:14:26+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "owner": "roomhacker"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T21:40:07+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "c1e920a: native public activity parsing, exact session probe and selected regression tests PASS"
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T21:44:28+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "Проверяем потерю commentary при насыщенном activity tail реальной root-сессии; bounded IO сохранить."
+      },
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex"
+    }
+  ],
+  "result": "c1e920a: native public activity parsing, exact session probe and selected regression tests PASS",
+  "note": "Проверяем потерю commentary при насыщенном activity tail реальной root-сессии; bounded IO сохранить."
+}

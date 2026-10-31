@@ -1,0 +1,23 @@
+{
+  "checkedAt": "2026-10-29T00:19:02.500Z",
+  "requestId": "bfd790f2-c08d-4bd2-b2ee-c2dd96a792f1",
+  "noticeDelivery": {
+    "state": "accepted",
+    "claimId": "908f48f0-a8a3-4c61-afb0-9e30899a18fc",
+    "payloadFingerprint": "3d73ee1a2bdc88a8f6cc96de5f375a3ea315010f8cb2269758f0878cf716dc73",
+    "claimedAt": "2026-10-28T22:30:24.105Z",
+    "settledAt": "2026-10-28T22:30:24.273Z",
+    "httpStatus": 201,
+    "noticeRequestId": "bfd790f2-c08d-4bd2-b2ee-c2dd96a792f1",
+    "deliveryStatus": "sent",
+    "reconciledAt": "2026-10-29T00:19:02.249Z"
+  },
+  "canonicalStatus": 200,
+  "state": "pending",
+  "telegramChatId": "-1004322359393",
+  "telegramMessageId": 8483,
+  "nativeHarness": "codex",
+  "nativeSessionId": "01a182ff-be14-7171-9b7d-a4965f7363cd",
+  "questionStillPending": true,
+  "answerSubmitted": false
+}

@@ -1,0 +1,238 @@
+{
+  "observedAt": 1792780333.844676,
+  "elapsed": 2.5103737500030547,
+  "acceptedCandidates": 26,
+  "compactions": 0,
+  "rows": [
+    {
+      "id": "mvs_0856cb7a6f584667bbe77e7d908c696b",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_0f24ad87f7a04bb28cde89a1353d98d0",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1,
+        "message": "502 <html>\r\n<head><title>502 Bad Gateway</title></head>\r\n<body bgcolor=\"white\">\r\n<center><h1>502 Bad Gateway</h1></center>\r\n<hr><center>alb</center>\r\n</body>\r\n</html>\r\n",
+        "error_code": 50113,
+        "error_source": "agent-runtime"
+      }
+    },
+    {
+      "id": "mvs_117cacd35a354f838d0cedac92c34bdf",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_22623c75db5a4967bb19b6843229d832",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_22e2437b7bc74367868213bf4900d16b",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_3538fad6642c449ab303045463080d5a",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_38e41d80ff66430992c32cdcea89811d",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_42f71a7427224fc795d0b3d2b2197767",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_4dcee0773c65450da62aecf8b4d5e993",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_4eb4593054d140e7bb99f90cba3d48f5",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_8fd0ea6d3ad24b329612bb16c46a1dbc",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_90a1bc8a316c4322a262f32a55535434",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_92b7a29fcb6147ae848063c2e62bf864",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 0,
+        "message": "LLM request timed out: no response from the provider within 300000ms. Raise it with MCODE_LLM_FIRST_EVENT_TIMEOUT_MS (milliseconds, 0 disables) or the host's per-model firstEventTimeoutMs.",
+        "error_code": 50113,
+        "error_source": "agent-runtime"
+      }
+    },
+    {
+      "id": "mvs_93d3f9a8f7a84585ad70c16c880c0c20",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1,
+        "message": "rate limit exceeded(TPM) (1039)",
+        "error_code": 50150,
+        "error_source": "agent-runtime"
+      }
+    },
+    {
+      "id": "mvs_955e2edb69d84c1298c6d26caa6ab2c5",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_a54df74733ef4358829142c457c501e9",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_a832d78234dc467bbe2efe0cabba7881",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_a8fa9d14086a4fb1abc3057832b39019",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1,
+        "message": "Connection error.",
+        "error_code": 50113,
+        "error_source": "agent-runtime"
+      }
+    },
+    {
+      "id": "mvs_aeadd768458242f899b1adbbad60d8a9",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_b8548b515f834949ae2a963bc69b353f",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_caca9a6abb39486aa1e9231d732516a1",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_d01039d819ed4989ab4660fc7f859942",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1,
+        "message": "rate limit exceeded(TPM) (1039)",
+        "error_code": 50150,
+        "error_source": "agent-runtime"
+      }
+    },
+    {
+      "id": "mvs_f70ce650bbf94d789e4e4a2669f6743a",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1,
+        "message": "rate limit exceeded(TPM) (1039)",
+        "error_code": 50150,
+        "error_source": "agent-runtime"
+      }
+    },
+    {
+      "id": "mvs_f98723c0b11c40d8b8e7161adbcbf9d7",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_fcedef26e3924f728b459f2eceb1dfba",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1
+      }
+    },
+    {
+      "id": "mvs_fee82cd663194081a4dfab9969c20274",
+      "kind": "turn",
+      "runtimeState": 2,
+      "status": {
+        "status_type": 1,
+        "message": "Canonical ToolResult compaction changed a non-result message: msg-SJqqMa0zKLuyEXJKScvO7wD6OVyTLkzGfKflWP8sqHQ",
+        "error_code": 50113,
+        "error_source": "canonical-history",
+        "error_detail": "{\"compactionAttemptId\":\"[\\\"agent-host-context-compaction\\\",\\\"effd8cba-befc-49cf-bf4c-af5b8bef35ce\\\",84924]\",\"replacementId\":\"ctx_1644c346-57fc-400a-8318-a4b729f9b061\",\"strategyVersion\":\"local-context-compaction-v3\",\"compactionMethod\":\"tool_archive\",\"summary\":\"\",\"compactedMessages\":[],\"keptMessages\":[],\"firstKeptIndex\":0,\"tokensBefore\":323491,\"tokensAfter\":253654,\"serializedBytesBefore\":1909561,\"serializedBytesAfter\":1631385,\"messagesBefore\":212,\"messagesAfter\":212,\"compactionPhase\":\"iteration\",\"replacementSourceIndexes\":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211]}"
+      }
+    }
+  ]
+}

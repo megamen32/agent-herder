@@ -1,0 +1,113 @@
+{
+  "target": {
+    "hostId": "mac-mini-2012.lan",
+    "machine": "Macmini6,2",
+    "architecture": "x86_64",
+    "sshTarget": "roomhacker@192.168.2.4"
+  },
+  "artifact": {
+    "sourceSha": "c1e920a8c0572e21e7a80b516c5a5e6274eeeafe",
+    "path": "/home/roomhacker/agents-projects/.fleet-candidate/releases/c1e920a8c0572e21e7a80b516c5a5e6274eeeafe",
+    "bundleFingerprint": "f4b39b6c1f01862ca615853bfd4cb26084d3626ee13dfe97b35d851978f321b6",
+    "bundleFiles": 2166,
+    "releasePayloadFiles": 1861,
+    "rootVerification": "bundle 14/14 PASS; production build PASS",
+    "transportArchiveBytes": 54609920,
+    "transportArchiveSha256": "51e4fed85be1539f714f9fbd5cff4c595984b0bfb6c749aba8a1a72bfc47f468"
+  },
+  "rollout": {
+    "status": "accepted",
+    "entrypoint": "deploy/fleet/rollout-candidate.py --node-side --kind fleet",
+    "helperPython": "Python 3.14.6 from the active LaunchAgent ProgramArguments",
+    "helperSourceSha": "c1e920a8c0572e21e7a80b516c5a5e6274eeeafe",
+    "helperSha256": {
+      "rollout-candidate.py": "203e023859ff0ebf75da805662654470112f0c7eb8e04bd4d3bd88693ed22951",
+      "rollout-node.py": "f6fc1e5e1a3226746adeb526d5d3b3ca5cd584acfbd8aa247914639576a648e0",
+      "release_rules.py": "f8655f0fb57590665f409ca237577d50b18463439e035cb58270442285b42a7f"
+    },
+    "previousSourceSha": "3d02bf47978240a7d2b817b46d86e87b0c6cca2f",
+    "currentSourceSha": "c1e920a8c0572e21e7a80b516c5a5e6274eeeafe",
+    "currentReleaseDirectories": [
+      "3d02bf47978240a7d2b817b46d86e87b0c6cca2f",
+      "c1e920a8c0572e21e7a80b516c5a5e6274eeeafe"
+    ],
+    "retainedRollbackRelease": "9cffc9efa0dfe05eed6eb67c2b9a21db877dba7e",
+    "releaseBudgetBytes": 52526080,
+    "payloadFilesVerified": 1799,
+    "indexSha256": "e319b85041845584965e81114860084b8d3b72d3543eb2d1f5dd97e9b14e7dbf",
+    "agentResumePackage": {
+      "resolvedInsideRelease": true,
+      "sha256": "c1415a40ffe15c67c2f5a0a106427cb9f2533e61569d6c61ec6e17cfd24e8f3b",
+      "files": 59
+    },
+    "launchAgent": {
+      "label": "com.bezrabotnyi.agent-herder-fleet-node",
+      "domain": "user/501",
+      "watchdogPid": 34889,
+      "nodePid": 34935,
+      "nodeStarted": "Wed Oct 28 11:43:18 2026",
+      "nodeEntrypoint": "/Users/roomhacker/.local/share/agent-herder/fleet/releases/c1e920a8c0572e21e7a80b516c5a5e6274eeeafe/dist/index.js"
+    },
+    "endpoints": {
+      "sessionsHttp": 200,
+      "launchPolicyHttp": 200,
+      "mcpInitializeHttp": 200
+    }
+  },
+  "preservedState": {
+    "indexingPause": {
+      "fileEnabled": false,
+      "fileSha256": "cdad77a45c0fb0cb7a96e93287fb3e56f6d0f862a1993d7934b7a8ae90a77bcf",
+      "settingsApiHttp": 200,
+      "settingsApiEnabled": false,
+      "updatedAt": "2026-10-28T15:16:33.249214Z"
+    },
+    "nativeNodeConfig": {
+      "allFieldsExceptSourceShaUnchanged": true,
+      "harnesses": ["codex"],
+      "codexSocketExists": true,
+      "watchdogCheckExit": 0,
+      "watchdogCheckNativeCodexSocket": true
+    },
+    "automationDisarm": {
+      "unchanged": true,
+      "disarmed": false,
+      "scopes": ["*"],
+      "forbiddenScopes": [],
+      "sha256Prefix": "959ea29934dccfe3"
+    },
+    "launchPolicyApi": {
+      "http": 200,
+      "allowedHarnesses": ["codex"],
+      "models": {"codex": "gpt-6.1-sol"}
+    }
+  },
+  "readonlyHistoryReadback": {
+    "api": "GET /api/sessions/codex/{sessionId}/details?limit=3&history=auto",
+    "http": 200,
+    "hostId": "mac-mini-2012.lan",
+    "harness": "codex",
+    "sessionId": "01a1568e-9872-73d1-a7bd-422e8aaabbed",
+    "historySource": "acp-load",
+    "complete": false,
+    "messageCount": 3,
+    "messageProjection": [
+      {"id": "call_4c96bd0e0c784bc391647688ccc9e177", "role": "assistant", "partTypes": ["tool_call", "tool_result"], "timestamp": "2026-10-20T00:11:51.389Z", "visibleTextLength": 0},
+      {"id": "exec-d59f38ee-5d9d-4419-983a-7d99d101110d", "role": "assistant", "partTypes": ["tool_call", "tool_result"], "timestamp": "2026-10-20T00:11:56.934Z", "visibleTextLength": 0},
+      {"id": "msg_08b217715a74c749016ad6b1cd89b88191b7dca11b860a7ddb", "role": "assistant", "partTypes": ["text"], "timestamp": "2026-10-20T00:11:57.834Z", "visibleTextLength": 198}
+    ],
+    "contentStored": false,
+    "noTurnOrInputIssued": true
+  },
+  "warnings": [
+    "Read-only mac-node-watchdog --check exited 0 and confirmed the socket, but logged launch-policy seed failed: No module named launch_policy_seed.",
+    "The Codex history readback returned three messages with complete=false; this is a partial native history page, not proof of exhaustive history."
+  ],
+  "cleanup": {
+    "localTransportArchiveRemoved": true,
+    "remoteTransportPacketRemoved": true,
+    "m1Touched": false,
+    "publicUiRepeated": false,
+    "nativeTurnCreated": false
+  }
+}

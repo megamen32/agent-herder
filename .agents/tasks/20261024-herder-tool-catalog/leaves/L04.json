@@ -1,0 +1,23 @@
+{
+  "id": "L04",
+  "label": "Объединить однородные чтения 79 → 76",
+  "status": "queued",
+  "description": "Ввести job_read и coordination_note_read с view one/list; common_settings_read получает view settings/status с прежним поведением для {}. Старые endpoints сохраняются aliases.",
+  "acceptance": "Каталог содержит 76 tools при доказанной эквивалентности прав всех трёх объединений; get-only субъект не получает list-доступ, неверные ветви отклоняются до handler. Если эквивалентность не доказана, merge исключается и итог увеличивается на один.",
+  "affected_files": [
+    "src/mcp/control-plane-tools.ts",
+    "src/common-settings/tools.ts",
+    "tests/mcp-read-tools.test.ts",
+    "src/mcp/catalog-policy.ts",
+    "tests/mcp-catalog-policy.test.ts",
+    "tests/mcp-catalog-contract.test.ts",
+    "docs/mcp-catalog-migration.md"
+  ],
+  "owner": "implementation-owner-to-be-assigned",
+  "depends_on": [
+    "L03"
+  ],
+  "estimate_unknown_reason": "Длительность не измерена; зависит от SDK, текущих прав и deployment contract.",
+  "note": "Не смешивать чтение с job_cancel, изменением notes/settings или resolve. Два новых имени дают временно 89 callable endpoints; advertisement 76 не означает callable 76.",
+  "updated_at": "2026-10-24T15:28:01+03:00"
+}

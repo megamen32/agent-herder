@@ -1,0 +1,102 @@
+{
+  "schema_version": 2,
+  "title": "Хуки Agent Herder выключены по умолчанию и вкладка «Настройки»",
+  "goal": "опциональные хуки Agent Herder выключены по умолчанию и выключаются одним штатным переключателем",
+  "business_result": "владелец видит в «Настройках» честное «хуки выключены» и может включить или выключить их сам, без правки файлов и без рестарта живого OpenCode",
+  "current_progress": "L01–L05 закрыты: дефолт OFF в коде, herder не отдаёт контекст при OFF, клиенты хуков молчат, вкладка «Настройки» проверена в браузере. L06 — зелёная ветка для интегратора.",
+  "external_waits": "Интеграция ветки feat/hooks-off-default-20261023 в следующий кандидат: публикацию и раскатку ведёт интегратор.",
+  "slots": 1,
+  "updated_at": "2026-10-23T16:20:00",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "Два разных рычага и дефолт OFF в коде",
+      "status": "done",
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 30,
+        "maximum": 30
+      },
+      "actual_minutes": 31,
+      "started_at": "15:31",
+      "finished_at": "16:02"
+    },
+    {
+      "id": "L02",
+      "label": "Herder не отдаёт контекст при OFF: живой обработчик замолкает сразу",
+      "status": "done",
+      "depends_on": [
+        "L01"
+      ],
+      "estimate_minutes": {
+        "minimum": 20,
+        "maximum": 20
+      },
+      "actual_minutes": 5,
+      "started_at": "16:02",
+      "finished_at": "16:07"
+    },
+    {
+      "id": "L03",
+      "label": "Клиенты хуков уважают переключатель: скрипты и плагин OpenCode",
+      "status": "done",
+      "depends_on": [
+        "L01"
+      ],
+      "estimate_minutes": {
+        "minimum": 25,
+        "maximum": 25
+      },
+      "actual_minutes": 10,
+      "started_at": "16:07",
+      "finished_at": "16:17"
+    },
+    {
+      "id": "L04",
+      "label": "Вкладка «Настройки»: переключатели, состояние, область, синхронизация",
+      "status": "done",
+      "depends_on": [
+        "L01"
+      ],
+      "estimate_minutes": {
+        "minimum": 25,
+        "maximum": 25
+      },
+      "actual_minutes": 6,
+      "started_at": "16:12",
+      "finished_at": "16:18"
+    },
+    {
+      "id": "L05",
+      "label": "Проверка: тесты, сборка, реальная вкладка в браузере",
+      "status": "done",
+      "depends_on": [
+        "L02",
+        "L03",
+        "L04"
+      ],
+      "estimate_minutes": {
+        "minimum": 20,
+        "maximum": 20
+      },
+      "actual_minutes": 1,
+      "started_at": "16:18",
+      "finished_at": "16:19"
+    },
+    {
+      "id": "L06",
+      "label": "Зелёная ветка для интегратора: коммит, тесты, запрет возврата при раскатке",
+      "status": "running",
+      "depends_on": [
+        "L05"
+      ],
+      "estimate_minutes": {
+        "minimum": 20,
+        "maximum": 20
+      },
+      "actual_minutes": 3,
+      "started_at": "16:19"
+    }
+  ],
+  "leaf_count": 6
+}

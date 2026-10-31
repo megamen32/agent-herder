@@ -1,0 +1,22 @@
+{
+  "id": "L02",
+  "label": "Доставить первый scoped slice 87 → 85",
+  "status": "running",
+  "description": "Скрыть session_search_local и list_active_sessions_local только из агентского tools/list; сохранить exact endpoints, dispatch и существующую авторизацию.",
+  "acceptance": "Реальный подключённый агентский MCP показывает ровно 85 tools; разрешённый legacy/peer вызов работает, запрещённый прямой вызов отклоняется; source tests, установленная ревизия и consumer readback представлены отдельно.",
+  "affected_files": [
+    "src/mcp/catalog-policy.ts",
+    "src/index.ts",
+    "tests/mcp-catalog-policy.test.ts",
+    "tests/mcp-catalog-contract.test.ts",
+    "docs/mcp-catalog-migration.md",
+    "src/mcp/catalog-projection.ts"
+  ],
+  "owner": "implementation-owner-to-be-assigned",
+  "depends_on": [
+    "L01"
+  ],
+  "estimate_unknown_reason": "Длительность не измерена; зависит от SDK, текущих прав и deployment contract.",
+  "note": "Running — принятый статус работы первого среза, не утверждение об изменённых исходниках. catalog-projection.ts нужен только если публичный SDK не разделяет list/call; приватные поля SDK запрещены.",
+  "updated_at": "2026-10-24T15:28:01+03:00"
+}

@@ -1,0 +1,53 @@
+{
+  "checkedAt": "2026-10-29T00:30:52.372974+00:00",
+  "hostId": "mac-mini-2012.lan",
+  "status": "installed_and_independently_read_back",
+  "runtimeSourceSha": "f020a4b4a102d1eeb02f784be0204235e59c078c",
+  "previousRuntimeSourceSha": "43fcf5e711cf46f630374d31296f357db64b6dcb",
+  "helperSourceCommit": "09686d9",
+  "canonicalEntrypoint": "rollout-candidate.py --node-side --kind fleet",
+  "helperInterpreter": "/usr/local/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python",
+  "installerAttempts": 1,
+  "installerExitCode": 0,
+  "readinessReason": "ready",
+  "nodePid": 80947,
+  "nodeStartedAtHostLocal": "Wed Oct 28 17:30:30 2026",
+  "entrypoint": "/Users/roomhacker/.local/share/agent-herder/fleet/releases/f020a4b4a102d1eeb02f784be0204235e59c078c/dist/index.js",
+  "independentReadback": {
+    "nodeConfigSourceSha": "f020a4b4a102d1eeb02f784be0204235e59c078c",
+    "currentSourceSha": "f020a4b4a102d1eeb02f784be0204235e59c078c",
+    "runningProcessSourceSha": "f020a4b4a102d1eeb02f784be0204235e59c078c",
+    "payloadFiles": 1811,
+    "missing": [],
+    "extra": [],
+    "mismatched": [],
+    "indexSha256": "dcf6192094a2d9540fcb55d69b4403fae5a837ce87837fa4cccd1c6a42166214",
+    "payloadVerified": true
+  },
+  "installerReadback": {
+    "sessionsHttp": 200,
+    "launchPolicyHttp": 200,
+    "mcpHttp": 200,
+    "generationBoundReadiness": true,
+    "agentResumeResolvedInsideRelease": true,
+    "agentResumePackageSha256": "72679d3b62cecf15d6d052b8b37ed0e047ced16c2e6852e4227d4faf26344140"
+  },
+  "preserved": {
+    "nativeCodexPidsAndStartTimesUnchanged": true,
+    "nativeCodexPids": [413, 6889, 71043],
+    "configAllFieldsExceptSourceShaUnchanged": true,
+    "configWithoutSourceShaHash": "4042de5423618de03a498670f5576780a5e4fcb8863af2b9933589870166284b",
+    "allObservedStateFileHashesUnchanged": true,
+    "indexingSettingsSha256": "cdad77a45c0fb0cb7a96e93287fb3e56f6d0f862a1993d7934b7a8ae90a77bcf",
+    "automationDisarmSha256": "959ea29934dccfe369b92d6d8decd258d3f084ec39a8436897e2bd72f285480b",
+    "automationLaunchPolicySha256": "56af90a72135a26290a33849488c169f5aab6f738d47fa07f514bd5ab086b6d8",
+    "autostartSettingsFileAbsentBeforeAndAfter": true,
+    "watchdogSha256": "7eb9e2a6658a3f5531d7152decbe9954caf1f3b267172b3959634c291af5e9d1",
+    "nativeInputsOrResumesIssued": 0,
+    "m1Touched": false,
+    "server100AndLinuxNodesTouched": false,
+    "openCodeCoreUpdated": false
+  },
+  "remainingMiniInstallBlocker": null,
+  "claimLimit": "Mini runtime installation and native session/settings preservation are proven. This receipt is not an OpenCode provider-fallback consumer canary; no native prompts were sent."
+}

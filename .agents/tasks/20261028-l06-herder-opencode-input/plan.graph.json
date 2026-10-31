@@ -12,7 +12,7 @@
   "current_progress": "Brief и production path подтверждены; focused regression, исправление и установленная версия ещё не доказаны.",
   "external_waits": "",
   "slots": 1,
-  "updated_at": "2026-10-28T21:51:11+03:00",
+  "updated_at": "2026-10-29T08:57:01+03:00",
   "tasks": [
     {
       "id": "L01",
@@ -123,6 +123,53 @@
       "wave": 1
     },
     {
+      "id": "L03",
+      "label": "Сохранить связь native ответа в квитанции",
+      "status": "done",
+      "description": "Сохранить идентификаторы отправленного input и native ответа в существующей квитанции без повторной отправки.",
+      "acceptance": "Точечная проверка сохранения и защищённого чтения; установленный runtime и readback.",
+      "owner": "roomhacker",
+      "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-10-29T08:51:58+03:00",
+          "note": "",
+          "changes": {
+            "label": "Сохранить связь native ответа в квитанции",
+            "status": "running",
+            "description": "Сохранить идентификаторы отправленного input и native ответа в существующей квитанции без повторной отправки.",
+            "acceptance": "Точечная проверка сохранения и защищённого чтения; установленный runtime и readback.",
+            "owner": "roomhacker",
+            "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+            "harness": "codex",
+            "model": "gpt-6.1-sol",
+            "estimate_minutes": 20
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-10-29T08:57:01+03:00",
+          "note": "Установлен 94de44a на server-100; сохранение native input проверено изолированно, старый receipt read-only вернул null. Новая consumer приёмка остаётся ExManager.",
+          "changes": {
+            "status": "done"
+          },
+          "session": "01a1754f-0228-7553-bea6-cc89e40b5187",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 20.0,
+        "maximum": 20.0
+      },
+      "created_at": "2026-10-29T08:51:58+03:00"
+    },
+    {
       "id": "L02",
       "label": "Опубликовать и штатно установить исправление",
       "status": "running",
@@ -206,7 +253,7 @@
       "wave": 2
     }
   ],
-  "leaf_count": 2,
+  "leaf_count": 3,
   "plan_origin": {
     "at": "2026-10-28T18:43:59Z",
     "source": "recorded_start",

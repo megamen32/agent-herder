@@ -1,0 +1,64 @@
+{
+  "centre_request": {
+    "url": "http://127.0.0.1:18787/api/automation/project-launch",
+    "authorization_header_present": true,
+    "authorization_is_bearer": true,
+    "purpose": "noticeplace.health-analysis",
+    "purpose_matches_contract": true,
+    "operation_id": "probe-operation-0001",
+    "harness": "opencode",
+    "model": "omniroute/minimax-combo-m3.1",
+    "token_absent_from_body": true,
+    "body_keys": [
+      "cwd",
+      "harness",
+      "harness_order",
+      "message",
+      "mode",
+      "model",
+      "operation_id",
+      "project",
+      "purpose"
+    ]
+  },
+  "centre_policy": {
+    "default_route": "omniroute/minimax-combo-m3.1",
+    "known_routes": [
+      "omniroute/minimax-combo-m3.1"
+    ],
+    "paid_route_refused": true,
+    "stale_route_refused": true
+  },
+  "tokens": {
+    "herder_env": "/home/roomhacker/.config/agent-herder/herder.env",
+    "centre_env": "/etc/notification-center.env",
+    "herder_token_present": true,
+    "centre_token_present": true,
+    "same_value": true,
+    "herder_digest16": "08dda0fa413c3f40",
+    "centre_digest16": "08dda0fa413c3f40",
+    "live_herder_pid": "2285493",
+    "live_herder_token_present": true,
+    "live_herder_digest16": "08dda0fa413c3f40",
+    "centre_matches_live_herder": true
+  },
+  "live_herder_gate": {
+    "health_analysis_detected": true,
+    "bearer_accepted": true,
+    "wrong_bearer_refused": true,
+    "qualified_model": "omniroute/minimax-combo-m3.1",
+    "bare_model_qualified": "MiniMax-M3.1-Flash",
+    "validation_error": null,
+    "missing_operation_id_refused": true,
+    "boundary_verdict": "ACCEPTED_BY_LIVE_GATE",
+    "would_be_401": false,
+    "would_be_403": false,
+    "route_gate": {
+      "combo": true,
+      "stale_omniroute": true,
+      "paid_subscription": true,
+      "other_provider": false
+    },
+    "purpose_constant": "noticeplace.health-analysis"
+  }
+}

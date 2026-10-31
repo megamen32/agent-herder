@@ -1,0 +1,65 @@
+{
+  "label": "Подключить native-вопросы и точные ответы",
+  "model": "gpt-6",
+  "estimate_minutes": 30,
+  "acceptance": "Typed native запрос создаёт одну карточку на вопрос, canonical ответы возвращаются exact RPC без дублей",
+  "owner": "roomhacker",
+  "id": "L01",
+  "created_at": "2026-10-28T23:48:48+03:00",
+  "session": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+  "harness": "codex",
+  "updated_at": "2026-10-29T03:24:09+03:00",
+  "progress_events": [
+    {
+      "at": "2026-10-28T23:48:48+03:00",
+      "note": "",
+      "changes": {
+        "label": "Подключить native-вопросы и точные ответы",
+        "model": "gpt-6",
+        "estimate_minutes": 30,
+        "acceptance": "Typed native запрос создаёт одну карточку на вопрос, canonical ответы возвращаются exact RPC без дублей",
+        "owner": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef"
+      },
+      "session": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-28T23:48:50+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-29T00:01:35+03:00",
+      "note": "Blocking RPC срез b3609c6 и read-only async reader98caf62 опубликованы. Реальный Airlock pending подтверждён как typed persisted async question; добавляем отдельный exact latest-turn continuation, а не ответ потерянному RPC. Parent единственный restart100 текущего совместимого source. Проверено26+4+15 source tests; business acceptance пока не заявлена.",
+      "changes": {},
+      "session": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-29T03:14:08+03:00",
+      "note": "Продолжение после runtime recovery: код вопросов опубликован и установлен43fcf5e владельцем runtime. Ближайший бизнес-шаг — read-only reconciliation Airlock bfd790f2 UNKNOWN на точном canonical writer8091; повторный POST и ответ за человека запрещены. Задержка: прежняя сессия прерывалась, не успешная приёмка. АвтоGram accepted не повторять.",
+      "changes": {},
+      "session": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-10-29T03:24:09+03:00",
+      "note": "L01 source завершён. Airlock provider message8483 подтверждён UserIO; root runtime ownership сохранено, restart не выполнялся. Независимый QA ответ отдельным service actor8810909089 — L02.",
+      "changes": {
+        "status": "done",
+        "result": "Blocking и persisted async observers/completion установлены в43fcf5e; exact pending вопрос Airlock доставлен в Telegram после доказанного отсутствия прежнего admission. UNKNOWN fence не переоткрывался. Receipt-only repair6fa2a28 опубликован;10focused checks прошли.",
+        "estimate_over_limit_reason": "Единый связанный протокол native observer, canonical siblings и completion требует согласованной интеграции."
+      },
+      "session": "01a18444-4ce2-70d2-a7f0-65e9fe1cbbef",
+      "harness": "codex"
+    }
+  ],
+  "status": "done",
+  "result": "Blocking и persisted async observers/completion установлены в43fcf5e; exact pending вопрос Airlock доставлен в Telegram после доказанного отсутствия прежнего admission. UNKNOWN fence не переоткрывался. Receipt-only repair6fa2a28 опубликован;10focused checks прошли.",
+  "estimate_over_limit_reason": "Единый связанный протокол native observer, canonical siblings и completion требует согласованной интеграции."
+}

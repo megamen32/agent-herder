@@ -1,0 +1,15 @@
+{
+  "id": "L01",
+  "label": "Зафиксировать live baseline и матрицу контрактов",
+  "status": "done",
+  "description": "Зафиксировать исходный live каталог 87 tools и отделить advertisement, callability и authorization.",
+  "acceptance": "Текущий readback подтверждает 87 tools; исходные имена сохранены в task.md. Полный снимок схем, размер в байтах, версия runtime и матрица прав остаются обязательными входами перед реализацией.",
+  "affected_files": [
+    ".agents/tasks/20261024-herder-tool-catalog/task.md"
+  ],
+  "owner": "current-session-readback",
+  "depends_on": [],
+  "estimate_unknown_reason": "Длительность не измерена; зависит от SDK, текущих прав и deployment contract.",
+  "note": "Live count подтверждён в текущей сессии; done относится к count baseline, не к ещё не снятым расширенным измерениям.",
+  "updated_at": "2026-10-24T15:28:01+03:00"
+}

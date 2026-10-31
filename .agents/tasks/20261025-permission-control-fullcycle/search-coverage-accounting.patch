@@ -1,0 +1,71 @@
+diff --git a/src/session-search.ts b/src/session-search.ts
+--- a/src/session-search.ts
++++ b/src/session-search.ts
+@@ -8,7 +8,7 @@
+ /** A disposable mirror. Never point this at a native harness database. */
+ export const SESSION_SEARCH_PATH=process.env.AGENT_HERDER_SESSION_SEARCH_DB??join(homedir(),'.local/state/agent-herder/session-search/index.sqlite');
+ export interface SearchSessionInput {harness:string;nativeSessionId:string;title:string;cwd:string;revision:string;chunks:AsyncIterable<{id:string;text:string}>;contentUnavailable?:boolean}
+-export interface SearchSourceReceipt {harness:string;source:string;state:'complete'|'partial'|'unavailable'|'unsupported';sessions:number;catalogSessions?:number;textSessions?:number;missingContent?:number;chunks?:number;reason?:string}
++export interface SearchSourceReceipt {harness:string;source:string;state:'complete'|'partial'|'unavailable'|'unsupported';sessions:number;catalogSessions?:number;textSessions?:number;missingContent?:number;chunks?:number;processedTextSessions?:number;processedChunks?:number;indexedTextSessions?:number;indexedChunks?:number;reason?:string}
+ export interface SessionSearchQuery {query:string;harnesses?:string[];limit?:number}
+ 
+ /** Quote user words: the public API accepts words, never raw FTS operators. */
+@@ -113,7 +113,9 @@
+     this.db.prepare('DELETE FROM chunks WHERE harness=? AND native_id IN (SELECT native_id FROM sessions WHERE harness=? AND scan<>?)').run(receipt.harness,receipt.harness,scan);
+     this.db.prepare('DELETE FROM sessions WHERE harness=? AND scan<>?').run(receipt.harness,scan);
+    }
+-   this.db.prepare('INSERT INTO sources VALUES(?,?) ON CONFLICT(harness) DO UPDATE SET receipt=excluded.receipt').run(receipt.harness,JSON.stringify({...receipt,observedAt:new Date().toISOString()}));
++   const indexed=this.db.prepare("SELECT count(DISTINCT native_id) AS textSessions,count(*) AS chunks FROM chunks WHERE harness=? AND length(text)>0").get(receipt.harness) as {textSessions:number;chunks:number};
++   const recorded={...receipt,processedTextSessions:receipt.textSessions??0,processedChunks:receipt.chunks??0,indexedTextSessions:Number(indexed?.textSessions??0),indexedChunks:Number(indexed?.chunks??0),observedAt:new Date().toISOString()};
++   this.db.prepare('INSERT INTO sources VALUES(?,?) ON CONFLICT(harness) DO UPDATE SET receipt=excluded.receipt').run(receipt.harness,JSON.stringify(recorded));
+    this.db.exec('COMMIT');
+   }catch(error){this.db.exec('ROLLBACK');throw error;}
+  }
+diff --git a/tests/l72-session-search-incremental.test.ts b/tests/l72-session-search-incremental.test.ts
+--- a/tests/l72-session-search-incremental.test.ts
++++ b/tests/l72-session-search-incremental.test.ts
+@@ -92,10 +92,18 @@
+   const {root,path}=await fixture();
+   const indexPath=join(root,'index.sqlite');
+   const index=new SessionSearchIndex(indexPath);
++  const scan=async()=>{
++   const receipts:any[]=[];
++   await index.scan(scanSessionSearchSources({onStatus:status=>receipts.push(status)}),receipts);
++   return index.status().sources.find(source=>source.harness==='opencode');
++  };
+   try{
+    // First cycle: the index is empty, so every record is read once for the hash
+    // and once for the chunks.
+-   await index.scan(scanSessionSearchSources({}),[]);
++   const firstReceipt=await scan();
++   expect(firstReceipt).toMatchObject({indexedTextSessions:2,indexedChunks:80,processedTextSessions:2,processedChunks:80});
++   const firstSearch=index.search({query:'alpha-needle-7',harnesses:['opencode']}).results[0];
++   expect(firstSearch).toMatchObject({nativeSessionId:'ses-alpha',chunkId:'prt-alpha-7'});
+    const firstContent=contentRows(path);
+    expect(firstContent).toBeGreaterThan(0);
+    const revisions=readRevisions(indexPath);
+@@ -104,11 +112,13 @@
+    // Second cycle over the same database: no content row may be read at all,
+    // the catalog and the cheap key are still visited.
+    for(const key of Object.keys(reads))delete reads[key];
+-   await index.scan(scanSessionSearchSources({}),[]);
++   const unchangedReceipt=await scan();
+    expect(contentRows(path)).toBe(0);
+    expect(catalogRows(path)).toBe(2);
+    expect(envelopeRows(path)).toBeGreaterThan(0);
+    expect(readRevisions(indexPath)).toEqual(revisions);
++   expect(unchangedReceipt).toMatchObject({indexedTextSessions:2,indexedChunks:80,processedTextSessions:0,processedChunks:0});
++   expect(index.search({query:'alpha-needle-7',harnesses:['opencode']}).results[0]).toMatchObject({nativeSessionId:firstSearch!.nativeSessionId,chunkId:firstSearch!.chunkId,revision:firstSearch!.revision});
+ 
+    // A changed record is still indexed, and only that session is re-read.
+    const db=new DatabaseSync(path);
+@@ -117,7 +127,8 @@
+    db.prepare('UPDATE session SET time_updated=? WHERE id=?').run(21,'ses-beta');
+    db.close();
+    for(const key of Object.keys(reads))delete reads[key];
+-   await index.scan(scanSessionSearchSources({}),[]);
++   const changedReceipt=await scan();
++   expect(changedReceipt).toMatchObject({indexedTextSessions:2,indexedChunks:81,processedTextSessions:1,processedChunks:41});
+    const changed=readRevisions(indexPath);
+    expect(changed['ses-beta']).not.toBe(revisions['ses-beta']);
+    expect(changed['ses-alpha']).toBe(revisions['ses-alpha']);

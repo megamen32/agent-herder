@@ -1,0 +1,297 @@
+{
+"finalRelease": {
+  "sourceSha": "04b329cb5246484a9a5d305893b286d7d1240252",
+  "bundleFingerprint": "f9de826dc7a8ef2b1370b877cff463ae39d78eec3c8fc5044e9e1ab14bd7e5ac",
+  "observedAt": "2026-10-28T18:56:50Z",
+  "readiness": "Canonical rollout accepted both nodes; running source exact; authenticated MCP initialize/sessions/launch policy HTTP200.",
+  "nodes": {
+    "44": {
+      "pid": 3280371,
+      "startMSK": "2026-10-28 21:56:30",
+      "nativePids": [
+        5317,
+        2202889
+      ],
+      "indexCounts": {
+        "sessions": 87,
+        "chunks": 170
+      }
+    },
+    "88": {
+      "pid": 824018,
+      "startMSK": "2026-10-28 21:56:32",
+      "nativePids": [
+        8290,
+        2053045,
+        3147565
+      ],
+      "indexCounts": {
+        "sessions": 898,
+        "chunks": 5611
+      }
+    }
+  },
+  "invariants": "Independent immediate post-rollout readback matched pre-rollout: indexing false and file hash; HumanStop/automation disarm hash; autostart API hash; model policy API hash; native Codex/OpenCode PIDs; index counts. This is historical receipt before later reboot; no post-reboot runtime mutation."
+},
+  "recordedAt": "2026-10-28T18:39:33.627Z",
+  "sourceSha": "c1e920a8c0572e21e7a80b516c5a5e6274eeeafe",
+  "bundleFingerprint": "f4b39b6c1f01862ca615853bfd4cb26084d3626ee13dfe97b35d851978f321b6",
+  "method": "canonical rollout-candidate.py from git archive exact published source; same immutable artifact as server100",
+  "scope": "Herder service only on Linux44 and88; no native turns or user input",
+  "nodes": {
+    "44": {
+      "before": {
+        "host": "server-44",
+        "pid": 2460257,
+        "release": "/home/roomhacker/.local/share/agent-herder/fleet/releases/3d02bf47978240a7d2b817b46d86e87b0c6cca2f",
+        "unit": "NRestarts=0\nExecMainStartTimestamp=Wed 2026-10-28 18:26:01 MSK\nActiveState=active",
+        "load": [
+          10.56689453125,
+          6.244140625,
+          5.3173828125
+        ],
+        "nativePids": [
+          {
+            "pid": 5317,
+            "comm": "codex"
+          },
+          {
+            "pid": 2202889,
+            "comm": "codex"
+          }
+        ],
+        "indexing": {
+          "path": "/home/roomhacker/.local/state/agent-herder/indexing-settings.json",
+          "sha256": "713b3b0fd7130cfcc6241d519a7937f123559b896ff2e7b500a1e1e57e2bede6",
+          "state": {
+            "enabled": false,
+            "updatedAt": "2026-10-28T15:07:00.950Z"
+          }
+        },
+        "stop": {
+          "path": "/home/roomhacker/.local/state/agent-herder/fleet-node/autopilot/automation-disarm.json",
+          "sha256": "7eb64d5faf64468137b1724d6434798461c0f648dc2397ce236dadef6aa757b9"
+        },
+        "indexCounts": {
+          "sessions": 87,
+          "chunks": 170
+        },
+        "autostartAPI": {
+          "sha256": "5d9fb13e1e47ac081c2b630037168b7ed724e36ecf0a1b9da99dd19aa053a55f"
+        },
+        "policyAPI": {
+          "sha256": "9ee6ba28c146c22d723e1b495171e960e042a923d9986c8ba4c1ea887dd9bb3c"
+        },
+        "pauseAPI": {
+          "sha256": "0c2297b1fd43d3c941e822c26ed9f7a52f59328ed61e94aec8cbbe51475d6dba",
+          "state": {
+            "enabled": false,
+            "updatedAt": "2026-10-28T15:07:00.950Z"
+          }
+        }
+      },
+      "after": {
+        "host": "server-44",
+        "pid": 3204571,
+        "release": "/home/roomhacker/.local/share/agent-herder/fleet/releases/c1e920a8c0572e21e7a80b516c5a5e6274eeeafe",
+        "unit": "NRestarts=0\nExecMainStartTimestamp=Wed 2026-10-28 21:38:28 MSK\nActiveState=active",
+        "load": [
+          10.6357421875,
+          6.796875,
+          5.54150390625
+        ],
+        "nativePids": [
+          {
+            "pid": 5317,
+            "comm": "codex"
+          },
+          {
+            "pid": 2202889,
+            "comm": "codex"
+          }
+        ],
+        "indexing": {
+          "path": "/home/roomhacker/.local/state/agent-herder/indexing-settings.json",
+          "sha256": "713b3b0fd7130cfcc6241d519a7937f123559b896ff2e7b500a1e1e57e2bede6",
+          "state": {
+            "enabled": false,
+            "updatedAt": "2026-10-28T15:07:00.950Z"
+          }
+        },
+        "stop": {
+          "path": "/home/roomhacker/.local/state/agent-herder/fleet-node/autopilot/automation-disarm.json",
+          "sha256": "7eb64d5faf64468137b1724d6434798461c0f648dc2397ce236dadef6aa757b9"
+        },
+        "indexCounts": {
+          "sessions": 87,
+          "chunks": 170
+        },
+        "autostartAPI": {
+          "sha256": "5d9fb13e1e47ac081c2b630037168b7ed724e36ecf0a1b9da99dd19aa053a55f"
+        },
+        "policyAPI": {
+          "sha256": "9ee6ba28c146c22d723e1b495171e960e042a923d9986c8ba4c1ea887dd9bb3c"
+        },
+        "pauseAPI": {
+          "sha256": "0c2297b1fd43d3c941e822c26ed9f7a52f59328ed61e94aec8cbbe51475d6dba",
+          "state": {
+            "enabled": false,
+            "updatedAt": "2026-10-28T15:07:00.950Z"
+          }
+        }
+      },
+      "readiness": {
+        "runningSource": true,
+        "sessions": 200,
+        "launchPolicy": 200,
+        "mcpAuthenticatedInitialize": 200
+      },
+      "preserved": {
+        "nativePids": true,
+        "indexing": true,
+        "stop": true,
+        "indexCounts": true,
+        "autostartAPI": true,
+        "policyAPI": true,
+        "pauseAPI": true
+      },
+      "existingCodexDetails": {
+        "sessionId": "01a15a6e-ff79-7c60-9b32-3b8bbbbc2949",
+        "status": 200,
+        "partTypes": {}
+      },
+      "coverage": "Selected existing session history exposes no parts; live reasoning/tools not proven on this node. Root owns real UI acceptance."
+    },
+    "88": {
+      "before": {
+        "host": "roomhacker-server-88",
+        "pid": 3664122,
+        "release": "/home/roomhacker/.local/share/agent-herder/fleet/releases/cd2bb9f13f6ec5ded079ef59b71d5e350bec2cf7",
+        "unit": "NRestarts=0\nExecMainStartTimestamp=Wed 2026-10-28 18:37:45 MSK\nActiveState=active",
+        "load": [
+          25.92529296875,
+          22.8681640625,
+          19.802734375
+        ],
+        "nativePids": [
+          {
+            "pid": 8290,
+            "comm": "codex"
+          },
+          {
+            "pid": 2053045,
+            "comm": "opencode"
+          },
+          {
+            "pid": 3147565,
+            "comm": "codex"
+          }
+        ],
+        "indexing": {
+          "path": "/home/roomhacker/.local/state/agent-herder/indexing-settings.json",
+          "sha256": "9879d8cce6382426813e0a330248432640c807f507edf630192f006951c18bee",
+          "state": {
+            "enabled": false,
+            "updatedAt": "2026-10-28T15:07:39.388Z"
+          }
+        },
+        "stop": {
+          "path": "/home/roomhacker/.local/state/agent-herder/fleet-node/autopilot/automation-disarm.json",
+          "sha256": "7708307b65dc42c72a6595cef1cd46295aab7c92293dbc55c89130b84f41d832"
+        },
+        "indexCounts": {
+          "sessions": 898,
+          "chunks": 5611
+        },
+        "autostartAPI": {
+          "sha256": "44b943f1dd7cace005a084ea724751ce5bda4ac4f234b985899ffd0ec666793f"
+        },
+        "policyAPI": {
+          "sha256": "a6be6d5261add9b44f33fe16ff7b57f894b9b7ee1b35b0032cb52fc10f182e99"
+        },
+        "pauseAPI": {
+          "sha256": "ff3128baae78e63b44ba0aa3f0c9157271d131cb43be800c5cdddfe5c1ba942b",
+          "state": {
+            "enabled": false,
+            "updatedAt": "2026-10-28T15:07:39.388Z"
+          }
+        }
+      },
+      "after": {
+        "host": "roomhacker-server-88",
+        "pid": 682948,
+        "release": "/home/roomhacker/.local/share/agent-herder/fleet/releases/c1e920a8c0572e21e7a80b516c5a5e6274eeeafe",
+        "unit": "NRestarts=0\nExecMainStartTimestamp=Wed 2026-10-28 21:38:29 MSK\nActiveState=active",
+        "load": [
+          22.97119140625,
+          22.59228515625,
+          19.84521484375
+        ],
+        "nativePids": [
+          {
+            "pid": 8290,
+            "comm": "codex"
+          },
+          {
+            "pid": 2053045,
+            "comm": "opencode"
+          },
+          {
+            "pid": 3147565,
+            "comm": "codex"
+          }
+        ],
+        "indexing": {
+          "path": "/home/roomhacker/.local/state/agent-herder/indexing-settings.json",
+          "sha256": "9879d8cce6382426813e0a330248432640c807f507edf630192f006951c18bee",
+          "state": {
+            "enabled": false,
+            "updatedAt": "2026-10-28T15:07:39.388Z"
+          }
+        },
+        "stop": {
+          "path": "/home/roomhacker/.local/state/agent-herder/fleet-node/autopilot/automation-disarm.json",
+          "sha256": "7708307b65dc42c72a6595cef1cd46295aab7c92293dbc55c89130b84f41d832"
+        },
+        "indexCounts": {
+          "sessions": 898,
+          "chunks": 5611
+        },
+        "autostartAPI": {
+          "sha256": "44b943f1dd7cace005a084ea724751ce5bda4ac4f234b985899ffd0ec666793f"
+        },
+        "policyAPI": {
+          "sha256": "a6be6d5261add9b44f33fe16ff7b57f894b9b7ee1b35b0032cb52fc10f182e99"
+        },
+        "pauseAPI": {
+          "sha256": "ff3128baae78e63b44ba0aa3f0c9157271d131cb43be800c5cdddfe5c1ba942b",
+          "state": {
+            "enabled": false,
+            "updatedAt": "2026-10-28T15:07:39.388Z"
+          }
+        }
+      },
+      "readiness": {
+        "runningSource": true,
+        "sessions": 200,
+        "launchPolicy": 200,
+        "mcpAuthenticatedInitialize": 200
+      },
+      "preserved": {
+        "nativePids": true,
+        "indexing": true,
+        "stop": true,
+        "indexCounts": true,
+        "autostartAPI": true,
+        "policyAPI": true,
+        "pauseAPI": true
+      },
+      "existingCodexDetails": {
+        "sessionId": "01a15255-5cc4-7573-8eb9-286748e89b00",
+        "status": 200,
+        "partTypes": {}
+      },
+      "coverage": "Selected existing session history exposes no parts; live reasoning/tools not proven on this node. Root owns real UI acceptance."
+    }
+  }
+}

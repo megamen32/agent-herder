@@ -1,0 +1,42 @@
+{
+  "schema": "agent-herder.task-review-direction.v1",
+  "created_at": "2026-10-25T18:45:00Z",
+  "task": "20261025-permission-control-fullcycle",
+  "baseline": {
+    "installed_source": "00fe2e36",
+    "main_docs_source": "1a089139c4bf0426006e33b09e6af164c2cf22b6",
+    "nginx_pin": "0ceeccbc",
+    "accepted_lanes": ["L16", "L19"],
+    "L05": "active; no real human delivery accepted",
+    "original_quote_search": "UNKNOWN"
+  },
+  "direction": [
+    "Continue L05 from permission.requested through the existing observer and typed Notice question path; never add a daemon, direct Telegram client, or recipient-policy bypass.",
+    "Keep exact host/harness/session/request binding, fresh pending and canRespond checks, frozen safe fingerprint, write-ahead claim, and no replay after claimed, accepted, or unknown.",
+    "ID-less native events stay unsupported unless exact state reconciliation supplies an explicit pending ID; do not choose a pending request by text or position.",
+    "No owner notification or real Notice delivery during synthetic contract tests; source/tests do not close the live consumer gate."
+  ],
+  "learning": [
+    "Separate native CLI execution bound from adapter observation grace; verify with virtual late-completion and true-hang cases.",
+    "A delivery claim must bind the actual canonical payload fingerprint and be single-use; a stored nonce alone is insufficient.",
+    "Native atomic admission proof applies only when CLI and adapter use the same runtime DB/dataDir.",
+    "HTTP 2xx without the exact native or Notice request identity is not accepted delivery.",
+    "RPC status without message/data is inconclusive; preserve UNKNOWN and do not replay.",
+    "Report source, tests, install, browser and provider acceptance as separate evidence layers.",
+    "An idle worker needs an explicit follow-up task to resume; do not infer completion from availability."
+  ],
+  "current_l05": {
+    "paths": [
+      "src/human-request/notice-question.ts",
+      "src/human-request/registry.ts",
+      "src/index.ts",
+      "src/mcp/human-request-tools.ts",
+      "src/permission-control/notice-bridge.ts",
+      "src/session-supervisor.ts",
+      "tests/permission-control-notice.test.ts"
+    ],
+    "verification": "focused 26/26 passed before final initial-snapshot retry-status change; tsc and diff-check pass after it",
+    "independent_review": "first review found and fixes were applied for one-time snapshot lifecycle and CWD drift; latest retry-completeness tweak remains awaiting Lead review",
+    "live_delivery": "not performed"
+  }
+}

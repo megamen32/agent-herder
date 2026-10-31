@@ -1,0 +1,187 @@
+{
+  "checkedAt": "2026-10-28T20:38:17.158Z",
+  "scope": "read-only Mac inventory, no restart/resume/native socket takeover",
+  "limits": {
+    "nativeTailBytesPerRecentSession": 65536,
+    "recentSessionCap": 100,
+    "miniApiCap": 500
+  },
+  "hosts": {
+    "m1": {
+      "hostname": "MacBook-Pro-User.local",
+      "localHostName": "MacBook-Pro-User",
+      "bootTimeEpoch": 1793001143,
+      "bootTimeLocal": "2026-10-26 10:52:23",
+      "localHerderAvailable": false,
+      "nativeControlSocketPresent": false,
+      "launchAgents": {
+        "com.bezrabotnyi.agent-herder-fleet-node": {
+          "pid": null,
+          "lastExitStatus": 78
+        },
+        "com.bezrabotnyi.agent-herder-native-codex": {
+          "pid": null,
+          "lastExitStatus": 78
+        }
+      },
+      "desktopCodexPid": 451,
+      "port18787": {
+        "owner": "ssh",
+        "pid": 98867,
+        "remoteHostIds": [
+          "roomhacker-server-100"
+        ],
+        "warning": "This API is a server100 tunnel, not M1 inventory"
+      },
+      "codex": {
+        "available": true,
+        "recent24hCount": 4,
+        "truncated": false,
+        "sessions": [
+          {
+            "id": "01a183f3-e4ec-7e83-95e7-4d3a8484bef3",
+            "updatedAtMs": 1793219810413,
+            "tailBound": 65536,
+            "ownerStop": "unknown",
+            "pending": "unknown",
+            "deliveryUnknown": "unknown",
+            "fileSize": 19438829,
+            "observedTurnIds": 1,
+            "latestBoundary": null,
+            "boundaries": []
+          },
+          {
+            "id": "01a134e4-c26e-7ae0-900c-f9be106dbc98",
+            "updatedAtMs": 1793218554980,
+            "tailBound": 65536,
+            "ownerStop": "unknown",
+            "pending": "unknown",
+            "deliveryUnknown": "unknown",
+            "fileSize": 67129497,
+            "observedTurnIds": 1,
+            "latestBoundary": {
+              "event": "task_complete",
+              "turnId": "01a18426-07c6-7f80-bb03-a4a4c31a2899",
+              "at": "2026-10-28T20:15:54.978Z",
+              "reason": null
+            },
+            "boundaries": [
+              {
+                "event": "task_complete",
+                "turnId": "01a18426-07c6-7f80-bb03-a4a4c31a2899",
+                "at": "2026-10-28T20:15:54.978Z",
+                "reason": null
+              }
+            ]
+          },
+          {
+            "id": "01a139cf-aefe-75e3-8360-2c77885ef7a7",
+            "updatedAtMs": 1793183634272,
+            "tailBound": 65536,
+            "ownerStop": "unknown",
+            "pending": "unknown",
+            "deliveryUnknown": "unknown",
+            "fileSize": 270233193,
+            "observedTurnIds": 1,
+            "latestBoundary": {
+              "event": "turn_aborted",
+              "turnId": "01a18211-ae0a-72a3-b883-660e662c1b13",
+              "at": "2026-10-28T10:33:54.271Z",
+              "reason": "interrupted"
+            },
+            "boundaries": [
+              {
+                "event": "turn_aborted",
+                "turnId": "01a18211-ae0a-72a3-b883-660e662c1b13",
+                "at": "2026-10-28T10:33:54.271Z",
+                "reason": "interrupted"
+              }
+            ]
+          },
+          {
+            "id": "01a0fd79-42d3-79a2-8c7a-8955c3b0ac3e",
+            "updatedAtMs": 1793146438631,
+            "tailBound": 65536,
+            "ownerStop": "unknown",
+            "pending": "unknown",
+            "deliveryUnknown": "unknown",
+            "fileSize": 114942532,
+            "observedTurnIds": 1,
+            "latestBoundary": {
+              "event": "task_complete",
+              "turnId": "01a17de2-243e-7da2-a4e5-7431f8c0fee5",
+              "at": "2026-10-27T19:05:15.950Z",
+              "reason": null
+            },
+            "boundaries": [
+              {
+                "event": "task_complete",
+                "turnId": "01a17de2-243e-7da2-a4e5-7431f8c0fee5",
+                "at": "2026-10-27T19:05:15.950Z",
+                "reason": null
+              }
+            ]
+          }
+        ]
+      },
+      "opencode": {
+        "available": true,
+        "recent24hCount": 0,
+        "truncated": false,
+        "sessions": []
+      },
+      "interruptedIds": [
+        {
+          "sessionId": "01a139cf-aefe-75e3-8360-2c77885ef7a7",
+          "event": "turn_aborted",
+          "turnId": "01a18211-ae0a-72a3-b883-660e662c1b13",
+          "at": "2026-10-28T10:33:54.271Z",
+          "reason": "interrupted"
+        }
+      ],
+      "blocker": "Local fleet-node and fleet-native-codex LaunchAgents exited78; no native control socket. STOP/pending/accepted-UNKNOWN cannot be verified; persistent interrupted marker is not resume permission."
+    },
+    "mini": {
+      "hostname": "mac-mini-2012.lan",
+      "address": "192.168.2.4",
+      "bootTimeEpoch": 1791847062,
+      "bootTimeLocal": "2026-10-12 16:17:42",
+      "herderPid": 34935,
+      "herderPort": 18789,
+      "apiViaSSHLoopback": true,
+      "lanApiStatus": 401,
+      "codexAdapter": {
+        "enabled": true,
+        "active": true,
+        "ready": true,
+        "nativeEventConnected": true
+      },
+      "opencodeAdapter": {
+        "enabled": false,
+        "active": false
+      },
+      "apiInventory": {
+        "count": 38,
+        "total": 38,
+        "truncated": false,
+        "hostIds": [
+          "mac-mini-2012.lan"
+        ],
+        "recent24h": 0
+      },
+      "codex": {
+        "available": true,
+        "recent24hCount": 0,
+        "truncated": false,
+        "sessions": []
+      },
+      "opencode": {
+        "available": false,
+        "reason": "canonical_native_database_absent",
+        "controlStatus": "unknown"
+      },
+      "interruptedIds": []
+    }
+  },
+  "claim": "Neither Mac rebooted with server100 today. Mini has no recent Codex rows in native24h index. M1 has four recent rows; one explicit interrupted, two latest completed markers, one no boundary within64KiB. Absence of a boundary is UNKNOWN, not idle/completed. No recent M1 OpenCode rows; missing Mini OpenCode database/control is unavailable, not proof of zero sessions."
+}

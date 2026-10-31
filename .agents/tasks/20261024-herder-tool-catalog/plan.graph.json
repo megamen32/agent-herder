@@ -1,0 +1,144 @@
+{
+  "schema_version": 2,
+  "title": "Сокращение каталога MCP Agent Herder",
+  "goal": "Уменьшить advertisement 87→85→79→76, сохранив exact endpoints, авторизацию и lifecycle; optional агентский профиль 42.",
+  "business_result": "Подключённый агент получает меньший доказуемо работающий каталог без потери правовых границ, очередей и совместимости.",
+  "business_results": [
+    "Подключённый агент получает меньший доказуемо работающий каталог без потери правовых границ, очередей и совместимости."
+  ],
+  "current_progress": "",
+  "external_waits": "",
+  "slots": 1,
+  "updated_at": "2026-10-24T15:28:01+03:00",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "Зафиксировать live baseline и матрицу контрактов",
+      "status": "done",
+      "description": "Зафиксировать исходный live каталог 87 tools и отделить advertisement, callability и authorization.",
+      "acceptance": "Текущий readback подтверждает 87 tools; исходные имена сохранены в task.md. Полный снимок схем, размер в байтах, версия runtime и матрица прав остаются обязательными входами перед реализацией.",
+      "owner": "current-session-readback",
+      "note": "Live count подтверждён в текущей сессии; done относится к count baseline, не к ещё не снятым расширенным измерениям.",
+      "estimate_unknown_reason": "Длительность не измерена; зависит от SDK, текущих прав и deployment contract.",
+      "affected_files": [
+        ".agents/tasks/20261024-herder-tool-catalog/task.md"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "L02",
+      "label": "Доставить первый scoped slice 87 → 85",
+      "status": "running",
+      "description": "Скрыть session_search_local и list_active_sessions_local только из агентского tools/list; сохранить exact endpoints, dispatch и существующую авторизацию.",
+      "acceptance": "Реальный подключённый агентский MCP показывает ровно 85 tools; разрешённый legacy/peer вызов работает, запрещённый прямой вызов отклоняется; source tests, установленная ревизия и consumer readback представлены отдельно.",
+      "owner": "implementation-owner-to-be-assigned",
+      "note": "Running — принятый статус работы первого среза, не утверждение об изменённых исходниках. catalog-projection.ts нужен только если публичный SDK не разделяет list/call; приватные поля SDK запрещены.",
+      "estimate_unknown_reason": "Длительность не измерена; зависит от SDK, текущих прав и deployment contract.",
+      "affected_files": [
+        "src/mcp/catalog-policy.ts",
+        "src/index.ts",
+        "tests/mcp-catalog-policy.test.ts",
+        "tests/mcp-catalog-contract.test.ts",
+        "docs/mcp-catalog-migration.md",
+        "src/mcp/catalog-projection.ts"
+      ],
+      "depends_on": [
+        "L01"
+      ]
+    },
+    {
+      "id": "L03",
+      "label": "Сократить advertisement 85 → 79 через sync aliases",
+      "status": "queued",
+      "description": "Скрыть шесть sync aliases: browser_wake, export_transcript, cdp_export_chat, cdp_export_visible_chats, cdp_reconcile_known_routes, cdp_reconcile_visible_chats. Показывать их async пары без изменения sync/async семантики.",
+      "acceptance": "Подключённый MCP показывает 79 tools; sync endpoints сохраняют прежний результат и права, async возвращает job receipt, reconnect/readback не повторяет принятую операцию.",
+      "owner": "implementation-owner-to-be-assigned",
+      "note": "Handlers не менять; UNKNOWN/accepted не повторять.",
+      "estimate_unknown_reason": "Длительность не измерена; зависит от SDK, текущих прав и deployment contract.",
+      "affected_files": [
+        "src/mcp/catalog-policy.ts",
+        "tests/mcp-catalog-policy.test.ts",
+        "tests/mcp-catalog-contract.test.ts",
+        "docs/mcp-catalog-migration.md"
+      ],
+      "depends_on": [
+        "L02"
+      ]
+    },
+    {
+      "id": "L04",
+      "label": "Объединить однородные чтения 79 → 76",
+      "status": "queued",
+      "description": "Ввести job_read и coordination_note_read с view one/list; common_settings_read получает view settings/status с прежним поведением для {}. Старые endpoints сохраняются aliases.",
+      "acceptance": "Каталог содержит 76 tools при доказанной эквивалентности прав всех трёх объединений; get-only субъект не получает list-доступ, неверные ветви отклоняются до handler. Если эквивалентность не доказана, merge исключается и итог увеличивается на один.",
+      "owner": "implementation-owner-to-be-assigned",
+      "note": "Не смешивать чтение с job_cancel, изменением notes/settings или resolve. Два новых имени дают временно 89 callable endpoints; advertisement 76 не означает callable 76.",
+      "estimate_unknown_reason": "Длительность не измерена; зависит от SDK, текущих прав и deployment contract.",
+      "affected_files": [
+        "src/mcp/control-plane-tools.ts",
+        "src/common-settings/tools.ts",
+        "tests/mcp-read-tools.test.ts",
+        "src/mcp/catalog-policy.ts",
+        "tests/mcp-catalog-policy.test.ts",
+        "tests/mcp-catalog-contract.test.ts",
+        "docs/mcp-catalog-migration.md"
+      ],
+      "depends_on": [
+        "L03"
+      ]
+    },
+    {
+      "id": "L05",
+      "label": "Проверить профили 76 и optional 42-agent-profile",
+      "status": "queued",
+      "description": "Реализовать полный профиль 76, legacy и peer; optional обычный профиль 42 с 34 дополнительными инструментами в явных тематических наборах через конфигурацию подключения.",
+      "acceptance": "Полный профиль показывает 76, legacy сохраняет исходные 87 имён, peer сохраняет внутренние exact endpoints. При включении optional профиля он показывает ровно 42; reconnect/обновление каталога подтверждены клиентом, скрытие не меняет authorization.",
+      "owner": "implementation-owner-to-be-assigned",
+      "note": "42-agent-profile optional; его невключение не блокирует базовую приёмку 76. Новый универсальный execute/discovery endpoint не добавлять.",
+      "estimate_unknown_reason": "Длительность не измерена; зависит от SDK, текущих прав и deployment contract.",
+      "affected_files": [
+        "src/mcp/catalog-policy.ts",
+        "src/mcp/catalog-projection.ts",
+        "tests/mcp-catalog-policy.test.ts",
+        "tests/mcp-catalog-contract.test.ts",
+        "docs/mcp-catalog-migration.md"
+      ],
+      "depends_on": [
+        "L04"
+      ]
+    },
+    {
+      "id": "L06",
+      "label": "Уточнить descriptions и мигрировать потребителей",
+      "status": "queued",
+      "description": "Уточнить active inventory versus history search, steer versus queue, create/resume guards, sync result versus async receipt, workspace и human resolve. Exact endpoint names сохраняются, кроме двух новых read names.",
+      "acceptance": "Descriptions и migration guide отражают реальные контракты; существующие callers проверены, aliases сохраняются до инвентаризации и согласованного периода без legacy вызовов. HumanStop, queued delivery и active-session lifecycle проходят регрессионную проверку.",
+      "owner": "implementation-owner-to-be-assigned",
+      "note": "session-tools.ts — только после назначения владения. Dirty src/mcp-tools/definitions.ts — отдельная согласованная интеграция, не owned path этого цикла без назначения. Не присваивать foreign WIP.",
+      "estimate_unknown_reason": "Длительность не измерена; зависит от SDK, текущих прав и deployment contract.",
+      "affected_files": [
+        "src/mcp/control-plane-tools.ts",
+        "src/common-settings/tools.ts",
+        "docs/mcp-catalog-migration.md",
+        "src/mcp/session-tools.ts"
+      ],
+      "depends_on": [
+        "L05"
+      ]
+    },
+    {
+      "id": "L07",
+      "label": "Выполнить контролируемый релиз и consumer acceptance",
+      "status": "queued",
+      "description": "Один назначенный release executor устанавливает проверенную ревизию; новый каталог проверяется на реальном подключённом MCP с отдельными метриками и обратимым выбором legacy профиля.",
+      "acceptance": "Есть runtime revision и полный tools/list с пагинацией; доказаны 87→85→79→76, optional 42, размеры схем и отдельный callable count; тестовая сессия подтверждает steer/queue, async reconnect, legacy sync и отрицательную авторизацию без повторов UNKNOWN/accepted.",
+      "owner": "release-executor-to-be-assigned",
+      "note": "Release paths и исполнитель определяются по актуальному deployment contract перед действием. Сейчас release файлы и runtime не назначены этому artifact writer; телефонные тесты запрещены.",
+      "estimate_unknown_reason": "Длительность не измерена; зависит от SDK, текущих прав и deployment contract.",
+      "depends_on": [
+        "L06"
+      ]
+    }
+  ],
+  "leaf_count": 7
+}
