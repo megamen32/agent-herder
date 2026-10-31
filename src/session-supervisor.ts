@@ -31,6 +31,7 @@ import { LineageStore, type LineageRecord } from "./lineage-store.js";
 import { ModelsDevPricing } from "./model-pricing.js";
 import { coordinationNotes, type WorkspaceDeclaration, type WorkspaceObservation } from "./coordination-notes.js";
 import { herderEvents, type HerderEventBus } from "./herder-events.js";
+import { publishNativeTurnReceipt } from "./native-turn-receipts.js";
 import { adapterResourceUri, sessionMessagesResourceUri, sessionResourceUri } from "./herder-resource-uris.js";
 import { harnessEventHealth, type HarnessEventHealthRegistry } from "./harness-event-health.js";
 import type { UnfinishedSessionLauncher } from "./autopilot/unfinished-session-launcher.js";
@@ -1311,6 +1312,9 @@ export class SessionSupervisor {
       this.clearAutomaticResume(provider, event.sessionId);
     }
 
+    // Separate machine-readable native turn receipt for task completion.
+    // Delivery admission and idle status alone never create this receipt.
+    publishNativeTurnReceipt(this.events, event);
     this.recentNativeEvents.set(`${event.harness}:${event.sessionId}`, Date.now());
     const source = `native:${provider}:${event.nativeType || event.kind}`;
     const action = event.kind === "session.created" ? "created" : event.kind === "session.deleted" ? "deleted" : "changed";
