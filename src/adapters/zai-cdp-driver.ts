@@ -139,6 +139,21 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     };
   }
 
+  /** A route id is an exact native conversation identity: it stays a valid
+   * target even when the chat is not currently rendered in the bounded
+   * sidebar. Selecting it navigates the owned tab to the exact route; a
+   * wrong route simply fails identity confirmation and nothing is sent. */
+  private routeRecord(id: string): BrowserChat | null {
+    if (!id.startsWith("route:")) return null;
+    const route = "/c/" + id.slice(6);
+    if (!ROUTE_PATTERN.test(route)) return null;
+    const cached = this.cache.get(id);
+    if (cached) return cached;
+    const record = this.recordChat(id, "ZAI conversation", new Date().toISOString(), route);
+    this.cache.set(id, record);
+    return record;
+  }
+
   private async listUnlocked(): Promise<BrowserChat[]> {
     const page = await this.page();
     const state = await this.snapshot(page.id);
@@ -235,6 +250,8 @@ export class ZaiCdpDriver implements BrowserChatDriver {
             this.cache.set(id, known);
           }
         }
+        // An exact route id is a valid target without prior observation.
+        if (!known && id.startsWith("route:")) known = this.routeRecord(id) ?? undefined;
       }
       if (!known) return null;
       if (id.startsWith("sidebar:") && state.titles.filter(entry => entry === known.title).length !== 1) {
@@ -248,7 +265,13 @@ export class ZaiCdpDriver implements BrowserChatDriver {
         if (selected === "missing") return null;
         state = await this.confirmTarget(page.id, id, known);
       }
-      return { ...known, working: this.busy(state), stopVisible: state.phase === "generating" };
+      // A separate binding keeps the captured `known` narrowing for the
+      // sidebar-uniqueness filter callback above intact.
+      const refined = id.startsWith("route:") && known.title === "ZAI conversation" && state.selectedTitle
+        ? { ...known, title: state.selectedTitle }
+        : known;
+      if (refined !== known) this.cache.set(id, refined);
+      return { ...refined, working: this.busy(state), stopVisible: state.phase === "generating" };
     });
   }
 
@@ -256,7 +279,8 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     return this.exclusive(async () => {
       const { chatId, text } = input;
       if (!text.trim() || text.length > MAX_MESSAGE_CHARS) throw new Error("Invalid ZAI message size");
-      const known = this.cache.get(chatId) ?? (await this.listUnlocked()).find(chat => chat.id === chatId);
+      const known = this.cache.get(chatId) ?? (await this.listUnlocked()).find(chat => chat.id === chatId)
+        ?? (chatId.startsWith("route:") ? (this.routeRecord(chatId) ?? undefined) : undefined);
       if (!known) throw new Error("ZAI chat is not in the authenticated browser inventory");
       const page = await this.page();
       let state = await this.snapshot(page.id);

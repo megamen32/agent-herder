@@ -230,6 +230,28 @@ describe("Mac mini CDP ZAI provider", () => {
     await protectedDriver.listChats();
     await expect(protectedDriver.sendMessage({ chatId: "sidebar:Test%20fixture", text: "no" })).rejects.toThrow(/draft/);
   });
+  it("resumes an exact route target that was never rendered in the sidebar", async () => {
+    const tools = new MockChromeTools();
+    const driver = new ZaiCdpDriver(tools);
+    const chat = await driver.getChat("route:" + route.slice(3));
+    expect(chat).toMatchObject({ id: "route:" + route.slice(3), title: "Test fixture", working: false });
+    expect(tools.actions.find(x => x.name === "navigate_page")?.args.url).toBe("https://chat.z.ai" + route);
+  });
+  it("delivers to an exact route target without prior sidebar observation", async () => {
+    const tools = new MockChromeTools();
+    const driver = new ZaiCdpDriver(tools);
+    await driver.sendMessage({ chatId: "route:" + route.slice(3), text: "route-exact" });
+    expect(tools.sent).toEqual(["route-exact"]);
+    expect(tools.actions.find(x => x.name === "navigate_page")?.args.url).toBe("https://chat.z.ai" + route);
+    expect((await driver.getChat("route:" + route.slice(3)))?.title).toBe("Test fixture");
+  });
+  it("rejects malformed route identities without any navigation", async () => {
+    const tools = new MockChromeTools();
+    const driver = new ZaiCdpDriver(tools);
+    expect(await driver.getChat("route:not-a-uuid")).toBeNull();
+    await expect(driver.sendMessage({ chatId: "route:not-a-uuid", text: "no" })).rejects.toThrow(/not in/);
+    expect(tools.actions.some(x => x.name === "navigate_page")).toBe(false);
+  });
 });
 
 describe("browser-chat API schema compatibility", () => {

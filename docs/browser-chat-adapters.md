@@ -8,7 +8,7 @@ not to an aggregate `browser-chat` adapter.
 | Harness | Driver | Identity | Account archive |
 | --- | --- | --- | --- |
 | `chatgpt` | `builtin:chatgpt-mac-cdp` | stable native `/c/<uuid>` | separate `cdp_*` tools |
-| `zai` | `builtin:zai-cdp` | currently sidebar title (or verified route) | unavailable |
+| `zai` | `builtin:zai-cdp` | sidebar title or exact `/c/<uuid>` route | unavailable |
 
 Both drivers reuse the **existing authenticated Mac mini Chrome CDP gateway**.
 Neither opens another browser, profile or login session. A missing/unavailable
@@ -39,6 +39,12 @@ These prefixes keep persisted IDs recognizable and prevent a session from
 being routed to the wrong authenticated site. The legacy `browser-chat`
 harness remains in some historical schemas but is **not registered**.
 No fallback to the last active browser or a different provider is allowed.
+
+A `zai::route%3A<uuid>` target is an exact native route identity: it resolves,
+resumes and delivers even when the chat is not currently rendered in the
+bounded sidebar. The driver navigates the owned tab to the exact `/c/<uuid>`
+route only while that tab is idle and re-confirms the route before any
+composer action; a wrong route fails identity confirmation and nothing is sent.
 
 Both browser drivers check generation/activity in the live page and confirm
 the exact intended conversation and composer before Send. A visible Stop
