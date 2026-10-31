@@ -599,7 +599,8 @@ export class SessionSupervisor {
     if (direct) {
       const session = await read(direct);
       const humanStopHeld = session && (harness === "codex" || harness === "zcode" || harness === "opencode") ? await this.humanStops.observe(session) : false;
-      const modelOptions = includeModelOptions === false ? [] : direct.listModels ? await direct.listModels() : [];
+      const modelOptions = includeModelOptions === false || harness === "chatgpt" || harness === "zai"
+        ? [] : direct.listModels ? await direct.listModels() : [];
       return session
         ? { ...session, meta: { ...session.meta, humanStopHeld, provider: harness, controlCapabilities: getHarnessCapabilities(direct), modelOptions } }
         : null;
@@ -1082,8 +1083,12 @@ export class SessionSupervisor {
 
   async getSessionDetails(provider: string, id: string, options: SessionDetailOptions = {}): Promise<SessionDetails> {
     // An exact MiniMax read must not hydrate up to 500 unrelated transcripts.
+    // Exact browser chat reads must never run global session discovery or a
+    // live model-picker RPC. Those paths compete with 100-chat background
+    // warming and previously left an ordinary chat details GET hanging.
+    const browserProvider = provider === "chatgpt" || provider === "zai";
     const cachedSessions = options.quick
-      ? provider === "minimax-code" ? undefined : provider === "zcode"
+      ? browserProvider ? undefined : provider === "minimax-code" ? undefined : provider === "zcode"
         ? this.sessionSnapshot?.sessions.filter((session) => session.harness === provider)
         : provider === "codex"
         ? this.sessionSnapshot?.sessions.filter((session) => session.harness === provider)
@@ -1093,11 +1098,15 @@ export class SessionSupervisor {
     const cachedSession = cachedSessions?.find((candidate) => candidate.id === id || nativeSessionId(candidate) === id);
     // ZCode list rows can omit native model options after a picker change.
     // Keep metrics cheap, but read the selected session's actual control state.
-    const rawSession = options.quick
-      ? provider === "zcode" ? await this.getSession(provider, id) || cachedSession : provider === "codex" ? cachedSession || await this.getSession(provider, id, undefined, {includeModelOptions:false}) : cachedSession || await this.getSession(provider, id)
-      : await this.getSession(provider, id, undefined, {includeMetrics:true}) || cachedSession;
+    const rawSession = browserProvider
+      ? await this.getSession(provider, id, undefined, { includeModelOptions: false })
+      : options.quick
+        ? provider === "zcode" ? await this.getSession(provider, id) || cachedSession
+          : provider === "codex" ? cachedSession || await this.getSession(provider, id, undefined, {includeModelOptions:false})
+          : cachedSession || await this.getSession(provider, id)
+        : await this.getSession(provider, id, undefined, {includeMetrics:true}) || cachedSession;
     if (!rawSession) throw new SessionNotFoundError(provider, id);
-    const session = options.quick ? rawSession : await this.pricing.enrich(rawSession);
+    const session = options.quick || browserProvider ? rawSession : await this.pricing.enrich(rawSession);
     const limit = Math.max(1, Math.min(options.limit || 3, 50));
     const record = await this.lineage.get(sessionKey(provider, nativeSessionId(session)));
     const nativeParentId = typeof session.meta?.parentThreadId === "string" && session.meta.parentThreadId !== nativeSessionId(session) ? session.meta.parentThreadId : undefined;

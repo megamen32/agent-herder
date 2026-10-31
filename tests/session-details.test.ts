@@ -52,6 +52,37 @@ function adapterWithoutLiveHistory(): HarnessAdapter {
 }
 
 describe("SessionSupervisor details", () => {
+  for (const harness of ["chatgpt", "zai"] as const) {
+    for (const quick of [true, false]) {
+      it(`${harness} ${quick ? "quick" : "full"} details never discover all sessions or open the model menu`, async () => {
+        const id = `${harness}::native-conversation-id`;
+        const native: AgentSession = {
+          ...session, id, harness, status:"idle", title:"Cached browser chat",
+        };
+        const list = vi.fn(async () => {throw Error("global session scan must not run");});
+        const models = vi.fn(async () => {throw Error("model dropdown RPC must not run");});
+        const history = vi.fn(async () => messages);
+        const fake: HarnessAdapter = {
+          ...adapter(),type:harness,
+          getSession:async requested => requested === id ? native : null,
+          listSessions:list,listModels:models,getSessionMessages:history,
+        };
+        const sup=new SessionSupervisor(
+          new Map([[harness, fake]]),
+          { async convert() { return {success:true}; }, async read() { return null; } },
+          new LineageStore("/tmp/herder-browser-history-exact-fixture.json"),
+        );
+        const result=await sup.getSessionDetails(harness,id,{quick,limit:10});
+        expect(result.session).toMatchObject({harness,id});
+        expect(result.messages).toHaveLength(3);
+        expect(result.history.source).toBe("live-cache");
+        expect(list).not.toHaveBeenCalled();
+        expect(models).not.toHaveBeenCalled();
+        expect(history).toHaveBeenCalledTimes(1);
+      });
+    }
+  }
+
   it("accepts explicit empty OpenCode live history as complete empty history", async () => {
     const native: AgentSession = { ...session, id: "opencode-empty", harness: "opencode" };
     const openCodeAdapter: HarnessAdapter = {
