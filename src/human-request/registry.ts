@@ -118,6 +118,8 @@ export interface HumanRequestRecord {
   answerSource: HumanRequestAnswerSource;
   /** Whether a typed permission question is delivered by the user flow or observer. */
   noticeDeliveryMode?: "manual" | "automatic";
+  /** Set only by the Notice completion POST; the answer is read from Notice, never stored here. */
+  completionSource?: "notice";
   continuation: "resume";
   resolutionRef?: string;
   resultRef?: string;
@@ -216,6 +218,9 @@ function validateRecord(record: HumanRequestRecord): HumanRequestRecord {
   if (record.noticeDeliveryMode !== undefined && (record.answerSource !== "notice_question"
     || (record.noticeDeliveryMode !== "manual" && record.noticeDeliveryMode !== "automatic"))) {
     throw new Error("invalid Notice delivery mode");
+  }
+  if (record.completionSource !== undefined && (record.completionSource !== "notice" || record.kind === "secret")) {
+    throw new Error("invalid completion source");
   }
   targetOf(record.target);
   opaqueRef(record.contextRef, "contextRef");
@@ -516,6 +521,21 @@ export class HumanRequestRegistry {
       const acknowledged = await this.acknowledge(requestId, admittedAttemptId, idempotencyKey, leaseExpiresAt);
       this.publishRequest(record.requestId, "updated");
       return { admitted: true, recovered: false, idempotencyKey, record: acknowledged };
+    });
+  }
+
+  /** Marks a pending non-secret request whose answer arrived through the Notice completion POST. */
+  async markNoticeCompletion(requestId: string): Promise<HumanRequestRecord> {
+    return this.mutate(async () => {
+      const file = await this.read();
+      const record = file.requests.find((item) => item.requestId === requestId);
+      if (!record) throw new Error(`Human request '${requestId}' not found`);
+      if (record.status === "pending" && record.kind !== "secret" && record.completionSource !== "notice") {
+        record.completionSource = "notice";
+        await this.write(file);
+        this.publishRequest(record.requestId, "updated");
+      }
+      return cloneRecord(record);
     });
   }
 

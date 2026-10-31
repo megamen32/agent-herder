@@ -21,6 +21,8 @@ export interface HumanRequestResumeInput {
   resultRef: string;
   /** Opaque human-answer reference when the provider supplies a distinct one. */
   resolutionRef?: string;
+  /** Bounded chosen answer of the admitting request; shown in the continuation prompt only. */
+  answer?: HumanRequestAnswer;
   /** Invokes the bound native session. Only the admitted caller may call it. */
   resume: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
   /** Reads the durable provider receipt for the same idempotency key without launching the session. */
@@ -113,7 +115,7 @@ export async function resumeHumanRequestOnce(input: HumanRequestResumeInput): Pr
     result_ref: canonicalResultRef,
     // Derived from the durable record, never from the caller: a conflicting
     // replay or lease takeover cannot substitute its own instruction.
-    prompt: continuationPrompt(record, canonicalResultRef),
+    prompt: continuationPrompt(record, canonicalResultRef, input.answer),
     idempotency_key: admission.idempotencyKey,
     ...humanRequestedAt(record),
   });
@@ -134,6 +136,28 @@ export async function resumeHumanRequestOnce(input: HumanRequestResumeInput): Pr
       };
 }
 
+/** The chosen answer of a human question: a bounded value and its label. */
+export interface HumanRequestAnswer {
+  value: string;
+  label?: string;
+}
+
+const MAX_ANSWER_CHARS = 512;
+
+/**
+ * Bound one provider-supplied answer and replace control characters. The answer
+ * text is never stored: it only reaches the one admitted continuation prompt.
+ */
+export function boundedHumanAnswer(input: unknown): HumanRequestAnswer | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const clean = (text: unknown): string =>
+    typeof text === "string" ? text.replace(/\p{Cc}/gu, " ").trim().slice(0, MAX_ANSWER_CHARS) : "";
+  const value = clean((input as { value?: unknown }).value);
+  if (!value) return undefined;
+  const label = clean((input as { label?: unknown }).label);
+  return label ? { value, label } : { value };
+}
+
 /**
  * The exact continuation instruction for one admitted answer.
  *
@@ -141,7 +165,7 @@ export async function resumeHumanRequestOnce(input: HumanRequestResumeInput): Pr
  * instruction to read the canonical answer and apply it, so the session acts on
  * the real answer instead of an opaque reference. A secret stays opaque.
  */
-export function continuationPrompt(record: HumanRequestRecord, canonicalResultRef: string): string {
+export function continuationPrompt(record: HumanRequestRecord, canonicalResultRef: string, answer?: HumanRequestAnswer): string {
   if (record.kind === "secret") {
     return `Human Request ${record.requestId} resolved. Continue the same task with the supplied secret reference ${canonicalResultRef}; never print the secret.`;
   }
@@ -155,7 +179,20 @@ export function continuationPrompt(record: HumanRequestRecord, canonicalResultRe
       `Answer reference: ${canonicalResultRef}. Do not invent an answer and do not start a different task.`,
     ].join(" ");
   }
+  const answerLine = answer
+    ? "Ответ человека: «" + (answer.label ?? answer.value) + "» (value: " + answer.value + ")."
+    : undefined;
+  // Only an answer that arrived through the Notice completion is read from Notice.
+  if (record.completionSource === "notice") {
+    return [
+      ...(answerLine ? [answerLine] : []),
+      `Human Request ${record.requestId} is answered; continue the same task on this exact session.`,
+      `Read the canonical answer with noticeplace_question_result(request_id="${record.requestId}") and apply it.`,
+      `Answer reference: ${canonicalResultRef}. Do not invent an answer and do not start a different task.`,
+    ].join(" ");
+  }
   return [
+    ...(answerLine ? [answerLine] : []),
     `Human Request ${record.requestId} is answered; continue the same task on this exact session.`,
     `The answer arrived through this session, not through a Notice card: use the human message above it as the answer.`,
     `If no human message is present above, ask the human here for it instead of guessing.`,
