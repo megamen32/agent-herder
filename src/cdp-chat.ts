@@ -86,10 +86,6 @@ export const ALL_CDP_CHAT_CAPABILITIES: CdpChatCapabilities = {
 };
 
 /** Acquires the one authenticated page owned by this MCP process. */
-/** Compatibility aliases: browser chat drivers share the provider-neutral contract. */
-export type ChatGptHarnessChat = import("./adapters/browser-chat.js").BrowserChat;
-export type ChatGptHarnessDriver = import("./adapters/browser-chat.js").BrowserChatDriver;
-
 export interface CdpChatDriver {
   acquirePage(): Promise<CdpChatPage>;
   /** Undefined keeps the original full-driver contract; concrete partial drivers must opt out explicitly. */
@@ -98,8 +94,6 @@ export interface CdpChatDriver {
   accountExportDriver?: ChatGptAccountExportDriver;
   /** Optional read-only visible-history export action sharing this driver's one BrowserClaw page lease. */
   historyArchiveDriver?: ChatGptHistoryArchiveDriver;
-  /** Optional existing-chat session control sharing the exact same owned page lease. */
-  agentHarnessDriver?: ChatGptHarnessDriver;
 }
 
 export interface CdpChatOptions {

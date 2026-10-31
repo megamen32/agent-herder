@@ -20,7 +20,7 @@ import { readFileSync } from "node:fs";
 import { QaControlBackend } from "./qa-control.js";
 
 import { HarnessAdapter, type SendMessageResult, type AgentSession } from "./types/index.js";
-import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter, ChatGptAdapter, MinimaxCodeAdapter, loadBrowserChatAdapter } from "./adapters/index.js";
+import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter, MinimaxCodeAdapter, loadBrowserChatAdapter } from "./adapters/index.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
@@ -333,7 +333,6 @@ function configureAdapterRegistry(): void {
     ["hermes", "Hermes", "Hermes MCP adapter", ENABLE_HERMES],
     ["zcode", "ZCode", "ZCode app-server adapter", ENABLE_ZCODE],
     ["fast-agent", "Fast Agent", "Fast Agent persisted session observer and launcher", ENABLE_FAST_AGENT],
-    ["chatgpt", "ChatGPT", "Existing ChatGPT conversations on the one owned BrowserClaw page", true],
     ["browser-chat", "Browser chats", "Provider-neutral authenticated browser conversations", true],
     ["minimax-code", "MiniMax Code", "MiniMax Code local-runtime session observer", ENABLE_MINIMAX_CODE],
   ] as const) {
@@ -1020,7 +1019,9 @@ async function main() {
   let chatgptRetryTimer: NodeJS.Timeout | undefined;
 
   const activateCdpChat = async (): Promise<boolean> => {
-    if (cdpChatDriver?.agentHarnessDriver && adapters.has("chatgpt")) return true;
+    // Archive/CDP compatibility tools only. Browser conversations belong
+    // exclusively to the provider-neutral browser-chat adapter.
+    if (cdpChatDriver) return true;
     if (cdpInitInFlight) return cdpInitInFlight;
     cdpInitInFlight = (async () => {
       try {
@@ -1032,13 +1033,6 @@ async function main() {
         cdpHistoryArchive = new ChatGptHistoryArchive(driver.historyArchiveDriver, {
           archiveRoot: process.env.CHATGPT_HISTORY_ARCHIVE_ROOT,
         });
-        if (driver.agentHarnessDriver && adapterRegistry.shouldEnable("chatgpt", true)) {
-          const chatgpt = new ChatGptAdapter(driver.agentHarnessDriver);
-          await chatgpt.init();
-          adapters.set("chatgpt", chatgpt);
-          adapterRegistry.registerActive(chatgpt);
-          console.error("[agent-herder] ChatGPT resumable-session adapter initialized");
-        }
         if (chatgptRetryTimer) {
           clearInterval(chatgptRetryTimer);
           chatgptRetryTimer = undefined;

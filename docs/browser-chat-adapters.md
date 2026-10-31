@@ -7,7 +7,11 @@ Browser-backed conversations are Herder sessions. The provider-neutral seam is
 - `BrowserChatProvider`: provider ID, user-facing name, harness registration type and namespace CWD.
 - `BrowserChatAdapter`: maps the driver into the existing `HarnessAdapter` protocol.
 
-The ChatGPT adapter is a compatibility wrapper around this common adapter.
+There is exactly one registered browser session adapter, `browser-chat`,
+for both ChatGPT and Z.ai. The old `ChatGptAdapter` class and separate
+`chatgpt` harness are removed. The historical `cdp_*` archive/export tools
+are independent of the session adapter and remain available.
+
 No login state, page lease, CDP session, browser profile, or browser-specific
 selector is owned by the common adapter. A provider's driver must reuse its
 authenticated browser session through a dedicated browser transport.
@@ -34,8 +38,10 @@ Each provider owns its browser profile and page lease; the router has no
 cookies, selectors, or login state. A failed list operation for one site
 does not hide healthy sites; `providerStates()` exposes partial failures.
 Unknown chat IDs and provider mismatches never fall back to another account.
-The combined driver is intended for one `browser-chat` harness entry, with
-the old `chatgpt` name retained as a compatibility alias until consumers move.
+The combined driver is the single `browser-chat` harness entry.
+Legacy schema strings can still identify old records, but `chatgpt` no
+longer registers a live session adapter. All active browser session IDs use
+`browser-chat` plus a `chatgpt::` or `zai::` provider prefix.
 
 ## Configure site drivers
 

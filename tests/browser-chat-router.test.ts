@@ -18,7 +18,7 @@ describe("BrowserChatRouter", () => {
       { id: "zai", name: "ZAI", cwd: "/browser/zai", driver: fake("ZAI chat", zai) },
       { id: "deepseek", name: "DeepSeek", cwd: "/browser/deepseek", driver: fake("DeepSeek chat", deepseek) },
     ]);
-    const adapter = new BrowserChatAdapter(router, { id: "browser", name: "Browser chats", harness: "chatgpt", cwd: "/browser" });
+    const adapter = new BrowserChatAdapter(router, { id: "browser", name: "Browser chats", harness: "browser-chat", cwd: "/browser" });
     const chats = await adapter.listSessions();
     expect(chats).toHaveLength(2);
     expect(chats.map(c => c.id)).toEqual(["zai::c%2Fshared%3A1", "deepseek::c%2Fshared%3A1"]);
