@@ -82,6 +82,8 @@ import { createPermissionNoticeObserver } from "./permission-control/notice-brid
 import { createNativeUserInputNoticeObserver } from "./human-request/native-user-input-notice.js";
 import { createAsyncUserInputNoticeObserver } from "./human-request/async-user-input-notice.js";
 import { registerCdpTools } from "./mcp/cdp-tools.js";
+import { registerChatGptWakeTools } from "./mcp/chatgpt-wake-tools.js";
+import { WakeBindingStore } from "./chatgpt-wake-binding.js";
 import { registerSessionTools } from "./mcp/session-tools.js";
 import {withCatalogProjection} from "./mcp/catalog-projection.js";
 import { UserMessageDelivery } from "./user-message-delivery.js";
@@ -694,6 +696,8 @@ function registerTools(
   trustedMeshIngress?: ReturnType<typeof trustedMeshIngressFromMcpAuthInfo>,
   sessionQueueControl?: SessionQueueControlGateway,
   humanRequestsRegistry?: Pick<HumanRequestRegistry, "get" | "bindResumeWait">,
+  chatgptWakeBindings?: WakeBindingStore,
+  chatgptWakeAdapters?: Map<string, HarnessAdapter>,
 ) {
   // Archive/debug helpers remain available for existing callers. All normal
   // chat control uses the shared HarnessAdapter tools; this optional legacy
@@ -704,6 +708,18 @@ function registerTools(
   registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: autopilotSessionCommand } });
   registerResumeAfterTools(server, resumeAfter, humanRequestsRegistry);
   registerCadenceTools(server, cadence);
+
+  // ChatGPT supplies no routable conversation identity in MCP metadata, so
+  // wake/callback there works only through an explicit validated binding.
+  const wakeBindingStore = chatgptWakeBindings ?? new WakeBindingStore({
+    filePath: process.env.AGENT_HERDER_CHATGPT_WAKE_BINDINGS || join(autopilotStateDir, "chatgpt-wake-bindings.json"),
+  });
+  registerChatGptWakeTools(server, {
+    bindings: wakeBindingStore,
+    adapters: chatgptWakeAdapters ?? adapters,
+    jobs,
+    provenance: () => ({}),
+  });
 
   // A human answer resumes its exact native session exactly once through the
   // same durable admission the internal completion endpoint uses.
@@ -806,6 +822,10 @@ export interface AgentHerderMcpServerOptions {
   trustedMeshIngress?: ReturnType<typeof trustedMeshIngressFromMcpAuthInfo>;
   /** Shared local/remote native-owner queue control for HTTP and MCP ingress. */
   sessionQueueControl?: SessionQueueControlGateway;
+  /** Durable ChatGPT wake-binding store; the process default is used otherwise. */
+  chatgptWakeBindings?: WakeBindingStore;
+  /** Adapter registry used to validate wake-binding owners. */
+  chatgptWakeAdapters?: Map<string, HarnessAdapter>;
 }
 
 let qaControlBackend: QaControlBackend | undefined;
@@ -925,6 +945,8 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     options.trustedMeshIngress,
     options.sessionQueueControl,
     options.humanRequests,
+    options.chatgptWakeBindings,
+    options.chatgptWakeAdapters,
     );
   });
   return server;
