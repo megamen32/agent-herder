@@ -294,7 +294,7 @@ export class UserMessageDelivery {
           let nativeSend: Promise<SendMessageResult> | undefined;
           let responseContext:UserMessageDeliveryResponseHookInput|undefined;
           try {
-            waiting(input.mode === "queue" && (actor.kind === "human" || input.harness === "browser-chat")
+            waiting(input.mode === "queue" && (actor.kind === "human" || ["browser-chat", "chatgpt", "zai"].includes(input.harness))
               ? "Ожидает окончания ответа" : "Вставляется в текущий ход");
             if (previous) await Promise.race([previous, delay(this.options.maxWaitMs, undefined, { signal: combined })]);
             const adapter = targetAdapter;
@@ -302,7 +302,7 @@ export class UserMessageDelivery {
               combined.throwIfAborted();
               const session = await this.withSlot(combined, () => adapter.getSession(input.sessionId));
               if (!session) return { ok: false, nonRetryable: true, inputId: input.inputId, error: "Сессия недоступна" };
-              if (input.mode === "queue" && (actor.kind === "human" || input.harness === "browser-chat")
+              if (input.mode === "queue" && (actor.kind === "human" || ["browser-chat", "chatgpt", "zai"].includes(input.harness))
                 && (session.status === "running" || session.status === "needs_input")) {
                 await delay(this.options.pollMs, undefined, { signal: combined });
                 continue;

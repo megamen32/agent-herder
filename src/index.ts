@@ -20,7 +20,7 @@ import { readFileSync } from "node:fs";
 import { QaControlBackend } from "./qa-control.js";
 
 import { HarnessAdapter, type SendMessageResult, type AgentSession } from "./types/index.js";
-import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter, MinimaxCodeAdapter, loadBrowserChatAdapter } from "./adapters/index.js";
+import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter, MinimaxCodeAdapter, configuredBrowserProviderIds, loadBrowserChatProviderAdapter } from "./adapters/index.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
@@ -321,6 +321,8 @@ function configureAdapterRegistry(): void {
     home: process.env.FAST_AGENT_HOME || join(homedir(), ".fast-agent"),
     cwd: process.env.FAST_AGENT_CWD || process.cwd(),
   }));
+  adapterFactories.set("chatgpt", () => loadBrowserChatProviderAdapter("chatgpt"));
+  adapterFactories.set("zai", () => loadBrowserChatProviderAdapter("zai"));
   adapterFactories.set("minimax-code", () => new MinimaxCodeAdapter({
     sessionStore: process.env.MINIMAX_CODE_SESSION_STORE,
     cwd: process.env.MINIMAX_CODE_CWD,
@@ -333,7 +335,8 @@ function configureAdapterRegistry(): void {
     ["hermes", "Hermes", "Hermes MCP adapter", ENABLE_HERMES],
     ["zcode", "ZCode", "ZCode app-server adapter", ENABLE_ZCODE],
     ["fast-agent", "Fast Agent", "Fast Agent persisted session observer and launcher", ENABLE_FAST_AGENT],
-    ["browser-chat", "Browser chats", "Provider-neutral authenticated browser conversations", true],
+    ["chatgpt", "ChatGPT", "Browser ChatGPT: native route IDs and separate CDP archive", true],
+    ["zai", "Z.ai", "Browser Z.ai: sidebar identities and generation-aware queue", true],
     ["minimax-code", "MiniMax Code", "MiniMax Code local-runtime session observer", ENABLE_MINIMAX_CODE],
   ] as const) {
     const [id, name, description, defaultEnabled] = definition;
@@ -981,29 +984,34 @@ async function main() {
   }
   await adapterRegistry.load();
   await initAdapters();
-  // Browser providers are optional, configured local driver modules. A missing
-  // browser lease never blocks the coding-agent control plane.
-  if (process.env.AGENT_HERDER_BROWSER_CHAT_PROVIDERS && adapterRegistry.shouldEnable("browser-chat", true)) {
+  // Two independent site adapters sharing one base class and CDP owner.
+  // One unavailable tab must never hide the other adapter or coding agents.
+  if (process.env.AGENT_HERDER_BROWSER_CHAT_PROVIDERS) {
     try {
-      const browser = await loadBrowserChatAdapter();
-      if (browser) {
-        let browserRetryTimer: NodeJS.Timeout | undefined;
-        const activateBrowser = async (): Promise<boolean> => {
+      for (const id of configuredBrowserProviderIds()) {
+        if (!adapterRegistry.shouldEnable(id, true)) continue;
+        let retryTimer: NodeJS.Timeout | undefined;
+        const activate = async (): Promise<boolean> => {
+          if (!adapterRegistry.shouldEnable(id, true)) {
+            if (retryTimer) clearInterval(retryTimer);
+            return false;
+          }
           try {
+            const browser = await loadBrowserChatProviderAdapter(id);
             await browser.init();
             adapterRegistry.registerActive(browser);
-            console.error("[agent-herder] provider-neutral browser chat adapter initialized");
-            if (browserRetryTimer) clearInterval(browserRetryTimer);
+            console.error(`[agent-herder] browser provider ${id} initialized`);
+            if (retryTimer) clearInterval(retryTimer);
             return true;
           } catch (error) {
-            console.error(`[agent-herder] browser chat providers unavailable: ${error instanceof Error ? error.message : String(error)}`);
+            console.error(`[agent-herder] browser provider ${id} unavailable: ${error instanceof Error ? error.message : String(error)}`);
             return false;
           }
         };
-        if (!await activateBrowser()) {
-          browserRetryTimer = setInterval(() => { void activateBrowser(); }, 30_000);
-          browserRetryTimer.unref();
-          process.once("exit", () => { if (browserRetryTimer) clearInterval(browserRetryTimer); });
+        if (!await activate()) {
+          retryTimer = setInterval(() => { void activate(); }, 30_000);
+          retryTimer.unref();
+          process.once("exit", () => { if (retryTimer) clearInterval(retryTimer); });
         }
       }
     } catch (error) {

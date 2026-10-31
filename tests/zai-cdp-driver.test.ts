@@ -234,7 +234,7 @@ describe("Mac mini CDP ZAI provider", () => {
 
 describe("browser-chat API schema compatibility", () => {
   it("accepts browser-chat in filtered and exact agent tools", () => {
-    expect(ListAgentsSchema.safeParse({ harness: "browser-chat", limit: 2 }).success).toBe(true);
-    expect(AgentInfoSchema.safeParse({ sessionId: "zai::sidebar%3ATest", harness: "browser-chat" }).success).toBe(true);
+    expect(ListAgentsSchema.safeParse({ harness: "zai", limit: 2 }).success).toBe(true);
+    expect(AgentInfoSchema.safeParse({ sessionId: "zai::sidebar%3ATest", harness: "zai" }).success).toBe(true);
   });
 });

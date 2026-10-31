@@ -22,7 +22,7 @@ async function fixture() {
   const sent: string[] = [];
   const id = "zai::sidebar%3AQueue%20fixture";
   const getSession = vi.fn(async (): Promise<AgentSession> => ({
-    id, harness: "browser-chat", hostId: "roomhacker-server-100",
+    id, harness: "zai", hostId: "roomhacker-server-100",
     cwd: "/home/roomhacker/.browser-chat/zai", title: "Queue fixture",
     status: generating ? "running" : "idle", lastActivity: new Date().toISOString(),
     needsPermission: false,
@@ -34,7 +34,7 @@ async function fixture() {
     return { ok: true, admitted: true, inputId: options.inputId };
   });
   const adapter = {
-    type: "browser-chat", name: "Browser chats", getSession,
+    type: "zai", name: "Browser chats", getSession,
     sendMessage: send,
     controlCapabilities: { steer: false },
   } as unknown as HarnessAdapter;
@@ -43,7 +43,7 @@ async function fixture() {
     adapter,
     supervisor: { sendMessage: async (_h: string, sid: string, options: SendMessageOptions) => send(sid, options) },
   };
-  const delivery = new UserMessageDelivery(new Map([["browser-chat", adapter]]),
+  const delivery = new UserMessageDelivery(new Map([["zai", adapter]]),
     route.supervisor, jobs, { pollMs: 5, maxWaitMs: 3_000, maxPending: 8 });
   cleanup.push(async () => {
     delivery.close();
@@ -57,7 +57,7 @@ async function fixture() {
 describe("ZAI browser-chat durable queue admission", () => {
   it("holds FIFO human requests while generating, then sends each only once on idle", async () => {
     const f = await fixture();
-    const first = { harness: "browser-chat", sessionId: f.id, inputId: "zai-fixture-1", message: "First fixture", mode: "queue" as const };
+    const first = { harness: "zai", sessionId: f.id, inputId: "zai-fixture-1", message: "First fixture", mode: "queue" as const };
     const second = { ...first, inputId: "zai-fixture-2", message: "Second fixture" };
     const a = f.delivery.submit(first, f.route);
     f.delivery.submit(second, f.route);
@@ -83,7 +83,7 @@ describe("ZAI browser-chat durable queue admission", () => {
       token: "fixture-ingress-token", clientId: TRUSTED_MESH_MCP_CLIENT_ID, scopes: [TRUSTED_MESH_MCP_SCOPE],
     })!;
     const receipt = await f.delivery.submitAgent({
-      harness: "browser-chat", sessionId: f.id, inputId: "zai-agent-queue",
+      harness: "zai", sessionId: f.id, inputId: "zai-agent-queue",
       message: "Agent fixture", mode: "queue",
     }, { hostId: "source-host", harness: "opencode", nativeSessionId: "fixture-source" }, ingress, f.route);
     expect(receipt.notSubmitted).not.toBe(true);
@@ -103,7 +103,7 @@ describe("Browser chat native admission receipts", () => {
       async sendMessage() { throw new Error("prompt is already running; ZAI queue must wait"); },
     };
     const adapter = new BrowserChatAdapter(driver, {
-      id: "zai", name: "ZAI", harness: "browser-chat", cwd: "/browser/zai",
+      id: "zai", name: "ZAI", harness: "zai", cwd: "/browser/zai",
     });
     expect(await adapter.sendMessage("zai::fixture", { message: "fixture" })).toMatchObject({
       ok: false, error: expect.stringContaining("already running"),

@@ -114,7 +114,7 @@ describe("ChatGPT browser submit admission", () => {
       },
     });
     const adapter = new BrowserChatAdapter(driver, {
-      id: "browser-chat", name: "Browser chats", harness: "browser-chat", cwd: "/browser",
+      id: "browser-chat", name: "Browser chats", harness: "chatgpt", cwd: "/browser",
     });
     await adapter.init();
     const receipt = await adapter.sendMessage(ID, { message:"fixture-only", queue:true });

@@ -75,6 +75,12 @@ export const ZAI_ACTIVITY_SCRIPT = `() => {
  * An unknown UI state is always busy, never permission to submit a message.
  */
 export class ZaiCdpDriver implements BrowserChatDriver {
+  readonly browserFeatures = {
+    nativeConversationIds: false, // Sidebar title IDs until ZAI native API is adopted.
+    queueAfterGeneration: true,
+    chatCreation: false,
+    accountArchiveViaCdp: false,
+  } as const;
   private readonly cache = new Map<string, BrowserChat>();
   private operation: Promise<void> = Promise.resolve();
   private lastSubmittedAt = 0;

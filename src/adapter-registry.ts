@@ -22,6 +22,8 @@ export interface AdapterStatus {
   ready: boolean;
   status: "active" | "disabled" | "not_configured" | "error";
   capabilities: HarnessCapabilities | null;
+  /** Site-specific features are not inherited from the browser base class. */
+  browserFeatures?: HarnessAdapter["browserFeatures"];
   error?: string;
 }
 
@@ -81,6 +83,7 @@ export class AdapterRegistry {
           ? "error"
           : adapter ? "active" : enabled && !definition.factory ? "not_configured" : "disabled",
         capabilities: adapter ? getHarnessCapabilities(adapter) : null,
+        ...(adapter?.browserFeatures ? { browserFeatures: adapter.browserFeatures } : {}),
         ...(this.errors.has(definition.id) ? { error: this.errors.get(definition.id) } : {}),
       };
     });

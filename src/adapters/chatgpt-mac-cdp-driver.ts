@@ -64,6 +64,12 @@ export const CHATGPT_MAC_SNAPSHOT = `() => {
  * A single pinned/unique tab is required; no fallback to the other provider.
  */
 export class ChatGptMacCdpDriver implements BrowserChatDriver {
+  readonly browserFeatures = {
+    nativeConversationIds: true,
+    queueAfterGeneration: true,
+    chatCreation: false,
+    accountArchiveViaCdp: true,
+  } as const;
   private readonly cache = new Map<string, BrowserChat>();
   private operation: Promise<void> = Promise.resolve();
   private lastSubmittedAt = 0;

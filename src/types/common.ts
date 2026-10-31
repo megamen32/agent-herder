@@ -2,7 +2,7 @@
 
 import { hostname } from "node:os";
 
-export type HarnessType = "opencode" | "claude" | "codex" | "qoder" | "hermes" | "zcode" | "fast-agent" | "chatgpt" | "browser-chat" | "minimax-code";
+export type HarnessType = "opencode" | "claude" | "codex" | "qoder" | "hermes" | "zcode" | "fast-agent" | "chatgpt" | "zai" | "browser-chat" | "minimax-code";
 
 export type AgentStatus =
   | "running"      // actively processing
@@ -371,6 +371,13 @@ export interface HarnessAdapter {
   readonly name: string;
   /** Native controls exposed by this transport. */
   readonly controlCapabilities?: Partial<HarnessCapabilities>;
+  /** Provider-specific browser features; shared base does not imply equal sites. */
+  readonly browserFeatures?: {
+    nativeConversationIds: boolean;
+    queueAfterGeneration: boolean;
+    chatCreation: boolean;
+    accountArchiveViaCdp: boolean;
+  };
   /** If true, background discovery must not start a new child transport. */
   readonly lazyStart?: boolean;
   /** If true, listSessions() is read-only and safe while the transport sleeps. */

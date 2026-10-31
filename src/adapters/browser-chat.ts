@@ -25,6 +25,13 @@ export interface BrowserChatDriver {
   listModels?(signal?: AbortSignal): Promise<string[]>;
   supportsModelSwitch?(): boolean;
   changeModel?(input: { chatId: string; model: string }, signal?: AbortSignal): Promise<{ ok: boolean; error?: string }>;
+  /** Explicit site contract. Feature reporting must not be inferred from the common base. */
+  browserFeatures?: {
+    nativeConversationIds: boolean;
+    queueAfterGeneration: boolean;
+    chatCreation: boolean;
+    accountArchiveViaCdp: boolean;
+  };
 }
 export interface BrowserChatProvider { id: string; name: string; harness: HarnessType; cwd: string }
 
@@ -40,6 +47,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
   readonly type: HarnessType;
   readonly name: string;
   readonly controlCapabilities: HarnessCapabilities;
+  readonly browserFeatures: NonNullable<BrowserChatDriver["browserFeatures"]>;
   private static readonly browserCapabilities: HarnessCapabilities = {
     cancelTurn: false,
     detach: false,
@@ -57,11 +65,33 @@ export class BrowserChatAdapter implements HarnessAdapter {
     private readonly driver: BrowserChatDriver,
     private readonly provider: BrowserChatProvider,
     private readonly cwd = provider.cwd,
+    private readonly scopedIds = false,
   ) {
     this.type = provider.harness;
     this.name = provider.name;
     this.controlCapabilities = { ...BrowserChatAdapter.browserCapabilities,
       modelSwitch: driver.supportsModelSwitch?.() ?? typeof driver.changeModel === "function" };
+    this.browserFeatures = driver.browserFeatures ?? {
+      nativeConversationIds: false,
+      queueAfterGeneration: false,
+      chatCreation: typeof driver.createChat === "function",
+      accountArchiveViaCdp: false,
+    };
+  }
+
+  private scopedId(nativeId: string): string {
+    return this.scopedIds ? `${this.provider.id}::${encodeURIComponent(nativeId)}` : nativeId;
+  }
+
+  private nativeId(id: string): string {
+    if (!this.scopedIds) return id;
+    const prefix = `${this.provider.id}::`;
+    if (!id.startsWith(prefix)) throw new Error("Browser session belongs to another provider");
+    let nativeId: string;
+    try { nativeId = decodeURIComponent(id.slice(prefix.length)); }
+    catch { throw new Error("Invalid encoded browser session"); }
+    if (!nativeId) throw new Error("Empty native browser session");
+    return nativeId;
   }
 
   async init(): Promise<void> {
@@ -106,38 +136,34 @@ export class BrowserChatAdapter implements HarnessAdapter {
     if (!this.driver.changeModel) {
       return { ok: false, error: "This browser provider does not expose a model picker" };
     }
-    return this.driver.changeModel({ chatId: sessionId, model });
+    return this.driver.changeModel({ chatId: this.nativeId(sessionId), model });
   }
 
   async getSession(id: string): Promise<AgentSession | null> {
+    const native = this.nativeId(id);
     const chat = this.driver.getChat
-      ? await this.driver.getChat(id)
-      : (await this.driver.listChats()).find((entry) => entry.id === id);
+      ? await this.driver.getChat(native)
+      : (await this.driver.listChats()).find((entry) => entry.id === native);
     return chat ? this.toSession(chat) : null;
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
     try {
       await this.driver.sendMessage({
-        chatId: id,
+        chatId: this.nativeId(id),
         text: options.message,
         waitForCompletion: options.queue !== true,
       });
       return { ok: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (this.type === "browser-chat") {
-        // The only retryable case is a PROVEN pre-click busy state. Once a
-        // click may have happened, never let queue admission replay it.
-        if (/prompt is already running/i.test(message)) {
-          return { ok: false, error: message };
-        }
-        if (/(?:ZAI|ChatGPT) submission (outcome|admission) unknown/i.test(message)) {
-          return { ok: false, error: message, admissionUnknown: true, nonRetryable: true };
-        }
-        return { ok: false, error: message, notSubmitted: true, nonRetryable: true };
+      // Only a proven pre-click busy state is retryable. Never replay a click
+      // whose admission may already have reached either browser provider.
+      if (/prompt is already running/i.test(message)) return { ok: false, error: message };
+      if (/(?:ZAI|ChatGPT) submission (outcome|admission) unknown/i.test(message)) {
+        return { ok: false, error: message, admissionUnknown: true, nonRetryable: true };
       }
-      return { ok: false, error: message };
+      return { ok: false, error: message, notSubmitted: true, nonRetryable: true };
     }
   }
 
@@ -148,20 +174,20 @@ export class BrowserChatAdapter implements HarnessAdapter {
   }
 
   async stopSession(): Promise<ControlResult> {
-    return { ok: false, error: "ChatGPT turn cancellation is not exposed through this adapter yet" };
+    return { ok: false, error: "This browser provider does not expose native turn cancellation" };
   }
 
   async respondPermission(): Promise<{ ok: boolean; error?: string }> {
-    return { ok: false, error: "ChatGPT does not expose Herder permission prompts" };
+    return { ok: false, error: "This browser provider does not expose Herder permission prompts" };
   }
 
   async setPermissions(_sessionId: string, _options: SetPermissionsOptions): Promise<{ ok: boolean; error?: string }> {
-    return { ok: false, error: "ChatGPT permissions are controlled by the ChatGPT product surface" };
+    return { ok: false, error: "Browser chat permissions are controlled by their provider" };
   }
 
   private toSession(chat: BrowserChat): AgentSession {
     return {
-      id: chat.id,
+      id: this.scopedId(chat.id),
       harness: this.type,
       status: chat.working ? "running" : "idle",
       title: chat.title,

@@ -42,3 +42,36 @@ describe("adapter registry", () => {
     expect(adapters.has("zcode")).toBe(false);
   });
 });
+
+describe("provider-specific browser adapter cards", () => {
+  it("reports two separate site capability sets and does not aggregate them", async () => {
+    const { BrowserChatAdapter } = await import("../src/adapters/browser-chat.js");
+    const root = await mkdtemp(join(tmpdir(), "browser-registry-"));
+    const adapters = new Map<string, HarnessAdapter>();
+    const registry = new AdapterRegistry(adapters, join(root, "adapters.json"));
+    const browser = (id: "chatgpt" | "zai", nativeConversationIds: boolean) =>
+      new BrowserChatAdapter({
+        listChats: async () => [],
+        sendMessage: async () => ({}),
+        browserFeatures: {
+          nativeConversationIds, accountArchiveViaCdp: id === "chatgpt",
+          queueAfterGeneration: true, chatCreation: false,
+        },
+      }, { id, name: id, cwd: "/browser/" + id, harness: id });
+    const chatgpt = browser("chatgpt",true);
+    const zai = browser("zai",false);
+    registry.register({id:"chatgpt",name:"ChatGPT",description:"site",defaultEnabled:true});
+    registry.register({id:"zai",name:"Z.ai",description:"site",defaultEnabled:true});
+    registry.registerActive(chatgpt);
+    registry.registerActive(zai);
+    const items = registry.list().filter(x=>["chatgpt","zai"].includes(x.id));
+    expect(items).toHaveLength(2);
+    expect(items.find(x=>x.id==="chatgpt")).toMatchObject({
+      name:"ChatGPT",active:true,browserFeatures:{nativeConversationIds:true,accountArchiveViaCdp:true},
+    });
+    expect(items.find(x=>x.id==="zai")).toMatchObject({
+      name:"Z.ai",active:true,browserFeatures:{nativeConversationIds:false,accountArchiveViaCdp:false},
+    });
+    expect(adapters.has("browser-chat")).toBe(false);
+  });
+});

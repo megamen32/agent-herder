@@ -1861,8 +1861,11 @@ function App() {
   };
   const loadCreateAdapters = async () => {
     try {
-      const result = await api<{ adapters?: Array<{ id: string; name: string; active: boolean; ready: boolean; status: string }> }>("/api/adapters");
-      setCreateAdapters(Array.isArray(result.adapters) ? result.adapters : []);
+      const result = await api<{ adapters?: Array<{ id: string; name: string; active: boolean; ready: boolean; status: string;
+        browserFeatures?: { chatCreation: boolean } }> }>("/api/adapters");
+      setCreateAdapters(Array.isArray(result.adapters)
+        ? result.adapters.filter(adapter => adapter.browserFeatures?.chatCreation !== false)
+        : []);
     } catch {
       setCreateAdapters([
         { id: "opencode", name: "OpenCode", active: true, ready: true, status: "active" },

@@ -1,162 +1,64 @@
-# Browser chat adapter contract
+# Browser chat providers
 
-Browser-backed conversations are Herder sessions. The provider-neutral seam is
-`src/adapters/browser-chat.ts`:
+ChatGPT and Z.ai are **two separate Agent Herder adapters** with one shared
+implementation: `BrowserChatAdapter`. The adapter registry, UI, harness
+routing, lifecycle, capabilities and enabled setting belong to each provider,
+not to an aggregate `browser-chat` adapter.
 
-- `BrowserChatDriver`: list chats, send messages, optional create chat, list models and change model.
-- `BrowserChatProvider`: provider ID, user-facing name, harness registration type and namespace CWD.
-- `BrowserChatAdapter`: maps the driver into the existing `HarnessAdapter` protocol.
+| Harness | Driver | Identity | Account archive |
+| --- | --- | --- | --- |
+| `chatgpt` | `builtin:chatgpt-mac-cdp` | stable native `/c/<uuid>` | separate `cdp_*` tools |
+| `zai` | `builtin:zai-cdp` | currently sidebar title (or verified route) | unavailable |
 
-There is exactly one registered browser session adapter, `browser-chat`,
-for both ChatGPT and Z.ai. The old `ChatGptAdapter` class and separate
-`chatgpt` harness are removed. The historical `cdp_*` archive/export tools
-are independent of the session adapter and remain available.
+Both drivers reuse the **existing authenticated Mac mini Chrome CDP gateway**.
+Neither opens another browser, profile or login session. A missing/unavailable
+site does not disable the other or any coding agent.
 
-No login state, page lease, CDP session, browser profile, or browser-specific
-selector is owned by the common adapter. A provider's driver must reuse its
-authenticated browser session through a dedicated browser transport.
+Configure `AGENT_HERDER_BROWSER_CHAT_PROVIDERS` with a JSON array:
 
-## Onboarding ZAI and DeepSeek
-
-1. Implement a browser driver for each site using the same contract.
-2. Register each provider as a distinct harness type and configure its own
-   session namespace, capabilities, browser lease, and driver lifecycle.
-3. Verify list, resume and send against a logged-in test account before
-   exposing a provider to fleet automation.
-4. Only then retire ChatGPT-specific MCP tool aliases, using a compatibility
-   window to avoid breaking existing callers.
-
-Do not silently fall back to creating a conversation when resuming an existing
-chat. Do not enable features unsupported by the current driver.
-
-
-## Multiple authenticated providers
-
-`BrowserChatRouter` exposes one `BrowserChatDriver` for any number of
-site-specific drivers, with stable `provider::encoded-native-id` routing.
-Each provider owns its browser profile and page lease; the router has no
-cookies, selectors, or login state. A failed list operation for one site
-does not hide healthy sites; `providerStates()` exposes partial failures.
-Unknown chat IDs and provider mismatches never fall back to another account.
-The combined driver is the single `browser-chat` harness entry.
-Legacy schema strings can still identify old records, but `chatgpt` no
-longer registers a live session adapter. All active browser session IDs use
-`browser-chat` plus a `chatgpt::` or `zai::` provider prefix.
-
-## Configure site drivers
-
-Supply `AGENT_HERDER_BROWSER_CHAT_PROVIDERS` as a JSON array of
-`{id,name,cwd,module}` records. The module must be a trusted **local absolute
-path**, exporting `createBrowserChatDriver({id,cwd})`. The returned object
-implements `BrowserChatDriver`. Example provider IDs: `zai`, `deepseek`.
-The loader will only attach to the existing browser owner: it does not create
-a Chrome profile, sign in, install plugins, or invent a page lease.
-
-When configured, Herder exposes one `browser-chat` harness using the existing
-`list_agents`, `send_message`, `resume_agent`, and `change_model` commands.
-A site-specific driver must never expose or log auth cookies/tokens. A live
-read-only list of chats is required before activation. If the browser is down,
-Herder keeps the other harnesses alive and retries at 30-second intervals.
-
-Legacy ChatGPT-specific `cdp_*` tools remain on by default for clients that
-depend on account exports. Set `AGENT_HERDER_CHATGPT_LEGACY_TOOLS=false` only
-after those callers migrate to a separate archive endpoint.
-
-## ZAI on existing Mac mini Chrome CDP
-
-The built-in provider module `builtin:zai-cdp` uses the established Chrome
-DevTools owner at `127.0.0.1:50260/mcp` **on Mac mini**, reached from the
-Herder host using its existing SSH access. It does not open another Chrome CDP
-socket, launch a browser, require Vibe MCP, or take over the ChatGPT page.
-
-Configure the Herder user service (not secrets) with:
-
-```ini
-[Service]
-Environment='AGENT_HERDER_BROWSER_CHAT_PROVIDERS=[{"id":"zai","name":"ZAI","cwd":"/home/roomhacker/.browser-chat/zai","module":"builtin:zai-cdp"}]'
+```json
+[
+  {"id":"chatgpt","name":"ChatGPT","cwd":"/home/roomhacker/.browser-chat/chatgpt","module":"builtin:chatgpt-mac-cdp"},
+  {"id":"zai","name":"Z.ai","cwd":"/home/roomhacker/.browser-chat/zai","module":"builtin:zai-cdp"}
+]
 ```
 
-A single logged-in `https://chat.z.ai/` tab must be open in Mac mini Chrome.
-If more than one is open, specify `AGENT_HERDER_ZAI_PAGE_ID` to pin the exact
-page; no guessed fallback is allowed. The driver reads the rendered sidebar,
-exposes only uniquely named chats (duplicates are withheld), and derives a
-stable route ID for the selected conversation when available. Remaining sidebar
-IDs are exact-title handles, not native conversation IDs; renames invalidate
-them. The transport connects only to the pinned ZAI origin and doesn't read
-browser cookies or chat text during inventory.
+The loader validates both entries and initializes each provider independently.
+Use `/api/adapters` to inspect/disable them separately. This API also returns
+`browserFeatures` for each site. The site features are explicit: inherited
+base capabilities are not treated as proof of native provider support.
 
-Sending is available via the normal `send_message` Herder tool. Before input
-the driver verifies the exact selected title or native route and composer,
-and never creates a missing chat. An uncertain submission is **not retried**.
-The adapter currently does not claim model switching, chat creation, historical
-native timestamps, or reliable completion waits. Live sends require a separate
-test-account acceptance; inventory reads alone do not prove sending.
+## Sessions and sending
 
+Each provider exposes its own harness and scoped session IDs:
 
-## Native ZAI queue (CDP, no steer)
+- `harness="chatgpt"`, `sessionId="chatgpt::<encoded-native-id>"`
+- `harness="zai"`, `sessionId="zai::<encoded-native-id>"`
 
-`send_message(harness="browser-chat", mode="queue")` uses the shared
-`UserMessageDelivery` FIFO lane. The Herder's next exact-session read now
-checks the **live page** rather than trusting a previous cached idle value.
+These prefixes keep persisted IDs recognizable and prevent a session from
+being routed to the wrong authenticated site. The legacy `browser-chat`
+harness remains in some historical schemas but is **not registered**.
+No fallback to the last active browser or a different provider is allowed.
 
-The inspected ZAI editor has these two distinctive controls:
+Both browser drivers check generation/activity in the live page and confirm
+the exact intended conversation and composer before Send. A visible Stop
+control means an active response; a visible Send control on an empty composer
+may be disabled without indicating generation. Z.ai has a known square Stop
+control; the ChatGPT driver uses its own controls. On unknown state, an
+existing personal draft, changed target or ambiguous Send button, admission
+is refused. An uncertain click outcome is **never automatically retried**.
 
-- **generating**: visible Stop button with
-  `button > span.block.size-3.rounded-xs.bg-text-inverted`
-- **idle**: visible `#send-message-button` (the button may be disabled until
-  text is typed, so disabled does **not** mean the chat is generating)
+Use `mode="queue"` for deferred messages. `steer` is not native to either
+provider and must not silently substitute Stop/Continue. Neither driver is
+considered live-send-accepted without a dedicated test-account conversation.
 
-If both controls are missing, the activity state is unknown and admission
-waits rather than sending. An unsent personal draft also blocks queue
-admission. An exact chat read may select a different conversation only when
-the currently displayed chat is idle; it never leaves a generating chat.
+## Compatibility
 
-Human **and** authenticated agent queues wait until the exact chat is idle.
-There is a 1.8-second post-submit guard to avoid overlapping UI transitions.
-The driver verifies the exact chat after selection, then uses a single
-browser-side preflight followed by the Send button click. That preflight checks
-the Stop marker again, the route or selected title, the filled textarea, and
-whether Send is enabled. Pre-click activity rejection is retryable for queue;
-unknown submission outcome is non-retryable, without automatic replay.
-When the queue race blocks submission, only the driver's exact unsent draft
-is cleared. A native ZAI steer is **not** provided: Stop + Continue is a
-separate, explicitly disruptive operation and is never used for queue.
+The separate old ChatGPT `ChatGptAdapter` is removed. The archive and official
+account export `cdp_*` tools remain independent and are **not** registered as
+another chat adapter. Previously stored `browser-chat` records are not deleted
+and existing stored queued deliveries are not replayed during migration.
 
-The queue and CDP DOM behavior have fixture tests. Read-only Mac mini CDP
-validation confirms the real idle Send button can be disabled when empty.
-No live personal chat sends should be used as acceptance tests: a dedicated
-test account/chat is required before claiming live message delivery.
-
-## Two providers in one shared BrowserChatRouter (Mac mini)
-
-The production browser-chat harness supports two independent, provider-scoped
-instances via the existing authenticated Mac mini Chrome CDP gateway:
-
-- ChatGPT: builtin:chatgpt-mac-cdp; native chatgpt.com /c/ route ID
-- Z.ai: builtin:zai-cdp; chat.z.ai sidebar/route IDs
-
-Both are loaded into ONE BrowserChatRouter, ONE BrowserChatAdapter, and ONE
-harness named browser-chat. They share the same already-running Mac mini CDP
-owner, but their origins and chat IDs never mix or fall back to each other.
-The loader never creates a browser profile or starts Chrome.
-
-Configure the AGENT_HERDER_BROWSER_CHAT_PROVIDERS systemd environment variable
-as a JSON array with the following objects:
-
-    {"id":"chatgpt","name":"ChatGPT","cwd":"/home/roomhacker/.browser-chat/chatgpt","module":"builtin:chatgpt-mac-cdp"}
-    {"id":"zai","name":"ZAI","cwd":"/home/roomhacker/.browser-chat/zai","module":"builtin:zai-cdp"}
-
-The resulting IDs start with chatgpt:: or zai::. Pass them unchanged to
-harness=browser-chat for session read, queue and resume. The separate legacy
-chatgpt harness and cdp_* archive aliases remain for compatibility and are
-not a third router instance.
-
-The ChatGPT Mac mini driver reads only visible sidebar route links and editor
-state. It can fail closed if multiple matching tabs are present; pin the
-exact tab using AGENT_HERDER_CHATGPT_PAGE_ID when needed. Sending requires an
-exact route, idle composer without a human draft, an owned editor, and a unique
-enabled Send button. It never uses Enter or retries uncertain click outcomes.
-
-Tests validate two-provider routing, read-only live listing, provider isolation,
-busy gates and uncertain delivery behavior. A successful live send is not
-claimed until accepted in a dedicated test conversation.
+The frontend shows `ChatGPT` and `Z.ai` as distinct harnesses and adapter
+cards. Browser-only adapters without native chat creation do not appear in
+the new-session dialog.

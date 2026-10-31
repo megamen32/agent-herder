@@ -784,9 +784,18 @@
       const capabilities = adapter.capabilities
         ? Object.entries(adapter.capabilities).filter(([, enabled]) => enabled).map(([key]) => key).join(", ") || "base session controls"
         : "not initialized";
+      const browser = adapter.browserFeatures;
+      const siteFeatures = browser
+        ? [
+            browser.nativeConversationIds ? "native conversation IDs" : "sidebar-title identifiers",
+            browser.queueAfterGeneration ? "queued send" : "no queued send",
+            browser.chatCreation ? "new chat" : "existing chats only",
+            browser.accountArchiveViaCdp ? "ChatGPT archive via CDP" : "no account archive",
+          ].join(" · ")
+        : "";
       const action = adapter.enabled ? "Disable" : "Add";
       const readiness = adapter.ready ? "ready" : "sleeping (lazy)";
-      return `<div class="session-row"><div><strong>${esc(adapter.name)}</strong><div class="hint">${esc(adapter.description)} · ${esc(adapter.status)} · ${readiness} · ${esc(capabilities)}</div>${adapter.error ? `<div class="error">${esc(adapter.error)}</div>` : ""}</div><button class="small adapter-toggle" data-adapter="${esc(adapter.id)}" data-enabled="${adapter.enabled ? "false" : "true"}">${action}</button></div>`;
+      return `<div class="session-row"><div><strong>${esc(adapter.name)}</strong><div class="hint">${esc(adapter.description)} · ${esc(adapter.status)} · ${readiness} · ${esc(capabilities)}</div>${siteFeatures ? `<div class="hint">${esc(siteFeatures)}</div>` : ""}${adapter.error ? `<div class="error">${esc(adapter.error)}</div>` : ""}</div><button class="small adapter-toggle" data-adapter="${esc(adapter.id)}" data-enabled="${adapter.enabled ? "false" : "true"}">${action}</button></div>`;
     }).join("") || "No adapters registered";
     elements.adapterRegistry.querySelectorAll(".adapter-toggle").forEach((button) => {
       button.addEventListener("click", async () => {
