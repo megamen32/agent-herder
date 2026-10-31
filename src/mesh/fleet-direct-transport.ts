@@ -63,7 +63,7 @@ const peerFailure=(stderr:string):string=>{
 };
 const macSessionReadTimeoutMs=20_000;
 const macSessionReadTools=new Set(['fleet_node_info','fleet_session_view']);
-const bridge=String.raw`import sys,json,socket,pwd,os,time,urllib.request,urllib.parse,urllib.error,uuid,signal,stat,re,shlex
+const bridge=String.raw`import sys,json,socket,pwd,os,time,urllib.request,urllib.parse,urllib.error,uuid,signal,stat,re,shlex,hashlib
 body=sys.stdin.buffer.read(16385)
 if len(body)>16384:raise RuntimeError('request_limit')
 r=json.loads(body)
@@ -78,19 +78,22 @@ opener=urllib.request.build_opener(NoRedirect())
 session=None
 url='http://127.0.0.1:'+str(r['port'])+'/mcp'
 bearer=None
+def protected_read(path):
+ fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
+ with os.fdopen(fd,'r',encoding='utf8') as handle:
+  proof=os.fstat(handle.fileno())
+  if not stat.S_ISREG(proof.st_mode) or proof.st_uid!=os.geteuid() or proof.st_mode&0o077 or proof.st_size>65536:raise RuntimeError('direct_mcp_credential_unverified')
+  content=handle.read(65537);after=os.fstat(handle.fileno())
+  if (proof.st_dev,proof.st_ino,proof.st_size,proof.st_mtime_ns)!=(after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns):raise RuntimeError('direct_mcp_credential_unverified')
+ return content
 def mcp_bearer():
  global bearer
  if bearer is not None:return bearer
  value=os.environ.get('AGENT_HERDER_HTTP_TOKEN','').strip()
+ base=os.path.join(pwd.getpwuid(os.getuid()).pw_dir,'.config','agent-herder')
  if not value:
-  path=os.path.join(pwd.getpwuid(os.getuid()).pw_dir,'.config','agent-herder','herder.env')
   try:
-   fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
-   with os.fdopen(fd,'r',encoding='utf8') as handle:
-    proof=os.fstat(handle.fileno())
-    if not stat.S_ISREG(proof.st_mode) or proof.st_uid!=os.geteuid() or proof.st_mode&0o077 or proof.st_size>65536:raise RuntimeError('direct_mcp_credential_unverified')
-    content=handle.read(65537);after=os.fstat(handle.fileno())
-    if (proof.st_dev,proof.st_ino,proof.st_size,proof.st_mtime_ns)!=(after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns):raise RuntimeError('direct_mcp_credential_unverified')
+   content=protected_read(os.path.join(base,'herder.env'))
    for line in content.splitlines():
     match=re.fullmatch(r'\s*(?:export\s+)?AGENT_HERDER_HTTP_TOKEN\s*=\s*(.*?)\s*',line)
     if match:
@@ -99,8 +102,23 @@ def mcp_bearer():
      value=parts[0]
   except FileNotFoundError:raise RuntimeError('direct_mcp_credential_missing') from None
   except Exception:raise RuntimeError('direct_mcp_credential_unverified') from None
+ # The file of the product can hold the fingerprint marker of the secret instead
+ # of the raw value: the raw value lives in the protected secrets store of this
+ # node, exactly as loadSecretEnvironment resolves it for the runtime itself.
+ if value and re.fullmatch(r'sha256:[0-9a-f]{16}',value):
+  try:
+   store=json.loads(protected_read(os.path.join(base,'secrets.json')))
+   secret=store.get('secrets',{}).get('AGENT_HERDER_HTTP_TOKEN') if isinstance(store,dict) else None
+   if not isinstance(secret,str) or not secret:raise RuntimeError('direct_mcp_credential_missing')
+   if 'sha256:'+hashlib.sha256(secret.encode()).hexdigest()[:16]!=value:raise RuntimeError('direct_mcp_credential_unverified')
+   value=secret
+  except RuntimeError:raise
+  except FileNotFoundError:raise RuntimeError('direct_mcp_credential_missing') from None
+  except Exception:raise RuntimeError('direct_mcp_credential_unverified') from None
  if not value:raise RuntimeError('direct_mcp_credential_missing')
- if len(value)>4096 or not re.fullmatch(r'[A-Za-z0-9._~+/-]+=*',value):raise RuntimeError('direct_mcp_credential_unverified')
+ # One header value stays printable ASCII without whitespace; separators like
+ # ':' occur in real tokens and are not a header injection.
+ if len(value)>4096 or not re.fullmatch(r'[!-~]+',value):raise RuntimeError('direct_mcp_credential_unverified')
  bearer=value
  return bearer
 def checked(value,identity):
