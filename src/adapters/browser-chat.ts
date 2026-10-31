@@ -132,7 +132,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
         if (/prompt is already running/i.test(message)) {
           return { ok: false, error: message };
         }
-        if (/ZAI submission (outcome|admission) unknown/i.test(message)) {
+        if (/(?:ZAI|ChatGPT) submission (outcome|admission) unknown/i.test(message)) {
           return { ok: false, error: message, admissionUnknown: true, nonRetryable: true };
         }
         return { ok: false, error: message, notSubmitted: true, nonRetryable: true };

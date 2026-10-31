@@ -120,3 +120,37 @@ The queue and CDP DOM behavior have fixture tests. Read-only Mac mini CDP
 validation confirms the real idle Send button can be disabled when empty.
 No live personal chat sends should be used as acceptance tests: a dedicated
 test account/chat is required before claiming live message delivery.
+
+## Two providers in one shared BrowserChatRouter (Mac mini)
+
+The production browser-chat harness supports two independent, provider-scoped
+instances via the existing authenticated Mac mini Chrome CDP gateway:
+
+- ChatGPT: builtin:chatgpt-mac-cdp; native chatgpt.com /c/ route ID
+- Z.ai: builtin:zai-cdp; chat.z.ai sidebar/route IDs
+
+Both are loaded into ONE BrowserChatRouter, ONE BrowserChatAdapter, and ONE
+harness named browser-chat. They share the same already-running Mac mini CDP
+owner, but their origins and chat IDs never mix or fall back to each other.
+The loader never creates a browser profile or starts Chrome.
+
+Configure the AGENT_HERDER_BROWSER_CHAT_PROVIDERS systemd environment variable
+as a JSON array with the following objects:
+
+    {"id":"chatgpt","name":"ChatGPT","cwd":"/home/roomhacker/.browser-chat/chatgpt","module":"builtin:chatgpt-mac-cdp"}
+    {"id":"zai","name":"ZAI","cwd":"/home/roomhacker/.browser-chat/zai","module":"builtin:zai-cdp"}
+
+The resulting IDs start with chatgpt:: or zai::. Pass them unchanged to
+harness=browser-chat for session read, queue and resume. The separate legacy
+chatgpt harness and cdp_* archive aliases remain for compatibility and are
+not a third router instance.
+
+The ChatGPT Mac mini driver reads only visible sidebar route links and editor
+state. It can fail closed if multiple matching tabs are present; pin the
+exact tab using AGENT_HERDER_CHATGPT_PAGE_ID when needed. Sending requires an
+exact route, idle composer without a human draft, an owned editor, and a unique
+enabled Send button. It never uses Enter or retries uncertain click outcomes.
+
+Tests validate two-provider routing, read-only live listing, provider isolation,
+busy gates and uncertain delivery behavior. A successful live send is not
+claimed until accepted in a dedicated test conversation.

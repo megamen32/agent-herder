@@ -32,6 +32,24 @@ describe("browser provider module loader", () => {
     expect(adapter?.controlCapabilities.modelSwitch).toBe(false);
   });
 
+  it("loads ChatGPT and ZAI as two built-in browser providers without starting Chrome", async () => {
+    const adapter = await loadBrowserChatAdapter(JSON.stringify([
+      { id: "chatgpt", name: "ChatGPT", cwd: "/browser/chatgpt", module: "builtin:chatgpt-mac-cdp" },
+      { id: "zai", name: "ZAI", cwd: "/browser/zai", module: "builtin:zai-cdp" },
+    ]));
+    expect(adapter?.type).toBe("browser-chat");
+    expect(adapter?.controlCapabilities.modelSwitch).toBe(false);
+  });
+
+  it("loads ChatGPT and ZAI as two built-in browser providers without starting Chrome", async () => {
+    const adapter = await loadBrowserChatAdapter(JSON.stringify([
+      { id: "chatgpt", name: "ChatGPT", cwd: "/browser/chatgpt", module: "builtin:chatgpt-mac-cdp" },
+      { id: "zai", name: "ZAI", cwd: "/browser/zai", module: "builtin:zai-cdp" },
+    ]));
+    expect(adapter?.type).toBe("browser-chat");
+    expect(adapter?.controlCapabilities.modelSwitch).toBe(false);
+  });
+
   it("rejects nonlocal driver modules and duplicate providers before any browser use", async () => {
     await expect(loadBrowserChatAdapter(JSON.stringify([{ id: "zai", name: "ZAI", cwd: "/browser/zai", module: "https://invalid/" }]))).rejects.toThrow(/absolute local path/);
     await expect(loadBrowserChatAdapter(JSON.stringify([{ id: "zai", name: "ZAI", cwd: "/browser/zai", module: "/tmp/fixture" }, { id: "zai", name: "ZAI", cwd: "/browser/zai", module: "/tmp/fixture" }]))).rejects.toThrow(/Duplicate/);

@@ -19,7 +19,7 @@ function configuredProviders(raw: string): Config[] {
     if (typeof value.name !== "string" || !value.name.trim()) throw new Error("Browser provider name required");
     if (typeof value.cwd !== "string" || !isAbsolute(value.cwd)) throw new Error("Browser provider CWD must be absolute");
     if (typeof value.module !== "string" ||
-      (value.module !== "builtin:zai-cdp" && !isAbsolute(value.module))) {
+      (!["builtin:zai-cdp", "builtin:chatgpt-mac-cdp"].includes(value.module) && !isAbsolute(value.module))) {
       throw new Error("Browser driver module must be an absolute local path or an allowed built-in");
     }
     return { id: value.id, name: value.name, cwd: value.cwd, module: value.module };
@@ -40,7 +40,9 @@ export async function loadBrowserChatAdapter(raw = process.env[BROWSER_CHAT_PROV
   for (const config of configs) {
     const exports = config.module === "builtin:zai-cdp"
       ? await import("./zai-cdp-driver.js")
-      : await import(pathToFileURL(config.module).href);
+      : config.module === "builtin:chatgpt-mac-cdp"
+        ? await import("./chatgpt-mac-cdp-driver.js")
+        : await import(pathToFileURL(config.module).href);
     if (typeof exports.createBrowserChatDriver !== "function") {
       throw new Error(`Browser provider '${config.id}' must export createBrowserChatDriver`);
     }
