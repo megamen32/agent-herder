@@ -264,8 +264,8 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('<span className="chat-menu-section">Разделы</span>');
   });
 
-  it("gives the mobile session title its own full-width row", () => {
-    expect(styles).toContain('grid-template-areas: "back actions" "heading heading"');
+  it("keeps mobile back title and actions in one compact row", () => {
+    expect(styles).toContain('grid-template-areas: "back heading actions"');
     expect(styles).toContain('.chat-header .chat-heading { grid-area: heading;');
     expect(styles).toContain('.header-actions .automation-setting-button { display: none; }');
     expect(styles).toContain('.load-timings { display: none; }');
@@ -631,4 +631,12 @@ describe("чип модели в композере", () => {
     expect(main).toContain("Не удалось сменить модель:");
     expect(main).toContain("Не удалось загрузить список моделей:");
   });
+});
+
+
+it("keeps wide chat work-target controls clickable inside the transparent header overlay", () => {
+  const wide = styles.slice(styles.indexOf("@container chat-pane (min-width: 1200px)"));
+  expect(wide).toMatch(/\.chat-header-chat:not\(\.chat-header-noactive\)\s*\{[^}]*pointer-events:\s*none/);
+  expect(wide).toMatch(/\.chat-header-chat:not\(\.chat-header-noactive\) \.work-target\s*\{[^}]*pointer-events:\s*auto/);
+  expect(wide).toMatch(/\.header-actions\s*\{[^}]*pointer-events:\s*auto/);
 });
