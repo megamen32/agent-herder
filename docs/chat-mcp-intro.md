@@ -39,7 +39,9 @@ the environment (deployment-owned) is used as is.
   message of that call was refused or failed.
 - The send is a normal supervisor message with the stable input identity
   `mcp-intro-<harness>-<sessionId>`: restarts and repeated triggers cannot
-  duplicate it, and crash-safe delivery reconciliation applies.
+  duplicate it, and crash-safe delivery reconciliation applies. When the target chat is generating at that moment, the intro is parked
+  into the deferred inbox instead of being dropped: the sweeper delivers it
+  once the chat is calm, and the park stays idempotent by session and text.
 - Delivery is fire-and-forget: a refused or failed intro never fails the
   session creation that caused it. Refusals are logged with the
   `[chat-mcp-intro]` tag.
