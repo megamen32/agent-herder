@@ -36,7 +36,9 @@ the environment (deployment-owned) is used as is.
   first durable binding of an existing chat - the first adoption), never
   on a chat merely discovered in a sidebar. The intro belongs to the
   session, not to the delivery: a first binding fires it even when the
-  message of that call was refused or failed.
+  message of that call was refused or failed. The MCP tools
+  `create_session` and `new_or_resume` fire it through the same delivery
+  module, so every entry point behaves identically.
 - The send is a normal supervisor message with the stable input identity
   `mcp-intro-<harness>-<sessionId>`: restarts and repeated triggers cannot
   duplicate it, and crash-safe delivery reconciliation applies. When the target chat is generating at that moment, the intro is parked

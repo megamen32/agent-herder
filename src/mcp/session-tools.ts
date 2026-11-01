@@ -8,6 +8,8 @@ import { sessionIdentity } from "../session-identity.js";
 import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import { UserMessageDelivery } from "../user-message-delivery.js";
+import { deliverChatMcpIntroForSession } from "../chat-mcp-intro-delivery.js";
+import type { SessionSupervisor } from "../session-supervisor.js";
 import { captureDeliveryResponseBaseline, nativeDeliveryResponseComplete, nativeDeliveryResponseCompleteByInput, waitForDeliveryResponse, type DeliveryResponseBaseline, type DeliveryResponseResult, type DeliveryResponseTarget } from "../session-delivery-response.js";
 import { callerSessionFromMcpContext } from "./caller-session.js";
 import type { SendMessageResult } from "../types/index.js";
@@ -81,6 +83,22 @@ export interface FleetSessionTargetRouter {
   }>;
 }
 
+/** The owner MCP intro follows a created or first-adopted named session of the MCP tools too. */
+function deliverMcpIntroForNamedResult(
+  supervisor: Pick<SessionSupervisor, "sendMessage"> | undefined,
+  resultJson: string,
+  origin: "human" | "automation",
+): void {
+  if (!supervisor) return;
+  try {
+    const result = JSON.parse(resultJson) as { ok?: boolean; sessionId?: string; harness?: string; created?: boolean; adopted?: boolean };
+    if (!result.sessionId || !result.harness || !(result.created || result.adopted)) return;
+    void deliverChatMcpIntroForSession(supervisor, result.harness, result.sessionId, origin).catch(() => undefined);
+  } catch {
+    /* a malformed result never breaks the tool answer */
+  }
+}
+
 export function registerSessionTools(server: McpServer, deps: {
   adapters: Map<string, HarnessAdapter>;
   jobs: HerderJobRegistry;
@@ -104,6 +122,8 @@ export function registerSessionTools(server: McpServer, deps: {
   sessionQueueControl?: SessionQueueControlGateway;
   /** Durable resume-after service backing scheduled deliveries. */
   resumeAfter?: ResumeAfterService;
+  /** Session supervisor that delivers the owner MCP intro into freshly created or first-adopted chats. */
+  supervisor?: Pick<SessionSupervisor, "sendMessage">;
 }): void {
   const { adapters, jobs, events } = deps;
   const userMessageDelivery = deps.userMessageDelivery ?? new UserMessageDelivery(adapters, {
@@ -685,6 +705,7 @@ export function registerSessionTools(server: McpServer, deps: {
   server.registerTool("create_session", { description: "Create one named OpenCode, Codex, ZCode, or Fast Agent session in an absolute canonical working directory. Codex serviceTier defaults to normal; serviceTier is rejected for other harnesses.", inputSchema: CreateSessionSchema }, async (args) => {
     await assertModelAllowedForDirectoryWithPolicy(deps.launchPolicy, args.cwd, args.model, args.harness);
     const result = await handleCreateSession(adapters, args); publishSessionsChanged();
+    deliverMcpIntroForNamedResult(deps.supervisor, result, "human");
     return { content: [{ type: "text" as const, text: result }] };
   });
   server.registerTool("new_or_resume", { description: "Reuse the exact named session for harness+CWD or create it, then deliver one message. Codex serviceTier applies only when this call creates a new session; existing named sessions are never changed. OpenCode GLM 5.3 Flash uses MiniMax M3.1 Flash as its default fallback after a pre-admission HTTP 429 or provider quota rejection; fallbackModels overrides that route. Unknown/accepted delivery and manual stops never trigger fallback. Call model_quotas to inspect current provider allowances.", inputSchema: NewOrResumeSchema }, async (args) => {
@@ -695,6 +716,7 @@ export function registerSessionTools(server: McpServer, deps: {
       await assertModelAllowedForDirectoryWithPolicy(deps.launchPolicy, args.cwd, fallback, args.harness);
     }
     const result = await handleNewOrResume(adapters, args); publishSessionsChanged();
+    deliverMcpIntroForNamedResult(deps.supervisor, result, args.humanRequested === false ? "automation" : "human");
     return { content: [{ type: "text" as const, text: result }] };
   });
   server.registerTool("deliver", { description: "Deliver a message to an agent. Existing targets default to current-turn-only delivery; idle/completed targets are skipped without deferred debt. Newly created named targets receive their initial task. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed. deliverIn (seconds) or deliverAt (RFC3339) schedules the message through the durable resume-after service: exact sessionId targets of this machine, the target must exist, a model override is refused, busy sessions queue the message at fire time; status via resume_after_status, cancel via resume_after_cancel with the owner from the schedule receipt. Omit both to deliver immediately.", inputSchema: DeliverSchema }, async(args)=>{ const route=await sessionRoute(args);if(route.denied)throw new Error("project_session_scope_unavailable");if(route.hostTargetUnavailable)throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);await assertDeliveryModelAllowed(route.adapters,{sessionId:args.sessionId,harness:args.harness,cwd:args.cwd,model:args.model});if(args.deliverIn!==undefined||args.deliverAt!==undefined){const result=await scheduleDeliver(route.adapters,deps.resumeAfter,route.args);return {content:[{type:"text" as const,text:result}]};}const result=await handleDeliver(route.adapters,route.args);publishSessionsChanged();return {content:[{type:"text" as const,text:result}]}; });
