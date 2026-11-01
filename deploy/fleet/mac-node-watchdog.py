@@ -4,7 +4,7 @@
 Contract: ~/.local/share/agent-herder/fleet/{node-config.json,current/dist,
 releases}; config sourceSha/hostId/nodeBin/harnesses and native pointers match
 Linux. launcherHashes seals installed Python wrappers; every declared payload
-file is SHA-checked (<=2048 files/512MiB/5s); external deps remain owner proof.
+file is SHA-checked (<=2048 files/512MiB/15s); external deps remain owner proof.
 Codex JOIN also requires approved codexOwnerPid/codexOwnerStartedAt
 (ps lstart) /codexOwnerBin; canonical rendezvous +UID/PID/executable/listen/
 inode proof is refreshed each sample, no unknown owner/forward adoption.
@@ -18,7 +18,7 @@ Never inspect /proc, create a native daemon, copy credentials or prune releases.
 Owned child process group: RSS soft256MiB Mini/384MiB M1 (30s sustained), hard512MiB;
 CPU100% over20s,150% per sample after10s startup;128 threads/16 processes;
 temp128/state64MiB; <=3 release directories/512MiB; host reserve Mini2/M1 4GiB,
-disk2GiB. Poll delay2s plus bounded probes, metadata commands5s/two attempts10s total,
+disk2GiB. Poll delay2s plus bounded probes, metadata commands8s/two attempts16s total,
 storage scan1s/30000 entries
 (one deadline-only fresh retry within2s total; artifact-only15s, census every30s);
 cleanup global10s (within LaunchAgent ExitTimeOut20s), unknown =>unverified. These are
@@ -39,7 +39,7 @@ import json
 import hashlib
 import plistlib
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import select
 import shlex
@@ -62,8 +62,8 @@ CPU_WINDOW = 20
 POLL_SECONDS = 2
 ARTIFACT_OBSERVATION_SECONDS = 15
 MAX_MANIFEST_FILES = 2048
-METADATA_ATTEMPT_SECONDS = 5
-METADATA_OBSERVATION_SECONDS = 10
+METADATA_ATTEMPT_SECONDS = 8
+METADATA_OBSERVATION_SECONDS = 16
 
 class Refused(RuntimeError):
     """Short non-secret reason; underlying commands/config are never printed."""
@@ -216,8 +216,8 @@ def darwin_artifact_bytes(root, limit, overall_deadline, verify_root, refuse, pi
 
 def darwin_mutable_bytes(root,limit,overall_deadline,verify_root,refuse,pinned):
     """The same fd/no-follow census, in one sealed native utility-QoS observer.
-    Parent/Node retain background policy. The four-second parent window fits
-    the child's unchanged two-second census plus startup and owned cleanup.
+    Parent/Node retain background policy. The parent window fits the child's
+    unchanged two-second census plus startup and owned cleanup.
     """
     child=None;root_fd=None;cwd_fd=None;summary=b''
     # A fresh retry shares the original window; leave bounded cleanup time
@@ -289,10 +289,17 @@ def storage_probe_main(args):
 
 def storage_bytes(root, limit, *, artifact=False, _native_mutable=True):
     root=root.absolute()
-    window=ARTIFACT_OBSERVATION_SECONDS if artifact else (4 if sys.platform=='darwin' and _native_mutable else 2)
+    # The native mutable census runs as a sealed helper whose own two-second
+    # census budget starts after the process is spawned. On a loaded host the
+    # spawn and the first census pass together needed more than three seconds,
+    # so the former four-second parent window killed a healthy helper with
+    # SIGKILL and refused the pass. The parent now keeps the same fifteen
+    # second allowance the artifact census already uses, which fits one
+    # deadline-only fresh retry plus the owned cleanup.
+    window=ARTIFACT_OBSERVATION_SECONDS if artifact or (sys.platform=='darwin' and _native_mutable) else 2
     # Give a complete artifact census one finite allowance. Disk metadata
     # delays must not discard a healthy pass at the former five-second gate.
-    attempt_window=window if artifact else window/2
+    attempt_window=window if artifact or (sys.platform=='darwin' and _native_mutable) else window/2
     started=time.monotonic();overall_deadline=started+window;count=0;attempt=0
     root_class={'releases':'artifact','tmp':'temp','native-codex-tmp':'temp',
                 'fleet-node':'state','fleet-native-codex':'state'}.get(root.name,'other')
@@ -839,21 +846,43 @@ def verify_manifest(base,source):
     payload=manifest.get('payload')
     if not isinstance(payload,dict) or not 1<=len(payload)<=MAX_MANIFEST_FILES or 'index.js' not in payload:
         raise Refused('artifact_identity_missing')
-    root=(base/'current/dist').resolve(strict=True);total=0;deadline=time.monotonic()+5
+    root=(base/'current/dist').resolve(strict=True);total=0;deadline=time.monotonic()+ARTIFACT_OBSERVATION_SECONDS
+    # Resolve each distinct parent directory once and hash the file through a
+    # no-follow descriptor. A per-file resolve() plus stat() repeats the whole
+    # path walk for every payload entry; under the LaunchAgent background
+    # policy that consumed the five-second observation budget on its own and
+    # refused a healthy release as artifact_observation_limit. The parent
+    # cache keeps the same no-escape rule (a resolved parent must stay under
+    # root), and O_NOFOLLOW plus fstat() keep the same "regular file under
+    # root" guarantee the previous path.is_file() check provided.
+    parents={}
     for name,digest in payload.items():
         if (not isinstance(name,str) or Path(name).is_absolute() or '..' in Path(name).parts
                 or not isinstance(digest,str) or not re.fullmatch('[a-f0-9]{64}',digest)):
             raise Refused('artifact_manifest_invalid')
-        path=(root/name).resolve(strict=True)
-        if root not in path.parents or not path.is_file():raise Refused('artifact_manifest_invalid')
+        relative=PurePosixPath(name)
+        parent_key=relative.parent.as_posix()
+        parent=parents.get(parent_key)
+        if parent is None:
+            parent=(root/parent_key).resolve(strict=True)
+            if parent!=root and root not in parent.parents:raise Refused('artifact_manifest_invalid')
+            parents[parent_key]=parent
+        path=parent/relative.name
         computed=hashlib.sha256()
-        with path.open('rb') as handle:
+        try:
+            descriptor=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
+        except OSError:
+            raise Refused('artifact_manifest_invalid') from None
+        try:
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):raise Refused('artifact_manifest_invalid')
             while True:
-                data=handle.read(MIB)
+                data=os.read(descriptor,MIB)
                 if not data:break
                 total+=len(data)
                 if total>512*MIB or time.monotonic()>deadline:raise Refused('artifact_observation_limit')
                 computed.update(data)
+        finally:
+            os.close(descriptor)
         if computed.hexdigest()!=digest:raise Refused('artifact_identity_mismatch')
     return entry
 
@@ -1054,22 +1083,37 @@ def main():
             stderr_reader=ChildStderrDiagnostic(child.stderr,entry.parent)
             while child.poll() is None:
                 if stderr_reader.failed:raise Refused('stderr_observation_failed')
-                if 'codex' in config['harnesses']:verify_codex_owner(config)
-                observed=read_processes(child.pid);now=time.monotonic();elapsed=now-started
-                if not observed:raise Refused('owned_group_unobserved')
-                sample={'rss_kib':sum(r['rss_kib'] for r in observed),'processes':len(observed)}
-                failed=[name for name,over in [('memory_hard',sample['rss_kib']>MEMORY_MAX_KIB),('processes',len(observed)>16)] if over]
-                if failed:reason='resource_budget';break
-                current={(r['pid'],r.get('generation',r['identity'])):r['cpu_seconds'] for r in observed};cpu=cpu_percent(previous_cpu,current,now-previous)
-                cpu_samples.append((previous,now,cpu));cpu_samples=[s for s in cpu_samples if s[1]>now-CPU_WINDOW];previous=now;previous_cpu=current
-                releases,artifact=release_usage(base,artifact_cache)
-                sample={'rss_kib':sum(r['rss_kib'] for r in observed),'processes':len(observed),'threads':read_threads(observed),
-                    'cpu_percent':cpu,'sustained_cpu_percent':rolling_cpu(cpu_samples,now),'temp_bytes':storage_bytes(temp,128*MIB),
-                    'state_bytes':storage_bytes(state,64*MIB),'artifact_bytes':artifact,'releases':releases,
-                    'artifactCensusAgeSeconds':artifact_cache.age_seconds(),
-                    'host_available_kib':host_available_kib(),'disk_free_bytes':shutil.disk_usage(base).free}
-                soft=soft_memory_anchor(sample['rss_kib'],elapsed,soft,policy.memory_soft_kib);failed=violations(sample,policy,elapsed,soft)
-                if failed:reason='resource_budget';break
+                # A loaded host deschedules every observer command for seconds.
+                # One missed observation window is a state, not a verdict: a
+                # healthy owned child (its own exit code stays zero) must not
+                # be stopped because a metadata probe was descheduled. The
+                # second consecutive miss still refuses, so a sustained
+                # observer failure is never reported as healthy.
+                for tick in range(2):
+                    try:
+                        if 'codex' in config['harnesses']:verify_codex_owner(config)
+                        observed=read_processes(child.pid);now=time.monotonic();elapsed=now-started
+                        if not observed:raise Refused('owned_group_unobserved')
+                        sample={'rss_kib':sum(r['rss_kib'] for r in observed),'processes':len(observed)}
+                        failed=[name for name,over in [('memory_hard',sample['rss_kib']>MEMORY_MAX_KIB),('processes',len(observed)>16)] if over]
+                        if failed:reason='resource_budget';break
+                        current={(r['pid'],r.get('generation',r['identity'])):r['cpu_seconds'] for r in observed};cpu=cpu_percent(previous_cpu,current,now-previous)
+                        cpu_samples.append((previous,now,cpu));cpu_samples=[s for s in cpu_samples if s[1]>now-CPU_WINDOW];previous=now;previous_cpu=current
+                        releases,artifact=release_usage(base,artifact_cache)
+                        sample={'rss_kib':sum(r['rss_kib'] for r in observed),'processes':len(observed),'threads':read_threads(observed),
+                            'cpu_percent':cpu,'sustained_cpu_percent':rolling_cpu(cpu_samples,now),'temp_bytes':storage_bytes(temp,128*MIB),
+                            'state_bytes':storage_bytes(state,64*MIB),'artifact_bytes':artifact,'releases':releases,
+                            'artifactCensusAgeSeconds':artifact_cache.age_seconds(),
+                            'host_available_kib':host_available_kib(),'disk_free_bytes':shutil.disk_usage(base).free}
+                        soft=soft_memory_anchor(sample['rss_kib'],elapsed,soft,policy.memory_soft_kib);failed=violations(sample,policy,elapsed,soft)
+                        if failed:reason='resource_budget';break
+                        break
+                    except (OSError,ValueError,Refused,subprocess.SubprocessError) as error:
+                        if tick==1 or child.poll() is not None:raise
+                        # One descheduled observation: keep the owned child and
+                        # take a fresh, complete sample before any verdict.
+                        time.sleep(POLL_SECONDS)
+                if reason=='resource_budget':break
                 time.sleep(POLL_SECONDS)
         except KeyboardInterrupt:reason='operator_stop'
         except (OSError,ValueError,Refused,subprocess.SubprocessError) as error:

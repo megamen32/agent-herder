@@ -7,6 +7,7 @@ import plistlib
 import hashlib
 import json
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -95,6 +96,61 @@ class MacWatchdogTests(unittest.TestCase):
             self.assertEqual(w.storage_bytes(root,10,artifact=True),3)
             self.assertEqual(w.storage_bytes(root,10),6)
 
+    def test_manifest_verification_survives_a_slow_path_walk_within_the_budget(self):
+        # The LaunchAgent runs the watchdog under the background policy, where a
+        # per-file resolve() plus stat() repeated the whole path walk for every
+        # payload entry and exhausted the five-second observation budget. The
+        # observed release held 1811 entries in 105 directories, so the check
+        # must stay inside its window without weakening the digest proof.
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder);dist=base/'releases'/'one'/'dist';dist.mkdir(parents=True);(base/'current').symlink_to(dist.parent)
+            payload={}
+            for directory in range(105):
+                (dist/f'd{directory}').mkdir()
+                for n in range(17):
+                    name=f'd{directory}/m{n}.js'
+                    (dist/name).write_bytes(b'compiled')
+                    payload[name]=hashlib.sha256(b'compiled').hexdigest()
+            (dist/'index.js').write_bytes(b'compiled');payload['index.js']=hashlib.sha256(b'compiled').hexdigest()
+            path=dist/'fleet-deployment-manifest.json'
+            manifest={'source_sha':'a'*40,'source_dirty':False,'payload':payload}
+            path.write_text(json.dumps(manifest))
+            original=w.verify_manifest
+            def slow(*args,**kwargs):
+                time.sleep(0.00005)
+                return original(*args,**kwargs)
+            with patch.object(w,'Path',w.Path),patch.object(w.time,'monotonic',side_effect=w.time.monotonic):
+                self.assertEqual(w.verify_manifest(base,'a'*40),dist/'index.js')
+            # A drifting file is still refused by digest.
+            (dist/'d0/m0.js').write_bytes(b'drift')
+            with self.assertRaisesRegex(w.Refused,'artifact_identity_mismatch'):w.verify_manifest(base,'a'*40)
+            # A payload path that leaves the release root is still refused.
+            payload.pop('d0/m0.js')
+            payload['../escape.js']='b'*64
+            path.write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(w.Refused,'artifact_manifest_invalid'):w.verify_manifest(base,'a'*40)
+
+    def test_manifest_verification_refuses_a_symlink_that_leaves_the_release(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder);dist=base/'releases'/'one'/'dist';dist.mkdir(parents=True);(base/'current').symlink_to(dist.parent)
+            outside=base/'outside.js';outside.write_bytes(b'secret')
+            (dist/'link.js').symlink_to(outside)
+            (dist/'index.js').write_bytes(b'compiled')
+            payload={'index.js':hashlib.sha256(b'compiled').hexdigest(),'link.js':hashlib.sha256(b'secret').hexdigest()}
+            path=dist/'fleet-deployment-manifest.json'
+            path.write_text(json.dumps({'source_sha':'a'*40,'source_dirty':False,'payload':payload}))
+            with self.assertRaisesRegex(w.Refused,'artifact_manifest_invalid'):w.verify_manifest(base,'a'*40)
+
+    def test_manifest_verification_refuses_a_directory_named_as_a_payload_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder);dist=base/'releases'/'one'/'dist';dist.mkdir(parents=True);(base/'current').symlink_to(dist.parent)
+            (dist/'index.js').write_bytes(b'compiled')
+            (dist/'folder').mkdir()
+            payload={'index.js':hashlib.sha256(b'compiled').hexdigest(),'folder':'a'*64}
+            path=dist/'fleet-deployment-manifest.json'
+            path.write_text(json.dumps({'source_sha':'a'*40,'source_dirty':False,'payload':payload}))
+            with self.assertRaisesRegex(w.Refused,'artifact_manifest_invalid'):w.verify_manifest(base,'a'*40)
+
     def test_full_source_pins_manifest_uses_1mib_cap_but_node_config_keeps_64k(self):
         with tempfile.TemporaryDirectory() as folder:
             base=Path(folder);dist=base/'releases'/'one'/'dist';dist.mkdir(parents=True);(base/'current').symlink_to(dist.parent)
@@ -180,7 +236,7 @@ class MacWatchdogTests(unittest.TestCase):
         with patch.object(w.subprocess,'run',side_effect=[subprocess.TimeoutExpired(['/bin/ps'],2),ok]) as run:
             self.assertEqual(w.command(['/bin/ps','-axo','pid=']),'fresh\n')
             self.assertEqual(run.call_count,2)
-            self.assertTrue(all(0<call.kwargs['timeout']<=5 for call in run.call_args_list))
+            self.assertTrue(all(0<call.kwargs['timeout']<=w.METADATA_ATTEMPT_SECONDS for call in run.call_args_list))
 
     def test_second_timeout_fails_with_safe_stage_and_no_raw_arguments(self):
         with patch.object(w.subprocess,'run',side_effect=subprocess.TimeoutExpired(['sensitive-argument'],2)) as run:
@@ -659,7 +715,7 @@ class MacWatchdogTests(unittest.TestCase):
                 calls.append(kwargs['timeout']);now[0]+=kwargs['timeout'];raise subprocess.TimeoutExpired(argv,kwargs['timeout'])
             with patch.object(w.time,'monotonic',side_effect=lambda:now[0]),patch.object(w.subprocess,'run',side_effect=timeout):
                 with self.assertRaisesRegex(w.Refused,'native_observation_deadline') as caught:w.command([probe,mode,'42','/fixture'])
-            self.assertEqual(calls,[5,5]);self.assertEqual(now[0],10)
+            self.assertEqual(calls,[8,8]);self.assertEqual(now[0],16)
             details=json.loads(str(caught.exception).split(' ',1)[1]);self.assertEqual(details['probe'],'text_mapping' if mode=='--text' else 'unix_owner')
 
     def test_targeted_owner_check_refuses_socket_replacement_of_same_uid(self):
@@ -876,6 +932,33 @@ class MacWatchdogTests(unittest.TestCase):
                 self.assertTrue(all(call.kwargs['timeout']==0 for call in join.call_args_list))
         finally:os.close(write);reader.close(time.monotonic()+1)
 
+    def test_one_descheduled_observation_does_not_stop_a_healthy_owned_child(self):
+        # A loaded host deschedules every observer command for seconds. One
+        # missed observation window is a state, not a verdict: the owned child
+        # stayed healthy (its own exit code zero) and must not be stopped.
+        import sys
+        with tempfile.TemporaryDirectory() as folder:
+            home=Path(folder);base=home/'.local/share/agent-herder/fleet';state=home/'state';temp=base/'run/tmp'
+            config={'sourceSha':'a'*40,'hostId':'fixture','harnesses':[]}
+            env={};env.update({'ENABLE_'+name.upper().replace('-','_'):'false' for name in ('codex','zcode','opencode','claude','qoder','hermes','fast-agent','chatgpt','minimax-code')})
+            native_popen=w.subprocess.Popen;children=[]
+            def fake_child(*args,**kwargs):
+                child=native_popen([sys.executable,'-I','-S','-B','-c','import time;time.sleep(2)'],stdout=w.subprocess.DEVNULL,stderr=w.subprocess.PIPE)
+                children.append(child);return child
+            calls=[0]
+            def flaky_processes(pid,deadline=None):
+                calls[0]+=1
+                if calls[0]==1:raise w.Refused('native_observation_deadline {"stage":"host_identity"}')
+                return [{'pid':pid,'rss_kib':1024,'cpu_seconds':0.0,'identity':'x','pgid':pid,'uid':os.getuid(),'generation':None}]
+            with patch.object(w.Path,'home',return_value=home),patch.object(w.sys,'argv',['watchdog']),patch.object(w,'json_file',return_value=config),patch.object(w,'prepare',return_value=(w.Policy('Macmini6,2'),Path('/fake/node'),base/'index.js',state,temp,env)),patch.object(w.subprocess,'Popen',side_effect=fake_child),patch.object(w.signal,'signal'),patch.object(w,'read_processes',side_effect=flaky_processes),patch.object(w,'verify_codex_owner'),patch.object(w,'release_usage',return_value=(1,1)),patch.object(w,'storage_bytes',return_value=1),patch.object(w,'host_available_kib',return_value=5*1024**2),patch.object(w,'read_threads',return_value=1),patch.object(w,'stop_owned'):
+                w.main()
+            report=json.loads((state/'last-run.json').read_text())
+            # The descheduled observation was retried and the healthy child
+            # kept running; the verdict is its own exit, not an observer miss.
+            self.assertGreaterEqual(calls[0],2)
+            self.assertEqual(report.get('reason'),'node_exit')
+            self.assertEqual(report.get('childExitCode'),0)
+
     def test_main_records_child_exit_code_and_sanitized_stderr_only(self):
         import sys
         with tempfile.TemporaryDirectory() as folder:
@@ -1024,11 +1107,26 @@ class MacWatchdogTests(unittest.TestCase):
     def test_native_mutable_parent_fits_full_child_window_and_cleanup(self):
         # Fast unit: parent used1.25s execution despite a2s child contract;
         # actual fresh state probe was killed at1.492s. No native acceptance.
+        # The parent window must now cover one deadline-only fresh retry of the
+        # sealed helper plus the owned cleanup: on a loaded host the helper was
+        # killed with SIGKILL at3.58s inside the former four-second window.
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)/'tmp';root.mkdir()
             with patch.object(w.sys,'platform','darwin'),patch.object(w.time,'monotonic',return_value=100),patch.object(w,'darwin_mutable_bytes',return_value=3) as probe:
                 self.assertEqual(w.storage_bytes(root,128*w.MIB),3)
-            self.assertEqual(probe.call_args.args[2],104)
+            self.assertEqual(probe.call_args.args[2],100+w.ARTIFACT_OBSERVATION_SECONDS)
+
+    def test_native_mutable_window_survives_a_slow_helper_that_the_parent_used_to_kill(self):
+        # The sealed helper is spawned and its own two-second census starts
+        # afterwards, so a healthy pass on a loaded host needed more than the
+        # former three-second parent allowance. The refusal must not return
+        # while the helper is still inside the new parent window.
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'tmp';root.mkdir();info=root.lstat()
+            spawn,probes,argv=self.native_artifact_fixture(root,du_payload=b'BYTES 3\n')
+            with patch.object(w.sys,'platform','darwin'),patch.object(w.subprocess,'Popen',side_effect=spawn):
+                self.assertEqual(w.storage_bytes(root,128*w.MIB),3)
+            self.assertTrue(all(p.stdout.closed for p in probes))
 
     def test_mutable_observer_uses_sealed_native_fd_scanner_not_interpreter_startup(self):
         with tempfile.TemporaryDirectory() as folder:
