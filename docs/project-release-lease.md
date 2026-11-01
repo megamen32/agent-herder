@@ -95,3 +95,29 @@ This does not prove inactivity for sessions that never reported lifecycle events
 Early draft PRs are useful visibility for unfinished branches; link only plans
 whose content is safe for the actual audience. SSO protection must be verified,
 not inferred from a hostname.
+
+
+## Offline owner administration when canonicalization blocks installation
+
+The source CLI `agent-herder-release-admin` uses the same validated command
+handler, canonicalization, hostname check and store transactions as MCP. It does
+not start a second authority and cannot initialize a ledger. Before invoking it,
+the authorized operator must independently establish the running authority's
+exact effective ledger path and hostname. The live configured store path must
+be canonical and non-symlink; alias paths are rejected because they split ledger
+transaction lock names and can diverge on atomic rename. A root native user is not evidence of
+the process HOME or an absent AGENT_HERDER_RELEASE_LEASES override.
+
+Pass `--ledger /verified/existing/ledger.json --authority-host VERIFIED_HOST`
+and `--request /protected/request.json`. The request file contains the same JSON
+arguments as the MCP tool. Acquisition additionally requires
+`--proof-out /protected/new-proof.json`; the path must not already exist. The CLI
+writes the capability with mode 0600 and omits it from stdout. Renew, check and
+release use a protected request file with the acquired proof. Do not put tokens
+in command arguments, transcripts or source control.
+
+Even status uses the store transaction and rewrites the existing ledger. Never
+use guessed-path status as authority discovery. Both the CLI and rollout must
+use the same verified ledger; pass the corresponding AGENT_HERDER_RELEASE_LEASES
+to the normal rollout command. The existing release gate, lease TTL, fencing,
+target binding, revision checks and rollback rules remain mandatory.

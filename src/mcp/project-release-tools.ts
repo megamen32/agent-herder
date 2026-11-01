@@ -31,11 +31,8 @@ const schema = z.object({
   token: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   fence: z.number().int().positive().optional(),
 }).strict();
-export function registerProjectReleaseTools(server: McpServer, store: ProjectReleaseLeaseStore = projectReleaseLeases) {
-  server.registerTool("project_release_lease", {
-    description: "Acquire/renew/release/check an exclusive project release lease on this authority host, or inspect holder session and remaining TTL to contact it through existing SendMessage. Worktrees share one project key. Owner is attribution under existing MCP authorization, not authentication. Acquisition returns a short-lived ownership capability once; do not publish it. Renew before expiry and use token+fence at the final deployment boundary. No command execution, merge, or deployment is authorized by a lease.",
-    inputSchema: schema,
-  }, async args => {
+export async function executeProjectRelease(input: unknown, store: ProjectReleaseLeaseStore) {
+    const args = schema.parse(input);
     const project = await releaseProject(args.cwd);
     let result: unknown;
     if (args.action === "status") result = await store.status(project);
@@ -53,7 +50,16 @@ export function registerProjectReleaseTools(server: McpServer, store: ProjectRel
           : args.action === "release" ? await store.release(project, proof) : await store.check(project, proof);
       }
     }
-    return { content: [{ type: "text" as const, text: JSON.stringify({ authorityHost: hostname(), project, ...result as object }) }] };
+    return { authorityHost: hostname(), project, ...result as object };
+}
+
+export function registerProjectReleaseTools(server: McpServer, store: ProjectReleaseLeaseStore = projectReleaseLeases) {
+  server.registerTool("project_release_lease", {
+    description: "Acquire/renew/release/check an exclusive project release lease on this authority host, or inspect holder session and remaining TTL to contact it through existing SendMessage. Worktrees share one project key. Owner is attribution under existing MCP authorization, not authentication. Acquisition returns a short-lived ownership capability once; do not publish it. Renew before expiry and use token+fence at the final deployment boundary. No command execution, merge, or deployment is authorized by a lease.",
+    inputSchema: schema,
+  }, async args => {
+    const result = await executeProjectRelease(args, store);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
   });
   server.registerTool("project_integration", {
     description: "Inspect durable last-worker integration follow-up and project worktrees. Claim under an owned release lease, integrate known changes via authorized PRs, verify the whole project, then finish with evidence/blockers. Cleanup removes only exact merged clean inactive linked worktrees, never branches or unknown/active/dirty artifacts. No merge authorization is granted.",
