@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { completionEvidence, createAnthropicCompatibleSessionCompletionJudge, fitBatchContext, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type UnfinishedSessionNotice } from "../src/autopilot/unfinished-session-launcher.js";
 import { AutopilotPolicyStore } from "../src/autopilot/policy-store.js";
+import { JudgeRequestError } from "../src/autopilot/judge-request.js";
 import { AutopilotSessionStore } from "../src/autopilot/session-store.js";
 import { AutomationLaunchPolicyStore } from "../src/automation-launch-policy.js";
 import { HumanRequestRegistry } from "../src/human-request/registry.js";
@@ -1029,6 +1030,63 @@ describe("original task completion evidence", () => {
             expect(inventory.every((record) => record.transcriptTail !== undefined)).toBe(true);
             expect(calls).toEqual({ resumes: 0, messages: [] });
         } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+
+    it("keeps the plans of healthy chunks when one chunk answer is cut off by the provider", async () => {
+        const root = await mkdtemp(join(tmpdir(), "truncated-chunk-"));
+        const previousSessionsPerRequest = process.env.AGENT_HERDER_UNFINISHED_BATCH_SESSIONS_PER_REQUEST;
+        process.env.AGENT_HERDER_UNFINISHED_BATCH_SESSIONS_PER_REQUEST = "2";
+        try {
+            // Four sessions of one workspace form two chunks. The provider cuts
+            // the first chunk's answer; the second chunk must still be planned
+            // and applied instead of the whole cycle failing.
+            const sessions: AgentSession[] = Array.from({ length: 4 }, (_, index) => ({
+                ...fixture("idle", "zcode", `chunk-${index}`),
+                cwd: "/tmp/truncated-chunk",
+                lastActivity: new Date(Date.now() - (index + 1) * 1000).toISOString(),
+            }));
+            const calls = { resumes: 0, messages: [] as string[] };
+            const adapter = fakeAdapter(() => sessions[0]!, calls);
+            adapter.listSessions = async () => sessions.map((session) => ({ ...session }));
+            adapter.getSessionMessages = async (id) => [{ id: `u${id}`, role: "user" as const, text: `задача ${id}`, parts: [{ type: "text" as const, text: `задача ${id}` }] }];
+            const planned: string[] = [];
+            const policyStore = new AutopilotPolicyStore(join(root, "policy.json"));
+            await policyStore.replacePolicy({ schemaVersion: 1, enabled: true, harnesses: ["zcode"], scope: { mode: "all_ingress" }, maxContinuationsPerSession: 10, timeout: { mode: "auto_continue", delayMs: 1000 }, card: { includeUserMessage: true, includeAssistantMessage: true, includeReason: true } }, null);
+            const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+            const launcher = new UnfinishedSessionLauncher({
+                adapters: new Map([["zcode", adapter]]), store,
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+                autopilotPolicyStore: policyStore, autopilotSessionStore: new AutopilotSessionStore(join(root, "sessions.json")),
+                discoveryIdleMs: 1,
+                judge: {
+                    async decide() { return { verdict: "unfinished", reason: "work remains", confidence: 1 }; },
+                    async plan({ sessions: plannedSessions }) {
+                        const ids = plannedSessions.map(({ session }) => session.id);
+                        planned.push(...ids);
+                        // The first chunk is cut off on every attempt.
+                        if (ids.includes("chunk-0")) throw new JudgeRequestError({ model: "glm-5.3-flash", endpoint: "https://api.z.ai/api/coding/paas/v4/chat/completions", operation: "batch-plan", elapsedMs: 1000, stage: "body", kind: "truncated_output", httpStatus: 200, finishReason: "length" });
+                        return { groups: plannedSessions.map(({ session }) => ({ sourceSessionIds: [session.id], primarySessionId: session.id, verdict: "completed", reason: "verified", confidence: 1, topic: "task", handoff: "" })) };
+                    },
+                    async reconcile({ groups }) {
+                        return { clusters: groups.map((group) => [group.groupRef]) };
+                    },
+                },
+            });
+            await launcher.runAutopilotCycle();
+            const inventory = await store.listInventory();
+            // The healthy chunk keeps its verdicts; only the cut chunk is failed.
+            const completed = inventory.filter((record) => record.verdict?.verdict === "completed").map((record) => record.sessionId);
+            expect(completed).toContain("chunk-2");
+            expect(completed).toContain("chunk-3");
+            expect(planned.some((id) => id.startsWith("chunk-2"))).toBe(true);
+            // The sessions of the cut chunk are decided one by one instead of
+            // erasing the verdicts of the healthy chunk.
+            expect(inventory.filter((record) => record.assessmentFailure).length).toBeLessThan(4);
+        } finally {
+            if (previousSessionsPerRequest === undefined) delete process.env.AGENT_HERDER_UNFINISHED_BATCH_SESSIONS_PER_REQUEST;
+            else process.env.AGENT_HERDER_UNFINISHED_BATCH_SESSIONS_PER_REQUEST = previousSessionsPerRequest;
             await rm(root, { recursive: true, force: true });
         }
     });

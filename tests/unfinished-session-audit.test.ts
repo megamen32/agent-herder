@@ -245,6 +245,29 @@ describe("explicit unfinished inventory pure contracts", () => {
                     primarySessionId: "zcode:second:/tmp/autostart-canary",
                 }] });
     });
+    it("reports a truncated provider answer as a tagged truncated_output failure", async () => {
+        const judge = createOpenAICompatibleSessionCompletionJudge({
+            baseUrl: "https://api.z.ai/api/coding/paas/v4/", model: "glm-5.3-flash", token: "test-token",
+            reasoningEffort: "high",
+            fetchImpl: async () => new Response(JSON.stringify({
+                choices: [{ finish_reason: "length", message: { content: '{"groups":[{"source_session_ids":["S1"]' } }],
+                usage: { completion_tokens: 8192 },
+            }), { status: 200, headers: { "content-type": "application/json" } }),
+        });
+        await expect(judge.plan?.({ sessions: [{ session: fixtureSession("idle", "zcode"), transcriptTail: "Работа не завершена" }] }))
+            .rejects.toThrow(/truncated_output/);
+    });
+    it("reports a truncated provider answer as a tagged truncated_output failure in decide", async () => {
+        const judge = createOpenAICompatibleSessionCompletionJudge({
+            baseUrl: "https://api.z.ai/api/coding/paas/v4/", model: "glm-5.3-flash", token: "test-token",
+            reasoningEffort: "high",
+            fetchImpl: async () => new Response(JSON.stringify({
+                choices: [{ finish_reason: "length", message: { content: '{"verdict":"unf' } }],
+            }), { status: 200, headers: { "content-type": "application/json" } }),
+        });
+        await expect(judge.decide({ session: fixtureSession("idle", "zcode"), transcriptTail: "Работа не завершена" }))
+            .rejects.toThrow(/truncated_output/);
+    });
     it("rejects a numeric-string alias that collides with a different native session id", async () => {
         const judge = createAnthropicCompatibleSessionCompletionJudge({
             baseUrl: "https://api.minimax.io/anthropic/", model: "MiniMax-M3.1-Flash", token: "test-token",
@@ -394,9 +417,11 @@ describe("explicit unfinished inventory pure contracts", () => {
         // The opencode inventory stays inside the audit window on purpose: only
         // its turn records are out of scope, the inventory of the opencode
         // runtime is still observed. The old codex and the fast-agent records
-        // leave the inventory.
-        await expect(store.pruneAutocontinueScope(new Date(now - 48 * 60 * 60000))).resolves.toEqual({ sessions: 1, inventory: 2 });
-        expect((await store.list()).map((record) => record.sessionId)).toEqual(["kept-codex"]);
+        // leave the inventory. Since the native opencode recovery landed
+        // (30d145d) the opencode turn records are native recovery records too,
+        // so they stay in the registry as well and nothing is pruned here.
+        await expect(store.pruneAutocontinueScope(new Date(now - 48 * 60 * 60000))).resolves.toEqual({ sessions: 0, inventory: 2 });
+        expect((await store.list()).map((record) => record.sessionId).sort()).toEqual(["kept-codex", "legacy-health"]);
         expect((await store.listInventory()).map((record) => record.sessionId).sort()).toEqual(["recent", "recent-opencode"]);
     });
     it("is independent from autopilot, defaults on, and supports a per-session opt-out", async () => {

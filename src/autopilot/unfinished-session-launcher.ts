@@ -5664,7 +5664,7 @@ export class UnfinishedSessionLauncher {
         }), plannerPhaseDeadline, plannerPhaseController),
         candidates,
       );
-    let phaseOne: Array<{ plan?: SessionBatchPlan; validationError?: BatchPlanValidationError }>;
+    let phaseOne: Array<{ plan?: SessionBatchPlan; validationError?: BatchPlanValidationError; unavailableError?: string }>;
     try {
       phaseOne = await mapConcurrentOrdered(
         plannerChunks,
@@ -5683,7 +5683,20 @@ export class UnfinishedSessionLauncher {
             return { plan: await requestChunk() };
           } catch (error) {
             if (error instanceof BatchPlanValidationError) return { validationError: error };
-            if (!isTransientPlannerFailure(error)) throw error;
+            if (!isTransientPlannerFailure(error)) {
+              // One chunk that the provider could not deliver (a truncated
+              // answer, an exhausted quota, a rejected request) says nothing
+              // about the safety of the sibling chunks. Failing the whole phase
+              // here erased the verdicts of every healthy chunk and pushed the
+              // whole cohort into the assessment backoff: one cut answer cost
+              // the plan of 12 sessions. Such a chunk stays unavailable, its
+              // sessions go to the per-session omission judge, and the phase
+              // keeps the plans it did receive.
+              if (isChunkScopedPlannerFailure(error)) {
+                return { unavailableError: errorText(error) };
+              }
+              throw error;
+            }
             // A dead keep-alive connection fails again inside the same window, so an
             // immediate repeat spends the only safe retry and still aborts the phase.
             // Space one bounded retry instead; planning stays read-only, the phase
@@ -5699,6 +5712,10 @@ export class UnfinishedSessionLauncher {
       plannerPhaseController.abort(error);
       throw error;
     }
+    // A chunk the provider could not deliver is retried once as a whole chunk,
+    // exactly like a malformed chunk: the cut answer is the most likely
+    // transient fact of this route, and one more identical request settles it.
+    const unavailableChunkIndices = phaseOne.flatMap((result, index) => result.unavailableError ? [index] : []);
     const invalidChunkIndices = phaseOne.flatMap((result, index) => result.validationError ? [index] : []);
     if (invalidChunkIndices.length > MAX_REPAIRED_CHUNKS) {
       throw new BatchPlanValidationError(`MiniMax returned ${invalidChunkIndices.length} invalid chunks, above the safe repair limit ${MAX_REPAIRED_CHUNKS}`);
@@ -5724,9 +5741,41 @@ export class UnfinishedSessionLauncher {
       }
     }
     const repairsByIndex = new Map(repairedChunks.map((result) => [result.index, result]));
+    // A chunk the provider could not deliver gets the same whole-chunk retry a
+    // malformed chunk gets. When the retry also fails, the sessions of that
+    // chunk are decided one by one by the omission judge instead of erasing the
+    // plans of the healthy chunks: the provider answered for them already.
+    const unavailableOmissions = new Map<number, AssessedSession[]>();
+    if (unavailableChunkIndices.length > 0) {
+      try {
+        await mapConcurrentOrdered(
+          unavailableChunkIndices,
+          plannerConcurrency,
+          async (index) => {
+            const chunk = plannerChunks[index]!;
+            console.error(`[agent-herder] MiniMax не отдал chunk; повторяю весь chunk один раз: ${errorText(phaseOne[index]!.unavailableError)}`);
+            try {
+              const plan = await requestPlan(chunk);
+              const omissions = missingBatchPlanCandidates(plan, chunk);
+              repairsByIndex.set(index, { index, plan, omissions });
+            } catch {
+              // The chunk stays unavailable: its own sessions fall through to
+              // the per-session omission judge below.
+              unavailableOmissions.set(index, [...chunk]);
+            }
+          },
+          plannerPhaseController,
+        );
+      } catch (error) {
+        plannerPhaseController.abort(error);
+        throw error;
+      }
+    }
     const chunkResults = phaseOne.map((result, index) => {
       const repairedChunk = repairsByIndex.get(index);
       if (repairedChunk) return { groups: repairedChunk.plan.groups, omissions: repairedChunk.omissions };
+      const unavailable = unavailableOmissions.get(index);
+      if (unavailable) return { groups: [] as SessionBatchPlanGroup[], omissions: unavailable };
       return { groups: result.plan!.groups, omissions: [] as AssessedSession[] };
     });
     const groups = chunkResults.flatMap((result) => result.groups);
@@ -6625,6 +6674,25 @@ function isTransientPlannerFailure(error: unknown): boolean {
     || kind === "network"
     || kind === "rate_limited"
     || kind === "overloaded";
+}
+
+/** True for a provider failure that concerns one chunk, not the whole cohort.
+ *
+ * A truncated answer, an exhausted quota or a rejected request is a fact about
+ * one request to the provider. The phase keeps the plans of the healthy chunks
+ * and decides the sessions of the failed chunk one by one, instead of erasing
+ * every verdict of the cycle. */
+function isChunkScopedPlannerFailure(error: unknown): boolean {
+  if (error instanceof BatchPlanValidationError || error instanceof BatchReconciliationValidationError) return false;
+  if (error instanceof SyntaxError) return false;
+  const kind = error instanceof JudgeRequestError
+    ? error.diagnostic.kind
+    : plannerFailureRoute(errorText(error)) && /"kind"\s*:\s*"(\w+)"/.exec(errorText(error))?.[1];
+  return kind === "truncated_output"
+    || kind === "quota_exhausted"
+    || kind === "invalid_json"
+    || kind === "provider_error"
+    || kind === "http_error";
 }
 
 /** Bounded pause before the single safe planner transport retry.
