@@ -271,11 +271,15 @@ export class SessionSupervisor {
 
   async newOrResumeNamedSession(request: NewOrResumeNamedSessionRequest): Promise<NamedSessionResult> {
     const result = await newOrResumeNamedSession(this.adapters, request);
+    if (result.sessionId && (result.created || result.adopted)) {
+      // The intro belongs to the session, not to the delivery of this call:
+      // the first binding fires it even when the message was refused or failed.
+      this.maybeDeliverChatMcpIntro(result.harness, result.sessionId, request.humanRequested === false ? "automation" : "human");
+    }
     if (result.ok && result.sessionId) {
       const session = await this.adapters.get(result.harness)?.getSession(result.sessionId);
       if (session) await this.unfinishedSessions?.armSession(session);
       this.publishSessionChanged(result.harness, result.sessionId, result.created ? "created" : "changed");
-      if (result.created) this.maybeDeliverChatMcpIntro(result.harness, result.sessionId, request.humanRequested === false ? "automation" : "human");
     }
     return result;
   }

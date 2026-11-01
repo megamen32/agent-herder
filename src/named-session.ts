@@ -54,6 +54,8 @@ export interface NamedSessionResult {
   coalesced?: boolean;
   ok: boolean;
   created: boolean;
+  /** True when this call made the first durable binding of a chat that already existed natively: the first adoption, e.g. a browser chat found by its title. */
+  adopted?: boolean;
   harness: string;
   name: string;
   cwd: string;
@@ -89,7 +91,7 @@ export interface NamedSessionResult {
 
 type NamedSessionResolution =
   | { kind: "error"; result: NamedSessionResult }
-  | { kind: "resolved"; adapter: HarnessAdapter; target: AgentSession; created: boolean; normalized: NamedSessionRequest };
+  | { kind: "resolved"; adapter: HarnessAdapter; target: AgentSession; created: boolean; adopted: boolean; normalized: NamedSessionRequest };
 
 const canonicalSources = new WeakMap<NamedSessionRequest, Array<{ harness: string; sessionId: string; hostId?: string }>>();
 const queues = new Map<string, Promise<void>>();
@@ -353,6 +355,11 @@ export async function newOrResumeNamedSession(
     if (!adapter) return { kind: "error", result: failed(normalized, `Harness '${normalized.harness}' is not configured`, "not_attempted") };
     if (!adapter.createSession) return { kind: "error", result: failed(normalized, `${adapter.name} does not support session creation`, "not_attempted") };
 
+    // A binding that already names this session means a resume, not a first
+    // adoption: exactMatches below binds a native chat found by its title,
+    // and that first binding is the moment the herder takes the chat under
+    // its management.
+    const boundBefore = await namedSessionBindings().get(adapter.type, normalized.cwd, normalized.name);
     let matches: AgentSession[];
     try {
       if (request.existingSessionId) {
@@ -385,12 +392,13 @@ export async function newOrResumeNamedSession(
         return { kind: "error", result: failed(normalized, (error as Error).message, "not_attempted") };
       }
     }
-    return { kind: "resolved", adapter, target, created, normalized };
+    const adopted = !created && Boolean(target) && !boundBefore;
+    return { kind: "resolved", adapter, target, created, adopted, normalized };
   });
   if (resolved.kind === "error") return resolved.result;
   const createdServiceTier = resolved.created ? createdCodexServiceTierResult(resolved.target, request.serviceTier) : {};
 
-  if (request.healthRecovery && resolved.target.meta?.healthRecovery !== true) return { ...failed(resolved.normalized, "Health recovery requires a dedicated bounded session", "not_attempted"), sessionId: resolved.target.id, created: resolved.created, ...createdServiceTier };
+  if (request.healthRecovery && resolved.target.meta?.healthRecovery !== true) return { ...failed(resolved.normalized, "Health recovery requires a dedicated bounded session", "not_attempted"), sessionId: resolved.target.id, created: resolved.created, ...(resolved.adopted ? { adopted: true } : {}), ...createdServiceTier };
 
   const deliveryIdentity = namedDeliveryIdentity(resolved.normalized, request.message);
   const priorDelivery = recentNamedDelivery(deliveryIdentity);
@@ -406,7 +414,7 @@ export async function newOrResumeNamedSession(
     if (!resolved.adapter.changeModel) {
       return {
         ok: false,
-        created: resolved.created,
+        created: resolved.created, ...(resolved.adopted ? { adopted: true } : {}),
         sessionId: resolved.target.id,
         delivery: "not_attempted",
         error: `${resolved.adapter.name} does not support model selection before delivery`,
@@ -418,7 +426,7 @@ export async function newOrResumeNamedSession(
     if (!modelResult.ok) {
       return {
         ok: false,
-        created: resolved.created,
+        created: resolved.created, ...(resolved.adopted ? { adopted: true } : {}),
         sessionId: resolved.target.id,
         delivery: "not_attempted",
         error: modelResult.error || "Model selection failed",
@@ -432,7 +440,7 @@ export async function newOrResumeNamedSession(
     ? await parkForDelivery(resolved.adapter.type, resolved.target.id, agentRelayEnvelope(request.message))
     : await withDeferred(resolved.target.id, agentRelayEnvelope(request.message));
   const injectedMessage = await coordinationNotes.inject(resolved.target, pending.message);
-  if (await sourceHeldNow(request) || await automaticDeliveryHeld(resolved.target, false, resolved.adapter)) return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created, ...createdServiceTier };
+  if (await sourceHeldNow(request) || await automaticDeliveryHeld(resolved.target, false, resolved.adapter)) return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created, ...(resolved.adopted ? { adopted: true } : {}), ...createdServiceTier };
   const inputId = request.inputId ?? (request.humanRequested ? undefined : createHash("sha256").update(request.message).digest("hex"));
   let selectedModel = request.model;
   let fallbackFrom: string | undefined;
@@ -447,7 +455,7 @@ export async function newOrResumeNamedSession(
       queue: mode === "queue",
   }));
   const firstSend = await send(request.model);
-  if (!firstSend.allowed) return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created, ...createdServiceTier };
+  if (!firstSend.allowed) return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created, ...(resolved.adopted ? { adopted: true } : {}), ...createdServiceTier };
   let delivery = firstSend.value;
   const tried = new Set([request.model].filter((model): model is string => typeof model === "string"));
   for (const fallbackModel of request.fallbackModels ?? defaultFallbackModels(request.harness, request.model)) {
@@ -457,7 +465,7 @@ export async function newOrResumeNamedSession(
     const changed = await resolved.adapter.changeModel(resolved.target.id, fallbackModel);
     if (!changed.ok) break;
     if (await sourceHeldNow(request) || await automaticDeliveryHeld(resolved.target, false, resolved.adapter)) {
-      return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created,
+      return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created, ...(resolved.adopted ? { adopted: true } : {}),
         ...createdServiceTier,
         ...(request.model ? { requestedModel: request.model, model: request.model } : {}) };
     }
@@ -465,7 +473,7 @@ export async function newOrResumeNamedSession(
     selectedModel = fallbackModel;
     const retrySend = await send(fallbackModel);
     if (!retrySend.allowed) {
-      return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created,
+      return { ...failed(resolved.normalized, HUMAN_STOP_MESSAGE, "not_attempted"), sessionId: resolved.target.id, created: resolved.created, ...(resolved.adopted ? { adopted: true } : {}),
         ...createdServiceTier,
         ...(request.model ? { requestedModel: request.model, model: request.model } : {}) };
     }
@@ -474,7 +482,7 @@ export async function newOrResumeNamedSession(
   if (!delivery.ok) {
     const result: NamedSessionResult = {
       ok: false,
-      created: resolved.created,
+      created: resolved.created, ...(resolved.adopted ? { adopted: true } : {}),
       sessionId: resolved.target.id,
       delivery: delivery.admitted && delivery.nonRetryable ? "accepted_failed" : "failed",
       ...(delivery.admitted ? { admitted: true } : {}),
@@ -496,7 +504,7 @@ export async function newOrResumeNamedSession(
   }
   const result: NamedSessionResult = {
     ok: true,
-    created: resolved.created,
+    created: resolved.created, ...(resolved.adopted ? { adopted: true } : {}),
     sessionId: resolved.target.id,
     delivery: delivery.pending ? "accepted_unconfirmed" : mode === "queue" ? "accepted" : "completed",
     ...(delivery.admitted ? { admitted: true } : {}),

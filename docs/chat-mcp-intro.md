@@ -31,9 +31,12 @@ the environment (deployment-owned) is used as is.
 
 ## Trigger and delivery doctrine
 
-- The intro fires only on the herder's own `created` events
-  (`create_session`, `new_or_resume` first adoption of a target), never on
-  a chat merely discovered in a sidebar.
+- The intro fires only on the herder's own creation events
+  (`create_session`, `new_or_resume` creating the session or making its
+  first durable binding of an existing chat - the first adoption), never
+  on a chat merely discovered in a sidebar. The intro belongs to the
+  session, not to the delivery: a first binding fires it even when the
+  message of that call was refused or failed.
 - The send is a normal supervisor message with the stable input identity
   `mcp-intro-<harness>-<sessionId>`: restarts and repeated triggers cannot
   duplicate it, and crash-safe delivery reconciliation applies.
