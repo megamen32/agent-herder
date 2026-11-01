@@ -1,3 +1,4 @@
+import { ZAI_LIST_API_SCRIPT } from "../src/adapters/browser-chat-api-scripts.js";
 import { describe, expect, it, vi } from "vitest";
 import { runInNewContext } from "node:vm";
 import { ZaiCdpDriver, ZAI_ACTIVITY_SCRIPT, parseZaiPages } from "../src/adapters/zai-cdp-driver.js";
@@ -268,4 +269,23 @@ describe("browser-chat API schema compatibility", () => {
     expect(ListAgentsSchema.safeParse({ harness: "zai", limit: 2 }).success).toBe(true);
     expect(AgentInfoSchema.safeParse({ sessionId: "zai::sidebar%3ATest", harness: "zai" }).success).toBe(true);
   });
+});
+
+it("labels only authenticated API update timestamps as remote revisions", async () => {
+  class ApiTools extends MockChromeTools {
+    override async call(name: string, args: Record<string, unknown> = {}): Promise<string> {
+      if (name === "evaluate_script" && args.function === ZAI_LIST_API_SCRIPT) {
+        return evalJson({scope:"a".repeat(64),chats:[
+          {id:"123e4567-e89b-12d3-a456-426614174000",title:"Changed",updatedAt:1730000000},
+          {id:"123e4567-e89b-12d3-a456-426614174001",title:"Unknown"}
+        ]});
+      }
+      return super.call(name,args);
+    }
+  }
+  const chats = await new ZaiCdpDriver(new ApiTools()).listChats();
+  expect(chats[0]).toMatchObject({updatedAtSemantics:"remote-update-time",updatedAt:new Date(1730000000000).toISOString()});
+  expect(chats[1]).toMatchObject({updatedAtSemantics:"observed-sidebar-order"});
+  const fallback = await new ZaiCdpDriver(new MockChromeTools()).listChats();
+  expect(fallback.every(chat => chat.updatedAtSemantics === "observed-sidebar-order")).toBe(true);
 });

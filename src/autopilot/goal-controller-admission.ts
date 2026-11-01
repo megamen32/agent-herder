@@ -3,7 +3,10 @@ import type { AgentSession } from "../types/index.js";
 
 /** Read-only exact-thread check. A native Goal is an active controller, not transport. */
 export async function goalControllerAdmission(session: AgentSession): Promise<{ allowed: boolean; reason?: string }> {
-  if (session.harness === "opencode" || session.harness === "zcode") return { allowed: true };
+  // Browser chats have no second native goal controller: the site's own
+  // model picker and generation controls are not a competing autopilot.
+  if (session.harness === "opencode" || session.harness === "zcode"
+    || session.harness === "chatgpt" || session.harness === "zai") return { allowed: true };
   if (session.harness !== "codex") return { allowed: false, reason: "Для этой среды ещё не подтверждён единственный контроллер полной цели." };
   const indexPath = session.meta?.sessionIndexPath;
   if (typeof indexPath !== "string" || !indexPath.startsWith("/")) return { allowed: false, reason: "Не подтверждён источник состояния native Goals этой Codex-сессии." };

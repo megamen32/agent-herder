@@ -121,3 +121,18 @@ describe("ChatGPT browser submit admission", () => {
     expect(receipt).toMatchObject({ok:false, admissionUnknown:true,nonRetryable:true});
   });
 });
+
+describe("dot tab isolation", () => {
+ it("excludes dot routes even when the pinned numeric page points there", async () => {
+  const listing="6: Dot (https://chatgpt.com/dots/owner~room)\n7: ChatGPT (https://chatgpt.com/c/"+ID+")";
+  expect(parseChatGptPages(listing)).toEqual([{id:7,url:"https://chatgpt.com/c/"+ID}]);
+  const actions:string[]=[];
+  const tools:ChromePageTools={call:async(name:string)=>{actions.push(name);if(name==="list_pages")return listing;throw Error("must not touch dot");}};
+  const driver=new ChatGptMacCdpDriver(tools,6);
+  await expect(driver.sendMessage({chatId:ID,text:"must not send"})).rejects.toThrow(/Pinned ChatGPT tab unavailable/);
+  expect(actions).toEqual(["list_pages"]);
+ });
+ it("excludes the dot root route, retains normal chat candidates",()=>{
+  expect(parseChatGptPages("1: Dot (https://chatgpt.com/dots)\n2: ChatGPT (https://chatgpt.com/)")).toEqual([{id:2,url:"https://chatgpt.com/"}]);
+ });
+});

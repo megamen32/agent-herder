@@ -127,7 +127,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
     for (const chat of chats) this.inventory.set(chat.id, chat);
     this.inventoryAt = Date.now();
     this.historyCache.setAccountScope(this.driver.getAccountScope?.());
-    this.historyCache.prewarm(chats.map(chat => chat.id));
+    this.historyCache.prewarm(chats.map(chat => ({ id: chat.id, revision: chat.updatedAtSemantics === "remote-update-time" ? chat.updatedAt : undefined })));
   }
 
   async init(): Promise<void> {
@@ -217,6 +217,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
         text: options.message,
         waitForCompletion: options.queue !== true,
       });
+      this.historyCache.invalidate(this.nativeId(id));
       return { ok: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -21,7 +21,7 @@ export class BackgroundAutopilotStop {
   }) {}
   isPending(harness: string, id: string): boolean { return (this.pending.get(`${harness}:${id}`) ?? 0) > 0; }
   submit(input: AutopilotRunnerInput) {
-    if (!["codex", "claude", "zcode", "opencode", "hermes"].includes(input.harness) || !input.sessionId?.trim()
+    if (!["codex", "claude", "zcode", "opencode", "hermes", "chatgpt", "zai"].includes(input.harness) || !input.sessionId?.trim()
       || !input.cwd?.startsWith("/") || !input.turnId?.trim()) throw new Error("Stop requires harness, sessionId, absolute cwd and turnId");
     // The same immutable event identity is independent from repeated hook metadata.
     const key = `autopilot-stop:${input.harness}:${resolve(input.cwd)}:${input.sessionId}:${input.turnId}`;

@@ -1,5 +1,8 @@
 #!/usr/bin/env node
+import { resumePendingProjectIntegrations } from "./project-integration.js";
+import { registerProjectReleaseTools } from "./mcp/project-release-tools.js";
 import { BackgroundAutopilotStop } from "./autopilot/background-stop.js";
+import { BrowserTurnAutopilotObserver } from "./autopilot/browser-turn-observer.js";
 import { NativeTurnAutopilotObserver } from "./autopilot/native-turn-observer.js";
 import { deliverAutopilotGoal } from "./autopilot/continuation-delivery.js";
 import { evaluateAutopilotStop, runAutopilotCommand } from "./autopilot-runner.js";
@@ -737,6 +740,7 @@ function registerTools(
   registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate, userMessageDelivery, sessionQueueControl, resumeAfter, ...(inventorySupervisor ? { supervisor: inventorySupervisor } : {}) });
   registerRagTools(server, adapters);
   registerResourceOwnershipTools(server);
+  registerProjectReleaseTools(server);
   const workspaceTransport = new FleetDirectTransport(fleetPeers().filter(peer => peer.hostId !== "MacBook-Pro-User.local"));
   registerActiveSessionTools(server);
   registerSessionWorkspaceTools(server);
@@ -1192,6 +1196,7 @@ async function main() {
   const stopCadence = cadence.start(error => console.error("[agent-herder] cadence:", error));
   process.once("exit", stopCadence);
   const stopResumeAfter = await resumeAfterRuntime.start();
+  await resumePendingProjectIntegrations(input => resumeAfterRuntime.service.register(input));
   process.once("exit", stopResumeAfter);
   const stopAutoCompact = autoCompactService.start();
   process.once("exit", stopAutoCompact);
@@ -1243,6 +1248,28 @@ async function main() {
       console.error(`[agent-herder] Autopilot native turn bridge active for ${harness}`);
       return [observer.start()];
     });
+  // Browser chats (Z.ai, ChatGPT) publish no native turn events: this bridge
+  // turns observed running→idle transitions into the same durable Stop
+  // submissions and nudges a turn that stopped making remote progress.
+  const browserAutopilotHarnesses = (process.env.AGENT_HERDER_BROWSER_AUTOPILOT_HARNESSES ?? "zai,chatgpt")
+    .split(",").map((value) => value.trim()).filter(Boolean)
+    .filter((harness) => adapters.has(harness));
+  const browserTurnObserver = browserAutopilotHarnesses.length
+    ? new BrowserTurnAutopilotObserver({
+        harnesses: browserAutopilotHarnesses,
+        adapters,
+        supervisor: processSupervisor,
+        submit: (input) => backgroundAutopilotStop!.submit(input),
+        enabled: async (input) => (await runAutopilotCommand({ ...input, command: "status" })).enabled === true,
+        held: (harness, id) => humanStopStore.isHeld(harness, id),
+        stallMs: Number(process.env.AGENT_HERDER_BROWSER_AUTOCONTINUE_STALL_MS || 1_200_000),
+        autoContinue: process.env.AGENT_HERDER_BROWSER_AUTOCONTINUE !== "0",
+        onError: (message) => console.error(`[agent-herder] ${message}`),
+      })
+    : undefined;
+  const stopBrowserTurnObserver = browserTurnObserver?.start();
+  process.once("exit", () => stopBrowserTurnObserver?.());
+  if (browserTurnObserver) console.error(`[agent-herder] Autopilot browser turn bridge active for ${browserAutopilotHarnesses.join(", ")}`);
   const stopUnfinishedSessionLauncher = unfinishedSessionLauncher.start();
   process.once("exit", stopUnfinishedSessionLauncher);
   // One human answer resumes its exact native session once, from every MCP surface.
@@ -1369,6 +1396,7 @@ async function main() {
       projectLaunchDispatch,
       choiceQuery: (request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters),
       humanRequestJoin: (requestId: string, reason: string) => resumeAfterRuntime.service.invalidateByHumanRequest(requestId, reason),
+      projectIntegrationWake: input => resumeAfterRuntime.service.register(input),
       adapterRegistry,
       mcpServerFactory: createHttpMcpServer,
       herderEvents,

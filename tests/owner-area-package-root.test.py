@@ -96,6 +96,7 @@ class OwnerAreaTests(unittest.TestCase):
         archive = self.root / "release.tar"
         rollout.pack_release(self.source, archive)
         argv = ["rollout-candidate.py", "--node-side", "--kind", "owner",
+                "--release-proof", "/unused-inner-unit-test-proof",
                 "--sha", SHA, "--archive", str(archive),
                 "--catalog", str(self.catalog), "--previous-sha", "",
                 "--drop-in", str(self.root / "unit.d" / "10-release-exec.conf"),
@@ -116,7 +117,13 @@ class OwnerAreaTests(unittest.TestCase):
                 return MagicMock(returncode=0)
             return real_run(command, *args, **kwargs)
 
+        # This suite tests inner owner package/current behavior. Lease admission
+        # and actual process readiness have separate focused regression suites.
         with (patch.object(sys, "argv", argv),
+              patch.object(rollout, "node_side", side_effect=lambda args:
+                           rollout._leased_node_side_owner(args, MagicMock())),
+              patch.object(rollout, "owner_process_identity", return_value=None),
+              patch.object(rollout, "wait_owner_ready", return_value=True),
               patch.object(rollout.subprocess, "run", side_effect=run),
               patch("urllib.request.urlopen", return_value=MagicMock())):
             self.assertEqual(rollout.main(), 0)

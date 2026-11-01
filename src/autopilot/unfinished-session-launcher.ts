@@ -34,7 +34,7 @@ import { projectRecoveryModelAllowed, resolveProjectRecoveryModels } from "../au
 import { resolveAutopilotStateDir } from "./state-dir.js";
 import { automationDisarmDecision, sessionWorkKey, AutomationDisarmStore } from "../automation-disarm/index.js";
 
-const SUPPORTED_HARNESSES: readonly HarnessType[] = ["codex", "opencode", "claude", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"];
+const SUPPORTED_HARNESSES: readonly HarnessType[] = ["codex", "opencode", "claude", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "zai"];
 const DEFAULT_CONTINUATION = "Продолжи незавершённую задачу с того места, где выполнение было прервано. Сначала проверь текущее состояние и не повторяй уже завершённые действия.";
 const MAX_TEXT = 1_024;
 const DEFAULT_EVIDENCE_MESSAGE_COUNT = 200;
@@ -8004,7 +8004,7 @@ function displayHarness(harness: HarnessType): string {
         : harness === "claude" ? "Claude"
           : harness === "qoder" ? "Qoder"
             : harness === "fast-agent" ? "Fast Agent"
-              : harness === "chatgpt" ? "ChatGPT" : "Hermes";
+              : harness === "chatgpt" ? "ChatGPT" : harness === "zai" ? "Z.ai" : "Hermes";
 }
 
 export function createOpenAICompatibleSessionCompletionJudge(config: {

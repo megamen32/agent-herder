@@ -75,6 +75,7 @@ class OwnerCurrentTests(unittest.TestCase):
         rollout.pack_release(source, archive)
 
         argv = ["rollout-candidate.py", "--node-side", "--kind", "owner",
+                "--release-proof", "/unused-inner-unit-test-proof",
                 "--sha", NEW_SHA, "--archive", str(archive),
                 "--catalog", str(catalog), "--previous-sha", OLD_SHA,
                 "--drop-in", str(drop_in), "--web-port", "18787",
@@ -98,7 +99,13 @@ class OwnerCurrentTests(unittest.TestCase):
                 return MagicMock(returncode=0)
             return real_run(command, *args, **kwargs)
 
+        # This suite tests inner owner package/current behavior. Lease admission
+        # and actual process readiness have separate focused regression suites.
         with (patch.object(sys, "argv", argv),
+              patch.object(rollout, "node_side", side_effect=lambda args:
+                           rollout._leased_node_side_owner(args, MagicMock())),
+              patch.object(rollout, "owner_process_identity", return_value=None),
+              patch.object(rollout, "wait_owner_ready", return_value=True),
               patch.object(rollout.subprocess, "run", side_effect=run),
               patch("urllib.request.urlopen", return_value=MagicMock())):
             self.assertEqual(rollout.main(), 0)
@@ -126,15 +133,14 @@ class OwnerCurrentTests(unittest.TestCase):
             self.assertIn(f"{catalog}/releases/{NEW_SHA}/dist/index.js", drop_in.read_text())
             self.assertEqual(json.loads((catalog / "node-config.json").read_text())["sourceSha"],
                              NEW_SHA)
-            # the point of rollback stays real: the old release lives in
-            # rollback/ and the saved drop-in points at it
-            self.assertTrue((catalog / "rollback" / OLD_SHA).is_dir())
+            # Keep rollback bytes at their original path until acceptance.
+            self.assertTrue((catalog / "releases" / OLD_SHA).is_dir())
             saved = sorted(drop_in.parent.glob("10-release-exec.conf.bak-*"))
             self.assertEqual(len(saved), 1)
-            self.assertIn(f"/rollback/{OLD_SHA}/dist/index.js", saved[0].read_text())
-            # the owner keeps one release directory
+            self.assertIn(f"/releases/{OLD_SHA}/dist/index.js", saved[0].read_text())
+            # Pruning is separate from admission and cannot destroy rollback bytes.
             self.assertEqual(sorted(item.name for item in (catalog / "releases").iterdir()),
-                             [NEW_SHA])
+                             sorted([NEW_SHA, OLD_SHA]))
             # nothing is left over from the switch
             self.assertFalse((catalog / ".current.new").exists())
 
@@ -180,19 +186,25 @@ class OwnerCurrentTests(unittest.TestCase):
                 return MagicMock(returncode=0)
 
             argv = ["rollout-candidate.py", "--node-side", "--kind", "fleet",
+                    "--release-proof", "/unused-inner-unit-test-proof",
                     "--sha", NEW_SHA, "--archive", str(archive),
                     "--fleet-dir", str(fleet), "--previous-sha", OLD_SHA,
                     "--restart-cmd", "systemctl --user restart agent-herder-fleet.service",
                     "--web-port", "18791", "--unit", "agent-herder-fleet.service",
                     "--state-dir", str(root / "state")]
+            gate = MagicMock()
+            node = MagicMock()
+            node._main.return_value = 0
             with (patch.object(sys, "argv", argv),
-                  patch.object(rollout.subprocess, "run", side_effect=run)):
+                  patch.object(rollout, "node_side", side_effect=lambda args:
+                               rollout._node_side_fleet(args, rollout=node, release_gate=gate))):
                 self.assertEqual(rollout.main(), 0)
 
-            self.assertEqual(len(commands), 1)
-            self.assertTrue(commands[0][1].endswith("rollout-node.py"))
-            self.assertIn("--kind", commands[0])
-            self.assertEqual(commands[0][commands[0].index("--kind") + 1], "fleet")
+            node._main.assert_called_once()
+            command = node._main.call_args.args[0]
+            self.assertIs(node._main.call_args.kwargs["release_gate"], gate)
+            self.assertIn("--kind", command)
+            self.assertEqual(command[command.index("--kind") + 1], "fleet")
             # the fleet branch did not move the symlink itself
             self.assertEqual(os.readlink(fleet / "current"), f"releases/{OLD_SHA}")
 

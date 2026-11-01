@@ -4,7 +4,7 @@ import type { AutopilotHarness } from "../autopilot/session-store.js";
 const HARNESSES = [
   ["codex", "Codex"], ["zcode", "ZCode"], ["claude", "Claude Code"],
   ["opencode", "OpenCode"], ["hermes", "Hermes"], ["qoder", "Qoder"],
-  ["fast-agent", "Fast Agent"], ["chatgpt", "ChatGPT"],
+  ["fast-agent", "Fast Agent"], ["chatgpt", "ChatGPT"], ["zai", "Z.ai"],
 ] as const;
 
 export function withAutopilotHarness<T extends { harnesses: AutopilotHarness[] }>(policy: T, harness: AutopilotHarness, enabled: boolean): T {

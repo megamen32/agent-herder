@@ -30,6 +30,7 @@ import urllib.request
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import release_rules  # noqa: E402
+from release_gate import ReleaseGate  # noqa: E402
 
 
 def sha256(path: Path) -> str:
@@ -974,7 +975,7 @@ def wait_codex_socket(config: dict, attempts: int = 30) -> bool:
     return False
 
 
-def main(argv=None, stopped_generation=None) -> int:
+def _main(argv=None, stopped_generation=None, release_gate=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fleet-dir", required=True)
     parser.add_argument("--sha", required=True)
@@ -1066,6 +1067,9 @@ def main(argv=None, stopped_generation=None) -> int:
         print("node-config rollback snapshot failed:", error)
         return 1
 
+    release_gate.compare_revision(config_path, previous_sha)
+    release_gate.candidate_descends_from(previous_sha, arguments.sha)
+
     dropin_path: Path | None = None
     dropin_snapshot: Path | None = None
     if arguments.kind == "fleet":
@@ -1114,6 +1118,7 @@ def main(argv=None, stopped_generation=None) -> int:
     config["sourceSha"] = arguments.sha
     config_mode = stat.S_IMODE(config_path.stat().st_mode)
     try:
+        release_gate.compare_revision(config_path, previous_sha)
         atomic_write(config_path, (json.dumps(config, indent=1) + "\n").encode(), config_mode)
         switch_current(fleet, arguments.sha)
         if dropin_path and not systemd_daemon_reload():
@@ -1121,6 +1126,7 @@ def main(argv=None, stopped_generation=None) -> int:
     except (OSError, RuntimeError, ValueError) as error:
         print("release configuration switch failed:", error)
         try:
+            release_gate.compare_cleanup_revision(config_path, (previous_sha, arguments.sha))
             restore_install(fleet, config_path, backup, arguments.sha, previous_sha,
                             dropin_path, dropin_snapshot, arguments.restart_cmd.split())
         except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as rollback_error:
@@ -1138,6 +1144,7 @@ def main(argv=None, stopped_generation=None) -> int:
     live_sha, sessions, policy, mcp = (readiness[key] for key in ("live_sha", "sessions", "policy", "mcp"))
     after = disarm_state(fleet, state_dir)
     checks = [
+        ("restart command succeeded", restart_result.returncode == 0, str(restart_result.returncode)),
         ("readiness belongs to the new generation", readiness["reason"] == "ready", readiness["reason"]),
         ("running process comes from the new release", live_sha == arguments.sha, live_sha or "unknown"),
         ("sessions answer", sessions == 200, str(sessions)),
@@ -1150,9 +1157,15 @@ def main(argv=None, stopped_generation=None) -> int:
         print(f"[{'OK ' if ok else 'FAIL'}] {name}: {detail}")
         failed += 0 if ok else 1
 
+    try:
+        release_gate.check()
+    except (OSError, RuntimeError, ValueError) as error:
+        print("release cancelled before acceptance:", error)
+        failed += 1
     if failed:
         print("rolling back to", previous_sha)
         try:
+            release_gate.compare_cleanup_revision(config_path, (previous_sha, arguments.sha))
             restore_install(fleet, config_path, backup, arguments.sha, previous_sha,
                             dropin_path, dropin_snapshot, arguments.restart_cmd.split())
         except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
@@ -1168,6 +1181,21 @@ def main(argv=None, stopped_generation=None) -> int:
         return 1
     print(f"accepted: node on {arguments.sha}")
     return 0
+
+
+def main(argv=None, stopped_generation=None) -> int:
+    admission = argparse.ArgumentParser(add_help=False)
+    admission.add_argument("--release-proof", required=True,
+                           help="protected JSON capability from project_release_lease acquire; never inline tokens")
+    admission.add_argument("--fleet-dir", required=True)
+    admission.add_argument("--unit", default="agent-herder-fleet.service")
+    args, rest = admission.parse_known_args(sys.argv[1:] if argv is None else argv)
+    try:
+        with ReleaseGate(args.release_proof, target={"fleetDir": str(Path(args.fleet_dir).expanduser().resolve()), "unit": args.unit}) as gate:
+            return _main(rest + ["--fleet-dir", args.fleet_dir, "--unit", args.unit], stopped_generation=stopped_generation, release_gate=gate)
+    except (OSError, ValueError, KeyError, RuntimeError) as error:
+        print("release gate refused:", type(error).__name__)
+        return 1
 
 
 if __name__ == "__main__":

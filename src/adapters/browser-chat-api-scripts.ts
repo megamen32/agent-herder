@@ -5,6 +5,7 @@
  */
 export const CHATGPT_LIST_API_SCRIPT = `async () => {
   if (location.origin !== 'https://chatgpt.com') return {error:'wrong_origin'};
+  if (Date.now() < (globalThis.__herderChatGptReadCooldownUntil || 0)) return {error:'read_cooldown'};
   const sessionResponse = await fetch('/api/auth/session',{credentials:'same-origin'});
   if (!sessionResponse.ok) return {error:'session_unavailable'};
   const session = await sessionResponse.json();
@@ -14,7 +15,10 @@ export const CHATGPT_LIST_API_SCRIPT = `async () => {
   const headers = {authorization:'Bearer '+session.accessToken,'chatgpt-account-id':session.account.id};
   const response = await fetch('/backend-api/conversations?offset=0&limit=100&order=updated',
     {headers,credentials:'same-origin'});
-  if (!response.ok) return {error:'list_http_'+response.status};
+  if (!response.ok) {
+    if (response.status === 429) globalThis.__herderChatGptReadCooldownUntil = Date.now() + 900_000;
+    return {error:'list_http_'+response.status};
+  }
   const data=await response.json();
   return {scope,chats:(data.items||[]).filter(x=>x.id && x.title && !x.is_archived && !x.is_temporary_chat)
    .slice(0,100).map(x=>({id:x.id,title:x.title,updatedAt:x.update_time,createdAt:x.create_time}))};
@@ -25,13 +29,17 @@ export function chatgptMessagesApiScript(chatId: string): string {
     const id=${JSON.stringify(chatId)};
     if (location.origin !== 'https://chatgpt.com' || !/^[a-f0-9-]{28,80}$/i.test(id))
       return {error:'invalid_chat'};
+    if (Date.now() < (globalThis.__herderChatGptReadCooldownUntil || 0)) return {error:'read_cooldown'};
     const session=await(await fetch('/api/auth/session',{credentials:'same-origin'})).json();
     if (!session.accessToken || !session.account?.id) return {error:'account_unavailable'};
     const r=await fetch('/backend-api/conversations/'+encodeURIComponent(id)
       +'?num_turns=60&include_has_versions=true',
       {headers:{authorization:'Bearer '+session.accessToken,'chatgpt-account-id':session.account.id},
        credentials:'same-origin'});
-    if (!r.ok) return {error:'history_http_'+r.status};
+    if (!r.ok) {
+      if (r.status === 429) globalThis.__herderChatGptReadCooldownUntil = Date.now() + 900_000;
+      return {error:'history_http_'+r.status};
+    }
     const data=await r.json();
     if(data.conversation_id!==id || !Array.isArray(data.messages))return {error:'identity_mismatch'};
     const readPart=p=>{

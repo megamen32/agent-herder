@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 import urllib.error
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("rollout_node", ROOT / "deploy/fleet/rollout-node.py")
@@ -34,11 +34,11 @@ class RolloutNodeInstallTests(unittest.TestCase):
                 def capture(*args):
                     events.append("proof")
                     return handoff
-                def install(argv, stopped_generation):
+                def install(argv, stopped_generation, release_gate):
                     self.assertIs(stopped_generation, handoff)
                     events.append("switch_and_restart")
                     return 0
-                helper = SimpleNamespace(DarwinStoppedGeneration=capture, main=install)
+                helper = SimpleNamespace(DarwinStoppedGeneration=capture, _main=install)
                 loader = Mock()
                 spec = SimpleNamespace(loader=loader)
                 args = SimpleNamespace(fleet_dir=str(fleet), sha="a"*40, previous_sha="b"*40,
@@ -54,9 +54,9 @@ class RolloutNodeInstallTests(unittest.TestCase):
                       patch.object(candidate, "unpack_release", side_effect=unpack)):
                     if failure:
                         with self.assertRaisesRegex(ValueError, "isolated_preparation_failure"):
-                            candidate.node_side_fleet(args)
+                            candidate._leased_node_side_fleet(args, Mock())
                     else:
-                        self.assertEqual(candidate.node_side_fleet(args), 0)
+                        self.assertEqual(candidate._leased_node_side_fleet(args, Mock()), 0)
                 self.assertEqual(events, ["proof", "stop", "trim", "unpack"] +
                     ([] if failure else ["switch_and_restart"]) + ["restore_if_still_owned"])
 
@@ -192,32 +192,23 @@ class RolloutNodeInstallTests(unittest.TestCase):
         self.assertEqual(result["reason"], "mcp_credential_outcome_unknown")
         self.assertEqual(mcp.call_count, 1)
 
-    def test_node_side_reuses_its_python_interpreter_for_rollout_node(self):
+    def test_node_side_reuses_admitted_gate_in_process(self):
+        from types import SimpleNamespace
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
-            fleet = root / "fleet"
-            previous = "af06240abbe0a9567289b40e0e44328ee49e1942"
-            target = "6549b34255adb669782f8f07f5b7b852045fd708"
-            (fleet / "releases" / previous).mkdir(parents=True)
-            source = root / "candidate"
-            (source / "dist").mkdir(parents=True)
-            (source / "dist" / "index.js").write_text("candidate\n")
-            archive = root / "candidate.tar"
-            candidate.pack_release(source, archive)
-            arguments = type("Args", (), {
-                "fleet_dir": str(fleet), "sha": target, "previous_sha": previous,
-                "archive": str(archive), "restart_cmd": "launchctl kickstart -k user/501/example",
-                "web_port": 18789, "unit": "com.bezrabotnyi.agent-herder-fleet-node",
-                "state_dir": "/state",
-            })()
-            calls = []
-            with (patch.object(candidate, "HERE", root / "tools"),
-                  patch.object(candidate.subprocess, "run", side_effect=lambda command, **kwargs: (
-                      calls.append(command) or subprocess.CompletedProcess(command, 0, "", "")))):
-                self.assertEqual(candidate.node_side_fleet(arguments), 0)
-            self.assertEqual(len(calls), 1)
-            self.assertEqual(calls[0][0], sys.executable)
-            self.assertEqual(calls[0][1], str(root / "tools" / "rollout-node.py"))
+            gate = Mock()
+            install = Mock(return_value=0)
+            helper = SimpleNamespace(_main=install)
+            spec = SimpleNamespace(loader=Mock())
+            args = SimpleNamespace(fleet_dir=str(root), sha="a"*40, previous_sha="b"*40,
+                archive="fixture.tar", restart_cmd="systemctl restart test", web_port=18789,
+                unit="test.service", state_dir="/state")
+            with (patch.object(candidate.sys, "platform", "linux"),
+                  patch.object(candidate.importlib.util, "spec_from_file_location", return_value=spec),
+                  patch.object(candidate.importlib.util, "module_from_spec", return_value=helper),
+                  patch.object(candidate, "trim_releases"), patch.object(candidate, "unpack_release")):
+                self.assertEqual(candidate._leased_node_side_fleet(args, gate), 0)
+            self.assertIs(install.call_args.kwargs["release_gate"], gate)
 
     def test_darwin_fleet_launcher_resolves_exact_active_user_domain_agent(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -237,11 +228,13 @@ class RolloutNodeInstallTests(unittest.TestCase):
                 "RunAtLoad": True,
                 "KeepAlive": False,
             }))
+            plist_path.chmod(0o600)
             def launchctl(args, **kwargs):
                 if args[-1].startswith("gui/"):
                     return subprocess.CompletedProcess(args, 113, "", "Could not find service")
                 return subprocess.CompletedProcess(args, 0,
                     f"\tpath = {plist_path}\n\tstate = running\n\tprogram = {python}\n\tpid = 456\n", "")
+            plist_path.chmod(0o600)
             with (patch.object(rollout.Path, "home", return_value=home),
                   patch.object(rollout.os, "getuid", return_value=os.getuid()),
                   patch.object(rollout.subprocess, "run", side_effect=launchctl)):
@@ -263,12 +256,14 @@ class RolloutNodeInstallTests(unittest.TestCase):
                 "RunAtLoad": True,
                 "KeepAlive": False,
             }))
+            plist_path.chmod(0o600)
             with (patch.object(rollout.Path, "home", return_value=home),
                   patch.object(rollout.os, "getuid", return_value=os.getuid())):
                 with self.assertRaisesRegex(ValueError, "launchagent_program_mismatch"):
                     rollout.darwin_fleet_launchd_proof(fleet, "com.bezrabotnyi.agent-herder-fleet-node")
 
-    def test_darwin_fleet_install_uses_verified_launchd_domain_and_never_systemd(self):
+    @patch.object(rollout, "canonical_mcp_bearer", return_value="fixture-only")
+    def test_darwin_fleet_install_uses_verified_launchd_domain_and_never_systemd(self, _bearer):
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
             fleet = root / "fleet"
@@ -307,7 +302,7 @@ class RolloutNodeInstallTests(unittest.TestCase):
                   patch.object(rollout, "http_status", return_value=200),
                   patch.object(rollout, "mcp_status", return_value=200),
                   patch.object(rollout.time, "sleep")):
-                self.assertEqual(rollout.main(), 0)
+                self.assertEqual(rollout._main(release_gate=Mock()), 0)
             self.assertEqual(order, [["launchctl", "kickstart", "-k", f"user/{os.getuid()}/{label}"]])
             self.assertEqual(__import__("json").loads(config.read_text())["sourceSha"], target)
             self.assertEqual((fleet / "current").resolve(), fleet / "releases" / target)
@@ -444,7 +439,7 @@ class RolloutNodeInstallTests(unittest.TestCase):
                   patch.object(rollout, "http_status", return_value=200),
                   patch.object(rollout, "mcp_status", return_value=200),
                   patch.object(rollout.time, "sleep")):
-                self.assertEqual(rollout.main(), 0)
+                self.assertEqual(rollout._main(release_gate=Mock()), 0)
 
             dropin = rollout.systemd_release_dropin_path("agent-herder.service", root)
             self.assertIn(f"{fleet}/releases/{target}/dist/index.js", dropin.read_text())
@@ -504,7 +499,7 @@ class RolloutNodeInstallTests(unittest.TestCase):
                   patch.object(rollout, "http_status", return_value=200),
                   patch.object(rollout, "mcp_status", return_value=200),
                   patch.object(rollout.time, "sleep")):
-                self.assertEqual(rollout.main(), 0)
+                self.assertEqual(rollout._main(release_gate=Mock()), 0)
 
             # The node was switched: the current symlink and the sourceSha.
             self.assertEqual(__import__("json").loads(config.read_text())["sourceSha"], target)
@@ -550,7 +545,7 @@ class RolloutNodeInstallTests(unittest.TestCase):
                   patch.object(rollout, "wait_codex_socket", return_value=True),
                   patch.object(rollout, "switch_current", side_effect=lambda *a: switched.append(a)),
                   patch.object(rollout, "restart", side_effect=lambda *a: switched.append(a))):
-                self.assertEqual(rollout.main(), 1)
+                self.assertEqual(rollout._main(release_gate=Mock()), 1)
             self.assertEqual(switched, [])
             self.assertEqual(__import__("json").loads(config.read_text())["sourceSha"], previous)
             self.assertEqual((fleet / "current").resolve(), fleet / "releases" / previous)

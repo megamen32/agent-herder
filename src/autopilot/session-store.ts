@@ -4,7 +4,7 @@ import lockfile from "proper-lockfile";
 import { GoalStore } from "./goal-store.js";
 import { isHealthPlanId, parseNoticeIncident, type HealthPlanId, type NoticeIncidentBinding } from "./notice-incident.js";
 
-export type AutopilotHarness = "codex" | "opencode" | "claude" | "hermes" | "zcode";
+export type AutopilotHarness = "codex" | "opencode" | "claude" | "hermes" | "zcode" | "chatgpt" | "zai";
 export type NoticeAttempt = { incidentId: string; attemptId: string };
 export function parseNoticeAttempt(value: unknown): NoticeAttempt {
   const input = value as Record<string, unknown> | null;
@@ -283,7 +283,7 @@ function reportUnknownLaunchPlan(key: string): void {
 }
 
 function normalizeTarget(target: { harness: AutopilotHarness; sessionId: string; cwd: string }) {
-  if (!(["codex", "opencode", "claude", "hermes", "zcode"] as string[]).includes(target.harness)) throw new Error("unsupported autopilot harness");
+  if (!(["codex", "opencode", "claude", "hermes", "zcode", "chatgpt", "zai"] as string[]).includes(target.harness)) throw new Error("unsupported autopilot harness");
   const sessionId = boundedText(target.sessionId, "sessionId");
   const cwd = boundedText(target.cwd, "cwd");
   return { harness: target.harness, sessionId, cwd: normalize(cwd) };

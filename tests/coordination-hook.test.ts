@@ -10,12 +10,12 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
 });
 
-async function runHook(event: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function runHook(event: Record<string, unknown>, route = "/api/coordination/activity"): Promise<Record<string, unknown>> {
   let received: Record<string, unknown> | undefined;
   const server = createServer(async (request, response) => {
     let raw = "";
     for await (const part of request) raw += part;
-    if (request.url === "/api/coordination/activity") received = JSON.parse(raw);
+    if (request.url === route) received = JSON.parse(raw);
     response.setHeader("content-type", "application/json");
     response.end("{}");
   });
@@ -136,4 +136,16 @@ describe("coordination hook activity reservations", () => {
     });
     expect(activity.paths).toEqual(expected);
   });
+});
+
+describe("terminal release hook",()=>{
+ it.each([["SessionEnd","end"],["SessionError","error"],["SessionAbort","abort"]])("forwards original %s event time",async(native,event)=>{
+  const at="2026-11-01T00:00:00.000Z";
+  const report=await runHook({hook_event_name:native,session_id:"ending",cwd:"/repo",at},"/api/coordination/lifecycle");
+  expect(report).toMatchObject({event,at,sessionId:"ending"});
+ });
+ it("never turns unknown original event time into delivery time",async()=>{
+  const report=await runHook({hook_event_name:"SessionEnd",session_id:"ending",cwd:"/repo"},"/api/coordination/lifecycle");
+  expect(report).not.toHaveProperty("at");
+ });
 });

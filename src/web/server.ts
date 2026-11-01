@@ -1,3 +1,6 @@
+import { recordProjectLifecycle, type IntegrationWake } from "../project-integration.js";
+import { hostname as releaseAuthorityHost } from "node:os";
+import { projectReleaseLeases, terminalReleaseAt } from "../project-release-lease.js";
 import {startActiveFleetInventoryOwner} from '../active-session-fleet.js';
 import { isLeafAllowedByOwnerRule } from "../model-launch-policy.js";
 import {startActiveInventoryOwner} from "../active-session-inventory.js";
@@ -138,6 +141,7 @@ import { handleMcpOAuthRequest } from "./mcp-oauth-api.js";
 const MAX_LOGGED_SKIP_REASONS = 50;
 
 export interface WebDependencies {
+  projectIntegrationWake?: IntegrationWake;
   sessionImageStore?: SessionImageStore;
   adapters: Map<string, HarnessAdapter>;
   converter: Pick<AgentHerderSessionConverter, "convert"> & Partial<Pick<AgentHerderSessionConverter, "read">>;
@@ -345,7 +349,8 @@ export async function resumeSelectedTarget(
   answerReplay = false,
   automationPurpose?: "autopilot",
 ): Promise<ResumeReceipt> {
-  if (request.target.agent !== "codex" && request.target.agent !== "zcode") return new AgentResumeClient().resume(request);
+  if (request.target.agent !== "codex" && request.target.agent !== "zcode"
+    && request.target.agent !== "chatgpt" && request.target.agent !== "zai") return new AgentResumeClient().resume(request);
   const harness = request.target.agent;
   const prompt = request.prompt ?? request.goal ?? `Human Request resolved: ${request.result_ref}`;
   // A replayed stored answer carries its own admission instant. Without one
@@ -1109,7 +1114,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
       // checks the owner of the request itself.
       if (await settingsApi(request, response)) return;
       if (await rag.handleHttp(request, response, async (harness, id) => (await dependencies.adapters.get(harness)?.getSession(id)) || undefined)) return;
-      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.allowOwnerLoopbackMcp === true, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport, dependencies.noticeAnswerFetch, dependencies.composerTranscriber, dependencies.sessionQueueControl, dependencies.mcpOAuthTokenStore, dependencies.humanRequestJoin);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.allowOwnerLoopbackMcp === true, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport, dependencies.noticeAnswerFetch, dependencies.composerTranscriber, dependencies.sessionQueueControl, dependencies.mcpOAuthTokenStore, dependencies.humanRequestJoin, dependencies.projectIntegrationWake);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -1558,7 +1563,7 @@ export async function computeModelLaunchVerdicts(input: {
   return Object.fromEntries(entries);
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, allowOwnerLoopbackMcp=false, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch, composerTranscriber?: ComposerTranscriber, sessionQueueControl?: SessionQueueControlGateway, mcpOAuthTokenStore?: McpOAuthTokenStore, humanRequestJoin?: (requestId: string, reason: string) => Promise<number>): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, allowOwnerLoopbackMcp=false, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch, composerTranscriber?: ComposerTranscriber, sessionQueueControl?: SessionQueueControlGateway, mcpOAuthTokenStore?: McpOAuthTokenStore, humanRequestJoin?: (requestId: string, reason: string) => Promise<number>, projectIntegrationWake?: IntegrationWake): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (await handleMcpOAuthRequest(request, response, { store: mcpOAuthTokenStore })) return;
   if (await handleMcpConnectionRequest(request, response, { configured: !!mcpAuthToken, enabled: !!mcpNodeHandler })) return;
@@ -1854,21 +1859,30 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!sessionId) return sendJson(response, 400, { error: "sessionId is required" });
     const harness = typeof body.harness === "string" && body.harness.trim() ? body.harness.trim() : "zcode";
     markLifecycleEvent(harness, sessionId, "end", typeof body.cwd === "string" ? body.cwd : undefined, events);
+    await recordProjectLifecycle({ harness, sessionId, cwd: typeof body.cwd === "string" ? body.cwd : undefined, event: "end", at: body.at }, projectIntegrationWake).catch(() => undefined);
+    const terminalAt = terminalReleaseAt(body.at);
+    if (terminalAt !== null) await projectReleaseLeases.endSession({ hostId: releaseAuthorityHost(), harness, nativeSessionId: sessionId }, terminalAt);
     return sendJson(response, 200, await coordinationNotes.endSession(sessionId));
   }
   if (url.pathname === "/api/coordination/lifecycle" && request.method === "POST") {
     const body = await readJson(request);
     const harness = typeof body.harness === "string" ? body.harness.trim() : "";
     const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
-    const event = typeof body.event === "string" ? body.event.trim() : "";
+    const reportedEvent = typeof body.event === "string" ? body.event.trim() : "";
+    const event = ["abort", "error", "killed"].includes(reportedEvent) ? "end" : reportedEvent;
     if(harness==='zcode'&&sessionId&&['user-prompt','tool-progress','turn-end'].includes(event)){
       const result=await supervisor.recordZcodeLifecycle(sessionId,typeof body.cwd==='string'?body.cwd:'',typeof body.turnId==='string'?body.turnId:'',event,typeof body.outcome==='string'?body.outcome:undefined);
+      if ((event === 'user-prompt' && result.origin !== 'unknown') || result.recorded)
+        await recordProjectLifecycle({ harness, sessionId, cwd: typeof body.cwd === "string" ? body.cwd : undefined, event: "turn-start", at: body.at }, projectIntegrationWake).catch(() => undefined);
       if((event==='user-prompt'&&result.origin!=='unknown')||(event==='turn-end'&&result.recorded))markLifecycleEvent(harness,sessionId,event==='user-prompt'?'turn-start':'turn-end',typeof body.cwd==='string'?body.cwd:undefined,events);
       return sendJson(response,200,{ok:true,...result});
     }
     if (harness && sessionId && event === "user-prompt") {
       const inputId = typeof body.inputId === "string" ? body.inputId : "";
-      if (inputId.startsWith("agent-herder:auto:")) return sendJson(response, 200, { ok: true, released: false });
+      if (inputId.startsWith("agent-herder:auto:")) {
+        await recordProjectLifecycle({ harness, sessionId, cwd: typeof body.cwd === "string" ? body.cwd : undefined, event: "turn-start", at: body.at }, projectIntegrationWake).catch(() => undefined);
+        return sendJson(response, 200, { ok: true, released: false });
+      }
       const id = typeof body.promptId === "string" ? body.promptId : inputId || (typeof body.turnId === "string" ? body.turnId : "");
       const at = typeof body.at === "string" ? body.at : "";
       if (!id || !Number.isFinite(Date.parse(at))) return sendJson(response, 400, { error: "user-prompt requires promptId/inputId/turnId and valid at" });
@@ -1876,6 +1890,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       // session listings report "running" for the whole turn, not only until
       // the tasks-index recency window expires.
       markLifecycleEvent(harness, sessionId, "turn-start", typeof body.cwd === "string" ? body.cwd : undefined, events);
+      await recordProjectLifecycle({ harness, sessionId, cwd: typeof body.cwd === "string" ? body.cwd : undefined, event: "turn-start", at: body.at }, projectIntegrationWake).catch(() => undefined);
       const released = await supervisor.releaseHumanStop(harness, sessionId, {
         id, at, ...(typeof body.turnId === "string" ? { turnId: body.turnId } : {}),
         ...(typeof body.text === "string" ? { text: body.text } : {}),
@@ -1887,7 +1902,12 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 400, { error: "harness, sessionId, and event (start|turn-start|turn-end|end) are required" });
     }
     markLifecycleEvent(harness, sessionId, event as SessionLifecycleEvent, typeof body.cwd === "string" ? body.cwd : undefined, events);
-    if (event === "end") await coordinationNotes.endSession(sessionId);
+    await recordProjectLifecycle({ harness, sessionId, cwd: typeof body.cwd === "string" ? body.cwd : undefined, event, at: body.at }, projectIntegrationWake).catch(() => undefined);
+    if (event === "end") {
+      await coordinationNotes.endSession(sessionId);
+      const terminalAt = terminalReleaseAt(body.at);
+      if (terminalAt !== null) await projectReleaseLeases.endSession({ hostId: releaseAuthorityHost(), harness, nativeSessionId: sessionId }, terminalAt);
+    }
     return sendJson(response, 200, { ok: true });
   }
   // The five states of the product, each one read on its own.

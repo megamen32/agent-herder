@@ -121,3 +121,50 @@ describe("read-only deep-link details outside 100 cached chats", () => {
     expect(browserWrites).toBe(0);
   });
 });
+
+describe("change-aware history request budget", () => {
+  it("does not refetch cached history merely because time passed", async () => {
+    const root = await dir();
+    const fetch = vi.fn(async () => messages);
+    const cache = new BrowserChatHistoryCache("chatgpt", fetch, root);
+    cache.setAccountScope(ACCOUNT_A);
+    await cache.messages("one");
+    await vi.waitFor(async () => expect(await cache.messages("one")).toEqual(messages));
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 3_600_000);
+    try {
+      for (let i = 0; i < 20; i++) expect(await cache.messages("one")).toEqual(messages);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    } finally { now.mockRestore(); }
+  });
+
+  it("uses trusted revision changes, not repeated metadata, and preserves cache when warming is disabled", async () => {
+    const root = await dir();
+    const fetch = vi.fn(async () => messages);
+    const cache = new BrowserChatHistoryCache("chatgpt", fetch, root);
+    cache.setAccountScope(ACCOUNT_A);
+    cache.prewarm([{id:"one", revision:"v1"}]);
+    await vi.waitFor(async () => expect(await cache.messages("one")).toEqual(messages));
+    for (let i = 0; i < 20; i++) cache.prewarm([{id:"one", revision:"v1"}]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    cache.prewarm([{id:"one", revision:"v2"}]);
+    expect((cache as any).dirty.has("one")).toBe(true);
+    vi.stubEnv("AGENT_HERDER_BROWSER_CHAT_PREWARM_LIMIT", "0");
+    cache.prewarm(["another"]);
+    expect(await readdir(join(root,"chatgpt",ACCOUNT_A))).toHaveLength(1);
+    cache.setAccountScope(undefined);
+  });
+
+  it("globally backs off history reads after a 429", async () => {
+    const root = await dir();
+    const fetch = vi.fn(async () => { throw Error("history_http_429"); });
+    const cache = new BrowserChatHistoryCache("chatgpt", fetch, root);
+    cache.setAccountScope(ACCOUNT_A);
+    await cache.messages("one");
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect((cache as any).cooldownUntil).toBeGreaterThan(Date.now()+800_000));
+    await cache.messages("two");
+    cache.prewarm(["three"]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    cache.setAccountScope(undefined);
+  });
+});

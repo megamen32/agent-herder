@@ -235,7 +235,12 @@ function normalizePaths(paths, workdir = cwd) {
 }
 try {
   if (event === "SessionStart" || event === "UserPromptSubmit") await reportActivity(event, { outcome: "fired", sessionId, harness });
-  if (event === "SessionStart") {
+  if (event === "SessionEnd" || event === "SessionError" || event === "SessionAbort") {
+    await fetchJson(`${endpoint}/api/coordination/lifecycle`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ harness, sessionId, cwd, event: event === "SessionEnd" ? "end" : event === "SessionError" ? "error" : "abort", at: input.at }),
+    });
+  } else if (event === "SessionStart") {
     // The panel learns that the session exists: the lifecycle of the session
     // of MiniMax Code starts here, and the goal of the turn arrives with the
     // prompt that follows.
