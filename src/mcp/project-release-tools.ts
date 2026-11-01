@@ -1,4 +1,4 @@
-import { realpath } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { hostname } from "node:os";
 import { execFile } from "node:child_process";
@@ -11,7 +11,14 @@ const run = promisify(execFile);
 /** All worktrees of a repository share its git common directory. */
 export async function releaseProject(cwd: string): Promise<string> {
   const path = await realpath(cwd);
-  const { stdout } = await run("git", ["-C", path, "rev-parse", "--git-common-dir"], { timeout: 5000 });
+  // The MCP child may be root while the repository belongs to a regular user.
+  // Run Git as that directory owner, preserving Git's own ownership checks.
+  // Do not change safe.directory or mutate the repository.
+  const owner = await stat(path);
+  const options = process.geteuid?.() === 0
+    ? { timeout: 5000, uid: owner.uid, gid: owner.gid }
+    : { timeout: 5000 };
+  const { stdout } = await run("git", ["-C", path, "rev-parse", "--git-common-dir"], options);
   return realpath(resolve(path, stdout.trim()));
 }
 const ownerSchema = z.object({ hostId: z.string().min(1).max(256), harness: z.string().min(1).max(64), nativeSessionId: z.string().min(1).max(256) }).strict();
