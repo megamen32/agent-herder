@@ -11,6 +11,7 @@ The durable current-session switch has one owner per harness:
 | Hermes | extension `register_command`, Hermes completion hook |
 | OpenCode 2 | Agent Herder `autopilot_set` MCP tool, native turn event |
 | OpenCode 1 (legacy servers) | `integrations/opencode/agent-herder-autopilot.js`, `session.idle` event |
+| Z.ai, ChatGPT | browser turn bridge in the herder process (no per-session command; the web Autopilot toggle still works) |
 
 ```text
 /autopilot          # enable for the current session (plugin harnesses)
@@ -97,6 +98,30 @@ app-server or connects to the Z.AI web relay. For a Telegram/NoticePlace
 choice, the Stop hook exits immediately after persisting the question. An
 explicit selection resumes the same native session through the existing
 choice consumer; the hook does not hold the native turn open.
+
+## Browser chats (Z.ai and ChatGPT)
+
+Browser harnesses publish no native Stop hook and no turn events, so their
+sessions reach Autopilot through the herder's own browser turn bridge instead
+(`src/autopilot/browser-turn-observer.ts`). The bridge watches the adapters'
+inventory: a session observed running and then idle has finished exactly one
+remote turn, and the fingerprint of its newest messages becomes the immutable
+turn identity of the durable Stop submission. The consumer then re-verifies
+status, human stops, policy and staleness exactly as for hook-driven
+harnesses, and a selected continuation is delivered through the same
+supervisor send path with a stable idempotency key.
+
+The same bridge owns the browser autocontinue watchdog. A running turn whose
+remote update timestamp has not advanced for
+`AGENT_HERDER_BROWSER_AUTOCONTINUE_STALL_MS` (default 20 minutes) counts as
+stalled: one bounded continuation nudge per stalled burst goes through the
+normal automation send path, so human stops and the automation admission
+apply unchanged. Sessions without a real remote update timestamp carry no
+honest stall evidence and are never nudged.
+
+`AGENT_HERDER_BROWSER_AUTOCONTINUE=0` turns the watchdog off while turn
+judging stays on. The bridged harness list defaults to `zai,chatgpt` and is
+overridden with `AGENT_HERDER_BROWSER_AUTOPILOT_HARNESSES`.
 
 ## Crash recovery (Autocontinue)
 

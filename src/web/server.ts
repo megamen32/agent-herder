@@ -345,7 +345,8 @@ export async function resumeSelectedTarget(
   answerReplay = false,
   automationPurpose?: "autopilot",
 ): Promise<ResumeReceipt> {
-  if (request.target.agent !== "codex" && request.target.agent !== "zcode") return new AgentResumeClient().resume(request);
+  if (request.target.agent !== "codex" && request.target.agent !== "zcode"
+    && request.target.agent !== "chatgpt" && request.target.agent !== "zai") return new AgentResumeClient().resume(request);
   const harness = request.target.agent;
   const prompt = request.prompt ?? request.goal ?? `Human Request resolved: ${request.result_ref}`;
   // A replayed stored answer carries its own admission instant. Without one

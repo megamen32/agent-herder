@@ -3,7 +3,7 @@ import { ReceiptLedger } from "agent-resume-mcp";
 import { spawnIsolatedWorkload } from "./workload-launcher.js";
 import { coreCanDeliver, createCoreResumeTransport, defaultResumeLedgerPath } from "./resume/core-transport.js";
 
-export type ResumeAgent = "codex" | "opencode" | "claude" | "hermes" | "zcode";
+export type ResumeAgent = "codex" | "opencode" | "claude" | "hermes" | "zcode" | "chatgpt" | "zai";
 
 /** Immutable Gateway address selected by the upstream Hermes/session converter. */
 export interface HermesResumeLocator {

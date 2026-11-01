@@ -21,7 +21,7 @@ export function parseChatGptPages(text: string): Page[] {
     if (!match) return [];
     try {
       const url = new URL(match[2]!);
-      return url.origin === ORIGIN ? [{ id: Number(match[1]), url: url.toString() }] : [];
+      return url.origin === ORIGIN && !/^\/dots(?:\/|$)/.test(url.pathname) ? [{ id: Number(match[1]), url: url.toString() }] : [];
     } catch { return []; }
   });
 }
@@ -122,7 +122,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
         ? new Date(at < 1e12 ? at * 1000 : at).toISOString() : new Date().toISOString(),
       working: selected && this.busy(s),
       stopVisible: selected && s.phase === "generating",
-      unread: false, updatedAtSemantics: "observed-sidebar-order",
+      unread: false, updatedAtSemantics: typeof at === "number" && Number.isFinite(at) && at > 0 ? "remote-update-time" : "observed-sidebar-order",
       sourceRoute: ORIGIN + "/c/" + id,
     };
   }

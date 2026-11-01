@@ -183,11 +183,14 @@ export class ZaiCdpDriver implements BrowserChatDriver {
         for (const item of data.chats) {
           if (!/^[a-f0-9-]{12,80}$/i.test(item.id) || !item.title) continue;
           const selected = state.path === "/c/" + item.id;
-          const updatedAt = typeof item.updatedAt === "number" && item.updatedAt > 0
+          const updatedAt = typeof item.updatedAt === "number" && Number.isFinite(item.updatedAt) && item.updatedAt > 0
             ? new Date(item.updatedAt < 1e12 ? item.updatedAt * 1000 : item.updatedAt).toISOString()
             : observedAt;
           const chat = this.recordChat("route:" + item.id, item.title, updatedAt,
             selected ? state.path : undefined);
+          if (typeof item.updatedAt === "number" && Number.isFinite(item.updatedAt) && item.updatedAt > 0) {
+            chat.updatedAtSemantics = "remote-update-time";
+          }
           chat.working = selected && this.busy(state);
           chat.stopVisible = selected && state.phase === "generating";
           chat.unread = item.unread === true;

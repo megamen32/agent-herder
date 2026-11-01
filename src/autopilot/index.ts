@@ -22,7 +22,7 @@ export type StopHookInput = {
   transcript_path: string | null;
   stop_hook_active: boolean;
   model?: string;
-  harness?: "codex" | "opencode" | "claude" | "hermes" | "zcode";
+  harness?: "codex" | "opencode" | "claude" | "hermes" | "zcode" | "chatgpt" | "zai";
 };
 
 export type AutopilotDecision =
@@ -81,7 +81,7 @@ export type NotificationPayload = {
 };
 
 export type ExecutionIdentity = {
-  harness: "opencode" | "codex" | "hermes" | "zcode" | "claude" | "qoder" | "fast-agent" | "chatgpt";
+  harness: "opencode" | "codex" | "hermes" | "zcode" | "claude" | "qoder" | "fast-agent" | "chatgpt" | "zai";
   session_id: string;
   model?: string;
   cwd?: string;
@@ -387,7 +387,7 @@ export function createAutopilotCore(options: {
   pendingQuestions?: PendingQuestionSource;
   effectivePolicy?: EffectivePolicy;
   policyBypassSessionId?: string;
-  harness?: "codex" | "opencode" | "claude" | "hermes" | "zcode";
+  harness?: "codex" | "opencode" | "claude" | "hermes" | "zcode" | "chatgpt" | "zai";
   onDecision?: (decision: AutopilotDecision, metadata?: { choiceRequestId?: string; humanRequestId?: string }) => void;
 }): { handleStop(input: StopHookInput): Promise<AutopilotHookResult> } {
   const continuationCounts = new Map<string, number>();
@@ -737,7 +737,7 @@ async function createResumableHumanQuestion(
   options: {
     humanRequests?: Pick<HumanRequestRegistry, "create">;
     deliverHumanQuestion?: (question: PendingHumanQuestion) => Promise<void>;
-    harness?: "codex" | "opencode" | "claude" | "hermes" | "zcode";
+    harness?: "codex" | "opencode" | "claude" | "hermes" | "zcode" | "chatgpt" | "zai";
     noticeIncident?: NoticeIncidentBinding;
   },
   input: StopHookInput,
@@ -771,7 +771,7 @@ function buildChoiceNotificationBody(
   choices: AutopilotChoice[],
   lastUserMessage: string | null,
   card?: { includeUserMessage: boolean; includeAssistantMessage: boolean; includeReason: boolean },
-  harness: "codex" | "opencode" | "claude" | "hermes" | "zcode" = "codex",
+  harness: "codex" | "opencode" | "claude" | "hermes" | "zcode" | "chatgpt" | "zai" = "codex",
 ): string {
   const options = choices
     .map((choice, index) => `${index + 1}. ${choice.label}`)
