@@ -3909,7 +3909,7 @@ function hasControlCharacters(value: string): boolean {
 }
 
 function isAutopilotHarness(value: string): value is AutopilotHarness {
-  return value === "codex" || value === "opencode" || value === "claude" || value === "hermes" || value === "zcode";
+  return value === "codex" || value === "opencode" || value === "claude" || value === "hermes" || value === "zcode" || value === "chatgpt" || value === "zai";
 }
 
 /**

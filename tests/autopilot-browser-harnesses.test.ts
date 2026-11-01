@@ -160,6 +160,16 @@ describe("BrowserTurnAutopilotObserver", () => {
     expect(h.submit).not.toHaveBeenCalled();
   });
 
+  it("never nudges a stalled browser chat when autopilot is disabled or human-held", async () => {
+    const session = fakeSession({ status: "running", lastActivity: new Date(Date.now() - 120_000).toISOString(), meta: { timestampSemantics: "remote-update-time" } });
+    const disabled = harness({ sessions: [session], enabled: async () => false });
+    await disabled.observer.observeOnce();
+    expect(disabled.sendMessage).not.toHaveBeenCalled();
+    const held = harness({ sessions: [session], held: async () => true });
+    await held.observer.observeOnce();
+    expect(held.sendMessage).not.toHaveBeenCalled();
+  });
+
   it("nudges a stalled running turn once per burst through the automation send path", async () => {
     const stalled = new Date(Date.now() - 120_000).toISOString();
     const h = harness({
