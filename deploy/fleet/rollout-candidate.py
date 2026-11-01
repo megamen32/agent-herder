@@ -41,6 +41,7 @@ import time
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import release_rules  # noqa: E402
+from release_gate import ReleaseGate
 
 DEFAULT_CATALOG = Path.home() / "agents-projects/.fleet-candidate"
 BUDGET_MIB = 512
@@ -229,7 +230,7 @@ def switch_current(catalog: Path, sha: str) -> None:
     os.rename(temporary, link)
 
 
-def node_side_fleet(arguments) -> int:
+def _leased_node_side_fleet(arguments, release_gate) -> int:
     if sys.platform == "darwin":
         # Keep the handoff in this process, never in a caller-supplied flag or
         # proof file. Stop the exact existing owner before touching releases.
@@ -241,15 +242,15 @@ def node_side_fleet(arguments) -> int:
             arguments.previous_sha, arguments.web_port, shlex.split(arguments.restart_cmd))
         try:
             handoff.stop()
-            return _node_side_fleet(arguments, rollout, handoff)
+            return _node_side_fleet(arguments, rollout, handoff, release_gate)
         finally:
             # Preparation or a pre-switch refusal must not leave our known
             # previous runtime down. A new owner/configuration forbids this.
             handoff.restore_if_still_owned()
-    return _node_side_fleet(arguments)
+    return _node_side_fleet(arguments, release_gate=release_gate)
 
 
-def _node_side_fleet(arguments, rollout=None, handoff=None) -> int:
+def _node_side_fleet(arguments, rollout=None, handoff=None, release_gate=None) -> int:
     fleet = Path(arguments.fleet_dir).expanduser()
     sha = arguments.sha
     release = fleet / "releases" / sha
@@ -275,10 +276,11 @@ def _node_side_fleet(arguments, rollout=None, handoff=None) -> int:
                "--release-local-packages",
                "--unit", arguments.unit,
                "--state-dir", arguments.state_dir]
-    if rollout is not None:
-        return rollout.main(command[2:], stopped_generation=handoff)
-    result = subprocess.run(command, check=False)
-    return result.returncode
+    if rollout is None:
+        spec = importlib.util.spec_from_file_location("fleet_rollout_owned", HERE / "rollout-node.py")
+        rollout = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rollout)
+    return rollout._main(command[2:], stopped_generation=handoff, release_gate=release_gate)
 
 
 def prepare_owner_area(catalog: Path, release: Path, working_directory: str) -> str:
@@ -319,7 +321,74 @@ def prepare_owner_area(catalog: Path, release: Path, working_directory: str) -> 
                if takeover.get("moved") else ""))
 
 
-def node_side_owner(arguments) -> int:
+def owner_process_identity(unit: str):
+    """Read the service's actual process, not its configured ExecStart."""
+    try:
+        result = subprocess.run(["systemctl", "--user", "show", unit, "-p", "MainPID", "--value"],
+                                capture_output=True, text=True, timeout=5, check=False)
+        if result.returncode != 0:
+            return None
+        pid = int(result.stdout.strip())
+        if pid <= 0:
+            return None
+        proc = Path("/proc") / str(pid)
+        # comm may contain spaces/parentheses; starttime is field 22.
+        start = proc.joinpath("stat").read_text().rsplit(")", 1)[1].split()[19]
+        argv = tuple(part.decode() for part in proc.joinpath("cmdline").read_bytes().split(b"\0") if part)
+        return pid, start, argv
+    except (OSError, ValueError, UnicodeError, IndexError, subprocess.SubprocessError):
+        return None
+
+
+def owner_listens(pid: int, port: int) -> bool:
+    """An unrelated old HTTP listener must not certify the new generation."""
+    try:
+        proc = Path("/proc") / str(pid)
+        sockets = {os.readlink(fd) for fd in (proc / "fd").iterdir()}
+        for table in ("tcp", "tcp6"):
+            for row in (proc / "net" / table).read_text().splitlines()[1:]:
+                fields = row.split()
+                if (fields[3] == "0A" and int(fields[1].rsplit(":", 1)[1], 16) == port
+                        and "socket:[" + fields[9] + "]" in sockets):
+                    return True
+    except (OSError, ValueError, IndexError):
+        return False
+    return False
+
+
+def wait_owner_ready(unit: str, release: Path, port: int, previous_identity, attempts=30) -> bool:
+    import urllib.request
+    expected_entry = str((release / "dist/index.js").resolve())
+    for _ in range(attempts):
+        identity = owner_process_identity(unit)
+        if (identity and (previous_identity is None or identity[:2] != previous_identity[:2])
+                and expected_entry in identity[2] and owner_listens(identity[0], port)):
+            try:
+                with urllib.request.urlopen(
+                        f"http://127.0.0.1:{port}/api/sessions?quick=1&limit=1", timeout=5) as response:
+                    response.read(64)
+                if owner_process_identity(unit) == identity:
+                    return True
+            except Exception:
+                pass
+        time.sleep(2)
+    return False
+
+
+def restart_owner_release(unit: str, release: Path, port: int) -> bool:
+    previous_identity = owner_process_identity(unit)
+    reload_result = subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
+    if reload_result.returncode != 0:
+        print("owner daemon-reload failed")
+        return False
+    restart_result = subprocess.run(["systemctl", "--user", "restart", unit], check=False)
+    if restart_result.returncode != 0:
+        print("owner restart failed")
+        return False
+    return wait_owner_ready(unit, release, port, previous_identity)
+
+
+def _leased_node_side_owner(arguments, release_gate) -> int:
     catalog = Path(arguments.catalog).expanduser()
     sha = arguments.sha
     release = catalog / "releases" / sha
@@ -327,6 +396,8 @@ def node_side_owner(arguments) -> int:
     # The config of the node is the node's own file: the rollout writes the
     # native values of the node into it and only the source sha changes. The
     # candidate template of the build never lands here.
+    release_gate.compare_revision(catalog / "node-config.json", arguments.previous_sha)
+    release_gate.candidate_descends_from(arguments.previous_sha, sha)
     if arguments.node_config:
         native = json.loads(arguments.node_config)
         config_path = catalog / "node-config.json"
@@ -360,12 +431,12 @@ def node_side_owner(arguments) -> int:
     # before the release that was live is sent to rollback/, so the link never
     # names a directory that is gone: after the rollout it names the release
     # of this rollout, not the place the old one moved to.
+    release_gate.compare_revision(catalog / "node-config.json", sha)
     switch_current(catalog, sha)
     # The owner node keeps one release directory: the new one. The release that
     # is live now moves to rollback/ with its bytes, and the saved drop-in is
     # rewritten below to the place it moved to, so the rollback stays real.
-    moved = trim_releases(catalog / "releases", catalog / "rollback", sha,
-                           arguments.previous_sha, keep_only=True)
+    moved = {}  # Retain previous release bytes until acceptance; cleanup is separate.
     unit_dir.mkdir(parents=True, exist_ok=True)
     backup = Path(f"{drop_in}.bak-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}")
     if previous:
@@ -381,6 +452,7 @@ def node_side_owner(arguments) -> int:
             "ExecStart=\n"
             f"ExecStart={target}\n")
         print("rollback drop-in saved:", backup)
+    release_gate.compare_revision(catalog / "node-config.json", sha)
     drop_in.write_text(
         f"# Release-local runtime of the candidate {sha}.\n"
         "# The working directory stays the checkout, so the live data paths do not move.\n"
@@ -388,31 +460,51 @@ def node_side_owner(arguments) -> int:
         "[Service]\n"
         "ExecStart=\n"
         f"ExecStart=/usr/local/bin/node {release}/dist/index.js\n")
-    subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
-    subprocess.run(["systemctl", "--user", "restart", arguments.unit], check=False)
-    import urllib.request
-    for _ in range(30):
-        try:
-            with urllib.request.urlopen(
-                    f"http://127.0.0.1:{arguments.web_port}/api/sessions?quick=1&limit=1", timeout=5) as response:
-                response.read(64)
-            print("owner node is back on", sha)
-            return 0
-        except Exception:
-            time.sleep(2)
+    if restart_owner_release(arguments.unit, release, arguments.web_port):
+        release_gate.check()  # Cancellation during readiness must enter guarded cleanup.
+        print("owner node is back on", sha)
+        return 0
     print("the owner node did not come back on its port")
     return 1
 
 
 def node_side(arguments) -> int:
-    if arguments.kind == "owner":
-        return node_side_owner(arguments)
-    return node_side_fleet(arguments)
+    target_root = Path(arguments.catalog if arguments.kind == "owner" else arguments.fleet_dir).expanduser().resolve()
+    with ReleaseGate(arguments.release_proof, target={"fleetDir": str(target_root), "unit": arguments.unit}) as gate:
+        if arguments.kind != "owner":
+            return _leased_node_side_fleet(arguments, gate)
+        config_path = target_root / "node-config.json"
+        drop_in = Path(arguments.drop_in).expanduser()
+        old_config = config_path.read_bytes()
+        old_dropin = drop_in.read_bytes() if drop_in.exists() else None
+        old_current = os.readlink(target_root / "current") if (target_root / "current").is_symlink() else None
+        try:
+            result = _leased_node_side_owner(arguments, gate)
+            if result == 0:
+                return 0
+            raise RuntimeError("owner_release_not_ready")
+        except Exception:
+            gate.compare_cleanup_revision(config_path, (arguments.previous_sha, arguments.sha))
+            # Restore only this rollout's files while still owning target serialization.
+            config_path.write_bytes(old_config)
+            if old_dropin is not None:
+                drop_in.write_bytes(old_dropin)
+            elif drop_in.exists():
+                drop_in.unlink()
+            if old_current is not None:
+                current = target_root / "current"
+                temporary = target_root / (".restore-current-" + str(os.getpid()))
+                os.symlink(old_current, temporary)
+                os.replace(temporary, current)
+            subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
+            subprocess.run(["systemctl", "--user", "restart", arguments.unit], check=False)
+            raise
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sha", required=True)
+    parser.add_argument("--release-proof", default="", help="protected proof path on the target authority host; never transferred")
     parser.add_argument("--node", default="", help="node id of deploy/fleet/nodes.json")
     parser.add_argument("--catalog", default=str(DEFAULT_CATALOG))
     parser.add_argument("--dry-run", action="store_true",
@@ -431,6 +523,8 @@ def main() -> int:
     parser.add_argument("--node-config", default="",
                         help="the native values of the node as JSON (the owner node writes them into its config)")
     arguments = parser.parse_args()
+    if not arguments.dry_run and not arguments.release_proof:
+        parser.error("--release-proof is required for rollout")
 
     if arguments.node_side:
         return node_side(arguments)
@@ -506,14 +600,15 @@ def main() -> int:
                                   (HERE / "rollout-candidate.py", "/tmp/rollout-candidate.py"),
                                   (HERE / "rollout-node.py", "/tmp/rollout-node.py"),
                                   (HERE / "accept-node.py", "/tmp/accept-node.py"),
-                                  (HERE / "release_rules.py", "/tmp/release_rules.py")):
+                                  (HERE / "release_rules.py", "/tmp/release_rules.py"),
+                                  (HERE / "release_gate.py", "/tmp/release_gate.py")):
                 command = ["scp", "-q", "-P", ssh_port, str(local), f"{host}:{remote}"]
                 copied = subprocess.run(command, capture_output=True, text=True, check=False)
                 if copied.returncode != 0:
                     print(f"transfer failed: {copied.stderr.strip()}")
                     return 1
             side = ["python3", "/tmp/rollout-candidate.py", "--node-side",
-                    "--kind", "fleet", "--sha", arguments.sha,
+                    "--kind", "fleet", "--sha", arguments.sha, "--release-proof", arguments.release_proof,
                     "--archive", remote_archive,
                     "--fleet-dir", expand(node["fleetDir"]),
                     "--previous-sha", live_sha,
@@ -527,7 +622,7 @@ def main() -> int:
                        " ".join(shlex.quote(item) for item in side)]
         else:
             side = ["python3", str(Path(__file__).resolve()), "--node-side",
-                    "--kind", "owner", "--sha", arguments.sha,
+                    "--kind", "owner", "--sha", arguments.sha, "--release-proof", arguments.release_proof,
                     "--archive", str(archive),
                     "--catalog", str(catalog),
                     "--previous-sha", live_sha,

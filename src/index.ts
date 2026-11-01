@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { registerProjectReleaseTools } from "./mcp/project-release-tools.js";
 import { BackgroundAutopilotStop } from "./autopilot/background-stop.js";
 import { BrowserTurnAutopilotObserver } from "./autopilot/browser-turn-observer.js";
 import { NativeTurnAutopilotObserver } from "./autopilot/native-turn-observer.js";
@@ -738,6 +739,7 @@ function registerTools(
   registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate, userMessageDelivery, sessionQueueControl, resumeAfter, ...(inventorySupervisor ? { supervisor: inventorySupervisor } : {}) });
   registerRagTools(server, adapters);
   registerResourceOwnershipTools(server);
+  registerProjectReleaseTools(server);
   const workspaceTransport = new FleetDirectTransport(fleetPeers().filter(peer => peer.hostId !== "MacBook-Pro-User.local"));
   registerActiveSessionTools(server);
   registerSessionWorkspaceTools(server);

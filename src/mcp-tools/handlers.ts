@@ -1,3 +1,4 @@
+import { projectReleaseLeases } from "../project-release-lease.js";
 import {meshDiscoveryTimeoutMs} from "../mesh/discovery-timeout.js";
 import type { ResumeAfterService } from "../resume-after.js";
 import { HarnessAdapter, AgentSession } from "../types/index.js";
@@ -765,8 +766,10 @@ export async function handleStopAgent(
 
   await holdManualStop(found.session);
 
+  const stopStartedAt = Date.now();
   const result = await found.adapter.stopSession(parsed.sessionId);
   if (result.ok) {
+    await projectReleaseLeases.endSession({ hostId: localHostId, harness: found.session.harness, nativeSessionId: parsed.sessionId }, stopStartedAt);
     return `Stopped agent [${found.session.harness}] ${parsed.sessionId}.`;
   }
   return `Failed to stop agent: ${result.error}`;

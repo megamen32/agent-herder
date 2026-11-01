@@ -1,3 +1,5 @@
+import { hostname as releaseAuthorityHost } from "node:os";
+import { projectReleaseLeases, terminalReleaseAt } from "../project-release-lease.js";
 import {startActiveFleetInventoryOwner} from '../active-session-fleet.js';
 import { isLeafAllowedByOwnerRule } from "../model-launch-policy.js";
 import {startActiveInventoryOwner} from "../active-session-inventory.js";
@@ -1855,13 +1857,16 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!sessionId) return sendJson(response, 400, { error: "sessionId is required" });
     const harness = typeof body.harness === "string" && body.harness.trim() ? body.harness.trim() : "zcode";
     markLifecycleEvent(harness, sessionId, "end", typeof body.cwd === "string" ? body.cwd : undefined, events);
+    const terminalAt = terminalReleaseAt(body.at);
+    if (terminalAt !== null) await projectReleaseLeases.endSession({ hostId: releaseAuthorityHost(), harness, nativeSessionId: sessionId }, terminalAt);
     return sendJson(response, 200, await coordinationNotes.endSession(sessionId));
   }
   if (url.pathname === "/api/coordination/lifecycle" && request.method === "POST") {
     const body = await readJson(request);
     const harness = typeof body.harness === "string" ? body.harness.trim() : "";
     const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
-    const event = typeof body.event === "string" ? body.event.trim() : "";
+    const reportedEvent = typeof body.event === "string" ? body.event.trim() : "";
+    const event = ["abort", "error", "killed"].includes(reportedEvent) ? "end" : reportedEvent;
     if(harness==='zcode'&&sessionId&&['user-prompt','tool-progress','turn-end'].includes(event)){
       const result=await supervisor.recordZcodeLifecycle(sessionId,typeof body.cwd==='string'?body.cwd:'',typeof body.turnId==='string'?body.turnId:'',event,typeof body.outcome==='string'?body.outcome:undefined);
       if((event==='user-prompt'&&result.origin!=='unknown')||(event==='turn-end'&&result.recorded))markLifecycleEvent(harness,sessionId,event==='user-prompt'?'turn-start':'turn-end',typeof body.cwd==='string'?body.cwd:undefined,events);
@@ -1888,7 +1893,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 400, { error: "harness, sessionId, and event (start|turn-start|turn-end|end) are required" });
     }
     markLifecycleEvent(harness, sessionId, event as SessionLifecycleEvent, typeof body.cwd === "string" ? body.cwd : undefined, events);
-    if (event === "end") await coordinationNotes.endSession(sessionId);
+    if (event === "end") {
+      await coordinationNotes.endSession(sessionId);
+      const terminalAt = terminalReleaseAt(body.at);
+      if (terminalAt !== null) await projectReleaseLeases.endSession({ hostId: releaseAuthorityHost(), harness, nativeSessionId: sessionId }, terminalAt);
+    }
     return sendJson(response, 200, { ok: true });
   }
   // The five states of the product, each one read on its own.
