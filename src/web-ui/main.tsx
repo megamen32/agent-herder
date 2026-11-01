@@ -2484,9 +2484,17 @@ function App() {
       {!detailsLoading && !cachedDetails && ["chatgpt", "zai"].includes(activeSession?.harness || "")
         && details?.history?.source === "unavailable"
         && <p className="cached-view-notice" role="status">История этого чата ещё не сохранена или сайт недоступен. <button type="button" onClick={()=>activeKey&&void loadDetails(activeKey)}>Обновить</button></p>}
-      <header className="chat-header">
+      <header className={`chat-header ${(showCreateSession || showJobs || showStatistics || showQuota) ? "chat-header-page" : "chat-header-chat"} ${activeSession ? "" : "chat-header-noactive"}`}>
         <button className="mobile-back" onClick={() => { setLayoutField("chatListOpen", true); setMobileView("sessions"); }} aria-label="К списку сессий">← <span>Сессии</span></button>
         <div className="chat-heading">{showCreateSession ? <><h2>Новый чат</h2><small>Выберите среду, модель и каталог проекта.</small></> : showJobs ? <><span className="eyebrow">AGENT HERDER</span><h2>Фоновые операции</h2><small>Запуски и запланированные действия Herder: состояние, результат и отмена. Это не доска задач проекта.</small></> : showStatistics ? <><span className="eyebrow">AGENT HERDER</span><h2>Статистика</h2><small>Реальные паттерны активности недавних сессий</small></> : showQuota ? <><span className="eyebrow">AGENT HERDER</span><h2>Квота</h2><small>Окна Codex, расход моделей, потребители</small></> : <><span className="eyebrow">{activeSession?.harness || "HERDER"}</span><h2 title={activeSession ? `${activeSession.title || activeSession.id}\n${activeSession.cwd || ""}` : undefined}>{activeSession ? (cleanSessionTitle(activeSession.title) || activeSession.id) : loading ? "Загрузка сессий…" : "Выберите сессию"}{(detailsLoading || detailsHydrating) && <span className="inline-loading-dot chat-loading-dot" role="status" aria-label="Загрузка сессии" />}</h2><small className="chat-session-state"><span>{activeSession?.harness || ""}</span>{activeSession && <><span aria-hidden="true"> · </span><span className={`status-label status-${statusClass(activeSession.status)}`}>{statusLabel(activeSession.status)}</span></>}</small>{SHOW_DEBUG_TIMINGS && <div className="load-timings" role="status" aria-label="Тайминги загрузки в браузере"><span title="Страница → список сессий готов">sessions <b>{formatLoadTiming(sessionsTimingMs)}</b></span>{activeKey && <><span title="Запрос свежих ходов">latest <b>{detailsLoading ? "…" : formatLoadTiming(latestTimingMs)}</b></span><span title="Фоновая история и метрики">hydrate <b>{detailsHydrating ? "…" : formatLoadTiming(hydrateTimingMs)}</b></span></>}</div>}</>}</div>
+        {activeSession && !remoteSelection && !showCreateSession && !showJobs && !showStatistics && !showQuota && <SessionWorkTarget
+          session={{ id: activeSession.id, harness: activeSession.harness, cwd: activeSession.cwd, hostId: activeSession.hostId }}
+          hosts={workTargetHosts}
+          localHostId={directory.localHostId}
+          expanded={layout.headerOpen}
+          onExpandedChange={(value) => setLayoutField("headerOpen", value)}
+          settingsMenu={chatMenuContent}
+          onApplied={() => { void loadSessions(); if (activeKey) void loadDetails(activeKey); }} />}
         <div className="header-actions">
           {!showStatistics && !showJobs && !showQuota && <button className={`icon-button session-inspector-button ${showInspector ? "selected-icon" : ""}`} aria-label="Панель сессии" title="Файлы, таймлайн и метаинформация сессии" aria-pressed={showInspector} onClick={() => { setSessionSettingsReturn(undefined); setShowInspector((value) => !value); }}><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="18" r="2"/></svg></button>}
           <button className={`icon-button desktop-chat-menu ${chatMenuOpen ? "selected-icon" : ""}`} aria-label="Меню чата" aria-expanded={chatMenuOpen} title="Все настройки" onClick={() => setChatMenuOpen((value) => !value)}>···</button>
@@ -2494,14 +2502,7 @@ function App() {
         {chatMenuOpen && <div className="chat-menu" aria-label="Меню чата"><button type="button" className="chat-menu-close" aria-label="Закрыть меню чата" title="Закрыть меню чата" onClick={() => setChatMenuOpen(false)}>×</button>{chatMenuContent}</div>}
       </header>
       {activeSession?.needsPermission && !remoteSelection && !showCreateSession && !showJobs && !showStatistics && !showQuota && <NativePermissionStrip key={`${activeSession.harness}:${activeSession.id}:${activeSession.permissionDetails?.id}`} session={activeSession} onRefresh={()=>{void loadSessions();if(activeKey)void loadDetails(activeKey,false);}}/>}
-      {activeSession && !remoteSelection && !showCreateSession && !showJobs && !showStatistics && !showQuota && <SessionWorkTarget
-        session={{ id: activeSession.id, harness: activeSession.harness, cwd: activeSession.cwd, hostId: activeSession.hostId }}
-        hosts={workTargetHosts}
-        localHostId={directory.localHostId}
-        expanded={layout.headerOpen}
-        onExpandedChange={(value) => setLayoutField("headerOpen", value)}
-        settingsMenu={chatMenuContent}
-        onApplied={() => { void loadSessions(); if (activeKey) void loadDetails(activeKey); }} />}
+
       {showJobs && <JobsView jobs={jobs} loading={jobsLoading} error={jobsError} cancellingJobId={cancellingJobId} onRefresh={() => void loadJobs()} onCancel={(jobId) => void cancelJob(jobId)} />}
       {showQuota && <><CodexQuotaSettings /><QuotaPanel /></>}
       {showStatistics && <StatisticsView statistics={statistics} loading={statisticsLoading} error={statisticsError} days={statisticsDays} onDays={changeStatisticsDays} onRefresh={() => void loadStatistics(statisticsDays, true)} />}
