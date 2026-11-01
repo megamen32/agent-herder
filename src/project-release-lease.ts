@@ -32,6 +32,7 @@ export class ProjectReleaseLeaseStore {
   constructor(
     readonly file = process.env.AGENT_HERDER_RELEASE_LEASES || join(homedir(), ".local/state/agent-herder/project-release-leases.json"),
     readonly now: () => number = Date.now,
+    readonly requireExisting = false,
   ) {}
   private async transaction<T>(fn: (state: State) => T | Promise<T>): Promise<T> {
     await mkdir(dirname(this.file), { recursive: true });
@@ -39,7 +40,7 @@ export class ProjectReleaseLeaseStore {
     try {
       let state: State;
       try { state = JSON.parse(await readFile(this.file, "utf8")); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; state = { version: 1, projects: {} }; }
+      catch (error) { if (this.requireExisting || (error as NodeJS.ErrnoException).code !== "ENOENT") throw error; state = { version: 1, projects: {} }; }
       if (state.version !== 1 || !state.projects || typeof state.projects !== "object") throw new Error("release_lease_state_invalid");
       const result = await fn(state);
       const temp = this.file + "." + randomBytes(8).toString("hex") + ".tmp";
