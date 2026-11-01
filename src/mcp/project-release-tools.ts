@@ -48,4 +48,37 @@ export function registerProjectReleaseTools(server: McpServer, store: ProjectRel
     }
     return { content: [{ type: "text" as const, text: JSON.stringify({ authorityHost: hostname(), project, ...result as object }) }] };
   });
+  server.registerTool("project_integration", {
+    description: "Inspect durable last-worker integration follow-up and project worktrees. Claim under an owned release lease, integrate known changes via authorized PRs, verify the whole project, then finish with evidence/blockers. Cleanup removes only exact merged clean inactive linked worktrees, never branches or unknown/active/dirty artifacts. No merge authorization is granted.",
+    inputSchema: z.object({
+      action: z.enum(["status", "inventory", "claim", "finish", "cleanup"]),
+      cwd: z.string().min(1), target: z.string().min(1).default("main"),
+      owner: ownerSchema.optional(), token: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+      fence: z.number().int().positive().optional(), integrationId: z.string().optional(),
+      path: z.string().optional(), expectedHead: z.string().regex(/^[a-f0-9]{40,64}$/).optional(),
+      blockers: z.array(z.string().max(2000)).max(100).optional(), verification: z.string().min(1).max(8000).optional(),
+    }).strict(),
+  }, async args => {
+    const project = await releaseProject(args.cwd);
+    const { inventoryProjectWorktrees, cleanupProjectWorktree } = await import("../project-worktree-inventory.js");
+    let result: unknown;
+    if (args.action === "status") result = await store.integrationStatus(project);
+    else if (args.action === "inventory") result = await inventoryProjectWorktrees(args.cwd, args.target);
+    else {
+      if (!args.owner || args.owner.hostId !== hostname() || !args.token || !args.fence || !args.integrationId)
+        throw new Error("project_integration_local_owner_proof_required");
+      const proof = { owner: args.owner, token: args.token, fence: args.fence };
+      if (args.action === "claim") result = await store.claimIntegration(project, proof, args.integrationId);
+      else if (args.action === "finish") {
+        if (!args.verification) throw new Error("project_integration_verification_evidence_required");
+        result = await store.finishIntegration(project, proof, args.integrationId, args.blockers || [], args.verification);
+      } else {
+        if (!args.path || !args.expectedHead) throw new Error("project_integration_exact_worktree_required");
+        const path = await realpath(args.path);
+        result = await store.withIntegrationCleanup(project, proof, args.integrationId, path,
+          () => cleanupProjectWorktree(args.cwd, { path, expectedHead: args.expectedHead!, target: args.target, verifiedInactive: true }), args.target);
+      }
+    }
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  });
 }

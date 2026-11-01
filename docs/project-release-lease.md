@@ -62,3 +62,36 @@ enforcement. Existing running services were not changed by this PR.
 Record task/branch, pushed commit, draft PR, tested commit, release owner session,
 expiry and intended/live revision. Never record the lease capability. Report a
 prepared PR separately from a merged or deployed result.
+
+## Last-worker integration and worktree cleanup
+
+A terminal lifecycle report inventories only that Git project and records a
+durable integration responsibility in the existing lease ledger. Only when all
+registered participants ended does it register one bounded continuation through
+existing resume_after. A stable request ID and a bounded startup replay recover
+a crash before registration. Human-stop remains authoritative; a confirmed
+manual StopAgent never immediately wakes the stopped session.
+
+project_integration status/inventory shows remaining work. The last worker
+acquires a project release lease, claims the exact integration ID, reconciles
+known branches through PRs with the required specific merge authorization,
+verifies the whole project, and finishes with verification evidence or blockers.
+Starting another participant invalidates the prior claim and creates a fresh
+bounded continuation when the participants finish. No endless polling daemon or
+automatic merge of unknown branches is introduced.
+
+Cleanup is explicit for exact path and HEAD under the same ledger transaction.
+It requires a known ended occupant, no other active participant, unchanged HEAD,
+merged ancestry into the recorded integration target, clean tracked/untracked
+AND ignored content, and an unlocked linked worktree in this Git project.
+Primary, unknown, active, dirty, conflicted and unmerged artifacts remain visible.
+Normal git worktree remove is used without force; the branch remains recoverable.
+No existing worktree was removed while preparing this PR.
+
+Current lifecycle integration target is main. Projects using another target stay
+blocked for explicit configuration, not silently cleaned against a caller-chosen
+task branch. Hooks without original terminal timestamps retain unknown activity.
+This does not prove inactivity for sessions that never reported lifecycle events.
+Early draft PRs are useful visibility for unfinished branches; link only plans
+whose content is safe for the actual audience. SSO protection must be verified,
+not inferred from a hostname.

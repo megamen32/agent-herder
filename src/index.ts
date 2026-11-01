@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { resumePendingProjectIntegrations } from "./project-integration.js";
 import { registerProjectReleaseTools } from "./mcp/project-release-tools.js";
 import { BackgroundAutopilotStop } from "./autopilot/background-stop.js";
 import { BrowserTurnAutopilotObserver } from "./autopilot/browser-turn-observer.js";
@@ -1195,6 +1196,7 @@ async function main() {
   const stopCadence = cadence.start(error => console.error("[agent-herder] cadence:", error));
   process.once("exit", stopCadence);
   const stopResumeAfter = await resumeAfterRuntime.start();
+  await resumePendingProjectIntegrations(input => resumeAfterRuntime.service.register(input));
   process.once("exit", stopResumeAfter);
   const stopAutoCompact = autoCompactService.start();
   process.once("exit", stopAutoCompact);
@@ -1394,6 +1396,7 @@ async function main() {
       projectLaunchDispatch,
       choiceQuery: (request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters),
       humanRequestJoin: (requestId: string, reason: string) => resumeAfterRuntime.service.invalidateByHumanRequest(requestId, reason),
+      projectIntegrationWake: input => resumeAfterRuntime.service.register(input),
       adapterRegistry,
       mcpServerFactory: createHttpMcpServer,
       herderEvents,

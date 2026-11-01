@@ -1,3 +1,4 @@
+import { recordProjectLifecycle } from "../project-integration.js";
 import { projectReleaseLeases } from "../project-release-lease.js";
 import {meshDiscoveryTimeoutMs} from "../mesh/discovery-timeout.js";
 import type { ResumeAfterService } from "../resume-after.js";
@@ -770,6 +771,8 @@ export async function handleStopAgent(
   const result = await found.adapter.stopSession(parsed.sessionId);
   if (result.ok) {
     await projectReleaseLeases.endSession({ hostId: localHostId, harness: found.session.harness, nativeSessionId: parsed.sessionId }, stopStartedAt);
+    // Manual stop records a durable handoff but must not wake the stopped session.
+    await recordProjectLifecycle({ harness: found.session.harness, sessionId: parsed.sessionId, cwd: found.session.cwd, event: "end", at: new Date(stopStartedAt).toISOString() }).catch(() => undefined);
     return `Stopped agent [${found.session.harness}] ${parsed.sessionId}.`;
   }
   return `Failed to stop agent: ${result.error}`;

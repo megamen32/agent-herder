@@ -100,3 +100,64 @@ it.each(["release","end","expire"])("in-flight %s retains cleanup fence and bloc
  } finally {await unlock();}
  expect((await store.acquire("p",owner,30,target)).lease.fence).toBe(2);
 });
+
+describe("last-worker integration registry",()=>{
+ const peer={...owner,nativeSessionId:"peer"};
+ async function ended(store:ProjectReleaseLeaseStore,who=owner,cwd="/task") {
+  await store.projectLifecycle("p",who,cwd,"active",1000);
+  await store.projectLifecycle("p",who,cwd,"ended",1001);
+ }
+ it("only prepares when every registered participant has ended and deduplicates concurrent endings",async()=>{
+  const {store}=await setup();
+  await store.projectLifecycle("p",owner,"/a","active",1000);
+  await store.projectLifecycle("p",peer,"/b","active",1000);
+  await store.projectLifecycle("p",owner,"/a","ended",1001);
+  expect((await store.prepareIntegration("p",owner,"fp",{target:"main"})).prepared).toBe(false);
+  await store.projectLifecycle("p",peer,"/b","ended",1001);
+  const other=new ProjectReleaseLeaseStore(store.file,store.now);
+  const results=await Promise.all([store.prepareIntegration("p",owner,"fp",{target:"main"}),other.prepareIntegration("p",peer,"fp",[])]);
+  expect(results.filter(r=>r.prepared)).toHaveLength(1);
+  expect(results[0].integration?.id).toBe(results[1].integration?.id);
+ });
+ it("unknown or delayed terminal events cannot establish inactivity",async()=>{
+  const {store}=await setup();
+  expect((await store.projectLifecycle("p",owner,"/a","ended",1000)).accepted).toBe(false);
+  await store.projectLifecycle("p",owner,"/a","active",1100);
+  expect((await store.projectLifecycle("p",owner,"/a","ended",1000)).accepted).toBe(false);
+  expect((await store.projectLifecycle("p",owner,"/a","ended",null)).accepted).toBe(false);
+  expect((await store.prepareIntegration("p",owner,"fp",{target:"main"})).prepared).toBe(false);
+ });
+ it("claim persists across process death and expired owner cannot mutate successor",async()=>{
+  const {store,advance}=await setup();await ended(store);
+  const item=(await store.prepareIntegration("p",owner,"fp",{target:"main"})).integration!;
+  const a=await store.acquire("p",owner,30);await store.claimIntegration("p",proof(a),item.id);
+  const other=new ProjectReleaseLeaseStore(store.file,store.now);
+  expect((await other.integrationStatus("p")).integration?.state).toBe("claimed");
+  advance(30001);
+  const b=await other.acquire("p",peer);await other.claimIntegration("p",proof(b,peer),item.id);
+  await expect(store.finishIntegration("p",proof(a),item.id,[])).rejects.toThrow();
+  await other.finishIntegration("p",proof(b,peer),item.id,["needs PR merge"],"unit tests passed");
+  expect((await store.integrationStatus("p")).integration).toMatchObject({state:"blocked",verification:"unit tests passed"});
+ });
+ it("new active worker invalidates claim and blocks cleanup; unknown path stays visible",async()=>{
+  const {store}=await setup();await ended(store);
+  const item=(await store.prepareIntegration("p",owner,"fp",{target:"main"})).integration!;
+  const a=await store.acquire("p",owner);await store.claimIntegration("p",proof(a),item.id);
+  await expect(store.withIntegrationCleanup("p",proof(a),item.id,"/task",async()=>true,"task")).rejects.toThrow("target_mismatch");
+  await expect(store.withIntegrationCleanup("p",proof(a),item.id,"/unknown",async()=>true)).rejects.toThrow("inactive");
+  expect(await store.withIntegrationCleanup("p",proof(a),item.id,"/task",async()=>true)).toBe(true);
+  await store.projectLifecycle("p",peer,"/other","active",1002);
+  await expect(store.withIntegrationCleanup("p",proof(a),item.id,"/task",async()=>true)).rejects.toThrow("claim_changed");
+  await expect(store.claimIntegration("p",proof(a),item.id)).rejects.toThrow("not_pending");
+  const current=(await store.integrationStatus("p")).integration!;
+  await expect(store.claimIntegration("p",proof(a),current.id)).rejects.toThrow("other_session_active");
+ });
+ it("completion with identical inventory does not schedule an endless continuation",async()=>{
+  const {store}=await setup();await ended(store);
+  const item=(await store.prepareIntegration("p",owner,"fp",{target:"main"})).integration!;
+  const a=await store.acquire("p",owner);await store.claimIntegration("p",proof(a),item.id);
+  await store.finishIntegration("p",proof(a),item.id,[],"whole-project tests passed");
+  expect((await store.prepareIntegration("p",owner,"fp",{target:"main"})).prepared).toBe(false);
+  expect((await store.prepareIntegration("p",owner,"changed",[])).prepared).toBe(true);
+ });
+});

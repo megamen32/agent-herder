@@ -10,7 +10,15 @@ export interface ReleaseLease {
   project: string; deploymentTarget?: { fleetDir: string; unit: string }; owner: ReleaseOwner; fence: number; acquiredAt: number; expiresAt: number;
 }
 interface StoredLease extends ReleaseLease { tokenHash: string }
-interface State { version: 1; projects: Record<string, { fence: number; lease?: StoredLease }> }
+export interface IntegrationSession { owner: ReleaseOwner; cwd: string; at: number; state: "active" | "ended" }
+export interface ProjectIntegration {
+  id: string; fingerprint: string; state: "pending" | "claimed" | "blocked" | "done";
+  owner: ReleaseOwner; createdAt: number; updatedAt: number; claimFence?: number;
+  inventory: unknown; verification?: string; blockers?: string[]; wakeId?: string;
+}
+interface ProjectState { fence: number; lease?: StoredLease; sessions?: Record<string, IntegrationSession>; integration?: ProjectIntegration }
+interface State { version: 1; projects: Record<string, ProjectState> }
+const ownerKey = (owner: ReleaseOwner) => JSON.stringify([owner.hostId, owner.harness, owner.nativeSessionId]);
 export interface ReleaseProof { owner: ReleaseOwner; fence: number; token: string }
 const sameOwner = (a: ReleaseOwner, b: ReleaseOwner) => a.hostId === b.hostId && a.harness === b.harness && a.nativeSessionId === b.nativeSessionId;
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -88,7 +96,7 @@ export class ProjectReleaseLeaseStore {
       const token = randomBytes(32).toString("hex");
       const fence = (state.projects[project]?.fence || 0) + 1;
       const lease: StoredLease = { project, ...(deploymentTarget ? { deploymentTarget } : {}), owner, fence, acquiredAt: this.now(), expiresAt: this.now() + ttl, tokenHash: hash(token) };
-      state.projects[project] = { fence, lease };
+      state.projects[project] = { ...state.projects[project], fence, lease };
       return { acquired: true as const, lease: publicLease(lease), token };
     });
   }
@@ -111,6 +119,98 @@ export class ProjectReleaseLeaseStore {
   }
   async check(project: string, proof: ReleaseProof) {
     return this.transaction(state => publicLease(this.require(state, project, proof)));
+  }
+  /** Durable participation mirrors existing lifecycle reports, not an inventory poll.
+   * Missing terminal timestamps cannot prove inactivity and are retained active. */
+  async projectLifecycle(project: string, owner: ReleaseOwner, cwd: string, event: "active" | "ended", at: number | null) {
+    return this.transaction(state => {
+      const value = state.projects[project] ||= { fence: 0 };
+      const sessions = value.sessions ||= {};
+      const key = ownerKey(owner), previous = sessions[key];
+      if (event === "ended" && (at === null || !previous || at < previous.at)) return { accepted: false };
+      const observedAt = at ?? this.now();
+      if (previous && observedAt < previous.at) return { accepted: false };
+      sessions[key] = { owner, cwd, state: event, at: observedAt };
+      // Starting another worker invalidates an earlier "last worker" claim.
+      if (event === "active" && value.integration
+          && ["claimed", "pending"].includes(value.integration.state)
+          && !sameOwner(value.integration.owner, owner)) {
+        value.integration.state = "pending"; delete value.integration.claimFence;
+        value.integration.id = "integration_" + randomBytes(16).toString("hex");
+        value.integration.owner = owner; delete value.integration.wakeId;
+        value.integration.updatedAt = this.now();
+      }
+      return { accepted: true };
+    });
+  }
+  async prepareIntegration(project: string, owner: ReleaseOwner, fingerprint: string, inventory: unknown) {
+    return this.transaction(state => {
+      const value = state.projects[project] ||= { fence: 0 };
+      const sessions = Object.values(value.sessions || {});
+      if (!sessions.length || sessions.some(s => s.state !== "ended")) return { prepared: false as const, reason: "project_sessions_active_or_unknown" };
+      if (value.integration?.fingerprint === fingerprint) return { prepared: false as const, integration: value.integration };
+      const integration: ProjectIntegration = { id: "integration_" + randomBytes(16).toString("hex"),
+        fingerprint, state: "pending", owner, createdAt: this.now(), updatedAt: this.now(), inventory };
+      value.integration = integration;
+      return { prepared: true as const, integration };
+    });
+  }
+  async integrationStatus(project: string) {
+    return this.transaction(state => ({ integration: state.projects[project]?.integration ?? null,
+      sessions: Object.values(state.projects[project]?.sessions || {}) }));
+  }
+  async pendingIntegrations(limit = 32) {
+    return this.transaction(state => Object.entries(state.projects)
+      .filter(([, value]) => value.integration?.state === "pending" && !value.integration.wakeId
+        && Object.values(value.sessions || {}).length > 0
+        && Object.values(value.sessions || {}).every(session => session.state === "ended"))
+      .slice(0, limit).map(([project, value]) => ({ project, integration: value.integration! })));
+  }
+  async integrationWake(project: string, id: string, wakeId: string) {
+    return this.transaction(state => {
+      const item = state.projects[project]?.integration;
+      if (!item || item.id !== id) throw new Error("project_integration_changed");
+      item.wakeId = wakeId; item.updatedAt = this.now(); return item;
+    });
+  }
+  async claimIntegration(project: string, proof: ReleaseProof, id: string) {
+    return this.transaction(state => {
+      this.require(state, project, proof);
+      const value = state.projects[project]!, item = value.integration;
+      if (!item || item.id !== id || item.state === "done") throw new Error("project_integration_not_pending");
+      if (Object.values(value.sessions || {}).some(s => s.state === "active" && !sameOwner(s.owner, proof.owner)))
+        throw new Error("project_integration_other_session_active");
+      item.owner = proof.owner; item.state = "claimed"; item.claimFence = proof.fence; item.updatedAt = this.now();
+      return item;
+    });
+  }
+  async finishIntegration(project: string, proof: ReleaseProof, id: string, blockers: string[], verification?: string) {
+    return this.transaction(state => {
+      this.require(state, project, proof);
+      const item = state.projects[project]?.integration;
+      if (!item || item.id !== id || item.state !== "claimed" || item.claimFence !== proof.fence || !sameOwner(item.owner, proof.owner))
+        throw new Error("project_integration_claim_changed");
+      item.state = blockers.length ? "blocked" : "done"; item.blockers = blockers; item.verification = verification; item.updatedAt = this.now();
+      return item;
+    });
+  }
+  /** Hold the same ledger transaction through recheck+cleanup. Another cooperating
+   * worker's start cannot race an admitted cleanup; unknown worktrees stay held. */
+  async withIntegrationCleanup<T>(project: string, proof: ReleaseProof, id: string, cwd: string, cleanup: () => Promise<T>, target = "main") {
+    return this.transaction(async state => {
+      this.require(state, project, proof);
+      const value = state.projects[project]!, item = value.integration;
+      if (!item || item.id !== id || item.state !== "claimed" || item.claimFence !== proof.fence || !sameOwner(item.owner, proof.owner))
+        throw new Error("project_integration_claim_changed");
+      const recordedTarget = (item.inventory as { target?: unknown })?.target;
+      if (recordedTarget !== target) throw new Error("worktree_integration_target_mismatch");
+      const sessions = Object.values(value.sessions || {});
+      const occupants = sessions.filter(s => s.cwd === cwd);
+      if (!occupants.length || occupants.some(s => s.state !== "ended") ||
+          sessions.some(s => s.state === "active" && !sameOwner(s.owner, proof.owner)))
+        throw new Error("worktree_activity_not_proven_inactive");
+      return cleanup();
+    });
   }
   /** Called only by the existing trusted lifecycle controller, not exposed as a public bulk-release tool.
    * Timestamp limits prevent a delayed end event releasing a newer acquisition. */
