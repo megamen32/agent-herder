@@ -1,4 +1,5 @@
 import type { SessionSupervisor } from "./session-supervisor.js";
+import { isSecretMarker, SecretStore } from "./web/settings-store.js";
 
 /**
  * MCP intro for chats the herder creates.
@@ -12,6 +13,11 @@ import type { SessionSupervisor } from "./session-supervisor.js";
  * settings form, its value is never returned by any API (the settings store
  * keeps secrets write-only), and one revocation on the gateway side disables
  * every chat at once. Per-chat keys are deliberately not minted here.
+ *
+ * Because the key is write-only, the environment of the running process
+ * carries only its fingerprint marker; the value itself is resolved from the
+ * secret store of the product at delivery time. A raw value written straight
+ * into the environment of the product (deployment-owned) is used as is.
  *
  * Doctrine: the intro is a normal supervisor send with a stable inputId, so
  * restarts and repeated creation triggers cannot duplicate the native
@@ -33,6 +39,18 @@ const DEFAULT_TEMPLATE = [
   "SSH не использовать. Ключ общий для всех чатов; при отзыве придёт новый в этом же чате.",
 ].join("\n");
 
+/** Reads one write-only secret of the product. */
+export interface IntroSecretReader {
+  readSecret(key: string): Promise<string | undefined>;
+}
+
+let sharedSecretReader: IntroSecretReader | undefined;
+
+function secretReader(): IntroSecretReader {
+  sharedSecretReader ??= new SecretStore();
+  return sharedSecretReader;
+}
+
 export interface ChatMcpIntroConfig {
   readonly harnesses: readonly string[];
   readonly url: string;
@@ -40,11 +58,22 @@ export interface ChatMcpIntroConfig {
   readonly template?: string;
 }
 
-/** Disabled until the owner sets both the gateway URL and the shared key. */
-export function chatMcpIntroConfig(): ChatMcpIntroConfig | null {
+/**
+ * Disabled until the owner sets both the gateway URL and the shared key.
+ * The key is write-only: a fingerprint marker in the environment resolves
+ * through the secret store of the product; a raw value is used as is.
+ */
+export async function chatMcpIntroConfig(
+  reader: IntroSecretReader = secretReader(),
+): Promise<ChatMcpIntroConfig | null> {
   const url = process.env.AGENT_HERDER_CHAT_INTRO_URL?.trim();
-  const token = process.env.AGENT_HERDER_CHAT_INTRO_TOKEN?.trim();
-  if (!url || !token) return null;
+  const rawToken = process.env.AGENT_HERDER_CHAT_INTRO_TOKEN?.trim();
+  if (!url || !rawToken) return null;
+  let token = rawToken;
+  if (isSecretMarker(rawToken)) {
+    token = (await reader.readSecret("AGENT_HERDER_CHAT_INTRO_TOKEN"))?.trim() ?? "";
+    if (!token) return null;
+  }
   const harnesses = (process.env.AGENT_HERDER_CHAT_INTRO_HARNESSES ?? DEFAULT_HARNESSES)
     .split(",").map((value) => value.trim()).filter(Boolean);
   if (!harnesses.length) return null;
@@ -77,7 +106,7 @@ export async function deliverChatMcpIntroForSession(
   sessionId: string,
   origin: "human" | "automation",
 ): Promise<boolean> {
-  const config = chatMcpIntroConfig();
+  const config = await chatMcpIntroConfig();
   if (!config || !config.harnesses.includes(harness)) return false;
   try {
     const result = await supervisor.sendMessage(harness, sessionId, {

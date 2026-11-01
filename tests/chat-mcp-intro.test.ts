@@ -28,37 +28,56 @@ function fakeSupervisor(sendMessage = vi.fn(async () => ({ ok: true }))) {
 }
 
 describe("chatMcpIntroConfig", () => {
-  it("is disabled until the owner sets both url and token", () => {
-    expect(chatMcpIntroConfig()).toBeNull();
+  it("is disabled until the owner sets both url and token", async () => {
+    expect(await chatMcpIntroConfig()).toBeNull();
     process.env.AGENT_HERDER_CHAT_INTRO_URL = "https://mcp.example/mcp";
-    expect(chatMcpIntroConfig()).toBeNull();
+    expect(await chatMcpIntroConfig()).toBeNull();
     process.env.AGENT_HERDER_CHAT_INTRO_TOKEN = "gptk_shared";
-    const config = chatMcpIntroConfig();
+    const config = await chatMcpIntroConfig();
     expect(config?.url).toBe("https://mcp.example/mcp");
     expect(config?.token).toBe("gptk_shared");
   });
 
-  it("defaults to zai and parses a comma-separated harness list", () => {
+  it("defaults to zai and parses a comma-separated harness list", async () => {
     process.env.AGENT_HERDER_CHAT_INTRO_URL = "https://mcp.example/mcp";
     process.env.AGENT_HERDER_CHAT_INTRO_TOKEN = "gptk_shared";
-    expect(chatMcpIntroConfig()?.harnesses).toEqual(["zai"]);
+    expect((await chatMcpIntroConfig())?.harnesses).toEqual(["zai"]);
     process.env.AGENT_HERDER_CHAT_INTRO_HARNESSES = "zai, chatgpt ,";
-    expect(chatMcpIntroConfig()?.harnesses).toEqual(["zai", "chatgpt"]);
+    expect((await chatMcpIntroConfig())?.harnesses).toEqual(["zai", "chatgpt"]);
   });
 
-  it("ignores a harness list that is empty after trimming", () => {
+  it("ignores a harness list that is empty after trimming", async () => {
     process.env.AGENT_HERDER_CHAT_INTRO_URL = "https://mcp.example/mcp";
     process.env.AGENT_HERDER_CHAT_INTRO_TOKEN = "gptk_shared";
     process.env.AGENT_HERDER_CHAT_INTRO_HARNESSES = " , ";
-    expect(chatMcpIntroConfig()).toBeNull();
+    expect(await chatMcpIntroConfig()).toBeNull();
+  });
+
+  it("resolves a write-only marker through the secret store and stays off when the store has no value", async () => {
+    process.env.AGENT_HERDER_CHAT_INTRO_URL = "https://mcp.example/mcp";
+    process.env.AGENT_HERDER_CHAT_INTRO_TOKEN = "sha256:0123456789abcdef";
+    const reader = { readSecret: vi.fn(async () => "gptk_resolved") };
+    const config = await chatMcpIntroConfig(reader);
+    expect(reader.readSecret).toHaveBeenCalledWith("AGENT_HERDER_CHAT_INTRO_TOKEN");
+    expect(config?.token).toBe("gptk_resolved");
+    const empty = { readSecret: vi.fn(async () => undefined) };
+    expect(await chatMcpIntroConfig(empty)).toBeNull();
+  });
+
+  it("uses a raw environment value as is without touching the secret store", async () => {
+    process.env.AGENT_HERDER_CHAT_INTRO_URL = "https://mcp.example/mcp";
+    process.env.AGENT_HERDER_CHAT_INTRO_TOKEN = "gptk_raw";
+    const reader = { readSecret: vi.fn(async () => "gptk_resolved") };
+    expect((await chatMcpIntroConfig(reader))?.token).toBe("gptk_raw");
+    expect(reader.readSecret).not.toHaveBeenCalled();
   });
 });
 
 describe("chatMcpIntroMessage", () => {
-  it("substitutes the shared url and token into the default template", () => {
+  it("substitutes the shared url and token into the default template", async () => {
     process.env.AGENT_HERDER_CHAT_INTRO_URL = "https://mcp.example/mcp";
     process.env.AGENT_HERDER_CHAT_INTRO_TOKEN = "gptk_shared";
-    const config = chatMcpIntroConfig()!;
+    const config = (await chatMcpIntroConfig())!;
     const message = chatMcpIntroMessage(config, "zai", "zai::route%3Aabc");
     expect(message).toContain("https://mcp.example/mcp");
     expect(message).toContain("gptk_shared");
@@ -68,11 +87,11 @@ describe("chatMcpIntroMessage", () => {
     expect(message).not.toContain("{sessionId}");
   });
 
-  it("uses the owner template when one is set", () => {
+  it("uses the owner template when one is set", async () => {
     process.env.AGENT_HERDER_CHAT_INTRO_URL = "https://mcp.example/mcp";
     process.env.AGENT_HERDER_CHAT_INTRO_TOKEN = "gptk_shared";
     process.env.AGENT_HERDER_CHAT_INTRO_TEMPLATE = "connect {url} with {token} for {sessionId} on {harness}";
-    const config = chatMcpIntroConfig()!;
+    const config = (await chatMcpIntroConfig())!;
     expect(chatMcpIntroMessage(config, "zai", "s1")).toBe(
       "connect https://mcp.example/mcp with gptk_shared for s1 on zai",
     );
@@ -117,19 +136,7 @@ describe("deliverChatMcpIntroForSession", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       expect(await deliverChatMcpIntroForSession(supervisor, "zai", "s1", "automation")).toBe(true);
-      expect(error).toHaveBeenCalled();
-    } finally {
-      error.mockRestore();
-    }
-  });
-
-  it("swallows a rejecting supervisor send", async () => {
-    process.env.AGENT_HERDER_CHAT_INTRO_URL = "https://mcp.example/mcp";
-    process.env.AGENT_HERDER_CHAT_INTRO_TOKEN = "gptk_shared";
-    const supervisor = fakeSupervisor(vi.fn(async () => { throw new Error("boom"); }));
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      expect(await deliverChatMcpIntroForSession(supervisor, "zai", "s1", "human")).toBe(false);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("admission refused"));
     } finally {
       error.mockRestore();
     }

@@ -24,6 +24,11 @@ value, only the fact that it is set.
 The feature is off until both URL and token are set. Changes apply after a
 restart, exactly as the settings form states.
 
+The key is write-only: the environment of the running process carries its
+fingerprint marker only, and the delivery resolves the real value from the
+secret store of the product at send time. A raw value written straight into
+the environment (deployment-owned) is used as is.
+
 ## Trigger and delivery doctrine
 
 - The intro fires only on the herder's own `created` events
