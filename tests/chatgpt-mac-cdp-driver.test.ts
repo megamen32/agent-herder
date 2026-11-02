@@ -216,7 +216,7 @@ describe("dots workspace dashboard", () => {
         if (name === "list_pages") return "6: ChatGPT (https://chatgpt.com/dots/home)";
         if (name === "evaluate_script") {
           const fn = String(args.function);
-          if (fn.includes("backend-api/conversations")) return json({ scope: "a".repeat(64), chats: [{ id: ID, title: "Workspace chat", updatedAt: 1730000000 }] });
+          if (fn.includes("__herderChatGptReadCooldownUntil")) return json({ scope: "a".repeat(64), chats: [{ id: ID, title: "Workspace chat", updatedAt: 1730000000 }] });
           return json({ origin: "https://chatgpt.com", path: "/dots/home", authenticated: true, composer: false,
             phase: "unknown", draftPresent: false, chats: [] });
         }
@@ -237,7 +237,7 @@ describe("dots workspace dashboard", () => {
         if (name === "fill") return "ok";
         if (name === "evaluate_script") {
           const fn = String(args.function);
-          if (fn.includes("backend-api/conversations")) return json({ scope: "a".repeat(64), chats: [{ id: ID, title: "Workspace chat" }] });
+          if (fn.includes("__herderChatGptReadCooldownUntil")) return json({ scope: "a".repeat(64), chats: [{ id: ID, title: "Workspace chat" }] });
           if (fn.includes("editor.innerText")) return json({ value: "" });
           if (fn.includes("const expected")) return json({ submitted: true });
           const path = navigated ? "/c/" + ID : "/dots/home";
