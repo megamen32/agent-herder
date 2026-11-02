@@ -13,7 +13,7 @@ export class BrowserChatHistoryCache {
   private static readonly LIMIT = 100;
   private static readonly MAX_COMPRESSED_BYTES = 400_000;
   private static readonly MAX_JSON_BYTES = 500_000;
-  private static readonly REQUEST_GAP_MS = 5_000;
+  private static readonly REQUEST_GAP_MS = 15_000;
   private revisions = new Map<string, string>();
   private dirty = new Set<string>();
   private invalidations = new Map<string, number>();
@@ -138,8 +138,11 @@ export class BrowserChatHistoryCache {
         if (this.revisions.get(id) === revision && this.invalidations.get(id) === invalidation) this.dirty.delete(id);
         return fresh;
       } catch (error) {
-        this.cooldownUntil = Date.now() + (/429/.test(String(error)) ? 60_000 : 300_000);
+        const is429 = /429/.test(String(error));
+        const cooldownMs = is429 ? 60_000 : 300_000;
+        this.cooldownUntil = Date.now() + cooldownMs;
         this.lastFailureAt.set(id, Date.now());
+        console.warn("[browser-chat] history fetch " + (is429 ? "429 rate-limited" : "failed") + " for " + id + "; cooldown " + (cooldownMs / 1000) + "s; err=" + String(error).slice(0, 140));
         return null; // stale cache remains available after a network failure
       }
     })();
@@ -161,7 +164,11 @@ export class BrowserChatHistoryCache {
     this.running = true;
     try {
       while (this.queue.length && this.dir) {
-        if (Date.now() < this.cooldownUntil) { this.queue.length = 0; this.queued.clear(); break; }
+        if (Date.now() < this.cooldownUntil) {
+          const dropped = this.queue.length;
+          if (dropped) console.warn("[browser-chat] prewarm queue paused on 429 cooldown; dropped " + dropped + " pending history fetches");
+          this.queue.length = 0; this.queued.clear(); break;
+        }
         const id = this.queue.shift()!;
         this.queued.delete(id);
         const scope = this.scope;
