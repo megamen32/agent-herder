@@ -4,13 +4,18 @@ import type { AgentSession, HarnessAdapter } from "../src/types/index.js";
 import { HerderEventBus } from "../src/herder-events.js";
 import { HerderJobRegistry } from "../src/herder-jobs.js";
 import type { Server } from "node:http";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const servers: Server[] = [];
+const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(servers.splice(0).map(async (server) => {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }));
+  await Promise.all(roots.splice(0).map((root)=>rm(root,{recursive:true,force:true})));
 });
 
 function session(id: string): AgentSession {
@@ -69,7 +74,8 @@ describe("owner HTTP scoped Fleet session routes", () => {
       if (sessionAdapters.get("codex") !== scopedAdapter) throw new Error("scoped adapter map was not isolated");
       return scopedSupervisor as any;
     });
-    const jobs = new HerderJobRegistry(new HerderEventBus());
+    const jobsDir=await mkdtemp(join(tmpdir(),"herder-scoped-http-"));roots.push(jobsDir);
+    const jobs = new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(jobsDir,"jobs.json")});
     const server = createWebServer({ adapters: new Map([["codex", ordinaryAdapter]]), converter: {} as any, supervisor: supervisor as any,
       integratorRuntime: integratorRuntime as any, scopedSupervisorFactory, jobs });
     const base = await listen(server);

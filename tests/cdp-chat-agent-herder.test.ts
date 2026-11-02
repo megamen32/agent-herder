@@ -146,53 +146,35 @@ async function connect(driver: CdpChatDriver, options?: { cdpHistoryArchive?: Ch
 }
 
 describe("Agent Herder CDP chat capability", () => {
-  it("registers namespaced tools alongside the existing coding-agent send_message", async () => {
+  it("advertises consolidated CDP operations with legacy handlers still callable", async () => {
     const client = await connect(fakeDriver());
     const names = (await client.listTools()).tools.map((tool) => tool.name);
-
-    expect(names).toContain("send_message");
-    expect(names).toEqual(expect.arrayContaining([
-      "cdp_new_chat",
-      "cdp_list_chats",
-      "cdp_search_chat",
-      "cdp_export_chat",
-      "cdp_send_message",
-      "cdp_edit_message",
-      "cdp_download_media",
-      "cdp_request_account_export",
-      "cdp_import_account_export",
-      "cdp_list_account_exports",
-    ]));
-    expect(names.filter((name) => name === "send_message")).toHaveLength(1);
+    expect(names).toEqual(expect.arrayContaining(["deliver", "cdp_chat", "cdp_archive", "cdp_account", "cdp_edit_message", "cdp_download_media"]));
+    for (const hidden of ["send_message", "cdp_new_chat", "cdp_list_chats", "cdp_export_chat", "cdp_send_message", "cdp_request_account_export"]) {
+      expect(names).not.toContain(hidden);
+    }
+    const listed = await client.callTool({ name: "cdp_list_chats", arguments: { view: "recent" } });
+    expect(listed.isError).not.toBe(true);
+    expect(names.filter((name) => name === "deliver")).toHaveLength(1);
   });
 
-  it("does not advertise chat operations that a partial driver cannot verify", async () => {
+  it("does not advertise unsupported chat actions for a partial driver", async () => {
     const client = await connect(archiveOnlyDriver());
     const names = (await client.listTools()).tools.map((tool) => tool.name);
-
-    expect(names).toContain("send_message");
-    expect(names).toEqual(expect.arrayContaining([
-      "cdp_request_account_export",
-      "cdp_import_account_export",
-      "cdp_list_account_exports",
-    ]));
-    expect(names).not.toEqual(expect.arrayContaining([
-      "cdp_new_chat",
-      "cdp_list_chats",
-      "cdp_search_chat",
-      "cdp_export_chat",
-      "cdp_send_message",
-      "cdp_edit_message",
-      "cdp_download_media",
-    ]));
+    expect(names).toContain("deliver");
+    expect(names).toContain("cdp_account");
+    expect(names).not.toContain("cdp_chat");
+    expect(names).not.toContain("cdp_new_chat");
+    await expect(client.callTool({ name: "cdp_chat", arguments: { action: "new", confirmation: "NEW_CHAT", idempotencyKey: "absent" } }))
+      .rejects.toThrow(/not found/i);
   });
 
-  it("registers the read-only checkpoint archive instead of fixture chat tools", async () => {
+  it("advertises consolidated history archive actions without fixture send", async () => {
     const client = await connect(historyOnlyDriver());
     const names = (await client.listTools()).tools.map((tool) => tool.name);
-    expect(names).toEqual(expect.arrayContaining(["cdp_list_chats", "cdp_export_chat", "cdp_export_visible_chats", "cdp_reconcile_visible_chats"]));
-    expect(names).not.toEqual(expect.arrayContaining(["cdp_new_chat", "cdp_send_message", "cdp_edit_message", "cdp_download_media"]));
-
+    expect(names).toEqual(expect.arrayContaining(["cdp_chat", "cdp_archive"]));
+    expect(names).not.toContain("cdp_send_message");
+    expect(names).not.toContain("cdp_new_chat");
     const listed = await client.callTool({ name: "cdp_list_chats", arguments: { view: "recent" } });
     const body = JSON.parse(String(listed.content[0]?.type === "text" ? listed.content[0].text : "{}")) as { chats: Array<{ chatRef: string }> };
     expect(body.chats).toHaveLength(1);
@@ -249,8 +231,9 @@ describe("Agent Herder CDP chat capability", () => {
     connected.push({ client, server });
 
     const names = (await client.listTools()).tools.map((tool) => tool.name);
-    expect(names).toContain("list_agents");
-    expect(names).toContain("list_agents");
+    expect(names).toContain("list_sessions");
+    expect(names).not.toContain("cdp_chat");
+    expect(names).not.toContain("cdp_archive");
     expect(names).not.toContain("cdp_reconcile_visible_chats");
   });
 });

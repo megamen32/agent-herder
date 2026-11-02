@@ -19,7 +19,7 @@ async function fixture(test: (base: string, idle: () => void, send: ReturnType<t
   const converter = { async convert() { return { success: true, targetSessionId: "x", targetPath: dir, messageCount: 0 }; } };
   const stops = new HumanStopStore(join(dir, "stops.json"));
   const supervisor = new SessionSupervisor(adapters, converter, undefined, { humanStopStore: stops });
-  const server = createWebServer({ adapters, converter, supervisor, jobs: new HerderJobRegistry(new HerderEventBus()) });
+  const server = createWebServer({ adapters, converter, supervisor, jobs: new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(dir,"jobs.json")}) });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   const address = server.address(); if (!address || typeof address === "string") throw new Error("fixture bind failed");
   try { await test(`http://127.0.0.1:${address.port}`, () => { status = "idle"; }, send, async (resumeImmediately = false) => {

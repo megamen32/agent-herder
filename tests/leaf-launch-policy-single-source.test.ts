@@ -83,6 +83,7 @@ describe("the rule of the owner about leaves is written once", () => {
     expect(LEAF_LAUNCH_POLICY.allowedFamilies.map((family) => family.providers)).toEqual([
       ["minimax", "minimax-code", "minimax-coding-plan"],
       ["glm", "zai", "zai-coding-plan", "zhipu"],
+      ["zcode-start", "zcode-individual"],
     ]);
   });
 });

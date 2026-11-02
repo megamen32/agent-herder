@@ -730,7 +730,10 @@ export class HumanRequestRegistry {
         realpath: false,
         stale: 30_000,
         update: 10_000,
-        retries: { retries: 4, minTimeout: 10, maxTimeout: 25, factor: 1 },
+        // Five independent callbacks may contend while one accepted receipt
+        // is fsynced. Keep the SAME interprocess exclusive lock and bounded
+        // fail-closed timeout; allow a normal finite handoff under load.
+        retries: { retries: 40, minTimeout: 25, maxTimeout: 50, factor: 1 },
       });
     } catch (error) {
       throw new HumanRequestLockUnavailableError(this.lockTarget, error);

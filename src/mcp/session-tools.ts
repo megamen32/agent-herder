@@ -683,7 +683,7 @@ export function registerSessionTools(server: McpServer, deps: {
     const requestArgs = { ...route.args, ...(harness ? { harness } : {}), ...(inputId ? { inputId } : {}) };
     let resolvedTarget: DeliveryResponseTarget | undefined;
     const result = await handleSendMessage(route.adapters, requestArgs,
-      userMessageDelivery, trustedMeshIngressFromMcpAuthInfo(ctx.http?.authInfo), (session) => {
+      userMessageDelivery, trustedMeshIngressFromMcpAuthInfo(ctx?.http?.authInfo), (session) => {
         if (session.hostId) resolvedTarget = { hostId: session.hostId, harness: session.harness as DeliveryResponseTarget["harness"], sessionId: session.id };
       });
     const response = harness && inputId ? await observeExistingUserDelivery(harness, args.sessionId, inputId, resolvedTarget) : undefined;

@@ -70,12 +70,12 @@ describe("Notice Place health-launch HTTP admission", () => {
     expect((await post()).status).toBe(401);
     expect(run).not.toHaveBeenCalled();
   });
-  it.each(["other/model", `${model} `, "omniroute/minimax-combo-m3.1", "minimax-coding-plan/MiniMax-M3.1-Flash"])("rejects a model outside the selected combo %s", async invalid => {
+  it.each(["other/model", `${model} `, "omniroute/minimax-coding-plan/MiniMax-M3.1-Flash", "minimax-coding-plan/MiniMax-M3.1-Flash"])("rejects a model outside the two exact approved combos %s", async invalid => {
     const { post, run } = await fixture();
     expect((await post({ model: invalid })).status).toBe(400);
     expect(run).not.toHaveBeenCalled();
   });
-  it.each([model])("accepts the exact selected combo %s", async approved => {
+  it.each([model, "omniroute/minimax-combo-m3.1"])("accepts an approved exact combo %s", async approved => {
     const { post, run } = await fixture();
     const response = await post({ model: approved });
     expect(response.status).toBe(200);

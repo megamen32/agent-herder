@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,11 @@ const baseMs = Date.now() - 60_000;
 const iso = (seconds: number) => new Date(baseMs + seconds * 1000).toISOString();
 
 describe("session activity statistics", () => {
+  beforeEach(() => {
+    vi.stubEnv("OPENCODE_DB_PATH", join(tmpdir(), "agent-herder-stats-fixture-absent-opencode.db"));
+    vi.stubEnv("ZCODE_DB_PATH", join(tmpdir(), "agent-herder-stats-fixture-absent-zcode.sqlite"));
+  });
+  afterEach(() => vi.unstubAllEnvs());
   it("measures tool gaps and same-path write revisits from Codex apply_patch events", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-stats-"));
     const day = join(root, "2026", "09", "05");
@@ -20,7 +25,20 @@ describe("session activity statistics", () => {
       { timestamp: iso(120), type: "event_msg", payload: { type: "token_count", info: { total_token_usage: { total_tokens: 123456 } } } },
       { timestamp: iso(180), type: "response_item", payload: { type: "custom_tool_call", name: "apply_patch", input: "*** Begin Patch\n*** Update File: /repo/src/a.ts\n*** Add File: src/b.ts\n*** End Patch" } },
     ];
-    await writeFile(join(day, "session.jsonl"), rows.map((row) => JSON.stringify(row)).join("\n") + "\n");
+    // Codex tool invocations count only after matching successful native
+    // output receipts. Call-only logs must never be counted as successful.
+    const completed = rows.flatMap((row, index) => {
+      if (row.type !== "response_item" || !("name" in row.payload)) return [JSON.stringify(row)];
+      const callId = "fixture-tool-" + index;
+      return [
+        JSON.stringify({ ...row, payload: { ...row.payload, call_id: callId } }),
+        JSON.stringify({ timestamp: row.timestamp, type: "response_item", payload: {
+          type: row.payload.type === "function_call" ? "function_call_output" : "custom_tool_call_output",
+          call_id: callId, output: "ok",
+        } }),
+      ];
+    });
+    await writeFile(join(day, "session.jsonl"), completed.join("\n") + "\n");
     const stats = await computeAgentActivityStatistics(30, root);
     expect(stats.sample.sessionFiles).toBe(1);
     expect(stats.sample.patchCalls).toBe(3);
@@ -29,7 +47,14 @@ describe("session activity statistics", () => {
     expect(stats.sameFileRevisits.percentilesSec.p50).toBeCloseTo(90, 1);
     expect(stats.sameFileRevisits.coverage.find((item) => item.seconds === 60)?.percent).toBe(50);
     expect(stats.activityGaps.count).toBe(3);
-    expect(stats.source.confidence).toBe("high");
+    // The aggregate combines confirmed Codex data with two unavailable native
+    // fixture databases; source confidence must not be overstated.
+    expect(stats.source.confidence).toBe("medium");
+    expect(stats.source.harnesses).toEqual(expect.arrayContaining([
+      expect.objectContaining({ harness: "codex", state: "ready" }),
+      expect.objectContaining({ harness: "opencode", state: "unavailable" }),
+      expect.objectContaining({ harness: "zcode", state: "unavailable" }),
+    ]));
     expect(stats.schemaVersion).toBe(2);
     expect(stats.codexDeep.tokens.count).toBe(1);
     expect(stats.codexDeep.tokens.median).toBe(123456);

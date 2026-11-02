@@ -1,10 +1,13 @@
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAgentHerderMcpServer } from "../src/index.js";
 import * as catalogPolicy from "../src/mcp/catalog-policy.js";
 
 const connections: Array<{ client: Client; server: { close(): Promise<void> } }> = [];
+// Run catalog contract fixtures without the host-specific production hide file.
+beforeEach(() => vi.stubEnv("AGENT_HERDER_CATALOG_POLICY_FILE", "/dev/null"));
 afterEach(async () => {
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
   for (const { client, server } of connections.splice(0)) {
     await client.close();
@@ -23,7 +26,7 @@ async function connect() {
 }
 
 describe("ordinary Agent Herder catalog", () => {
-  it("omits exactly the two internal local readers from discovery", async () => {
+  it("consolidates duplicated public tools without unregistering any native handler", async () => {
     const client = await connect();
     // Observe the same SDK catalog without projection; no registration or
     // configuration changes between requests, and no production opt-out.
@@ -32,12 +35,15 @@ describe("ordinary Agent Herder catalog", () => {
     const projected = (await client.listTools()).tools;
     const names = projected.map(tool => tool.name);
     expect(baseline.map(tool => tool.name)).toEqual(expect.arrayContaining(["session_search_local", "list_active_sessions_local"]));
-    expect(projected).toEqual(baseline.filter(tool => tool.name !== "session_search_local" && tool.name !== "list_active_sessions_local"));
-    expect(projected).toHaveLength(baseline.length - 2);
-    console.info(`catalog advertisement: ${baseline.length} -> ${projected.length}; exactly two internal readers omitted`);
-    expect(names).not.toContain("session_search_local");
-    expect(names).not.toContain("list_active_sessions_local");
-    expect(names).toEqual(expect.arrayContaining(["session_search", "list_active_sessions", "send_message", "deliver", "stop_agent"]));
+    for (const tool of projected) expect(tool).toEqual(baseline.find(original => original.name === tool.name));
+    expect(projected.length).toBeLessThan(baseline.length - 20);
+    expect(projected.length).toBeLessThanOrEqual(50);
+    console.info("catalog consolidation: " + baseline.length + " registered -> " + projected.length + " visible");
+    expect(names).toEqual(expect.arrayContaining(["model", "stop", "rename", "session_info", "list_sessions", "job", "workspace", "resume_after", "deliver", "create_session"]));
+    for (const hidden of ["session_search_local", "list_active_sessions_local", "send_message", "stop_agent", "list_agents", "job_list", "change_model", "resume_after_status"]) {
+      expect(names).not.toContain(hidden);
+      expect(baseline.map(tool => tool.name)).toContain(hidden);
+    }
   });
 
   it.each([

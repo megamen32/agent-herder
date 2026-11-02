@@ -8,6 +8,8 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { registerSessionTools } from "../src/mcp/session-tools.js";
 import { HerderEventBus } from "../src/herder-events.js";
 import { HerderJobRegistry } from "../src/herder-jobs.js";
+import { UserMessageDelivery } from "../src/user-message-delivery.js";
+import { trustedMeshIngressForOwnerStdio } from "../src/mesh/authenticated-ingress.js";
 import { LocalHarnessMesh } from "../src/mesh/local.js";
 import { GptAdminMesh } from "../src/mesh/gptadmin.js";
 import { checkDeliveryModel, resolveSessionWorkDirectory } from "../src/project-model-delivery-gate.js";
@@ -31,7 +33,7 @@ async function projectRoot(prefix: string): Promise<string> {
 
 function sessionOf(cwd: string, id: string, harness = "opencode", meta?: Record<string, unknown>): AgentSession {
   return {
-    id, harness, status: "running", title: `Session ${id}`, cwd,
+    id, harness, hostId:"host-1", status: "running", title: `Session ${id}`, cwd,
     lastActivity: "2026-09-06T02:00:00.000Z", model: "model-a", needsPermission: false,
     messageCount: 3, lastMessage: "done", ...(meta ? { meta } : {}),
   } as AgentSession;
@@ -39,7 +41,8 @@ function sessionOf(cwd: string, id: string, harness = "opencode", meta?: Record<
 
 function adapterOf(sessions: AgentSession[], sendMessage: ReturnType<typeof vi.fn>): HarnessAdapter {
   return {
-    type: "opencode", name: "Fixture",
+    type: sessions[0]?.harness || "opencode", name: "Fixture",
+    controlCapabilities: { steer: true },
     async init() {}, async listSessions() { return sessions; },
     async getSession(id) { return sessions.find((session) => session.id === id) ?? null; },
     async getParent() { return null; }, async listChildren() { return []; },
@@ -58,12 +61,21 @@ function adapterOf(sessions: AgentSession[], sendMessage: ReturnType<typeof vi.f
 async function connect(sessions: AgentSession[], state: ProjectModelPolicyState, sendMessage: ReturnType<typeof vi.fn>) {
   const events = new HerderEventBus();
   const server = new McpServer({ name: "delivery-gate-test", version: "1" });
+  const root = await projectRoot("model-gate-jobs-");
+  const adapter = adapterOf(sessions, sendMessage);
+  const adapters = new Map<string, HarnessAdapter>([["opencode", adapter]]);
+  const jobs = new HerderJobRegistry(events,{ persistencePath: join(root,"jobs.json") });
+  const delivery = new UserMessageDelivery(adapters,
+    { sendMessage: async(_h,id,options) => adapter.sendMessage(id,options) },
+    jobs,{ pollMs:1,maxWaitMs:1500,maxPending:16 });
   registerSessionTools(server, {
-    adapters: new Map([["opencode", adapterOf(sessions, sendMessage)]]),
-    jobs: new HerderJobRegistry(events),
+    adapters,
+    jobs,
     events,
+    userMessageDelivery: delivery,
     deliveryPolicy: async () => state,
   });
+  closers.push(async () => { delivery.close(); });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "delivery-gate-client", version: "1" }, { versionNegotiation: { mode: "auto" } });
   await server.connect(serverTransport);
@@ -95,9 +107,9 @@ describe("the model gate of a delivery", () => {
     };
     const sendMessage = vi.fn(async () => ({ ok: true }));
     const client = await connect([sessionOf(root, "sess-b")], { kind: "valid", policy }, sendMessage);
-    const result = await client.callTool({ name: "send_message", arguments: { sessionId: "sess-b", message: "work" } });
+    const result = await client.callTool({ name: "send_message", arguments: { sessionId: "sess-b", message: "work", humanRequested:true, inputId:"allowed-project-one", mode:"steer" } });
     expect(result.isError).toBeFalsy();
-    expect(sendMessage).toHaveBeenCalled();
+    await vi.waitFor(() => expect(sendMessage).toHaveBeenCalled(), {timeout:1500});
   });
 
   it("checks the model the delivery names", async () => {
@@ -156,7 +168,7 @@ describe("the model gate of a mesh delivery", () => {
       sender: { hostId: "host-2", harness: "codex", nativeSessionId: "peer" },
       inputId: "input-1", message: "work",
     };
-    const receipt = await mesh.deliver(request);
+    const receipt = await mesh.deliver(request,trustedMeshIngressForOwnerStdio());
     expect(receipt.state).toBe("not_attempted");
     expect(receipt.retryable).toBe(false);
     expect(receipt.reason).toContain("model_not_permitted_for_project");
@@ -164,28 +176,41 @@ describe("the model gate of a mesh delivery", () => {
     expect(receipt.reason).toContain(root);
     expect(send).not.toHaveBeenCalled();
     // The refusal is kept, so the same intent is never delivered again.
-    expect((await mesh.deliver(request)).state).toBe("not_attempted");
+    expect((await mesh.deliver(request,trustedMeshIngressForOwnerStdio())).state).toBe("not_attempted");
     expect(send).not.toHaveBeenCalled();
   });
 
   it("delivers into a project that allows the model", async () => {
     const root = await projectRoot("mesh-gate-allowed-");
     const policy: ProjectModelPolicy = { models: { codex: "model-a" }, projectRoutes: { [root]: { deniedModels: ["model-b"] } } };
-    const send = vi.fn(async (args: { inputId: string }) => ({ admitted: true, inputId: args.inputId, turnId: "turn-1" }));
-    const mesh = new LocalHarnessMesh({
-      hostId: "host-1",
-      adapters: new Map([["codex", adapterOf([sessionOf(root, "sess-n", "codex")], vi.fn(async () => ({ ok: true })))]]),
-      send,
-      ledgerPath: join(root, "ledger.json"),
-      deliveryPolicy: async () => ({ kind: "valid", policy }),
-    });
-    const receipt = await mesh.deliver({
-      target: { hostId: "host-1", harness: "codex", nativeSessionId: "sess-n" },
-      sender: { hostId: "host-2", harness: "codex", nativeSessionId: "peer" },
-      inputId: "input-2", message: "work",
-    });
-    expect(receipt.state).toBe("admitted");
-    expect(send).toHaveBeenCalled();
+    const send = vi.fn(async(_id:string,options:{inputId?:string})=>({
+      ok:true,admitted:true,inputId:options.inputId,turnId:"turn-1",
+    }));
+    const session = { ...sessionOf(root,"sess-n","codex"),status:"idle" as const };
+    const adapter=adapterOf([session],send);
+    const adapters=new Map<string,HarnessAdapter>([["codex",adapter]]);
+    const events=new HerderEventBus();
+    const jobs=new HerderJobRegistry(events,{persistencePath:join(root,"jobs.json")});
+    const delivery=new UserMessageDelivery(adapters,{sendMessage:async(_h,id,o)=>adapter.sendMessage(id,o)},jobs,
+      {pollMs:1,maxWaitMs:2000,maxPending:16});
+    try {
+      const mesh = new LocalHarnessMesh({
+        hostId:"host-1",adapters,userMessageDelivery:delivery,
+        ledgerPath:join(root,"ledger.json"),
+        deliveryPolicy:async()=>({kind:"valid",policy}),
+      });
+      const receipt = await mesh.deliver({
+        target: { hostId: "host-1", harness: "codex", nativeSessionId: "sess-n" },
+        sender: { hostId: "host-2", harness: "codex", nativeSessionId: "peer" },
+        inputId: "input-2", message: "work",
+      },trustedMeshIngressForOwnerStdio());
+      expect(["queued","admitted"]).toContain(receipt.state);
+      await vi.waitFor(()=>expect(send).toHaveBeenCalled(),{timeout:2000});
+      expect(send.mock.calls[0]?.[1]).toMatchObject({inputId:"input-2"});
+      const native=delivery.get("codex","sess-n","input-2");
+      await vi.waitFor(()=>expect(native?.job?.state).toBe("completed"),{timeout:2000});
+      expect(native?.job?.result).toMatchObject({admitted:true,inputId:"input-2"});
+    } finally {delivery.close();}
   });
 });
 

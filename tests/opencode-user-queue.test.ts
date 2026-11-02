@@ -45,7 +45,7 @@ it("acknowledges OpenCode async admission while the native model response remain
   const adapters = new Map([["opencode", adapter]]);
   const converter = { async convert() { return { success: true, targetSessionId: "thread", targetPath: dir, messageCount: 0 }; } };
   const supervisor = new SessionSupervisor(adapters, converter, undefined, { humanStopStore: new HumanStopStore(join(dir, "stops.json")) });
-  const jobs = new HerderJobRegistry(new HerderEventBus());
+  const jobs = new HerderJobRegistry(new HerderEventBus(),{persistencePath:join(dir,"jobs.json")});
   const web = createWebServer({ adapters, converter, supervisor, jobs });
   await new Promise<void>((resolve) => web.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${(web.address() as { port: number }).port}`;

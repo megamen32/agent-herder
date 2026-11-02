@@ -24,6 +24,10 @@ import { ALWAYS_FORBIDDEN_ENV } from "../src/web/settings-harness-env.js";
 import { setTimeout as delay } from "node:timers/promises";
 
 const fixture = join(process.cwd(), "tests/fixtures/fake-codex-app-server.mjs");
+// Scoped policy unit tests pass Node's known executable as a harmless path
+// witness, and stub all native RPCs; they never start the Codex CLI.
+// Real rollout still requires a verified Codex binary at the owner host.
+
 
 /**
  * The handles of the fixture travel in argv.
@@ -109,7 +113,7 @@ function stubScopedCollectionReads(adapter: CodexAppServerAdapter, options: {
 describe("Codex app-server adapter", () => {
   it("a busy app-server thread/list page falls back to the persisted state index", async () => {
     const root = await mkdtemp(join(tmpdir(), "codex-thread-list-deadline-"));
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, cwd: root });
     const { internals } = stubScopedCollectionReads(adapter, { root, ready: true, listedThreads: [] });
     const originalRequest = internals.request;
     internals.request = async (method: string, params?: Record<string, unknown>) => {
@@ -233,7 +237,12 @@ describe("Codex app-server adapter", () => {
 
   it("records a late deferred H34 reservation UNKNOWN and never starts a thread after abort", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-abort-reserve-"));
-    const nativeHome = resolve(process.env.CODEX_HOME || join(homedir(), ".codex"));
+    // Isolate the genuine on-disk runtime/readback identity within this
+    // fixture, without launching Codex or relaxing the production root guard.
+    const nativeHome = join(root, "codex-home");
+    await mkdir(nativeHome, { recursive: true });
+    vi.stubEnv("CODEX_HOME", nativeHome);
+    vi.stubEnv("CODEX_DATA_DIR", nativeHome);
     const store = new IntegratorSessionBindingStore({ persistencePath: join(root, "integrator-bindings.json") });
     const policy = await createCodexProjectRuntimePolicy({ projectId: "abort-reserve", projectRoot: root, materialized: true });
     const controller = new AbortController();
@@ -267,6 +276,7 @@ describe("Codex app-server adapter", () => {
         attempts: [{ state: "unknown", receipt: { state: "unknown", reason: "operation_aborted_after_durable_reservation" } }] });
     } finally {
       await adapter.dispose();
+      vi.unstubAllEnvs();
       await rm(root, { recursive: true, force: true });
     }
   });
@@ -347,7 +357,12 @@ describe("Codex app-server adapter", () => {
   it("materializes once into the H34 journal and restores the accepted same ID with fresh scope proof", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-materialized-"));
     const journal = join(root, "integrator-bindings.json");
-    const nativeHome = resolve(process.env.CODEX_HOME || join(homedir(), ".codex"));
+    // Isolate the genuine on-disk runtime/readback identity within this
+    // fixture, without launching Codex or relaxing the production root guard.
+    const nativeHome = join(root, "codex-home");
+    await mkdir(nativeHome, { recursive: true });
+    vi.stubEnv("CODEX_HOME", nativeHome);
+    vi.stubEnv("CODEX_DATA_DIR", nativeHome);
     const store = new IntegratorSessionBindingStore({ persistencePath: journal });
     const policy = await createCodexProjectRuntimePolicy({ projectId: "materialized-test", projectRoot: root, materialized: true });
     const progress: Array<Record<string, unknown>> = [];
@@ -422,13 +437,19 @@ describe("Codex app-server adapter", () => {
       await second.dispose();
     } finally {
       await first.dispose();
+      vi.unstubAllEnvs();
       await rm(root, { recursive: true, force: true });
     }
   });
 
   it("refuses materialized UNKNOWN operation reuse before any native create", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-materialized-unknown-"));
-    const nativeHome = resolve(process.env.CODEX_HOME || join(homedir(), ".codex"));
+    // Isolate the genuine on-disk runtime/readback identity within this
+    // fixture, without launching Codex or relaxing the production root guard.
+    const nativeHome = join(root, "codex-home");
+    await mkdir(nativeHome, { recursive: true });
+    vi.stubEnv("CODEX_HOME", nativeHome);
+    vi.stubEnv("CODEX_DATA_DIR", nativeHome);
     const store = new IntegratorSessionBindingStore({ persistencePath: join(root, "integrator-bindings.json") });
     const policy = await createCodexProjectRuntimePolicy({ projectId: "unknown-test", projectRoot: root, materialized: true });
     const rootStat = await stat(root);
@@ -457,6 +478,7 @@ describe("Codex app-server adapter", () => {
       expect((await store.get(policy.binding.attemptId))?.state).toBe("unknown");
     } finally {
       await adapter.dispose();
+      vi.unstubAllEnvs();
       await rm(root, { recursive: true, force: true });
     }
   });
@@ -470,11 +492,11 @@ describe("Codex app-server adapter", () => {
         .toThrow("requires its own app-server process");
       expect(() => new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "/unused", projectToolDenyList: { mcpServerIds: [], appIds: [], pluginIds: [] } }))
         .toThrow("require a trusted project runtime policy");
-      const scoped = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+      const scoped = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, projectRuntimePolicy: policy, cwd: root });
       expect((scoped as unknown as { processArgs: string[] }).processArgs).toContain("apps._default.enabled=false");
       expect((scoped as unknown as { processArgs: string[] }).processArgs).not.toContain("mcp_servers={}");
       const denied = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),
-        codexBin: "codex", projectRuntimePolicy: policy, cwd: root,
+        codexBin: process.execPath, projectRuntimePolicy: policy, cwd: root,
         projectToolDenyList: { mcpServerIds: ["mcp-one"], appIds: ["app-one"], pluginIds: ["plugin@market"] },
       });
       const args = (denied as unknown as { processArgs: string[] }).processArgs.join(" ");
@@ -491,7 +513,7 @@ describe("Codex app-server adapter", () => {
   it("keeps ephemeral project thread naming in adapter memory without metadata RPCs", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-ephemeral-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "ephemeral-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, projectRuntimePolicy: policy, cwd: root });
     const calls: string[] = [];
     const internals = adapter as unknown as {
       ensureReady: () => Promise<void>;
@@ -524,7 +546,7 @@ describe("Codex app-server adapter", () => {
   it("rejects foreign project resume and recover before native RPC and preserves owned provenance", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-resume-admission-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "resume-admission-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, projectRuntimePolicy: policy, cwd: root });
     const calls: Array<{ method: string; params?: Record<string, unknown> }> = [];
     let readyCalls = 0;
     const internals = adapter as unknown as {
@@ -568,7 +590,7 @@ describe("Codex app-server adapter", () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-stale-resume-root-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "stale-resume-root-test", projectRoot: root });
     const stalePolicy = Object.freeze({ ...policy, rootInode: policy.rootInode + 1 });
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, projectRuntimePolicy: stalePolicy, cwd: root });
     const calls: string[] = [];
     let readyCalls = 0;
     const internals = adapter as unknown as {
@@ -593,7 +615,7 @@ describe("Codex app-server adapter", () => {
   it("refuses foreign project history reads before transcript access, initialization, or RPC", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-foreign-history-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "foreign-history-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, projectRuntimePolicy: policy, cwd: root });
     const calls = { transcript: 0, observation: 0, session: 0, messages: 0, firstUser: 0, ready: 0, rpc: [] as string[] };
     type TranscriptReads = {
       getRawTranscript: (id: string) => Promise<unknown>;
@@ -634,7 +656,7 @@ describe("Codex app-server adapter", () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-stale-history-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "stale-history-test", projectRoot: root });
     const stalePolicy = Object.freeze({ ...policy, rootInode: policy.rootInode + 1 });
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, projectRuntimePolicy: stalePolicy, cwd: root });
     const calls = { transcript: 0, observation: 0, session: 0, messages: 0, firstUser: 0, ready: 0, rpc: [] as string[] };
     type TranscriptReads = {
       getRawTranscript: (id: string) => Promise<unknown>;
@@ -676,7 +698,7 @@ describe("Codex app-server adapter", () => {
   it("permits owned project history reads while the bound root remains current", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-owned-history-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "owned-history-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, projectRuntimePolicy: policy, cwd: root });
     const calls = { transcript: 0, observation: 0, session: 0, messages: 0, firstUser: 0, rpc: [] as string[] };
     type TranscriptReads = {
       getRawTranscript: (id: string) => Promise<unknown>;
@@ -722,7 +744,7 @@ describe("Codex app-server adapter", () => {
   it("scoped cold session listing never delegates to the global transcript index", async () => {
     const root = process.cwd();
     const policy = await createCodexProjectRuntimePolicy({ projectId: "cold-scoped-list-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, projectRuntimePolicy: policy, cwd: root });
     const { calls } = stubScopedCollectionReads(adapter, {
       root,
       ready: false,
@@ -739,7 +761,7 @@ describe("Codex app-server adapter", () => {
   it("scoped ready session listing returns only in-memory owned IDs", async () => {
     const root = process.cwd();
     const policy = await createCodexProjectRuntimePolicy({ projectId: "ready-scoped-list-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, projectRuntimePolicy: policy, cwd: root });
     const { calls, internals } = stubScopedCollectionReads(adapter, {
       root,
       ready: true,
@@ -762,7 +784,7 @@ describe("Codex app-server adapter", () => {
     const root = process.cwd();
     const policy = await createCodexProjectRuntimePolicy({ projectId: "stale-scoped-list-test", projectRoot: root });
     const stalePolicy = Object.freeze({ ...policy, rootInode: policy.rootInode + 1 });
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, projectRuntimePolicy: stalePolicy, cwd: root });
     const { calls, internals } = stubScopedCollectionReads(adapter, {
       root,
       ready: false,
@@ -781,7 +803,7 @@ describe("Codex app-server adapter", () => {
   it("scoped named lookup ignores foreign index candidates before native reads", async () => {
     const root = process.cwd();
     const policy = await createCodexProjectRuntimePolicy({ projectId: "foreign-scoped-name-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, projectRuntimePolicy: policy, cwd: root });
     const { calls } = stubScopedCollectionReads(adapter, {
       root,
       ready: true,
@@ -799,7 +821,7 @@ describe("Codex app-server adapter", () => {
     const root = process.cwd();
     const policy = await createCodexProjectRuntimePolicy({ projectId: "stale-scoped-name-test", projectRoot: root });
     const stalePolicy = Object.freeze({ ...policy, rootInode: policy.rootInode + 1 });
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, projectRuntimePolicy: stalePolicy, cwd: root });
     const { calls, internals } = stubScopedCollectionReads(adapter, {
       root,
       ready: true,
@@ -818,7 +840,7 @@ describe("Codex app-server adapter", () => {
   it("scoped collection reads preserve positive access to locally owned threads", async () => {
     const root = process.cwd();
     const policy = await createCodexProjectRuntimePolicy({ projectId: "owned-scoped-collection-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, projectRuntimePolicy: policy, cwd: root });
     const { calls, internals } = stubScopedCollectionReads(adapter, {
       root,
       ready: false,
@@ -853,7 +875,7 @@ describe("Codex app-server adapter", () => {
     let adapter: CodexAppServerAdapter | undefined;
     try {
       const policy = await createCodexProjectRuntimePolicy({ projectId: "current-scope-evidence-test", projectRoot: root });
-      adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+      adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, projectRuntimePolicy: policy, cwd: root });
       const calls = { version: 0, rpc: [] as string[] };
       const internals = adapter as unknown as {
         verifiedNativeHarnessVersion: () => Promise<string | null>;
@@ -894,7 +916,7 @@ describe("Codex app-server adapter", () => {
       expect(calls).toEqual({ version: 1, rpc: [] });
 
       const stalePolicy = Object.freeze({ ...policy, rootInode: policy.rootInode + 1 });
-      const staleAdapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: stalePolicy, cwd: root });
+      const staleAdapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, projectRuntimePolicy: stalePolicy, cwd: root });
       const staleInternals = staleAdapter as unknown as {
         verifiedNativeHarnessVersion: () => Promise<string | null>;
         request: (method: string) => Promise<unknown>;
@@ -921,7 +943,7 @@ describe("Codex app-server adapter", () => {
   it("uses fresh native state for an owned ephemeral thread before its first rollout exists", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-ephemeral-state-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "ephemeral-state-test", projectRoot: root });
-    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: "codex", projectRuntimePolicy: policy, cwd: root });
+    const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, projectRuntimePolicy: policy, cwd: root });
     const threadId = "ephemeral-before-first-turn";
     const internals = adapter as unknown as {
       ensureReady: () => Promise<void>;

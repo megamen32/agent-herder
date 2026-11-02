@@ -34,6 +34,10 @@ function fixtureServer(state: { entries: Array<{ path: string; body: unknown }>;
           data: { id: "ses_1", title: parsed.title ?? "worker-7", location: parsed.location ?? { directory: "/tmp/project" }, time: { created: 1, updated: 2 } },
         }));
       }
+      if (/^\/api\/session\/[^/]+\/(?:permission|message)$/.test(path)) {
+        response.setHeader("content-type", "application/json");
+        return response.end(JSON.stringify({ data: [] }));
+      }
       if (path.startsWith("/api/session/")) {
         response.setHeader("content-type", "application/json");
         return response.end(JSON.stringify({ data: { id: "ses_1", title: "worker-7", location: { directory: "/tmp/project" }, time: { created: 1, updated: 2 } } }));

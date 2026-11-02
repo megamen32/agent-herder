@@ -1,0 +1,34 @@
+# Agent Herder PR25 tool consolidation acceptance receipt, 2026-11-02
+
+- Worktree: /home/roomhacker/agents-projects/.worktrees/herder-catalog-40-20261102
+- Base: origin/main 4a97225 (PR24 guarded realpath/Git-owner fix retained), worktree initial commit c6f7ba9.
+- PR25: https://github.com/megamen32/agent-herder/pull/25
+- AgentHerder registered tools: 99; discoverable tools: 40; original tool names registered and directly callable.
+- TypeScript, npm run build, npm run test:core passed at relevant source states. Dedicated 107-file MCP/session regression: 842/842 passed.
+- Independent review found hidden remote mesh discovery; fixed in source by reusing original authenticated mesh_route/mesh_deliver handlers with no local fallback; exact native tests passed.
+- Full project Vitest command: 503 test files, 4328 total tests, 4211 passed, 103 failed, 14 skipped; 1 unhandled rejection (captured .catalog-alltests.log).
+- Every full-suite failure logged at .agents/bugs/alltests-*.md; 37 issue files including unhandled rejection, immutable history maintained.
+- Follow-up independent isolated checks after repairs:
+  * 107 MCP/session files: 842/842 passed.
+  * CDP and scope: 18/18 passed.
+  * Codex app-server: 74/74 passed without Codex CLI launch or native live sends.
+  * ZCode workspace lifecycle: 33/33 passed; V4 fixture now proves queue receipt matching requested delivery.
+  * Codex policy unit: 15/15 passed without Codex CLI launch.
+  * 31 remaining failure file group isolated: 59 failed tests / 362 passed; exact per-test signatures in bug records.
+- RELEASE GATE RED: full project tests are RED. Do not classify cycle done, merge PR25, or install candidate until every remaining issue is fixed or clearly resolved as a duplicate/false-positive with evidence. No tests disabled/removed, no safeguards lowered, no production changed.
+- Do not modify the main owner checkout or unrelated polling/429, broker, consumer scopes. Native guarded installer enforces canonical release proof, lease project binding, entrypoint snapshot CAS, Git owner, and service identity; no bypass.
+
+## Follow-up full project acceptance
+
+- First final full-suite run on c2dd294: 503 files, 4314 passed, 2 failed, 14 skipped, no unhandled errors. Exact log: .catalog-final-all.log. Registered two new bugs before repair: alltests-final-noticeplace-allowlist and alltests-final-permission-poll.
+- Focused RED-to-GREEN of these two: 27/27 passed. Code fixes are test-contract-only: one exact two-route allowlist, and bounded polling plus single accepted Notice external action. No owner gate changes.
+- Status at this record: pending the next single full-suite run after the two fixes; do not claim production/merge readiness until proven green.
+
+- Second full-suite run on 9d3de58: 503 files, 4315 passed, 1 failed, 14 skipped, no unhandled. Exact log .catalog-final-all2.log. Registered alltests-final-human-request-lock-concurrency. Deterministic lock regression RED, then 7/7 GREEN with bounded atomic lock fix; new tests demonstrate fail-closed on durable contention. Next full-suite acceptance pending, no merge or release claimed.
+
+## Final source acceptance: GREEN
+
+- Final run on SHA 71f8fa2: npm run build exit=0; Vitest full project 503 files, 499 passed and 4 skipped, 4318 tests passed, 14 skipped, 0 failed, 0 unhandled, exit=0. Evidence .catalog-release-build.log and .catalog-release-all.log.
+- All 40 full-suite records and 10 initial catalog/baseline records have preserved evidence and no open entries. Two false-positive classifications include reasons and bound native acceptance; no tests disabled, no gates bypassed.
+- Code review verified tools/list-only projection, existing tools/call aliases, original native Zod validation/permission/HumanRequest guards, exact mesh target routing, authenticated ingress and no-retry UNKNOWN. Existing PR24 realpath/main-guard and Git owner fix preserved.
+- Gate transition: SOURCE TESTS GREEN. Merge/release and post-install catalog/process generation readback remain separate pending tasks; no production acceptance claimed by source tests alone.

@@ -85,6 +85,27 @@ export const COMMON_SETTINGS_SCOPE: readonly CommonSettingScopeEntry[] = [
  */
 export const MACHINE_SETTINGS_SCOPE: readonly CommonSettingScopeEntry[] = [
   {
+    id: "herder.env/AGENT_HERDER_CHAT_INTRO_URL",
+    scope: "machine",
+    reason: "Адрес конкретного подключённого чата: зависит от узла и не должен переноситься на другой.",
+  },
+  {
+    id: "herder.env/AGENT_HERDER_CHAT_INTRO_TOKEN",
+    scope: "machine",
+    reason: "Локальный ключ чата: не реплицировать доступ между узлами.",
+    secret: true,
+  },
+  {
+    id: "herder.env/AGENT_HERDER_CHAT_INTRO_HARNESSES",
+    scope: "machine",
+    reason: "Список локально доступных сред чата: зависит от этого узла.",
+  },
+  {
+    id: "herder.env/AGENT_HERDER_CHAT_INTRO_TEMPLATE",
+    scope: "machine",
+    reason: "Локальный шаблон представления авторизации чата: привязан к этому узлу.",
+  },
+  {
     id: "herder.env/AGENT_HERDER_BROWSER_WORKER_PORT",
     scope: "machine",
     reason: "Порт воркера браузера: это порт машины.",
