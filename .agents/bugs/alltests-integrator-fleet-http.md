@@ -9,6 +9,8 @@ Observed first errors:
 - AssertionError: expected [ 200, 202 ] to include 400
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: open
+Status: fixed_pending_full_suite
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
+
+- 2026-11-02: Focused RED→GREEN 2 files 5/5 tests. Both scoped/ordinary HTTP test servers now provide true isolated persistent HerderJobRegistry; no production gate bypass. Native admission once, replay stable id, scoped owner routing and STOP no-wake receipts passed. In-memory non-durable registry previously correctly rejected native dispatch.
