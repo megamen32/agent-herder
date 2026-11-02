@@ -50,6 +50,7 @@ import { groupSessionMessages, joinAssistantTurnMessages } from "./message-group
 import { projectDeliveredChat, resolveDeliveredImages } from "./delivered-chat.js";
 import {sidebarEntries, sessionPinKey, projectLocalSessionHost} from './session-pins.js';
 import {SessionSidebarRow, useSessionPins} from './session-sidebar.js';
+import {RescanButton} from './rescan-button.js';
 import { DetailsReadGate } from "./details-read-gate.js";
 import { MessageAdmissionDispatcher, appendOutboxEntry, beginOutboxAttempt, canDeleteOutboxEntry, canSteerOutboxEntry, cancelOutcomeOfJob, classifyMessageDelivery, deliveryConnectionFailure, deliveryModeLabel, isOutboxUnfinished, isTerminalJobState, newInputId, outboxStatusLabel, planContinuation, readDefaultDeliveryMode, readDeliveryModePinned, readOutboxJobId, readStoredOutbox, reconcileMessageStatus, removeOutboxEntry, updateOutboxEntry, withOutboxJobId, writeDefaultDeliveryMode, writeDeliveryModePinned, writeStoredOutbox, type CancelOutcome, type DeliveryMode, type OutboxEntry } from "./composer-delivery.js";
 import { formatJsonPayload, readJsonRenderingOptOut, splitSystemBlocks, writeJsonRenderingOptOut } from "./json-rendering.js";
@@ -758,6 +759,7 @@ function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, load
     {settingsOpen&&<details className="session-cache-settings"><summary>Быстрое открытие сессий</summary><label>Хранить просмотр в этом браузере<select aria-label="Срок кэша сессий" value={cacheSettings.hours} onChange={e=>onCacheSettings({...cacheSettings,hours:Number(e.target.value)})}><option value={0}>Выключено</option><option value={24}>Сутки</option><option value={72}>3 дня</option><option value={168}>Неделя</option></select></label><label>Размер кэша<select aria-label="Размер кэша сессий" value={cacheSettings.maxMiB} onChange={e=>onCacheSettings({...cacheSettings,maxMiB:Number(e.target.value)})}>{[16,32,64].map(size=><option key={size} value={size}>{size} МБ</option>)}</select></label><small>Только открытые сессии. История остальных остаётся на их машине. При открытии сохранённый просмотр обновляется.</small><button className="quiet-button" onClick={onCacheClear}>Очистить сохранённый просмотр</button></details>}
     {directoryStatus&&<details className="directory-status"><summary>Подключение машин</summary><small role="status">{directoryStatus}</small>{onLoadMore&&<button className="quiet-button" onClick={onLoadMore}>Показать ещё сессии</button>}</details>}
     {pinError && <div className="session-pin-error" role="alert">{pinError}</div>}
+    <RescanButton/>
     <div className="session-list" role="list" aria-label="Сессии">
       {entries.slice(0,windowSize).map(({ session, depth, hasChildren }) => {
         const key = keyOf(session);

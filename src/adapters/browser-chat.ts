@@ -35,6 +35,10 @@ export interface BrowserChatDriver {
     input: { chatId: string; text: string; waitForCompletion?: boolean },
     signal?: AbortSignal,
   ): Promise<{ assistantText?: string }>;
+  /** Full paginated scan of every conversation (ChatGPT only). Paginates
+   * offset=0,100,200… with a 15s gap; respects 429. Used by the Web UI
+   * "Пересканировать чаты" button / Ctrl+Shift+R. */
+  fullScan?(): Promise<{ count: number; pages: number }>;
   /** Stop only the actively generating turn of this exact conversation.
    * Never navigates to another chat to find a Stop button.
    */
@@ -192,6 +196,14 @@ export class BrowserChatAdapter implements HarnessAdapter {
     return (await this.driver.listChats())
       .filter((chat) => chat.title.trim() === normalized)
       .map((chat) => this.toSession(chat));
+  }
+
+  /** Delegate to the driver's fullScan when the browser site supports it
+   * (ChatGPT). Returns {count:0,pages:0} when unsupported so callers can treat
+   * the absence uniformly. */
+  async fullScan(): Promise<{ count: number; pages: number }> {
+    if (typeof this.driver.fullScan !== "function") return { count: 0, pages: 0 };
+    return this.driver.fullScan();
   }
 
   /** Launch one ChatGPT session: a new disposable chat becomes the session. */
