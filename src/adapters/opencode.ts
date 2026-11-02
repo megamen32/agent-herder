@@ -336,9 +336,14 @@ export function resolveOpenCodeDispatchableModel(
  * *running* turn with a durable receipt, and how delivery interacts with the
  * human-stop fence.
  */
+import { registerHarnessRuntimeCapabilities, type HarnessRuntimeCapabilities } from "../types/harness-runtime.js";
+
+const RUNTIME_CAPS: HarnessRuntimeCapabilities = { autopilotDispatch: "deliverInRunner", hookDrivenStop: true, browserChat: false, autopilotEligible: true, localInject: false, humanStopObserver: true };
+registerHarnessRuntimeCapabilities('opencode', RUNTIME_CAPS);
 export class OpenCodeAdapter implements HarnessAdapter {
   readonly type = "opencode" as const;
   readonly name = "OpenCode";
+  readonly runtimeCapabilities = RUNTIME_CAPS;
   readonly controlCapabilities: HarnessCapabilities = {
     cancelTurn: true,
     detach: true,

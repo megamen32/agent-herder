@@ -998,9 +998,14 @@ function defaultCommand(): ZcodeCommand {
 }
 
 /** ZCode adapter backed by the local stdio app-server, not the remote GUI relay. */
+import { registerHarnessRuntimeCapabilities, type HarnessRuntimeCapabilities } from "../types/harness-runtime.js";
+
+const RUNTIME_CAPS: HarnessRuntimeCapabilities = { autopilotDispatch: "returnNextGoal", hookDrivenStop: true, browserChat: false, autopilotEligible: true, localInject: false, humanStopObserver: true };
+registerHarnessRuntimeCapabilities('zcode', RUNTIME_CAPS);
 export class ZcodeAdapter implements HarnessAdapter {
   readonly type = "zcode" as const;
   readonly name = "ZCode";
+  readonly runtimeCapabilities = RUNTIME_CAPS;
   readonly lazyStart = true;
   // Sessions live in workspace-scoped app-server storage that is readable
   // without starting a run; discovery must not wait for lazyStart. The

@@ -317,9 +317,14 @@ function latestActivity(left: string | undefined, right: string | undefined): st
  * log: the index is cached, the rendered session is cached against the file
  * stamp of its own transcript, and transcripts are streamed line by line.
  */
+import { registerHarnessRuntimeCapabilities, type HarnessRuntimeCapabilities } from "../types/harness-runtime.js";
+
+const RUNTIME_CAPS: HarnessRuntimeCapabilities = { autopilotDispatch: "agentResume", hookDrivenStop: false, browserChat: false, autopilotEligible: false, localInject: false, humanStopObserver: false };
+registerHarnessRuntimeCapabilities('minimax-code', RUNTIME_CAPS);
 export class MinimaxCodeAdapter implements HarnessAdapter {
   readonly type = "minimax-code" as const;
   readonly name = "MiniMax Code";
+  readonly runtimeCapabilities = RUNTIME_CAPS;
   readonly lazyDiscovery = true;
 
   private readonly sessionStore: string;
