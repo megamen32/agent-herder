@@ -46,8 +46,8 @@ export function useSessionPins(scope: string) {
   }};
 }
 
-export function SessionSidebarRow({session, title, selected, pinned, canPin, statusClass, statusOverride, autopilotOn, onSelect, onPin}: {
-  session:SidebarSession; title:string; selected:boolean; pinned:boolean; canPin:boolean; statusClass:string; statusOverride?:string; autopilotOn?:boolean; onSelect:()=>void; onPin:()=>void;
+export function SessionSidebarRow({session, title, selected, pinned, canPin, canMoveToProject, statusClass, statusOverride, autopilotOn, onSelect, onPin, onMoveToProject}: {
+  session:SidebarSession; title:string; selected:boolean; pinned:boolean; canPin:boolean; canMoveToProject?:boolean; statusClass:string; statusOverride?:string; autopilotOn?:boolean; onSelect:()=>void; onPin:()=>void; onMoveToProject?:()=>void;
 }) {
   const root = React.useRef<HTMLDivElement>(null), tooltip = React.useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = React.useState<{left:number; top:number; right:number} | null>(null);
