@@ -1,7 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { runInNewContext } from "node:vm";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { CHATGPT_MAC_SNAPSHOT, ChatGptMacCdpDriver, parseChatGptPages, pickChatGptPage } from "../src/adapters/chatgpt-mac-cdp-driver.js";
 import { parseChromeEvaluation, type ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
+let _invDir: string;
+beforeEach(() => { _invDir = mkdtempSync(join(tmpdir(), "chatgpt-inv-")); process.env.AGENT_HERDER_BROWSER_CHAT_INVENTORY_ROOT = _invDir; });
+afterEach(() => { rmSync(_invDir, { recursive: true, force: true }); delete process.env.AGENT_HERDER_BROWSER_CHAT_INVENTORY_ROOT; });
 
 const ID = "6ada477c-7014-83ed-82ae-7881dbe3e109";
 const json = (x: unknown) => "Script ran on page and returned:\n```json\n" + JSON.stringify(x) + "\n```";
