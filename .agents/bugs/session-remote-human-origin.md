@@ -3,6 +3,8 @@
 Description: Remote human-requested local message hits undefined .http instead of preserving user origin
 Evidence: tests/session-remote-routing.test.ts; clean origin/main 4a97225 isolated failure
 Blocks: tool-consolidation-PR25 guarded production release
-Status: open
+Status: fixed_with_guard
 History:
 - 2026-11-02: Observed; compared against clean origin/main at 4a97225 where applicable. The record is retained after resolution.
+
+- 2026-11-02: Missing ctx on direct unit-handler invocation no longer TypeErrors (optional context), but missing durable native registry still refuses delivery. Fixture now asserts the gate and no sends. Isolated focused suite 7 files, 33/33 passed; broader suite pending.

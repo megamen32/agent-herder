@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { hostname } from "node:os";
 
 /**
  * Public action facades over existing, independently validated SDK handlers.
@@ -325,11 +326,38 @@ export function withToolConsolidation(
     }
   }
 
-  // deliver already supersets the ordinary send/new-or-resume workflows.
-  // Legacy mesh-specific endpoints stay registered and callable for callers
-  // that need their exact target and guard semantics.
-  if (captured.has("deliver")) {
-    for (const oldName of ["send_message", "new_or_resume", "mesh_deliver", "mesh_route"]) {
+  // deliver supports legacy session calls AND exact native mesh target{}.
+  // A remote mesh call is delegated to the ORIGINAL mesh_route handler, which
+  // authenticates owner ingress and never retries UNKNOWN. Never reroute an
+  // unavailable remote host through a local ordinary-session fallback.
+  const ordinary = captured.get("deliver");
+  const meshLocal = captured.get("mesh_deliver");
+  const meshRemote = captured.get("mesh_route");
+  if (ordinary) {
+    if (meshLocal) {
+      const inputSchema = joinedSchema([ordinary.schema, meshRemote?.schema ?? meshLocal.schema]);
+      ordinary.handle.update({
+        paramsSchema: inputSchema,
+        description: "Deliver to a session with legacy flat arguments, or specify exact target "
+          + "{hostId,harness,nativeSessionId}, sender, inputId and message for mesh delivery. "
+          + "The native owner enforces authenticated ingress, project policy, idempotency "
+          + "and no replay of unknown admission; remote unavailable never falls back locally.",
+        callback: (async (input: unknown, context: unknown) => {
+          const args = asRecord(input);
+          if (args.target !== undefined) {
+            const validated = (meshRemote ?? meshLocal).schema.parse(args);
+            const target = asRecord(asRecord(validated).target);
+            const peer = target.hostId === hostname() ? meshLocal : meshRemote;
+            if (!peer) throw new Error("remote_mesh_transport_unavailable");
+            return peer.callback(peer.schema.parse(validated), context);
+          }
+          return ordinary.callback(ordinary.schema.parse(args), context);
+        }) as never,
+      });
+      hidden.add("mesh_deliver");
+      if (meshRemote) hidden.add("mesh_route");
+    }
+    for (const oldName of ["send_message", "new_or_resume"]) {
       if (captured.has(oldName)) hidden.add(oldName);
     }
   }

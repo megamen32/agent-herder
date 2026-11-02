@@ -55,7 +55,8 @@ describe("панель списка сессий", () => {
 
   it("показывает причину пустого списка и кнопку «показать завершённые»", () => {
     expect(main).toContain("sessionListEmptyReason(");
-    expect(main).toContain("{empty.title}");
+    expect(main).toContain('quickStatus === "working" && settings.harness');
+    expect(main).toContain(": empty.title");
     expect(main).toContain("Показать завершённые сессии");
     expect(main).not.toContain("<div className=\"empty-list\">Нет сессий по этим настройкам.</div>");
   });

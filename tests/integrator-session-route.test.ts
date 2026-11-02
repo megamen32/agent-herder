@@ -64,7 +64,7 @@ describe("exact native transcript session route", () => {
     }
   });
 
-  it("returns the exact existing steer endpoint for its bound session", async () => {
+  it("returns the exact steer endpoint and refuses a message without the durable stock registry", async () => {
     const session: AgentSession = { id: "exact-id", harness: "codex", status: "idle", cwd: "/tmp", lastActivity: new Date().toISOString() };
     const sendMessage = vi.fn(async (_id: string, _options: SendMessageOptions) => ({ ok: true, admitted: true }));
     const adapter = { type: "codex", name: "fixture", async init() {}, async listSessions() { return [session]; }, async getSession() { return session; }, async getRawTranscript() {
@@ -82,9 +82,9 @@ describe("exact native transcript session route", () => {
     try {
       const page = await (await fetch(`${base}/api/sessions/codex/exact-id/transcript`)).json() as any;
       const steer = await fetch(`${base}${page.steerEndpoint}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "Continue this task", humanRequested: true, inputId: "integrator-steer-1", mode: "steer" }) });
-      expect([200, 202]).toContain(steer.status);
-      await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
-      expect(sendMessage).toHaveBeenCalledWith("exact-id", expect.objectContaining({ origin: "human", inputId: "integrator-steer-1", steer: true }));
+      expect(steer.status).toBe(400);
+      expect(await steer.json()).toMatchObject({ error: "native_stock_case_durable_registry_required" });
+      expect(sendMessage).not.toHaveBeenCalled();
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
