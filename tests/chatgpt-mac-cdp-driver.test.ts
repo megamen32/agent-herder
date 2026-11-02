@@ -77,6 +77,36 @@ describe("ChatGPT on existing Mac mini CDP", () => {
   });
 });
 
+describe("ChatGPT native async_status running signal", () => {
+  it("marks a background-running chat working even when another chat is observed", async () => {
+    const OTHER = "6ada477c-7014-83ed-82ae-7881dbe3e110";
+    const THIRD = "6ada477c-7014-83ed-82ae-7881dbe3e111";
+    class NativeListFixture extends BrowserFixture {
+      override async call(name: string, args: Record<string, unknown> = {}): Promise<string> {
+        if (name === "evaluate_script" && args.function === CHATGPT_LIST_API_SCRIPT) {
+          return json({ scope: "a".repeat(64), chats: [
+            { id: ID, title: "Observed idle", updatedAt: 1730000000, asyncStatus: 0 },
+            { id: OTHER, title: "Background running", updatedAt: 1730000001, asyncStatus: 3 },
+            { id: THIRD, title: "Quiet", updatedAt: 1730000002, asyncStatus: 0 },
+          ] });
+        }
+        return super.call(name, args);
+      }
+    }
+    const f = new NativeListFixture();
+    const driver = new ChatGptMacCdpDriver(f);
+    const chats = await driver.listChats();
+    // The observed tab's own chat keeps the DOM truth (idle here).
+    expect(chats.find(c => c.id === ID)).toMatchObject({ working: false });
+    expect(chats.find(c => c.id === ID)?.workingSource).toBeUndefined();
+    // A chat with non-zero async_status is running on native evidence, with no Stop control.
+    expect(chats.find(c => c.id === OTHER)).toMatchObject({ working: true, workingSource: "native-async-status", stopVisible: false });
+    // Zero async_status stays idle.
+    expect(chats.find(c => c.id === THIRD)).toMatchObject({ working: false });
+    expect(chats.find(c => c.id === THIRD)?.workingSource).toBeUndefined();
+  });
+});
+
 describe("ChatGPT browser submit admission", () => {
   it("blocks a race after fill without pressing Enter", async () => {
     const f = new BrowserFixture();
