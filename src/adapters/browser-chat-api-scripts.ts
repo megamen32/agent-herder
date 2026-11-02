@@ -4,16 +4,32 @@
  * Only normalized user/assistant text crosses the Mac mini CDP gateway.
  */
 export const CHATGPT_LIST_API_SCRIPT = `async () => {
+  const trace = [];
+  const tracedFetch = async (operation,endpoint,path,options) => {
+    const started=Date.now();
+    const r=await fetch(path,options);
+    const value=r?.headers && typeof r.headers.get==='function'
+      ? r.headers.get('retry-after'):null;
+    const raInt=typeof value==='string' && /^[0-9]{1,8}$/.test(value.trim())
+      ? parseInt(value,10):0;
+    const asDate=typeof value==='string' && !raInt ? Date.parse(value):NaN;
+    const raSec=raInt>0?Math.min(86400,raInt)
+      :(Number.isFinite(asDate)?Math.max(0,Math.min(86400,Math.ceil((asDate-Date.now())/1000))):null);
+    trace.push({operation,endpoint,http_status:r?.status,
+      latency_ms:Math.max(0,Date.now()-started),retry_after_s:raSec,
+      backoff_ms:0});
+    return r;
+  };
   if (location.origin !== 'https://chatgpt.com') return {error:'wrong_origin'};
   if (Date.now() < (globalThis.__herderChatGptReadCooldownUntil || 0)) return {error:'read_cooldown'};
-  const sessionResponse = await fetch('/api/auth/session',{credentials:'same-origin'});
-  if (!sessionResponse.ok) return {error:'session_unavailable'};
+  const sessionResponse = await tracedFetch('auth_session','/api/auth/session','/api/auth/session',{credentials:'same-origin'});
+  if (!sessionResponse.ok) return {error:'session_unavailable',trace};
   const session = await sessionResponse.json();
-  if (!session.accessToken || !session.account?.id) return {error:'account_unavailable'};
+  if (!session.accessToken || !session.account?.id) return {error:'account_unavailable',trace};
   const digest = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(session.account.id));
   const scope = [...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
   const headers = {authorization:'Bearer '+session.accessToken,'chatgpt-account-id':session.account.id};
-  const response = await fetch('/backend-api/conversations?offset=0&limit=100&order=updated',
+  const response = await tracedFetch('conversation_list','/backend-api/conversations','/backend-api/conversations?offset=0&limit=100&order=updated',
     {headers,credentials:'same-origin'});
   if (!response.ok) {
     if (response.status === 429) {
@@ -23,22 +39,40 @@ export const CHATGPT_LIST_API_SCRIPT = `async () => {
       globalThis.__herderChatGptReadCooldownUntil = Date.now() +
         (Number.isFinite(raSec) && raSec > 0 ? Math.min(raSec * 1000, 300_000) : 60_000);
     }
-    return {error:'list_http_'+response.status};
+    if(trace.length && response.status === 429)
+      trace[trace.length-1].backoff_ms = Math.max(0, globalThis.__herderChatGptReadCooldownUntil-Date.now());
+    return {error:'list_http_'+response.status,trace};
   }
   const data=await response.json();
-  return {scope,chats:(data.items||[]).filter(x=>x.id && x.title && !x.is_archived && !x.is_temporary_chat)
+  return {scope,trace,chats:(data.items||[]).filter(x=>x.id && x.title && !x.is_archived && !x.is_temporary_chat)
    .slice(0,100).map(x=>({id:x.id,title:x.title,updatedAt:x.update_time,createdAt:x.create_time}))};
 }`;
 
 export function chatgptMessagesApiScript(chatId: string): string {
   return `async () => {
+  const trace = [];
+  const tracedFetch = async (operation,endpoint,path,options) => {
+    const started=Date.now();
+    const r=await fetch(path,options);
+    const value=r?.headers && typeof r.headers.get==='function'
+      ? r.headers.get('retry-after'):null;
+    const raInt=typeof value==='string' && /^[0-9]{1,8}$/.test(value.trim())
+      ? parseInt(value,10):0;
+    const asDate=typeof value==='string' && !raInt ? Date.parse(value):NaN;
+    const raSec=raInt>0?Math.min(86400,raInt)
+      :(Number.isFinite(asDate)?Math.max(0,Math.min(86400,Math.ceil((asDate-Date.now())/1000))):null);
+    trace.push({operation,endpoint,http_status:r?.status,
+      latency_ms:Math.max(0,Date.now()-started),retry_after_s:raSec,
+      backoff_ms:0});
+    return r;
+  };
     const id=${JSON.stringify(chatId)};
     if (location.origin !== 'https://chatgpt.com' || !/^[a-f0-9-]{28,80}$/i.test(id))
       return {error:'invalid_chat'};
     if (Date.now() < (globalThis.__herderChatGptReadCooldownUntil || 0)) return {error:'read_cooldown'};
-    const session=await(await fetch('/api/auth/session',{credentials:'same-origin'})).json();
-    if (!session.accessToken || !session.account?.id) return {error:'account_unavailable'};
-    const r=await fetch('/backend-api/conversations/'+encodeURIComponent(id)
+    const session=await(await tracedFetch('auth_session','/api/auth/session','/api/auth/session',{credentials:'same-origin'})).json();
+    if (!session.accessToken || !session.account?.id) return {error:'account_unavailable',trace};
+    const r=await tracedFetch('conversation_read','/backend-api/conversations/{id}','/backend-api/conversations/'+encodeURIComponent(id)
       +'?num_turns=60&include_has_versions=true',
       {headers:{authorization:'Bearer '+session.accessToken,'chatgpt-account-id':session.account.id},
        credentials:'same-origin'});
@@ -50,10 +84,12 @@ export function chatgptMessagesApiScript(chatId: string): string {
         globalThis.__herderChatGptReadCooldownUntil = Date.now() +
           (Number.isFinite(raSec) && raSec > 0 ? Math.min(raSec * 1000, 300_000) : 60_000);
       }
-      return {error:'history_http_'+r.status};
+        if(trace.length && r.status === 429)
+        trace[trace.length-1].backoff_ms = Math.max(0, globalThis.__herderChatGptReadCooldownUntil-Date.now());
+      return {error:'history_http_'+r.status,trace};
     }
     const data=await r.json();
-    if(data.conversation_id!==id || !Array.isArray(data.messages))return {error:'identity_mismatch'};
+    if(data.conversation_id!==id || !Array.isArray(data.messages))return {error:'identity_mismatch',trace};
     const readPart=p=>{
       if(typeof p==='string')return p;
       if(!p||typeof p!=='object')return '';
@@ -81,7 +117,7 @@ export function chatgptMessagesApiScript(chatId: string): string {
       if(used+size>210000)break;
       used+=size;tail.unshift(messages[i]);
     }
-    return {messages:tail};
+    return {messages:tail,trace};
   }`;
 }
 
