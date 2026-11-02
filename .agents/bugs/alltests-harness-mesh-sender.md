@@ -1,0 +1,22 @@
+# alltests-harness-mesh-sender
+
+Description: Full project test suite observed 5 failed test(s) in tests/harness-mesh-sender.test.ts. Fix native cause or correct stale fixture only with independently verified semantics. Do not skip/disable tests or relax safeguards.
+Evidence: isolated worktree origin/main=4a97225, branch commits through 5132ed9; .catalog-alltests.log, grep exact 'FAIL  tests/harness-mesh-sender.test.ts'. Full-suite result 103 failed / 4211 passed / 1 unhandled rejection.
+Cases:
+- declared mesh sender API (focused integration; expected 3s, maximum 30s) > publishes and carries structured meshSender through the registered MCP SDK tool
+- declared mesh sender API (focused integration; expected 3s, maximum 30s) > budgets the full host/harness/native address: 2 senders x6, pair7 rejected, target12
+- declared mesh sender API (focused integration; expected 3s, maximum 30s) > declares a MiniMax sender without local lookup, fake native ID or human origin
+- declared mesh sender API (focused integration; expected 3s, maximum 30s) > preserves human STOP and never replays native UNKNOWN
+- declared mesh sender API (focused integration; expected 3s, maximum 30s) > keeps legacy checked native attribution and explicit human callers unchanged
+
+Observed first errors:
+- TypeError: Cannot read properties of undefined (reading '1')
+- AssertionError: expected '{"ok":false,"delivery":"not_attempted…' to contain 'Native admission receipt'
+- TypeError: Cannot read properties of undefined (reading '1')
+- AssertionError: expected '{"ok":false,"delivery":"not_attempted…' to contain 'cannot be replayed safely'
+- TypeError: Cannot read properties of undefined (reading '1')
+
+Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
+Status: open
+History:
+- 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
