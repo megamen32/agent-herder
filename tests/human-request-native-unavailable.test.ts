@@ -7,6 +7,7 @@ import type { ResumeReceipt, ResumeTransportRequest } from "../src/resume-transp
 import { createWebServer } from "../src/web/server.js";
 import type { Server } from "node:http";
 import { randomUUID } from "node:crypto";
+import lockfile from "proper-lockfile";
 
 const directories: string[] = [];
 const servers: Server[] = [];
@@ -42,6 +43,35 @@ it("re-admits only the canonical unavailable answer atomically after restart, ke
   expect(resume).toHaveBeenCalledTimes(1);
   expect(resume.mock.calls[0][0]).toMatchObject({ result_ref: f.resultRef, idempotency_key: original.idempotencyKey, target: { agent: "opencode", session_id: "original", cwd: f.record.target.cwd }, human_requested_at: Date.parse(original.record.admittedAt!) });
   expect((await restarted.get(f.record.requestId))?.attemptId).toBe(original.record.attemptId);
+});
+
+it("waits for a short cross-process Human Request lock handoff without a second native resume", async () => {
+  const f = await fixture();
+  const release = await lockfile.lock(f.path + ".lock", { realpath: false, stale: 30_000, update: 10_000 });
+  const resume = vi.fn(accepted);
+  // An old four-retry / 10ms budget fails before the 225ms lock handoff.
+  // Catch immediately so a deliberate failed regression has no unhandled promise.
+  const pending = resumeHumanRequestOnce({ registry: new HumanRequestRegistry(f.path),
+    requestId: f.record.requestId, resultRef: f.resultRef, resume })
+    .then(value => ({value}), error => ({error}));
+  try { await new Promise<void>((resolve) => setTimeout(resolve, 225)); }
+  finally { await release(); }
+  const outcome = await pending;
+  expect(outcome).toHaveProperty("value");
+  if ("value" in outcome) expect(outcome.value).toMatchObject({status:"resumed"});
+  expect(resume).toHaveBeenCalledOnce();
+});
+
+it("fails closed when the exclusive Human Request lock does not yield within the bounded window", async () => {
+  const f = await fixture();
+  const release = await lockfile.lock(f.path + ".lock", { realpath: false, stale: 30_000, update: 10_000 });
+  const resume = vi.fn(accepted);
+  try {
+    await expect(resumeHumanRequestOnce({ registry: new HumanRequestRegistry(f.path),
+      requestId: f.record.requestId, resultRef: f.resultRef, resume }))
+      .rejects.toMatchObject({ name: "HumanRequestLockUnavailableError" });
+    expect(resume).not.toHaveBeenCalled();
+  } finally { await release(); }
 });
 
 it("never re-invokes an unknown admission or an expired in-flight transport", async () => {

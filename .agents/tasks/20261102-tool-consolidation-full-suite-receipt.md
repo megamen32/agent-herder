@@ -23,3 +23,5 @@
 - First final full-suite run on c2dd294: 503 files, 4314 passed, 2 failed, 14 skipped, no unhandled errors. Exact log: .catalog-final-all.log. Registered two new bugs before repair: alltests-final-noticeplace-allowlist and alltests-final-permission-poll.
 - Focused RED-to-GREEN of these two: 27/27 passed. Code fixes are test-contract-only: one exact two-route allowlist, and bounded polling plus single accepted Notice external action. No owner gate changes.
 - Status at this record: pending the next single full-suite run after the two fixes; do not claim production/merge readiness until proven green.
+
+- Second full-suite run on 9d3de58: 503 files, 4315 passed, 1 failed, 14 skipped, no unhandled. Exact log .catalog-final-all2.log. Registered alltests-final-human-request-lock-concurrency. Deterministic lock regression RED, then 7/7 GREEN with bounded atomic lock fix; new tests demonstrate fail-closed on durable contention. Next full-suite acceptance pending, no merge or release claimed.
