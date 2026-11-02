@@ -321,7 +321,10 @@ export class BrowserChatAdapter implements HarnessAdapter {
   }
 
   async invalidateHistory(id: string): Promise<void> {
-    this.historyCache.invalidate(this.nativeId(id));
+    // A completed remote turn changed this conversation: drop the cached
+    // copy AND wait for the fresh read, so the turn fingerprint computed
+    // immediately afterwards cannot repeat the already-judged identity.
+    await this.historyCache.refreshNow(this.nativeId(id)).catch(() => undefined);
   }
 
   subscribeEvents(handler: (event: HarnessEvent) => void): () => void {

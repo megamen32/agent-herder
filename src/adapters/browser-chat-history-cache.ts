@@ -200,6 +200,23 @@ export class BrowserChatHistoryCache {
   /** Mark a known successful foreground send as changed without a TTL sweep. */
   invalidate(id: string): void { this.dirty.add(id); this.invalidations.set(id, (this.invalidations.get(id) || 0) + 1); }
 
+  /** Invalidate and WAIT for a fresh read (bounded). The turn-observer
+   * calls this at the running->idle transition: the fingerprint it computes
+   * right afterwards must reflect the finished turn, so a stale-while-
+   * revalidate fast path is not enough. The wait survives a short global
+   * 429 cooldown but never blocks longer than maxWaitMs. */
+  async refreshNow(id: string, maxWaitMs = 90_000): Promise<SessionMessageView[] | null> {
+    if (!this.dir) return null;
+    this.invalidate(id);
+    const deadline = Date.now() + maxWaitMs;
+    while (Date.now() < this.cooldownUntil && Date.now() < deadline) {
+      const slice = Math.min(5_000, this.cooldownUntil - Date.now(), deadline - Date.now());
+      if (slice <= 0) break;
+      await new Promise(resolve => setTimeout(resolve, slice));
+    }
+    return this.refresh(id);
+  }
+
   prewarm(items: readonly (string | { id: string; revision?: string })[]): void {
     if (!this.dir || Date.now() < this.cooldownUntil) return;
     const configured = Number(process.env.AGENT_HERDER_BROWSER_CHAT_PREWARM_LIMIT);
