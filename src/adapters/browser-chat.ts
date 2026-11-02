@@ -172,7 +172,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
     if (this.inventory.size) {
       // Cached titles and session identity are also stale-while-revalidate.
       // Never block selected-chat details on an unrelated 100-chat API list.
-      if (Date.now() - this.inventoryAt > 30_000 && !this.inventoryRefresh) {
+      if (Date.now() - this.inventoryAt > 60_000 && !this.inventoryRefresh) {
         this.inventoryRefresh = this.driver.listChats().then(chats => {
           this.updateInventory(chats);
         }).catch(() => undefined).finally(() => { this.inventoryRefresh = undefined; });
