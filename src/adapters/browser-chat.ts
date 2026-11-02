@@ -320,6 +320,10 @@ export class BrowserChatAdapter implements HarnessAdapter {
     return { ok: false, error: "Browser chat permissions are controlled by their provider" };
   }
 
+  async invalidateHistory(id: string): Promise<void> {
+    this.historyCache.invalidate(this.nativeId(id));
+  }
+
   subscribeEvents(handler: (event: HarnessEvent) => void): () => void {
     this.eventListeners.add(handler);
     return () => { this.eventListeners.delete(handler); };

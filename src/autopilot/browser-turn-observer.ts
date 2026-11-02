@@ -156,6 +156,11 @@ export class BrowserTurnAutopilotObserver {
 
   private async submitStop(harness: string, adapter: HarnessAdapter, session: AgentSession): Promise<void> {
     if (typeof session.cwd !== "string" || !session.cwd.startsWith("/")) return;
+    // A finished remote turn changed the conversation history. Drop the
+    // adapter's cached copy for this chat BEFORE fingerprinting, so the
+    // fingerprint of the new turn differs from the already-judged one even
+    // when the prewarm pipeline is paused and no revision signal arrives.
+    try { await adapter.invalidateHistory?.(session.id); } catch { /* cache invalidation must never block the Stop submission */ }
     // Fingerprint first: it warms the same history cache the consumer reads.
     let fingerprint: string | undefined;
     try {

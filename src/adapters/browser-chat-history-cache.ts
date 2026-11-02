@@ -14,6 +14,13 @@ export class BrowserChatHistoryCache {
   private static readonly MAX_COMPRESSED_BYTES = 400_000;
   private static readonly MAX_JSON_BYTES = 500_000;
   private static readonly REQUEST_GAP_MS = 15_000;
+  /** A saved history older than this is re-fetched on read even when
+   * prewarm is disabled or revision metadata is absent: the browser-turn
+   * observer derives its turn fingerprint from the newest cached messages,
+   * and a frozen cache makes every later turn deduplicate as the identity
+   * that was already judged, silently stopping autopilot continuation. */
+  private static readonly STALE_RESYNC_MS = 90 * 60_000;
+  private lastPrewarmDisabledLogAt = 0;
   private revisions = new Map<string, string>();
   private dirty = new Set<string>();
   private invalidations = new Map<string, number>();
@@ -174,7 +181,9 @@ export class BrowserChatHistoryCache {
         const scope = this.scope;
         const old = await this.load(id);
         if (this.scope !== scope) continue;
-        if (!old || this.dirty.has(id) || (old.revision !== undefined && this.revisions.has(id) && old.revision !== this.revisions.get(id))) {
+        if (!old || this.dirty.has(id) ||
+            (old.revision !== undefined && this.revisions.has(id) && old.revision !== this.revisions.get(id)) ||
+            (!this.revisions.has(id) && Date.now() - old.at > BrowserChatHistoryCache.STALE_RESYNC_MS)) {
           await this.refresh(id);
         } else if (old.revision === undefined && this.revisions.has(id)) {
           // Migrate legacy cache metadata without downloading all histories.
@@ -194,7 +203,16 @@ export class BrowserChatHistoryCache {
   prewarm(items: readonly (string | { id: string; revision?: string })[]): void {
     if (!this.dir || Date.now() < this.cooldownUntil) return;
     const configured = Number(process.env.AGENT_HERDER_BROWSER_CHAT_PREWARM_LIMIT);
-    if (configured === 0) return; // Explicit emergency pause; never prune stored history.
+    if (configured === 0) {
+      // Explicit emergency pause; never prune stored history. The pause used
+      // to be completely silent while it froze every turn fingerprint: make
+      // it visible at a bounded rate so an operator can see the tradeoff.
+      if (Date.now() - this.lastPrewarmDisabledLogAt > 3_600_000) {
+        this.lastPrewarmDisabledLogAt = Date.now();
+        console.warn("[browser-chat] history prewarm is disabled (AGENT_HERDER_BROWSER_CHAT_PREWARM_LIMIT=0); stale turn fingerprints degrade autopilot continuation");
+      }
+      return;
+    }
     const limit = Number.isFinite(configured) && configured >= 1
       ? Math.min(BrowserChatHistoryCache.LIMIT, Math.floor(configured))
       : BrowserChatHistoryCache.LIMIT;
@@ -217,7 +235,13 @@ export class BrowserChatHistoryCache {
     if (!this.dir) return null;
     const saved = await this.load(id);
     if (saved) {
-      if (this.dirty.has(id) || (saved.revision !== undefined && this.revisions.has(id) && saved.revision !== this.revisions.get(id))) this.enqueue(id,true);
+      // Wall-clock self-heal fires ONLY when no revision signal exists for the
+      // chat (prewarm disabled or the chat is outside the warmed inventory):
+      // when a revision is known and unchanged, the request budget must hold.
+      const staleByClock = !this.revisions.has(id) &&
+        Date.now() - saved.at > BrowserChatHistoryCache.STALE_RESYNC_MS;
+      if (this.dirty.has(id) || staleByClock ||
+          (saved.revision !== undefined && this.revisions.has(id) && saved.revision !== this.revisions.get(id))) this.enqueue(id,true);
       return saved.messages.slice(-Math.max(1,limit));
     }
     // Don't wait behind the whole 100-chat warmup when a user opens a chat.
