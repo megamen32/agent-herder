@@ -12,13 +12,14 @@ export function withAutopilotHarness<T extends { harnesses: AutopilotHarness[] }
 }
 
 /** One mechanism per settings page; each harness keeps its independent switch. */
-export function HarnessAutomationSettings({ mode, available, enabled, loaded, failed, saving, onToggle }: {
+export function HarnessAutomationSettings({ mode, available, enabled, loaded, failed, saving, disabledAll, onToggle }: {
   mode: "autopilot" | "autocontinue";
   available: ReadonlySet<string>;
   enabled: ReadonlySet<string>;
   loaded?: ReadonlySet<string>;
   failed?: ReadonlySet<string>;
   saving?: string;
+  disabledAll?: boolean;
   onToggle: (harness: string) => void;
 }) {
   const label = mode === "autopilot" ? "Автопилот" : "Автопродолжение";
@@ -26,9 +27,11 @@ export function HarnessAutomationSettings({ mode, available, enabled, loaded, fa
       const supported = available.has(id);
       const ready = supported && (!loaded || loaded.has(id));
       const checked = ready && enabled.has(id);
-      return <section className="harness-setting-row" key={id} aria-label={`${label} · ${name}`}>
-        <div><strong>{name}</strong><small id={`${mode}-${id}-status`}>{!supported ? "Пока не поддерживается" : saving === id ? "Сохраняю…" : failed?.has(id) ? "Не удалось загрузить" : !ready ? "Загружаю…" : checked ? "Разрешено" : "Выключено"}</small></div>
-        <button className={`switch-control ${checked ? "enabled" : ""}`} role="switch" aria-label={`${label} · ${name}`} aria-checked={checked} aria-describedby={`${mode}-${id}-status`} disabled={!ready || Boolean(saving)} onClick={() => onToggle(id)}><span /></button>
+      const disabledByKillSwitch = Boolean(disabledAll);
+      const rowClassName = `harness-setting-row${disabledByKillSwitch ? " harness-setting-row-disabled" : ""}`;
+      return <section className={rowClassName} key={id} aria-label={`${label} · ${name}`}>
+        <div><strong>{name}</strong><small id={`${mode}-${id}-status`}>{disabledByKillSwitch ? "Стоп-сигнал: общий переключатель выключен" : !supported ? "Пока не поддерживается" : saving === id ? "Сохраняю…" : failed?.has(id) ? "Не удалось загрузить" : !ready ? "Загружаю…" : checked ? "Разрешено" : "Выключено"}</small></div>
+        <button className={`switch-control ${checked ? "enabled" : ""}`} role="switch" aria-label={`${label} · ${name}`} aria-checked={checked} aria-describedby={`${mode}-${id}-status`} disabled={disabledByKillSwitch || !ready || Boolean(saving)} onClick={() => onToggle(id)}><span /></button>
       </section>;
   };
   const unavailable = HARNESSES.filter(([id]) => !available.has(id));

@@ -49,6 +49,15 @@ export class AutopilotSessionStore {
     this.lockTarget = `${path}.lock`;
   }
 
+  /** Every remembered session override, including enabled, disabled and
+   * inherited-binding rows. Used by the overview endpoint so the chat list
+   * can mark sessions whose explicit override is on.
+   */
+  async list(): Promise<AutopilotSessionOverride[]> {
+    const file = await this.read();
+    return file.sessions.map((item) => ({ ...item }));
+  }
+
   async get(harness: AutopilotHarness, sessionId: string): Promise<AutopilotSessionOverride | null> {
     const key = sessionKey(harness, sessionId);
     const record = (await this.read()).sessions.find((item) => sessionKey(item.harness, item.sessionId) === key);

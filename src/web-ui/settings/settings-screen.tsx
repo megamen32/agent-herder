@@ -131,7 +131,7 @@ export function SettingsScreen({
       <div className="herder-settings-panel" role="tabpanel">
         {tab === "settings" && <McpConnectionSection />}
         {tab === "settings" && <IndexingSection />}
-        {tab === "settings" && <section aria-label="Автоматизация"><h2>Автоматизация</h2><p>Управление автопилотом, продолжением работы и запуском новых сессий.</p><div className="session-automation-links">{([['autopilot','Автопилот'],['autocontinue','Автопродолжение'],['launch-policy','Запуск сессий']] as const).map(([section,label]) => <button key={section} className="quiet-button" onClick={() => onOpenAutomationSettings(section)}>{label}</button>)}</div></section>}
+        {tab === "settings" && <section aria-label="Автоматизация" className="settings-automation-links"><h2>Автоматизация</h2><p>Управление автопилотом, продолжением работы и запуском новых сессий. Каждая группа настроек — отдельная страница со своей ссылкой.</p><ul className="settings-link-list"><li><a href="?page=autopilot">Автопилот <small>?page=autopilot</small></a></li><li><a href="?page=autocontinue">Автопродолжение <small>?page=autocontinue</small></a></li><li><a href="?page=launch-policy">Запуск сессий <small>?page=launch-policy</small></a></li></ul></section>}
         {tab === "settings"
           ? <HerderSettings onOpenLaunchSettings={onOpenLaunchSettings} />
           : tab === "projects"

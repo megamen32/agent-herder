@@ -287,6 +287,33 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .switch-control { position: relative; width: 44px; height: 26px; flex: 0 0 44px; padding: 3px; border-radius: 999px; background: var(--border-2); }
 .switch-control span { display: block; width: 20px; height: 20px; border-radius: 50%; background: var(--text); transition: transform .15s ease; }
 .switch-control.enabled { background: var(--accent); } .switch-control.enabled span { transform: translateX(18px); } .switch-control:disabled { opacity: .55; cursor: wait; }
+/* ===== UI overhaul: airplane, kill-switch, harness link, grouping ===== */
+.session-autopilot-icon { flex: 0 0 11px; width: 11px; height: 11px; margin: 0 4px 0 0; color: var(--accent); opacity: .85; }
+.session-autopilot-icon[aria-hidden="true"] { pointer-events: none; }
+
+/* Chat header: harness label is a small link-style button. */
+.chat-harness-link { display: inline; padding: 0 2px; border: 0; background: transparent; color: var(--text-2); font: inherit; font-size: inherit; cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+.chat-harness-link:hover { color: var(--accent); }
+
+/* Settings screen: real URL links for each automation group. */
+.settings-link-list { list-style: none; padding: 0; margin: var(--space-2) 0 0; display: grid; gap: 6px; }
+.settings-link-list li { padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-1); }
+.settings-link-list a { display: flex; align-items: baseline; gap: 8px; color: var(--text); text-decoration: none; }
+.settings-link-list a:hover { color: var(--accent); }
+.settings-link-list a small { color: var(--muted); font-family: var(--font-mono, monospace); font-size: 11px; }
+
+/* Kill-switch: when the global toggle is off, every harness row is gray. */
+.harness-setting-row-disabled { opacity: .55; }
+.harness-setting-row-disabled .switch-control { cursor: not-allowed; }
+.harness-setting-row-disabled strong { color: var(--muted); }
+
+/* Grouped activity block: one collapsible card for thinking + tools. */
+details.activity-group { border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-1); margin: 4px 0; }
+details.activity-group > summary { padding: 6px 10px; cursor: pointer; color: var(--text-2); font-size: var(--text-xs); user-select: none; }
+details.activity-group > summary:hover { color: var(--text); }
+details.activity-group[open] > summary { border-bottom: 1px solid var(--border); }
+details.activity-group .message-activity-rows { padding: 4px 10px; }
+
 .switch-control.large { width: 48px; height: 28px; flex-basis: 48px; }
 .switch-control.large span { width: 22px; height: 22px; }
 .switch-control.large.enabled span { transform: translateX(20px); }

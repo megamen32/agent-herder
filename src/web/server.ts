@@ -2755,6 +2755,18 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 400, { error: (error as Error).message });
     }
   }
+  if (request.method === "GET" && url.pathname === "/api/autopilot/overview") {
+    const policy = autopilotPolicyStore ? await autopilotPolicyStore.readEffective() : null;
+    const sessions = autopilotSessionStore ? await autopilotSessionStore.list() : [];
+    response.setHeader("cache-control", "no-store");
+    return sendJson(response, 200, {
+      global: Boolean(policy?.policy?.enabled),
+      harnesses: Array.isArray(policy?.policy?.harnesses) ? [...policy.policy.harnesses] : [],
+      sessions: sessions
+        .filter((s) => s.enabled === true)
+        .map((s) => ({ harness: s.harness, sessionId: s.sessionId })),
+    });
+  }
   if (request.method === "GET" && url.pathname === "/api/autopilot/choices") {
     if (!choiceRegistry) return sendJson(response, 503, { error: "Choice registry is disabled" });
     const status = url.searchParams.get("status") || "pending";
