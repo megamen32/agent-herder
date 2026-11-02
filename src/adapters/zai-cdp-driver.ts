@@ -210,7 +210,13 @@ export class ZaiCdpDriver implements BrowserChatDriver {
           if (typeof item.updatedAt === "number" && Number.isFinite(item.updatedAt) && item.updatedAt > 0) {
             chat.updatedAtSemantics = "remote-update-time";
           }
-          chat.working = selected && this.busy(state);
+          // The DOM Stop control exists only on the observed page's own
+          // conversation, but the native listing reports last_run for every
+          // chat of the account: that is the only honest busy signal for a
+          // conversation generating in another tab or in no herder tab at all.
+          const nativeRunning = item.lastRunStatus === "running";
+          chat.working = selected ? this.busy(state) : nativeRunning;
+          if (nativeRunning && !selected) chat.workingSource = "native-last-run";
           chat.stopVisible = selected && state.phase === "generating";
           chat.unread = item.unread === true;
           chats.push(chat);

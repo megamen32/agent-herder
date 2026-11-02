@@ -292,6 +292,34 @@ it("labels only authenticated API update timestamps as remote revisions", async 
   expect(fallback.every(chat => chat.updatedAtSemantics === "observed-sidebar-order")).toBe(true);
 });
 
+it("derives working from the native last_run for chats outside the observed tab", async () => {
+  const routeId = "123e4567-e89b-12d3-a456-426614174000";
+  const otherId = "123e4567-e89b-12d3-a456-426614174002";
+  const thirdId = "123e4567-e89b-12d3-a456-426614174003";
+  class ApiTools extends MockChromeTools {
+    override async call(name: string, args: Record<string, unknown> = {}): Promise<string> {
+      if (name === "evaluate_script" && args.function === ZAI_LIST_API_SCRIPT) {
+        return evalJson({ scope: "a".repeat(64), chats: [
+          { id: routeId, title: "Observed generating", updatedAt: 1730000000, lastRunStatus: "completed" },
+          { id: otherId, title: "Remote running", updatedAt: 1730000001, lastRunStatus: "running" },
+          { id: thirdId, title: "Remote done", updatedAt: 1730000002, lastRunStatus: "completed" },
+        ] });
+      }
+      return super.call(name, args);
+    }
+  }
+  const tools = new ApiTools();
+  tools.page = state(route, ["Observed generating"], "Observed generating", "generating");
+  const chats = await new ZaiCdpDriver(tools).listChats();
+  // The observed tab's own chat keeps the DOM truth: generating, Stop visible.
+  expect(chats.find(chat => chat.id === "route:" + routeId)).toMatchObject({ working: true, stopVisible: true });
+  expect(chats.find(chat => chat.id === "route:" + routeId)?.workingSource).toBeUndefined();
+  // A chat generating elsewhere is running on native evidence, with no Stop control.
+  expect(chats.find(chat => chat.id === "route:" + otherId)).toMatchObject({ working: true, workingSource: "native-last-run", stopVisible: false });
+  expect(chats.find(chat => chat.id === "route:" + thirdId)).toMatchObject({ working: false });
+  expect(chats.find(chat => chat.id === "route:" + thirdId)?.workingSource).toBeUndefined();
+});
+
 
 describe("ZAI tab auto-discovery", () => {
   it("captures the selected marker; the selected tab wins, then the lowest ID", () => {
