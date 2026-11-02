@@ -17,6 +17,8 @@ Observed first errors:
 - TypeError: Cannot read properties of undefined (reading '1')
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: open
+Status: fixed_pending_full_suite
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
+
+- 2026-11-02: Focused RED→GREEN: 8/8 passed across tests/harness-mesh-sender.test.ts and tests/harness-mesh-zcode-delivery.test.ts. Test owner ingress uses trustedMeshIngressForOwnerStdio, persistent HerderJobRegistry and real UserMessageDelivery; unauthenticated SDK send refuses, authenticated native send succeeds. Native UNKNOWN recorded durably, reusing same inputId returns same initial budget receipt and performs no second native send; ZCode accepts only official V4 proof and refuses unauthorized ingress. No production guards changed.
