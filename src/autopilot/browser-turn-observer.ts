@@ -199,6 +199,7 @@ export class BrowserTurnAutopilotObserver {
 
   private async nudgeStalled(harness: string, session: AgentSession, state: TrackedTurn): Promise<void> {
     if (await this.options.held(harness, session.id)) return;
+    if (!await this.isEnabled({ harness: harness as AutopilotRunnerInput["harness"], sessionId: session.id, cwd: session.cwd || "/" })) return;
     state.nudgedActivity = session.lastActivity;
     const burst = createHash("sha256").update(`${harness}:${session.id}:${session.lastActivity}`).digest("hex").slice(0, 12);
     try {

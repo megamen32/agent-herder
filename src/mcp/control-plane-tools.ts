@@ -124,7 +124,7 @@ export function registerControlPlaneTools(server: McpServer, deps: {
         "Use this for harnesses without a native Stop hook command (OpenCode 2). An explicit human Stop always wins over Autopilot.",
       inputSchema: z.object({
         action: z.enum(["on", "off", "status"]).describe("on = continue unfinished goals automatically, off = stop judging, status = read the current state."),
-        harness: z.enum(["opencode", "claude", "codex", "zcode", "hermes", "fast-agent"]).describe("Harness that owns the session."),
+        harness: z.enum(["opencode", "claude", "codex", "zcode", "hermes", "fast-agent", "chatgpt", "zai"]).describe("Harness that owns the session."),
         sessionId: z.string().trim().min(1).max(512),
         cwd: z.string().trim().min(1).optional().describe("Absolute working directory; required when the session record has none."),
       }),
