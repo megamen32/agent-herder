@@ -88,6 +88,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     queueAfterGeneration: true,
     chatCreation: false,
     accountArchiveViaCdp: false,
+    projects: false,
   } as const;
   private readonly cache = new Map<string, BrowserChat>();
   private operation: Promise<void> = Promise.resolve();
