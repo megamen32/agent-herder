@@ -138,7 +138,7 @@ export class BrowserChatHistoryCache {
         if (this.revisions.get(id) === revision && this.invalidations.get(id) === invalidation) this.dirty.delete(id);
         return fresh;
       } catch (error) {
-        this.cooldownUntil = Date.now() + (/429/.test(String(error)) ? 900_000 : 300_000);
+        this.cooldownUntil = Date.now() + (/429/.test(String(error)) ? 60_000 : 300_000);
         this.lastFailureAt.set(id, Date.now());
         return null; // stale cache remains available after a network failure
       }

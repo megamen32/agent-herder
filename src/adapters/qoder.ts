@@ -34,9 +34,14 @@ interface ParsedSession {
 }
 
 /** Controls Qoder sessions stored by qodercli through its supported CLI flags. */
+import { registerHarnessRuntimeCapabilities, type HarnessRuntimeCapabilities } from "../types/harness-runtime.js";
+
+const RUNTIME_CAPS: HarnessRuntimeCapabilities = { autopilotDispatch: "agentResume", hookDrivenStop: true, browserChat: false, autopilotEligible: false, localInject: false, humanStopObserver: false };
+registerHarnessRuntimeCapabilities('qoder', RUNTIME_CAPS);
 export class QoderAdapter implements HarnessAdapter {
   readonly type = "qoder" as const;
   readonly name = "Qoder";
+  readonly runtimeCapabilities = RUNTIME_CAPS;
 
   private readonly qoderBin: string;
   private readonly qoderDir: string;

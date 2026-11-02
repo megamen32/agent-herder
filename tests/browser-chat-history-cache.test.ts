@@ -161,7 +161,7 @@ describe("change-aware history request budget", () => {
     cache.setAccountScope(ACCOUNT_A);
     await cache.messages("one");
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-    await vi.waitFor(() => expect((cache as any).cooldownUntil).toBeGreaterThan(Date.now()+800_000));
+    await vi.waitFor(() => expect((cache as any).cooldownUntil).toBeGreaterThan(Date.now()+30_000));
     await cache.messages("two");
     cache.prewarm(["three"]);
     expect(fetch).toHaveBeenCalledTimes(1);

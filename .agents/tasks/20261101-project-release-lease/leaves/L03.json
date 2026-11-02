@@ -1,0 +1,76 @@
+{
+  "label": "Общий workflow через GPTAdmin",
+  "status": "done",
+  "description": "Canonical shared workflow + сохранённые профильные инструкции для MCP клиентов без plugin. Композиция перед hash/receipt, без ACL изменений.",
+  "acceptance": "Named/default content сохранён, receipts обновляются при изменении workflow, generic MCP delivery проверен; actual Z.ai QA отмечается отдельно.",
+  "owner": "align_lhc_pr_policy",
+  "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+  "harness": "chatgpt",
+  "depends_on": [],
+  "note": "Shared workflow PR30 merged59f1655c, publisher PR31 merged0f5efcd5. Production installed0f5efcd5, PID3165515, health200, version exact, draining=false. Real authenticated production MCP initialize returns shared workflow; generic consumer verified, actual Z.ai receipt not yet claimed. Native package clean source SHA67ec6564..., leasefence3 released.",
+  "id": "L03",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-01T17:07:28+03:00",
+  "updated_at": "2026-11-01T18:40:24+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-01T17:07:28+03:00",
+      "note": "",
+      "changes": {
+        "label": "Общий workflow через GPTAdmin",
+        "status": "running",
+        "description": "Canonical shared workflow + сохранённые профильные инструкции для MCP клиентов без plugin. Композиция перед hash/receipt, без ACL изменений.",
+        "acceptance": "Named/default content сохранён, receipts обновляются при изменении workflow, generic MCP delivery проверен; actual Z.ai QA отмечается отдельно.",
+        "owner": "align_lhc_pr_policy",
+        "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+        "harness": "chatgpt",
+        "depends_on": [],
+        "note": "Исходник в isolated GPTAdmin branch fix/shared-workflow-instructions-20261101, base456bfcb2. Existing instructions/ACL не перезаписываются. Production rollout после review с exact revision verification.",
+        "model": "gpt-6.1-sol"
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T17:13:10+03:00",
+      "note": "",
+      "changes": {
+        "result": "Draft PR https://github.com/megamen32/gptadmin/pull/30 source30aa5ab0. Structural independent review PASS; focused tests выполняются. Shared composition сохраняет named/default content и существующие ACL/receipts. Documentation описывает отдельные persisted16KiB и shared4KiB budgets. Production не изменён; actual Z.ai profile binding QA отдельно."
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T17:36:49+03:00",
+      "note": "",
+      "changes": {
+        "note": "PR30 MERGED59f1655c7d9fec137c0a17f0d266fe41d5117e2c;42 focused и full hub251.4s PASS, review PASS, actual isolated built-binary MCP initialize/resource/pure-exec PASS. Exact merged native package source_dirty=false, SHA813584d7..., sanitized public mirror2eecac9c опубликован, CI41316578749 выполняется. Native deployment попытка безопасно остановилась до switch: drain не достиг ready_to_stop за45s. Отмена подтверждена draining=false, health200, live456bfcb2/PID2391949.",
+        "result": "Дальнейший deployment отложен root из-за срочной OmniRoute/Z.ai диагностики, connector оставлен доступным. Leasefence1 released:true. После quietwindow: новый lease+CAS, штатный bounded wait до300s без force/bypass, health/real MCP proof. Actual audit client_id=zai найден, но postdeploy common-instruction delivery пока не подтверждён."
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T18:04:42+03:00",
+      "note": "",
+      "changes": {
+        "note": "PR30 merged59f1655c. 42 focused tests, full hub251.4s, independent review and isolated native binary MCP initialize/resource/pure-exec PASS. Corrected public mirror6234784 CI41317883323 terminal: adminUI/artifact PASS; only three independently verified pre-existing baseline gates fail (macOS cwd normalization, candidate tasks/get400, installer tasks/get400). First native deployment canceled before switch; live remains456bfcb2/build1076, health200. No production shared workflow delivery claim.",
+        "result": "Deployment waiting root quiet window. No active release lease. New acquire and actual revision/PID CAS required before native require-drain retry. Actual Z.ai postdeploy receipt not yet verified. Public publisher guard tracked in L04; new source publication held."
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T18:40:24+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "note": "Shared workflow PR30 merged59f1655c, publisher PR31 merged0f5efcd5. Production installed0f5efcd5, PID3165515, health200, version exact, draining=false. Real authenticated production MCP initialize returns shared workflow; generic consumer verified, actual Z.ai receipt not yet claimed. Native package clean source SHA67ec6564..., leasefence3 released.",
+        "result": "42 focused tests, full hub251.4s and independent review PASS. Latest native code unchanged vs tested59f. Required-drain rollout reached zero unfinished jobs and switched source. Detached native launcher terminated across service restart without final exit receipt; installation verified independently by current pointer, version, health and real MCP response. Prior unsuccessful attempts retained in history."
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    }
+  ],
+  "result": "42 focused tests, full hub251.4s and independent review PASS. Latest native code unchanged vs tested59f. Required-drain rollout reached zero unfinished jobs and switched source. Detached native launcher terminated across service restart without final exit receipt; installation verified independently by current pointer, version, health and real MCP response. Prior unsuccessful attempts retained in history."
+}

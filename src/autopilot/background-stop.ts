@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { harnessRuntimeCapabilities } from "../types/harness-runtime.js";
 import { resolve } from "node:path";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import type { HarnessAdapter } from "../types/index.js";
@@ -21,7 +22,7 @@ export class BackgroundAutopilotStop {
   }) {}
   isPending(harness: string, id: string): boolean { return (this.pending.get(`${harness}:${id}`) ?? 0) > 0; }
   submit(input: AutopilotRunnerInput) {
-    if (!["codex", "claude", "zcode", "opencode", "hermes", "chatgpt", "zai"].includes(input.harness) || !input.sessionId?.trim()
+    if (!harnessRuntimeCapabilities(input.harness).autopilotEligible || !input.sessionId?.trim()
       || !input.cwd?.startsWith("/") || !input.turnId?.trim()) throw new Error("Stop requires harness, sessionId, absolute cwd and turnId");
     // The same immutable event identity is independent from repeated hook metadata.
     const key = `autopilot-stop:${input.harness}:${resolve(input.cwd)}:${input.sessionId}:${input.turnId}`;

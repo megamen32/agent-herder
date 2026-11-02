@@ -1,3 +1,4 @@
+import "./_harness-caps-bootstrap.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { McpServer } from "@modelcontextprotocol/server";

@@ -46,8 +46,8 @@ export function useSessionPins(scope: string) {
   }};
 }
 
-export function SessionSidebarRow({session, title, selected, pinned, canPin, statusClass, statusOverride, onSelect, onPin}: {
-  session:SidebarSession; title:string; selected:boolean; pinned:boolean; canPin:boolean; statusClass:string; statusOverride?:string; onSelect:()=>void; onPin:()=>void;
+export function SessionSidebarRow({session, title, selected, pinned, canPin, statusClass, statusOverride, autopilotOn, onSelect, onPin}: {
+  session:SidebarSession; title:string; selected:boolean; pinned:boolean; canPin:boolean; statusClass:string; statusOverride?:string; autopilotOn?:boolean; onSelect:()=>void; onPin:()=>void;
 }) {
   const root = React.useRef<HTMLDivElement>(null), tooltip = React.useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = React.useState<{left:number; top:number; right:number} | null>(null);
@@ -82,7 +82,7 @@ export function SessionSidebarRow({session, title, selected, pinned, canPin, sta
     <button className={`session-row ${selected ? 'selected' : ''}`} aria-label={`${title}, ${subtitle}, ${context.status}`}
       aria-describedby={anchor ? id : undefined} onClick={onSelect}>
       <span className={`status-dot status-${statusClass}`} aria-hidden="true" />
-      <span className="session-copy"><strong>{title}</strong><small className="session-identity">{subtitle}</small>{context.goal && context.goal !== title ? <small className="session-goal">Цель: {context.goal}</small> : null}</span>
+      <span className="session-copy"><strong>{title}</strong>{autopilotOn && <svg className="session-autopilot-icon" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true" role="img" aria-label="Сессия на автопилоте"><path d="M2 12l9-2 1-7 2 1-1 6 7 3v1l-7-1-2 5-2-1 1-4-7-1z" /></svg>}<small className="session-identity">{subtitle}</small>{context.goal && context.goal !== title ? <small className="session-goal">Цель: {context.goal}</small> : null}</span>
     </button>
     <button type="button" className="session-pin" aria-pressed={pinned} aria-label={`${pinned ? 'Открепить' : 'Закрепить'} сессию: ${title}`}
       disabled={!canPin} title={!canPin ? 'Данные машины и кабинета ещё загружаются' : pinned ? 'Открепить сессию' : 'Закрепить сессию'} onClick={onPin}>

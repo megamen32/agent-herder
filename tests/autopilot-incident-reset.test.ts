@@ -38,6 +38,8 @@ it.each(["opencode", "codex"] as const)("resets policy inheritance while retaini
   }
   return nativeFetch(url, init);
  }));
+ // resetModules clears the registry too; load real adapter declarations after isolation.
+ await import("./_harness-caps-bootstrap.js");
  const { AutopilotSessionStore } = await import("../src/autopilot/session-store.js");
  const { AutopilotPolicyStore } = await import("../src/autopilot/policy-store.js");
  const { createDefaultAutopilotPolicy, createCodexSelectorFromStopSession } = await import("../src/autopilot/policy.js");

@@ -14,7 +14,7 @@ type ZaiSnapshot = {
   phase: ZaiPhase;
   draftPresent: boolean;
 };
-type BrowserPage = { id: number; url: string };
+export type BrowserPage = { id: number; url: string; selected?: boolean };
 
 const ZAI_ORIGIN = "https://chat.z.ai";
 const MAX_MESSAGE_CHARS = 16_000;
@@ -24,13 +24,19 @@ const POST_SEND_GUARD_MS = 1_800;
 /** Extract only tab IDs and exact ZAI origins from the shared Chrome owner's page list. */
 export function parseZaiPages(text: string): BrowserPage[] {
   return text.split("\n").flatMap(line => {
-    const match = line.match(/^\s*(\d+):.*?\((https:\/\/chat\.z\.ai(?:\/[^)]*)?)\)/);
+    const match = line.match(/^\s*(\d+):.*?\((https:\/\/chat\.z\.ai(?:\/[^)]*)?)\)(\s*\[selected\])?/);
     if (!match) return [];
     try {
       const url = new URL(match[2]!);
-      return url.origin === ZAI_ORIGIN ? [{ id: Number(match[1]), url: url.toString() }] : [];
+      return url.origin === ZAI_ORIGIN
+        ? [{ id: Number(match[1]), url: url.toString(), ...(match[3] ? { selected: true } : {}) }] : [];
     } catch { return []; }
   });
+}
+
+/** Deterministic pick among open ZAI tabs: the selected tab first, then the lowest page ID. */
+export function pickZaiPage(pages: BrowserPage[]): BrowserPage {
+  return pages.find(page => page.selected) ?? [...pages].sort((a, b) => a.id - b.id)[0]!;
 }
 
 function parseTitleId(id: string): string {
@@ -90,7 +96,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   getAccountScope(): string | undefined { return this.accountScope; }
 
 
-  constructor(private readonly tools: ChromePageTools, private readonly pinnedPageId?: number) {}
+  constructor(private readonly tools: ChromePageTools, private readonly pinnedPageId?: number, private readonly openWaitMs = 5_000) {}
 
   private exclusive<T>(callback: () => Promise<T>): Promise<T> {
     const result = this.operation.then(callback);
@@ -98,17 +104,27 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     return result;
   }
 
+  /** Auto-detect the ZAI tab; open one when none exists. A stale explicit
+   * pin never disables the provider and falls back to auto-detection. */
   private async page(): Promise<BrowserPage> {
     const pages = parseZaiPages(await this.tools.call("list_pages"));
-    if (this.pinnedPageId !== undefined) {
-      const match = pages.find(page => page.id === this.pinnedPageId);
-      if (!match) throw new Error("Pinned ZAI Chrome tab no longer exists; no fallback to another tab");
-      return match;
-    }
-    if (pages.length !== 1) throw new Error(
-      pages.length ? "Ambiguous ZAI Chrome tabs; pin AGENT_HERDER_ZAI_PAGE_ID" : "No ZAI tab open in Mac mini Chrome",
-    );
-    return pages[0]!;
+    const pinned = this.pinnedPageId !== undefined
+      ? pages.find(page => page.id === this.pinnedPageId) : undefined;
+    if (pinned) return pinned;
+    if (pages.length) return pickZaiPage(pages);
+    return this.openZaiTab();
+  }
+
+  /** The tab list is the source of truth: new_page reports its own navigation
+   * timeout even when the tab actually opened, so that error is tolerated. */
+  private async openZaiTab(): Promise<BrowserPage> {
+    try {
+      await this.tools.call("new_page", { url: ZAI_ORIGIN + "/" });
+    } catch { /* presence is verified by the re-list below */ }
+    await new Promise(resolve => setTimeout(resolve, this.openWaitMs));
+    const pages = parseZaiPages(await this.tools.call("list_pages"));
+    if (!pages.length) throw new Error("No ZAI tab open in Mac mini Chrome and auto-open failed");
+    return pickZaiPage(pages);
   }
 
   private async snapshot(pageId: number): Promise<ZaiSnapshot> {
@@ -126,7 +142,10 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   }
 
   private busy(state: ZaiSnapshot): boolean {
-    return state.phase !== "idle" || state.draftPresent ||
+    // A user draft is preserved and restored around the herder's send (see
+    // readComposerDraft/restoreComposerDraft), so it no longer counts as
+    // busy. Only an active generation or the post-send guard blocks the next send.
+    return state.phase !== "idle" ||
       Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS;
   }
 
@@ -373,6 +392,29 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     }));
   }
 
+  /** Read the user's own unsent draft so the herder's send can restore it
+   * after submission instead of clobbering it. */
+  private async readComposerDraft(pageId: number): Promise<string> {
+    const result = parseChromeEvaluation<{ value: string }>(
+      await this.tools.call("evaluate_script", { pageId, function: `() => {
+        const editor = document.querySelector('textarea[placeholder="Send a Message"]');
+        return { value: editor ? editor.value : "" };
+      }` }),
+    );
+    return result.value ?? "";
+  }
+
+  /** Restore the captured draft (or clear the composer when there was none).
+   * Skipped silently when the composer is not editable mid-generation; Z.ai
+   * keeps its own per-conversation draft state in that case. */
+  private async restoreComposerDraft(pageId: number, draft: string): Promise<void> {
+    try {
+      const snapshot = await this.tools.call("take_snapshot", { pageId });
+      const uid = snapshot.match(/uid=([\w-]+) textbox "Send a Message"/)?.[1];
+      if (uid) await this.tools.call("fill", { pageId, uid, value: draft });
+    } catch { /* composer not editable mid-generation */ }
+  }
+
   async sendMessage(input: { chatId: string; text: string; waitForCompletion?: boolean }): Promise<{ assistantText?: string }> {
     return this.exclusive(async () => {
       const { chatId, text } = input;
@@ -386,7 +428,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
         if (state.phase === "generating" || Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS) {
           throw new Error("prompt is already running; ZAI queue must wait");
         }
-        throw new Error("ZAI composer is unavailable or has an existing draft; message not sent");
+        throw new Error("ZAI composer is unavailable; message not sent");
       }
       if (!this.isSelected(chatId, known, state)) {
         const outcome = await this.selectChat(page.id, chatId, known);
@@ -406,7 +448,10 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       const snapshot = await this.tools.call("take_snapshot", { pageId: page.id });
       const uid = snapshot.match(/uid=([\w-]+) textbox "Send a Message"/)?.[1];
       if (!uid) throw new Error("ZAI message composer not found; message not sent");
-      await this.tools.call("fill", { pageId: page.id, uid, value: text });
+      // Preserve any user draft across the herder's send and restore it after.
+      const savedDraft = await this.readComposerDraft(page.id);
+      try {
+        await this.tools.call("fill", { pageId: page.id, uid, value: text });
 
       // ONE atomic browser-side preflight+click: re-check Stop, exact target,
       // actual filled textarea and enabled Send immediately before the click.
@@ -480,6 +525,9 @@ export class ZaiCdpDriver implements BrowserChatDriver {
         throw new Error("ZAI submission admission unknown: do not retry automatically");
       }
       return {};
+      } finally {
+        await this.restoreComposerDraft(page.id, savedDraft).catch(() => undefined);
+      }
     });
   }
 
@@ -529,7 +577,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       if (!known) return { ok: false, error: "Z.ai chat is not in the authenticated inventory" };
       const page = await this.page();
       let state = await this.snapshot(page.id);
-      if (this.busy(state)) return { ok: false, error: "Z.ai model switch requires an idle chat without a personal draft" };
+      if (this.busy(state)) return { ok: false, error: "Z.ai model switch requires an idle chat" };
       if (!this.isSelected(chatId, known, state)) {
         const selection = await this.selectChat(page.id, chatId, known);
         if (selection !== "selected") return { ok: false, error: "Z.ai chat could not be selected safely" };

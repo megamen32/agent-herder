@@ -1,3 +1,4 @@
+import "./_harness-caps-bootstrap.js";
 import { randomUUID } from "node:crypto";
 import type { Server } from "node:http";
 import { mkdtemp } from "node:fs/promises";

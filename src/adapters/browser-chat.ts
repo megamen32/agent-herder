@@ -59,6 +59,15 @@ export interface BrowserChatProvider { id: string; name: string; harness: Harnes
  * provider driver. Never starts an independent browser or silently creates
  * a chat while trying to resume an existing one.
  */
+import { registerHarnessRuntimeCapabilities, type HarnessRuntimeCapabilities } from "../types/harness-runtime.js";
+
+/** Browser-chat harnesses (chatgpt, zai, browser-chat alias) share one runtime
+ * capability set: observer-driven, no CLI, eligible for autopilot except the
+ * generic browser-chat alias. */
+const BROWSER_RUNTIME_CAPS: HarnessRuntimeCapabilities = { autopilotDispatch: "returnNextGoal", hookDrivenStop: false, browserChat: true, autopilotEligible: true, localInject: false, humanStopObserver: false };
+registerHarnessRuntimeCapabilities("chatgpt", BROWSER_RUNTIME_CAPS);
+registerHarnessRuntimeCapabilities("zai", BROWSER_RUNTIME_CAPS);
+registerHarnessRuntimeCapabilities("browser-chat", { ...BROWSER_RUNTIME_CAPS, autopilotEligible: false });
 export class BrowserChatAdapter implements HarnessAdapter {
   readonly type: HarnessType;
   readonly name: string;
@@ -75,6 +84,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
     subagents: false,
     events: false,
   };
+  readonly runtimeCapabilities = BROWSER_RUNTIME_CAPS;
   readonly lazyDiscovery = true;
   private readonly inventory = new Map<string, BrowserChat>();
   private inventoryAt = 0;
@@ -114,12 +124,35 @@ export class BrowserChatAdapter implements HarnessAdapter {
   private nativeId(id: string): string {
     if (!this.scopedIds) return id;
     const prefix = `${this.provider.id}::`;
-    if (!id.startsWith(prefix)) throw new Error("Browser session belongs to another provider");
-    let nativeId: string;
-    try { nativeId = decodeURIComponent(id.slice(prefix.length)); }
-    catch { throw new Error("Invalid encoded browser session"); }
-    if (!nativeId) throw new Error("Empty native browser session");
-    return nativeId;
+    if (id.startsWith(prefix)) {
+      let nativeId: string;
+      try { nativeId = decodeURIComponent(id.slice(prefix.length)); }
+      catch { throw new Error("Invalid encoded browser session"); }
+      if (!nativeId) throw new Error("Empty native browser session");
+      return nativeId;
+    }
+    // An id carrying another provider's scoped prefix must still be
+    // refused: cross-provider leaks cannot become possible via the
+    // fallback path.
+    if (id.includes("::")) throw new Error("Browser session belongs to another provider");
+    // Accept a raw native id directly: HTTP routes like
+    // /api/sessions/<harness>/<native-id>/<action> and MCP callers do not
+    // know the scoped-id convention. The ZAI driver keys deep-link chats
+    // by a `route:` prefix (its listChats emits id="route:<uuid>"), so a
+    // raw native uuid must be normalized to that form for inventory and
+    // driver lookups to resolve. The ChatGPT driver uses native ids
+    // directly and needs no prefix.
+    if (this.provider.id === "zai" && !id.startsWith("route:") && !id.startsWith("sidebar:") && !id.includes(":")) {
+      return "route:" + id;
+    }
+    return id;
+  }
+
+  /** Preserve the caller's id form so HTTP identity checks pass whether
+   *  the caller used the scoped form ("zai::route%3A<uuid>") or a raw
+   *  native id. The rest of the session object stays canonical. */
+  private withCallerId(session: AgentSession, id: string): AgentSession {
+    return session.id === id ? session : { ...session, id };
   }
 
   private updateInventory(chats: readonly BrowserChat[]): void {
@@ -191,15 +224,15 @@ export class BrowserChatAdapter implements HarnessAdapter {
     const native = this.nativeId(id);
     // Never navigate the user's browser merely to display history metadata.
     const observed = this.inventory.get(native);
-    if (observed) return this.toSession(observed);
+    if (observed) return this.withCallerId(this.toSession(observed), id);
     // An exact deep link outside the current 100 chats must not switch the
     // user's browser tab just to resolve the frontend's session header.
     const known = this.driver.getKnownChat?.(native);
-    if (known) return this.toSession(known);
+    if (known) return this.withCallerId(this.toSession(known), id);
     const chat = this.driver.getChat
       ? await this.driver.getChat(native)
       : (await this.driver.listChats()).find((entry) => entry.id === native);
-    return chat ? this.toSession(chat) : null;
+    return chat ? this.withCallerId(this.toSession(chat), id) : null;
   }
 
   async getSessionMessages(id: string, limit = 100): Promise<SessionMessageView[] | null> {

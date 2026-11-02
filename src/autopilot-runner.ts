@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { notifyAutopilotStop } from "./autopilot/stop-notify.js";
+import { harnessRuntimeCapabilities } from "./types/harness-runtime.js";
 import { readFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
@@ -227,11 +228,10 @@ async function evaluateAutopilotCommand(input: AutopilotRunnerInput, background 
       const nextGoal = result.reason;
       await humanStops.rememberGeneratedPrompt(input.harness, input.sessionId, nextGoal);
       if (await held()) return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "human-stop-held" };
-      if (background || input.harness === "codex" || input.harness === "claude" || input.harness === "zcode") {
-        return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "continue", next_goal: nextGoal };
-      }
-      if (input.harness === "hermes") {
-        return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "continue", next_goal: nextGoal, resume_status: "local-inject" };
+      const runtimeCaps = harnessRuntimeCapabilities(input.harness);
+      if (background || runtimeCaps.autopilotDispatch === "returnNextGoal") {
+        return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "continue", next_goal: nextGoal,
+          ...(runtimeCaps.localInject ? { resume_status: "local-inject" } : {}) };
       }
       if (await held()) return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "human-stop-held" };
       // OpenCode 2 sessions are not addressable by the standalone CLI, so the

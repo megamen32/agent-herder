@@ -1,3 +1,4 @@
+import "./_harness-caps-bootstrap.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";

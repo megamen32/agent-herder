@@ -75,7 +75,7 @@ describe("ChatGPT MCP OAuth HTTP flow", () => {
     expect(emptyScopeCallback.searchParams.get("error")).toBe("invalid_scope");
     expect(emptyScopeCallback.searchParams.get("iss")).toBe(MCP_OAUTH_ISSUER);
 
-    const state = "chatgpt-state-binding-274c";
+    const state = "chatgpt-state-binding-274c&<test>";
     const params = new URLSearchParams({
       client_id: client.client_id, redirect_uri: CHATGPT_REDIRECT_URI, response_type: "code",
       code_challenge: pkceS256(verifier), code_challenge_method: "S256", resource: MCP_OAUTH_RESOURCE,
@@ -90,9 +90,32 @@ describe("ChatGPT MCP OAuth HTTP flow", () => {
     expect(transaction).toBeTruthy();
 
     const form = new URLSearchParams({ transaction: transaction!, client_id: client.client_id, redirect_uri: CHATGPT_REDIRECT_URI, state });
+    for (const [field, value] of [["state", "wrong-state"], ["redirect_uri", "https://attacker.example/callback"], ["transaction", "wrong-transaction"]]) {
+      const invalid = new URLSearchParams(form);
+      invalid.set(field!, value!);
+      const rejected = await fetch(`${origin}/oauth/consent`, { method: "POST", redirect: "manual", headers: { Origin: origin, "Content-Type": "application/x-www-form-urlencoded" }, body: invalid });
+      expect(rejected.status).toBe(400);
+      expect(rejected.headers.get("location")).toBeNull();
+    }
+    const crossOrigin = await fetch(`${origin}/oauth/consent`, { method: "POST", redirect: "manual", headers: { Origin: "https://attacker.example", "Content-Type": "application/x-www-form-urlencoded" }, body: form });
+    expect(crossOrigin.status).toBe(401);
     const consent = await fetch(`${origin}/oauth/consent`, { method: "POST", redirect: "manual", headers: { Origin: origin, "Content-Type": "application/x-www-form-urlencoded" }, body: form });
-    expect(consent.status).toBe(303);
-    const callback = new URL(consent.headers.get("location")!);
+    expect(consent.status).toBe(200);
+    expect(consent.headers.get("location")).toBeNull();
+    expect(consent.headers.get("cache-control")).toBe("no-store, private");
+    expect(consent.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(consent.headers.get("content-security-policy")).toBe(authorization.headers.get("content-security-policy"));
+    expect(consent.headers.get("content-security-policy")).toContain("form-action 'self'");
+    const confirmation = await consent.text();
+    expect(confirmation).toContain("Вернуться в ChatGPT");
+    expect(confirmation).not.toMatch(/<script|http-equiv=["']refresh/i);
+    const callbackLink = confirmation.match(/href="([^"\s]+)"/)?.[1];
+    expect(callbackLink).toBeTruthy();
+    expect(callbackLink).toContain("&amp;state=");
+    const callback = new URL(callbackLink!.replaceAll("&amp;", "&"));
+    const replay = await fetch(`${origin}/oauth/consent`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/x-www-form-urlencoded" }, body: form });
+    expect(replay.status).toBe(400);
+    expect(await replay.json()).toEqual({ error: "invalid_authorization_transaction" });
     expect(callback.origin + callback.pathname).toBe(CHATGPT_REDIRECT_URI);
     expect(callback.searchParams.get("state")).toBe(state);
     expect(callback.searchParams.get("iss")).toBe(MCP_OAUTH_ISSUER);

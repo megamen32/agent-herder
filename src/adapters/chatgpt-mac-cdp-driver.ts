@@ -1,6 +1,7 @@
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import type { SessionMessageView } from "../types/index.js";
 import { CHATGPT_LIST_API_SCRIPT, chatgptMessagesApiScript } from "./browser-chat-api-scripts.js";
+import { ChatGptRequestTrace } from "./chatgpt-request-trace.js";
 import { MacMiniChromeTransport, parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
 
 const ORIGIN = "https://chatgpt.com";
@@ -8,30 +9,45 @@ const MAX_MESSAGE = 16_000;
 const POST_SEND_GUARD_MS = 1_800;
 const NATIVE_CHAT_ID = /^[a-f0-9]{8}-[a-f0-9-]{20,75}$/i;
 type Phase = "idle" | "generating" | "unknown";
-type Page = { id: number; url: string };
+export type Page = { id: number; url: string; selected?: boolean; conversation?: boolean };
 type Snapshot = {
   origin: string; path: string; authenticated: boolean; composer: boolean;
   phase: Phase; draftPresent: boolean;
   chats: Array<{ id: string; title: string }>;
+  pageResources?: unknown;
 };
 
 export function parseChatGptPages(text: string): Page[] {
   return text.split("\n").flatMap(line => {
-    const match = line.match(/^\s*(\d+):.*?\((https:\/\/chatgpt\.com(?:\/[^)]*)?)\)/);
+    const match = line.match(/^\s*(\d+):.*?\((https:\/\/chatgpt\.com(?:\/[^)]*)?)\)(\s*\[selected\])?/);
     if (!match) return [];
     try {
       const url = new URL(match[2]!);
-      return url.origin === ORIGIN && !/^\/dots(?:\/|$)/.test(url.pathname) ? [{ id: Number(match[1]), url: url.toString() }] : [];
+      if (url.origin !== ORIGIN) return [];
+      // /dots/home is the ChatGPT workspace dashboard: a valid authenticated
+      // tab with the same sidebar/composer once navigated. It is no longer
+      // excluded; a conversation tab is simply preferred (see pickChatGptPage).
+      const conversation = /^(?:\/c\/[a-f0-9-]{28,80}|\/g\/g-p-[a-f0-9-]+\/c\/[a-f0-9-]{28,80})$/i.test(url.pathname);
+      return [{ id: Number(match[1]), url: url.toString(), conversation, ...(match[3] ? { selected: true } : {}) }];
     } catch { return []; }
   });
+}
+
+/** Deterministic pick among open ChatGPT tabs: the selected tab first, then
+ * a tab already on a conversation route (/c/<id> or /g/g-p-…/c/<id>) so a
+ * dashboard such as /dots/home is left undisturbed, then the lowest page ID. */
+export function pickChatGptPage(pages: Page[]): Page {
+  return pages.find(page => page.selected)
+    ?? pages.find(page => page.conversation)
+    ?? [...pages].sort((a, b) => a.id - b.id)[0]!;
 }
 
 /** A read-only page snapshot, using the live ChatGPT sidebar's native /c/ URLs.
  * This code never reads message bodies, cookies, JWTs or private drafts.
  */
 export const CHATGPT_MAC_SNAPSHOT = `() => {
-  const route = /^\\/c\\/([a-f0-9-]{28,80})$/i;
-  const links = [...document.querySelectorAll('a[data-interactive-row-link][href^="/c/"]')];
+  const route = /^\\/(?:c|g\\/g-p-[a-f0-9-]+\\/c)\\/([a-f0-9-]{28,80})$/i;
+  const links = [...document.querySelectorAll('a[data-interactive-row-link][href^="/c/"],a[data-interactive-row-link][href^="/g/"]')];
   const chats = links.flatMap(link => {
     const path = link.getAttribute('href') || '';
     const match = path.match(route);
@@ -52,6 +68,35 @@ export const CHATGPT_MAC_SNAPSHOT = `() => {
       button.getAttribute('aria-label') || ''
     )
   );
+  // PerformanceResourceTiming is passive; entries can include both native page
+  // traffic and our CDP fetches. They are NEVER counted as unique upstream calls.
+  let pageResources=[];
+  try {
+    if(typeof performance!=='undefined' && performance.getEntriesByType) {
+      const entries=performance.getEntriesByType('resource').slice(-300);
+      const highest=entries.reduce((v,e)=>Math.max(v,e.startTime||0),0);
+      const previous=globalThis.__herderTracePerfCursor;
+      globalThis.__herderTracePerfCursor=highest;
+      if(typeof previous==='number') {
+        for(const e of entries) {
+          if(!(e.startTime>previous))continue;
+          const u=new URL(e.name,location.origin);
+          if(u.origin!==location.origin)continue;
+          let endpoint,operation;
+          if(u.pathname==='/api/auth/session'){endpoint='/api/auth/session';operation='auth_session';}
+          else if(u.pathname==='/backend-api/conversations'){endpoint='/backend-api/conversations';operation='conversation_list';}
+          else if(/^\\/backend-api\\/conversations?\\/[^/]+$/.test(u.pathname)){
+            endpoint=u.pathname.startsWith('/backend-api/conversations/')
+              ?'/backend-api/conversations/{id}':'/backend-api/conversation/{id}';
+            operation='conversation_read';
+          }else continue;
+          pageResources.push({endpoint,operation,
+            http_status:Number.isInteger(e.responseStatus)?e.responseStatus:null,
+            latency_ms:e.duration});
+        }
+      }
+    }
+  }catch{pageResources=[];}
   return {
     origin:location.origin,path:location.pathname,
     authenticated:!!document.querySelector('button[aria-label="Открыть меню профиля"],button[aria-label="Open profile menu"]'),
@@ -59,11 +104,13 @@ export const CHATGPT_MAC_SNAPSHOT = `() => {
     phase:stop?'generating':(visible(editor)&&voice?'idle':'unknown'),
     draftPresent:!!(editor?.textContent||'').trim(),
     chats:chats.slice(0,300),
+    pageResources:pageResources.slice(-40),
   };
 }`;
 
 /** ChatGPT browser site, sharing Mac mini's established CDP owner with ZAI.
- * A single pinned/unique tab is required; no fallback to the other provider.
+ * The tab is auto-discovered (selected tab, else the lowest page ID) or opened
+ * on demand; there is never a fallback to the other provider's tab.
  */
 export class ChatGptMacCdpDriver implements BrowserChatDriver {
   readonly browserFeatures = {
@@ -73,13 +120,14 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     accountArchiveViaCdp: true,
   } as const;
   private readonly cache = new Map<string, BrowserChat>();
+  private readonly requestTrace = new ChatGptRequestTrace();
   private operation: Promise<void> = Promise.resolve();
   private lastSubmittedAt = 0;
   private accountScope: string | undefined;
   getAccountScope(): string | undefined { return this.accountScope; }
 
 
-  constructor(private readonly tools: ChromePageTools, private readonly pinnedPageId?: number) {}
+  constructor(private readonly tools: ChromePageTools, private readonly pinnedPageId?: number, private readonly openWaitMs = 5_000) {}
 
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {
     const op = this.operation.then(fn);
@@ -87,36 +135,58 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     return op;
   }
 
+  /** Auto-detect the ChatGPT tab; open one when none exists. A stale explicit
+   * pin never disables the provider and falls back to auto-detection. */
   private async page(): Promise<Page> {
     const pages = parseChatGptPages(await this.tools.call("list_pages"));
-    if (this.pinnedPageId !== undefined) {
-      const page = pages.find(p => p.id === this.pinnedPageId);
-      if (!page) throw new Error("Pinned ChatGPT tab unavailable; no other tab selected");
-      return page;
-    }
-    if (pages.length !== 1) throw new Error(pages.length
-      ? "Multiple ChatGPT tabs; pin AGENT_HERDER_CHATGPT_PAGE_ID"
-      : "No ChatGPT tab in Mac mini Chrome");
-    return pages[0]!;
+    const pinned = this.pinnedPageId !== undefined
+      ? pages.find(page => page.id === this.pinnedPageId) : undefined;
+    if (pinned?.conversation) return pinned;
+    if (pages.length) return pickChatGptPage(pages);
+    return this.openChatGptTab();
+  }
+
+  /** The tab list is the source of truth: new_page reports its own navigation
+   * timeout even when the tab actually opened, so that error is tolerated. */
+  private async openChatGptTab(): Promise<Page> {
+    try {
+      await this.tools.call("new_page", { url: ORIGIN + "/" });
+    } catch { /* presence is verified by the re-list below */ }
+    await new Promise(resolve => setTimeout(resolve, this.openWaitMs));
+    const pages = parseChatGptPages(await this.tools.call("list_pages"));
+    if (!pages.length) throw new Error("No ChatGPT tab in Mac mini Chrome and auto-open failed");
+    return pickChatGptPage(pages);
   }
 
   private async snapshot(pageId: number): Promise<Snapshot> {
+    const started = Date.now();
     const result = parseChromeEvaluation<Snapshot>(
       await this.tools.call("evaluate_script", { pageId, function: CHATGPT_MAC_SNAPSHOT }));
-    if (result.origin !== ORIGIN || !result.authenticated || !result.composer ||
+    this.requestTrace.ingestPageResources(result.pageResources);
+    this.requestTrace.record({
+      kind: "dom_cache_read", initiator: "herder_browser", executor: "herder_cdp",
+      operation: "snapshot", endpoint: "other", latency_ms: Date.now()-started,
+    });
+    if (result.origin !== ORIGIN || !result.authenticated ||
       !["idle", "generating", "unknown"].includes(result.phase)) {
-      throw new Error("ChatGPT Mac mini tab is not an authenticated chat page");
+      // The composer is not required here: a /dots/home workspace dashboard has
+      // no editor but is still an authenticated listing surface. sendMessage
+      // navigates such a tab to /c/<id> and re-checks the composer there.
+      throw new Error("ChatGPT Mac mini tab is not an authenticated page");
     }
     return result;
   }
 
   private busy(s: Snapshot): boolean {
-    return s.phase !== "idle" || s.draftPresent ||
+    // A user draft is preserved and restored around the herder's send (see
+    // readComposerDraft/restoreComposerDraft), so it no longer counts as
+    // busy. Only an active generation or the post-send guard blocks the next send.
+    return s.phase !== "idle" ||
       Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS;
   }
 
   private toChat(id: string, title: string, s: Snapshot, at?: number): BrowserChat {
-    const selected = s.path === "/c/" + id;
+    const selected = s.path.endsWith("/c/" + id);
     return {
       id, title, updatedAt: typeof at === "number" && at > 0
         ? new Date(at < 1e12 ? at * 1000 : at).toISOString() : new Date().toISOString(),
@@ -134,9 +204,10 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     // It does not navigate or change the user's selected chat.
     try {
       const data = parseChromeEvaluation<{
-        scope?: string; error?: string;
+        scope?: string; error?: string; trace?: unknown;
         chats?: Array<{ id: string; title: string; updatedAt?: number }>;
       }>(await this.tools.call("evaluate_script", { pageId: page.id, function: CHATGPT_LIST_API_SCRIPT }));
+      this.requestTrace.ingestBrowserHttp(data.trace);
       if (data.scope && /^[a-f0-9]{64}$/.test(data.scope) && Array.isArray(data.chats)) {
         this.accountScope = data.scope;
         const seen = new Set<string>();
@@ -146,7 +217,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
           seen.add(entry.id);
           chats.push(this.toChat(entry.id, entry.title, s, entry.updatedAt));
         }
-        const selected = s.path.match(/^\/c\/([a-f0-9-]{28,80})$/i)?.[1];
+        const selected = s.path.match(/\/c\/([a-f0-9-]{28,80})$/i)?.[1];
         if (selected && NATIVE_CHAT_ID.test(selected) && !seen.has(selected)) {
           chats.unshift(this.toChat(selected, this.cache.get(selected)?.title || "ChatGPT conversation", s));
         }
@@ -162,7 +233,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       seen.add(id);
       chats.push(this.toChat(id, title, s));
     }
-    const current = s.path.match(/^\/c\/([a-f0-9-]{28,80})$/i)?.[1];
+    const current = s.path.match(/\/c\/([a-f0-9-]{28,80})$/i)?.[1];
     if (current && NATIVE_CHAT_ID.test(current) && !seen.has(current)) {
       const oldTitle = this.cache.get(current)?.title;
       chats.unshift(this.toChat(current, oldTitle || "ChatGPT conversation", s));
@@ -177,6 +248,10 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
 
   getKnownChat(id: string): BrowserChat | null {
     if (!NATIVE_CHAT_ID.test(id)) return null;
+    this.requestTrace.record({
+      kind: "dom_cache_read", initiator: "herder_browser", executor: "herder_cdp",
+      operation: "cache_lookup", endpoint: "other", cache_hit: this.cache.has(id),
+    });
     return this.cache.get(id) ?? {
       id, title: "ChatGPT conversation", working: false, stopVisible: false,
       unread: false, updatedAt: new Date(0).toISOString(),
@@ -197,10 +272,11 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     if (!NATIVE_CHAT_ID.test(chatId)) return null;
     const page = await this.page();
     const result = parseChromeEvaluation<{
-      error?: string; messages?: Array<{ id: string; role: string; text: string;
+      error?: string; trace?: unknown; messages?: Array<{ id: string; role: string; text: string;
         timestamp?: string; model?: string }>;
     }>(await this.tools.call("evaluate_script",
       { pageId: page.id, function: chatgptMessagesApiScript(chatId) }));
+    this.requestTrace.ingestBrowserHttp(result.trace);
     if (result.error || !Array.isArray(result.messages)) {
       throw new Error("ChatGPT history unavailable: " + (result.error || "unexpected response"));
     }
@@ -213,6 +289,29 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     }));
   }
 
+  /** Read the user's own unsent draft so the herder's send can restore it
+   * after submission instead of clobbering it. */
+  private async readComposerDraft(pageId: number): Promise<string> {
+    const result = parseChromeEvaluation<{ value: string }>(
+      await this.tools.call("evaluate_script", { pageId, function: `() => {
+        const editor = document.querySelector('div[contenteditable="true"][role="textbox"][data-composer-markdown]');
+        return { value: editor ? (editor.innerText || editor.textContent || "") : "" };
+      }` }),
+    );
+    return result.value ?? "";
+  }
+
+  /** Restore the captured draft (or clear the composer when there was none).
+   * Skipped silently when the composer is not editable mid-generation; ChatGPT
+   * keeps its own per-conversation draft state in that case. */
+  private async restoreComposerDraft(pageId: number, draft: string): Promise<void> {
+    try {
+      const snapshot = await this.tools.call("take_snapshot", { pageId });
+      const uid = snapshot.match(/uid=([\w-]+) textbox "(?:Спросить ChatGPT|Ask ChatGPT|Ask anything|Message ChatGPT)"/i)?.[1];
+      if (uid) await this.tools.call("fill", { pageId, uid, value: draft });
+    } catch { /* composer not editable mid-generation */ }
+  }
+
   async sendMessage(input: { chatId: string; text: string; waitForCompletion?: boolean }): Promise<{ assistantText?: string }> {
     return this.exclusive(async () => {
       const { chatId, text } = input;
@@ -223,13 +322,19 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       if (!known) throw new Error("ChatGPT conversation absent from authenticated inventory");
       const page = await this.page();
       let state = await this.snapshot(page.id);
-      if (this.busy(state)) {
+      if (state.path === "/c/" + chatId) {
+        // Already on the target conversation: only an active generation or the
+        // post-send guard blocks the send. An unknown composer state here is
+        // a real "unavailable" (the chat itself is not idle).
         if (state.phase === "generating" || Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS) {
           throw new Error("prompt is already running; browser queue must wait");
         }
-        throw new Error("ChatGPT composer unavailable or has a personal draft; message not sent");
-      }
-      if (state.path !== "/c/" + chatId) {
+        if (state.phase !== "idle") {
+          throw new Error("ChatGPT composer unavailable; message not sent");
+        }
+      } else {
+        // Navigate a dashboard (e.g. /dots/home) or a different conversation
+        // onto the target chat; the composer is verified after navigation.
         await this.tools.call("navigate_page", {
           pageId: page.id, type: "url", url: ORIGIN + "/c/" + chatId,
         });
@@ -237,16 +342,20 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       let ready = false;
       for (let i = 0; i < 4; i++) {
         state = await this.snapshot(page.id);
-        if (state.path === "/c/" + chatId && !this.busy(state)) {
+        if (state.path === "/c/" + chatId && !this.busy(state) && state.composer) {
           ready = true;
           break;
         }
+        await new Promise(resolve => setTimeout(resolve, 150));
       }
       if (!ready) throw new Error("ChatGPT target or idle state not confirmed; message not sent");
       const accessibility = await this.tools.call("take_snapshot", { pageId: page.id });
       const textbox = accessibility.match(/uid=([\w-]+) textbox "(?:Спросить ChatGPT|Ask ChatGPT|Ask anything|Message ChatGPT)"/i)?.[1];
       if (!textbox) throw new Error("ChatGPT editor unavailable; message not sent");
-      await this.tools.call("fill", { pageId: page.id, uid: textbox, value: text });
+      // Preserve any user draft across the herder's send and restore it after.
+      const savedDraft = await this.readComposerDraft(page.id);
+      try {
+        await this.tools.call("fill", { pageId: page.id, uid: textbox, value: text });
 
       // A single browser-side check+click: Enter can accidentally stop a turn
       // if the UI transitions between the separate fill and submit RPCs.
@@ -291,6 +400,9 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       }
       this.lastSubmittedAt = Date.now();
       return {};
+      } finally {
+        await this.restoreComposerDraft(page.id, savedDraft).catch(() => undefined);
+      }
     });
   }
 

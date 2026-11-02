@@ -1,4 +1,5 @@
 import type { RecoveryAdmission, RecoveryAdmissionGate } from "./autopilot/recovery-admission.js";
+import { getHarnessRuntimeCapabilities } from "./types/harness-runtime.js";
 import type { OperatorCohortEnrollmentResult, OperatorCohortEnrollmentTarget, OperatorContinuationEnrollmentTarget } from "./autopilot/unfinished-session-launcher.js";
 import type { ContentPart, Conversation, ConversionResult, HarnessType, Message } from "session-convert";
 import { resolve } from "node:path";
@@ -613,8 +614,9 @@ export class SessionSupervisor {
     const direct = this.adapters.get(harness);
     if (direct) {
       const session = await read(direct);
-      const humanStopHeld = session && (harness === "codex" || harness === "zcode" || harness === "opencode") ? await this.humanStops.observe(session) : false;
-      const modelOptions = includeModelOptions === false || harness === "chatgpt" || harness === "zai"
+      const runtimeCaps = getHarnessRuntimeCapabilities(direct);
+      const humanStopHeld = session && runtimeCaps.humanStopObserver ? await this.humanStops.observe(session) : false;
+      const modelOptions = includeModelOptions === false || runtimeCaps.browserChat
         ? [] : direct.listModels ? await direct.listModels() : [];
       return session
         ? { ...session, meta: { ...session.meta, humanStopHeld, provider: harness, controlCapabilities: getHarnessCapabilities(direct), modelOptions } }
@@ -1101,7 +1103,9 @@ export class SessionSupervisor {
     // Exact browser chat reads must never run global session discovery or a
     // live model-picker RPC. Those paths compete with 100-chat background
     // warming and previously left an ordinary chat details GET hanging.
-    const browserProvider = provider === "chatgpt" || provider === "zai";
+    const providerAdapter = this.adapters.get(provider)
+      ?? [...this.adapters.values()].find(adapter => adapter.type === provider);
+    const browserProvider = providerAdapter ? getHarnessRuntimeCapabilities(providerAdapter).browserChat : false;
     const cachedSessions = options.quick
       ? browserProvider ? undefined : provider === "minimax-code" ? undefined : provider === "zcode"
         ? this.sessionSnapshot?.sessions.filter((session) => session.harness === provider)

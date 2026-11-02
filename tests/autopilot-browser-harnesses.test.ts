@@ -1,4 +1,5 @@
 import { mkdtemp, rm } from "node:fs/promises";
+import "./_harness-caps-bootstrap.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -160,6 +161,16 @@ describe("BrowserTurnAutopilotObserver", () => {
     expect(h.submit).not.toHaveBeenCalled();
   });
 
+  it("never nudges a stalled browser chat when autopilot is disabled or human-held", async () => {
+    const session = fakeSession({ status: "running", lastActivity: new Date(Date.now() - 120_000).toISOString(), meta: { timestampSemantics: "remote-update-time" } });
+    const disabled = harness({ sessions: [session], enabled: async () => false });
+    await disabled.observer.observeOnce();
+    expect(disabled.sendMessage).not.toHaveBeenCalled();
+    const held = harness({ sessions: [session], held: async () => true });
+    await held.observer.observeOnce();
+    expect(held.sendMessage).not.toHaveBeenCalled();
+  });
+
   it("nudges a stalled running turn once per burst through the automation send path", async () => {
     const stalled = new Date(Date.now() - 120_000).toISOString();
     const h = harness({
@@ -237,4 +248,34 @@ describe("BrowserTurnAutopilotObserver", () => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+
+describe("BackgroundAutopilotStop browser-chat deliver", () => {
+  function buildStop(deliver: (input: { harness: string; sessionId: string; cwd: string }, goal: string, inputId: string) => Promise<unknown>) {
+    const jobs = { start: vi.fn(async ({ run }: { run: ({ signal, progress }: { signal: AbortSignal; progress: (n: number, msg?: string) => void }) => Promise<unknown> }) => run({ signal: new AbortController().signal, progress: () => undefined })), get: () => undefined } as unknown as HerderJobRegistry;
+    const adapter = { listSessions: vi.fn(async () => [fakeSession({ status: "idle" })]), getSession: vi.fn(async () => fakeSession({ status: "idle" })), getSessionMessages: vi.fn(async () => [{ id: "m1", role: "user", text: "hi", parts: [{ type: "text", text: "hi" }] }, { id: "m2", role: "assistant", text: "hi back", parts: [{ type: "text", text: "hi back" }] }]) } as unknown as HarnessAdapter;
+    return new BackgroundAutopilotStop({
+      jobs, adapters: new Map([["chatgpt", adapter], ["zai", adapter]]),
+      evaluate: async () => ({ decision: "continue", next_goal: "next step" }),
+      held: async () => false,
+      allowed: async () => true,
+      deliver,
+    });
+  }
+
+  it("routes chatgpt and zai continuations through the browser-chat deliver callback with a stable inputId", async () => {
+    const seen: Array<{ harness: string; sessionId: string; goal: string; inputId: string }> = [];
+    const stop = buildStop(async (input, goal, inputId) => {
+      seen.push({ harness: input.harness, sessionId: input.sessionId, goal, inputId });
+      return { status: "delivered", transport: "browser-chat", inputId, goal, sessionId: input.sessionId, harness: input.harness };
+    });
+    for (const harness of ["chatgpt", "zai"] as const) {
+      await stop.submit({ harness, sessionId: "zai::abc", cwd: "/tmp/browser-wd", turnId: "browser:" + "a".repeat(32) } as never);
+    }
+    expect(seen).toHaveLength(2);
+    expect(seen.map(s => s.harness)).toEqual(["chatgpt", "zai"]);
+    expect(seen.every(s => s.goal === "next step")).toBe(true);
+    expect(seen.every(s => s.inputId.startsWith("agent-herder:auto:"))).toBe(true);
+  });
 });

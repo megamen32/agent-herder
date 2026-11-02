@@ -30,9 +30,14 @@ interface ParsedSession {
  * The adapter reads session files from disk for rich metadata extraction
  * (model, last message, transcript).
  */
+import { registerHarnessRuntimeCapabilities, type HarnessRuntimeCapabilities } from "../types/harness-runtime.js";
+
+const RUNTIME_CAPS: HarnessRuntimeCapabilities = { autopilotDispatch: "returnNextGoal", hookDrivenStop: true, browserChat: false, autopilotEligible: true, localInject: false, humanStopObserver: false };
+registerHarnessRuntimeCapabilities('claude', RUNTIME_CAPS);
 export class ClaudeCodeAdapter implements HarnessAdapter {
   readonly type = "claude" as const;
   readonly name = "Claude Code";
+  readonly runtimeCapabilities = RUNTIME_CAPS;
 
   private claudeBin: string;
   private claudeDir: string;

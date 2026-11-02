@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import "./_harness-caps-bootstrap.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

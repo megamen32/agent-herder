@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { isMainEntrypoint } from "./main-entrypoint.js";
 import { resumePendingProjectIntegrations } from "./project-integration.js";
+import { harnessRuntimeCapabilities } from "./types/harness-runtime.js";
 import { registerProjectReleaseTools } from "./mcp/project-release-tools.js";
 import { BackgroundAutopilotStop } from "./autopilot/background-stop.js";
 import { BrowserTurnAutopilotObserver } from "./autopilot/browser-turn-observer.js";
@@ -1217,9 +1218,31 @@ async function main() {
       return status.enabled === true && !await stopPendingQuestions.blocks(input.harness, input.sessionId, input.cwd);
     },
     deliver: async (input, goal, inputId) => {
-      // Harnesses Herder can drive natively never need a CLI process; the
-      // durable agent-resume transport stays the fallback for CLI-only ones.
-      if (input.harness === "opencode") {
+      // Capability-driven delivery: the registry is the single source of
+      // truth for which transport each harness uses. Browser chats go
+      // through the supervisor send path the turn observer also uses; the
+      // OpenCode inbox branch keeps its inline adapter; everything else
+      // falls back to the durable agent-resume transport.
+      const runtimeCaps = harnessRuntimeCapabilities(input.harness);
+      if (runtimeCaps.browserChat) {
+        try {
+          const res = await processSupervisor.sendMessage(input.harness, input.sessionId, {
+            message: goal, inputId, origin: "automation", queue: true,
+          });
+          if (res && res.ok === false) {
+            return { status: "failed", transport: "browser-chat", inputId, goal,
+              sessionId: input.sessionId, harness: input.harness,
+              error: String(res.error ?? "browser-chat send refused") };
+          }
+          return { status: "delivered", transport: "browser-chat", inputId, goal,
+            sessionId: input.sessionId, harness: input.harness };
+        } catch (error) {
+          return { status: "failed", transport: "browser-chat", inputId, goal,
+            sessionId: input.sessionId, harness: input.harness,
+            error: error instanceof Error ? error.message : String(error) };
+        }
+      }
+      if (runtimeCaps.autopilotDispatch === "deliverInRunner") {
         const native = await deliverAutopilotGoal(input, goal, inputId, {
           adapter: adapters.get("opencode") as OpenCodeAdapter | undefined,
         });

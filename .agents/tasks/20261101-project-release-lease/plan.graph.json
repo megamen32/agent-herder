@@ -1,0 +1,463 @@
+{
+  "schema_version": 2,
+  "title": "Безопасный параллельный выпуск проектов",
+  "goal": "Параллельные сессии не откатывают результаты друг друга.",
+  "business_result": "Одна сессия владеет ограниченной по времени бронью выпуска проекта. Завершение и сбои освобождают бронь, просроченный владелец не может выпустить старую версию. Изменения идут через отдельную ветку и PR.",
+  "business_results": [
+    "Одна сессия владеет ограниченной по времени бронью выпуска проекта. Завершение и сбои освобождают бронь, просроченный владелец не может выпустить старую версию. Изменения идут через отдельную ветку и PR."
+  ],
+  "acceptance_scenarios": [
+    "Две сессии одного проекта конкурируют за бронь; видны владелец, срок и SendMessage.",
+    "Завершение, ошибка и TTL освобождают бронь; старый токен не проходит проверку.",
+    "Другой проект независим; чужая сессия не может снять бронь.",
+    "Ветка опубликована и draft PR создан, без merge и production deployment."
+  ],
+  "current_progress": "Подтверждён конфликт shared-main инструкций с новым решением владельца. Работа идёт в отдельных ветках.",
+  "external_waits": "",
+  "slots": 2,
+  "updated_at": "2026-11-01T19:20:24+03:00",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "Бронь выпуска проекта",
+      "status": "done",
+      "description": "Agent Herder acquire/renew/release/status, lifecycle release, TTL и fencing.",
+      "acceptance": "Целевые регрессии проходят; draft PR опубликован, без merge и production deployment.",
+      "result": "Manual Z.ai coordination message echo проверен, пользовательский draft1575 символов восстановлен и hash проверен; owner acknowledgment не заявляется. Текущий pending scope L03 GPTAdmin.",
+      "owner": "fix_parallel_release_workflow",
+      "session": "/root/fix_parallel_release_workflow",
+      "harness": "chatgpt",
+      "model": "gpt-6.1-sol",
+      "note": "По проверке владельца combined Herder PR18 MERGED4049a99: live exec/config/current и canonicalmain4049, PID625564 в14:06UTC; candidate15/15, readiness и rate guard PASS, actual MCP project_integration успешно, lease fence2 освобождён. Ранее fd2 был заменён d134UI; затем d134+pointer fix интегрированы в reviewed history. Старые worktrees не удалялись.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-01T16:20:20+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "note": "Исходники опубликованы для review. Не установлено, merge и deployment не выполнялись, runtime не изменён. Draft PR создаётся для ранней видимости результата, а не как искусственная очередь ожидания.",
+            "result": "Draft PR https://github.com/megamen32/agent-herder/pull/17 открыт; HEAD 2257f5a3f0a294bf98558c5aaa005335a8680e68 проверен через GitHub. По отчёту исполнителя: 48 TypeScript и 52 Python теста PASS, tsc PASS; исправления независимого review гонок lease и readiness применены. Native lifecycle: ZCode SessionEnd с исходным timestamp; Codex использует StopAgent/controller reports и TTL, без выдуманных unsupported hooks.",
+            "model": "gpt-6.1-sol"
+          },
+          "session": "/root/fix_parallel_release_workflow",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T16:23:13+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "note": "Новый scope владельца: своя ветка и worktree; push свободно, PR только при готовности к merge. Session-end inventory; последний работник отвечает за интеграцию и проверку проекта. Cleanup только merged+clean+inactive; неизвестные, активные, грязные, конфликтные и unmerged сохраняются видимыми. Существующие PR остаются draft до обновлённого review; runtime не изменён."
+          },
+          "session": "/root/fix_parallel_release_workflow",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T16:26:23+03:00",
+          "note": "",
+          "changes": {
+            "note": "Последнее уточнение: ранний draft PR полезен для видимости незавершённой работы, с ссылкой на LHC план. Ready после тестов и review. Session-end inventory; последний работник отвечает за интеграцию и проверку проекта. Cleanup только merged+clean+inactive; остальные ветки сохраняются с видимыми блокерами. Изменения нового scope проходят проверки. Runtime не изменён. Доступ к этому техническому плану проверен без авторизации; SSO не подтверждён, приватных данных здесь нет."
+          },
+          "session": "/root/fix_parallel_release_workflow",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T16:35:36+03:00",
+          "note": "",
+          "changes": {
+            "note": "Исходники расширения опубликованы, финальное независимое review последнего исправления ещё проверяется. Merge/deploy не выполнялись, runtime не изменён, существующие worktrees не удалялись. Текущий integration target только main; для native lifecycle требуется надёжный исходный timestamp, неизвестные события не считаются подтверждением завершения. Этот технический план доступен без авторизации; SSO не подтверждён.",
+            "result": "PR https://github.com/megamen32/agent-herder/pull/17 HEAD b60d11e080590b6cdef97eed74e674691ff89663 проверен через GitHub. По отчёту исполнителя: 72 TypeScript теста PASS; ранее 52 Python PASS без изменений, tsc и diff-check PASS. Lifecycle использует существующий lease ledger, bounded inventory и atomic claim, existing resume_after; startup проверяет не более 32 известных pending записей. Cleanup только exact clean merged inactive worktree, branch сохраняется; unknown/active сохраняются. Review выявил и исправил target-self bypass, lost wakeup, reactivation gap и startup-active bug; финальное закрытие review ожидается."
+          },
+          "session": "/root/fix_parallel_release_workflow",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T16:36:54+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "note": "Готовы только исходники и PR: финальный независимый review b60d11e PASS, scoped blockers отсутствуют. PR17 OPEN, ready (isDraft=false), точный HEAD проверен. Merge/deploy не выполнялись, runtime не изменён, существующие worktrees не удалялись. Integration target пока main; неизвестные native timestamps не подтверждают завершение. SSO этого технического плана не подтверждён.",
+            "result": "PR https://github.com/megamen32/agent-herder/pull/17 HEAD b60d11e080590b6cdef97eed74e674691ff89663. 72 TS PASS, ранее 52 Python PASS без изменений; tsc/diff-check PASS. Lifecycle: existing lease ledger, bounded inventory, atomic claim, resume_after; startup не более 32 known pending. Exact clean merged inactive cleanup сохраняет branch; unknown/active сохраняются. Все scoped review findings исправлены и закрыты."
+          },
+          "session": "/root/fix_parallel_release_workflow",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T16:42:13+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "note": "PR17 merged fd2e639 по отчёту исполнителя; deployment выполняется ответственным worker. Завершение runtime не заявлено, старые worktrees не удалялись."
+          },
+          "session": "/root/fix_parallel_release_workflow",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T16:48:10+03:00",
+          "note": "",
+          "changes": {
+            "note": "Новая проверка runtime: по сообщению владельца deployment в13:46 UTC был заменён d134 UI. Ранее проверенные source/install результаты сохранены как история, но fd2 больше не заявляется текущим runtime. Изменения приняты на разбор в isolated branch fix/adopt-ui-release-integration-20261101 на базе fd2 с ancestry d134; точный diff содержит2 UI файла. Ограниченный поиск по недавним coordination notes, declarations и процессам не нашёл активного владельца. Review выполняется, ссылка PR ожидается.",
+            "result": "Новое правило владельца: существующие изменения без найденного активного владельца после bounded lookup текущий worker обязан разобрать, включить в существующий план и довести интеграцию. Это не разрешает принимать неизвестный diff без review или обходить проверки. Состояние deployment требует повторной проверки после интеграции."
+          },
+          "session": "/root/fix_parallel_release_workflow",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T17:13:10+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "note": "По проверке владельца combined Herder PR18 MERGED4049a99: live exec/config/current и canonicalmain4049, PID625564 в14:06UTC; candidate15/15, readiness и rate guard PASS, actual MCP project_integration успешно, lease fence2 освобождён. Ранее fd2 был заменён d134UI; затем d134+pointer fix интегрированы в reviewed history. Старые worktrees не удалялись.",
+            "result": "Manual Z.ai coordination message echo проверен, пользовательский draft1575 символов восстановлен и hash проверен; owner acknowledgment не заявляется. Текущий pending scope L03 GPTAdmin."
+          },
+          "session": "/root/fix_parallel_release_workflow",
+          "harness": "chatgpt"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 30.0
+      }
+    },
+    {
+      "id": "L02",
+      "label": "Ветки и PR в LHC",
+      "status": "done",
+      "description": "Инструкции и проверка branch, remote HEAD, PR и release lease.",
+      "acceptance": "Целевые регрессии проходят; draft PR опубликован, без merge и production deployment.",
+      "result": "https://github.com/megamen32/LastHumanCommit/pull/52 и /pull/53 merged.689 tests PASS/6skip, независимые policy/version reviews PASS. Source merged, landing published и native artifact installation подтверждены отдельно. Никакого cache handpatch, uninstall активного plugin или удаления старых worktrees.",
+      "owner": "align_lhc_pr_policy",
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt",
+      "model": "gpt-6.1-sol",
+      "note": "Adoption PR52 merged d35d0b6. Native publication fix PR53 merged809cff96f7d418055ca37f24bad3852aa521a175; версия1.7.21 устранила reuse старого cache. Host100 Claude installed1.7.21 exactgitCommitSha809cff, Codex marketplace exact809cff и cache1.7.21. Оба installed AGENTS byte-match merged source, adoption policy присутствует. OpenCode уже ссылается на этот marketplace. Native install exit0, merge CI run41314135974 SUCCESS. Активные сессии не перезапускались, reload старых чатов не заявляется.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-01T16:20:20+03:00",
+          "note": "",
+          "changes": {
+            "result": "Draft PR https://github.com/megamen32/LastHumanCommit/pull/51, remote HEAD 4a83dc3 подтверждён; delivery gate выполнен на реальном PR. 684 теста PASS, 6 skipped, независимый review PASS. GitHub CI build SUCCESS, deploy SKIPPED. Main и установленный LHC не изменены.",
+            "model": "gpt-6.1-sol"
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T16:23:13+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "note": "Новый scope владельца: своя ветка и worktree; push свободно, PR только при готовности к merge. Session-end inventory; последний работник отвечает за интеграцию и проверку проекта. Cleanup только merged+clean+inactive; неизвестные, активные, грязные, конфликтные и unmerged сохраняются видимыми. Существующие PR остаются draft до обновлённого review; runtime не изменён."
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T16:26:23+03:00",
+          "note": "",
+          "changes": {
+            "note": "Последнее уточнение: ранний draft PR полезен для видимости незавершённой работы, с ссылкой на LHC план. Ready после тестов и review. Session-end inventory; последний работник отвечает за интеграцию и проверку проекта. Cleanup только merged+clean+inactive; остальные ветки сохраняются с видимыми блокерами. Изменения нового scope проходят проверки. Runtime не изменён. Доступ к этому техническому плану проверен без авторизации; SSO не подтверждён, приватных данных здесь нет."
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T16:28:02+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "PR https://github.com/megamen32/LastHumanCommit/pull/51 обновлён, remote HEAD 69650b42bddf206a9aeb92671dc0c634224ba25c подтверждён. 688 тестов PASS, 6 skipped; 31 focused PASS. Независимый review нового delta PASS. Добавлен read-only worktree inventory, правила last-worker integration и draft visibility со ссылкой на план. Merge/install/cleanup не выполнялись. Lifecycle implementation Agent Herder остаётся в L01 in-progress."
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T16:36:54+03:00",
+          "note": "",
+          "changes": {
+            "note": "Источник и PR готовы: PR51 OPEN ready, HEAD 69650b42bddf206a9aeb92671dc0c634224ba25c. Full688 PASS/6skip, focused31 PASS, независимый review PASS, CI build PASS/deploy SKIPPED. Merge/install/cleanup не выполнялись; установленный LHC не изменён."
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T16:42:13+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "note": "PR51 MERGED 286f0d26f7e38121a40d6ed7d6bf44a600bee73d. Exact merge CI build+deploy SUCCESS. Claude native plugin на host100 обновлён штатным менеджером до1.7.20, installed gitCommitSha совпадает с merge; inventory доступен. Активные сессии не перезапускались, загрузка новых инструкций в них не подтверждена. Codex enabled cache1.7.20 остаётся старым, marketplace ced3c251; native update CLI отсутствует в PATH, путь обновления выясняется. Никакие старые worktrees не удалялись.",
+            "result": "Source merged; landing published; Claude installed exact merge. Source tests688 PASS/6skip, focused31 PASS, независимый review PASS. Runtime-wide completion пока не заявляется: Codex cache и existing session reload не подтверждены."
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T16:43:58+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "note": "LHC source merge и native installation проверены отдельно. PR51 MERGED 286f0d26f7e38121a40d6ed7d6bf44a600bee73d; merge CI build+deploy SUCCESS. Host100 Claude native plugin установлен exact merge1.7.20. Codex штатные marketplace upgrade + plugin add выполнены без создания сессий; marketplace HEAD exact merge, cache AGENTS.md и inventory helper совпадают с merged package. OpenCode конфигурация уже указывает на этот обновлённый marketplace. Активные чаты не перезапускались: загрузка новых инструкций в существующие сессии не подтверждена. Старые worktrees не удалялись.",
+            "result": "Source tests688 PASS/6skip, focused31 PASS, независимый review PASS. Landing published. Claude+Codex installed artifact verified, OpenCode configured source current. Native CLI сообщил старый отсутствующий Claude monitor SessionEnd hook; проблема передана владельцу Herder и не скрывается как исправленная. Runtime session reload не заявляется."
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T16:49:31+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "note": "Ранее merged/installed286f0d2 сохраняется как подтверждённый результат. Новый scope: bounded owner lookup и обязательное принятие ответственности за ownerless work, review/test и интеграция в существующем плане. Изолированная ветка fix/adopt-ownerless-work-20261101;13 focused PASS, full validation и независимый review выполняются. Не означает blind acceptance или обход release/merge checks."
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T16:50:36+03:00",
+          "note": "",
+          "changes": {
+            "result": "Новый adoption policy PR https://github.com/megamen32/LastHumanCommit/pull/52 HEAD6198a0fc6583d36fd2add22360ccb32c2cc37c88 опубликован draft. Full689 PASS/6skip,13 focused PASS. Независимый review ожидается. Ранее PR51 merged286f0d2 и native Claude/Codex установка подтверждены, новый policy пока не установлен."
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T16:51:40+03:00",
+          "note": "",
+          "changes": {
+            "status": "blocked",
+            "note": "Adoption PR52 source готов: HEAD6198a0fc6583d36fd2add22360ccb32c2cc37c88, full689 PASS/6skip,13 focused PASS, независимый review PASS, GitHub buildPASS/deploySKIPPED. Попытка ready+normal merge exact HEAD отклонена auto-review: требуется явное разрешение именно PR52→main. Повтор не выполнялся. Read-only проверка после отказа: OPEN draft=true CLEAN, HEAD неизменен. Новый policy не merged и не установлен; прежняя установленная286f0d2 сохраняется.",
+            "result": "Точный следующий шаг: разрешить merge https://github.com/megamen32/LastHumanCommit/pull/52 в main, затем штатная публикация/установка и проверка. Изменения сохранены в ветке/PR, ownerless adoption не брошен."
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T17:00:11+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "note": "Новый прямой ответ владельца разрешил merge PR52: MERGED d35d0b6cf6e74850b7f5502908852f04d6c0f0ac. Codex cache обновлён и adoption rule byte-matches merged source; OpenCode использует этот marketplace. Claude native update сохранил старую1.7.20 из-за неизменённой версии. Готовится минимальный native package bump1.7.21 в отдельной ветке fix/publish-workflow-1.7.21, review/full validation выполняются. Cache не правился вручную, активные плагины не удалялись.",
+            "result": "Adoption source merged, approval blocker снят новым прямым ответом. Оставшая работа: штатно выпустить1.7.21, обновить Claude native plugin и проверить установленный artifact. Ранее подтверждённые результаты689tests/review и installation286f0d2 сохранены в истории."
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T17:03:28+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "note": "Adoption PR52 merged d35d0b6. Native publication fix PR53 merged809cff96f7d418055ca37f24bad3852aa521a175; версия1.7.21 устранила reuse старого cache. Host100 Claude installed1.7.21 exactgitCommitSha809cff, Codex marketplace exact809cff и cache1.7.21. Оба installed AGENTS byte-match merged source, adoption policy присутствует. OpenCode уже ссылается на этот marketplace. Native install exit0, merge CI run41314135974 SUCCESS. Активные сессии не перезапускались, reload старых чатов не заявляется.",
+            "result": "https://github.com/megamen32/LastHumanCommit/pull/52 и /pull/53 merged.689 tests PASS/6skip, независимые policy/version reviews PASS. Source merged, landing published и native artifact installation подтверждены отдельно. Никакого cache handpatch, uninstall активного plugin или удаления старых worktrees."
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 30.0
+      }
+    },
+    {
+      "id": "L03",
+      "label": "Общий workflow через GPTAdmin",
+      "status": "done",
+      "description": "Canonical shared workflow + сохранённые профильные инструкции для MCP клиентов без plugin. Композиция перед hash/receipt, без ACL изменений.",
+      "acceptance": "Named/default content сохранён, receipts обновляются при изменении workflow, generic MCP delivery проверен; actual Z.ai QA отмечается отдельно.",
+      "result": "42 focused tests, full hub251.4s and independent review PASS. Latest native code unchanged vs tested59f. Required-drain rollout reached zero unfinished jobs and switched source. Detached native launcher terminated across service restart without final exit receipt; installation verified independently by current pointer, version, health and real MCP response. Prior unsuccessful attempts retained in history.",
+      "owner": "align_lhc_pr_policy",
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt",
+      "model": "gpt-6.1-sol",
+      "note": "Shared workflow PR30 merged59f1655c, publisher PR31 merged0f5efcd5. Production installed0f5efcd5, PID3165515, health200, version exact, draining=false. Real authenticated production MCP initialize returns shared workflow; generic consumer verified, actual Z.ai receipt not yet claimed. Native package clean source SHA67ec6564..., leasefence3 released.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-01T17:07:28+03:00",
+          "note": "",
+          "changes": {
+            "label": "Общий workflow через GPTAdmin",
+            "status": "running",
+            "description": "Canonical shared workflow + сохранённые профильные инструкции для MCP клиентов без plugin. Композиция перед hash/receipt, без ACL изменений.",
+            "acceptance": "Named/default content сохранён, receipts обновляются при изменении workflow, generic MCP delivery проверен; actual Z.ai QA отмечается отдельно.",
+            "owner": "align_lhc_pr_policy",
+            "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+            "harness": "chatgpt",
+            "depends_on": [],
+            "note": "Исходник в isolated GPTAdmin branch fix/shared-workflow-instructions-20261101, base456bfcb2. Existing instructions/ACL не перезаписываются. Production rollout после review с exact revision verification.",
+            "model": "gpt-6.1-sol"
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T17:13:10+03:00",
+          "note": "",
+          "changes": {
+            "result": "Draft PR https://github.com/megamen32/gptadmin/pull/30 source30aa5ab0. Structural independent review PASS; focused tests выполняются. Shared composition сохраняет named/default content и существующие ACL/receipts. Documentation описывает отдельные persisted16KiB и shared4KiB budgets. Production не изменён; actual Z.ai profile binding QA отдельно."
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T17:36:49+03:00",
+          "note": "",
+          "changes": {
+            "note": "PR30 MERGED59f1655c7d9fec137c0a17f0d266fe41d5117e2c;42 focused и full hub251.4s PASS, review PASS, actual isolated built-binary MCP initialize/resource/pure-exec PASS. Exact merged native package source_dirty=false, SHA813584d7..., sanitized public mirror2eecac9c опубликован, CI41316578749 выполняется. Native deployment попытка безопасно остановилась до switch: drain не достиг ready_to_stop за45s. Отмена подтверждена draining=false, health200, live456bfcb2/PID2391949.",
+            "result": "Дальнейший deployment отложен root из-за срочной OmniRoute/Z.ai диагностики, connector оставлен доступным. Leasefence1 released:true. После quietwindow: новый lease+CAS, штатный bounded wait до300s без force/bypass, health/real MCP proof. Actual audit client_id=zai найден, но postdeploy common-instruction delivery пока не подтверждён."
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T18:04:42+03:00",
+          "note": "",
+          "changes": {
+            "note": "PR30 merged59f1655c. 42 focused tests, full hub251.4s, independent review and isolated native binary MCP initialize/resource/pure-exec PASS. Corrected public mirror6234784 CI41317883323 terminal: adminUI/artifact PASS; only three independently verified pre-existing baseline gates fail (macOS cwd normalization, candidate tasks/get400, installer tasks/get400). First native deployment canceled before switch; live remains456bfcb2/build1076, health200. No production shared workflow delivery claim.",
+            "result": "Deployment waiting root quiet window. No active release lease. New acquire and actual revision/PID CAS required before native require-drain retry. Actual Z.ai postdeploy receipt not yet verified. Public publisher guard tracked in L04; new source publication held."
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T18:40:24+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "note": "Shared workflow PR30 merged59f1655c, publisher PR31 merged0f5efcd5. Production installed0f5efcd5, PID3165515, health200, version exact, draining=false. Real authenticated production MCP initialize returns shared workflow; generic consumer verified, actual Z.ai receipt not yet claimed. Native package clean source SHA67ec6564..., leasefence3 released.",
+            "result": "42 focused tests, full hub251.4s and independent review PASS. Latest native code unchanged vs tested59f. Required-drain rollout reached zero unfinished jobs and switched source. Detached native launcher terminated across service restart without final exit receipt; installation verified independently by current pointer, version, health and real MCP response. Prior unsuccessful attempts retained in history."
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        }
+      ],
+      "depends_on": [],
+      "created_at": "2026-11-01T17:07:28+03:00"
+    },
+    {
+      "id": "L04",
+      "label": "Fail-closed публикация из worktree",
+      "status": "done",
+      "description": "Обязательные canonical privacy policies перед prepare/push; исключить молчаливый fallback при отсутствии ignored локальных файлов.",
+      "acceptance": "Canonical policy принимается, неполный/изменённый worktree отказывается до публикации; review и tests подтверждены.",
+      "result": "Guarded canonical publication83e032f9 descendant6234784 succeeded, exact private0f5efcd5, scanner PASS and canonical policy fingerprints verified. No history rewrite/deletion. CI monitoring separate; previous corrected snapshot had only three verified pre-existing failures.",
+      "owner": "align_lhc_pr_policy",
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt",
+      "model": "gpt-6.1-sol",
+      "note": "PR31 exact6dcbac17 independently reviewed and16tests PASS; merged0f5efcd5 after exact user approval. Canonical clean main fast-forwarded, existing hook now uses fail-closed policy guard. Final receipt revalidated immediately before push, regression covers policy change during remote check.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-01T17:54:36+03:00",
+          "note": "",
+          "changes": {
+            "label": "Fail-closed публикация из worktree",
+            "status": "running",
+            "description": "Обязательные canonical privacy policies перед prepare/push; исключить молчаливый fallback при отсутствии ignored локальных файлов.",
+            "acceptance": "Canonical policy принимается, неполный/изменённый worktree отказывается до публикации; review и tests подтверждены.",
+            "owner": "align_lhc_pr_policy",
+            "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+            "harness": "chatgpt",
+            "depends_on": [],
+            "note": "Отдельный PR https://github.com/megamen32/gptadmin/pull/31 HEAD14ed2ed2.15 focused tests PASS, actual canonical accepted и actual missing-policy worktree refused. Независимый review ожидается. Новые public publications остановлены до guard.",
+            "result": "Исправленный публичный snapshot6234784 использует точную canonical policy, CI41317883323 выполняется. Private sensitive classification/evidence не переносится в публичный план.",
+            "model": "gpt-6.1-sol"
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T18:04:42+03:00",
+          "note": "",
+          "changes": {
+            "note": "Draft PR https://github.com/megamen32/gptadmin/pull/31 HEAD14ed2ed219d38af4b978904f586dd2bb47d6a2eb. Canonical ignored privacy policies required in linked worktrees before prepare/push, exact hashes and no symlinks/empty policies. 15 tests PASS; actual canonical accepted and policy-missing worktree refused. Independent review pending.",
+            "result": "Existing public snapshot corrected forward to6234784 using exact canonical policy. No history rewrite or deletion. Current CI has only three verified pre-existing baseline failures. New public publication held until fail-closed guard reviewed and installed."
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        },
+        {
+          "at": "2026-11-01T18:40:24+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "note": "PR31 exact6dcbac17 independently reviewed and16tests PASS; merged0f5efcd5 after exact user approval. Canonical clean main fast-forwarded, existing hook now uses fail-closed policy guard. Final receipt revalidated immediately before push, regression covers policy change during remote check.",
+            "result": "Guarded canonical publication83e032f9 descendant6234784 succeeded, exact private0f5efcd5, scanner PASS and canonical policy fingerprints verified. No history rewrite/deletion. CI monitoring separate; previous corrected snapshot had only three verified pre-existing failures."
+          },
+          "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+          "harness": "chatgpt"
+        }
+      ],
+      "depends_on": [],
+      "created_at": "2026-11-01T17:54:36+03:00"
+    },
+    {
+      "id": "L05",
+      "label": "Связать задачу, исполнителя и проверяемое состояние проекта",
+      "status": "queued",
+      "description": "Повторно использовать реестры участников, рабочих деревьев, квитанции доски и листья LHC. Отдельно показывать native-сессию и внешнего исполнителя dot, не считать статус плана доказательством активности.",
+      "acceptance": "Одна задача связывает план/лист, подтверждённого владельца, рабочее дерево/ветку, PR и установленную ревизию. Устаревшие наблюдения и передача ответственности видимы; нет нового демона, ложной активности или удаления неизвестных данных.",
+      "owner": "dot",
+      "harness": "external",
+      "model": "gpt-6.1-sol",
+      "note": "Сначала read-only карта существующих связей. Native metadata attribution-only; внешний исполнитель не является native-сессией. Реализация и runtime ещё не изменены.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-01T19:20:24+03:00",
+          "note": "",
+          "changes": {
+            "label": "Связать задачу, исполнителя и проверяемое состояние проекта",
+            "description": "Повторно использовать реестры участников, рабочих деревьев, квитанции доски и листья LHC. Отдельно показывать native-сессию и внешнего исполнителя dot, не считать статус плана доказательством активности.",
+            "acceptance": "Одна задача связывает план/лист, подтверждённого владельца, рабочее дерево/ветку, PR и установленную ревизию. Устаревшие наблюдения и передача ответственности видимы; нет нового демона, ложной активности или удаления неизвестных данных.",
+            "owner": "dot",
+            "harness": "external",
+            "estimate_minutes": {
+              "minimum": 30,
+              "maximum": 60
+            },
+            "note": "Сначала read-only карта существующих связей. Native metadata attribution-only; внешний исполнитель не является native-сессией. Реализация и runtime ещё не изменены.",
+            "affected_files": [
+              "src/project-release-lease.ts",
+              "src/project-integration.ts",
+              "src/session-workspaces.ts"
+            ],
+            "model": "gpt-6.1-sol"
+          },
+          "session": "unknown",
+          "harness": "external"
+        }
+      ],
+      "affected_files": [
+        "src/project-release-lease.ts",
+        "src/project-integration.ts",
+        "src/session-workspaces.ts"
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 30.0,
+        "maximum": 60.0
+      },
+      "created_at": "2026-11-01T19:20:24+03:00"
+    }
+  ],
+  "leaf_count": 5,
+  "plan_origin": {
+    "at": "2026-11-01T12:48:51.235882+00:00",
+    "source": "file_birthtime",
+    "leaf_id": "L01",
+    "recorded_at": "2026-11-01T12:48:54.148666+00:00"
+  }
+}
