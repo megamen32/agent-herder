@@ -1,4 +1,4 @@
-import type { AgentSession, ControlResult, CreateSessionOptions, HarnessAdapter, HarnessCapabilities, HarnessType, ListSessionsOptions, SendMessageOptions, SendMessageResult, SetPermissionsOptions } from "../types/index.js";
+import type { AgentSession, ControlResult, CreateSessionOptions, HarnessAdapter, HarnessCapabilities, HarnessEvent, HarnessType, ListSessionsOptions, SendMessageOptions, SendMessageResult, SetPermissionsOptions } from "../types/index.js";
 import { localSessionHostId, type SessionMessageView } from "../types/index.js";
 import { BrowserChatHistoryCache } from "./browser-chat-history-cache.js";
 /** Normalized browser chat; native IDs belong to their provider driver. */
@@ -39,6 +39,11 @@ export interface BrowserChatDriver {
    * Never navigates to another chat to find a Stop button.
    */
   stopTurn?(chatId: string, signal?: AbortSignal): Promise<{ stopped: boolean; error?: string }>;
+  /** Subscribe to modal-prompt events emitted when the driver answers (or
+   * skips) a permission / 'Continue in Work?' prompt on the owned browser
+   * page. The adapter forwards these as HarnessEvent of kind
+   * permission.requested / permission.resolved into the shared bus. */
+  subscribePromptEvents?(handler: (event: HarnessEvent) => void): () => void;
   createChat?(input: { title?: string }, signal?: AbortSignal): Promise<BrowserChat>;
   listModels?(signal?: AbortSignal): Promise<string[]>;
   supportsModelSwitch?(): boolean;
@@ -86,6 +91,8 @@ export class BrowserChatAdapter implements HarnessAdapter {
     subagents: false,
     events: false,
   };
+  private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
+  private promptEventsUnsubscribe?: () => void;
   readonly runtimeCapabilities = BROWSER_RUNTIME_CAPS;
   readonly lazyDiscovery = true;
   private readonly inventory = new Map<string, BrowserChat>();
@@ -106,11 +113,24 @@ export class BrowserChatAdapter implements HarnessAdapter {
     );
     this.type = provider.harness;
     this.name = provider.name;
+    const supportsPromptEvents = typeof driver.subscribePromptEvents === "function";
     this.controlCapabilities = {
       ...BrowserChatAdapter.browserCapabilities,
       cancelTurn: typeof driver.stopTurn === "function",
       modelSwitch: driver.supportsModelSwitch?.() ?? typeof driver.changeModel === "function",
+      // Advertise event emission only when the underlying driver actually
+      // emits modal-prompt events; otherwise the supervisor would call
+      // subscribeEvents and get nothing.
+      events: supportsPromptEvents,
     };
+    if (supportsPromptEvents) {
+      // The unsubscribe is held for the adapter's lifetime: the driver emits
+      // permission.requested / permission.resolved events whenever it
+      // answers (or skips) a modal prompt, and the adapter fans them out to
+      // every registered listener (the supervisor, the permission-control
+      // notice-bridge, the UI event bus).
+      this.promptEventsUnsubscribe = driver.subscribePromptEvents?.((event) => this.emitEvent(event));
+    }
     this.browserFeatures = driver.browserFeatures ?? {
       nativeConversationIds: false,
       queueAfterGeneration: false,
@@ -298,6 +318,17 @@ export class BrowserChatAdapter implements HarnessAdapter {
 
   async setPermissions(_sessionId: string, _options: SetPermissionsOptions): Promise<{ ok: boolean; error?: string }> {
     return { ok: false, error: "Browser chat permissions are controlled by their provider" };
+  }
+
+  subscribeEvents(handler: (event: HarnessEvent) => void): () => void {
+    this.eventListeners.add(handler);
+    return () => { this.eventListeners.delete(handler); };
+  }
+
+  private emitEvent(event: HarnessEvent): void {
+    for (const handler of this.eventListeners) {
+      try { handler(event); } catch { /* a listener must never break the adapter */ }
+    }
   }
 
   private toSession(chat: BrowserChat): AgentSession {
