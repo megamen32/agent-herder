@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isMainEntrypoint } from "./main-entrypoint.js";
 import { resumePendingProjectIntegrations } from "./project-integration.js";
 import { registerProjectReleaseTools } from "./mcp/project-release-tools.js";
 import { BackgroundAutopilotStop } from "./autopilot/background-stop.js";
@@ -17,7 +18,6 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { QaControlBackend } from "./qa-control.js";
@@ -1435,7 +1435,7 @@ async function main() {
   if (commonSettingsNode) startCommonSettingsSyncLoop(commonSettingsNode);
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainEntrypoint(import.meta.url)) {
   main().catch((err) => {
     console.error("[agent-herder] Fatal:", err);
     process.exit(1);
