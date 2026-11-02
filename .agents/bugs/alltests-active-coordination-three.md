@@ -9,6 +9,8 @@ Observed first errors:
 - AssertionError: expected { type: 'text', …(1) } to match object { text: StringContaining{…} }
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: open
+Status: fixed_pending_full_suite
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
+
+- 2026-11-02: Focused RED 1/10 → GREEN 10/10 in tests/active-coordination-three.test.ts. In-memory MCP without authenticated owner ingress cannot send agent messages; asserts explicit authenticated-ingress refusal, zero native reservation, and retained older inbox. Separate deliver and named paths continue to prove native current-turn-context reservation with older inbox unchanged. Security gate preserved.

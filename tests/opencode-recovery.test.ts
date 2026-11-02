@@ -153,12 +153,11 @@ describe("OpenCode native recovery controls", () => {
       message: "reply to parent",
       mode: "queue",
     });
+    // Ordinary MCP coordination without a durable owner registry cannot
+    // wake a session or lose an untracked queued intent.
     expect(JSON.parse(coordinated)).toMatchObject({
-      ok: true,
-      sessionId: "direct-parent",
-      harness: "opencode",
-      delivery: "skipped_inactive",
-      activated: false,
+      ok: false, delivery: "not_attempted", nonRetryable: true,
+      error: "Shared durable message delivery is unavailable; message was not sent.",
     });
     expect(sentBody).toBe("");
 
