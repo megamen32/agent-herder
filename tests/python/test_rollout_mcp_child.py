@@ -169,6 +169,41 @@ class TestRootMcpChildSwitch(unittest.TestCase):
                 self.assertEqual(list(root.glob(".mcp-entrypoint-*")), [])
                 self.assertEqual(list(root.glob(".mcp-recover-*")), [])
 
+    def test_rollback_preserves_foreign_change_during_cleanup_or_staging(self):
+        for change_during in ("cleanup", "staging"):
+            with self.subTest(change_during=change_during), tempfile.TemporaryDirectory(prefix="mcp-rollback-foreign-") as base:
+                root = Path(base)
+                old, candidate = root / "index.js", root / "candidate.js"
+                old.write_text("previous")
+                candidate.write_text("candidate")
+                replace, copy2 = os.replace, rollout.shutil.copy2
+                guard = Gate()
+                def foreign_replace():
+                    foreign = root / "foreign.js"
+                    foreign.write_text("foreign-change")
+                    replace(foreign, old)
+                def fail_after_replace(source, destination):
+                    replace(source, destination)
+                    if Path(source).name.startswith(".mcp-entrypoint-"):
+                        raise RuntimeError("injected_after_replace")
+                def cleanup_check(cleanup=False):
+                    if cleanup and change_during == "cleanup":
+                        foreign_replace()
+                def recovery_copy(source, destination):
+                    result = copy2(source, destination)
+                    if Path(destination).name.startswith(".mcp-recover-") and change_during == "staging":
+                        foreign_replace()
+                    return result
+                guard.check = cleanup_check
+                with patch.object(rollout.os, "replace", side_effect=fail_after_replace), \
+                     patch.object(rollout.shutil, "copy2", side_effect=recovery_copy):
+                    with self.assertRaisesRegex(RuntimeError, "injected_after_replace"):
+                        rollout.atomic_entrypoint_switch(old, candidate, root / "backup", guard)
+                self.assertFalse(old.is_symlink())
+                self.assertEqual(old.read_text(), "foreign-change")
+                self.assertEqual(list(root.glob(".mcp-entrypoint-*")), [])
+                self.assertEqual(list(root.glob(".mcp-recover-*")), [])
+
     def test_guard_refusal_preserves_entrypoint(self):
         with tempfile.TemporaryDirectory(prefix="mcp-child-refuse-") as base:
             root = Path(base)

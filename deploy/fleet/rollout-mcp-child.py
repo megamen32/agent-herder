@@ -184,7 +184,15 @@ def atomic_entrypoint_switch(entrypoint: Path, new_entrypoint: Path,
                 recover.symlink_to(os.readlink(previous))
             else:
                 shutil.copy2(previous, recover)
-            os.replace(recover, entrypoint)
+            try:
+                current = entrypoint.lstat()
+                still_ours = (current.st_dev, current.st_ino) == installed_identity
+            except FileNotFoundError:
+                still_ours = False
+            if still_ours:
+                os.replace(recover, entrypoint)
+            else:
+                recover.unlink()
         raise
     return previous
 
