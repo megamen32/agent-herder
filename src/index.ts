@@ -1213,6 +1213,28 @@ async function main() {
       return status.enabled === true && !await stopPendingQuestions.blocks(input.harness, input.sessionId, input.cwd);
     },
     deliver: async (input, goal, inputId) => {
+      // Browser chat harnesses (ChatGPT, Z.ai) deliver the next goal through
+      // the same supervised send path the browser turn observer uses for
+      // stall nudges; the durable agent-resume transport has no browser
+      // endpoint and would reject the continuation.
+      if (input.harness === "chatgpt" || input.harness === "zai") {
+        try {
+          const res = await processSupervisor.sendMessage(input.harness, input.sessionId, {
+            message: goal, inputId, origin: "automation", queue: true,
+          });
+          if (res && res.ok === false) {
+            return { status: "failed", transport: "browser-chat", inputId, goal,
+              sessionId: input.sessionId, harness: input.harness,
+              error: String(res.error ?? "browser-chat send refused") };
+          }
+          return { status: "delivered", transport: "browser-chat", inputId, goal,
+            sessionId: input.sessionId, harness: input.harness };
+        } catch (error) {
+          return { status: "failed", transport: "browser-chat", inputId, goal,
+            sessionId: input.sessionId, harness: input.harness,
+            error: error instanceof Error ? error.message : String(error) };
+        }
+      }
       // Harnesses Herder can drive natively never need a CLI process; the
       // durable agent-resume transport stays the fallback for CLI-only ones.
       if (input.harness === "opencode") {

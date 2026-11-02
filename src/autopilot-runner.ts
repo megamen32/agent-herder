@@ -227,7 +227,8 @@ async function evaluateAutopilotCommand(input: AutopilotRunnerInput, background 
       const nextGoal = result.reason;
       await humanStops.rememberGeneratedPrompt(input.harness, input.sessionId, nextGoal);
       if (await held()) return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "human-stop-held" };
-      if (background || input.harness === "codex" || input.harness === "claude" || input.harness === "zcode") {
+      if (background || input.harness === "codex" || input.harness === "claude" || input.harness === "zcode"
+          || input.harness === "chatgpt" || input.harness === "zai") {
         return { ok: true, command, harness: input.harness, session_id: input.sessionId, decision: "continue", next_goal: nextGoal };
       }
       if (input.harness === "hermes") {
