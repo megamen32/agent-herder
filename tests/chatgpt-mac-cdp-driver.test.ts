@@ -3,7 +3,7 @@ import { runInNewContext } from "node:vm";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CHATGPT_MAC_SNAPSHOT, ChatGptMacCdpDriver, parseChatGptPages, pickChatGptPage } from "../src/adapters/chatgpt-mac-cdp-driver.js";
+import { CHATGPT_LIST_API_SCRIPT, CHATGPT_MAC_SNAPSHOT, ChatGptMacCdpDriver, parseChatGptPages, pickChatGptPage } from "../src/adapters/chatgpt-mac-cdp-driver.js";
 import { parseChromeEvaluation, type ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
 let _invDir: string;
 beforeEach(() => { _invDir = mkdtempSync(join(tmpdir(), "chatgpt-inv-")); process.env.AGENT_HERDER_BROWSER_CHAT_INVENTORY_ROOT = _invDir; });
