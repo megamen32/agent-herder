@@ -9,7 +9,7 @@ const MAX_MESSAGE = 16_000;
 const POST_SEND_GUARD_MS = 1_800;
 const NATIVE_CHAT_ID = /^[a-f0-9]{8}-[a-f0-9-]{20,75}$/i;
 type Phase = "idle" | "generating" | "unknown";
-export type Page = { id: number; url: string; selected?: boolean };
+export type Page = { id: number; url: string; selected?: boolean; conversation?: boolean };
 type Snapshot = {
   origin: string; path: string; authenticated: boolean; composer: boolean;
   phase: Phase; draftPresent: boolean;
@@ -23,23 +23,31 @@ export function parseChatGptPages(text: string): Page[] {
     if (!match) return [];
     try {
       const url = new URL(match[2]!);
-      return url.origin === ORIGIN && !/^\/dots(?:\/|$)/.test(url.pathname)
-        ? [{ id: Number(match[1]), url: url.toString(), ...(match[3] ? { selected: true } : {}) }] : [];
+      if (url.origin !== ORIGIN) return [];
+      // /dots/home is the ChatGPT workspace dashboard: a valid authenticated
+      // tab with the same sidebar/composer once navigated. It is no longer
+      // excluded; a conversation tab is simply preferred (see pickChatGptPage).
+      const conversation = /^(?:\/c\/[a-f0-9-]{28,80}|\/g\/g-p-[a-f0-9-]+\/c\/[a-f0-9-]{28,80})$/i.test(url.pathname);
+      return [{ id: Number(match[1]), url: url.toString(), conversation, ...(match[3] ? { selected: true } : {}) }];
     } catch { return []; }
   });
 }
 
-/** Deterministic pick among open ChatGPT tabs: the selected tab first, then the lowest page ID. */
+/** Deterministic pick among open ChatGPT tabs: the selected tab first, then
+ * a tab already on a conversation route (/c/<id> or /g/g-p-…/c/<id>) so a
+ * dashboard such as /dots/home is left undisturbed, then the lowest page ID. */
 export function pickChatGptPage(pages: Page[]): Page {
-  return pages.find(page => page.selected) ?? [...pages].sort((a, b) => a.id - b.id)[0]!;
+  return pages.find(page => page.selected)
+    ?? pages.find(page => page.conversation)
+    ?? [...pages].sort((a, b) => a.id - b.id)[0]!;
 }
 
 /** A read-only page snapshot, using the live ChatGPT sidebar's native /c/ URLs.
  * This code never reads message bodies, cookies, JWTs or private drafts.
  */
 export const CHATGPT_MAC_SNAPSHOT = `() => {
-  const route = /^\\/c\\/([a-f0-9-]{28,80})$/i;
-  const links = [...document.querySelectorAll('a[data-interactive-row-link][href^="/c/"]')];
+  const route = /^\\/(?:c|g\\/g-p-[a-f0-9-]+\\/c)\\/([a-f0-9-]{28,80})$/i;
+  const links = [...document.querySelectorAll('a[data-interactive-row-link][href^="/c/"],a[data-interactive-row-link][href^="/g/"]')];
   const chats = links.flatMap(link => {
     const path = link.getAttribute('href') || '';
     const match = path.match(route);
@@ -133,7 +141,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     const pages = parseChatGptPages(await this.tools.call("list_pages"));
     const pinned = this.pinnedPageId !== undefined
       ? pages.find(page => page.id === this.pinnedPageId) : undefined;
-    if (pinned) return pinned;
+    if (pinned?.conversation) return pinned;
     if (pages.length) return pickChatGptPage(pages);
     return this.openChatGptTab();
   }
@@ -159,9 +167,12 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       kind: "dom_cache_read", initiator: "herder_browser", executor: "herder_cdp",
       operation: "snapshot", endpoint: "other", latency_ms: Date.now()-started,
     });
-    if (result.origin !== ORIGIN || !result.authenticated || !result.composer ||
+    if (result.origin !== ORIGIN || !result.authenticated ||
       !["idle", "generating", "unknown"].includes(result.phase)) {
-      throw new Error("ChatGPT Mac mini tab is not an authenticated chat page");
+      // The composer is not required here: a /dots/home workspace dashboard has
+      // no editor but is still an authenticated listing surface. sendMessage
+      // navigates such a tab to /c/<id> and re-checks the composer there.
+      throw new Error("ChatGPT Mac mini tab is not an authenticated page");
     }
     return result;
   }
@@ -175,7 +186,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   }
 
   private toChat(id: string, title: string, s: Snapshot, at?: number): BrowserChat {
-    const selected = s.path === "/c/" + id;
+    const selected = s.path.endsWith("/c/" + id);
     return {
       id, title, updatedAt: typeof at === "number" && at > 0
         ? new Date(at < 1e12 ? at * 1000 : at).toISOString() : new Date().toISOString(),
@@ -206,7 +217,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
           seen.add(entry.id);
           chats.push(this.toChat(entry.id, entry.title, s, entry.updatedAt));
         }
-        const selected = s.path.match(/^\/c\/([a-f0-9-]{28,80})$/i)?.[1];
+        const selected = s.path.match(/\/c\/([a-f0-9-]{28,80})$/i)?.[1];
         if (selected && NATIVE_CHAT_ID.test(selected) && !seen.has(selected)) {
           chats.unshift(this.toChat(selected, this.cache.get(selected)?.title || "ChatGPT conversation", s));
         }
@@ -222,7 +233,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       seen.add(id);
       chats.push(this.toChat(id, title, s));
     }
-    const current = s.path.match(/^\/c\/([a-f0-9-]{28,80})$/i)?.[1];
+    const current = s.path.match(/\/c\/([a-f0-9-]{28,80})$/i)?.[1];
     if (current && NATIVE_CHAT_ID.test(current) && !seen.has(current)) {
       const oldTitle = this.cache.get(current)?.title;
       chats.unshift(this.toChat(current, oldTitle || "ChatGPT conversation", s));
@@ -311,13 +322,19 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       if (!known) throw new Error("ChatGPT conversation absent from authenticated inventory");
       const page = await this.page();
       let state = await this.snapshot(page.id);
-      if (this.busy(state)) {
+      if (state.path === "/c/" + chatId) {
+        // Already on the target conversation: only an active generation or the
+        // post-send guard blocks the send. An unknown composer state here is
+        // a real "unavailable" (the chat itself is not idle).
         if (state.phase === "generating" || Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS) {
           throw new Error("prompt is already running; browser queue must wait");
         }
-        throw new Error("ChatGPT composer unavailable; message not sent");
-      }
-      if (state.path !== "/c/" + chatId) {
+        if (state.phase !== "idle") {
+          throw new Error("ChatGPT composer unavailable; message not sent");
+        }
+      } else {
+        // Navigate a dashboard (e.g. /dots/home) or a different conversation
+        // onto the target chat; the composer is verified after navigation.
         await this.tools.call("navigate_page", {
           pageId: page.id, type: "url", url: ORIGIN + "/c/" + chatId,
         });
@@ -325,10 +342,11 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       let ready = false;
       for (let i = 0; i < 4; i++) {
         state = await this.snapshot(page.id);
-        if (state.path === "/c/" + chatId && !this.busy(state)) {
+        if (state.path === "/c/" + chatId && !this.busy(state) && state.composer) {
           ready = true;
           break;
         }
+        await new Promise(resolve => setTimeout(resolve, 150));
       }
       if (!ready) throw new Error("ChatGPT target or idle state not confirmed; message not sent");
       const accessibility = await this.tools.call("take_snapshot", { pageId: page.id });

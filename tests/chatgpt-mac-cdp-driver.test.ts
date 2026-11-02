@@ -1,3 +1,4 @@
+import { CHATGPT_LIST_API_SCRIPT } from "../src/adapters/browser-chat-api-scripts.js";
 import { describe, expect, it } from "vitest";
 import { runInNewContext } from "node:vm";
 import { CHATGPT_MAC_SNAPSHOT, ChatGptMacCdpDriver, parseChatGptPages, pickChatGptPage } from "../src/adapters/chatgpt-mac-cdp-driver.js";
@@ -29,7 +30,7 @@ describe("ChatGPT on existing Mac mini CDP", () => {
       "7: ChatGPT (https://chatgpt.com/c/" + ID + ")\n"
       + "8: impostor (https://chatgpt.com.evil.invalid/c/" + ID + ")\n"
       + "9: ZAI (https://chat.z.ai/)"))
-      .toEqual([{ id: 7, url: "https://chatgpt.com/c/" + ID }]);
+      .toEqual([{ id: 7, url: "https://chatgpt.com/c/" + ID, conversation: true }]);
   });
   it("reads verified native route IDs without sending or touching ZAI", async () => {
     const f = new BrowserFixture();
@@ -125,7 +126,7 @@ describe("ChatGPT browser submit admission", () => {
 describe("dot tab isolation", () => {
  it("falls back to auto-detection when the pinned numeric page is a dot route", async () => {
   const listing="6: Dot (https://chatgpt.com/dots/owner~room)\n7: ChatGPT (https://chatgpt.com/c/"+ID+")";
-  expect(parseChatGptPages(listing)).toEqual([{id:7,url:"https://chatgpt.com/c/"+ID}]);
+  expect(parseChatGptPages(listing)).toEqual([{id:6,url:"https://chatgpt.com/dots/owner~room",conversation:false},{id:7,url:"https://chatgpt.com/c/"+ID,conversation:true}]);
   const pageIds:number[]=[];
   const tools:ChromePageTools={call:async(name:string,args:Record<string,unknown>={})=>{
     if(name==="list_pages")return listing;
@@ -137,8 +138,8 @@ describe("dot tab isolation", () => {
   expect(pageIds.length).toBeGreaterThan(0);
   expect(pageIds.every(id=>id===7)).toBe(true);
  });
- it("excludes the dot root route, retains normal chat candidates",()=>{
-  expect(parseChatGptPages("1: Dot (https://chatgpt.com/dots)\n2: ChatGPT (https://chatgpt.com/)")).toEqual([{id:2,url:"https://chatgpt.com/"}]);
+ it("includes the dot root route alongside normal chat candidates",()=>{
+  expect(parseChatGptPages("1: Dot (https://chatgpt.com/dots)\n2: ChatGPT (https://chatgpt.com/)")).toEqual([{id:1,url:"https://chatgpt.com/dots",conversation:false},{id:2,url:"https://chatgpt.com/",conversation:false}]);
  });
 });
 
@@ -147,11 +148,16 @@ describe("ChatGPT tab auto-discovery", () => {
   it("captures the selected marker; the selected tab wins, then the lowest ID", () => {
     const pages = parseChatGptPages("2: ChatGPT (https://chatgpt.com/)\n4: ChatGPT (https://chatgpt.com/c/" + ID + ") [selected]");
     expect(pages).toEqual([
-      { id: 2, url: "https://chatgpt.com/" },
-      { id: 4, url: "https://chatgpt.com/c/" + ID, selected: true },
+      { id: 2, url: "https://chatgpt.com/", conversation: false },
+      { id: 4, url: "https://chatgpt.com/c/" + ID, conversation: true, selected: true },
     ]);
     expect(pickChatGptPage(pages).id).toBe(4);
     expect(pickChatGptPage(parseChatGptPages("9: ChatGPT (https://chatgpt.com/)\n4: ChatGPT (https://chatgpt.com/)")).id).toBe(4);
+  });
+  it("prefers a tab already on a conversation route over a lower-id dashboard", () => {
+    const pages = parseChatGptPages("2: ChatGPT (https://chatgpt.com/)\n4: ChatGPT (https://chatgpt.com/c/" + ID + ")");
+    expect(pages.map(p => p.id)).toEqual([2, 4]);
+    expect(pickChatGptPage(pages).id).toBe(4);
   });
   it("opens a ChatGPT tab when none exists and tolerates the tool navigation timeout", async () => {
     let opened = 0;
@@ -201,5 +207,49 @@ describe("ChatGPT draft preservation", () => {
     const driver = new ChatGptMacCdpDriver(tools, undefined, 0);
     await driver.sendMessage({ chatId: ID, text: "herder msg" });
     expect(fills).toEqual(["herder msg", "user draft text"]);
+  });
+});
+
+describe("dots workspace dashboard", () => {
+  it("lists chats from a /dots/home dashboard tab via the authenticated API", async () => {
+    const tools: ChromePageTools = {
+      call: async (name, args = {}) => {
+        if (name === "list_pages") return "6: ChatGPT (https://chatgpt.com/dots/home)";
+        if (name === "evaluate_script") {
+          const fn = String(args.function);
+          if (fn === CHATGPT_LIST_API_SCRIPT) return json({ scope: "a".repeat(64), chats: [{ id: ID, title: "Workspace chat", updatedAt: 1730000000 }] });
+          return json({ origin: "https://chatgpt.com", path: "/dots/home", authenticated: true, composer: false,
+            phase: "unknown", draftPresent: false, chats: [] });
+        }
+        throw Error("unexpected tool: " + name);
+      },
+    };
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0);
+    expect(await driver.listChats()).toMatchObject([{ id: ID, title: "Workspace chat", working: false }]);
+  });
+  it("navigates a dashboard tab to the target chat before sending", async () => {
+    const navs: string[] = [];
+    let navigated = false;
+    const tools: ChromePageTools = {
+      call: async (name, args = {}) => {
+        if (name === "list_pages") return "6: ChatGPT (https://chatgpt.com/dots/home)";
+        if (name === "navigate_page") { navigated = true; navs.push(String(args.url)); return "ok"; }
+        if (name === "take_snapshot") return 'uid=1_7 textbox "Спросить ChatGPT"';
+        if (name === "fill") return "ok";
+        if (name === "evaluate_script") {
+          const fn = String(args.function);
+          if (fn === CHATGPT_LIST_API_SCRIPT) return json({ scope: "a".repeat(64), chats: [{ id: ID, title: "Workspace chat" }] });
+          if (fn.includes("editor.innerText")) return json({ value: "" });
+          if (fn.includes("const expected")) return json({ submitted: true });
+          const path = navigated ? "/c/" + ID : "/dots/home";
+          return json({ origin: "https://chatgpt.com", path, authenticated: true, composer: navigated,
+            phase: navigated ? "idle" : "unknown", draftPresent: false, chats: navigated ? [{ id: ID, title: "Workspace chat" }] : [] });
+        }
+        throw Error("unexpected tool: " + name);
+      },
+    };
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0);
+    await driver.sendMessage({ chatId: ID, text: "hello from herder" });
+    expect(navs).toEqual(["https://chatgpt.com/c/" + ID]);
   });
 });
