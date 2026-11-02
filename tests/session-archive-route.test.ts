@@ -1,3 +1,4 @@
+import "./_harness-caps-bootstrap.js";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Server } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";

@@ -1,3 +1,4 @@
+import "./_harness-caps-bootstrap.js";
 import {it,expect} from 'vitest';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';

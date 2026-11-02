@@ -1,3 +1,4 @@
+import "./_harness-caps-bootstrap.js";
 import {expect,it} from 'vitest';
 import {SessionSupervisor} from '../src/session-supervisor.js';
 // Focused integration expected1s/max5s: polling must not replace a verified model with a stale list label.

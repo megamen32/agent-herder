@@ -1,9 +1,10 @@
+import "./_harness-caps-bootstrap.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Conversation } from "session-convert";
-import { SessionSupervisor } from "../src/session-supervisor.js";
+import { SessionSupervisor, SessionNotFoundError } from "../src/session-supervisor.js";
 import { LineageStore } from "../src/lineage-store.js";
 import type { AgentSession, HarnessAdapter, SessionMessageView } from "../src/types/index.js";
 
@@ -52,6 +53,38 @@ function adapterWithoutLiveHistory(): HarnessAdapter {
 }
 
 describe("SessionSupervisor details", () => {
+  it("uses adapter-owned runtime capabilities through a provider alias", async () => {
+    const list = vi.fn(async () => { throw Error("global discovery must not run"); });
+    const models = vi.fn(async () => { throw Error("model picker must not run"); });
+    const custom: HarnessAdapter = {
+      ...adapter(), listSessions: list, listModels: models,
+      runtimeCapabilities: {
+        autopilotDispatch: "returnNextGoal", hookDrivenStop: false, browserChat: true,
+        autopilotEligible: true, localInject: false, humanStopObserver: false,
+      },
+    };
+    const supervisor = new SessionSupervisor(
+      new Map([["custom-provider", custom]]),
+      { async convert() { return { success: true }; }, async read() { return null; } },
+      new LineageStore("/tmp/herder-instance-capabilities-fixture.json"),
+    );
+    const details = await supervisor.getSessionDetails("custom-provider", session.id, { quick: true });
+    expect(details.session.id).toBe(session.id);
+    expect(details.messages).toHaveLength(3);
+    expect(list).not.toHaveBeenCalled();
+    expect(models).not.toHaveBeenCalled();
+  });
+
+  it("keeps the missing-provider session-not-found contract", async () => {
+    const supervisor = new SessionSupervisor(
+      new Map(),
+      { async convert() { return { success: true }; }, async read() { return null; } },
+      new LineageStore("/tmp/herder-missing-provider-fixture.json"),
+    );
+    await expect(supervisor.getSessionDetails("unregistered-provider", session.id))
+      .rejects.toBeInstanceOf(SessionNotFoundError);
+  });
+
   for (const harness of ["chatgpt", "zai"] as const) {
     for (const quick of [true, false]) {
       it(`${harness} ${quick ? "quick" : "full"} details never discover all sessions or open the model menu`, async () => {
