@@ -86,6 +86,7 @@ export function SessionSidebarRow({session, title, selected, pinned, canPin, sta
     </button>
     <button type="button" className="session-pin" aria-pressed={pinned} aria-label={`${pinned ? 'Открепить' : 'Закрепить'} сессию: ${title}`}
       disabled={!canPin} title={!canPin ? 'Данные машины и кабинета ещё загружаются' : pinned ? 'Открепить сессию' : 'Закрепить сессию'} onClick={onPin}>
+    {canMoveToProject && <button type="button" className="session-move-project" aria-label={`Переместить в проект: ${title}`} title="Переместить в проект" onClick={onMoveToProject}>В проект</button>}
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M8 3h8M9 3v5l-3 3v3h12v-3l-3-3V3M12 14v7" /></svg>
     </button>
     {anchor && createPortal(<div ref={tooltip} id={id} role="tooltip" className="session-context-tooltip" style={position}>

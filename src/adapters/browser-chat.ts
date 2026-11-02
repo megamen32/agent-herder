@@ -49,6 +49,8 @@ export interface BrowserChatDriver {
     queueAfterGeneration: boolean;
     chatCreation: boolean;
     accountArchiveViaCdp: boolean;
+    /** The site has a Projects feature and chats can be moved into one. */
+    projects: boolean;
   };
 }
 export interface BrowserChatProvider { id: string; name: string; harness: HarnessType; cwd: string }
@@ -85,6 +87,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
     modelSwitch: false,
     subagents: false,
     events: false,
+    projects: false,
   };
   readonly runtimeCapabilities = BROWSER_RUNTIME_CAPS;
   readonly lazyDiscovery = true;
@@ -110,12 +113,14 @@ export class BrowserChatAdapter implements HarnessAdapter {
       ...BrowserChatAdapter.browserCapabilities,
       cancelTurn: typeof driver.stopTurn === "function",
       modelSwitch: driver.supportsModelSwitch?.() ?? typeof driver.changeModel === "function",
+      projects: driver.browserFeatures?.projects ?? false,
     };
     this.browserFeatures = driver.browserFeatures ?? {
       nativeConversationIds: false,
       queueAfterGeneration: false,
       chatCreation: typeof driver.createChat === "function",
       accountArchiveViaCdp: false,
+      projects: false,
     };
   }
 

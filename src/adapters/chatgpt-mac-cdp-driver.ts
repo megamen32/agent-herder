@@ -118,6 +118,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     queueAfterGeneration: true,
     chatCreation: false,
     accountArchiveViaCdp: true,
+    projects: true,
   } as const;
   private readonly cache = new Map<string, BrowserChat>();
   private readonly requestTrace = new ChatGptRequestTrace();
