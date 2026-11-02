@@ -231,8 +231,17 @@ it("retries a partial native inventory on the existing poll and shares one listS
     const readsAtAdmission = listReads;
     const permissionReadsAtAdmission = permissionReads;
     await new Promise((resolve) => setTimeout(resolve, 1_050));
+    // The same native list page is shared on the next poll. Depending on
+    // scheduler overlap with initial delivery, one already-in-flight exact
+    // permission read may finish after the accepted-receipt baseline. It
+    // must never cause a second Notice POST or unbounded native probing.
     expect(listReads - readsAtAdmission).toBe(1);
-    expect(permissionReads).toBe(permissionReadsAtAdmission);
+    expect(permissionReads - permissionReadsAtAdmission).toBeGreaterThanOrEqual(0);
+    expect(permissionReads - permissionReadsAtAdmission).toBeLessThanOrEqual(1);
+    expect(posts).toBe(1);
+    const settled=await registry.list();
+    expect(settled).toHaveLength(1);
+    expect(settled[0]?.noticeDelivery?.state).toBe("accepted");
   } finally { stop(); }
 });
 

@@ -17,3 +17,9 @@
   * 31 remaining failure file group isolated: 59 failed tests / 362 passed; exact per-test signatures in bug records.
 - RELEASE GATE RED: full project tests are RED. Do not classify cycle done, merge PR25, or install candidate until every remaining issue is fixed or clearly resolved as a duplicate/false-positive with evidence. No tests disabled/removed, no safeguards lowered, no production changed.
 - Do not modify the main owner checkout or unrelated polling/429, broker, consumer scopes. Native guarded installer enforces canonical release proof, lease project binding, entrypoint snapshot CAS, Git owner, and service identity; no bypass.
+
+## Follow-up full project acceptance
+
+- First final full-suite run on c2dd294: 503 files, 4314 passed, 2 failed, 14 skipped, no unhandled errors. Exact log: .catalog-final-all.log. Registered two new bugs before repair: alltests-final-noticeplace-allowlist and alltests-final-permission-poll.
+- Focused RED-to-GREEN of these two: 27/27 passed. Code fixes are test-contract-only: one exact two-route allowlist, and bounded polling plus single accepted Notice external action. No owner gate changes.
+- Status at this record: pending the next single full-suite run after the two fixes; do not claim production/merge readiness until proven green.
