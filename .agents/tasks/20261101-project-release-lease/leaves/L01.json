@@ -1,0 +1,104 @@
+{
+  "id": "L01",
+  "label": "Бронь выпуска проекта",
+  "status": "done",
+  "description": "Agent Herder acquire/renew/release/status, lifecycle release, TTL и fencing.",
+  "acceptance": "Целевые регрессии проходят; draft PR опубликован, без merge и production deployment.",
+  "owner": "fix_parallel_release_workflow",
+  "session": "/root/fix_parallel_release_workflow",
+  "harness": "chatgpt",
+  "depends_on": [],
+  "estimate_minutes": {
+    "minimum": 15,
+    "maximum": 30
+  },
+  "note": "По проверке владельца combined Herder PR18 MERGED4049a99: live exec/config/current и canonicalmain4049, PID625564 в14:06UTC; candidate15/15, readiness и rate guard PASS, actual MCP project_integration успешно, lease fence2 освобождён. Ранее fd2 был заменён d134UI; затем d134+pointer fix интегрированы в reviewed history. Старые worktrees не удалялись.",
+  "result": "Manual Z.ai coordination message echo проверен, пользовательский draft1575 символов восстановлен и hash проверен; owner acknowledgment не заявляется. Текущий pending scope L03 GPTAdmin.",
+  "model": "gpt-6.1-sol",
+  "updated_at": "2026-11-01T17:13:10+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-01T16:20:20+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "note": "Исходники опубликованы для review. Не установлено, merge и deployment не выполнялись, runtime не изменён. Draft PR создаётся для ранней видимости результата, а не как искусственная очередь ожидания.",
+        "result": "Draft PR https://github.com/megamen32/agent-herder/pull/17 открыт; HEAD 2257f5a3f0a294bf98558c5aaa005335a8680e68 проверен через GitHub. По отчёту исполнителя: 48 TypeScript и 52 Python теста PASS, tsc PASS; исправления независимого review гонок lease и readiness применены. Native lifecycle: ZCode SessionEnd с исходным timestamp; Codex использует StopAgent/controller reports и TTL, без выдуманных unsupported hooks.",
+        "model": "gpt-6.1-sol"
+      },
+      "session": "/root/fix_parallel_release_workflow",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T16:23:13+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "Новый scope владельца: своя ветка и worktree; push свободно, PR только при готовности к merge. Session-end inventory; последний работник отвечает за интеграцию и проверку проекта. Cleanup только merged+clean+inactive; неизвестные, активные, грязные, конфликтные и unmerged сохраняются видимыми. Существующие PR остаются draft до обновлённого review; runtime не изменён."
+      },
+      "session": "/root/fix_parallel_release_workflow",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T16:26:23+03:00",
+      "note": "",
+      "changes": {
+        "note": "Последнее уточнение: ранний draft PR полезен для видимости незавершённой работы, с ссылкой на LHC план. Ready после тестов и review. Session-end inventory; последний работник отвечает за интеграцию и проверку проекта. Cleanup только merged+clean+inactive; остальные ветки сохраняются с видимыми блокерами. Изменения нового scope проходят проверки. Runtime не изменён. Доступ к этому техническому плану проверен без авторизации; SSO не подтверждён, приватных данных здесь нет."
+      },
+      "session": "/root/fix_parallel_release_workflow",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T16:35:36+03:00",
+      "note": "",
+      "changes": {
+        "note": "Исходники расширения опубликованы, финальное независимое review последнего исправления ещё проверяется. Merge/deploy не выполнялись, runtime не изменён, существующие worktrees не удалялись. Текущий integration target только main; для native lifecycle требуется надёжный исходный timestamp, неизвестные события не считаются подтверждением завершения. Этот технический план доступен без авторизации; SSO не подтверждён.",
+        "result": "PR https://github.com/megamen32/agent-herder/pull/17 HEAD b60d11e080590b6cdef97eed74e674691ff89663 проверен через GitHub. По отчёту исполнителя: 72 TypeScript теста PASS; ранее 52 Python PASS без изменений, tsc и diff-check PASS. Lifecycle использует существующий lease ledger, bounded inventory и atomic claim, existing resume_after; startup проверяет не более 32 известных pending записей. Cleanup только exact clean merged inactive worktree, branch сохраняется; unknown/active сохраняются. Review выявил и исправил target-self bypass, lost wakeup, reactivation gap и startup-active bug; финальное закрытие review ожидается."
+      },
+      "session": "/root/fix_parallel_release_workflow",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T16:36:54+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "note": "Готовы только исходники и PR: финальный независимый review b60d11e PASS, scoped blockers отсутствуют. PR17 OPEN, ready (isDraft=false), точный HEAD проверен. Merge/deploy не выполнялись, runtime не изменён, существующие worktrees не удалялись. Integration target пока main; неизвестные native timestamps не подтверждают завершение. SSO этого технического плана не подтверждён.",
+        "result": "PR https://github.com/megamen32/agent-herder/pull/17 HEAD b60d11e080590b6cdef97eed74e674691ff89663. 72 TS PASS, ранее 52 Python PASS без изменений; tsc/diff-check PASS. Lifecycle: existing lease ledger, bounded inventory, atomic claim, resume_after; startup не более 32 known pending. Exact clean merged inactive cleanup сохраняет branch; unknown/active сохраняются. Все scoped review findings исправлены и закрыты."
+      },
+      "session": "/root/fix_parallel_release_workflow",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T16:42:13+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "PR17 merged fd2e639 по отчёту исполнителя; deployment выполняется ответственным worker. Завершение runtime не заявлено, старые worktrees не удалялись."
+      },
+      "session": "/root/fix_parallel_release_workflow",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T16:48:10+03:00",
+      "note": "",
+      "changes": {
+        "note": "Новая проверка runtime: по сообщению владельца deployment в13:46 UTC был заменён d134 UI. Ранее проверенные source/install результаты сохранены как история, но fd2 больше не заявляется текущим runtime. Изменения приняты на разбор в isolated branch fix/adopt-ui-release-integration-20261101 на базе fd2 с ancestry d134; точный diff содержит2 UI файла. Ограниченный поиск по недавним coordination notes, declarations и процессам не нашёл активного владельца. Review выполняется, ссылка PR ожидается.",
+        "result": "Новое правило владельца: существующие изменения без найденного активного владельца после bounded lookup текущий worker обязан разобрать, включить в существующий план и довести интеграцию. Это не разрешает принимать неизвестный diff без review или обходить проверки. Состояние deployment требует повторной проверки после интеграции."
+      },
+      "session": "/root/fix_parallel_release_workflow",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T17:13:10+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "note": "По проверке владельца combined Herder PR18 MERGED4049a99: live exec/config/current и canonicalmain4049, PID625564 в14:06UTC; candidate15/15, readiness и rate guard PASS, actual MCP project_integration успешно, lease fence2 освобождён. Ранее fd2 был заменён d134UI; затем d134+pointer fix интегрированы в reviewed history. Старые worktrees не удалялись.",
+        "result": "Manual Z.ai coordination message echo проверен, пользовательский draft1575 символов восстановлен и hash проверен; owner acknowledgment не заявляется. Текущий pending scope L03 GPTAdmin."
+      },
+      "session": "/root/fix_parallel_release_workflow",
+      "harness": "chatgpt"
+    }
+  ]
+}

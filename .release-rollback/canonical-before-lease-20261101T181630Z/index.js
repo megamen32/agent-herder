@@ -1,0 +1,1372 @@
+#!/usr/bin/env node
+import { BackgroundAutopilotStop } from "./autopilot/background-stop.js";
+import { BrowserTurnAutopilotObserver } from "./autopilot/browser-turn-observer.js";
+import { NativeTurnAutopilotObserver } from "./autopilot/native-turn-observer.js";
+import { deliverAutopilotGoal } from "./autopilot/continuation-delivery.js";
+import { evaluateAutopilotStop, runAutopilotCommand } from "./autopilot-runner.js";
+import { PendingQuestionGate } from "./autopilot/pending-question-gate.js";
+import { AutoCompactStore, AutoCompactService } from "./autocontinue/auto-compact.js";
+import { createHash, randomUUID } from "node:crypto";
+import { createFleetRecoveryAdmissionGate } from "./autopilot/recovery-admission.js";
+import { createMiniMaxQuotaPreflight } from "./automation/minimax-quota-preflight.js";
+import { startSelectedStdio } from "./mcp/transport-selection.js";
+import { McpServer } from "@modelcontextprotocol/server";
+import { z } from "zod";
+import { homedir, hostname } from "node:os";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { QaControlBackend } from "./qa-control.js";
+import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter, MinimaxCodeAdapter, configuredBrowserProviderIds, loadBrowserChatProviderAdapter } from "./adapters/index.js";
+import { HumanRequestRegistry } from "./human-request/index.js";
+import { ChoiceRegistry } from "./autopilot/choice-registry.js";
+import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
+import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
+import { AutopilotSessionStore } from "./autopilot/session-store.js";
+import { AutomationLaunchPolicyStore } from "./automation-launch-policy.js";
+import { resolveProjectRecoveryModels } from "./automation/project-recovery-models.js";
+import { AutomationDisarmStore, automationDisarmDecisionWithWork, sessionWorkKey } from "./automation-disarm/index.js";
+import { IntegratorSessionBindingStore } from "./integrator-session-binding.js";
+import { IntegratorFleetRuntime } from "./integrator-fleet-runtime.js";
+import { dispatchProjectLaunch, namedSessionRunner, ProjectLaunchAttemptLog } from "./automation/project-launch-dispatch.js";
+import { IncidentSessionRouter, incidentSourceKey } from './automation/incident-session-router.js';
+import { noticeplaceGroupContinuationPorts } from './automation/noticeplace-group-continuation.js';
+import { createAnthropicCompatibleSessionCompletionJudge, createOpenAICompatibleSessionCompletionJudge, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore } from "./autopilot/unfinished-session-launcher.js";
+import { applyOutboundFamilyToProcess } from "./net/outbound-family.js";
+import { createIncidentUpdateSink, deliverIncidentQuestion, readIncidentBinding } from "./autopilot/notice-incident.js";
+import { createNoticePlacePayload, createNoticePlaceSink, drainPendingNotices, loadReceiptStore, persistReceiptStore } from "./autopilot/index.js";
+import { buildAskHumanRequest } from "./human-request/notice-question.js";
+import { describeAskHumanProducer, loadAskHumanProducer } from "./human-request/ask-human-producer.js";
+import { acquireLock } from "./autopilot-hook.js";
+import { AgentHerderSessionConverter } from "./session-convert.js";
+import { SessionSupervisor } from "./session-supervisor.js";
+import { getHumanStopStore } from "./human-stop-store.js";
+import { LineageStore } from "./lineage-store.js";
+import { AnthropicMiniMaxSummarizer, CacheHandoffService, FastAgentMiniMaxSummarizer } from "./cache-handoff.js";
+import { acquireAgentHerderSingleton } from "./singleton.js";
+import { AdapterRegistry } from "./adapter-registry.js";
+import { boundResumeReceiptQuery, createWebServer, resumeSelectedTarget } from "./web/server.js";
+import { AgentResumeClient } from "./resume-transport.js";
+import { createConfiguredFleetApiHandler, createManagedFleetHttpGuard, isManagedFleetNode } from "./web/fleet-wiring.js";
+import { loadSecretEnvironment } from "./web/settings-store.js";
+import { registerFleetNodeTools } from "./mesh/fleet-node.js";
+import { commonSettingsService, registerCommonSettingsTools, startCommonSettingsSyncLoop, } from "./common-settings/index.js";
+import { hooksLeverFromStore } from "./common-settings/index.js";
+import { HooksProhibitionsStore, isHookKind } from "./hooks/index.js";
+import { fleetPolicyRevisionLedgerPath } from "./mesh/fleet-policy-revision.js";
+import { createConfiguredBrowserWakeService } from "./browser-wake.js";
+import { coordinationNotes } from "./coordination-notes.js";
+import { herderEvents } from "./herder-events.js";
+import { herderJobs } from "./herder-jobs.js";
+import { harnessEventHealth } from "./harness-event-health.js";
+import { registerHerderResources } from "./mcp/resources.js";
+import { registerDeliveryResponseResource } from "./mcp/delivery-response-resources.js";
+import { createDeliveryResponseOwnerReader } from "./mcp/delivery-response-owner-routing.js";
+import { registerControlPlaneTools } from "./mcp/control-plane-tools.js";
+import { registerResumeAfterTools } from "./mcp/resume-after-tools.js";
+import { createResumeAfterRuntime } from "./resume-after-runtime.js";
+import { createCadenceRuntime } from "./cadence-runtime.js";
+import { registerCadenceTools } from "./mcp/cadence-tools.js";
+import { registerHumanRequestTools } from "./mcp/human-request-tools.js";
+import { createPermissionNoticeObserver } from "./permission-control/notice-bridge.js";
+import { createNativeUserInputNoticeObserver } from "./human-request/native-user-input-notice.js";
+import { createAsyncUserInputNoticeObserver } from "./human-request/async-user-input-notice.js";
+import { registerCdpTools } from "./mcp/cdp-tools.js";
+import { registerChatGptWakeTools } from "./mcp/chatgpt-wake-tools.js";
+import { WakeBindingStore } from "./chatgpt-wake-binding.js";
+import { registerSessionTools } from "./mcp/session-tools.js";
+import { withCatalogProjection } from "./mcp/catalog-projection.js";
+import { UserMessageDelivery } from "./user-message-delivery.js";
+import { DeferredDeliverySweeper } from "./deferred-delivery-sweeper.js";
+import { SessionQueueControl } from "./session-queue-control.js";
+import { SessionQueueControlGateway } from "./session-queue-control-gateway.js";
+import { registerResourceOwnershipTools } from "./mcp/resource-ownership-tools.js";
+import { registerHarnessMeshTools } from "./mesh/register-tools.js";
+import { trustedMeshIngressForOwnerStdio, trustedMeshIngressFromMcpAuthInfo } from "./mesh/authenticated-ingress.js";
+import { FleetDirectTransport, fleetPeers } from "./mesh/fleet-direct-transport.js";
+import { registerWorkspaceTools } from "./mesh/workspace-tools.js";
+import { registerBackgroundTools } from "./mcp/background-tools.js";
+import { registerRagTools } from "./mcp/rag-tools.js";
+import { registerActiveSessionTools } from "./mcp/active-session-tools.js";
+import { registerSessionWorkspaceTools } from "./session-workspaces-tools.js";
+import { registerSessionSearchTools } from "./mcp/session-search-tools.js";
+import { captureDeliveryResponseBaseline, nativeDeliveryResponseComplete, nativeDeliveryResponseCompleteByInput, waitForDeliveryResponse } from "./session-delivery-response.js";
+import { loadCdpChatDriver } from "./cdp-chat-mcp.js";
+import { ALL_CDP_CHAT_CAPABILITIES, CdpChatClient } from "./cdp-chat.js";
+import { ChatGptAccountArchive } from "./chatgpt-account-archive.js";
+import { ChatGptHistoryArchive } from "./chatgpt-history-archive.js";
+import { isQuotaLensEnabled, startQuotaLensSampler } from "./web/quota-lens.js";
+// ===== Configuration from environment =====
+const ENABLE_OPENCODE = parseEnvBool(process.env.ENABLE_OPENCODE, true);
+const ENABLE_CLAUDE = parseEnvBool(process.env.ENABLE_CLAUDE, true);
+const ENABLE_CLAUDE_SDK = parseEnvBool(process.env.ENABLE_CLAUDE_SDK, true);
+const ENABLE_CODEX = parseEnvBool(process.env.ENABLE_CODEX, true);
+const CODEX_TRANSPORT = process.env.CODEX_TRANSPORT || "app-server";
+const ENABLE_QODER = parseEnvBool(process.env.ENABLE_QODER, true);
+const ENABLE_HERMES = parseEnvBool(process.env.ENABLE_HERMES, true);
+const ENABLE_ZCODE = parseEnvBool(process.env.ENABLE_ZCODE, true);
+const ENABLE_FAST_AGENT = parseEnvBool(process.env.ENABLE_FAST_AGENT, false);
+const ENABLE_MINIMAX_CODE = parseEnvBool(process.env.ENABLE_MINIMAX_CODE, true);
+const ACP_AGENT_COMMAND = process.env.ACP_AGENT_COMMAND;
+const LAZY_ADAPTERS = new Set(["codex", "hermes", "zcode"]);
+function parseEnvBool(val, fallback) {
+    if (!val)
+        return fallback;
+    return val === "1" || val === "true" || val === "yes";
+}
+/** Resolve the currently configured task judge for every batch operation. */
+export function createDynamicSessionCompletionJudge(getClient, getModel) {
+    const currentClient = async () => getClient(getModel ? await getModel() : undefined);
+    return {
+        async decide(input) {
+            return (await currentClient()).decide(input);
+        },
+        async plan(input) {
+            const plan = (await currentClient()).plan;
+            if (!plan)
+                throw new Error("Configured session judge does not support batch planning");
+            return plan(input);
+        },
+        async reconcile(input) {
+            const reconcile = (await currentClient()).reconcile;
+            if (!reconcile)
+                throw new Error("Configured session judge does not support batch reconciliation");
+            return reconcile(input);
+        },
+    };
+}
+/** Read an operator-selected credential file without placing its value in config or argv. */
+export async function readCredentialFile(path) {
+    if (!path?.trim())
+        return undefined;
+    const value = (await readFile(path.trim(), "utf8")).trim();
+    if (!value)
+        throw new Error(`Credential file is empty: ${path.trim()}`);
+    return value;
+}
+function parseReasoningEffort(value) {
+    const normalized = value?.trim().toLowerCase();
+    if (!normalized)
+        return undefined;
+    if (normalized === "low" || normalized === "high" || normalized === "max")
+        return normalized;
+    throw new Error("AGENT_HERDER_UNFINISHED_JUDGE_REASONING_EFFORT must be low, high, or max");
+}
+// ===== Create adapters =====
+const adapters = new Map();
+// One Autopilot state seam for the daemon, the Stop hook and the runner. Legacy
+// state is adopted once instead of being reset, so live sessions, pending
+// questions and pending choices survive this unification.
+const autopilotStateDir = resolveAutopilotStateDir();
+const autopilotStateReady = adoptLegacyAutopilotState(autopilotStateDir);
+const humanRequests = new HumanRequestRegistry(resolveHumanRequestStorePath(autopilotStateDir));
+const permissionObserver = createPermissionNoticeObserver(humanRequests);
+const nativeInputObserver = createNativeUserInputNoticeObserver(humanRequests);
+const asyncInputObserver = createAsyncUserInputNoticeObserver(humanRequests);
+const permissionNoticeObserver = {
+    async onEvent(adapter, event) {
+        await Promise.all([permissionObserver.onEvent(adapter, event), nativeInputObserver.onEvent(adapter, event), asyncInputObserver.onEvent(adapter, event)]);
+    },
+    async reconcileInitialSnapshot(adapter, sessions) {
+        const results = await Promise.all([
+            permissionObserver.reconcileInitialSnapshot(adapter, sessions),
+            nativeInputObserver.reconcileInitialSnapshot(adapter, sessions),
+            asyncInputObserver.reconcileInitialSnapshot(adapter, sessions),
+        ]);
+        return results.every(Boolean);
+    },
+    reconcileSessionSnapshot: asyncInputObserver.reconcileInitialSnapshot,
+};
+const choiceRegistry = new ChoiceRegistry(process.env.AGENT_HERDER_AUTOPILOT_CHOICE_STORE || join(autopilotStateDir, "choices.json"));
+const autopilotPolicyStore = new AutopilotPolicyStore(resolveAutopilotPolicyStorePath(autopilotStateDir));
+const autopilotSessionStore = new AutopilotSessionStore(join(autopilotStateDir, "sessions.json"));
+const unfinishedSessionStore = new UnfinishedSessionStore(process.env.AGENT_HERDER_UNFINISHED_SESSION_STORE || join(autopilotStateDir, "unfinished-sessions.json"));
+const sessionAutostartStore = new SessionAutostartStore(process.env.AGENT_HERDER_SESSION_AUTOSTART_SETTINGS || join(autopilotStateDir, "session-autostart.json"));
+const autoCompactStore = new AutoCompactStore(join(autopilotStateDir, "auto-compact.json"));
+const automationLaunchPolicyStore = new AutomationLaunchPolicyStore(join(autopilotStateDir, "automation-launch-policy.json"));
+// The lever of the owner over the prohibitions of the hooks. It is the
+// same durable state as the launch policy beside it, and it travels in
+// the common document of the fleet — the lever of the automation is a
+// different thing and is not touched here.
+const hooksProhibitionsStore = HooksProhibitionsStore.at(autopilotStateDir);
+/**
+ * The lever of the hooks as the common document sees it.
+ *
+ * The store of the hooks accepts only the known kinds of hooks, while the
+ * common document carries the names as strings: the names are checked here, so
+ * an unknown name is dropped instead of written into the lever.
+ */
+const hooksLeverStore = {
+    readState: () => hooksProhibitionsStore.readState(),
+    apply: (change) => hooksProhibitionsStore.apply({
+        ...change,
+        disabledHooks: change.disabledHooks?.filter((hook) => isHookKind(hook)),
+    }),
+};
+const integratorSessionBindingStore = new IntegratorSessionBindingStore({ persistencePath: join(autopilotStateDir, "integrator-session-bindings.json") });
+// Explicit owner-persisted adoptions for legacy OpenCode rows: a JSON array of
+// exact tuples {operationId, nativeSessionId, launchCwd, rootIdentity,
+// policyRevision} taken from the owner's durable original-evidence readback.
+// Absent file → no adoptions; every legacy scope_missing row fails closed.
+const legacyScopeAdoptions = (() => {
+    const path = process.env.AGENT_HERDER_OPENCODE_SCOPE_ADOPTIONS?.trim()
+        || join(autopilotStateDir, "opencode-legacy-scope-adoptions.json");
+    try {
+        const parsed = JSON.parse(readFileSync(path, "utf8"));
+        return Array.isArray(parsed) ? parsed : [];
+    }
+    catch {
+        return []; // No adoption file: every legacy scope_missing row fails closed.
+    }
+})();
+const integratorFleetRuntime = new IntegratorFleetRuntime({ policyStore: automationLaunchPolicyStore, bindingStore: integratorSessionBindingStore, codexBin: process.env.CODEX_BIN, legacyScopeAdoptions });
+// The per-project model gate reads the same stored document as the launcher,
+// so a denied model is refused at every place a model can be applied.
+const readLaunchPolicyForGate = async () => {
+    const loaded = await automationLaunchPolicyStore.load();
+    return loaded.kind === "valid" ? loaded.policy : undefined;
+};
+// The node says which version of the policy of the launch it holds right now,
+// so the fleet can tell a node that applied the wanted version from a node
+// that holds another one. The document is read at the moment of the answer,
+// and no copy of it is kept.
+const readLaunchPolicyRevision = async () => {
+    const loaded = await automationLaunchPolicyStore.readDocument();
+    return { kind: loaded.kind, appliedRevision: loaded.etag };
+};
+// A delivery may not start work in a project that restricts models, so the
+// delivery gate needs the state of the document and not only its content: an
+// unreadable policy is not a permission.
+const readLaunchPolicyStateForGate = async () => {
+    const loaded = await automationLaunchPolicyStore.load().catch((error) => ({ kind: "invalid", error: error instanceof Error ? error.message : String(error) }));
+    if (loaded.kind === "valid")
+        return { kind: "valid", policy: loaded.policy };
+    if (loaded.kind === "absent")
+        return { kind: "absent" };
+    return { kind: "invalid", error: loaded.error };
+};
+const humanStopStore = getHumanStopStore();
+const herderGenerationId = `process-${process.pid}-${randomUUID()}`;
+const persistNativeOwner = async (id, proof, current) => {
+    if (await humanStopStore.isHeld("zcode", id))
+        return false;
+    return unfinishedSessionStore.recordNativeOwnerProof(id, proof, current);
+};
+const lineageStore = new LineageStore(join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "agent-herder", "lineage.json"));
+const browserWakeService = createConfiguredBrowserWakeService(process.env);
+const adapterFactories = new Map();
+const adapterRegistry = new AdapterRegistry(adapters, process.env.AGENT_HERDER_ADAPTER_REGISTRY || ".agent-herder/adapters.json");
+const openCodeModelProviderResolver = () => ({
+    omniRouteBaseUrl: process.env.AGENT_HERDER_OMNIROUTE_BASE_URL,
+    omniRouteApiKey: process.env.OMNIROUTE_API_KEY,
+    omniRouteManagementToken: process.env.AGENT_HERDER_OMNIROUTE_MANAGEMENT_TOKEN,
+    omniRouteCliToken: process.env.AGENT_HERDER_OMNIROUTE_CLI_TOKEN,
+});
+function configureAdapterRegistry() {
+    adapterFactories.set("opencode", () => new OpenCodeAdapter({
+        baseUrl: process.env.OPENCODE_URL,
+        password: process.env.OPENCODE_SERVER_PASSWORD,
+        modelProviderResolver: openCodeModelProviderResolver(),
+    }));
+    adapterFactories.set("claude", () => ENABLE_CLAUDE_SDK ? new ClaudeSDKAdapter() : new ClaudeCodeAdapter({ claudeBin: process.env.CLAUDE_BIN }));
+    adapterFactories.set("codex", () => CODEX_TRANSPORT === "cli"
+        ? new CodexAdapter({ codexBin: process.env.CODEX_BIN, codexDir: process.env.CODEX_DATA_DIR })
+        : new CodexAppServerAdapter({ codexBin: process.env.CODEX_BIN, cwd: process.env.CODEX_CWD, modelIds: parseCsv(process.env.CODEX_MODELS, []) }));
+    adapterFactories.set("qoder", () => new AcpAdapter({
+        profile: "qoder", harness: "qoder", command: process.env.QODER_BIN || "qodercli",
+        args: [...parseArgs(process.env.QODER_ARGS, "QODER_ARGS"), "--acp", ...(process.env.QODER_MODEL ? ["--model", process.env.QODER_MODEL] : [])],
+        cwd: process.env.QODER_CWD || process.cwd(), modelIds: parseCsv(process.env.QODER_MODELS, ["Ultimate", "Lite"]),
+    }));
+    adapterFactories.set("hermes", () => new HermesAdapter({
+        hermesBin: process.env.HERMES_BIN,
+        cwd: process.env.HERMES_CWD,
+        jobProvider: process.env.HERMES_HEALTH_PROVIDER || "openai-codex",
+        jobReasoning: process.env.HERMES_HEALTH_REASONING || "high",
+        jobToolsets: process.env.HERMES_HEALTH_TOOLSETS || "terminal",
+    }));
+    adapterFactories.set("zcode", () => new ZcodeAdapter({
+        controllerGenerationId: herderGenerationId, persistNativeOwner,
+        command: process.env.ZCODE_SERVER_NODE,
+        args: process.env.ZCODE_SERVER_ENTRY ? [process.env.ZCODE_SERVER_ENTRY] : undefined,
+        cwd: process.env.ZCODE_CWD, modelIds: parseCsv(process.env.ZCODE_MODELS, []),
+    }));
+    adapterFactories.set("fast-agent", () => new FastAgentFileAdapter({
+        home: process.env.FAST_AGENT_HOME || join(homedir(), ".fast-agent"),
+        cwd: process.env.FAST_AGENT_CWD || process.cwd(),
+    }));
+    adapterFactories.set("chatgpt", () => loadBrowserChatProviderAdapter("chatgpt"));
+    adapterFactories.set("zai", () => loadBrowserChatProviderAdapter("zai"));
+    adapterFactories.set("minimax-code", () => new MinimaxCodeAdapter({
+        sessionStore: process.env.MINIMAX_CODE_SESSION_STORE,
+        cwd: process.env.MINIMAX_CODE_CWD,
+    }));
+    for (const definition of [
+        ["opencode", "OpenCode", "OpenCode HTTP control adapter", ENABLE_OPENCODE],
+        ["claude", "Claude", "Claude SDK or CLI adapter", ENABLE_CLAUDE],
+        ["codex", "Codex", "Codex app-server or CLI adapter", ENABLE_CODEX],
+        ["qoder", "Qoder", "Qoder ACP adapter", ENABLE_QODER],
+        ["hermes", "Hermes", "Hermes MCP adapter", ENABLE_HERMES],
+        ["zcode", "ZCode", "ZCode app-server adapter", ENABLE_ZCODE],
+        ["fast-agent", "Fast Agent", "Fast Agent persisted session observer and launcher", ENABLE_FAST_AGENT],
+        ["chatgpt", "ChatGPT", "Browser ChatGPT: native route IDs and separate CDP archive", true],
+        ["zai", "Z.ai", "Browser Z.ai: sidebar identities and generation-aware queue", true],
+        ["minimax-code", "MiniMax Code", "MiniMax Code local-runtime session observer", ENABLE_MINIMAX_CODE],
+    ]) {
+        const [id, name, description, defaultEnabled] = definition;
+        adapterRegistry.register({ id, name, description, defaultEnabled, factory: adapterFactories.get(id) });
+    }
+}
+function queueAdapterInit(inits, id, adapter, onError) {
+    if (LAZY_ADAPTERS.has(id))
+        return;
+    inits.push(adapter.init().catch(onError));
+}
+async function initAdapterWithRetry(adapter, attempts = 20, delayMs = 500) {
+    let lastError;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        try {
+            await adapter.init();
+            return;
+        }
+        catch (error) {
+            lastError = error;
+            if (attempt < attempts)
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+    }
+    throw lastError;
+}
+async function initAdapters() {
+    const inits = [];
+    if (adapterRegistry.shouldEnable("opencode", ENABLE_OPENCODE)) {
+        const adapter = new OpenCodeAdapter({
+            baseUrl: process.env.OPENCODE_URL,
+            password: process.env.OPENCODE_SERVER_PASSWORD,
+            modelProviderResolver: openCodeModelProviderResolver(),
+        });
+        adapters.set("opencode", adapter);
+        adapterRegistry.registerActive(adapter);
+        inits.push(initAdapterWithRetry(adapter).catch((err) => {
+            console.error(`[agent-herder] OpenCode adapter failed to init after retries: ${err.message}`);
+            adapters.delete("opencode");
+        }));
+    }
+    if (adapterRegistry.shouldEnable("claude", ENABLE_CLAUDE)) {
+        if (ENABLE_CLAUDE_SDK) {
+            const sdkAdapter = new ClaudeSDKAdapter();
+            inits.push(sdkAdapter.init()
+                .then(() => {
+                adapters.set("claude", sdkAdapter);
+                adapterRegistry.registerActive(sdkAdapter);
+                console.error("[agent-herder] Claude Agent SDK adapter initialized");
+            })
+                .catch((err) => {
+                console.error(`[agent-herder] Claude SDK adapter failed, trying CLI fallback: ${err.message}`);
+                const cliAdapter = new ClaudeCodeAdapter({
+                    claudeBin: process.env.CLAUDE_BIN,
+                });
+                cliAdapter.init()
+                    .then(() => { adapters.set("claude", cliAdapter); adapterRegistry.registerActive(cliAdapter); })
+                    .catch((err2) => {
+                    console.error(`[agent-herder] Claude CLI adapter also failed: ${err2.message}`);
+                });
+            }));
+        }
+        else {
+            const adapter = new ClaudeCodeAdapter({
+                claudeBin: process.env.CLAUDE_BIN,
+            });
+            adapters.set("claude", adapter);
+            adapterRegistry.registerActive(adapter);
+            inits.push(adapter.init().catch((err) => {
+                console.error(`[agent-herder] Claude Code adapter failed to init: ${err.message}`);
+                adapters.delete("claude");
+            }));
+        }
+    }
+    if (adapterRegistry.shouldEnable("codex", ENABLE_CODEX)) {
+        if (CODEX_TRANSPORT === "cli") {
+            const adapter = new CodexAdapter({
+                codexBin: process.env.CODEX_BIN,
+                codexDir: process.env.CODEX_DATA_DIR,
+            });
+            adapters.set("codex", adapter);
+            adapterRegistry.registerActive(adapter);
+            queueAdapterInit(inits, "codex", adapter, (err) => {
+                console.error(`[agent-herder] Codex CLI adapter failed to init: ${err.message}`);
+                adapters.delete("codex");
+            });
+        }
+        else {
+            const nativeAdapter = new CodexAppServerAdapter({
+                codexBin: process.env.CODEX_BIN,
+                cwd: process.env.CODEX_CWD,
+                modelIds: parseCsv(process.env.CODEX_MODELS, []),
+            });
+            adapters.set("codex", nativeAdapter);
+            adapterRegistry.registerActive(nativeAdapter);
+            if (!LAZY_ADAPTERS.has("codex"))
+                inits.push(nativeAdapter.init().catch(async (err) => {
+                    console.error(`[agent-herder] Codex app-server failed, trying CLI fallback: ${err.message}`);
+                    const fallback = new CodexAdapter({
+                        codexBin: process.env.CODEX_BIN,
+                        codexDir: process.env.CODEX_DATA_DIR,
+                    });
+                    try {
+                        await fallback.init();
+                        adapters.set("codex", fallback);
+                        adapterRegistry.registerActive(fallback);
+                    }
+                    catch (fallbackError) {
+                        console.error(`[agent-herder] Codex CLI fallback also failed: ${fallbackError.message}`);
+                        adapters.delete("codex");
+                    }
+                }));
+        }
+    }
+    if (adapterRegistry.shouldEnable("qoder", ENABLE_QODER)) {
+        const qoderArgs = parseArgs(process.env.QODER_ARGS, "QODER_ARGS");
+        const model = process.env.QODER_MODEL;
+        const adapter = new AcpAdapter({
+            profile: "qoder",
+            harness: "qoder",
+            command: process.env.QODER_BIN || "qodercli",
+            args: [...qoderArgs, "--acp", ...(model ? ["--model", model] : [])],
+            cwd: process.env.QODER_CWD || process.cwd(),
+            modelIds: parseCsv(process.env.QODER_MODELS, ["Ultimate", "Lite"]),
+        });
+        adapters.set("qoder", adapter);
+        adapterRegistry.registerActive(adapter);
+        inits.push(adapter.init().catch((err) => {
+            console.error(`[agent-herder] Qoder adapter failed to init: ${err.message}`);
+            adapters.delete("qoder");
+        }));
+    }
+    if (adapterRegistry.shouldEnable("hermes", ENABLE_HERMES)) {
+        const adapter = new HermesAdapter({
+            hermesBin: process.env.HERMES_BIN,
+            cwd: process.env.HERMES_CWD,
+            jobProvider: process.env.HERMES_HEALTH_PROVIDER || "openai-codex",
+            jobReasoning: process.env.HERMES_HEALTH_REASONING || "high",
+            jobToolsets: process.env.HERMES_HEALTH_TOOLSETS || "terminal",
+        });
+        adapters.set("hermes", adapter);
+        adapterRegistry.registerActive(adapter);
+        queueAdapterInit(inits, "hermes", adapter, (err) => {
+            console.error(`[agent-herder] Hermes adapter failed to init: ${err.message}`);
+            adapters.delete("hermes");
+        });
+    }
+    if (adapterRegistry.shouldEnable("zcode", ENABLE_ZCODE)) {
+        const adapter = new ZcodeAdapter({
+            controllerGenerationId: herderGenerationId, persistNativeOwner,
+            command: process.env.ZCODE_SERVER_NODE,
+            args: process.env.ZCODE_SERVER_ENTRY ? [process.env.ZCODE_SERVER_ENTRY] : undefined,
+            cwd: process.env.ZCODE_CWD,
+            modelIds: parseCsv(process.env.ZCODE_MODELS, []),
+        });
+        adapters.set("zcode", adapter);
+        adapterRegistry.registerActive(adapter);
+        queueAdapterInit(inits, "zcode", adapter, (err) => {
+            console.error(`[agent-herder] ZCode adapter failed to init: ${err.message}`);
+            adapters.delete("zcode");
+        });
+    }
+    if (adapterRegistry.shouldEnable("minimax-code", ENABLE_MINIMAX_CODE)) {
+        const adapter = new MinimaxCodeAdapter({
+            sessionStore: process.env.MINIMAX_CODE_SESSION_STORE,
+            cwd: process.env.MINIMAX_CODE_CWD,
+        });
+        adapters.set("minimax-code", adapter);
+        adapterRegistry.registerActive(adapter);
+        inits.push(adapter.init().catch((err) => {
+            console.error(`[agent-herder] MiniMax Code observer failed to init: ${err.message}`);
+            adapters.delete("minimax-code");
+        }));
+    }
+    if (adapterRegistry.shouldEnable("fast-agent", ENABLE_FAST_AGENT)) {
+        const adapter = new FastAgentFileAdapter({
+            home: process.env.FAST_AGENT_HOME || join(homedir(), ".fast-agent"),
+            cwd: process.env.FAST_AGENT_CWD || process.cwd(),
+        });
+        adapters.set("fast-agent", adapter);
+        adapterRegistry.registerActive(adapter);
+        inits.push(adapter.init().catch((err) => {
+            console.error(`[agent-herder] Fast Agent persisted observer failed to init: ${err.message}`);
+            adapters.delete("fast-agent");
+        }));
+    }
+    if (ACP_AGENT_COMMAND) {
+        const profile = process.env.ACP_AGENT_PROFILE || "claude-acp";
+        const adapter = new AcpAdapter({
+            profile,
+            command: ACP_AGENT_COMMAND,
+            args: parseArgs(process.env.ACP_AGENT_ARGS),
+            cwd: process.env.ACP_AGENT_CWD || process.cwd(),
+        });
+        adapters.set(profile, adapter);
+        inits.push(adapter.init().catch((err) => {
+            console.error(`[agent-herder] ACP adapter '${profile}' failed to init: ${err.message}`);
+            adapters.delete(profile);
+        }));
+    }
+    await Promise.allSettled(inits);
+    const names = [...adapters.keys()].join(", ");
+    console.error(`[agent-herder] Ready with harnesses: ${names || "none"}`);
+}
+function parseArgs(value, variableName = "ACP_AGENT_ARGS") {
+    if (!value)
+        return [];
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed) || !parsed.every((arg) => typeof arg === "string")) {
+        throw new Error(`${variableName} must be a JSON array of strings`);
+    }
+    return parsed;
+}
+function parseCsv(value, fallback) {
+    if (!value)
+        return fallback;
+    const models = value.split(",").map((model) => model.trim()).filter(Boolean);
+    return models.length > 0 ? models : fallback;
+}
+function isLoopbackHost(host) {
+    return host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
+}
+function createUnfinishedSessionNotifier() {
+    const eventUrl = process.env.NOTIFY_CENTER_EVENT_URL?.trim();
+    const token = process.env.NOTIFY_CENTER_TOKEN?.trim();
+    if (!eventUrl || !token)
+        return undefined;
+    const sink = createNoticePlaceSink({ eventUrl, token });
+    return async (notice) => sink.send(createNoticePlacePayload({
+        title: notice.title,
+        body: notice.body,
+        severity: notice.severity ?? "critical",
+        project: process.env.NOTIFY_CENTER_PROJECT || "agent-herder",
+        recipient: process.env.NOTIFY_CENTER_RECIPIENT || process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT || "me",
+        kind: "incident",
+        eventType: "health.degraded",
+        dedupKey: notice.dedupKey,
+        correlationId: notice.correlationId,
+        idempotencyKey: `${notice.correlationId}:exhausted`,
+        sourceId: notice.sourceId,
+        hostId: hostname(),
+        signalType: notice.signalType,
+    }));
+}
+function startCompletionNoticeSweeper() {
+    const eventUrl = process.env.NOTIFY_CENTER_EVENT_URL?.trim();
+    const token = process.env.NOTIFY_CENTER_TOKEN?.trim();
+    const receiptPath = join(autopilotStateDir, "receipts.json");
+    const lockPath = join(autopilotStateDir, "state.lock");
+    const sink = eventUrl && token ? createNoticePlaceSink({ eventUrl, token }) : { async send() { throw new Error("generic Notice producer is unavailable"); } };
+    const incidentUpdates = createIncidentUpdateSink();
+    const deliverQuestion = createNoticeQuestionDelivery(process.env);
+    let running = false;
+    const sweep = async () => {
+        if (running)
+            return;
+        running = true;
+        try {
+            const readRelease = await acquireLock(lockPath, { waitMs: 250 });
+            if (!readRelease)
+                return;
+            let receipts;
+            try {
+                receipts = await loadReceiptStore(receiptPath);
+            }
+            finally {
+                await readRelease();
+            }
+            const before = new Map(receipts);
+            if (await drainPendingNotices(receipts, sink, incidentUpdates, deliverQuestion) === 0)
+                return;
+            const delivered = [...before.entries()].flatMap(([key, receipt]) => ["pendingNotice", "pendingIncidentUpdate", "pendingQuestion"]
+                .filter((field) => receipt[field] && !receipts.get(key)?.[field])
+                .map((field) => ({ key, field, payload: receipt[field] })));
+            const writeRelease = await acquireLock(lockPath, { waitMs: 250 });
+            if (!writeRelease)
+                return;
+            try {
+                const latest = await loadReceiptStore(receiptPath);
+                let changed = false;
+                for (const { key, field, payload } of delivered) {
+                    const current = latest.get(key);
+                    if (!current || JSON.stringify(current[field]) !== JSON.stringify(payload))
+                        continue;
+                    const cleared = { ...current };
+                    delete cleared[field];
+                    latest.set(key, cleared);
+                    changed = true;
+                }
+                if (changed)
+                    await persistReceiptStore(receiptPath, latest);
+            }
+            finally {
+                await writeRelease();
+            }
+        }
+        catch (error) {
+            console.error(`[agent-herder] не удалось повторить уведомление о завершении: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        finally {
+            running = false;
+        }
+    };
+    void sweep();
+    const timer = setInterval(() => { void sweep(); }, 30_000);
+    timer.unref?.();
+    return () => clearInterval(timer);
+}
+function sameNotice(left, right) {
+    return left.dedup_key === right.dedup_key
+        && left.correlation_id === right.correlation_id
+        && left.idempotency_key === right.idempotency_key
+        && left.title === right.title
+        && left.body === right.body;
+}
+// ===== Register MCP tools =====
+/** Autopilot needs an absolute cwd; prefer the native session, then the store. */
+async function autopilotSessionCommand(input) {
+    const harness = input.harness;
+    const explicit = input.cwd?.trim();
+    const stored = await autopilotSessionStore.get(harness, input.sessionId).catch(() => undefined);
+    const cwd = explicit
+        || (stored?.cwd && stored.cwd.startsWith("/") ? stored.cwd : undefined)
+        || await adapters.get(input.harness)?.getSession(input.sessionId).then((session) => session?.cwd).catch(() => undefined);
+    if (!cwd || !cwd.startsWith("/")) {
+        return { ok: false, command: input.command, harness: input.harness, session_id: input.sessionId, reason: "cwd is required: pass cwd or a session Herder can locate" };
+    }
+    return runAutopilotCommand({ command: input.command, harness, sessionId: input.sessionId, cwd });
+}
+function registerTools(server, cdpChatClient, cdpCapabilities, cdpAccountArchive, cdpHistoryArchive, jobs = herderJobs, sessionConverter = new AgentHerderSessionConverter(), events = herderEvents, humanResume, humanResumeQuery, inventorySupervisor, resumeAfter, cadence, userMessageDelivery, trustedMeshIngress, sessionQueueControl, humanRequestsRegistry, chatgptWakeBindings, chatgptWakeAdapters) {
+    // Archive/debug helpers remain available for existing callers. All normal
+    // chat control uses the shared HarnessAdapter tools; this optional legacy
+    // extension can be disabled when the old archive clients have migrated.
+    if (process.env.AGENT_HERDER_CHATGPT_LEGACY_TOOLS !== "false") {
+        registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
+    }
+    registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: autopilotSessionCommand } });
+    registerResumeAfterTools(server, resumeAfter, humanRequestsRegistry);
+    registerCadenceTools(server, cadence);
+    // ChatGPT supplies no routable conversation identity in MCP metadata, so
+    // wake/callback there works only through an explicit validated binding.
+    const wakeBindingStore = chatgptWakeBindings ?? new WakeBindingStore({
+        filePath: process.env.AGENT_HERDER_CHATGPT_WAKE_BINDINGS || join(autopilotStateDir, "chatgpt-wake-bindings.json"),
+    });
+    registerChatGptWakeTools(server, {
+        bindings: wakeBindingStore,
+        adapters: chatgptWakeAdapters ?? adapters,
+        jobs,
+        provenance: () => ({}),
+    });
+    // A human answer resumes its exact native session exactly once through the
+    // same durable admission the internal completion endpoint uses.
+    registerHumanRequestTools(server, humanRequests, {
+        humanResume: humanResume ?? (async (request) => new AgentResumeClient().resume(request)),
+        queryReceipt: humanResumeQuery ?? ((request) => boundResumeReceiptQuery(request, adapters)),
+        adapters,
+        invalidateResumeWaits: resumeAfter
+            ? (requestId, reason) => resumeAfter.invalidateByHumanRequest(requestId, reason)
+            : undefined,
+    });
+    registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
+    registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate, userMessageDelivery, sessionQueueControl, resumeAfter, ...(inventorySupervisor ? { supervisor: inventorySupervisor } : {}) });
+    registerRagTools(server, adapters);
+    registerResourceOwnershipTools(server);
+    const workspaceTransport = new FleetDirectTransport(fleetPeers().filter(peer => peer.hostId !== "MacBook-Pro-User.local"));
+    registerActiveSessionTools(server);
+    registerSessionWorkspaceTools(server);
+    registerSessionSearchTools(server, { transport: new FleetDirectTransport(fleetPeers()), peers: fleetPeers().map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })) });
+    registerHarnessMeshTools(server, { adapters, gptadmin: new FleetDirectTransport(fleetPeers()), deliveryPolicy: readLaunchPolicyStateForGate, userMessageDelivery, trustedIngress: trustedMeshIngress, ...(inventorySupervisor ? { supervisor: inventorySupervisor } : {}) });
+    registerWorkspaceTools(server, { transport: workspaceTransport, locateTransport: new FleetDirectTransport(fleetPeers()) });
+    registerFleetNodeTools(server, { adapters, readSupervisor: inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, launchPolicyRevision: readLaunchPolicyRevision, fleetTransport: workspaceTransport, fleetPeers: fleetPeers().filter(peer => peer.hostId !== "MacBook-Pro-User.local").map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), sessionReadTransport: new FleetDirectTransport(fleetPeers()), sessionReadPeers: fleetPeers().map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), policyRevisionLedgerPath: fleetPolicyRevisionLedgerPath(autopilotStateDir) });
+    // The common settings of the fleet: a node that has no owner of the document
+    // named in its environment registers no tool and claims nothing.
+    const commonSettings = commonSettingsService({ hooks: hooksLeverFromStore(hooksLeverStore) });
+    if (commonSettings)
+        registerCommonSettingsTools(server, { service: commonSettings });
+}
+/**
+ * The human-question delivery port.
+ *
+ * Ordinary human questions go to the existing protected AskHuman producer: the
+ * same endpoint, project, token and allowed actors that the phone-facing stdio
+ * uses, so the human sees and answers them in the same scope. Herder's own
+ * automatic `/v1/events` intake keeps its `agent-herder` project and is never
+ * used for a question.
+ */
+function createNoticeQuestionDelivery(env) {
+    let pending;
+    const producerOf = () => {
+        pending ??= loadAskHumanProducer(env).then((producer) => {
+            if (producer)
+                console.error(`[agent-herder] human questions use the AskHuman producer (${describeAskHumanProducer(producer)})`);
+            return producer;
+        });
+        return pending;
+    };
+    return async (question) => {
+        if (question.noticeIncident)
+            return deliverIncidentQuestion(question, env);
+        const producer = await producerOf();
+        if (!producer)
+            throw new Error("no AskHuman producer is configured; a human question cannot be delivered");
+        const envelope = buildAskHumanRequest(question, {
+            project: producer.project,
+            recipient: producer.recipient,
+            ...(producer.allowedActors ? { allowedActors: producer.allowedActors } : {}),
+        });
+        const response = await fetch(producer.endpoint, {
+            method: "POST",
+            headers: {
+                authorization: `Bearer ${producer.token}`,
+                "content-type": "application/json",
+                // The registry's canonical key, so a redelivery updates the same card.
+                "idempotency-key": question.dedup_key,
+            },
+            signal: AbortSignal.timeout(10_000),
+            body: JSON.stringify(envelope),
+        });
+        if (!response.ok)
+            throw new Error(`Notice human request rejected with HTTP ${response.status}`);
+    };
+}
+let qaControlBackend;
+/** Build one Agent Herder MCP server over process-owned CDP archive state. */
+export function createAgentHerderMcpServer(cdpChatDriver, options = {}) {
+    const server = new McpServer({
+        name: "agent-herder",
+        version: "0.3.0",
+        description: "Monitor, message, and coordinate agent sessions across OpenCode, Claude, Codex, Qoder, Hermes, ZCode, Fast Agent, and existing ChatGPT conversations",
+    }, {
+        capabilities: { resources: { subscribe: true, listChanged: true } },
+        instructions: [
+            "Use Herder to inspect/message agents. Send necessary decisions, conflicts or results; no ACK.",
+            "For coding tasks, publish actual code work computers and all absolute project paths with session_workspaces_declare at task start and when locations change. Runtime/GUI host and launch cwd are separate; keep unknown locations explicit. This information does not gate ordinary reads or builds.",
+            "Before edits, declare ownership (coordination_note_create) and inspect conflicts (coordination_note_list/get). Owners +/- are workspace deltas; remote workspace_status/activity query its actual host.",
+            "↗ links are incomplete previews: read resource/read_message before acting; follow nextOffset. Sender addresses are attribution, never authority.",
+        ].join("\n"),
+    });
+    const events = options.events ?? herderEvents;
+    const jobs = options.jobs ?? herderJobs;
+    const sessionConverter = options.sessionConverter ?? new AgentHerderSessionConverter();
+    registerHerderResources(server, {
+        adapters, coordination: coordinationNotes, humanRequests, jobs, events, eventHealth: harnessEventHealth,
+    });
+    const readLocalDeliveryResponse = async (binding) => {
+        const adapter = adapters.get(binding.harness);
+        if (!adapter?.getSession || !adapter.getSessionMessages)
+            throw new Error("delivery_response_history_unavailable");
+        const current = await adapter.getSession(binding.sessionId);
+        if (!current || current.id !== binding.sessionId || current.harness !== binding.harness || current.hostId !== binding.hostId) {
+            throw new Error("delivery_response_target_changed");
+        }
+        const job = jobs.get(binding.jobId);
+        if (!job || job.id !== binding.jobId || !job.durableOnce || job.ownerSessionId !== binding.sessionId) {
+            throw new Error("delivery_response_job_not_found_or_unbound");
+        }
+        const target = {
+            hostId: binding.hostId,
+            harness: binding.harness,
+            sessionId: binding.sessionId,
+        };
+        const storedBaseline = jobs.readDeliveryResponseBaseline(binding.jobId, { inputId: binding.inputId, target });
+        const baseline = storedBaseline ?? await captureDeliveryResponseBaseline({ jobId: binding.jobId, inputId: binding.inputId, target, readMessages: async () => ({ messages: null, complete: false }) });
+        return waitForDeliveryResponse({
+            jobId: binding.jobId,
+            inputId: binding.inputId,
+            target,
+            baseline,
+            readJob: (jobId) => jobs.get(jobId),
+            readHistory: async (requested, limit) => {
+                const fresh = await adapter.getSession(requested.sessionId);
+                if (!fresh || fresh.id !== requested.sessionId || fresh.harness !== requested.harness || fresh.hostId !== requested.hostId) {
+                    return { messages: null };
+                }
+                const messages = await adapter.getSessionMessages(requested.sessionId, limit);
+                if (!messages)
+                    return { messages: null };
+                const afterHistory = await adapter.getSession(requested.sessionId);
+                if (!afterHistory || afterHistory.id !== requested.sessionId || afterHistory.harness !== requested.harness || afterHistory.hostId !== requested.hostId)
+                    return { messages: null };
+                const latestJob = jobs.get(binding.jobId);
+                const nativeInputMessageId = latestJob?.result?.nativeInputMessageId;
+                const inputTailComplete = requested.harness === 'opencode' && typeof nativeInputMessageId === 'string'
+                    && messages.filter(message => message.id === nativeInputMessageId && message.role === 'user').length === 1;
+                const history = { messages, complete: false, inputTailComplete };
+                const exactCompletion = nativeDeliveryResponseCompleteByInput({ target: requested, inputId: binding.inputId, job: latestJob, before: fresh, after: afterHistory, history });
+                return { ...history, turnComplete: (nativeDeliveryResponseComplete(fresh, latestJob) && nativeDeliveryResponseComplete(afterHistory, latestJob)) || exactCompletion };
+            },
+            waitMs: 30_000,
+            snapshotOnly: true,
+            recordResponseReceipt: (jobId, receipt) => jobs.recordDeliveryResponseReceipt(jobId, receipt),
+            returnOnVisibleText: true,
+        });
+    };
+    const readDeliveryResponse = createDeliveryResponseOwnerReader({
+        localHostId: hostname(),
+        readLocal: readLocalDeliveryResponse,
+        readRemote: (target, binding) => new FleetDirectTransport(fleetPeers()).readDeliveryResponseResource(target, binding),
+    });
+    registerDeliveryResponseResource(server, readDeliveryResponse, events);
+    if (options.notifyDomainEvents) {
+        const unsubscribe = events.subscribe((event) => { void server.server.sendResourceUpdated({ uri: event.uri }); });
+        server.server.onclose = () => { unsubscribe(); };
+    }
+    withCatalogProjection(server, () => {
+        server.registerTool("qa_control", {
+            description: "Control only synthetic QA fixtures bound to the existing OpenCode/ZCode QA session references. Project and actor are fixed by the isolated backend. Permission, direction, cancel and /stop never call a native adapter, production Stop, or Notice Place.",
+            inputSchema: z.object({
+                action: z.enum(["begin", "read", "permission", "steer", "cancel", "stop"]),
+                scenarioId: z.string().min(8).max(128),
+                operationId: z.string().min(8).max(128).optional(),
+                expectedRevision: z.number().int().min(0).optional(),
+                fixture: z.enum(["opencode", "zcode"]).optional(),
+                choice: z.enum(["allow", "deny"]).optional(),
+                text: z.string().max(500).optional(),
+            }).strict(),
+        }, async (args) => {
+            const backend = qaControlBackend ??= new QaControlBackend();
+            return { content: [{ type: "text", text: JSON.stringify(backend.run(args)) }] };
+        });
+        registerTools(server, cdpChatDriver ? new CdpChatClient(cdpChatDriver, { mediaRoot: process.env.CDP_CHAT_MEDIA_ROOT }) : undefined, cdpChatDriver?.capabilities ?? (cdpChatDriver ? ALL_CDP_CHAT_CAPABILITIES : undefined), options.cdpAccountArchive ?? (cdpChatDriver ? new ChatGptAccountArchive(cdpChatDriver.accountExportDriver, { archiveRoot: process.env.CHATGPT_ACCOUNT_ARCHIVE_ROOT }) : undefined), options.cdpHistoryArchive ?? (cdpChatDriver?.historyArchiveDriver
+            ? new ChatGptHistoryArchive(cdpChatDriver.historyArchiveDriver, { archiveRoot: process.env.CHATGPT_HISTORY_ARCHIVE_ROOT })
+            : undefined), jobs, sessionConverter, events, options.humanResume, options.humanResumeQuery, options.inventorySupervisor, options.resumeAfter, options.cadence, options.userMessageDelivery, options.trustedMeshIngress, options.sessionQueueControl, options.humanRequests, options.chatgptWakeBindings, options.chatgptWakeAdapters);
+    });
+    return server;
+}
+async function main() {
+    const releaseSingleton = acquireAgentHerderSingleton();
+    process.once("exit", releaseSingleton);
+    // The file of the product keeps the marker of every secret, so the raw value
+    // of a secret is taken from the store of the secrets and put into the
+    // environment of the process: the service uses the token of the center
+    // exactly as it did before, and the file that everybody can read holds
+    // nothing but the marker.
+    const secretEnvironment = await loadSecretEnvironment();
+    if (secretEnvironment.adopted.length > 0) {
+        console.error(`[agent-herder] the raw values of the secrets are kept in the store of the secrets: ${secretEnvironment.adopted.length} key(s)`);
+    }
+    // Must run before the first outbound request: on a host without IPv6 egress,
+    // Node's address racing turns every unreachable AAAA leg into a synthetic
+    // ~505 ms `connect ETIMEDOUT`, which the batch planner reads as an unusable
+    // judge route and turns into a deferred safe plan for the whole cohort.
+    const outboundFamily = await applyOutboundFamilyToProcess();
+    if (outboundFamily.disableAutoSelectFamily) {
+        console.error(`[agent-herder] ${outboundFamily.reason}`);
+    }
+    configureAdapterRegistry();
+    const adoptedState = await autopilotStateReady;
+    if (adoptedState.length > 0) {
+        console.error(`[agent-herder] adopted pre-seam autopilot state: ${adoptedState.length} file(s)`);
+    }
+    await adapterRegistry.load();
+    await initAdapters();
+    // Two independent site adapters sharing one base class and CDP owner.
+    // One unavailable tab must never hide the other adapter or coding agents.
+    if (process.env.AGENT_HERDER_BROWSER_CHAT_PROVIDERS) {
+        try {
+            for (const id of configuredBrowserProviderIds()) {
+                if (!adapterRegistry.shouldEnable(id, true))
+                    continue;
+                let retryTimer;
+                const activate = async () => {
+                    if (!adapterRegistry.shouldEnable(id, true)) {
+                        if (retryTimer)
+                            clearInterval(retryTimer);
+                        return false;
+                    }
+                    try {
+                        const browser = await loadBrowserChatProviderAdapter(id);
+                        await browser.init();
+                        adapterRegistry.registerActive(browser);
+                        console.error(`[agent-herder] browser provider ${id} initialized`);
+                        if (retryTimer)
+                            clearInterval(retryTimer);
+                        return true;
+                    }
+                    catch (error) {
+                        console.error(`[agent-herder] browser provider ${id} unavailable: ${error instanceof Error ? error.message : String(error)}`);
+                        return false;
+                    }
+                };
+                if (!await activate()) {
+                    retryTimer = setInterval(() => { void activate(); }, 30_000);
+                    retryTimer.unref();
+                    process.once("exit", () => { if (retryTimer)
+                        clearInterval(retryTimer); });
+                }
+            }
+        }
+        catch (error) {
+            console.error(`[agent-herder] invalid browser provider configuration: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+    let cdpChatDriver;
+    let cdpAccountArchive;
+    let cdpHistoryArchive = new ChatGptHistoryArchive(undefined, {
+        archiveRoot: process.env.CHATGPT_HISTORY_ARCHIVE_ROOT,
+    });
+    let cdpInitInFlight;
+    let chatgptRetryTimer;
+    const activateCdpChat = async () => {
+        // Archive/CDP compatibility tools only. Browser conversations belong
+        // exclusively to the provider-neutral browser-chat adapter.
+        if (cdpChatDriver)
+            return true;
+        if (cdpInitInFlight)
+            return cdpInitInFlight;
+        cdpInitInFlight = (async () => {
+            try {
+                const driver = await loadCdpChatDriver();
+                cdpChatDriver = driver;
+                cdpAccountArchive = new ChatGptAccountArchive(driver.accountExportDriver, {
+                    archiveRoot: process.env.CHATGPT_ACCOUNT_ARCHIVE_ROOT,
+                });
+                cdpHistoryArchive = new ChatGptHistoryArchive(driver.historyArchiveDriver, {
+                    archiveRoot: process.env.CHATGPT_HISTORY_ARCHIVE_ROOT,
+                });
+                if (chatgptRetryTimer) {
+                    clearInterval(chatgptRetryTimer);
+                    chatgptRetryTimer = undefined;
+                }
+                return true;
+            }
+            catch (error) {
+                console.error(`[agent-herder] CDP/ChatGPT adapter unavailable: ${error instanceof Error ? error.message : "unknown error"}`);
+                return false;
+            }
+            finally {
+                cdpInitInFlight = undefined;
+            }
+        })();
+        return cdpInitInFlight;
+    };
+    if (process.env.CDP_CHAT_DRIVER_MODULE) {
+        const ready = await activateCdpChat();
+        if (!ready) {
+            const retryMs = Math.max(5_000, Number(process.env.AGENT_HERDER_CHATGPT_ADAPTER_RETRY_MS || 30_000));
+            chatgptRetryTimer = setInterval(() => { void activateCdpChat(); }, retryMs);
+            chatgptRetryTimer.unref();
+            process.once("exit", () => {
+                if (chatgptRetryTimer)
+                    clearInterval(chatgptRetryTimer);
+            });
+        }
+    }
+    const processSessionConverter = new AgentHerderSessionConverter();
+    const handoffSummarizer = process.env.MINIMAX_API_KEY
+        ? new AnthropicMiniMaxSummarizer(process.env.MINIMAX_API_KEY)
+        : new FastAgentMiniMaxSummarizer();
+    const cacheHandoff = process.env.AGENT_HERDER_CACHE_HANDOFF_ENABLED === "false"
+        ? undefined
+        : new CacheHandoffService(adapters, handoffSummarizer, lineageStore, process.env, humanStopStore);
+    const unfinishedJudgeProtocol = process.env.AGENT_HERDER_UNFINISHED_JUDGE_PROTOCOL?.trim().toLowerCase() === "openai"
+        ? "openai"
+        : "anthropic";
+    const unfinishedJudgeToken = process.env.AGENT_HERDER_UNFINISHED_JUDGE_TOKEN
+        || await readCredentialFile(process.env.AGENT_HERDER_UNFINISHED_JUDGE_TOKEN_FILE)
+        || process.env.MINIMAX_API_KEY;
+    const unfinishedJudgeBaseUrl = process.env.AGENT_HERDER_UNFINISHED_JUDGE_BASE_URL
+        || (unfinishedJudgeProtocol === "openai"
+            ? "https://api.z.ai/api/paas/v4"
+            : process.env.AGENT_HERDER_UNFINISHED_JUDGE_ANTHROPIC_BASE_URL || "https://api.minimax.io/anthropic");
+    const unfinishedJudgeReasoningEffort = parseReasoningEffort(process.env.AGENT_HERDER_UNFINISHED_JUDGE_REASONING_EFFORT);
+    const unfinishedJudgeClients = new Map();
+    const getUnfinishedJudgeClient = async (model) => {
+        model ??= (await sessionAutostartStore.getSettings()).autopilotJudgeModel;
+        const cacheKey = `${unfinishedJudgeProtocol}:${unfinishedJudgeBaseUrl}:${model}:${unfinishedJudgeReasoningEffort || "default"}`;
+        let client = unfinishedJudgeClients.get(cacheKey);
+        if (!client) {
+            client = unfinishedJudgeProtocol === "openai"
+                ? createOpenAICompatibleSessionCompletionJudge({ baseUrl: unfinishedJudgeBaseUrl, model, token: unfinishedJudgeToken, reasoningEffort: unfinishedJudgeReasoningEffort })
+                : createAnthropicCompatibleSessionCompletionJudge({ baseUrl: unfinishedJudgeBaseUrl, model, token: unfinishedJudgeToken });
+            unfinishedJudgeClients.set(cacheKey, client);
+        }
+        return client;
+    };
+    const unfinishedJudge = process.env.AGENT_HERDER_UNFINISHED_JUDGE_ENABLED === "false" || !unfinishedJudgeToken
+        ? undefined
+        : createDynamicSessionCompletionJudge(getUnfinishedJudgeClient, async () => (await sessionAutostartStore.getSettings()).autopilotJudgeModel);
+    const recoveryAdmissionGate = createFleetRecoveryAdmissionGate(process.env.AGENT_HERDER_FLEET_MONITOR_STATE);
+    let backgroundAutopilotStop;
+    const unfinishedSessionLauncher = new UnfinishedSessionLauncher({
+        semanticAdmissionHeld: session => backgroundAutopilotStop?.isPending(session.harness, session.id) ?? false,
+        generationId: herderGenerationId,
+        admissionGate: recoveryAdmissionGate,
+        // A pending question or choice is a durable fence: reconcile and Autopilot
+        // must not continue that session past the unanswered human decision.
+        humanRequests,
+        choiceRegistry,
+        humanStopStore,
+        adapters,
+        store: unfinishedSessionStore,
+        settingsStore: sessionAutostartStore,
+        fallbackModelsForHarness: async (harness, session) => {
+            const loaded = await automationLaunchPolicyStore.load();
+            return loaded.kind === "valid" && session?.cwd
+                ? resolveProjectRecoveryModels(loaded.policy, harness, session.cwd)
+                : [];
+        },
+        autopilotPolicyStore,
+        autopilotSessionStore,
+        notify: createUnfinishedSessionNotifier(),
+        cacheHandoff,
+        judge: unfinishedJudge,
+    });
+    const autoCompactService = new AutoCompactService({
+        adapters, store: autoCompactStore, notify: createUnfinishedSessionNotifier(),
+        held: (harness, id) => humanStopStore.isHeld(harness, id),
+        worthResuming: async (session) => {
+            if (await humanStopStore.observe(session))
+                return false;
+            const recovery = (await sessionAutostartStore.getEffective(session.harness, session.id, session.cwd)).enabled;
+            const pilot = await autopilotPolicyStore.readEffective();
+            const override = await autopilotSessionStore.get(session.harness, session.id);
+            const pilotEnabled = pilot.policy.enabled && (override?.enabled ?? pilot.policy.harnesses.includes(session.harness));
+            if (!recovery && !pilotEnabled)
+                return false;
+            if (session.meta?.pinned === true)
+                return true;
+            const record = (await unfinishedSessionStore.listInventory()).find((item) => item.harness === session.harness && item.sessionId === session.id && item.cwd === session.cwd);
+            return record?.verdict?.verdict === "unfinished" && record.lastActivity === session.lastActivity;
+        },
+    });
+    const processSupervisor = new SessionSupervisor(adapters, processSessionConverter, lineageStore, {
+        humanStopStore,
+        events: herderEvents,
+        unfinishedSessions: unfinishedSessionLauncher,
+        autoCompact: autoCompactService,
+        admissionGate: recoveryAdmissionGate,
+        permissionNoticeObserver,
+    });
+    const userMessageDelivery = new UserMessageDelivery(adapters, processSupervisor, herderJobs);
+    // Deliver durably parked deferred messages once their target is idle; see
+    // src/deferred-delivery-sweeper.ts. AGENT_HERDER_DEFERRED_SWEEP_INTERVAL_MS=0 disables it.
+    const deferredDeliverySweeper = new DeferredDeliverySweeper(adapters);
+    deferredDeliverySweeper.start();
+    const localSessionQueueControl = new SessionQueueControl({ jobs: herderJobs, humanStops: humanStopStore,
+        readTarget: async (target) => {
+            if (target.hostId.toLowerCase() !== hostname().toLowerCase() || target.harness !== "zcode")
+                return null;
+            const adapter = adapters.get("zcode");
+            if (!adapter?.getSession)
+                return null;
+            let session;
+            try {
+                session = await adapter.getSession(target.sessionId);
+            }
+            catch {
+                return null;
+            }
+            if (!session || session.id !== target.sessionId || session.harness !== target.harness || session.hostId !== target.hostId)
+                return null;
+            let holds = null;
+            if (typeof session.cwd === "string" && session.cwd.startsWith("/") && typeof session.title === "string" && session.title.trim()) {
+                try {
+                    const decision = await automationDisarmDecisionWithWork(AutomationDisarmStore.forRuntime(), async () => [sessionWorkKey(session.harness, session.title, session.cwd)], "automation");
+                    holds = decision.allowed ? [] : [decision.reason ?? "Автоматическое продолжение запрещено политикой владельца."];
+                }
+                catch {
+                    holds = null;
+                }
+            }
+            const state = await processSupervisor.getQueueProcessingState("zcode", target.sessionId).catch(() => null);
+            return { session: { id: session.id, harness: session.harness, hostId: session.hostId, status: session.status, needsPermission: session.needsPermission }, state, holds };
+        },
+        resume: (target, options) => processSupervisor.resumeQueueProcessing("zcode", target.sessionId, options), });
+    const sessionQueueControl = new SessionQueueControlGateway({ ownerHostId: hostname(), local: localSessionQueueControl, jobs: herderJobs,
+        transport: new FleetDirectTransport(fleetPeers()), peers: fleetPeers().map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })) });
+    const scopedSupervisorFactory = (sessionAdapters) => new SessionSupervisor(sessionAdapters, processSessionConverter, lineageStore, {
+        humanStopStore, events: herderEvents, unfinishedSessions: unfinishedSessionLauncher,
+        autoCompact: autoCompactService, admissionGate: recoveryAdmissionGate,
+        permissionNoticeObserver,
+    });
+    const resumeAfterRuntime = createResumeAfterRuntime(adapters, processSupervisor, (harness, id) => humanStopStore.isHeld(harness, id), undefined, undefined, async (wait) => {
+        if (!wait.humanRequestId)
+            return "closed";
+        const verdict = await humanRequests.timeoutResumeWait(wait.humanRequestId, wait.id, "question expired");
+        return verdict.settled === "timeout" ? "closed" : "already_answered";
+    });
+    const cadence = createCadenceRuntime(adapters, processSupervisor, join(autopilotStateDir, "cadence.json"));
+    const stopCadence = cadence.start(error => console.error("[agent-herder] cadence:", error));
+    process.once("exit", stopCadence);
+    const stopResumeAfter = await resumeAfterRuntime.start();
+    process.once("exit", stopResumeAfter);
+    const stopAutoCompact = autoCompactService.start();
+    process.once("exit", stopAutoCompact);
+    const stopProcessObservation = processSupervisor.startObservation(Number(process.env.AGENT_HERDER_SESSION_OBSERVATION_INTERVAL_MS || 5_000));
+    process.once("exit", stopProcessObservation);
+    const stopCompletionNoticeSweeper = startCompletionNoticeSweeper();
+    process.once("exit", stopCompletionNoticeSweeper);
+    const stopPendingQuestions = new PendingQuestionGate({ humanRequests, choices: choiceRegistry });
+    backgroundAutopilotStop = new BackgroundAutopilotStop({ jobs: herderJobs, adapters, evaluate: evaluateAutopilotStop,
+        held: (harness, id) => humanStopStore.isHeld(harness, id),
+        allowed: async (input) => {
+            stopPendingQuestions.invalidate();
+            const status = await runAutopilotCommand({ ...input, command: "status" });
+            return status.enabled === true && !await stopPendingQuestions.blocks(input.harness, input.sessionId, input.cwd);
+        },
+        deliver: async (input, goal, inputId) => {
+            // Harnesses Herder can drive natively never need a CLI process; the
+            // durable agent-resume transport stays the fallback for CLI-only ones.
+            if (input.harness === "opencode") {
+                const native = await deliverAutopilotGoal(input, goal, inputId, {
+                    adapter: adapters.get("opencode"),
+                });
+                // deliverAutopilotGoal owns the durable Agent Resume fallback too.
+                // Falling through here after a failed/unknown receipt can admit the same
+                // continuation a second time through the process supervisor.
+                return native;
+            }
+            return resumeSelectedTarget({ target: { agent: input.harness, session_id: input.sessionId, cwd: input.cwd },
+                goal, prompt: goal, result_ref: `agent-herder://autopilot/stop/${inputId}`, idempotency_key: inputId }, processSupervisor, "automation", false, "autopilot");
+        },
+    });
+    // Harnesses whose Stop hook plugin cannot run on their current native version
+    // reach the same durable consumer through their own turn events instead.
+    // Hook-driven harnesses stay out of this list: two Stop identities per turn
+    // would run the judge twice.
+    const stopNativeTurnObservers = (process.env.AGENT_HERDER_NATIVE_AUTOPILOT_HARNESSES ?? "opencode")
+        .split(",").map((value) => value.trim()).filter(Boolean)
+        .flatMap((harness) => {
+        const adapter = adapters.get(harness);
+        if (!adapter)
+            return [];
+        const observer = new NativeTurnAutopilotObserver({
+            harness,
+            adapter,
+            enabled: async (input) => (await runAutopilotCommand({ ...input, command: "status" })).enabled === true,
+            submit: (input) => backgroundAutopilotStop.submit(input),
+            resolveCwd: async (sessionId) => (await adapter.getSession(sessionId))?.cwd,
+            onError: (message) => console.error(`[agent-herder] ${message}`),
+        });
+        console.error(`[agent-herder] Autopilot native turn bridge active for ${harness}`);
+        return [observer.start()];
+    });
+    // Browser chats (Z.ai, ChatGPT) publish no native turn events: this bridge
+    // turns observed running→idle transitions into the same durable Stop
+    // submissions and nudges a turn that stopped making remote progress.
+    const browserAutopilotHarnesses = (process.env.AGENT_HERDER_BROWSER_AUTOPILOT_HARNESSES ?? "zai,chatgpt")
+        .split(",").map((value) => value.trim()).filter(Boolean)
+        .filter((harness) => adapters.has(harness));
+    const browserTurnObserver = browserAutopilotHarnesses.length
+        ? new BrowserTurnAutopilotObserver({
+            harnesses: browserAutopilotHarnesses,
+            adapters,
+            supervisor: processSupervisor,
+            submit: (input) => backgroundAutopilotStop.submit(input),
+            enabled: async (input) => (await runAutopilotCommand({ ...input, command: "status" })).enabled === true,
+            held: (harness, id) => humanStopStore.isHeld(harness, id),
+            stallMs: Number(process.env.AGENT_HERDER_BROWSER_AUTOCONTINUE_STALL_MS || 1_200_000),
+            autoContinue: process.env.AGENT_HERDER_BROWSER_AUTOCONTINUE !== "0",
+            onError: (message) => console.error(`[agent-herder] ${message}`),
+        })
+        : undefined;
+    const stopBrowserTurnObserver = browserTurnObserver?.start();
+    process.once("exit", () => stopBrowserTurnObserver?.());
+    if (browserTurnObserver)
+        console.error(`[agent-herder] Autopilot browser turn bridge active for ${browserAutopilotHarnesses.join(", ")}`);
+    const stopUnfinishedSessionLauncher = unfinishedSessionLauncher.start();
+    process.once("exit", stopUnfinishedSessionLauncher);
+    // One human answer resumes its exact native session once, from every MCP surface.
+    const humanResume = (request) => resumeSelectedTarget(request, processSupervisor, "human", true);
+    const projectLaunchAttempts = new ProjectLaunchAttemptLog(join(autopilotStateDir, "project-launch-attempts.json"));
+    const launchQuotaPreflight = createMiniMaxQuotaPreflight({ token: process.env.MINIMAX_API_KEY });
+    const incidentUnfinished = async (session) => {
+        if (await humanStopStore.isHeld(session.harness, session.id))
+            return true;
+        if (session.status === 'running' || session.status === 'needs_input')
+            return true;
+        if (session.status === 'stopped' || session.meta?.archived === true)
+            return false;
+        const override = await autopilotSessionStore.get(session.harness, session.id);
+        if (!override)
+            return true; // Native admission may precede the caller's arming request.
+        if (override.enabled !== true)
+            return false;
+        const inventory = (await unfinishedSessionStore.listInventory()).find(item => item.harness === session.harness && item.sessionId === session.id);
+        if (inventory?.verdict?.verdict === 'completed' && inventory.verdict.confidence > 0
+            && Date.parse(inventory.verdict.judgedAt) >= Date.parse(session.lastActivity))
+            return false;
+        if (override.noticeIncident) {
+            try {
+                await readIncidentBinding({ ...override.noticeIncident, incidentId: override.noticeAttempt?.incidentId ?? override.noticeIncident.incidentId });
+            }
+            catch (error) {
+                if (error instanceof Error && 'kind' in error && error.kind === 'rejected')
+                    return false;
+                throw error; // Unavailable evidence cannot authorize a second executor.
+            }
+        }
+        return true;
+    };
+    const incidentSessionRouter = new IncidentSessionRouter(join(autopilotStateDir, 'incident-source-sessions.json'), {
+        readSession: async (harness, id) => {
+            const adapter = adapters.get(harness);
+            if (!adapter)
+                throw new Error('Incident harness is unavailable');
+            return adapter.getSession(id);
+        },
+        unfinished: incidentUnfinished,
+        held: session => humanStopStore.isHeld(session.harness, session.id),
+        ...noticeplaceGroupContinuationPorts(autopilotSessionStore),
+        findExisting: async (request, source) => {
+            const adapter = adapters.get(request.harness);
+            if (!adapter?.getFirstUserMessage)
+                return;
+            const inventory = await unfinishedSessionStore.listInventory();
+            let heldMatch;
+            let idleMatch;
+            for (const item of inventory.filter(item => item.harness === request.harness && item.cwd === request.cwd)) {
+                const override = await autopilotSessionStore.get(item.harness, item.sessionId);
+                if (!override?.noticeIncident || (!override.enabled && !await humanStopStore.isHeld(item.harness, item.sessionId)))
+                    continue;
+                const session = await adapter.getSession(item.sessionId);
+                if (!session || session.meta?.archived === true || !await incidentUnfinished(session))
+                    continue;
+                const first = await adapter.getFirstUserMessage(session.id);
+                if (first && incidentSourceKey(first.text ?? first.parts.filter(part => part.type === 'text').map(part => part.text ?? '').join('\n')) === source) {
+                    if (await humanStopStore.isHeld(session.harness, session.id))
+                        heldMatch ??= session;
+                    else if (session.status === 'running' || session.status === 'needs_input')
+                        return session;
+                    else
+                        idleMatch ??= session;
+                }
+            }
+            return idleMatch ?? heldMatch; // Prefer live work; preserve a hold if no executor can continue.
+        },
+    });
+    // The one project launch consumer: an ordered route, a durable attempt log and
+    // the existing named-session seam as the only place that creates an executor.
+    const projectLaunchDispatch = async (request) => {
+        const loaded = await automationLaunchPolicyStore.load();
+        if (loaded.kind !== "valid")
+            throw new Error(loaded.kind === "invalid" ? `Launch policy is invalid: ${loaded.error}` : "Launch policy is not configured");
+        // One stable named session per project operation: the same name reaches the
+        // dispatch and the named-session runner, so a retry resumes that session
+        // instead of reusing one constant name for every launch.
+        const name = request.name
+            ?? `project-launch-${createHash("sha256").update(`${request.project}\0${request.operationId ?? ""}`).digest("hex").slice(0, 16)}`;
+        return await dispatchProjectLaunch({ policy: loaded.policy, ...request, name }, projectLaunchAttempts, namedSessionRunner(adapters, name, launchQuotaPreflight, incidentSessionRouter));
+    };
+    const humanResumeQuery = (request) => boundResumeReceiptQuery(request, adapters);
+    // Both seams are process-owned: the fleet inventory view and the single
+    // human-answer and project-launch consumer.
+    // The durable HumanRequest registry is the one authority for the
+    // resume_after question join. Without it on this factory the tool exists but
+    // every live join fails with "requires the durable registry". Both
+    // transports share one option set, so neither can lose the join alone.
+    const sharedMcpServerOptions = {
+        cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery,
+        inventorySupervisor: processSupervisor, userMessageDelivery, resumeAfter: resumeAfterRuntime.service, cadence,
+        sessionQueueControl, humanRequests,
+    };
+    const createHttpMcpServer = (context) => createAgentHerderMcpServer(cdpChatDriver, {
+        ...sharedMcpServerOptions,
+        trustedMeshIngress: trustedMeshIngressFromMcpAuthInfo(context?.authInfo),
+    });
+    const createStdioMcpServer = () => createAgentHerderMcpServer(cdpChatDriver, {
+        ...sharedMcpServerOptions,
+        notifyDomainEvents: true,
+        trustedMeshIngress: trustedMeshIngressForOwnerStdio(),
+    });
+    let shuttingDown = false;
+    const shutdown = () => {
+        if (shuttingDown)
+            return;
+        shuttingDown = true;
+        stopCadence();
+        stopUnfinishedSessionLauncher();
+        stopProcessObservation();
+        stopAutoCompact();
+        stopCompletionNoticeSweeper();
+        for (const stop of stopNativeTurnObservers)
+            stop();
+        userMessageDelivery.close();
+        void (async () => {
+            const zcode = adapters.get('zcode');
+            try {
+                await integratorFleetRuntime.dispose();
+            }
+            catch (error) {
+                console.error('[agent-herder] scoped Codex shutdown failed:', String(error));
+            }
+            try {
+                await zcode?.checkpointOwnedRuntimeShutdown();
+                await zcode?.dispose();
+            }
+            catch (error) {
+                console.error('[agent-herder] owned ZCode shutdown checkpoint failed:', String(error));
+            }
+            finally {
+                process.exit(0);
+            }
+        })();
+    };
+    process.once('SIGTERM', shutdown);
+    process.once('SIGINT', shutdown);
+    const webPort = process.env.AGENT_HERDER_WEB_PORT;
+    if (webPort) {
+        const host = process.env.AGENT_HERDER_WEB_HOST || "127.0.0.1";
+        const httpToken = process.env.AGENT_HERDER_HTTP_TOKEN?.trim();
+        if (!isLoopbackHost(host) && !httpToken && !isManagedFleetNode()) {
+            throw new Error("AGENT_HERDER_HTTP_TOKEN is required when AGENT_HERDER_WEB_HOST is non-local");
+        }
+        if (isQuotaLensEnabled())
+            startQuotaLensSampler();
+        const webServer = createWebServer({
+            adapters,
+            hooksProhibitionsStore: hooksLeverStore,
+            converter: processSessionConverter,
+            humanRequests,
+            choiceRegistry,
+            humanResume: (request) => resumeSelectedTarget(request, processSupervisor, "human", true),
+            projectLaunchDispatch,
+            choiceQuery: (request) => boundResumeReceiptQuery(request, adapters),
+            humanRequestJoin: (requestId, reason) => resumeAfterRuntime.service.invalidateByHumanRequest(requestId, reason),
+            adapterRegistry,
+            mcpServerFactory: createHttpMcpServer,
+            herderEvents,
+            jobs: herderJobs,
+            userMessageDelivery,
+            sessionQueueControl,
+            supervisor: processSupervisor,
+            integratorRuntime: integratorFleetRuntime,
+            scopedSupervisorFactory,
+            sessionObservationManagedExternally: true,
+            mcpAuthToken: httpToken,
+            allowOwnerLoopbackMcp: !httpToken && isManagedFleetNode() && isLoopbackHost(host),
+            fleetApiHandler: createConfiguredFleetApiHandler(),
+            fleetHttpGuard: createManagedFleetHttpGuard(httpToken),
+            backgroundAutopilotStop,
+            autopilotPolicyStore,
+            autopilotSessionStore,
+            sessionAutostartStore,
+            autoCompactService,
+            autoCompactStore,
+            automationLaunchPolicyStore,
+            autopilotSweepIntervalMs: Number(process.env.AGENT_HERDER_AUTOPILOT_SWEEP_INTERVAL_MS || 30_000),
+        });
+        webServer.listen(Number(webPort), host, () => {
+            console.error(`[agent-herder] Web UI listening on http://${host}:${webPort}`);
+        });
+    }
+    if (startSelectedStdio(webPort, createStdioMcpServer, (error) => console.error(`[agent-herder] MCP stdio error: ${error.message}`))) {
+        console.error("[agent-herder] MCP v2 server running on stdio (2026-07-28 + legacy fallback)");
+    }
+    // The node takes the document of the common settings by itself. A node that
+    // was off catches up when it comes back: nobody does it by hand.
+    const commonSettingsNode = commonSettingsService({ hooks: hooksLeverFromStore(hooksLeverStore) });
+    if (commonSettingsNode)
+        startCommonSettingsSyncLoop(commonSettingsNode);
+}
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+    main().catch((err) => {
+        console.error("[agent-herder] Fatal:", err);
+        process.exit(1);
+    });
+}
