@@ -13,6 +13,8 @@ Observed first errors:
 - AssertionError: expected 'not_attempted' to be 'admitted' // Object.is equality
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: open
+Status: fixed_pending_full_suite
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
+
+- 2026-11-02: RED 3/13 failures, GREEN 13/13. Positive agent delivery has process-owned durable HerderJobRegistry and genuine UserMessageDelivery, trusted mesh ingress and confirmed native hostId; steer declared only when fixture supports it. Denied model & corrupt policy remain fail closed. Successful native input receipt and no-replay checked.

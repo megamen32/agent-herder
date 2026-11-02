@@ -118,7 +118,8 @@ function v2Fixture(state: {
           const reply = rest === "permission" && url.pathname.endsWith("/reply");
           if (request.method === "POST" && url.pathname.endsWith("/reply")) return json(response, { decision: JSON.parse(body || "{}").decision });
           if (request.method === "POST") return json(response, { data: [] });
-          return json(response, { data: [] });
+          // V2 exact session-scoped permission list, never a different SID.
+          return json(response, { data: state.permissions.filter((item) => item.sessionID === id) });
         }
       }
       const replyMatch = url.pathname.match(/^\/api\/session\/([^/]+)\/permission\/([^/]+)\/reply$/);
@@ -248,7 +249,7 @@ it("reads the selected V2 session mode and only its exact pending requests", asy
     await adapter.init();
     expect(await adapter.getPermissionState("ses_running")).toMatchObject({
       target: { harness: "opencode", sessionId: "ses_running" },
-      currentMode: "allow",
+      currentMode: "fullAuto",
       scope: "session",
       pendingRequests: [{ id: "perm_selected", toolName: "bash", command: "pwd", reason: "Run command" }],
     });
@@ -380,7 +381,7 @@ it("resolves the exact OpenCode combo ID into its complete configured OmniRoute 
   const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
   try {
     await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3.1", {
-      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", fetcher,
+      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", omniRouteManagementToken: "fixture-management", fetcher,
     })).resolves.toEqual({
       nativeHarness: "opencode",
       nativeModelId: "omniroute/minimax-combo-m3.1",
@@ -397,11 +398,12 @@ it("resolves the exact OpenCode combo ID into its complete configured OmniRoute 
       ["http://omniroute.test/api/model-combo-mappings", "GET"],
       ["http://omniroute.test/api/models/alias", "GET"],
     ]));
-    expect(calls.every((call) => call.authorization === "Bearer fixture-key")).toBe(true);
+    expect(calls.filter((call) => call.url.endsWith("/v1/models")).every((call) => call.authorization === "Bearer fixture-key")).toBe(true);
+    expect(calls.filter((call) => !call.url.endsWith("/v1/models")).every((call) => call.authorization === "Bearer fixture-management")).toBe(true);
 
     modelAliases = { "minimax-combo-m3.1": "other-combo" };
     await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3.1", {
-      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", fetcher,
+      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", omniRouteManagementToken: "fixture-management", fetcher,
     })).resolves.toBeNull();
     modelAliases = {};
 
@@ -410,7 +412,7 @@ it("resolves the exact OpenCode combo ID into its complete configured OmniRoute 
       ...modelMappings.slice(1),
     ];
     await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3.1", {
-      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", fetcher,
+      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", omniRouteManagementToken: "fixture-management", fetcher,
     })).resolves.toBeNull();
 
     modelMappings = [
@@ -418,7 +420,7 @@ it("resolves the exact OpenCode combo ID into its complete configured OmniRoute 
       ...modelMappings,
     ];
     await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3.1", {
-      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", fetcher,
+      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", omniRouteManagementToken: "fixture-management", fetcher,
     })).resolves.toBeNull();
 
     modelMappings = [
@@ -427,7 +429,7 @@ it("resolves the exact OpenCode combo ID into its complete configured OmniRoute 
       { id: "mapping-other-b", comboId: "other-b", comboName: "minimax-combo-m3", pattern: "minimax-combo-m3/MiniMax-M3", enabled: true },
     ];
     await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3.1", {
-      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", fetcher,
+      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", omniRouteManagementToken: "fixture-management", fetcher,
     })).resolves.toBeNull();
   } finally {
     server.close();
@@ -461,7 +463,7 @@ it("recursively resolves nested configured OmniRoute combos and fails closed on 
     ] },
   ];
   try {
-    const options = { omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key" };
+    const options = { omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", omniRouteManagementToken: "fixture-management" };
     await expect(adapter.resolveModelProviderLeaves("omniroute/outer-combo", { ...options, fetcher: makeFetcher(2, tree) }))
       .resolves.toMatchObject({ resolvedProviderLeaves: [
         { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" },
@@ -571,7 +573,7 @@ it("controls v2 turns, lineage, recovery, permissions and models", async () => {
   const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
   try {
     expect(await adapter.cancelTurn("ses_running")).toEqual({ ok: true });
-    expect(state.calls.some((call) => call.path === "/api/session/ses_running/interrupt" && call.method === "POST")).toBe(true);
+    expect(state.calls.some((call) => call.path === "/api/session/ses_running/interrupt?resume=false" && call.method === "POST")).toBe(true);
 
     const children = await adapter.listChildren("ses_root");
     expect(children.map((child) => child.id)).toEqual(["ses_running"]);
@@ -587,7 +589,7 @@ it("controls v2 turns, lineage, recovery, permissions and models", async () => {
     expect(replies.map((call) => JSON.parse(call.body!).decision)).toEqual(["always", "reject"]);
 
     expect(await adapter.setPermissions("ses_running", { allowedTools: "read,edit", mode: "plan" })).toEqual({ ok: true });
-    const patched = state.calls.find((call) => call.method === "PATCH")!;
+    const patched = state.calls.find((call) => call.method === "PATCH" && call.path === "/api/session/ses_running")!;
     expect(JSON.parse(patched.body!).permissions).toEqual([
       { action: "read", resource: "*", effect: "allow" },
       { action: "edit", resource: "*", effect: "allow" },
@@ -1014,7 +1016,7 @@ it("the adapter adds Herder's orchestration shape on top of the core event", () 
   expect((adapter as unknown as { toHarnessEvent(event: unknown): unknown }).toHarnessEvent({ kind: "unknown" })).toBeNull();
 });
 
-it("fails closed on a combo whose legs carry different model identities", async () => {
+it("keeps exact separately qualified mixed combo legs without pretending they share a model identity", async () => {
   const state = sessionFixture();
   state.models = [{ id: "minimax/MiniMax-M3.1-Flash", modelID: "minimax-combo-m3.1", providerID: "omniroute" }];
   const server = v2Fixture(state);
@@ -1039,8 +1041,11 @@ it("fails closed on a combo whose legs carry different model identities", async 
   const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
   try {
     await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3.1", {
-      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", fetcher,
-    })).resolves.toBeNull();
+      omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", omniRouteManagementToken: "fixture-management", fetcher,
+    })).resolves.toMatchObject({ resolvedProviderLeaves: [
+      { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" },
+      { providerId: "minimax", modelId: "minimax/MiniMax-M3" },
+    ] });
   } finally {
     server.close();
   }
@@ -1076,7 +1081,7 @@ it("keeps a combo route verifiable when another enabled mapping serves the same 
     return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
   };
   const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
-  const options = { omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", fetcher };
+  const options = { omniRouteBaseUrl: "http://omniroute.test", omniRouteApiKey: "fixture-key", omniRouteManagementToken: "fixture-management", fetcher };
   try {
     await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3", options)).resolves.toMatchObject({
       nativeModelId: "omniroute/minimax-combo-m3",
