@@ -110,12 +110,12 @@ describe("new session launch policy settings", () => {
     expect(component).toContain("mergePolicyChanges");
   });
 
-  it("lets the operator type the incident model and warns about an unknown one", () => {
+  it("refuses an unrelated local incident override while still explaining generic catalog warnings", () => {
     const incident = { runtime: "opencode", provider: "omniroute", model: "omniroute/hand-typed-model", reasoning: "default", topic: "health" } as const;
     const policy: LaunchPolicy = { ...DEFAULT_LAUNCH_POLICY, incidentExecution: incident };
     expect(incidentModelRoute(policy)).toBe("omniroute/hand-typed-model");
     // The owner is the authority: a model outside the catalog is saved as it is.
-    expect(incidentModelIssue("omniroute/hand-typed-model")).toBeUndefined();
+    expect(incidentModelIssue("omniroute/hand-typed-model")).toContain("закреплён");
     expect(modelCatalogIssue("opencode", "omniroute/hand-typed-model", ["omniroute/minimax-combo-m3.1"])).toContain("не найдена в каталоге harness");
     expect(modelCatalogIssue("opencode", "omniroute/hand-typed-model", ["omniroute/hand-typed-model"])).toBeUndefined();
     // An empty catalog carries no verdict about the model.
@@ -125,15 +125,17 @@ describe("new session launch policy settings", () => {
   it("allows the MiniMax subscription route and refuses a provider substitution", () => {
     expect(modelValueIssue("minimax-coding-plan/MiniMax-M3.1-Flash")).toBeUndefined();
     expect(modelValueIssue("omniroute/minimax/MiniMax-M3.1-Flash")).toBeUndefined();
-    expect(incidentModelIssue("minimax-coding-plan/MiniMax-M3.1-Flash")).toBeUndefined();
+    expect(incidentModelIssue("minimax-coding-plan/MiniMax-M3.1-Flash")).toContain("закреплён");
     expect(incidentModelIssue("zai/GLM-4.6")).toBeTruthy();
-    expect(incidentModelIssue("omniroute/minimax-combo-m3.1")).toBeUndefined();
+    expect(incidentModelIssue("omniroute/minimax-combo-m3.1")).toContain("закреплён");
+    expect(incidentModelIssue("omniroute/glm-5.3-flash-minimax-m3.1")).toBeUndefined();
   });
 
-  it("saves a hand-typed incident model through the production validation", () => {
-    const draft = { ...DEFAULT_LAUNCH_POLICY, incidentExecution: { runtime: "opencode", provider: "omniroute", model: "omniroute/hand-typed-model", reasoning: "default", topic: "health" } };
+  it("validates the canonical local incident route and refuses an arbitrary override", () => {
+    const draft = { ...DEFAULT_LAUNCH_POLICY, incidentExecution: { runtime: "opencode", provider: "omniroute", model: "omniroute/glm-5.3-flash-minimax-m3.1", reasoning: "default", topic: "health" } };
     const saved = validateAutomationLaunchPolicy(JSON.parse(JSON.stringify(draft)));
-    expect(saved.incidentExecution?.model).toBe("omniroute/hand-typed-model");
+    expect(saved.incidentExecution?.model).toBe("omniroute/glm-5.3-flash-minimax-m3.1");
+    expect(() => validateAutomationLaunchPolicy({ ...draft, incidentExecution: { ...draft.incidentExecution, model: "omniroute/hand-typed-model" } })).toThrow(/incident execution model/);
   });
 
   it("edits the incident model by hand instead of choosing a pinned option", () => {

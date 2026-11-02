@@ -9,6 +9,8 @@ Observed first errors:
 - AssertionError: expected 400 to be 200 // Object.is equality
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: open
+Status: fixed_pending_full_suite
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
+
+- 2026-11-02: Focused initial RED 3 failures/49 assertions; after preserving server-pinned incident profile and UI validation, rerun 49/49 PASS in 3 files. Arbitrary local incident overrides are tested as HTTP400 with no saved-policy corruption; canonical profile save/reload is positive. Leaf family test updated to include already-authorized zcode-start/zcode-individual source family, without changing runtime admission.

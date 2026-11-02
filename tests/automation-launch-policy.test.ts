@@ -220,7 +220,7 @@ describe("automation launch policy", () => {
     await expect(store.load()).resolves.toMatchObject({ kind: "valid" });
   });
 
-  it("keeps a hand-typed incident model through a save and a reload", async () => {
+  it("persists the exact incident profile and refuses unrelated hand-typed substitutes", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-launch-policy-incident-"));
     directories.push(root);
     const store = new AutomationLaunchPolicyStore(join(root, "automation-launch-policy.json"));
@@ -240,13 +240,17 @@ describe("automation launch policy", () => {
       allowedHarnesses: ["opencode"],
       preferredHarness: "opencode",
       models: { opencode: "omniroute/hand-typed-model" },
-      incidentExecution: { runtime: "opencode", provider: "omniroute", model: "omniroute/hand-typed-model", reasoning: "default", topic: "health" },
+      incidentExecution: { runtime: "opencode", provider: "omniroute", model: "omniroute/glm-5.3-flash-minimax-m3.1", reasoning: "default", topic: "health" },
     };
     const saved = await fetch(url, { method: "PUT", headers: { "content-type": "application/json", "if-match": ABSENT_LAUNCH_POLICY_ETAG }, body: JSON.stringify(document) });
     expect(saved.status).toBe(200);
-    expect(await saved.json()).toMatchObject({ incidentExecution: { model: "omniroute/hand-typed-model" } });
-    expect(await (await fetch(url)).json()).toMatchObject({ incidentExecution: { model: "omniroute/hand-typed-model" } });
-    expect(JSON.parse(await readFile(join(root, "automation-launch-policy.json"), "utf8"))).toMatchObject({ incidentExecution: { model: "omniroute/hand-typed-model" } });
+    expect(await saved.json()).toMatchObject({ incidentExecution: { model: document.incidentExecution.model } });
+    expect(await (await fetch(url)).json()).toMatchObject({ incidentExecution: { model: document.incidentExecution.model } });
+    expect(JSON.parse(await readFile(join(root, "automation-launch-policy.json"), "utf8"))).toMatchObject({ incidentExecution: { model: document.incidentExecution.model } });
+    const rejected = await fetch(url, { method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...document, incidentExecution: { ...document.incidentExecution, model: "omniroute/hand-typed-model" } }) });
+    expect(rejected.status).toBe(400);
+    expect(await store.load()).toMatchObject({ kind: "valid", policy: { incidentExecution: { model: document.incidentExecution.model } } });
   });
 
   it("fails closed when absent and validates HTTP writes before persistence", async () => {
