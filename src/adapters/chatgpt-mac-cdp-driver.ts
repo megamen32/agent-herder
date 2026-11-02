@@ -1,6 +1,7 @@
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import type { SessionMessageView } from "../types/index.js";
 import { CHATGPT_LIST_API_SCRIPT, chatgptMessagesApiScript } from "./browser-chat-api-scripts.js";
+import { ChatGptRequestTrace } from "./chatgpt-request-trace.js";
 import { MacMiniChromeTransport, parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
 
 const ORIGIN = "https://chatgpt.com";
@@ -13,6 +14,7 @@ type Snapshot = {
   origin: string; path: string; authenticated: boolean; composer: boolean;
   phase: Phase; draftPresent: boolean;
   chats: Array<{ id: string; title: string }>;
+  pageResources?: unknown;
 };
 
 export function parseChatGptPages(text: string): Page[] {
@@ -52,6 +54,35 @@ export const CHATGPT_MAC_SNAPSHOT = `() => {
       button.getAttribute('aria-label') || ''
     )
   );
+  // PerformanceResourceTiming is passive; entries can include both native page
+  // traffic and our CDP fetches. They are NEVER counted as unique upstream calls.
+  let pageResources=[];
+  try {
+    if(typeof performance!=='undefined' && performance.getEntriesByType) {
+      const entries=performance.getEntriesByType('resource').slice(-300);
+      const highest=entries.reduce((v,e)=>Math.max(v,e.startTime||0),0);
+      const previous=globalThis.__herderTracePerfCursor;
+      globalThis.__herderTracePerfCursor=highest;
+      if(typeof previous==='number') {
+        for(const e of entries) {
+          if(!(e.startTime>previous))continue;
+          const u=new URL(e.name,location.origin);
+          if(u.origin!==location.origin)continue;
+          let endpoint,operation;
+          if(u.pathname==='/api/auth/session'){endpoint='/api/auth/session';operation='auth_session';}
+          else if(u.pathname==='/backend-api/conversations'){endpoint='/backend-api/conversations';operation='conversation_list';}
+          else if(/^\\/backend-api\\/conversations?\\/[^/]+$/.test(u.pathname)){
+            endpoint=u.pathname.startsWith('/backend-api/conversations/')
+              ?'/backend-api/conversations/{id}':'/backend-api/conversation/{id}';
+            operation='conversation_read';
+          }else continue;
+          pageResources.push({endpoint,operation,
+            http_status:Number.isInteger(e.responseStatus)?e.responseStatus:null,
+            latency_ms:e.duration});
+        }
+      }
+    }
+  }catch{pageResources=[];}
   return {
     origin:location.origin,path:location.pathname,
     authenticated:!!document.querySelector('button[aria-label="Открыть меню профиля"],button[aria-label="Open profile menu"]'),
@@ -59,6 +90,7 @@ export const CHATGPT_MAC_SNAPSHOT = `() => {
     phase:stop?'generating':(visible(editor)&&voice?'idle':'unknown'),
     draftPresent:!!(editor?.textContent||'').trim(),
     chats:chats.slice(0,300),
+    pageResources:pageResources.slice(-40),
   };
 }`;
 
@@ -73,6 +105,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     accountArchiveViaCdp: true,
   } as const;
   private readonly cache = new Map<string, BrowserChat>();
+  private readonly requestTrace = new ChatGptRequestTrace();
   private operation: Promise<void> = Promise.resolve();
   private lastSubmittedAt = 0;
   private accountScope: string | undefined;
@@ -101,8 +134,14 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   }
 
   private async snapshot(pageId: number): Promise<Snapshot> {
+    const started = Date.now();
     const result = parseChromeEvaluation<Snapshot>(
       await this.tools.call("evaluate_script", { pageId, function: CHATGPT_MAC_SNAPSHOT }));
+    this.requestTrace.ingestPageResources(result.pageResources);
+    this.requestTrace.record({
+      kind: "dom_cache_read", initiator: "herder_browser", executor: "herder_cdp",
+      operation: "snapshot", endpoint: "other", latency_ms: Date.now()-started,
+    });
     if (result.origin !== ORIGIN || !result.authenticated || !result.composer ||
       !["idle", "generating", "unknown"].includes(result.phase)) {
       throw new Error("ChatGPT Mac mini tab is not an authenticated chat page");
@@ -134,9 +173,10 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     // It does not navigate or change the user's selected chat.
     try {
       const data = parseChromeEvaluation<{
-        scope?: string; error?: string;
+        scope?: string; error?: string; trace?: unknown;
         chats?: Array<{ id: string; title: string; updatedAt?: number }>;
       }>(await this.tools.call("evaluate_script", { pageId: page.id, function: CHATGPT_LIST_API_SCRIPT }));
+      this.requestTrace.ingestBrowserHttp(data.trace);
       if (data.scope && /^[a-f0-9]{64}$/.test(data.scope) && Array.isArray(data.chats)) {
         this.accountScope = data.scope;
         const seen = new Set<string>();
@@ -177,6 +217,10 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
 
   getKnownChat(id: string): BrowserChat | null {
     if (!NATIVE_CHAT_ID.test(id)) return null;
+    this.requestTrace.record({
+      kind: "dom_cache_read", initiator: "herder_browser", executor: "herder_cdp",
+      operation: "cache_lookup", endpoint: "other", cache_hit: this.cache.has(id),
+    });
     return this.cache.get(id) ?? {
       id, title: "ChatGPT conversation", working: false, stopVisible: false,
       unread: false, updatedAt: new Date(0).toISOString(),
@@ -197,10 +241,11 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     if (!NATIVE_CHAT_ID.test(chatId)) return null;
     const page = await this.page();
     const result = parseChromeEvaluation<{
-      error?: string; messages?: Array<{ id: string; role: string; text: string;
+      error?: string; trace?: unknown; messages?: Array<{ id: string; role: string; text: string;
         timestamp?: string; model?: string }>;
     }>(await this.tools.call("evaluate_script",
       { pageId: page.id, function: chatgptMessagesApiScript(chatId) }));
+    this.requestTrace.ingestBrowserHttp(result.trace);
     if (result.error || !Array.isArray(result.messages)) {
       throw new Error("ChatGPT history unavailable: " + (result.error || "unexpected response"));
     }
