@@ -28,7 +28,8 @@ describe('owner direct route local logic only',()=>{
  it('keeps personal Mac in native discovery while workspace mutation scope stays separate',()=>{
   const entry=readFileSync(new URL('../src/index.ts',import.meta.url),'utf8');
   expect(entry).toContain('registerHarnessMeshTools(server, { adapters, gptadmin: new FleetDirectTransport(fleetPeers())');
-  expect(entry).toContain('registerWorkspaceTools(server, { transport: workspaceTransport })');
+  expect(entry).toContain('registerWorkspaceTools(server, { transport: workspaceTransport, locateTransport: new FleetDirectTransport(fleetPeers()) })');
+  expect(entry).toContain('fleetPeers().filter(peer => peer.hostId !== "MacBook-Pro-User.local")');
  });
  it('gives a native snapshot thirty seconds plus transport margin',async()=>{
   await new FleetDirectTransport([peer]).call('mcp:shell:roomhacker-server-88:AgentHerder','mesh_snapshot',{limit:1});

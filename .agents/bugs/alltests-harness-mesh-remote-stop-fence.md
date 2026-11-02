@@ -9,6 +9,8 @@ Observed first errors:
 - AssertionError: expected true to be false // Object.is equality
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: open
+Status: fixed_pending_full_suite
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
+
+- 2026-11-02: Focused RED→GREEN evidence: native Codex discovery 23/23 across 2 files, fleet machine/transport/stop 50/50 across 3 files. Native MiniMax stop uses same durable HumanStop hold as Codex; test confirms held=true before verified stop and single native abort; no model sends or stop bypass.
