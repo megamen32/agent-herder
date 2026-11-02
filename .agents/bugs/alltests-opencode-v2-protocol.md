@@ -18,8 +18,10 @@ Observed first errors:
 - AssertionError: expected false to be true // Object.is equality
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: fixed_pending_full_suite
+Status: fixed
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
 
 - 2026-11-02: RED 6/31 failures, GREEN 31/31. Scoped native V2 permission fixture now lists exact matching session requests, readback checks real fullAuto mode, interrupt?resume=false, and distinct model/read-management credentials. Native permission write asserted by exact path rather than first unrelated inbox PATCH. Parentless authenticated mixed-leg combo keeps distinct actual provider leaves; conflicting routes/aliases still refused.
+
+- 2026-11-02: Full-suite verified SHA 71f8fa2 (source tree): 503 files, 499 passed, 4 skipped; 4332 tests, 4318 passed, 14 skipped; exit=0, 0 failures, 0 unhandled errors. Evidence .catalog-release-all.log, plus previous per-cluster RED/isolated GREEN in this record. Resolution retained with full history.

@@ -25,3 +25,10 @@
 - Status at this record: pending the next single full-suite run after the two fixes; do not claim production/merge readiness until proven green.
 
 - Second full-suite run on 9d3de58: 503 files, 4315 passed, 1 failed, 14 skipped, no unhandled. Exact log .catalog-final-all2.log. Registered alltests-final-human-request-lock-concurrency. Deterministic lock regression RED, then 7/7 GREEN with bounded atomic lock fix; new tests demonstrate fail-closed on durable contention. Next full-suite acceptance pending, no merge or release claimed.
+
+## Final source acceptance: GREEN
+
+- Final run on SHA 71f8fa2: npm run build exit=0; Vitest full project 503 files, 499 passed and 4 skipped, 4318 tests passed, 14 skipped, 0 failed, 0 unhandled, exit=0. Evidence .catalog-release-build.log and .catalog-release-all.log.
+- All 40 full-suite records and 10 initial catalog/baseline records have preserved evidence and no open entries. Two false-positive classifications include reasons and bound native acceptance; no tests disabled, no gates bypassed.
+- Code review verified tools/list-only projection, existing tools/call aliases, original native Zod validation/permission/HumanRequest guards, exact mesh target routing, authenticated ingress and no-retry UNKNOWN. Existing PR24 realpath/main-guard and Git owner fix preserved.
+- Gate transition: SOURCE TESTS GREEN. Merge/release and post-install catalog/process generation readback remain separate pending tasks; no production acceptance claimed by source tests alone.

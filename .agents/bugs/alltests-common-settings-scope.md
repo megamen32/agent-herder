@@ -11,8 +11,10 @@ Observed first errors:
 - AssertionError: expected [ …(8) ] to deeply equal [ …(12) ]
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: fixed_pending_full_suite
+Status: fixed
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
 
 - 2026-11-02: Isolated 18/18 green; four chat-intro variables explicitly classified machine-local, chat-intro token is secret, preserving no cross-node credential replication.
+
+- 2026-11-02: Full-suite verified SHA 71f8fa2 (source tree): 503 files, 499 passed, 4 skipped; 4332 tests, 4318 passed, 14 skipped; exit=0, 0 failures, 0 unhandled errors. Evidence .catalog-release-all.log, plus previous per-cluster RED/isolated GREEN in this record. Resolution retained with full history.
