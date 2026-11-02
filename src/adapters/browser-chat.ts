@@ -43,6 +43,10 @@ export interface BrowserChatDriver {
   listModels?(signal?: AbortSignal): Promise<string[]>;
   supportsModelSwitch?(): boolean;
   changeModel?(input: { chatId: string; model: string }, signal?: AbortSignal): Promise<{ ok: boolean; error?: string }>;
+  /** List the account's projects (ZAI: /api/v1/projects). Returns [] when unsupported. */
+  listProjects?(): Promise<Array<{ id: string; name: string; chatCount?: number; archived?: boolean }>>;
+  /** Move a chat into a project (ZAI: PATCH /api/v1/chats/<id> with project_id). */
+  moveToProject?(input: { chatId: string; projectId: string }): Promise<{ ok: boolean; error?: string }>;
   /** Explicit site contract. Feature reporting must not be inferred from the common base. */
   browserFeatures?: {
     nativeConversationIds: boolean;
