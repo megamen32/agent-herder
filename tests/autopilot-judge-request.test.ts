@@ -50,7 +50,11 @@ describe("judge provider diagnostics", () => {
     expect(e.diagnostic).toMatchObject({ kind: "quota_exhausted", providerCode: "2056", requestId: "stream-123", model: "MiniMax-M3.1-Flash", httpStatus: 200 });
   });
   it("preserves malformed-reconciliation classification for the bounded repair path", async () => {
-    const judge = createOpenAICompatibleSessionCompletionJudge({ baseUrl: "https://api.z.ai/api/coding/paas/v4", model: "glm-5.3-flash", fetchImpl: async () => new Response("invalid private body") });
+    // The HTTP envelope itself is valid JSON. The provider's reconciliation
+    // content is malformed: this is the bounded business repair path, not a
+    // transport JSON failure (separately covered by JudgeRequestTrace).
+    const judge = createOpenAICompatibleSessionCompletionJudge({ baseUrl: "https://api.z.ai/api/coding/paas/v4", model: "glm-5.3-flash",
+      fetchImpl: async () => Response.json({ choices: [{ message: { content: "invalid private body" }, finish_reason: "stop" }] }) });
     await expect(judge.reconcile!({ groups: [] })).rejects.toMatchObject({ name: "BatchReconciliationValidationError" });
   });
   it("bounds and discards an unstructured error body, strips endpoint query credentials", async () => {

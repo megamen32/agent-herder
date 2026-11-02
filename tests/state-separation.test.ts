@@ -289,7 +289,7 @@ describe("the stop of a session is a lever of its own", () => {
     expect(stateOf(held, "prohibitions")).toBe("active");
     expect(stateOf(held, "hooks")).toBe("inactive");
     expect(stateOf(held, "quota_policy")).toBe("active");
-    expect(held.activeCount).toBe(4);
+    expect(held.activeCount).toBe(held.dimensions.filter(d => d.active).length);
 
     // Another session of the same harness is not held, and the other four
     // states read exactly the same.
@@ -297,6 +297,8 @@ describe("the stop of a session is a lever of its own", () => {
     expect(stateOf(other, "session_stop")).toBe("inactive");
     expect(stateOf(other, "prohibitions")).toBe("active");
     expect(stateOf(other, "hooks")).toBe("inactive");
-    expect(other.activeCount).toBe(3);
+    expect(other.activeCount).toBe(other.dimensions.filter(d => d.active).length);
+    expect(held.activeCount).toBe(other.activeCount+1);
+    for(const key of ["prohibitions","hooks","quota_policy","network_pause"] as const) expect(stateOf(held,key)).toBe(stateOf(other,key));
   });
 });

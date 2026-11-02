@@ -9,6 +9,8 @@ Observed first errors:
 - AssertionError: expected JudgeRequestError: LLM glm-5.3-flash HTTP… { diagnostic: { …(7) } } to match object { Object (name) }
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: open
+Status: fixed_pending_full_suite
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
+
+- 2026-11-02: Focused RED→GREEN 4 test files, 49/49 PASS. Valid HTTP JSON envelope with invalid reconciliation content now invokes BatchReconciliationValidationError; raw malformed HTTP JSON remains JudgeRequestError invalid_json in separate test. Sensitive raw provider body never logged.

@@ -9,6 +9,8 @@ Observed first errors:
 - AssertionError: expected 3 to be 4 // Object.is equality
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: open
+Status: fixed_pending_full_suite
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
+
+- 2026-11-02: Focused RED→GREEN 4 test files, 49/49 PASS. Session Stop adds exactly one independent active dimension; OS-derived network pause may be active/inactive/unknown, so counts are derived from observed dimensions and all other states compared between sessions.

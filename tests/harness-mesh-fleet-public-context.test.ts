@@ -49,7 +49,11 @@ describe('verified public owner context',()=>{
   expect(state.providers[0]!()).toBeUndefined();expect(state.hubCalls).toBe(0);
  });
  it.each(['mac-mini-2012.lan','roomhacker-server-100'])('does not construct a peer transport when the owner cookie fails verification on %s',async(host)=>{state.host=host;
-  state.auth=false;const r=response();await createConfiguredFleetApiHandler()(request('untrusted-unit-cookie'),r as any);
+  state.auth=false;
+  // Both authoritative routes must fail: the server100 signed SSO probe
+  // precedes the HAOS cookie fallback, neither may authenticate this caller.
+  vi.stubGlobal('fetch',vi.fn(async()=>new Response(null,{status:401})));
+  const r=response();const handler=createConfiguredFleetApiHandler(host==='roomhacker-server-100'?await ownerOptions():{clientConfigPath:'/never-read-a-foreign-client'});await handler(request('untrusted-unit-cookie'),r as any);
   expect(r.writeHead).toHaveBeenCalledWith(401,expect.anything());expect(state.providers).toHaveLength(0);expect(state.calls).toHaveLength(0);
  });
  it('preserves the same profile service and browser partition across owner cookie rotation',async()=>{

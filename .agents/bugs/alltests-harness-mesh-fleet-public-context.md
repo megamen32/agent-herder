@@ -9,6 +9,8 @@ Observed first errors:
 - AssertionError: expected "vi.fn()" to be called with arguments: [ 401, Anything ]
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: open
+Status: fixed_pending_full_suite
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
+
+- 2026-11-02: Focused RED→GREEN 4 test files, 49/49 PASS. Both public SSO authority and fallback owner-cookie verifier explicitly mocked to refuse the unauthorized request. Test asserts HTTP401 and zero peer provider/calls; fake 204 SSO was the prior false-positive.

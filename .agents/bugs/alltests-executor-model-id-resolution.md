@@ -9,6 +9,8 @@ Observed first errors:
 - AssertionError: expected undefined to be 'opencode' // Object.is equality
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: open
+Status: fixed_pending_full_suite
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
+
+- 2026-11-02: Focused RED→GREEN 4 test files, 49/49 PASS. Exact loopback OmniRoute provider-leaf proof now has separate scoped CLI read credential; no silent fallback to unauthenticated management endpoints and unknown translated catalog ID remains rejected.
