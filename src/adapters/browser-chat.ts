@@ -14,6 +14,8 @@ export interface BrowserChat {
   cwd?: string;
   /** Only a currently selected generating chat has a real Stop control. */
   stopVisible?: boolean;
+  /** Origin of the working signal when it is not the observed page's own DOM. */
+  workingSource?: "native-last-run";
 }
 
 /** A browser transport owns its authenticated page and implements these operations. */
@@ -315,6 +317,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
         browserProvider: chat.providerId ?? this.provider.id,
         stopVisible: chat.stopVisible === true,
         timestampSemantics: chat.updatedAtSemantics ?? "native-or-visible-order",
+        ...(chat.workingSource ? { runningEvidence: chat.workingSource } : {}),
       },
     };
   }
