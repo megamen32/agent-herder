@@ -12,6 +12,31 @@ vi.mock("node:fs/promises", async importOriginal => {
 });
 
 describe("offline release authority route", () => {
+  it.each([{ fleetDir: "/fixture/fleet" }, { unit: "fixture.service" }])(
+    "rejects partial deployment targets without mutating authority: %j",
+    async deploymentTarget => {
+      const base = await realpath(await mkdtemp(join(tmpdir(), "release-admin-partial-")));
+      const ledger = join(base, "ledger.json"), proofOut = join(base, "proof.json");
+      const original = JSON.stringify({ version: 1, projects: {} });
+      try {
+        execFileSync("git", ["init", "-q", base]);
+        await writeFile(ledger, original, { mode: 0o600 });
+        await expect(runReleaseAdmin({
+          ledger, authorityHost: hostname(), proofOut,
+          request: { action: "acquire", cwd: base, deploymentTarget,
+            owner: { hostId: hostname(), harness: "test", nativeSessionId: "partial" } },
+        })).rejects.toMatchObject({
+          name: "ZodError",
+          issues: expect.arrayContaining([expect.objectContaining({
+            path: ["deploymentTarget", "fleetDir" in deploymentTarget ? "unit" : "fleetDir"],
+          })]),
+        });
+        expect(await readFile(ledger, "utf8")).toBe(original);
+        await expect(stat(proofOut)).rejects.toThrow();
+      } finally { await rm(base, { recursive: true, force: true }); }
+    },
+  );
+
   it("rejects symlink and lexical ledger aliases without touching authority state", async () => {
     const base = await realpath(await mkdtemp(join(tmpdir(), "release-admin-alias-")));
     const ledger = join(base, "ledger.json"), alias = join(base, "alias.json");
@@ -87,6 +112,7 @@ describe("offline release authority route", () => {
       const acquired = await runReleaseAdmin({ ...options, proofOut, request: { action: "acquire", cwd: repo, owner } });
       const proof = JSON.parse(await readFile(proofOut, "utf8"));
       expect(proof.token).toMatch(/^[a-f0-9]{64}$/);
+      expect((acquired.lease as Record<string, unknown>).deploymentTarget).toBeUndefined();
       expect(JSON.stringify(acquired)).not.toContain(proof.token);
       expect((await stat(proofOut)).mode & 0o777).toBe(0o600);
       const status = await runReleaseAdmin({ ...options, request: { action: "status", cwd: linked } });
