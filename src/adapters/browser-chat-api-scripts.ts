@@ -45,7 +45,7 @@ export const CHATGPT_LIST_API_SCRIPT = `async () => {
   }
   const data=await response.json();
   return {scope,trace,chats:(data.items||[]).filter(x=>x.id && x.title && !x.is_archived && !x.is_temporary_chat)
-   .slice(0,100).map(x=>({id:x.id,title:x.title,updatedAt:x.update_time,createdAt:x.create_time}))};
+   .slice(0,100).map(x=>({id:x.id,title:x.title,updatedAt:x.update_time,createdAt:x.create_time,asyncStatus:x.async_status}))};
 }`;
 
 export function chatgptMessagesApiScript(chatId: string): string {

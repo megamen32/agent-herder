@@ -222,6 +222,24 @@ describe("BrowserTurnAutopilotObserver", () => {
     expect(h.sendMessage).not.toHaveBeenCalled();
   });
 
+  it("never nudges a native-async-status running chat: frozen timestamps are not stall evidence", async () => {
+    const h = harness({
+      messages,
+      sessions: [fakeSession({
+        status: "running",
+        lastActivity: new Date(Date.now() - 120_000).toISOString(),
+        meta: { timestampSemantics: "remote-update-time", runningEvidence: "native-async-status" },
+      })],
+    });
+    await h.observer.observeOnce();
+    expect(h.sendMessage).not.toHaveBeenCalled();
+    // The remote turn still ends through the normal running-to-idle Stop submission.
+    h.listSessions.mockResolvedValue([fakeSession({ status: "idle" })]);
+    await h.observer.observeOnce();
+    expect(h.submit).toHaveBeenCalledTimes(1);
+    expect(h.sendMessage).not.toHaveBeenCalled();
+  });
+
   it("starts a new nudge burst only after fresh remote progress", async () => {
     const stalledA = new Date(Date.now() - 120_000).toISOString();
     const h = harness({

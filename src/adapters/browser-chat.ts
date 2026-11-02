@@ -15,7 +15,7 @@ export interface BrowserChat {
   /** Only a currently selected generating chat has a real Stop control. */
   stopVisible?: boolean;
   /** Origin of the working signal when it is not the observed page's own DOM. */
-  workingSource?: "native-last-run";
+  workingSource?: "native-last-run" | "native-async-status";
 }
 
 /** A browser transport owns its authenticated page and implements these operations. */
