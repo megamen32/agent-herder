@@ -39,7 +39,7 @@ describe("ChatGPT on existing Mac mini CDP", () => {
     expect(f.actions.every(a => ["list_pages","evaluate_script"].includes(a))).toBe(true);
     expect(await driver.getChat("6ada477c-7014-83ed-82ae-7881dbe3e999")).toBeNull();
   });
-  it("will not write while generating, unknown, or when user has a draft", async () => {
+  it("will not write while generating or unknown; a draft is preserved", async () => {
     const f = new BrowserFixture();
     const driver = new ChatGptMacCdpDriver(f);
     await driver.listChats();
@@ -48,8 +48,8 @@ describe("ChatGPT on existing Mac mini CDP", () => {
     await expect(driver.sendMessage({ chatId: ID, text: "hold" })).rejects.toThrow(/already running/);
     f.phase = "unknown";
     await expect(driver.sendMessage({ chatId: ID, text: "hold" })).rejects.toThrow(/unavailable/);
-    f.phase = "idle"; f.draft = true;
-    await expect(driver.sendMessage({ chatId: ID, text: "hold" })).rejects.toThrow(/personal draft/);
+    // A user draft no longer blocks the herder's send (preserved + restored);
+    // the dedicated preservation test below covers the save/restore sequence.
     expect(f.actions.every(a => ["list_pages","evaluate_script"].includes(a))).toBe(true);
   });
   it("extracts sidebar route and recognizes idle voice control from real ChatGPT DOM selectors", () => {
@@ -175,5 +175,31 @@ describe("ChatGPT tab auto-discovery", () => {
     const driver = new ChatGptMacCdpDriver(tools, undefined, 0);
     expect(await driver.listChats()).toMatchObject([{ id: ID, title: "Auto chat" }]);
     expect(opened).toBe(1);
+  });
+});
+
+
+describe("ChatGPT draft preservation", () => {
+  it("saves a user draft before the herder's send and restores it after", async () => {
+    let composerValue = "user draft text";
+    const fills: string[] = [];
+    const tools: ChromePageTools = {
+      call: async (name, args = {}) => {
+        if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/c/" + ID + ")";
+        if (name === "take_snapshot") return 'uid=1_42 textbox "Спросить ChatGPT" focusable multiline';
+        if (name === "fill") { fills.push(String(args.value)); composerValue = String(args.value); return "ok"; }
+        if (name === "evaluate_script") {
+          const fn = String(args.function);
+          if (fn.includes("editor.innerText")) return json({ value: composerValue });
+          if (fn.includes("const expected")) { composerValue = ""; return json({ submitted: true }); }
+          return json({ origin: "https://chatgpt.com", path: "/c/" + ID, authenticated: true, composer: true,
+            phase: "idle", draftPresent: false, chats: [{ id: ID, title: "Fixture chat" }] });
+        }
+        throw Error("unexpected tool: " + name);
+      },
+    };
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0);
+    await driver.sendMessage({ chatId: ID, text: "herder msg" });
+    expect(fills).toEqual(["herder msg", "user draft text"]);
   });
 });

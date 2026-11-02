@@ -128,7 +128,10 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   }
 
   private busy(s: Snapshot): boolean {
-    return s.phase !== "idle" || s.draftPresent ||
+    // A user draft is preserved and restored around the herder's send (see
+    // readComposerDraft/restoreComposerDraft), so it no longer counts as
+    // busy. Only an active generation or the post-send guard blocks the next send.
+    return s.phase !== "idle" ||
       Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS;
   }
 
@@ -230,6 +233,29 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     }));
   }
 
+  /** Read the user's own unsent draft so the herder's send can restore it
+   * after submission instead of clobbering it. */
+  private async readComposerDraft(pageId: number): Promise<string> {
+    const result = parseChromeEvaluation<{ value: string }>(
+      await this.tools.call("evaluate_script", { pageId, function: `() => {
+        const editor = document.querySelector('div[contenteditable="true"][role="textbox"][data-composer-markdown]');
+        return { value: editor ? (editor.innerText || editor.textContent || "") : "" };
+      }` }),
+    );
+    return result.value ?? "";
+  }
+
+  /** Restore the captured draft (or clear the composer when there was none).
+   * Skipped silently when the composer is not editable mid-generation; ChatGPT
+   * keeps its own per-conversation draft state in that case. */
+  private async restoreComposerDraft(pageId: number, draft: string): Promise<void> {
+    try {
+      const snapshot = await this.tools.call("take_snapshot", { pageId });
+      const uid = snapshot.match(/uid=([\w-]+) textbox "(?:Спросить ChatGPT|Ask ChatGPT|Ask anything|Message ChatGPT)"/i)?.[1];
+      if (uid) await this.tools.call("fill", { pageId, uid, value: draft });
+    } catch { /* composer not editable mid-generation */ }
+  }
+
   async sendMessage(input: { chatId: string; text: string; waitForCompletion?: boolean }): Promise<{ assistantText?: string }> {
     return this.exclusive(async () => {
       const { chatId, text } = input;
@@ -244,7 +270,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
         if (state.phase === "generating" || Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS) {
           throw new Error("prompt is already running; browser queue must wait");
         }
-        throw new Error("ChatGPT composer unavailable or has a personal draft; message not sent");
+        throw new Error("ChatGPT composer unavailable; message not sent");
       }
       if (state.path !== "/c/" + chatId) {
         await this.tools.call("navigate_page", {
@@ -263,7 +289,10 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       const accessibility = await this.tools.call("take_snapshot", { pageId: page.id });
       const textbox = accessibility.match(/uid=([\w-]+) textbox "(?:Спросить ChatGPT|Ask ChatGPT|Ask anything|Message ChatGPT)"/i)?.[1];
       if (!textbox) throw new Error("ChatGPT editor unavailable; message not sent");
-      await this.tools.call("fill", { pageId: page.id, uid: textbox, value: text });
+      // Preserve any user draft across the herder's send and restore it after.
+      const savedDraft = await this.readComposerDraft(page.id);
+      try {
+        await this.tools.call("fill", { pageId: page.id, uid: textbox, value: text });
 
       // A single browser-side check+click: Enter can accidentally stop a turn
       // if the UI transitions between the separate fill and submit RPCs.
@@ -308,6 +337,9 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       }
       this.lastSubmittedAt = Date.now();
       return {};
+      } finally {
+        await this.restoreComposerDraft(page.id, savedDraft).catch(() => undefined);
+      }
     });
   }
 

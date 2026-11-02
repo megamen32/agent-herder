@@ -56,7 +56,7 @@ class MockChromeTools implements ChromePageTools {
     if (fn.includes("() => ({remaining:")) {
       return evalJson({ remaining: this.draft, origin: this.page.origin, path: this.page.path });
     }
-    return evalJson({ ...this.page, draftPresent: Boolean(this.draft) || this.page.draftPresent });
+    return evalJson({ ...this.page, draftPresent: Boolean(this.draft) || this.page.draftPresent, value: this.draft });
   }
 }
 
@@ -215,7 +215,7 @@ describe("Mac mini CDP ZAI provider", () => {
       result: { submitted: true }, clicked: 1, draft: "",
     });
   });
-  it("refuses unknown UI, drafts, and unexpected origins; a stale pin falls back", async () => {
+  it("refuses unknown UI and unexpected origins; a stale pin falls back and a draft is preserved", async () => {
     const duplicate = new MockChromeTools();
     duplicate.page = state("/", ["Duplicate", "Duplicate"]);
     const driver = new ZaiCdpDriver(duplicate);
@@ -234,7 +234,8 @@ describe("Mac mini CDP ZAI provider", () => {
     draft.page.draftPresent = true;
     const protectedDriver = new ZaiCdpDriver(draft);
     await protectedDriver.listChats();
-    await expect(protectedDriver.sendMessage({ chatId: "sidebar:Test%20fixture", text: "no" })).rejects.toThrow(/draft/);
+    // A user draft no longer blocks the herder's send; it is preserved and restored.
+    await expect(protectedDriver.sendMessage({ chatId: "sidebar:Test%20fixture", text: "no" })).resolves.toEqual({});
   });
   it("resumes an exact route target that was never rendered in the sidebar", async () => {
     const tools = new MockChromeTools();
@@ -321,5 +322,22 @@ describe("ZAI tab auto-discovery", () => {
     const driver = new ZaiCdpDriver(tools, undefined, 0);
     expect(await driver.listChats()).toMatchObject([{ id: "sidebar:Auto%20chat", title: "Auto chat" }]);
     expect(opened).toBe(1);
+  });
+});
+
+
+describe("ZAI draft preservation", () => {
+  it("saves a user draft before the herder's send and restores it after", async () => {
+    const tools = new MockChromeTools();
+    tools.draft = "user draft text";
+    const fills: string[] = [];
+    const origCall = tools.call.bind(tools);
+    tools.call = async (name: string, args: Record<string, unknown> = {}) => {
+      if (name === "fill") fills.push(String(args.value));
+      return origCall(name, args);
+    };
+    const driver = new ZaiCdpDriver(tools);
+    await driver.sendMessage({ chatId: "route:123e4567-e89b-12d3-a456-426614174000", text: "herder msg" });
+    expect(fills).toEqual(["herder msg", "user draft text"]);
   });
 });

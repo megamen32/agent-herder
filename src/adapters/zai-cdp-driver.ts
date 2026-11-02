@@ -142,7 +142,10 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   }
 
   private busy(state: ZaiSnapshot): boolean {
-    return state.phase !== "idle" || state.draftPresent ||
+    // A user draft is preserved and restored around the herder's send (see
+    // readComposerDraft/restoreComposerDraft), so it no longer counts as
+    // busy. Only an active generation or the post-send guard blocks the next send.
+    return state.phase !== "idle" ||
       Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS;
   }
 
@@ -389,6 +392,29 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     }));
   }
 
+  /** Read the user's own unsent draft so the herder's send can restore it
+   * after submission instead of clobbering it. */
+  private async readComposerDraft(pageId: number): Promise<string> {
+    const result = parseChromeEvaluation<{ value: string }>(
+      await this.tools.call("evaluate_script", { pageId, function: `() => {
+        const editor = document.querySelector('textarea[placeholder="Send a Message"]');
+        return { value: editor ? editor.value : "" };
+      }` }),
+    );
+    return result.value ?? "";
+  }
+
+  /** Restore the captured draft (or clear the composer when there was none).
+   * Skipped silently when the composer is not editable mid-generation; Z.ai
+   * keeps its own per-conversation draft state in that case. */
+  private async restoreComposerDraft(pageId: number, draft: string): Promise<void> {
+    try {
+      const snapshot = await this.tools.call("take_snapshot", { pageId });
+      const uid = snapshot.match(/uid=([\w-]+) textbox "Send a Message"/)?.[1];
+      if (uid) await this.tools.call("fill", { pageId, uid, value: draft });
+    } catch { /* composer not editable mid-generation */ }
+  }
+
   async sendMessage(input: { chatId: string; text: string; waitForCompletion?: boolean }): Promise<{ assistantText?: string }> {
     return this.exclusive(async () => {
       const { chatId, text } = input;
@@ -402,7 +428,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
         if (state.phase === "generating" || Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS) {
           throw new Error("prompt is already running; ZAI queue must wait");
         }
-        throw new Error("ZAI composer is unavailable or has an existing draft; message not sent");
+        throw new Error("ZAI composer is unavailable; message not sent");
       }
       if (!this.isSelected(chatId, known, state)) {
         const outcome = await this.selectChat(page.id, chatId, known);
@@ -422,7 +448,10 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       const snapshot = await this.tools.call("take_snapshot", { pageId: page.id });
       const uid = snapshot.match(/uid=([\w-]+) textbox "Send a Message"/)?.[1];
       if (!uid) throw new Error("ZAI message composer not found; message not sent");
-      await this.tools.call("fill", { pageId: page.id, uid, value: text });
+      // Preserve any user draft across the herder's send and restore it after.
+      const savedDraft = await this.readComposerDraft(page.id);
+      try {
+        await this.tools.call("fill", { pageId: page.id, uid, value: text });
 
       // ONE atomic browser-side preflight+click: re-check Stop, exact target,
       // actual filled textarea and enabled Send immediately before the click.
@@ -496,6 +525,9 @@ export class ZaiCdpDriver implements BrowserChatDriver {
         throw new Error("ZAI submission admission unknown: do not retry automatically");
       }
       return {};
+      } finally {
+        await this.restoreComposerDraft(page.id, savedDraft).catch(() => undefined);
+      }
     });
   }
 
@@ -545,7 +577,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       if (!known) return { ok: false, error: "Z.ai chat is not in the authenticated inventory" };
       const page = await this.page();
       let state = await this.snapshot(page.id);
-      if (this.busy(state)) return { ok: false, error: "Z.ai model switch requires an idle chat without a personal draft" };
+      if (this.busy(state)) return { ok: false, error: "Z.ai model switch requires an idle chat" };
       if (!this.isSelected(chatId, known, state)) {
         const selection = await this.selectChat(page.id, chatId, known);
         if (selection !== "selected") return { ok: false, error: "Z.ai chat could not be selected safely" };
