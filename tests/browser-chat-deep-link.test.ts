@@ -31,7 +31,9 @@ function adapterWith(driver: Partial<BrowserChatDriver>): BrowserChatAdapter {
 
 describe("BrowserChatAdapter deep-link routing", () => {
   it("getSession resolves a raw native id from the inventory and preserves the caller form", async () => {
-    const chat = makeChat("6aa1dd0e-4f11-4fc9-a633-94fa95566c2f", "Problems with Herder Agent Delivery");
+    // The ZAI driver keys deep-link chats by `route:<uuid>` in listChats;
+    // a raw native id from an HTTP caller is normalized to that form.
+    const chat = makeChat("route:6aa1dd0e-4f11-4fc9-a633-94fa95566c2f", "Problems with Herder Agent Delivery");
     const adapter = adapterWith({ listChats: async () => [chat] });
     await adapter.init();
     const session = await adapter.getSession("6aa1dd0e-4f11-4fc9-a633-94fa95566c2f");
@@ -51,14 +53,18 @@ describe("BrowserChatAdapter deep-link routing", () => {
   });
 
   it("getSession falls back to driver.getChat for a native id not in the inventory", async () => {
-    const chat = makeChat("unknown-uuid", "Deep-linked chat");
+    // The driver stores deep-link chats under the `route:<uuid>` form, so
+    // getChat receives the normalized id.
+    const chat = makeChat("route:unknown-uuid", "Deep-linked chat");
     let getChatCalls = 0;
+    let seenId = "";
     const adapter = adapterWith({
       listChats: async () => [],
-      getChat: async (id: string) => { getChatCalls++; expect(id).toBe("unknown-uuid"); return chat; },
+      getChat: async (id: string) => { getChatCalls++; seenId = id; return chat; },
     });
     const session = await adapter.getSession("unknown-uuid");
     expect(getChatCalls).toBe(1);
+    expect(seenId).toBe("route:unknown-uuid");
     expect(session).not.toBeNull();
     expect(session!.id).toBe("unknown-uuid");
     expect(session!.title).toBe("Deep-linked chat");

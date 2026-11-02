@@ -137,7 +137,14 @@ export class BrowserChatAdapter implements HarnessAdapter {
     if (id.includes("::")) throw new Error("Browser session belongs to another provider");
     // Accept a raw native id directly: HTTP routes like
     // /api/sessions/<harness>/<native-id>/<action> and MCP callers do not
-    // know the scoped-id convention and pass the native id as-is.
+    // know the scoped-id convention. The ZAI driver keys deep-link chats
+    // by a `route:` prefix (its listChats emits id="route:<uuid>"), so a
+    // raw native uuid must be normalized to that form for inventory and
+    // driver lookups to resolve. The ChatGPT driver uses native ids
+    // directly and needs no prefix.
+    if (this.provider.id === "zai" && !id.startsWith("route:") && !id.startsWith("sidebar:") && !id.includes(":")) {
+      return "route:" + id;
+    }
     return id;
   }
 
