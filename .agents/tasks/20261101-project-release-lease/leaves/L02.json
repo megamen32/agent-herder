@@ -1,0 +1,143 @@
+{
+  "id": "L02",
+  "label": "Ветки и PR в LHC",
+  "status": "done",
+  "description": "Инструкции и проверка branch, remote HEAD, PR и release lease.",
+  "acceptance": "Целевые регрессии проходят; draft PR опубликован, без merge и production deployment.",
+  "owner": "align_lhc_pr_policy",
+  "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+  "harness": "chatgpt",
+  "depends_on": [],
+  "estimate_minutes": {
+    "minimum": 15,
+    "maximum": 30
+  },
+  "note": "Adoption PR52 merged d35d0b6. Native publication fix PR53 merged809cff96f7d418055ca37f24bad3852aa521a175; версия1.7.21 устранила reuse старого cache. Host100 Claude installed1.7.21 exactgitCommitSha809cff, Codex marketplace exact809cff и cache1.7.21. Оба installed AGENTS byte-match merged source, adoption policy присутствует. OpenCode уже ссылается на этот marketplace. Native install exit0, merge CI run41314135974 SUCCESS. Активные сессии не перезапускались, reload старых чатов не заявляется.",
+  "result": "https://github.com/megamen32/LastHumanCommit/pull/52 и /pull/53 merged.689 tests PASS/6skip, независимые policy/version reviews PASS. Source merged, landing published и native artifact installation подтверждены отдельно. Никакого cache handpatch, uninstall активного plugin или удаления старых worktrees.",
+  "model": "gpt-6.1-sol",
+  "updated_at": "2026-11-01T17:03:28+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-01T16:20:20+03:00",
+      "note": "",
+      "changes": {
+        "result": "Draft PR https://github.com/megamen32/LastHumanCommit/pull/51, remote HEAD 4a83dc3 подтверждён; delivery gate выполнен на реальном PR. 684 теста PASS, 6 skipped, независимый review PASS. GitHub CI build SUCCESS, deploy SKIPPED. Main и установленный LHC не изменены.",
+        "model": "gpt-6.1-sol"
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T16:23:13+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "Новый scope владельца: своя ветка и worktree; push свободно, PR только при готовности к merge. Session-end inventory; последний работник отвечает за интеграцию и проверку проекта. Cleanup только merged+clean+inactive; неизвестные, активные, грязные, конфликтные и unmerged сохраняются видимыми. Существующие PR остаются draft до обновлённого review; runtime не изменён."
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T16:26:23+03:00",
+      "note": "",
+      "changes": {
+        "note": "Последнее уточнение: ранний draft PR полезен для видимости незавершённой работы, с ссылкой на LHC план. Ready после тестов и review. Session-end inventory; последний работник отвечает за интеграцию и проверку проекта. Cleanup только merged+clean+inactive; остальные ветки сохраняются с видимыми блокерами. Изменения нового scope проходят проверки. Runtime не изменён. Доступ к этому техническому плану проверен без авторизации; SSO не подтверждён, приватных данных здесь нет."
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T16:28:02+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "PR https://github.com/megamen32/LastHumanCommit/pull/51 обновлён, remote HEAD 69650b42bddf206a9aeb92671dc0c634224ba25c подтверждён. 688 тестов PASS, 6 skipped; 31 focused PASS. Независимый review нового delta PASS. Добавлен read-only worktree inventory, правила last-worker integration и draft visibility со ссылкой на план. Merge/install/cleanup не выполнялись. Lifecycle implementation Agent Herder остаётся в L01 in-progress."
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T16:36:54+03:00",
+      "note": "",
+      "changes": {
+        "note": "Источник и PR готовы: PR51 OPEN ready, HEAD 69650b42bddf206a9aeb92671dc0c634224ba25c. Full688 PASS/6skip, focused31 PASS, независимый review PASS, CI build PASS/deploy SKIPPED. Merge/install/cleanup не выполнялись; установленный LHC не изменён."
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T16:42:13+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "PR51 MERGED 286f0d26f7e38121a40d6ed7d6bf44a600bee73d. Exact merge CI build+deploy SUCCESS. Claude native plugin на host100 обновлён штатным менеджером до1.7.20, installed gitCommitSha совпадает с merge; inventory доступен. Активные сессии не перезапускались, загрузка новых инструкций в них не подтверждена. Codex enabled cache1.7.20 остаётся старым, marketplace ced3c251; native update CLI отсутствует в PATH, путь обновления выясняется. Никакие старые worktrees не удалялись.",
+        "result": "Source merged; landing published; Claude installed exact merge. Source tests688 PASS/6skip, focused31 PASS, независимый review PASS. Runtime-wide completion пока не заявляется: Codex cache и existing session reload не подтверждены."
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T16:43:58+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "note": "LHC source merge и native installation проверены отдельно. PR51 MERGED 286f0d26f7e38121a40d6ed7d6bf44a600bee73d; merge CI build+deploy SUCCESS. Host100 Claude native plugin установлен exact merge1.7.20. Codex штатные marketplace upgrade + plugin add выполнены без создания сессий; marketplace HEAD exact merge, cache AGENTS.md и inventory helper совпадают с merged package. OpenCode конфигурация уже указывает на этот обновлённый marketplace. Активные чаты не перезапускались: загрузка новых инструкций в существующие сессии не подтверждена. Старые worktrees не удалялись.",
+        "result": "Source tests688 PASS/6skip, focused31 PASS, независимый review PASS. Landing published. Claude+Codex installed artifact verified, OpenCode configured source current. Native CLI сообщил старый отсутствующий Claude monitor SessionEnd hook; проблема передана владельцу Herder и не скрывается как исправленная. Runtime session reload не заявляется."
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T16:49:31+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "Ранее merged/installed286f0d2 сохраняется как подтверждённый результат. Новый scope: bounded owner lookup и обязательное принятие ответственности за ownerless work, review/test и интеграция в существующем плане. Изолированная ветка fix/adopt-ownerless-work-20261101;13 focused PASS, full validation и независимый review выполняются. Не означает blind acceptance или обход release/merge checks."
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T16:50:36+03:00",
+      "note": "",
+      "changes": {
+        "result": "Новый adoption policy PR https://github.com/megamen32/LastHumanCommit/pull/52 HEAD6198a0fc6583d36fd2add22360ccb32c2cc37c88 опубликован draft. Full689 PASS/6skip,13 focused PASS. Независимый review ожидается. Ранее PR51 merged286f0d2 и native Claude/Codex установка подтверждены, новый policy пока не установлен."
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T16:51:40+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "note": "Adoption PR52 source готов: HEAD6198a0fc6583d36fd2add22360ccb32c2cc37c88, full689 PASS/6skip,13 focused PASS, независимый review PASS, GitHub buildPASS/deploySKIPPED. Попытка ready+normal merge exact HEAD отклонена auto-review: требуется явное разрешение именно PR52→main. Повтор не выполнялся. Read-only проверка после отказа: OPEN draft=true CLEAN, HEAD неизменен. Новый policy не merged и не установлен; прежняя установленная286f0d2 сохраняется.",
+        "result": "Точный следующий шаг: разрешить merge https://github.com/megamen32/LastHumanCommit/pull/52 в main, затем штатная публикация/установка и проверка. Изменения сохранены в ветке/PR, ownerless adoption не брошен."
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T17:00:11+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "Новый прямой ответ владельца разрешил merge PR52: MERGED d35d0b6cf6e74850b7f5502908852f04d6c0f0ac. Codex cache обновлён и adoption rule byte-matches merged source; OpenCode использует этот marketplace. Claude native update сохранил старую1.7.20 из-за неизменённой версии. Готовится минимальный native package bump1.7.21 в отдельной ветке fix/publish-workflow-1.7.21, review/full validation выполняются. Cache не правился вручную, активные плагины не удалялись.",
+        "result": "Adoption source merged, approval blocker снят новым прямым ответом. Оставшая работа: штатно выпустить1.7.21, обновить Claude native plugin и проверить установленный artifact. Ранее подтверждённые результаты689tests/review и installation286f0d2 сохранены в истории."
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T17:03:28+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "note": "Adoption PR52 merged d35d0b6. Native publication fix PR53 merged809cff96f7d418055ca37f24bad3852aa521a175; версия1.7.21 устранила reuse старого cache. Host100 Claude installed1.7.21 exactgitCommitSha809cff, Codex marketplace exact809cff и cache1.7.21. Оба installed AGENTS byte-match merged source, adoption policy присутствует. OpenCode уже ссылается на этот marketplace. Native install exit0, merge CI run41314135974 SUCCESS. Активные сессии не перезапускались, reload старых чатов не заявляется.",
+        "result": "https://github.com/megamen32/LastHumanCommit/pull/52 и /pull/53 merged.689 tests PASS/6skip, независимые policy/version reviews PASS. Source merged, landing published и native artifact installation подтверждены отдельно. Никакого cache handpatch, uninstall активного plugin или удаления старых worktrees."
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    }
+  ]
+}

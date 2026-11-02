@@ -1,0 +1,58 @@
+{
+  "label": "Fail-closed публикация из worktree",
+  "status": "done",
+  "description": "Обязательные canonical privacy policies перед prepare/push; исключить молчаливый fallback при отсутствии ignored локальных файлов.",
+  "acceptance": "Canonical policy принимается, неполный/изменённый worktree отказывается до публикации; review и tests подтверждены.",
+  "owner": "align_lhc_pr_policy",
+  "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+  "harness": "chatgpt",
+  "depends_on": [],
+  "note": "PR31 exact6dcbac17 independently reviewed and16tests PASS; merged0f5efcd5 after exact user approval. Canonical clean main fast-forwarded, existing hook now uses fail-closed policy guard. Final receipt revalidated immediately before push, regression covers policy change during remote check.",
+  "result": "Guarded canonical publication83e032f9 descendant6234784 succeeded, exact private0f5efcd5, scanner PASS and canonical policy fingerprints verified. No history rewrite/deletion. CI monitoring separate; previous corrected snapshot had only three verified pre-existing failures.",
+  "id": "L04",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-01T17:54:36+03:00",
+  "updated_at": "2026-11-01T18:40:24+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-01T17:54:36+03:00",
+      "note": "",
+      "changes": {
+        "label": "Fail-closed публикация из worktree",
+        "status": "running",
+        "description": "Обязательные canonical privacy policies перед prepare/push; исключить молчаливый fallback при отсутствии ignored локальных файлов.",
+        "acceptance": "Canonical policy принимается, неполный/изменённый worktree отказывается до публикации; review и tests подтверждены.",
+        "owner": "align_lhc_pr_policy",
+        "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+        "harness": "chatgpt",
+        "depends_on": [],
+        "note": "Отдельный PR https://github.com/megamen32/gptadmin/pull/31 HEAD14ed2ed2.15 focused tests PASS, actual canonical accepted и actual missing-policy worktree refused. Независимый review ожидается. Новые public publications остановлены до guard.",
+        "result": "Исправленный публичный snapshot6234784 использует точную canonical policy, CI41317883323 выполняется. Private sensitive classification/evidence не переносится в публичный план.",
+        "model": "gpt-6.1-sol"
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T18:04:42+03:00",
+      "note": "",
+      "changes": {
+        "note": "Draft PR https://github.com/megamen32/gptadmin/pull/31 HEAD14ed2ed219d38af4b978904f586dd2bb47d6a2eb. Canonical ignored privacy policies required in linked worktrees before prepare/push, exact hashes and no symlinks/empty policies. 15 tests PASS; actual canonical accepted and policy-missing worktree refused. Independent review pending.",
+        "result": "Existing public snapshot corrected forward to6234784 using exact canonical policy. No history rewrite or deletion. Current CI has only three verified pre-existing baseline failures. New public publication held until fail-closed guard reviewed and installed."
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-01T18:40:24+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "note": "PR31 exact6dcbac17 independently reviewed and16tests PASS; merged0f5efcd5 after exact user approval. Canonical clean main fast-forwarded, existing hook now uses fail-closed policy guard. Final receipt revalidated immediately before push, regression covers policy change during remote check.",
+        "result": "Guarded canonical publication83e032f9 descendant6234784 succeeded, exact private0f5efcd5, scanner PASS and canonical policy fingerprints verified. No history rewrite/deletion. CI monitoring separate; previous corrected snapshot had only three verified pre-existing failures."
+      },
+      "session": "/root/fix_parallel_release_workflow/align_lhc_pr_policy",
+      "harness": "chatgpt"
+    }
+  ]
+}
