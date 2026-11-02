@@ -53,6 +53,30 @@ describe("ChatGPT on existing Mac mini CDP", () => {
     // the dedicated preservation test below covers the save/restore sequence.
     expect(f.actions.every(a => ["list_pages","evaluate_script"].includes(a))).toBe(true);
   });
+  it.each([
+    ["/c/123e4567-e89b-42d3-a456-426614174000", "generating", false],
+    ["/g/g-p-123e4567-e89b-42d3-a456-426614174000/c/" + ID, "generating", false],
+    ["/dots/home", "unknown", true],
+    ["/c/123e4567-e89b-42d3-a456-426614174000", "idle", true],
+  ] as const)("does not navigate a busy or recently submitted tab from %s", async (path, phase, cooldown) => {
+    const fixture = new BrowserFixture();
+    const driver = new ChatGptMacCdpDriver(fixture);
+    await driver.listChats();
+    fixture.path = path;
+    fixture.phase = phase;
+    if (cooldown) Object.defineProperty(driver, "lastSubmittedAt", { value: Date.now(), writable: true });
+    await expect(driver.sendMessage({ chatId: ID, text: "hold" })).rejects.toThrow(/already running/);
+    expect(fixture.actions.every(action => ["list_pages", "evaluate_script"].includes(action))).toBe(true);
+  });
+  it("does not navigate away from another conversation with unknown state", async () => {
+    const fixture = new BrowserFixture();
+    const driver = new ChatGptMacCdpDriver(fixture);
+    await driver.listChats();
+    fixture.path = "/c/123e4567-e89b-42d3-a456-426614174000";
+    fixture.phase = "unknown";
+    await expect(driver.sendMessage({ chatId: ID, text: "hold" })).rejects.toThrow(/unavailable/);
+    expect(fixture.actions.every(action => ["list_pages", "evaluate_script"].includes(action))).toBe(true);
+  });
   it("extracts sidebar route and recognizes idle voice control from real ChatGPT DOM selectors", () => {
     const nav = { getAttribute: (key: string) => key === "href" ? "/c/" + ID : key === "aria-label" ? "Fixture chat" : null,
       textContent: "Fixture chat" };
@@ -227,12 +251,16 @@ describe("dots workspace dashboard", () => {
     const driver = new ChatGptMacCdpDriver(tools, undefined, 0);
     expect(await driver.listChats()).toMatchObject([{ id: ID, title: "Workspace chat", working: false }]);
   });
-  it("navigates a dashboard tab to the target chat before sending", async () => {
+  it.each([
+    "/dots/home",
+    "/c/123e4567-e89b-42d3-a456-426614174000",
+    "/g/g-p-123e4567-e89b-42d3-a456-426614174000/c/" + ID,
+  ])("navigates an idle or dashboard tab from %s before sending", async (initialPath) => {
     const navs: string[] = [];
     let navigated = false;
     const tools: ChromePageTools = {
       call: async (name, args = {}) => {
-        if (name === "list_pages") return "6: ChatGPT (https://chatgpt.com/dots/home)";
+        if (name === "list_pages") return "6: ChatGPT (https://chatgpt.com" + initialPath + ")";
         if (name === "navigate_page") { navigated = true; navs.push(String(args.url)); return "ok"; }
         if (name === "take_snapshot") return 'uid=1_7 textbox "Спросить ChatGPT"';
         if (name === "fill") return "ok";
@@ -241,9 +269,9 @@ describe("dots workspace dashboard", () => {
           if (fn === CHATGPT_LIST_API_SCRIPT) return json({ scope: "a".repeat(64), chats: [{ id: ID, title: "Workspace chat" }] });
           if (fn.includes("editor.innerText")) return json({ value: "" });
           if (fn.includes("const expected")) return json({ submitted: true });
-          const path = navigated ? "/c/" + ID : "/dots/home";
+          const path = navigated ? "/c/" + ID : initialPath;
           return json({ origin: "https://chatgpt.com", path, authenticated: true, composer: navigated,
-            phase: navigated ? "idle" : "unknown", draftPresent: false, chats: navigated ? [{ id: ID, title: "Workspace chat" }] : [] });
+            phase: navigated || initialPath !== "/dots/home" ? "idle" : "unknown", draftPresent: false, chats: navigated ? [{ id: ID, title: "Workspace chat" }] : [] });
         }
         throw Error("unexpected tool: " + name);
       },

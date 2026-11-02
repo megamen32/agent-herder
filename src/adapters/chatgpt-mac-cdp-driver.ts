@@ -322,19 +322,17 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       if (!known) throw new Error("ChatGPT conversation absent from authenticated inventory");
       const page = await this.page();
       let state = await this.snapshot(page.id);
-      if (state.path === "/c/" + chatId) {
-        // Already on the target conversation: only an active generation or the
-        // post-send guard blocks the send. An unknown composer state here is
-        // a real "unavailable" (the chat itself is not idle).
-        if (state.phase === "generating" || Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS) {
-          throw new Error("prompt is already running; browser queue must wait");
-        }
-        if (state.phase !== "idle") {
-          throw new Error("ChatGPT composer unavailable; message not sent");
-        }
-      } else {
-        // Navigate a dashboard (e.g. /dots/home) or a different conversation
-        // onto the target chat; the composer is verified after navigation.
+      // Never navigate away from an active turn, even when another chat is
+      // requested or the current conversation uses a project-scoped route.
+      if (state.phase === "generating" || Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS) {
+        throw new Error("prompt is already running; browser queue must wait");
+      }
+      // Only the authenticated workspace dashboard may lack a composer and
+      // report unknown state before navigation. Unknown chat state fails closed.
+      if (state.phase !== "idle" && state.path !== "/dots/home") {
+        throw new Error("ChatGPT composer unavailable; message not sent");
+      }
+      if (state.path !== "/c/" + chatId) {
         await this.tools.call("navigate_page", {
           pageId: page.id, type: "url", url: ORIGIN + "/c/" + chatId,
         });
