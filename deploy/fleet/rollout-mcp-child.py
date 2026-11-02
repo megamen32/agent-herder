@@ -101,22 +101,56 @@ def assert_parent():
         raise RuntimeError("gptadmin_hub_parent_identity_mismatch")
 
 
-def owner_ancestry(previous: str, candidate: str):
+def owner_git(arguments):
     owner = REPO.stat()
     def drop_to_owner():
         os.setgroups([])
         os.setgid(owner.st_gid)
         os.setuid(owner.st_uid)
-    result = subprocess.run(
-        ["git", "-C", str(REPO), "merge-base", "--is-ancestor", previous, candidate],
-        capture_output=True, timeout=10, preexec_fn=drop_to_owner)
+    return subprocess.run(
+        ["git", "-C", str(REPO), *arguments],
+        capture_output=True, text=True, timeout=10,
+        preexec_fn=drop_to_owner if os.geteuid() == 0 else None)
+
+
+def assert_project_binding(gate):
+    result = owner_git(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+    if result.returncode:
+        raise RuntimeError("release_project_canonicalization_failed")
+    project = str(Path(result.stdout.strip()).resolve(strict=True))
+    if gate.proof.get("project") != project:
+        raise RuntimeError("release_lease_project_mismatch")
+
+
+def owner_ancestry(previous: str, candidate: str):
+    result = owner_git(["merge-base", "--is-ancestor", previous, candidate])
     if result.returncode:
         raise RuntimeError("candidate_not_descended_from_installed_revision")
 
 
+def entrypoint_snapshot(entrypoint: Path):
+    info = entrypoint.lstat()
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_size,
+            info.st_mtime_ns, info.st_ctime_ns,
+            os.readlink(entrypoint) if entrypoint.is_symlink() else None,
+            str(entrypoint.resolve(strict=True)), sha256(entrypoint))
+
+
+def assert_entrypoint_snapshot(entrypoint: Path, expected):
+    try:
+        unchanged = entrypoint_snapshot(entrypoint) == expected
+    except OSError:
+        unchanged = False
+    if not unchanged:
+        raise RuntimeError("live_entrypoint_changed_before_commit")
+
+
 def atomic_entrypoint_switch(entrypoint: Path, new_entrypoint: Path,
-                             backup_dir: Path, gate) -> Path:
+                             backup_dir: Path, gate, expected_snapshot=None) -> Path:
     """Switch ONE file atomically; symlink realpath loads the full candidate tree."""
+    if expected_snapshot is None:
+        expected_snapshot = entrypoint_snapshot(entrypoint)
+    assert_entrypoint_snapshot(entrypoint, expected_snapshot)
     backup_dir.mkdir(mode=0o700, parents=True, exist_ok=False)
     previous = backup_dir / "index.js"
     if entrypoint.is_symlink():
@@ -124,9 +158,13 @@ def atomic_entrypoint_switch(entrypoint: Path, new_entrypoint: Path,
     else:
         shutil.copy2(entrypoint, previous)
     staged = entrypoint.parent / (".mcp-entrypoint-" + uuid.uuid4().hex)
+    installed_identity = None
     try:
         staged.symlink_to(new_entrypoint)
+        staged_info = staged.lstat()
+        installed_identity = (staged_info.st_dev, staged_info.st_ino)
         gate.check()  # Recheck token/fence immediately before the commit.
+        assert_entrypoint_snapshot(entrypoint, expected_snapshot)
         os.replace(staged, entrypoint)
         if entrypoint.resolve(strict=True) != new_entrypoint.resolve(strict=True):
             raise RuntimeError("entrypoint_switch_readback_failed")
@@ -134,14 +172,27 @@ def atomic_entrypoint_switch(entrypoint: Path, new_entrypoint: Path,
         if staged.is_symlink():
             staged.unlink()
         # Only rollback this exact switch while the same guard owns the lock.
-        if entrypoint.is_symlink() and entrypoint.resolve() == new_entrypoint.resolve():
+        try:
+            current = entrypoint.lstat()
+            owns_switch = (current.st_dev, current.st_ino) == installed_identity
+        except FileNotFoundError:
+            owns_switch = False
+        if owns_switch:
             gate.check(cleanup=True)
             recover = entrypoint.parent / (".mcp-recover-" + uuid.uuid4().hex)
             if previous.is_symlink():
                 recover.symlink_to(os.readlink(previous))
             else:
                 shutil.copy2(previous, recover)
-            os.replace(recover, entrypoint)
+            try:
+                current = entrypoint.lstat()
+                still_ours = (current.st_dev, current.st_ino) == installed_identity
+            except FileNotFoundError:
+                still_ours = False
+            if still_ours:
+                os.replace(recover, entrypoint)
+            else:
+                recover.unlink()
         raise
     return previous
 
@@ -155,6 +206,7 @@ def main():
     candidate_entry, sha, fingerprint = candidate_preflight(arguments.sha)
     old, previous_sha = existing_source()
     old_digest = sha256(old)
+    expected_snapshot = entrypoint_snapshot(ENTRYPOINT)
     assert_parent()
     if arguments.dry_run:
         print(json.dumps({"preflight": "ok", "candidateSha": sha,
@@ -170,7 +222,9 @@ def main():
         raise RuntimeError("authority_ledger_not_canonical")
     if socket.gethostname() != "roomhacker-server-100":
         raise RuntimeError("authority_host_mismatch")
-    with ReleaseGate(arguments.release_proof, state_path=LEDGER, target=TARGET) as gate:
+    gate = ReleaseGate(arguments.release_proof, state_path=LEDGER, target=TARGET)
+    assert_project_binding(gate)
+    with gate:
         gate.check()
         fresh_entry, _, fresh_fingerprint = candidate_preflight(sha)
         if fresh_entry != candidate_entry or fresh_fingerprint != fingerprint:
@@ -188,7 +242,8 @@ def main():
         if ENTRYPOINT.resolve() == candidate_entry.resolve():
             raise RuntimeError("candidate_already_current")
         backup = ROLLBACK_ROOT / (previous_sha[:12] + "-" + uuid.uuid4().hex)
-        saved = atomic_entrypoint_switch(ENTRYPOINT, candidate_entry, backup, gate)
+        saved = atomic_entrypoint_switch(
+            ENTRYPOINT, candidate_entry, backup, gate, expected_snapshot)
         print(json.dumps({"installed": True, "candidateSha": sha,
                           "previousSha": previous_sha, "entrypoint": str(ENTRYPOINT),
                           "sourceRealpath": str(ENTRYPOINT.resolve()),
