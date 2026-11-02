@@ -16,7 +16,13 @@ export const CHATGPT_LIST_API_SCRIPT = `async () => {
   const response = await fetch('/backend-api/conversations?offset=0&limit=100&order=updated',
     {headers,credentials:'same-origin'});
   if (!response.ok) {
-    if (response.status === 429) globalThis.__herderChatGptReadCooldownUntil = Date.now() + 900_000;
+    if (response.status === 429) {
+      const raSec = parseInt(
+        (response.headers && typeof response.headers.get === 'function')
+          ? (response.headers.get('retry-after') || '0') : '0', 10);
+      globalThis.__herderChatGptReadCooldownUntil = Date.now() +
+        (Number.isFinite(raSec) && raSec > 0 ? Math.min(raSec * 1000, 300_000) : 60_000);
+    }
     return {error:'list_http_'+response.status};
   }
   const data=await response.json();
@@ -37,7 +43,13 @@ export function chatgptMessagesApiScript(chatId: string): string {
       {headers:{authorization:'Bearer '+session.accessToken,'chatgpt-account-id':session.account.id},
        credentials:'same-origin'});
     if (!r.ok) {
-      if (r.status === 429) globalThis.__herderChatGptReadCooldownUntil = Date.now() + 900_000;
+      if (r.status === 429) {
+        const raSec = parseInt(
+          (r.headers && typeof r.headers.get === 'function')
+            ? (r.headers.get('retry-after') || '0') : '0', 10);
+        globalThis.__herderChatGptReadCooldownUntil = Date.now() +
+          (Number.isFinite(raSec) && raSec > 0 ? Math.min(raSec * 1000, 300_000) : 60_000);
+      }
       return {error:'history_http_'+r.status};
     }
     const data=await r.json();
