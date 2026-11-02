@@ -262,14 +262,14 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   async fullScan(): Promise<{ count: number; pages: number }> {
     return this.exclusive(async () => {
       const page = await this.page();
-      const result = parseChromeEvaluation<{ scope?: string; error?: string; trace?: unknown; pages?: number; chats?: Array<{ id: string; title: string; updatedAt?: number }> }>(await this.tools.call("evaluate_script", { pageId: page.id, function: CHATGPT_FULL_SCAN_SCRIPT }));
+      const result = parseChromeEvaluation<{ scope?: string; error?: string; trace?: unknown; pages?: number; source?: string; chats?: Array<{ id: string; title: string; updatedAt?: number }> }>(await this.tools.call("evaluate_script", { pageId: page.id, function: CHATGPT_FULL_SCAN_SCRIPT }));
       this.requestTrace.ingestBrowserHttp(result.trace);
       if (result.scope && /^[a-f0-9]{64}$/.test(result.scope)) {
         this.accountScope = result.scope;
         this.inventoryCache.setAccountScope(result.scope);
         if (!this.inventoryLoaded) { await this.inventoryCache.load(); this.inventoryLoaded = true; }
       }
-      if (Array.isArray(result.chats) && result.chats.length) {
+      if (result.source === "full_scan" && Array.isArray(result.chats) && result.chats.length) {
         this.inventoryCache.mergeFull(result.chats.map(c => ({ id: c.id, title: c.title, updatedAt: c.updatedAt, seenAt: Date.now() })));
         void this.inventoryCache.save();
         console.log("[chatgpt] full scan: " + result.chats.length + " chats across " + (result.pages || 0) + " pages");
