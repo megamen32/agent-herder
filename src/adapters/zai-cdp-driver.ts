@@ -14,7 +14,7 @@ type ZaiSnapshot = {
   phase: ZaiPhase;
   draftPresent: boolean;
 };
-type BrowserPage = { id: number; url: string };
+export type BrowserPage = { id: number; url: string; selected?: boolean };
 
 const ZAI_ORIGIN = "https://chat.z.ai";
 const MAX_MESSAGE_CHARS = 16_000;
@@ -24,13 +24,19 @@ const POST_SEND_GUARD_MS = 1_800;
 /** Extract only tab IDs and exact ZAI origins from the shared Chrome owner's page list. */
 export function parseZaiPages(text: string): BrowserPage[] {
   return text.split("\n").flatMap(line => {
-    const match = line.match(/^\s*(\d+):.*?\((https:\/\/chat\.z\.ai(?:\/[^)]*)?)\)/);
+    const match = line.match(/^\s*(\d+):.*?\((https:\/\/chat\.z\.ai(?:\/[^)]*)?)\)(\s*\[selected\])?/);
     if (!match) return [];
     try {
       const url = new URL(match[2]!);
-      return url.origin === ZAI_ORIGIN ? [{ id: Number(match[1]), url: url.toString() }] : [];
+      return url.origin === ZAI_ORIGIN
+        ? [{ id: Number(match[1]), url: url.toString(), ...(match[3] ? { selected: true } : {}) }] : [];
     } catch { return []; }
   });
+}
+
+/** Deterministic pick among open ZAI tabs: the selected tab first, then the lowest page ID. */
+export function pickZaiPage(pages: BrowserPage[]): BrowserPage {
+  return pages.find(page => page.selected) ?? [...pages].sort((a, b) => a.id - b.id)[0]!;
 }
 
 function parseTitleId(id: string): string {
@@ -90,7 +96,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   getAccountScope(): string | undefined { return this.accountScope; }
 
 
-  constructor(private readonly tools: ChromePageTools, private readonly pinnedPageId?: number) {}
+  constructor(private readonly tools: ChromePageTools, private readonly pinnedPageId?: number, private readonly openWaitMs = 5_000) {}
 
   private exclusive<T>(callback: () => Promise<T>): Promise<T> {
     const result = this.operation.then(callback);
@@ -98,17 +104,27 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     return result;
   }
 
+  /** Auto-detect the ZAI tab; open one when none exists. A stale explicit
+   * pin never disables the provider and falls back to auto-detection. */
   private async page(): Promise<BrowserPage> {
     const pages = parseZaiPages(await this.tools.call("list_pages"));
-    if (this.pinnedPageId !== undefined) {
-      const match = pages.find(page => page.id === this.pinnedPageId);
-      if (!match) throw new Error("Pinned ZAI Chrome tab no longer exists; no fallback to another tab");
-      return match;
-    }
-    if (pages.length !== 1) throw new Error(
-      pages.length ? "Ambiguous ZAI Chrome tabs; pin AGENT_HERDER_ZAI_PAGE_ID" : "No ZAI tab open in Mac mini Chrome",
-    );
-    return pages[0]!;
+    const pinned = this.pinnedPageId !== undefined
+      ? pages.find(page => page.id === this.pinnedPageId) : undefined;
+    if (pinned) return pinned;
+    if (pages.length) return pickZaiPage(pages);
+    return this.openZaiTab();
+  }
+
+  /** The tab list is the source of truth: new_page reports its own navigation
+   * timeout even when the tab actually opened, so that error is tolerated. */
+  private async openZaiTab(): Promise<BrowserPage> {
+    try {
+      await this.tools.call("new_page", { url: ZAI_ORIGIN + "/" });
+    } catch { /* presence is verified by the re-list below */ }
+    await new Promise(resolve => setTimeout(resolve, this.openWaitMs));
+    const pages = parseZaiPages(await this.tools.call("list_pages"));
+    if (!pages.length) throw new Error("No ZAI tab open in Mac mini Chrome and auto-open failed");
+    return pickZaiPage(pages);
   }
 
   private async snapshot(pageId: number): Promise<ZaiSnapshot> {

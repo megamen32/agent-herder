@@ -1,7 +1,7 @@
 import { ZAI_LIST_API_SCRIPT } from "../src/adapters/browser-chat-api-scripts.js";
 import { describe, expect, it, vi } from "vitest";
 import { runInNewContext } from "node:vm";
-import { ZaiCdpDriver, ZAI_ACTIVITY_SCRIPT, parseZaiPages } from "../src/adapters/zai-cdp-driver.js";
+import { ZaiCdpDriver, ZAI_ACTIVITY_SCRIPT, parseZaiPages, pickZaiPage } from "../src/adapters/zai-cdp-driver.js";
 import { ListAgentsSchema, AgentInfoSchema } from "../src/mcp-tools/definitions.js";
 import { parseChromeEvaluation, type ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
 
@@ -215,12 +215,13 @@ describe("Mac mini CDP ZAI provider", () => {
       result: { submitted: true }, clicked: 1, draft: "",
     });
   });
-  it("refuses unknown UI, drafts, duplicates, unexpected origins, and wrong tab IDs", async () => {
+  it("refuses unknown UI, drafts, and unexpected origins; a stale pin falls back", async () => {
     const duplicate = new MockChromeTools();
     duplicate.page = state("/", ["Duplicate", "Duplicate"]);
     const driver = new ZaiCdpDriver(duplicate);
     expect(await driver.listChats()).toHaveLength(0);
-    await expect(new ZaiCdpDriver(duplicate, 99).listChats()).rejects.toThrow(/Pinned/);
+    // A stale pin falls back to auto-detection instead of failing.
+    await expect(new ZaiCdpDriver(duplicate, 99).listChats()).resolves.toHaveLength(0);
     const wrongOrigin = new MockChromeTools();
     wrongOrigin.page = { ...state(), origin: "https://fake.z.ai" };
     await expect(new ZaiCdpDriver(wrongOrigin).listChats()).rejects.toThrow(/not a logged-in/);
@@ -288,4 +289,37 @@ it("labels only authenticated API update timestamps as remote revisions", async 
   expect(chats[1]).toMatchObject({updatedAtSemantics:"observed-sidebar-order"});
   const fallback = await new ZaiCdpDriver(new MockChromeTools()).listChats();
   expect(fallback.every(chat => chat.updatedAtSemantics === "observed-sidebar-order")).toBe(true);
+});
+
+
+describe("ZAI tab auto-discovery", () => {
+  it("captures the selected marker; the selected tab wins, then the lowest ID", () => {
+    const pages = parseZaiPages("3: Z.ai (https://chat.z.ai/)\n5: Z.ai (https://chat.z.ai/) [selected]");
+    expect(pages).toEqual([
+      { id: 3, url: "https://chat.z.ai/" },
+      { id: 5, url: "https://chat.z.ai/", selected: true },
+    ]);
+    expect(pickZaiPage(pages).id).toBe(5);
+    expect(pickZaiPage(parseZaiPages("9: Z.ai (https://chat.z.ai/)\n4: Z.ai (https://chat.z.ai/)")).id).toBe(4);
+  });
+  it("opens a ZAI tab when none exists and tolerates the tool navigation timeout", async () => {
+    let opened = 0;
+    const tools: ChromePageTools = {
+      call: async (name, args = {}) => {
+        if (name === "list_pages") return opened
+          ? "5: Z.ai (https://chat.z.ai/) [selected]\n1: ChatGPT (https://chatgpt.com/)"
+          : "1: ChatGPT (https://chatgpt.com/)";
+        if (name === "new_page") {
+          opened += 1;
+          expect(args.url).toBe("https://chat.z.ai/");
+          throw Error("Error: Navigation timeout of 10000 ms exceeded");
+        }
+        if (name === "evaluate_script") return evalJson(state("/", ["Auto chat"], "Auto chat"));
+        throw Error("unexpected tool: " + name);
+      },
+    };
+    const driver = new ZaiCdpDriver(tools, undefined, 0);
+    expect(await driver.listChats()).toMatchObject([{ id: "sidebar:Auto%20chat", title: "Auto chat" }]);
+    expect(opened).toBe(1);
+  });
 });

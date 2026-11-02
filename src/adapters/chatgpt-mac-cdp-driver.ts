@@ -8,7 +8,7 @@ const MAX_MESSAGE = 16_000;
 const POST_SEND_GUARD_MS = 1_800;
 const NATIVE_CHAT_ID = /^[a-f0-9]{8}-[a-f0-9-]{20,75}$/i;
 type Phase = "idle" | "generating" | "unknown";
-type Page = { id: number; url: string };
+export type Page = { id: number; url: string; selected?: boolean };
 type Snapshot = {
   origin: string; path: string; authenticated: boolean; composer: boolean;
   phase: Phase; draftPresent: boolean;
@@ -17,13 +17,19 @@ type Snapshot = {
 
 export function parseChatGptPages(text: string): Page[] {
   return text.split("\n").flatMap(line => {
-    const match = line.match(/^\s*(\d+):.*?\((https:\/\/chatgpt\.com(?:\/[^)]*)?)\)/);
+    const match = line.match(/^\s*(\d+):.*?\((https:\/\/chatgpt\.com(?:\/[^)]*)?)\)(\s*\[selected\])?/);
     if (!match) return [];
     try {
       const url = new URL(match[2]!);
-      return url.origin === ORIGIN && !/^\/dots(?:\/|$)/.test(url.pathname) ? [{ id: Number(match[1]), url: url.toString() }] : [];
+      return url.origin === ORIGIN && !/^\/dots(?:\/|$)/.test(url.pathname)
+        ? [{ id: Number(match[1]), url: url.toString(), ...(match[3] ? { selected: true } : {}) }] : [];
     } catch { return []; }
   });
+}
+
+/** Deterministic pick among open ChatGPT tabs: the selected tab first, then the lowest page ID. */
+export function pickChatGptPage(pages: Page[]): Page {
+  return pages.find(page => page.selected) ?? [...pages].sort((a, b) => a.id - b.id)[0]!;
 }
 
 /** A read-only page snapshot, using the live ChatGPT sidebar's native /c/ URLs.
@@ -63,7 +69,8 @@ export const CHATGPT_MAC_SNAPSHOT = `() => {
 }`;
 
 /** ChatGPT browser site, sharing Mac mini's established CDP owner with ZAI.
- * A single pinned/unique tab is required; no fallback to the other provider.
+ * The tab is auto-discovered (selected tab, else the lowest page ID) or opened
+ * on demand; there is never a fallback to the other provider's tab.
  */
 export class ChatGptMacCdpDriver implements BrowserChatDriver {
   readonly browserFeatures = {
@@ -79,7 +86,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   getAccountScope(): string | undefined { return this.accountScope; }
 
 
-  constructor(private readonly tools: ChromePageTools, private readonly pinnedPageId?: number) {}
+  constructor(private readonly tools: ChromePageTools, private readonly pinnedPageId?: number, private readonly openWaitMs = 5_000) {}
 
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {
     const op = this.operation.then(fn);
@@ -87,17 +94,27 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     return op;
   }
 
+  /** Auto-detect the ChatGPT tab; open one when none exists. A stale explicit
+   * pin never disables the provider and falls back to auto-detection. */
   private async page(): Promise<Page> {
     const pages = parseChatGptPages(await this.tools.call("list_pages"));
-    if (this.pinnedPageId !== undefined) {
-      const page = pages.find(p => p.id === this.pinnedPageId);
-      if (!page) throw new Error("Pinned ChatGPT tab unavailable; no other tab selected");
-      return page;
-    }
-    if (pages.length !== 1) throw new Error(pages.length
-      ? "Multiple ChatGPT tabs; pin AGENT_HERDER_CHATGPT_PAGE_ID"
-      : "No ChatGPT tab in Mac mini Chrome");
-    return pages[0]!;
+    const pinned = this.pinnedPageId !== undefined
+      ? pages.find(page => page.id === this.pinnedPageId) : undefined;
+    if (pinned) return pinned;
+    if (pages.length) return pickChatGptPage(pages);
+    return this.openChatGptTab();
+  }
+
+  /** The tab list is the source of truth: new_page reports its own navigation
+   * timeout even when the tab actually opened, so that error is tolerated. */
+  private async openChatGptTab(): Promise<Page> {
+    try {
+      await this.tools.call("new_page", { url: ORIGIN + "/" });
+    } catch { /* presence is verified by the re-list below */ }
+    await new Promise(resolve => setTimeout(resolve, this.openWaitMs));
+    const pages = parseChatGptPages(await this.tools.call("list_pages"));
+    if (!pages.length) throw new Error("No ChatGPT tab in Mac mini Chrome and auto-open failed");
+    return pickChatGptPage(pages);
   }
 
   private async snapshot(pageId: number): Promise<Snapshot> {
