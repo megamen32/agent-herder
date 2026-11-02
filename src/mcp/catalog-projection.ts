@@ -10,7 +10,7 @@ type ListHandler = (request: ListToolsRequest, context: ServerContext) => ListTo
  * No tools/call handler, tool registry or validator is replaced or inspected.
  * Registration must be synchronous and precede connect().
  */
-export function withCatalogProjection<T>(server: McpServer, register: () => T): T {
+export function withCatalogProjection<T>(server: McpServer, register: () => T, dynamicHidden: ReadonlySet<string> = new Set()): T {
   const protocol = server.server;
   const original = protocol.setRequestHandler;
   let installed = false;
@@ -23,7 +23,7 @@ export function withCatalogProjection<T>(server: McpServer, register: () => T): 
       const handler = args[1] as ListHandler;
       installed = true;
       return Reflect.apply(target, receiver, ["tools/list", async (request: ListToolsRequest, context: ServerContext) =>
-        projectToolCatalog(await handler(request, context))]);
+        projectToolCatalog(await handler(request, context), dynamicHidden)]);
     },
   });
   try {
