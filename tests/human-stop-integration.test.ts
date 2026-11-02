@@ -3,6 +3,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HumanStopStore, getHumanStopStore } from "../src/human-stop-store.js";
+import { HerderJobRegistry } from "../src/herder-jobs.js";
+import { HerderEventBus } from "../src/herder-events.js";
+import { UserMessageDelivery } from "../src/user-message-delivery.js";
 import { SessionSupervisor } from "../src/session-supervisor.js";
 import { createNamedSession, newOrResumeNamedSession } from "../src/named-session.js";
 import { handleResumeAgent, handleSendMessage, handleStopAgent } from "../src/mcp-tools/handlers.js";
@@ -192,37 +195,63 @@ describe.each(["codex", "zcode"] as const)("%s explicit stop delivery boundary",
 
 
 describe("MCP native admission acknowledgement", () => {
-  it("keeps native input admission without a turn ID for ZCode guide and queue", async () => {
+  function deliveryFor(f: ReturnType<typeof fixture>) {
+    const jobs = new HerderJobRegistry(new HerderEventBus(), { persistencePath: join(root, "native-admission-jobs.json") });
+    return new UserMessageDelivery(f.adapters, {
+      sendMessage: async (harness, id, options) => f.adapters.get(harness)!.sendMessage(id, options),
+    }, jobs, { pollMs: 1, maxWaitMs: 2_000, maxPending: 4 });
+  }
+  it("retains verified native input admission without inventing a turn ID for ZCode guide and queue", async () => {
     for (const mode of ["steer", "queue"] as const) {
       const f = fixture("zcode");
+      // In the native queue path, the agent has to be idle to accept next-turn input.
+      if (mode === "queue") f.current.status = "idle";
+      else f.adapters.get("zcode")!.controlCapabilities = { steer: true };
+      const inputId = "verified-native-input-" + mode;
       const send = vi.fn(async () => ({
-        ok: true, admitted: true, inputId: "verified-native-input",
+        ok: true, admitted: true, inputId,
         ...(mode === "queue" ? { pending: true } : {}),
       }));
       f.adapters.get("zcode")!.sendMessage = send;
-      const acknowledgement = await handleSendMessage(f.adapters, {
-        harness: "zcode", sessionId: f.current.id, message: "one harmless fixture input",
-        mode, humanRequested: true, inputId: "verified-native-input",
-      });
-      expect(acknowledgement).toContain('Native admission receipt: {"admitted":true,"inputId":"verified-native-input"}');
-      expect(acknowledgement).not.toContain('"turnId"');
-      expect(acknowledgement).not.toContain("Failed to send");
-      if (mode === "queue") expect(acknowledgement).toContain("native turn start is still being verified");
-      expect(send).toHaveBeenCalledOnce();
+      const delivery = deliveryFor(f);
+      try {
+        const acknowledgement = await handleSendMessage(f.adapters, {
+          harness: "zcode", sessionId: f.current.id, message: "one harmless fixture input",
+          mode, humanRequested: true, inputId,
+        }, delivery);
+        expect(acknowledgement).not.toContain("Failed to send");
+        await vi.waitFor(() => expect(delivery.get("zcode", f.current.id, inputId)?.job?.state).toBe("completed"));
+        const receipt = delivery.get("zcode", f.current.id, inputId)!;
+        expect(receipt).toMatchObject({ ok: true, admitted: true, inputId });
+        expect(receipt).not.toHaveProperty("turnId");
+        if (mode === "queue") {
+          const native = await send.mock.results[0]?.value;
+          expect(native).toMatchObject({ admitted:true, pending:true, inputId });
+          expect(receipt.job?.result).toMatchObject({admitted:true,inputId});
+        }
+        expect(send).toHaveBeenCalledOnce();
+        expect(send.mock.calls[0]?.[1]).toMatchObject({inputId});
+      } finally { delivery.close(); }
     }
   });
-  it("returns verified turn and input identity for explicit steer", async () => {
+  it("returns the native turn and input identity only after a completed durable steer", async () => {
     const f = fixture("codex");
     f.current.status = "idle";
     const send = vi.fn(async () => ({ ok: true, admitted: true, turnId: "verified-turn", inputId: "verified-input" }));
     f.adapters.get("codex")!.sendMessage = send;
-    const acknowledgement = await handleSendMessage(f.adapters, {
-      harness: "codex", sessionId: f.current.id, message: "one harmless fixture input",
-      mode: "steer", humanRequested: true, inputId: "verified-input",
-    });
-    expect(acknowledgement).toContain('Native admission receipt: {"admitted":true,"turnId":"verified-turn","inputId":"verified-input"}');
-    expect(acknowledgement).not.toContain("Failed to send");
-    expect(send).toHaveBeenCalledOnce();
-    expect(send.mock.calls[0]).toBeDefined();
+    const delivery = deliveryFor(f);
+    try {
+      const acknowledgement = await handleSendMessage(f.adapters, {
+        harness: "codex", sessionId: f.current.id, message: "one harmless fixture input",
+        mode: "steer", humanRequested: true, inputId: "verified-input",
+      }, delivery);
+      expect(acknowledgement).not.toContain("Failed to send");
+      await vi.waitFor(() => expect(delivery.get("codex", f.current.id, "verified-input")?.job?.state).toBe("completed"));
+      expect(delivery.get("codex", f.current.id, "verified-input")).toMatchObject({
+        ok: true, admitted: true, inputId: "verified-input", turnId: "verified-turn",
+      });
+      expect(send).toHaveBeenCalledOnce();
+      expect(send.mock.calls[0]).toBeDefined();
+    } finally { delivery.close(); }
   });
 });

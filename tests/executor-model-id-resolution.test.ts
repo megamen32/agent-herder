@@ -192,6 +192,7 @@ describe("executor model id resolution", () => {
     const proof = await adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3.1", {
       omniRouteBaseUrl: "http://127.0.0.1:20128",
       omniRouteApiKey: "test",
+      omniRouteCliToken: "test",
       fetcher: omniRouteFetcher,
     });
     expect(proof?.nativeHarness).toBe("opencode");
@@ -202,6 +203,7 @@ describe("executor model id resolution", () => {
     const translated = await adapter.resolveModelProviderLeaves("omniroute/minimax/MiniMax-M3.1-Flash", {
       omniRouteBaseUrl: "http://127.0.0.1:20128",
       omniRouteApiKey: "test",
+      omniRouteCliToken: "test",
       fetcher: omniRouteFetcher,
     });
     expect(translated).toBeNull();

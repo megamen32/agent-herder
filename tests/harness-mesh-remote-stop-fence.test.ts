@@ -30,14 +30,15 @@ describe("the fence of a stop on another machine",()=>{
    expect(stopSession).toHaveBeenCalledTimes(1);
   }finally{await rm(dir,{recursive:true,force:true});}
  });
- it("reports that the hold was not recorded when the harness has no fence",async()=>{
+ it("persists the manual hold for MiniMax before a native stop as well",async()=>{
   const dir=await mkdtemp(join(tmpdir(),"remote-stop-fence-"));try{
    const stopSession=vi.fn(async()=>({ok:true,sessionId:"native-2"}));
    const mesh=new LocalHarnessMesh({hostId:"mac",adapters:new Map([["minimax-code",adapterOf([session("native-2","minimax-code")],stopSession)]]) as any,ledgerPath:join(dir,"ledger.json")});
    const receipt=await mesh.stop({target:{hostId:"mac",harness:"minimax-code",nativeSessionId:"native-2"},inputId:"stop-2"});
    expect(receipt.state).toBe("admitted");
-   expect(receipt.held).toBe(false);
-   expect(receipt.reason).toBe("native_session_stopped_without_hold");
+   expect(receipt.held).toBe(true);
+   expect(receipt.reason).toBe("native_session_stopped");
+   expect(await getHumanStopStore().isHeld("minimax-code","native-2")).toBe(true);
    expect(stopSession).toHaveBeenCalledTimes(1);
   }finally{await rm(dir,{recursive:true,force:true});}
  });

@@ -27,7 +27,7 @@ it('keeps a compact native page when the larger native page would miss discovery
  expect(result).toMatchObject({complete:false,limited:true});
  expect(result.harnesses.find(h=>h.harness==='codex')).toMatchObject({discovery:'available'});
  expect(result.sessions[0]?.project).toMatchObject({launchCwd:'/actual/launch',currentCwd:null,source:'unverified'});
- expect(rpc).toHaveBeenCalledWith('thread/list',expect.objectContaining({limit:3,archived:false}));
+ expect(rpc).toHaveBeenCalledWith('thread/list',expect.objectContaining({limit:3,archived:false,sortKey:'updated_at',sortDirection:'desc'}),'thread/list',5000);
  expect(rpc.mock.calls.every(([m])=>['thread/list','thread/loaded/list'].includes(m as string))).toBe(true);
 });
 

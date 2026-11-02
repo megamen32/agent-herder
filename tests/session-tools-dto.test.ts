@@ -106,9 +106,11 @@ describe("session tool DTOs", () => {
     const client = new Client({ name: "session-scoped-routing-client", version: "1" }, { versionNegotiation: { mode: "auto" } });
     await server.connect(serverTransport); await client.connect(clientTransport);
     try {
-      await client.callTool({ name: "send_message", arguments: { sessionId: "scoped-1", message: "continue", humanRequested: true, inputId: "delivery-1" } });
+      const guarded = await client.callTool({ name: "send_message", arguments: { sessionId: "scoped-1", message: "continue", humanRequested: true, inputId: "delivery-1" } });
+      expect(JSON.stringify(guarded.content)).toContain("native_stock_case_durable_registry_required");
       expect(resolver.adapterForSession).toHaveBeenCalledWith({ hostId: expect.any(String), harness: "codex", nativeSessionId: "scoped-1" });
-      expect(scopedSend).toHaveBeenCalledOnce(); expect(ordinarySend).not.toHaveBeenCalled();
+      expect(scopedSend).not.toHaveBeenCalled();
+      expect(ordinarySend).not.toHaveBeenCalled();
       await client.callTool({ name: "resume_agent", arguments: { sessionId: "scoped-1", humanRequested: true } });
       expect(scopedResume).toHaveBeenCalledOnce(); expect(ordinaryResume).not.toHaveBeenCalled();
       await client.callTool({ name: "deliver", arguments: { sessionId: "scoped-1", message: "observe existing task", activation: "if_running" } });

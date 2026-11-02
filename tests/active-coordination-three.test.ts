@@ -140,8 +140,18 @@ it.each(['send_message','deliver','named'] as const)('Hermes %s pending context 
  const [ct,st]=InMemoryTransport.createLinkedPair();await server.connect(st);await client.connect(ct);
  try{
   const result=await client.callTool({name:route==='named'?'deliver':route,arguments:{harness:'hermes',...(route==='named'?{name:session.title,cwd:root,create:'never'}:{sessionId:id}),message:'current coordination report',inputId:randomUUID(),mode:'queue'}});
-  expect(result.content[0]).toMatchObject({text:expect.stringContaining(route==='send_message'?'model observation':'accepted_unconfirmed')});
-  expect(reserve).toHaveBeenCalledOnce();expect(reserve.mock.calls[0]?.[1]?.message).toContain('older explicit instruction');
-  expect(remove).not.toHaveBeenCalled();expect((await deferredMessages.list(id)).map(m=>m.id)).toEqual([prior.id]);
+  if (route === 'send_message') {
+    // An in-memory MCP client has no authenticated owner ingress. The agent
+    // cannot claim that authority through tool JSON, and must not consume the
+    // explicit inbox or reserve a native context.
+    expect(result.content[0]).toMatchObject({text:expect.stringContaining('Authenticated Agent Herder MCP ingress is required')});
+    expect(reserve).not.toHaveBeenCalled();
+  } else {
+    expect(result.content[0]).toMatchObject({text:expect.stringContaining('accepted_unconfirmed')});
+    expect(reserve).toHaveBeenCalledOnce();
+    expect(reserve.mock.calls[0]?.[1]?.message).toContain('older explicit instruction');
+  }
+  expect(remove).not.toHaveBeenCalled();
+  expect((await deferredMessages.list(id)).map(m=>m.id)).toEqual([prior.id]);
  }finally{await client.close();await server.close();await rm(root,{recursive:true,force:true})}
 });

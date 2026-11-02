@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isMainEntrypoint } from "./main-entrypoint.js";
 import { resumePendingProjectIntegrations } from "./project-integration.js";
 import { harnessRuntimeCapabilities } from "./types/harness-runtime.js";
 import { registerProjectReleaseTools } from "./mcp/project-release-tools.js";
@@ -18,7 +19,6 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { QaControlBackend } from "./qa-control.js";
@@ -90,6 +90,7 @@ import { registerChatGptWakeTools } from "./mcp/chatgpt-wake-tools.js";
 import { WakeBindingStore } from "./chatgpt-wake-binding.js";
 import { registerSessionTools } from "./mcp/session-tools.js";
 import {withCatalogProjection} from "./mcp/catalog-projection.js";
+import { withToolConsolidation } from "./mcp/tool-consolidation.js";
 import { UserMessageDelivery } from "./user-message-delivery.js";
 import { DeferredDeliverySweeper } from "./deferred-delivery-sweeper.js";
 import {SessionQueueControl} from "./session-queue-control.js";
@@ -916,7 +917,9 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     server.server.onclose = () => { unsubscribe(); };
   }
 
+  const hiddenByConsolidation = new Set<string>();
   withCatalogProjection(server, () => {
+    withToolConsolidation(server, () => {
     server.registerTool("qa_control", {
       description: "Control only synthetic QA fixtures bound to the existing OpenCode/ZCode QA session references. Project and actor are fixed by the isolated backend. Permission, direction, cancel and /stop never call a native adapter, production Stop, or Notice Place.",
       inputSchema: z.object({
@@ -955,7 +958,8 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     options.chatgptWakeBindings,
     options.chatgptWakeAdapters,
     );
-  });
+    }, hiddenByConsolidation);
+  }, hiddenByConsolidation);
   return server;
 }
 
@@ -1458,7 +1462,7 @@ async function main() {
   if (commonSettingsNode) startCommonSettingsSyncLoop(commonSettingsNode);
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainEntrypoint(import.meta.url)) {
   main().catch((err) => {
     console.error("[agent-herder] Fatal:", err);
     process.exit(1);

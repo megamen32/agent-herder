@@ -57,11 +57,13 @@ function fixture(unavailableCode='ZCODE_AGENT_RUNTIME_UNAVAILABLE'){
    if(m==='readSessionEvents')throw Error('strict schema: executionStartedAt');
    if(m==='listSessions')return [info];
    if(m==='sendConversationCommandV4'){
+    // A queue-mode test must return a queue admission, never startNow:
+    // production correctly refuses contradictory accepted native receipts.
     const id=args[0].envelope.commandId,at=Date.now(),n=++dispatches,user=n===1?'own-user':'recovery-user';
     db.prepare('insert into message values(?,?,?,?,?,?)').run(user,'own-session',n*2-1,JSON.stringify({role:'user',anchor:{sourceCommandId:id,turnId:'own-turn'}}),at,at);
     db.prepare('insert into message values(?,?,?,?,?,?)').run('assistant-'+n,'own-session',n*2,JSON.stringify({role:'assistant',parentID:user,anchor:{turnId:'own-turn'}}),at,at);
     db.prepare('insert into session_input values(?,?,?,?,?,?)').run('queue_'+id,'own-session','promoted',JSON.stringify({intent:{clientId:'agent-herder',sourceCommandId:id,kind:'sendText',queueItemId:'queue_'+id}}),user,at);
-    return {commandId:id,status:'accepted',result:{type:'inputAccepted',inputId:id,delivery:'startNow'}};
+    return {commandId:id,status:'accepted',result:{type:'inputAccepted',inputId:id,delivery:'queue'}};
    }throw Error(m);
   }};
  const probe:any={serviceOrigin:()=>({unit:'agent-herder.service',invocationId:'a'.repeat(32)}),ownerExit:(proof:any)=>exitAt===null?null:{unit:'agent-herder.service',invocationId:'a'.repeat(32),code:'killed',status:'9',atMicros:exitAt===undefined?String(BigInt(proof.at)*1000n+1n):String(BigInt(exitAt)*1000n)},birth:(pid:number)=>({pid,startTick:pid===process.pid?'1000':pid===runtimePid?String(generation+99):'2000',parentPid:pid===sdkPid?process.pid:1}),birthGone:(birth:any)=>birth.pid===process.pid?parentGone:sdkGone,capture:()=>alive?{...processProof,parentPid:sdkPid,pid:runtimePid,groupId:runtimePid,startTick:String(generation+99),descendants:[...sampledChildren]}:null,gone:(proof:any)=>!survivors&&(proof.pid!==runtimePid||!alive)&&!proof.descendants.some((child:any)=>detachedLive.has(`${child.pid}:${child.startTick}`))};

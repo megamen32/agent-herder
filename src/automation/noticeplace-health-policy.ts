@@ -1,17 +1,17 @@
 import { isHealthPlanId, type HealthPlanId } from "../autopilot/notice-incident.js";
-import { healthModelForHarness, INCIDENT_EXECUTION } from "../health-remediation.js";
+import { INCIDENT_MODELS } from "./noticeplace-health-launch.js";
 
 /**
  * The one model allowlist of Notice Place health work.
  *
- * Both analysis and repair use the exact owner-selected combo. A route
- * from the general health profile cannot substitute for an incident route.
+ * Both analysis and repair use the same exact two owner-selected incident
+ * combos as the dedicated HTTP gate. General health routes are not accepted.
  */
 export const NOTICEPLACE_HEALTH_MODELS = {
-  /** The sole authorized incident route. */
-  known: [healthModelForHarness("opencode", INCIDENT_EXECUTION)] as readonly string[],
-  /** True for a route the health work of an incident may run on. */
-  includes: (model: string): boolean => model === healthModelForHarness("opencode", INCIDENT_EXECUTION),
+  /** Exact owner-approved incident routes; no general OmniRoute prefix matching. */
+  known: Object.freeze([...INCIDENT_MODELS]) as readonly string[],
+  /** True only for those exact selected combo IDs. */
+  includes: (model: string): boolean => INCIDENT_MODELS.has(model),
   /** The known routes, in order. */
   *[Symbol.iterator](): Iterator<string> {
     yield* this.known;

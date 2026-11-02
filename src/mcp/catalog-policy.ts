@@ -30,8 +30,8 @@ function extraCatalogPolicy(): { hide: Set<string>; show: Set<string> } {
   }
 }
 
-export function projectToolCatalog(result: ListToolsResult): ListToolsResult {
+export function projectToolCatalog(result: ListToolsResult, dynamicHidden: ReadonlySet<string> = new Set()): ListToolsResult {
   const extra = extraCatalogPolicy();
-  const hidden = new Set([...internalReaders, ...extra.hide].filter(name => !extra.show.has(name)));
+  const hidden = new Set([...internalReaders, ...dynamicHidden, ...extra.hide].filter(name => !extra.show.has(name)));
   return { ...result, tools: result.tools.filter(tool => !hidden.has(tool.name)) };
 }

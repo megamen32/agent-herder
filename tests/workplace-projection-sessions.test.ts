@@ -78,8 +78,10 @@ describe("GET /api/sessions", () => {
       const response = await fetch(`${origin}/api/sessions`);
       expect(response.status).toBe(200);
       const body = await response.json() as { sessions: AgentSession[] };
-      expect(body.sessions.map((item) => item.hostId)).toEqual([localHost, localHost]);
-      expect(body.sessions.map((item) => item.cwd)).toEqual(["/one", "/two"]);
+      const byId = new Map(body.sessions.map((item) => [item.id, item]));
+      expect(byId.size).toBe(2);
+      expect(byId.get("one")).toMatchObject({ hostId: localHost, cwd: "/one" });
+      expect(byId.get("two")).toMatchObject({ hostId: localHost, cwd: "/two" });
     });
   });
 

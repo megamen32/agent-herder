@@ -5,7 +5,7 @@ import { NoticeplaceHealthObserver, type NoticeplaceHealthTarget } from "../src/
 import { createIncidentUpdateSink, readIncidentBinding, NoticeIncidentBindingError, type IncidentProgressUpdate } from "../src/autopilot/notice-incident.js";
 import { describeHealthStep, HEALTH_STEP_LIMIT } from "../src/automation/noticeplace-health-text.js";
 import { resolveLaunchHealthPlan, NOTICEPLACE_HEALTH_MODELS, isNoticeplaceHealthModel } from "../src/automation/noticeplace-health-policy.js";
-import { validateNoticeplaceHealthLaunch } from "../src/automation/noticeplace-health-launch.js";
+import { validateNoticeplaceHealthLaunch, INCIDENT_MODELS } from "../src/automation/noticeplace-health-launch.js";
 import { readArmedHealthCandidates, recoverNoticeplaceHealthObservation } from "../src/automation/noticeplace-health-recovery.js";
 import type { AgentStatus, SessionDetails } from "../src/types/index.js";
 
@@ -235,13 +235,15 @@ describe("Notice Place health launch policy", () => {
     }
     // No other provider is allowed on either path.
     expect(validateNoticeplaceHealthLaunch({ harness: "opencode", model: "zai/GLM-4.6", operationId: "op" })).toBeTruthy();
-    // The exact owner-selected combo is the only incident route.
-    expect([...NOTICEPLACE_HEALTH_MODELS]).toEqual(["omniroute/glm-5.3-flash-minimax-m3.1"]);
+    // Analysis and repair share the same two exact routes as the native HTTP
+    // admission gate; unrestricted OmniRoute prefixes remain forbidden.
+    expect([...NOTICEPLACE_HEALTH_MODELS]).toEqual([...INCIDENT_MODELS]);
+    expect([...INCIDENT_MODELS]).toEqual(["omniroute/glm-5.3-flash-minimax-m3.1", "omniroute/minimax-combo-m3.1"]);
     expect(NOTICEPLACE_HEALTH_MODELS.includes("omniroute/any-provider/any-model")).toBe(false);
     expect(NOTICEPLACE_HEALTH_MODELS.includes("minimax-coding-plan/MiniMax-M3.1-Flash")).toBe(false);
     expect(NOTICEPLACE_HEALTH_MODELS.includes("omniroute/minimax/MiniMax-M3.1-Flash")).toBe(false);
     expect(isNoticeplaceHealthModel("omniroute/glm-5.3-flash-minimax-m3.1")).toBe(true);
-    expect(isNoticeplaceHealthModel("omniroute/minimax-combo-m3.1")).toBe(false);
+    expect(isNoticeplaceHealthModel("omniroute/minimax-combo-m3.1")).toBe(true);
     expect(isNoticeplaceHealthModel("zai/GLM-4.6")).toBe(false);
   });
 });

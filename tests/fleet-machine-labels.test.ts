@@ -11,7 +11,8 @@ describe('machine selection explanations',()=>{
  it('separates unavailable agent from live computer and expired proof',()=>{
   expect(machineReason(host({reason:'direct_peer_unavailable'}))).toContain('Сама машина может продолжать работать');
   expect(machineStatus(host({state:'stale'}))).toBe('Нужна проверка');
-  expect(machineReason(host({reason:'metadata_expired'}))).toContain('устарела');
+  expect(machineReason(host({reason:'metadata_expired'}))).toContain('Истекло подтверждение связи');
+  expect(machineReason(host({reason:'metadata_expired'}))).not.toContain('машина выключена');
  });
  it('distinguishes SSH outage, missing listener and confirmed readiness',()=>{
   expect(machineReason(host({reason:'direct_ssh_refused'}))).toContain('Обратное SSH');

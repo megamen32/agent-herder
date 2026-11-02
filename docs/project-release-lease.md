@@ -95,3 +95,63 @@ This does not prove inactivity for sessions that never reported lifecycle events
 Early draft PRs are useful visibility for unfinished branches; link only plans
 whose content is safe for the actual audience. SSO protection must be verified,
 not inferred from a hostname.
+
+
+## Offline owner administration when canonicalization blocks installation
+
+The source CLI `agent-herder-release-admin` uses the same validated command
+handler, canonicalization, hostname check and store transactions as MCP. It does
+not start a second authority and cannot initialize a ledger. Before invoking it,
+the authorized operator must independently establish the running authority's
+exact effective ledger path and hostname. The live configured store path must
+be canonical and non-symlink; alias paths are rejected because they split ledger
+transaction lock names and can diverge on atomic rename. A root native user is not evidence of
+the process HOME or an absent AGENT_HERDER_RELEASE_LEASES override.
+
+Pass `--ledger /verified/existing/ledger.json --authority-host VERIFIED_HOST`
+and `--request /protected/request.json`. The request file contains the same JSON
+arguments as the MCP tool. Acquisition additionally requires
+`--proof-out /protected/new-proof.json`; the path must not already exist. The CLI
+writes the capability with mode 0600 and omits it from stdout. Renew, check and
+release use a protected request file with the acquired proof. Do not put tokens
+in command arguments, transcripts or source control.
+
+Even status uses the store transaction and rewrites the existing ledger. Never
+use guessed-path status as authority discovery. Both the CLI and rollout must
+use the same verified ledger; pass the corresponding AGENT_HERDER_RELEASE_LEASES
+to the normal rollout command. The existing release gate, lease TTL, fencing,
+target binding, revision checks and rollback rules remain mandatory.
+
+
+## Registered GPTAdmin root MCP child (different from owner fleet node)
+
+The registered child of `gptadmin-hub.service` starts
+`/home/roomhacker/agents-projects/agent-herder/dist/index.js` under root.
+The regular `rollout-candidate.py --node 100` deploys the separate UID1000
+`agent-herder.service` and **does not** update this registered root child.
+
+For the existing root authority, use only the independently verified canonical
+ledger at `/root/.local/state/agent-herder/project-release-leases.json`.
+The owner coordinates acquisition **once** through the existing native admin CLI;
+the deployment target must be exactly
+`{"fleetDir":"/home/roomhacker/agents-projects/agent-herder","unit":"gptadmin-hub.service"}`.
+The unit name is the OS-lock identity; the installer does not restart the hub.
+
+After a validated, target-bound proof is available, execute the new
+`deploy/fleet/rollout-mcp-child.py --sha <verified-full-sha> --release-proof <protected-path>`
+from the same authority host as root. Without the proof, only `--dry-run`
+preflight is supported. It verifies the immutable candidate bundle, checks
+Git ancestry as the repository owner, locks the same ledger and unit via
+`ReleaseGate`, and atomically redirects the registered entrypoint to the
+complete versioned release. The previous entrypoint is backed up under
+`/root/.local/state/agent-herder/release-backups/gptadmin-agentherder-child/`.
+The manually repaired mixed legacy dist is eligible only when exact reviewed
+release-control file hashes match the known prior release; arbitrary drift is
+rejected. Neither service identity, credentials nor security settings change.
+
+**Deployment receipt alone is not live acceptance.** Confirm a newly spawned
+root child and verify its actual owner-aware behavior using the documented
+`project_release_lease(status)` on both ExManager main/worktree, which must
+return the same canonical project key. Do not repeat unknown acquisitions or
+force a hub/consumer restart. Manual rollback remains subject to the existing
+release ownership and recovery policy.

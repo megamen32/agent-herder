@@ -816,11 +816,10 @@ export function modelValueIssue(value: string): string | undefined {
 export function incidentModelIssue(value: string): string | undefined {
   const issue = modelValueIssue(value);
   if (issue) return issue;
-  const model = value.trim();
-  const gateway = model.toLocaleLowerCase("en-US").startsWith("omniroute/");
-  const miniMaxRoute = model.toLocaleLowerCase("en-US").startsWith("minimax-coding-plan/");
-  if (model.includes("/") && !gateway && !miniMaxRoute) {
-    return "Маршрут инцидента должен вести через OmniRoute (или через маршрут MiniMax), без подмены провайдера.";
+  // The local incident profile is pinned by the server, independently of
+  // its dedicated two-route Notice Place HTTP admission gate.
+  if (value !== INCIDENT_EXECUTION.model) {
+    return "Локальный маршрут Herder закреплён за " + INCIDENT_EXECUTION.model + ". Измените модель инцидента в Notice Place.";
   }
   return undefined;
 }
@@ -872,13 +871,9 @@ export function LaunchPolicySettings({ onOpenProjects }: { onOpenProjects?: () =
       const model = route.models?.[harness] ?? policy.models[harness];
       return Boolean(model?.trim()) && model.length <= 256;
     }));
-  // The gateway combo route stays the first choice; the MiniMax route
-  // is allowed as a fallback, so nothing is filtered out of the list.
-  const incidentModelOptions = (() => {
-    const options = [...(modelOptions.opencode ?? [])];
-    const first = "omniroute/minimax-combo-m3.1";
-    return options.sort((left, right) => (left === first ? -1 : right === first ? 1 : 0));
-  })();
+  // The local policy stores only the canonical incident execution profile;
+  // the separate HTTP admission gate may authorize its exact fallback combo.
+  const incidentModelOptions = [INCIDENT_EXECUTION.model];
   const incidentIssue = policy.incidentExecution ? incidentModelIssue(policy.incidentExecution.model) : undefined;
   const incidentWarning = policy.incidentExecution
     ? modelCatalogIssue("opencode", incidentModelRoute(policy), modelOptions.opencode)
@@ -908,7 +903,7 @@ export function LaunchPolicySettings({ onOpenProjects }: { onOpenProjects?: () =
         </label>
         <label className="launch-policy-field"><span>Модель локального маршрута Herder</span>
           <input type="text" maxLength={256} list={INCIDENT_MODEL_LIST_ID} value={policy.incidentExecution?.model ?? ""}
-            placeholder="omniroute/провайдер/модель" aria-label="Модель локального маршрута Herder" aria-invalid={Boolean(incidentIssue)}
+            placeholder={INCIDENT_EXECUTION.model} aria-label="Модель локального маршрута Herder" aria-invalid={Boolean(incidentIssue)}
             onChange={(event) => {
               draft.edit({ ...policy, incidentExecution: { ...(policy.incidentExecution ?? INCIDENT_EXECUTION), model: event.target.value } }, "incidentExecution");
             }} />

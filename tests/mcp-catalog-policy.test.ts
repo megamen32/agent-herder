@@ -1,12 +1,15 @@
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { McpServer, type ListToolsResult } from "@modelcontextprotocol/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { projectToolCatalog } from "../src/mcp/catalog-policy.js";
 import { withCatalogProjection } from "../src/mcp/catalog-projection.js";
 
 const connections: Array<{ client: Client; server: McpServer }> = [];
+// Run catalog contract fixtures without the host-specific production hide file.
+beforeEach(() => vi.stubEnv("AGENT_HERDER_CATALOG_POLICY_FILE", "/dev/null"));
 afterEach(async () => {
+  vi.unstubAllEnvs();
   for (const { client, server } of connections.splice(0)) {
     await client.close();
     await server.close();

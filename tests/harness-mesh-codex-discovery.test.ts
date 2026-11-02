@@ -104,7 +104,7 @@ describe('bounded native Codex discovery',()=>{
   const writers=vi.spyOn(raw as unknown as {getOpenCodexRolloutPaths():Promise<unknown>},'getOpenCodexRolloutPaths').mockRejectedValue(new Error('global_writer_scan_must_not_run'));
   const sessions=await adapter.listSessions({limit:3});
   expect(sessions).toMatchObject([{id:'native-1',cwd:'/native/project',title:'Native title',status:'needs_input',needsPermission:true,meta:{parentThreadId:'parent-1',threadSource:'subagent',agentRole:'worker',pinned:true}}]);
-  expect(request).toHaveBeenCalledTimes(2);expect(request).toHaveBeenCalledWith('thread/list',expect.objectContaining({limit:3,archived:false}));
+  expect(request).toHaveBeenCalledTimes(2);expect(request).toHaveBeenCalledWith('thread/list',expect.objectContaining({limit:3,archived:false,sortKey:'updated_at',sortDirection:'desc'}),'thread/list',5000);
   expect(request).toHaveBeenCalledWith('thread/loaded/list',{limit:3});
   expect(global).not.toHaveBeenCalled();expect(history).not.toHaveBeenCalled();expect(scan).not.toHaveBeenCalled();expect(writers).not.toHaveBeenCalled();
   expect(adapter.getSessionSnapshotReceipt()).toMatchObject({exhaustive:false,reason:'bounded_native_page'});

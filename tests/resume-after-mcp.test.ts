@@ -449,7 +449,9 @@ describe("MCP dependency wait through native adapter events",()=>{
     await server.connect(serverTransport);await client.connect(clientTransport);
     cleanup.push(async()=>{await client.close();await server.close();});
     const tools=(await client.listTools()).tools.map(t=>t.name);
-    expect(tools).toEqual(expect.arrayContaining(["resume_after","resume_after_status","resume_after_cancel"]));
+    expect(tools).toContain("resume_after");
+    expect(tools).not.toContain("resume_after_status");
+    expect(tools).not.toContain("resume_after_cancel");
     const registration=await client.callTool({name:"resume_after",arguments:{owner:ref("owner"),dependencies:[ref("a"),ref("b")],message:"merge the actual work",requestId:"native-join"}});
     expect(registration.isError).not.toBe(true);
     const wait=(registration.structuredContent as any).wait;

@@ -164,7 +164,7 @@ describe("native Codex project runtime policy", () => {
   });
 
   it("uses a process-owned, default-isolated Codex config without touching global integrations", () => {
-    const args = codexProjectAppServerArgs();
+    const args = codexProjectAppServerArgs(undefined, process.execPath);
     const joined = args.join(" ");
     const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
     expect(args[0]).toBe("app-server");
@@ -174,7 +174,7 @@ describe("native Codex project runtime policy", () => {
     expect(joined).not.toContain(`${JSON.stringify(codexHome)}=\"deny\"`);
     expect(joined).toContain(`\":root\"=\"deny\"`);
     expect(joined).toContain(`${JSON.stringify(join(codexHome, "tmp/arg0"))}=\"read\"`);
-    expect(joined).toMatch(/\"[^\"]*\/\.codex\/packages\/standalone\/releases\/[^\"]*\/bin\/codex\"=\"read\"/);
+    expect(joined).toContain(JSON.stringify(realpathSync(process.execPath)) + '="read"');
     expect(joined).toContain(`\"${homedir()}/.ssh\"=\"deny\"`);
     expect(joined).not.toContain(`permissions.${CODEX_PROJECT_PERMISSION_PROFILE}.filesystem.\"`);
     expect(joined).toContain("permissions.agent_herder_project_v1.network.enabled=false");
@@ -193,7 +193,7 @@ describe("native Codex project runtime policy", () => {
   });
 
   it("adds live hosted search only when the trusted project policy explicitly opts in", () => {
-    const args = codexProjectAppServerArgs({ mcpServerIds: [], appIds: [], pluginIds: [] }, "codex", "live");
+    const args = codexProjectAppServerArgs({ mcpServerIds: [], appIds: [], pluginIds: [] }, process.execPath, "live");
     const joined = args.join(" ");
     expect(joined).toContain('--config web_search="live"');
     expect(joined).toContain("permissions.agent_herder_project_v1.network.enabled=false");
@@ -216,7 +216,7 @@ describe("native Codex project runtime policy", () => {
       mcpServerIds: ["mcp-alpha", "mcp-beta", "mcp-alpha"],
       appIds: ["connector/one"],
       pluginIds: ["plugin-a@marketplace-a"],
-    });
+    }, process.execPath);
     const joined = args.join(" ");
     expect(joined).toContain("mcp_servers.mcp-alpha.enabled=false");
     expect(joined).toContain("mcp_servers.mcp-beta.enabled=false");
@@ -227,16 +227,16 @@ describe("native Codex project runtime policy", () => {
   });
 
   it("uses the native dotted-key form for safe MCP ids", () => {
-    const args = codexProjectAppServerArgs({ mcpServerIds: ["AskHuman"], appIds: [], pluginIds: [] });
+    const args = codexProjectAppServerArgs({ mcpServerIds: ["AskHuman"], appIds: [], pluginIds: [] }, process.execPath);
     const joined = args.join(" ");
     expect(joined).toContain("mcp_servers.AskHuman.enabled=false");
     expect(joined).not.toContain('mcp_servers."AskHuman"');
   });
 
   it("rejects malformed IDs before constructing a process argument list", () => {
-    expect(() => codexProjectAppServerArgs({ mcpServerIds: ["bad\nid"], appIds: [], pluginIds: [] }))
+    expect(() => codexProjectAppServerArgs({ mcpServerIds: ["bad\nid"], appIds: [], pluginIds: [] }, process.execPath))
       .toThrow("invalid MCP server isolation id");
-    expect(() => codexProjectAppServerArgs({ mcpServerIds: ["Ask.Human"], appIds: [], pluginIds: [] }))
+    expect(() => codexProjectAppServerArgs({ mcpServerIds: ["Ask.Human"], appIds: [], pluginIds: [] }, process.execPath))
       .toThrow("unsupported MCP server id for native dotted config path");
   });
 
@@ -295,9 +295,8 @@ describe("native Codex project runtime policy", () => {
   });
 
   it("requires the exact closed filesystem profile in effective config readback", () => {
-    const codexBin = (process.env.PATH ?? "").split(delimiter)
-      .map((directory) => join(directory, "codex"))
-      .find((candidate) => { try { accessSync(candidate, fsConstants.X_OK); return true; } catch { return false; } }) ?? "codex";
+    // Unit readback tests verify closed path rules without launching Codex.
+    const codexBin = process.execPath;
     const profile = {
       ":root": "deny", ":minimal": "read", ":workspace_roots": "write", ":tmpdir": "deny", ":slash_tmp": "deny",
       [join(process.env.CODEX_HOME || join(homedir(), ".codex"), "tmp/arg0")]: "read",
