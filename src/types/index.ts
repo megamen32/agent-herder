@@ -38,3 +38,9 @@ export {
   createAgentSession,
   type AgentSessionInit,
 } from "./common.js";
+
+export {
+  type HarnessRuntimeCapabilities,
+  type AutopilotDispatch,
+  harnessRuntimeCapabilities,
+} from "./harness-runtime.js";
