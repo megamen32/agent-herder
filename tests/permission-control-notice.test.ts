@@ -151,6 +151,7 @@ it("joins an exact permission event and initial pending snapshot to one durable 
     type: "codex", name: "fixture", async init() {},
     subscribeEvents(handler) { listener = handler; return () => { listener = undefined; }; },
     async listSessions() { return [session]; }, async getSession() { return session; },
+    getSessionSnapshotReceipt() { return { exhaustive: true, observedAt: new Date().toISOString(), source: "fixture" }; },
     async getPermissionState() { stateReads += 1; return state; },
     async getSessionMessages() { return [
       { id: "u1", role: "user", text: "Check this", parts: [{ type: "text", text: "Check this" }] },
@@ -159,6 +160,7 @@ it("joins an exact permission event and initial pending snapshot to one durable 
     async sendMessage() { return { ok: true }; }, async stopSession() { return { ok: true }; },
     async respondPermission() { return { ok: true }; }, async setPermissions() { return { ok: true }; },
   };
+  const reconcileInitial = vi.spyOn(observer, "reconcileInitialSnapshot");
   const supervisor = new SessionSupervisor(new Map([["codex", adapter]]), { async convert() { return { success: true }; } } as any, undefined, { permissionNoticeObserver: observer });
   const stop = supervisor.startObservation(60_000);
   try {
@@ -183,7 +185,8 @@ it("joins an exact permission event and initial pending snapshot to one durable 
     expect(posts[0]?.body.message).toContain("Visible explanation");
     expect(posts[0]?.body.message).not.toContain("hidden reasoning");
     expect(JSON.stringify(await registry.get(record.requestId))).not.toContain("Check this");
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(reconcileInitial).toHaveBeenCalled();
+    await Promise.all(reconcileInitial.mock.results.map((result) => result.value));
     const readsBeforeRestart = stateReads;
     stop();
     const stopSameSupervisorRestart = supervisor.startObservation(60_000);
