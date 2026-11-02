@@ -126,7 +126,7 @@ function MinimaxExecPolicyPanel({ session }: { session: { hostId?: string; harne
 }
 type WebAutopilotChoice = { choiceId: string; label: string };
 type WebAutopilotChoiceCard = { requestId: string; sessionId: string; harness: string; cwd: string; status: "pending"; createdAt: string; choices: WebAutopilotChoice[] };
-type AutopilotHarness = "codex" | "opencode" | "claude" | "hermes" | "zcode";
+type AutopilotHarness = "codex" | "opencode" | "claude" | "hermes" | "zcode" | "chatgpt" | "zai";
 type WebAutopilotPolicy = {
   schemaVersion: 1;
   enabled: boolean;
@@ -150,6 +150,8 @@ const AUTOPILOT_HARNESS_LABELS: Record<AutopilotHarness, string> = {
   opencode: "OpenCode",
   hermes: "Hermes",
   zcode: "ZCode",
+  chatgpt: "ChatGPT",
+  zai: "Z.ai",
 };
 const AUTOCONTINUE_HARNESSES = new Set<string>(AUTOCONTINUE_HARNESS_IDS);
 
