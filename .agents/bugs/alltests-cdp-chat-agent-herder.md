@@ -15,6 +15,8 @@ Observed first errors:
 - AssertionError: expected [ 'read_message', 'event_list', …(34) ] to include 'list_agents'
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: open
+Status: fixed_pending_full_suite
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
+
+- 2026-11-02: Isolated 18/18 CDP and common-scope tests green; current catalog advertises cdp_chat/cdp_archive/cdp_account while original CDP names continue as callable aliases and unsupported partial driver action is not registered.

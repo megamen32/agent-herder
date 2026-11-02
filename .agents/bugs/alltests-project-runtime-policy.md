@@ -18,6 +18,8 @@ Observed first errors:
 - AssertionError: expected [Function] to throw error including 'invalid MCP server isolation id' but got 'cannot resolve the Codex executable f…'
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: open
+Status: fixed_pending_full_suite
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
+
+- 2026-11-02: Isolated tests/project-runtime-policy.test.ts 15/15 green. Unit readback uses process.execPath as an actual executable path without launching Codex; unchanged production filesystem deny profile still tested. Full suite still pending.

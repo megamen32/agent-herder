@@ -29,6 +29,8 @@ Observed first errors:
 - FAIL  tests/zcode-workspace-lifecycle.test.ts > native workspace lifecycle, not SDK disconnection > refuses parent-crash adoption with pending-input
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: open
+Status: fixed_pending_full_suite
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
+
+- 2026-11-02: Isolated zcode-workspace-lifecycle.test.ts 33/33 green after fixture V4 accepted queue receipt now matches requested delivery (not startNow); no native send fallback or replay allowed.

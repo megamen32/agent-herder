@@ -13,6 +13,8 @@ Observed first errors:
 - AssertionError: expected [ 'read_message', 'event_list', …(34) ] to include 'list_agents'
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: open
+Status: fixed_pending_full_suite
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
+
+- 2026-11-02: Isolated CDP 18/18 green; one consolidated CDP handler per family; old cdp_list_chats and cdp_export_chat direct calls still verified to answer.

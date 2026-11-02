@@ -30,6 +30,8 @@ Observed first errors:
 - Error: cannot resolve the Codex executable for the process-local sandbox profile
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: open
+Status: fixed_pending_full_suite
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
+
+- 2026-11-02: Isolated codex-app-server.test.ts 74/74 green, including three H34 materialized cases; tests provide a real isolated native home + process.execPath as path witness with mocked native calls, no Codex launched. Root and native home identity checks retained.

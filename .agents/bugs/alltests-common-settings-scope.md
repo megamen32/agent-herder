@@ -11,6 +11,8 @@ Observed first errors:
 - AssertionError: expected [ …(8) ] to deeply equal [ …(12) ]
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: open
+Status: fixed_pending_full_suite
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
+
+- 2026-11-02: Isolated 18/18 green; four chat-intro variables explicitly classified machine-local, chat-intro token is secret, preserving no cross-node credential replication.
