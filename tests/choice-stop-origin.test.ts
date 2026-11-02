@@ -169,7 +169,7 @@ describe("manual and automatic choice resume origins", () => {
     let final;
     for (let attempt = 0; attempt < 40; attempt += 1) {
       final = await registry.get(pending.requestId);
-      if (final?.status !== "pending") break;
+      if (final && final.status !== "pending" && final.status !== "claimed") break;
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     expect(final?.status).toBe("failed");

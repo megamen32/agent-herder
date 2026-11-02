@@ -167,8 +167,12 @@ it("joins an exact permission event and initial pending snapshot to one durable 
     listener?.(requested);
     for (let attempt = 0; attempt < 100 && posts.length === 0; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
     expect(posts).toHaveLength(1);
-    for (let attempt = 0; attempt < 100 && (await registry.list()).length === 0; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    // A record can already exist while its async delivery is still claimed.
+    // Await the asserted terminal delivery, with the same bounded poll budget.
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if ((await registry.list())[0]?.noticeDelivery?.state === "accepted") break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
     expect(posts).toHaveLength(1);
     const [record] = await registry.list();
     expect(record).toMatchObject({ answerSource: "notice_question", contextRef: expect.any(String), noticeDelivery: { state: "accepted", noticeRequestId: record.requestId, deliveryStatus: "sent" } });

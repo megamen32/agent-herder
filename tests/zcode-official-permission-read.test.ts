@@ -5,7 +5,7 @@ import {SessionSupervisor} from '../src/session-supervisor.js';
 
 it('reads exact quick ZCode details without enumerating unrelated sessions',async()=>{
  const session={id:'known',harness:'zcode',cwd:'/repo',status:'needs_input',needsPermission:true,title:'Task',lastActivity:new Date().toISOString()};
- const fake={sessionSnapshot:undefined,listSessions:vi.fn(async()=>{throw Error('unrelated enumeration is unavailable');}),getSession:vi.fn(async()=>session),lineage:{get:async()=>null},readHistory:async()=>({messages:[],info:{source:'unavailable'}})};
+ const fake={adapters:new Map([['zcode',{type:'zcode'}]]),sessionSnapshot:undefined,listSessions:vi.fn(async()=>{throw Error('unrelated enumeration is unavailable');}),getSession:vi.fn(async()=>session),lineage:{get:async()=>null},readHistory:async()=>({messages:[],info:{source:'unavailable'}})};
  const details=await SessionSupervisor.prototype.getSessionDetails.call(fake as any,'zcode','known',{quick:true,limit:3});
  expect(details.session).toBe(session);
  expect(fake.listSessions).not.toHaveBeenCalled();
