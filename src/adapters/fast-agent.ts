@@ -80,9 +80,14 @@ const FAST_AGENT_RESOURCE_PROPERTIES = ["CPUQuota=100%", "MemoryHigh=384M", "Mem
  * for Agent Herder's dashboard and transcript tools: it never creates a second
  * fast-agent session or steals an existing stdio stream.
  */
+import { registerHarnessRuntimeCapabilities, type HarnessRuntimeCapabilities } from "../types/harness-runtime.js";
+
+const RUNTIME_CAPS: HarnessRuntimeCapabilities = { autopilotDispatch: "agentResume", hookDrivenStop: false, browserChat: false, autopilotEligible: false, localInject: false, humanStopObserver: false };
+registerHarnessRuntimeCapabilities('fast-agent', RUNTIME_CAPS);
 export class FastAgentFileAdapter implements HarnessAdapter {
   readonly type = "fast-agent" as const;
   readonly name = "Fast Agent";
+  readonly runtimeCapabilities = RUNTIME_CAPS;
   readonly lazyStart = true;
   readonly lazyDiscovery = true;
   readonly controlCapabilities: HarnessCapabilities = {

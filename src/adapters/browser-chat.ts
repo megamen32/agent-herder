@@ -59,6 +59,15 @@ export interface BrowserChatProvider { id: string; name: string; harness: Harnes
  * provider driver. Never starts an independent browser or silently creates
  * a chat while trying to resume an existing one.
  */
+import { registerHarnessRuntimeCapabilities, type HarnessRuntimeCapabilities } from "../types/harness-runtime.js";
+
+/** Browser-chat harnesses (chatgpt, zai, browser-chat alias) share one runtime
+ * capability set: observer-driven, no CLI, eligible for autopilot except the
+ * generic browser-chat alias. */
+const BROWSER_RUNTIME_CAPS: HarnessRuntimeCapabilities = { autopilotDispatch: "returnNextGoal", hookDrivenStop: false, browserChat: true, autopilotEligible: true, localInject: false, humanStopObserver: false };
+registerHarnessRuntimeCapabilities("chatgpt", BROWSER_RUNTIME_CAPS);
+registerHarnessRuntimeCapabilities("zai", BROWSER_RUNTIME_CAPS);
+registerHarnessRuntimeCapabilities("browser-chat", { ...BROWSER_RUNTIME_CAPS, autopilotEligible: false });
 export class BrowserChatAdapter implements HarnessAdapter {
   readonly type: HarnessType;
   readonly name: string;
@@ -75,6 +84,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
     subagents: false,
     events: false,
   };
+  readonly runtimeCapabilities = BROWSER_RUNTIME_CAPS;
   readonly lazyDiscovery = true;
   private readonly inventory = new Map<string, BrowserChat>();
   private inventoryAt = 0;

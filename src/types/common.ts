@@ -371,6 +371,8 @@ export interface HarnessAdapter {
   readonly name: string;
   /** Native controls exposed by this transport. */
   readonly controlCapabilities?: Partial<HarnessCapabilities>;
+  /** Runtime dispatch/delivery capabilities declared by the adapter file. */
+  readonly runtimeCapabilities?: import("./harness-runtime.js").HarnessRuntimeCapabilities;
   /** Provider-specific browser features; shared base does not imply equal sites. */
   readonly browserFeatures?: {
     nativeConversationIds: boolean;

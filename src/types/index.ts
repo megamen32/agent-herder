@@ -43,4 +43,6 @@ export {
   type HarnessRuntimeCapabilities,
   type AutopilotDispatch,
   harnessRuntimeCapabilities,
+  getHarnessRuntimeCapabilities,
+  registerHarnessRuntimeCapabilities,
 } from "./harness-runtime.js";

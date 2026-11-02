@@ -165,11 +165,16 @@ function errorResult(message: string): ControlResult { return { ok: false, error
  * Native tasks enter the existing authenticated Gateway plugin. Public MCP
  * provides observation; explicitly selected legacy CLI jobs stay bounded.
  */
+import { registerHarnessRuntimeCapabilities, type HarnessRuntimeCapabilities } from "../../types/harness-runtime.js";
+
+const RUNTIME_CAPS: HarnessRuntimeCapabilities = { autopilotDispatch: "returnNextGoal", hookDrivenStop: true, browserChat: false, autopilotEligible: true, localInject: true, humanStopObserver: false };
+registerHarnessRuntimeCapabilities('hermes', RUNTIME_CAPS);
 export class HermesAdapter implements HarnessAdapter {
   // Hermes is intentionally not added to session-convert's narrower legacy
   // HarnessType union; the central converter does not support Hermes.
   readonly type = "hermes";
   readonly name = "Hermes gateway";
+  readonly runtimeCapabilities = RUNTIME_CAPS;
   readonly lazyStart = true;
   get controlCapabilities(): HarnessCapabilities { return {
     cancelTurn: !this.gatewayTasks,

@@ -330,9 +330,14 @@ interface PendingRequest {
  * share that authority with another client instead of starting a competing
  * app-server writer.
  */
+import { registerHarnessRuntimeCapabilities, type HarnessRuntimeCapabilities } from "../types/harness-runtime.js";
+
+const RUNTIME_CAPS: HarnessRuntimeCapabilities = { autopilotDispatch: "returnNextGoal", hookDrivenStop: true, browserChat: false, autopilotEligible: true, localInject: false, humanStopObserver: true };
+registerHarnessRuntimeCapabilities('codex', RUNTIME_CAPS);
 export class CodexAppServerAdapter implements HarnessAdapter {
   readonly type = "codex" as const;
   readonly name = "Codex app-server";
+  readonly runtimeCapabilities = RUNTIME_CAPS;
   readonly lazyStart = true;
   readonly lazyDiscovery = true;
   readonly controlCapabilities: HarnessCapabilities = {

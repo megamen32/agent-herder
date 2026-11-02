@@ -1,15 +1,14 @@
-/** Per-harness-type runtime capabilities: one registry for switch-by-name sites.
+/** Per-harness runtime capabilities: each adapter declares its own next to the
+class that owns them, and this module is an accumulator populated at module
+load via `registerHarnessRuntimeCapabilities()`. There is no God file: adding
+a harness means creating its adapter file, not editing a central table.
 
 Control-plane capabilities (cancelTurn, detach, resume, ...) live on each
 adapter instance via `controlCapabilities` because they can vary per transport
-implementation. Runtime capabilities — how a harness participates in
-autopilot dispatch, whether it is a browser chat with no CLI, whether it
-publishes native Stop hooks, whether it is eligible for the autopilot
-allowlist — are static per `HarnessType` and belong in exactly one place.
-
-Every switch-by-name site that used to enumerate `harness === "codex" ||
-harness === "claude" || ...` now asks this registry instead, so a new harness
-or a changed behaviour only edits one row.
+implementation. Runtime capabilities — how a harness participates in autopilot
+dispatch, whether it is a browser chat with no CLI, whether it publishes native
+Stop hooks — are static per `HarnessType`, so each adapter file knows them at
+module load and registers them once.
 */
 import type { HarnessType } from "./common.js";
 
@@ -41,25 +40,32 @@ export interface HarnessRuntimeCapabilities {
   readonly humanStopObserver: boolean;
 }
 
-/** The one source of truth. Order follows `HarnessType` for readability. */
-export const HARNESS_RUNTIME_CAPABILITIES: Record<HarnessType, HarnessRuntimeCapabilities> = {
-  codex:          { autopilotDispatch: "returnNextGoal",  hookDrivenStop: true,  browserChat: false, autopilotEligible: true,  localInject: false, humanStopObserver: true  },
-  opencode:       { autopilotDispatch: "deliverInRunner", hookDrivenStop: true,  browserChat: false, autopilotEligible: true,  localInject: false, humanStopObserver: true  },
-  claude:         { autopilotDispatch: "returnNextGoal",  hookDrivenStop: true,  browserChat: false, autopilotEligible: true,  localInject: false, humanStopObserver: false },
-  qoder:          { autopilotDispatch: "agentResume",     hookDrivenStop: true,  browserChat: false, autopilotEligible: false, localInject: false, humanStopObserver: false },
-  hermes:         { autopilotDispatch: "returnNextGoal",  hookDrivenStop: true,  browserChat: false, autopilotEligible: true,  localInject: true,  humanStopObserver: false },
-  zcode:          { autopilotDispatch: "returnNextGoal",  hookDrivenStop: true,  browserChat: false, autopilotEligible: true,  localInject: false, humanStopObserver: true  },
-  "fast-agent":   { autopilotDispatch: "agentResume",     hookDrivenStop: false, browserChat: false, autopilotEligible: false, localInject: false, humanStopObserver: false },
-  chatgpt:        { autopilotDispatch: "returnNextGoal",  hookDrivenStop: false, browserChat: true,  autopilotEligible: true,  localInject: false, humanStopObserver: false },
-  zai:            { autopilotDispatch: "returnNextGoal",  hookDrivenStop: false, browserChat: true,  autopilotEligible: true,  localInject: false, humanStopObserver: false },
-  "browser-chat": { autopilotDispatch: "returnNextGoal",  hookDrivenStop: false, browserChat: true,  autopilotEligible: false, localInject: false, humanStopObserver: false },
-  "minimax-code": { autopilotDispatch: "agentResume",     hookDrivenStop: false, browserChat: false, autopilotEligible: false, localInject: false, humanStopObserver: false },
-};
+const REGISTRY = new Map<string, HarnessRuntimeCapabilities>();
 
-/** Look up the runtime capabilities for a harness type. Throws on unknowns so a
- *  typo cannot silently fall through to a default. */
+/** Each adapter file calls this at module load to publish its runtime
+ *  capabilities. The registry is an accumulator, not a source of truth. */
+export function registerHarnessRuntimeCapabilities(type: string, caps: HarnessRuntimeCapabilities): void {
+  REGISTRY.set(type, caps);
+}
+
+/** Look up runtime capabilities for a harness type. Throws on unknowns so a
+ *  typo or a missing adapter import cannot silently fall through to a default. */
 export function harnessRuntimeCapabilities(type: string): HarnessRuntimeCapabilities {
-  const caps = (HARNESS_RUNTIME_CAPABILITIES as Record<string, HarnessRuntimeCapabilities>)[type];
-  if (!caps) throw new Error(`unknown harness type: ${type}`);
+  const caps = REGISTRY.get(type);
+  if (!caps) {
+    throw new Error(
+      `unknown harness type: ${type}; register it via registerHarnessRuntimeCapabilities in its adapter file`,
+    );
+  }
   return caps;
+}
+
+/** Prefer this helper when an adapter instance is in scope: it reads
+ *  `adapter.runtimeCapabilities` directly and only falls back to the registry
+ *  when the adapter has not declared its own (e.g. a third-party adapter). */
+export function getHarnessRuntimeCapabilities(adapter: {
+  type: string;
+  runtimeCapabilities?: HarnessRuntimeCapabilities;
+}): HarnessRuntimeCapabilities {
+  return adapter.runtimeCapabilities ?? harnessRuntimeCapabilities(adapter.type);
 }
