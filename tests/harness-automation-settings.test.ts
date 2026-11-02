@@ -15,7 +15,10 @@ describe("separate mechanism pages with independent harness settings", () => {
       mode:'autocontinue',available:new Set(AUTOCONTINUE_HARNESS_IDS),loaded:new Set(Object.keys(result.settings)),
       failed:new Set(result.failed),enabled:new Set(['hermes']),onToggle:()=>{},
     }));
-    expect(html).not.toContain('Пока не поддерживается');
+    // Unsupported harnesses stay visible but disabled and clearly named.
+    expect(html).toContain('Пока не поддерживается');
+    expect(html).toContain('Пока недоступные агенты');
+    expect(html).toMatch(/role="switch" aria-label="Автопродолжение · Z\.ai"[^>]*disabled=""/);
     expect(html).toContain('Не удалось загрузить');
     expect(html).toMatch(/role="switch" aria-label="Автопродолжение · Hermes" aria-checked="true"[^>]*>/);
     expect(html).toMatch(/role="switch" aria-label="Автопродолжение · Qoder"[^>]*disabled=""/);

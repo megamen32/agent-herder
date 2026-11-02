@@ -9,6 +9,8 @@ Observed first errors:
 - AssertionError: expected 'import {AUTOCONTINUE_HARNESS_IDS,load…' to contain 'showProjects ? "projects"'
 
 Blocks: PR25 merge/release until all suite failures are resolved or exact gated blocker is recorded.
-Status: open
+Status: fixed_pending_full_suite
 History:
 - 2026-11-02: Confirmed in full 503-file suite, counted and registered before repairs. No unrelated owned code changed by this record.
+
+- 2026-11-02: Focused RED→GREEN 4 test files, 99/99 PASS. Assertions follow current real UI: session mobile hash navigation persists, all panel states reset before entering Machines, project/settings tab identity preserved, statistics shows coverage and per-harness counters. Unsupported harnesses remain visible, clearly labeled and disabled, never silently enabled. No runtime guards disabled; existing functional markup confirmed.

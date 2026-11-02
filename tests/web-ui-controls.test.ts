@@ -166,9 +166,9 @@ describe("mobile chat and session controls", () => {
     expect(header).toContain('aria-label="Панель сессии"');
     expect(header).toContain('aria-label="Меню чата"');
     for (const label of ['>Машины<', '>Задачи<', '>Статистика<', '>Автопилот<', '>Автопродолжение<']) expect(header).not.toContain(label);
-    expect(main).toContain('onMachines={() => { setShowSearch(false); setFleetCreationMode(false);setShowFleet(true)');
-    expect(main).toContain('>Автопилот</button>');
-    expect(main).toContain('>Автопродолжение</button>');
+    expect(main).toContain('onMachines={() => { setShowSearch(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setShowProjects(false); setMobileView("chat"); setFleetCreationMode(false);setShowFleet(true)');
+    expect(main).toContain('Автопилот · общие настройки (в этом чате');
+    expect(main).toContain('Автопродолжение · общие настройки (в этом чате');
     expect(menu).toContain('Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})');
     expect(menu).toContain('Автопилот · общие настройки (в этом чате ${activeAutopilotEnabled ? "включён" : "выключен"})');
     expect(main).toContain('<div className="chat-menu" aria-label="Меню чата"><button type="button" className="chat-menu-close"');
@@ -204,7 +204,8 @@ describe("mobile chat and session controls", () => {
 
   it("keeps automation modes discoverable on mobile with their current state", () => {
     // Правая панель показывается по выбору владельца, и выбор переживает перезагрузку.
-    expect(main).toContain('React.useState(() => readPanelLayout())');
+    expect(main).toContain('React.useState(() => initialPanelLayout(window.location.search,window.self!==window.top))');
+    expect(main).toContain('writePanelLayout(layout)');
     expect(main).toContain('aria-label="Меню чата" aria-expanded={chatMenuOpen}');
     expect(main).toContain('Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})');
     expect(main).toContain('Автопилот · общие настройки (в этом чате ${activeAutopilotEnabled ? "включён" : "выключен"})');
@@ -217,7 +218,7 @@ describe("mobile chat and session controls", () => {
     const list = main.slice(main.indexOf("function SessionList("), main.indexOf("function App("));
     expect(list).toContain('className="quiet-button sessions-machines-button" onClick={onMachines}>Машины</button>');
     const render = main.slice(main.indexOf('<SessionList '));
-    expect(render).toContain('onMachines={() => { setShowSearch(false); setFleetCreationMode(false); setShowFleet(true); setAutomationSettings(undefined); }}');
+    expect(render).toContain('onMachines={() => { setShowSearch(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setShowProjects(false); setMobileView("chat"); setFleetCreationMode(false); setShowFleet(true); setAutomationSettings(undefined); }}');
   });
 
   it("keeps the existing chat menu available throughout mobile and tablet widths", () => {
@@ -272,7 +273,7 @@ describe("mobile chat and session controls", () => {
   });
 
   it("opens a session deep link directly in the mobile chat", () => {
-    expect(main).toContain('React.useState<"sessions" | "chat">(() => readSessionFromHash() ? "chat" : "sessions")');
+    expect(main).toContain('React.useState<"sessions" | "chat">(() => readPage() !== "chat" || readSessionFromHash() ? "chat" : "sessions")');
     expect(main).toContain('window.addEventListener("hashchange", followHash)');
     expect(main).toContain('setMobileView(key ? "chat" : "sessions")');
     expect(main).toContain('window.removeEventListener("hashchange", followHash)');

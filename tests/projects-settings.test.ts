@@ -26,7 +26,8 @@ describe("Projects navigation", () => {
     expect(navigation).toContain('label: "Проекты"');
     expect(navigation).toContain("onProjects: () => void;");
     expect(navigation).toContain('active: "chat" | "jobs" | "statistics" | "machines" | "search" | "projects"');
-    expect(main).toContain('showProjects ? "projects"');
+    expect(main).toContain('showProjects ? (settingsTab === "projects" ? "projects" : "settings")');
+    expect(main).toContain('setSettingsTab("projects"); setShowProjects(true)');
     expect(main).toContain("onProjects={() =>");
     // The projects are a tab of the screen of the settings of the herder:
     // the panel opens the screen, and the screen renders the component of

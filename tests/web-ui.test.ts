@@ -123,9 +123,10 @@ describe("activity statistics dashboard", () => {
     expect(reactSource).toContain("Распределение возвратов к записи");
     expect(reactSource).toContain("/api/statistics/activity?days=");
     expect(reactSource).toContain("Рекомендуемый таймаут неактивности");
-    expect(reactSource).toContain("Что реально используется");
+    expect(reactSource).toContain("Выберите среду, чтобы увидеть её вклад и покрытие данных.");
+    expect(reactSource).toContain("Среда статистики");
     expect(reactSource).toContain("Самые используемые модели");
-    expect(reactSource).toContain("Токены Codex за сессию");
-    expect(reactSource).toContain("Сессии Codex по дням");
+    expect(reactSource).toContain("Токены за сессию");
+    expect(reactSource).toContain("Сессии по дням");
   });
 });
