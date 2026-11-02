@@ -142,7 +142,7 @@ export class BrowserChatHistoryCache {
         const cooldownMs = is429 ? 60_000 : 300_000;
         this.cooldownUntil = Date.now() + cooldownMs;
         this.lastFailureAt.set(id, Date.now());
-        console.warn("[browser-chat] history fetch " + (is429 ? "429 rate-limited" : "failed") + " for " + id + "; cooldown " + (cooldownMs / 1000) + "s; err=" + String(error).slice(0, 140));
+        console.warn("[browser-chat] history fetch " + (is429 ? "429 rate-limited" : "failed") + "; cooldown " + (cooldownMs / 1000) + "s");
         return null; // stale cache remains available after a network failure
       }
     })();
@@ -166,7 +166,7 @@ export class BrowserChatHistoryCache {
       while (this.queue.length && this.dir) {
         if (Date.now() < this.cooldownUntil) {
           const dropped = this.queue.length;
-          if (dropped) console.warn("[browser-chat] prewarm queue paused on 429 cooldown; dropped " + dropped + " pending history fetches");
+          if (dropped) console.warn("[browser-chat] prewarm queue paused on cache cooldown; dropped " + dropped + " pending history fetches");
           this.queue.length = 0; this.queued.clear(); break;
         }
         const id = this.queue.shift()!;

@@ -224,7 +224,12 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
         for (const chat of chats) this.cache.set(chat.id, chat);
         return chats;
       }
-      if (data?.error) console.warn("[chatgpt] list API " + data.error + (data.error === "read_cooldown" ? " (429 cooldown active; falling back to sidebar DOM)" : ""));
+      if (data?.error) {
+        const error = typeof data.error === "string" ? data.error : "";
+        const classification = ["wrong_origin", "read_cooldown", "session_unavailable", "account_unavailable"].includes(error)
+          || /^list_http_[1-5][0-9]{2}$/.test(error) ? error : "unknown_error";
+        console.warn("[chatgpt] list API " + classification + "; falling back to sidebar DOM");
+      }
     } catch { /* The site may change its private API; retain the DOM fallback. */ }
     this.accountScope = undefined;
     const seen = new Set<string>();

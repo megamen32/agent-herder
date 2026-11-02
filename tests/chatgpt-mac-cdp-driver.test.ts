@@ -1,5 +1,5 @@
 import { CHATGPT_LIST_API_SCRIPT } from "../src/adapters/browser-chat-api-scripts.js";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { runInNewContext } from "node:vm";
 import { CHATGPT_MAC_SNAPSHOT, ChatGptMacCdpDriver, parseChatGptPages, pickChatGptPage } from "../src/adapters/chatgpt-mac-cdp-driver.js";
 import { parseChromeEvaluation, type ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
@@ -231,6 +231,26 @@ describe("ChatGPT draft preservation", () => {
     const driver = new ChatGptMacCdpDriver(tools, undefined, 0);
     await driver.sendMessage({ chatId: ID, text: "herder msg" });
     expect(fills).toEqual(["herder msg", "user draft text"]);
+  });
+});
+
+describe("bounded list failure diagnostics", () => {
+  it.each([
+    ["list_http_429", "list_http_429"],
+    ["read_cooldown", "read_cooldown"],
+    ["private-code-state-cookie-sentinel", "unknown_error"],
+    [{ secret: "private-code-state-cookie-sentinel" }, "unknown_error"],
+  ])("never emits arbitrary CDP list errors", async (error, expected) => {
+    const fixture = new BrowserFixture();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const tools: ChromePageTools = { call: (name, args = {}) =>
+      name === "evaluate_script" && args.function === CHATGPT_LIST_API_SCRIPT
+        ? Promise.resolve(json({ error })) : fixture.call(name, args) };
+    try {
+      expect(await new ChatGptMacCdpDriver(tools).listChats()).toMatchObject([{ id: ID }]);
+      expect(warn.mock.calls.flat().join(" ")).toContain(expected);
+      expect(warn.mock.calls.flat().join(" ")).not.toContain("private-code-state-cookie-sentinel");
+    } finally { warn.mockRestore(); }
   });
 });
 

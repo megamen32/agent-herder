@@ -154,6 +154,21 @@ describe("change-aware history request budget", () => {
     cache.setAccountScope(undefined);
   });
 
+  it.each([["history_http_429", "429 rate-limited; cooldown 60s"], ["upstream_failed", "failed; cooldown 300s"]])(
+    "logs bounded history failure diagnostics without identifiers or error payloads: %s", async (kind, expected) => {
+      const root = await dir();
+      const sentinel = "private-code-state-cookie-sentinel";
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const cache = new BrowserChatHistoryCache("chatgpt", async () => { throw Error(kind + " " + sentinel); }, root);
+      try {
+        cache.setAccountScope(ACCOUNT_A);
+        await cache.messages("private-native-id-sentinel");
+        await vi.waitFor(() => expect(warn).toHaveBeenCalled());
+        expect(warn.mock.calls.flat().join(" ")).toContain(expected);
+        expect(warn.mock.calls.flat().join(" ")).not.toContain(sentinel);
+        expect(warn.mock.calls.flat().join(" ")).not.toContain("private-native-id-sentinel");
+      } finally { cache.setAccountScope(undefined); warn.mockRestore(); }
+    });
   it("globally backs off history reads after a 429", async () => {
     const root = await dir();
     const fetch = vi.fn(async () => { throw Error("history_http_429"); });
