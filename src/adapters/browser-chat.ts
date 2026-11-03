@@ -18,7 +18,7 @@ export interface BrowserChat {
   /** Local empty chat awaiting the user's first message on the site. */
   pendingRemoteCreation?: boolean;
   /** Origin of the working signal when it is not the observed page's own DOM. */
-  workingSource?: "native-last-run" | "native-async-status";
+  workingSource?: "native-last-run" | "native-async-status" | "recently-generating";
 }
 
 /** A browser transport owns its authenticated page and implements these operations. */

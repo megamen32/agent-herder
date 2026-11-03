@@ -1325,6 +1325,11 @@ async function main() {
   // Chat commands (/pilot): the owner toggles the autopilot of one session
   // from the chat itself — on the site or in the herder composer — and the
   // answer lands in the same chat.
+  const chatCommandNotifyEventUrl = process.env.NOTIFY_CENTER_EVENT_URL?.trim();
+  const chatCommandNotifyToken = process.env.NOTIFY_CENTER_TOKEN?.trim();
+  const chatCommandNotifySink = chatCommandNotifyEventUrl && chatCommandNotifyToken
+    ? createNoticePlaceSink({ eventUrl: chatCommandNotifyEventUrl, token: chatCommandNotifyToken })
+    : undefined;
   const chatCommandPipeline = new ChatCommandPipeline({
     run: (input) => autopilotSessionCommand(input),
     reply: (harness, sessionId, text, inputId) => processSupervisor.sendMessage(harness, sessionId, {
@@ -1335,6 +1340,30 @@ async function main() {
     }),
     ledgerPath: join(autopilotStateDir, "chat-commands.json"),
     onError: (message) => console.error(`[agent-herder] ${message}`),
+    notify: chatCommandNotifySink
+      ? ({ harness, sessionId, action, enabled, reply }) => {
+          // One push per real state change (on/off/toggle). The body carries
+          // the harness, the chat id and the same reply that landed in the
+          // chat, so the owner can confirm which chat toggled even when they
+          // work across many harnesses. Never fires for /pilot status.
+          const payload = createNoticePlacePayload({
+            title: `Автопилот ${enabled ? "включён" : "выключен"}: ${harness}`,
+            body: `${reply}
+Чат: ${sessionId}`,
+            severity: "low",
+            project: process.env.NOTIFY_CENTER_PROJECT || "agent-herder",
+            recipient: process.env.NOTIFY_CENTER_RECIPIENT || process.env.AGENT_HERDER_AUTOPILOT_NOTIFY_RECIPIENT || "me",
+            kind: "notification",
+            eventType: "autopilot.chat_command",
+            dedupKey: `chat-command-pilot-${harness}-${sessionId}-${action}-${Date.now()}`,
+            correlationId: `chat-command:${harness}:${sessionId}`,
+            signalType: "autopilot_toggle",
+          });
+          return chatCommandNotifySink.send(payload).catch((error) => {
+            console.error(`[agent-herder] chat command push notify failed: ${error instanceof Error ? error.message : String(error)}`);
+          });
+        }
+      : undefined,
   });
   const browserTurnObserver = browserAutopilotHarnesses.length
     ? new BrowserTurnAutopilotObserver({

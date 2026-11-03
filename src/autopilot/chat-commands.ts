@@ -94,6 +94,19 @@ export type ChatCommandRunner = (input: {
   cwd?: string;
 }) => Promise<Record<string, unknown>>;
 
+/** Optional push-notification sink for an executed /pilot command.
+ *  Fires only on a real state change (on / off / toggle), never on
+ *  /pilot status (which is a read-only query). The owner asked for
+ *  this: they toggle autopilot from many chat harnesses directly, and
+ *  a push lets them confirm which chat actually changed state. */
+export type ChatCommandNotify = (input: {
+  harness: string;
+  sessionId: string;
+  action: "on" | "off";
+  enabled: boolean;
+  reply: string;
+}) => Promise<void> | void;
+
 /** Delivers the answer of a command back into its chat. */
 export type ChatCommandReply = (
   harness: string,
@@ -137,6 +150,7 @@ export class ChatCommandPipeline {
     reply: ChatCommandReply;
     ledgerPath: string;
     onError?: (message: string) => void;
+    notify?: ChatCommandNotify;
   }) {
     this.ledger = new ChatCommandLedger(options.ledgerPath);
   }
@@ -233,6 +247,16 @@ export class ChatCommandPipeline {
       const reply = enabled
         ? "[Agent Herder] Автопилот этой сессии включён: законченные ходы оцениваются, незаконченная цель продолжается автоматически. Выключить: /pilot off."
         : "[Agent Herder] Автопилот этой сессии выключен. Включить: /pilot on.";
+      // Push notification: only for a real state change (on/off/toggle),
+      // never for /pilot status. The owner toggles autopilot from many
+      // chat harnesses directly and a push confirms which chat changed.
+      if (this.options.notify) {
+        try {
+          await this.options.notify({ harness, sessionId, action, enabled, reply });
+        } catch (error) {
+          this.options.onError?.(`chat command push notify failed for ${harness}/${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
       return await this.answer(harness, sessionId, replyInputId, reply,
         { ok: true, enabled, ...(typeof result.source === "string" ? { source: result.source } : {}) });
     } catch (error) {

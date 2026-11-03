@@ -12,6 +12,14 @@ import { liveHarnessPollingEnabled, liveHarnessPromptPollingEnabled } from "../h
 const ORIGIN = "https://chatgpt.com";
 const MAX_MESSAGE = 16_000;
 const POST_SEND_GUARD_MS = 1_800;
+/** How long a chat we last saw generating stays marked working after the
+ *  hosting tab navigates away. The chatgpt site's async_status is not a
+ *  reliable background-running signal, so without this grace window the
+ *  autopilot would lose running->idle transitions every time the herder
+ *  borrows the tab to deliver a continuation to another chat. Five
+ *  minutes is longer than a typical model turn and shorter than the
+ *  observer's stale-refresh window, so a real finish still lands. */
+const RECENTLY_GENERATING_TTL_MS = 5 * 60 * 1000;
 const NATIVE_CHAT_ID = /^[a-f0-9]{8}-[a-f0-9-]{20,75}$/i;
 type Phase = "idle" | "generating" | "unknown";
 export type Page = { id: number; url: string; selected?: boolean; conversation?: boolean };
@@ -186,6 +194,19 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   private operation: Promise<void> = Promise.resolve();
   private lastSubmittedAt = 0;
   private accountScope: string | undefined;
+  /** Chats recently observed with phase=generating while their tab was
+   *  selected. The ChatGPT site's /backend-api/conversations often returns
+   *  an empty items list (or omits async_status), so the only reliable
+   *  "this chat is generating" signal is the editor's Stop button on the
+   *  tab that hosts the chat. When the herder navigates that tab to a
+   *  different chat (to deliver a continuation, to read messages, ...),
+   *  the adapter would otherwise lose the running state and the autopilot's
+   *  browser-turn-observer would never see the running->idle transition
+   *  that fires the Stop consumer (and with it the /pilot command path).
+   *  We therefore remember every chat we last saw generating, keep it
+   *  marked working for RECENTLY_GENERATING_TTL_MS, and clear it the next
+   *  time its own tab returns and reports phase=idle. */
+  private readonly recentlyGenerating = new Map<string, number>();
   getAccountScope(): string | undefined { return this.accountScope; }
 
   // --------------------------------------------------------------
@@ -378,17 +399,41 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
 
   private toChat(id: string, title: string, s: Snapshot, at?: number, asyncStatus?: number): BrowserChat {
     const selected = s.path.endsWith("/c/" + id);
+    // Track which chats we currently see generating on their own tab.
+    // The selected tab is the only place the DOM exposes a Stop button,
+    // so phase=generating+selected is the one honest "this chat is
+    // running right now" signal we can read without a site API that
+    // works. When the tab moves away we keep that chat marked working
+    // for the TTL grace window so the browser-turn-observer still sees
+    // the running->idle transition when the model actually finishes.
+    if (selected && s.phase === "generating") {
+      this.recentlyGenerating.set(id, Date.now());
+    } else if (selected && s.phase === "idle") {
+      // The tab came back to a chat that is now idle: the turn we may
+      // have been remembering is over. Clear it so working flips back
+      // to false immediately, not after the TTL expires.
+      this.recentlyGenerating.delete(id);
+    }
+    const recentlyRunning = !selected && this.recentlyGenerating.has(id)
+      && Date.now() - (this.recentlyGenerating.get(id) ?? 0) < RECENTLY_GENERATING_TTL_MS;
+    if (!selected && !recentlyRunning) {
+      // TTL expired: drop the stale entry so the map cannot grow
+      // unbounded across a long session.
+      this.recentlyGenerating.delete(id);
+    }
     // ChatGPT's conversation list exposes async_status per chat: non-zero
     // marks a conversation with an active background operation (a generation
     // that continued after the driver navigated away, or another async task).
     // That is the only honest busy signal for a conversation not open in the
     // observed tab; the DOM Stop control exists only on the selected page.
     const nativeRunning = !selected && typeof asyncStatus === "number" && asyncStatus !== 0;
+    const working = selected ? this.busy(s) : (nativeRunning || recentlyRunning);
     return {
       id, title, updatedAt: typeof at === "number" && at > 0
         ? new Date(at < 1e12 ? at * 1000 : at).toISOString() : new Date().toISOString(),
-      working: selected ? this.busy(s) : nativeRunning,
-      ...(nativeRunning ? { workingSource: "native-async-status" as const } : {}),
+      working,
+      ...(nativeRunning ? { workingSource: "native-async-status" as const }
+        : recentlyRunning ? { workingSource: "recently-generating" as const } : {}),
       stopVisible: selected && s.phase === "generating",
       unread: false, updatedAtSemantics: typeof at === "number" && Number.isFinite(at) && at > 0 ? "remote-update-time" : "observed-sidebar-order",
       sourceRoute: ORIGIN + "/c/" + id,
@@ -708,9 +753,15 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       if (state.phase === "generating" || Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS) {
         throw new Error("prompt is already running; browser queue must wait");
       }
-      // Only the authenticated workspace dashboard may lack a composer and
-      // report unknown state before navigation. Unknown chat state fails closed.
-      if (state.phase !== "idle" && state.path !== "/dots/home") {
+      // Unknown phase fails closed ONLY when the picked tab is already on the
+      // target chat: navigation cannot recover a broken target. A different
+      // conversation, the workspace dashboard, or any other authenticated
+      // path in unknown state may still recover once we navigate to the
+      // target chat — the post-navigate snapshot loop below either confirms
+      // a ready composer or throws "target or idle state not confirmed".
+      // Without this relaxation, one stuck tab on a stale conversation
+      // blocked every chatgpt send (autotest: chatgpt-mac-cdp-driver.test.ts).
+      if (state.phase === "unknown" && state.path === "/c/" + chatId) {
         throw new Error("ChatGPT composer unavailable; message not sent");
       }
       if (state.path !== "/c/" + chatId) {
