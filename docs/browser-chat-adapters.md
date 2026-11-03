@@ -193,3 +193,28 @@ model switching remains available on an actual native conversation afterward.
 Safety/acceptance: tests exercise both providers with simulated page tools.
 No personal first message was sent during implementation, and this feature
 is not deployed by creating the source branch.
+
+## Creating new browser chats (feat/browser-chat-create-20261103)
+
+ChatGPT and Z.ai allocate a persistent native conversation route only
+after the first user message. createSession therefore persists a private
+account-scoped LOCAL EMPTY DRAFT and returns a selectable draft ID. No
+automatic prompt is submitted, and this does not consume model quota.
+
+The first user message opens a new background tab on the same site,
+verifies its authenticated account against the owner of the local draft,
+fills only that user message and clicks the unique Send button after a
+target/draft/Stop safety preflight. The native conversation route is
+verified before it is bound to the local draft, preserving one stable
+Herder session ID across the transition.
+
+Pre-click failures can return to pending. An uncertain post-click outcome
+is durably marked uncertain and never retried automatically. Drafts are
+stored per site and per verified account (mode 0600), capped at 100.
+A changed account cannot read or send another account's drafts.
+
+The UI shows ChatGPT and Z.ai as separate create-session choices with no
+filesystem folder or model defaults for local browser drafts. It explains
+that the empty chat appears on the site after its first real message.
+
+No test messages were sent to personal ChatGPT or Z.ai accounts.

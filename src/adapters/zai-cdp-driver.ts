@@ -558,7 +558,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
         if (draft.remoteId) {
           chatId = draft.remoteId;
         } else {
-          const receipt = await submitFirstChatMessage(this.tools,"zai",text);
+          const receipt = await submitFirstChatMessage(this.tools,"zai",text,this.accountScope);
           if (!receipt.clicked) {
             await this.drafts.resetPreClick(chatId);
             throw new Error("ZAI first message not submitted: "+(receipt.reason||"unknown"));

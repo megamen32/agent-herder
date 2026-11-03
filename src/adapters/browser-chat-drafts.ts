@@ -24,6 +24,10 @@ const MAX_DRAFTS = 100;
 export class BrowserChatDraftStore {
   private dir = "";
   private scope = "";
+  /** Prevent an older asynchronous account read from restoring another
+   * account's drafts after the browser has switched identities.
+   */
+  private scopeEpoch = 0;
   private readonly items = new Map<string, BrowserChatDraft>();
   constructor(
     private readonly provider: "chatgpt" | "zai",
@@ -43,6 +47,7 @@ export class BrowserChatDraftStore {
 
   async useScope(scope?: string): Promise<void> {
     if (scope===this.scope) return;
+    const epoch = ++this.scopeEpoch;
     this.items.clear();this.scope="";this.dir="";
     if (!scope || !ACCOUNT_SCOPE.test(scope)) return;
     const dir=join(this.root,this.provider,scope);
@@ -64,19 +69,21 @@ export class BrowserChatDraftStore {
         drafts.push(data);
       } catch { /* an invalid cache file cannot create a conversation */ }
     }
+    if (epoch !== this.scopeEpoch) return;
     this.scope=scope;this.dir=dir;
     drafts.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
     for (const draft of drafts.slice(0,MAX_DRAFTS)) this.items.set(draft.id,draft);
   }
 
   private async save(data: BrowserChatDraft): Promise<void> {
-    const dir=this.dir,target=this.path(data.id);
+    const dir=this.dir,target=this.path(data.id),epoch=this.scopeEpoch;
     await mkdir(dir,{recursive:true,mode:0o700});
     await chmod(dir,0o700);
     const temp=target+"."+randomUUID()+".tmp";
     try {
       await writeFile(temp,JSON.stringify(data),{mode:0o600,flag:"wx"});
-      if (this.dir!==dir) throw new Error("Browser account changed while persisting a draft");
+      if (this.dir!==dir || epoch!==this.scopeEpoch)
+        throw new Error("Browser account changed while persisting a draft");
       await rename(temp,target);
       this.items.set(data.id,data);
     } finally { await unlink(temp).catch(()=>undefined); }

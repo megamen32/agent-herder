@@ -1,4 +1,5 @@
 import { parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
+import { CHATGPT_LIST_API_SCRIPT, ZAI_LIST_API_SCRIPT } from "./browser-chat-api-scripts.js";
 
 export type BrowserChatSite = "chatgpt" | "zai";
 const SITE_ORIGIN = {chatgpt:"https://chatgpt.com",zai:"https://chat.z.ai"} as const;
@@ -99,11 +100,29 @@ export interface NewChatSubmitReceipt {
  * createChat: creation itself must never send a synthetic prompt or use quota.
  */
 export async function submitFirstChatMessage(
-  tools:ChromePageTools,site:BrowserChatSite,text:string,
+  tools:ChromePageTools,site:BrowserChatSite,text:string,expectedScope?:string,
 ):Promise<NewChatSubmitReceipt> {
   let pageId:number;
   try { pageId=await openOwnedBlankChatPage(tools,site); }
   catch(error) { return {clicked:false,uncertain:false,reason:String(error)}; }
+  // A new tab must belong to the *same* browser account that owns the
+  // local draft. Browser profiles can coexist and account changes must not
+  // silently redirect the first user message to someone else's account.
+  if (expectedScope !== undefined) {
+    let verified=false;
+    try {
+      const result=parseChromeEvaluation<{scope?:string;error?:string}>(
+        await tools.call("evaluate_script", {
+          pageId,
+          function:site==="chatgpt"?CHATGPT_LIST_API_SCRIPT:ZAI_LIST_API_SCRIPT,
+        }));
+      verified=/^[a-f0-9]{64}$/.test(expectedScope) && result.scope===expectedScope;
+    }catch { /* no auth proof means do not send */ }
+    if (!verified) {
+      await tools.call("close_page",{pageId}).catch(()=>undefined);
+      return {clicked:false,uncertain:false,reason:"New-chat account identity could not be verified"};
+    }
+  }
   const editorLabel=site==="chatgpt"
     ? /uid=([\w-]+) textbox "(?:Спросить ChatGPT|Ask ChatGPT|Ask anything|Message ChatGPT)"/i
     : /uid=([\w-]+) textbox "Send a Message"/i;
