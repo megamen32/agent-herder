@@ -161,12 +161,14 @@ export function parseHarnessRuntimeSettings(raw: string): HarnessRuntimeSettings
   return document;
 }
 
-/** May this harness make its background requests? The master switch first,
- * the override of the harness second: a harness is polled only when both
- * say yes. */
+/** May this harness make its background requests? The global switch is the
+ * default; a per-harness override wins either way — `true` enables a
+ * harness even when the global switch is off, `false` pauses one harness
+ * even when the global switch is on. ChatGPT's 429 (which only an owner
+ * mapped to a global pause) no longer reaches Z.ai. */
 export function harnessPollingEnabled(document: HarnessRuntimeSettingsDocument, harness: string): boolean {
-  if (!document.pollingEnabled) return false;
-  return document.harnesses[harness]?.pollingEnabled !== false;
+  const override = document.harnesses[harness]?.pollingEnabled;
+  return override ?? document.pollingEnabled;
 }
 
 /** May the ChatGPT modal-prompt poller run? Its snapshots read the local

@@ -525,6 +525,49 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     }));
   }
 
+
+  /** One bounded re-read of the account's chat list from Z.ai's own API,
+   * merging fresh turn state into the durable inventory — the same call the
+   * enabled poller makes, without waiting for the next list tick. The
+   * browser turn observer uses it to un-freeze a running turn whose
+   * inventory stopped advancing. Read-only: never navigates or clicks. */
+  async refreshTurnState(chatId: string): Promise<boolean> {
+    // The owner's runtime switch governs every request of the herder's own;
+    // a paused harness never refreshes actively.
+    if (!liveHarnessPollingEnabled("zai")) return false;
+    let nativeId = chatId.startsWith("route:") ? chatId.slice(6) : "";
+    if (!nativeId && chatId.startsWith("sidebar:")) {
+      const title = parseTitleId(chatId);
+      const candidates = [...this.cache.values()].filter(chat =>
+        chat.title === title && chat.id.startsWith("route:"));
+      if (candidates.length === 1) nativeId = candidates[0]!.id.slice(6);
+    }
+    if (!/^[a-f0-9-]{12,80}$/i.test(nativeId)) return false;
+    try {
+      const page = await this.page();
+      const data = parseChromeEvaluation<{
+        scope?: string; error?: string;
+        chats?: Array<{ id: string; title: string; updatedAt?: number; unread?: boolean; lastRunStatus?: string }>;
+      }>(await this.tools.call("evaluate_script", { pageId: page.id, function: ZAI_LIST_API_SCRIPT }));
+      if (data.error || !Array.isArray(data.chats)) return false;
+      if (data.scope && /^[a-f0-9]{64}$/.test(data.scope)) {
+        this.accountScope = data.scope;
+        this.inventoryCache.setAccountScope(data.scope);
+      }
+      if (!this.inventoryLoaded) { await this.inventoryCache.load(); this.inventoryLoaded = true; }
+      this.inventoryCache.merge(data.chats.map(entry => ({
+        id: entry.id,
+        title: entry.title && entry.title.trim() ? entry.title : "ZAI conversation",
+        updatedAt: entry.updatedAt, lastRunStatus: entry.lastRunStatus, seenAt: Date.now(),
+      })));
+      await this.inventoryCache.save();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+
   /** Read the user's own unsent draft so the herder's send can restore it
    * after submission instead of clobbering it. */
   private async readComposerDraft(pageId: number): Promise<string> {

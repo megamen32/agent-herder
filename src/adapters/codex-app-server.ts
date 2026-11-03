@@ -2952,7 +2952,16 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       return;
     }
     if (!this.child?.stdin.writable) throw new Error("Codex app-server stdin is not writable");
-    this.child.stdin.write(`${serialized}\n`);
+    const stdin = this.child.stdin as NodeJS.WriteStream & { __epipeGuarded?: boolean };
+    if (!stdin.__epipeGuarded) {
+      stdin.__epipeGuarded = true;
+      // A dead app-server rejects stdin writes with EPIPE: an unhandled stream
+      // error must never take the whole herder process down.
+      stdin.on("error", (error: NodeJS.ErrnoException) => {
+        console.error(`[agent-herder] codex app-server stdin write failed (${error?.code ?? error?.message}); transport down`);
+      });
+    }
+    stdin.write(`${serialized}\n`);
   }
 
   private rejectRequest(id: number, error: Error): void {

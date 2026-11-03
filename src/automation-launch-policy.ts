@@ -399,7 +399,7 @@ export async function appendLaunchPolicyAudit(policyPath: string, record: Launch
   }
 }
 
-const HARNESSES: readonly HarnessType[] = ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"];
+const HARNESSES: readonly HarnessType[] = ["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "zai"];
 export const MAX_MODEL_LENGTH = 256;
 /** The length of the reference to an AI profile: an identifier, not a document. */
 export const MAX_PROFILE_ID_LENGTH = 256;

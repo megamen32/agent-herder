@@ -32,6 +32,11 @@ export interface BrowserChatDriver {
   getKnownChat?(chatId: string): BrowserChat | null;
   /** Authenticated read-only owner API; no navigation or model turn. */
   getMessages?(chatId: string): Promise<SessionMessageView[] | null>;
+  /** One bounded re-read of the turn state of one chat from the
+   * provider's own API, merging the fresh result into the durable
+   * inventory. Used by the browser turn observer when a running turn's
+   * inventory froze. */
+  refreshTurnState?(chatId: string): Promise<boolean>;
   /** SHA-256 browser account ID; never a token, cookie or display name. */
   getAccountScope?(): string | undefined;
   sendMessage(
@@ -327,6 +332,20 @@ export class BrowserChatAdapter implements HarnessAdapter {
     if (this.historyCache.available) return this.historyCache.messages(native, limit);
     const live = await this.driver.getMessages(native);
     return live?.slice(-Math.max(1, limit)) ?? null;
+  }
+
+  /** One bounded driver-side re-read of the turn state of one chat. The
+   * browser turn observer calls this when a running turn's inventory
+   * froze; the refreshed inventory lets the next tick observe the real
+   * idle state and submit the finished turn to the Stop consumer. */
+  async refreshSession(id: string): Promise<boolean> {
+    const native = this.nativeId(id);
+    if (!this.driver.refreshTurnState) return false;
+    try {
+      return await this.driver.refreshTurnState(native);
+    } catch {
+      return false;
+    }
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {

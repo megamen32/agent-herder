@@ -26,7 +26,7 @@ export class SingletonHarnessMesh {
   if(!request.inputId||request.inputId.length>256||!request.message.trim()||request.message.length>4000)throw new Error("Stable inputId and bounded delta required");
   if(request.target.hostId!==this.deps.hostId)return {state:"not_attempted" as const,inputId:request.inputId,retryable:true,reason:"native_host_identity_mismatch"};
   const reject=(reason:string)=>({state:"not_attempted" as const,inputId:request.inputId,retryable:false,reason});
-  if(!["opencode","claude","codex","qoder","hermes","zcode","fast-agent","chatgpt"].includes(request.sender.harness))return reject("unsupported_native_sender_harness");
+  if(!["opencode","claude","codex","qoder","hermes","zcode","fast-agent","chatgpt","zai"].includes(request.sender.harness))return reject("unsupported_native_sender_harness");
   if(this.deps.allowedSender&&addressKey(request.sender)!==addressKey(this.deps.allowedSender))return reject("interim_known_sender_only");
   return this.ledger.once(request,async()=>{
    try{await this.deps.verifyOwner();}catch{return {state:"not_attempted" as const,inputId:request.inputId,retryable:true,reason:"singleton_native_owner_identity_unverified"};}

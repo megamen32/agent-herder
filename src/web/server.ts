@@ -29,6 +29,7 @@ import type { HarnessType } from "session-convert";
 import { LineageStore } from "../lineage-store.js";
 import { SessionNotFoundError, SessionSupervisor } from "../session-supervisor.js";
 import type { AgentSession, HarnessAdapter, SessionDetails } from "../types/index.js";
+import { sessionShortId } from "../session-short-id.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "../session-convert.js";
 import { askHuman, HumanRequestLockUnavailableError, HumanRequestRegistry, resumeHumanRequestOnce } from "../human-request/index.js";
 import { boundedHumanAnswer } from "../human-request/resume-admission.js";
@@ -2119,6 +2120,35 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 500, { ok: false, error: (error as Error).message });
     }
   }
+  if (url.pathname === "/api/logs" && request.method === "GET") {
+    response.setHeader("cache-control", "no-store");
+    const rawLines = Number(url.searchParams.get("lines"));
+    const lineCount = Number.isFinite(rawLines) && rawLines > 0 ? Math.min(Math.trunc(rawLines), 2000) : 400;
+    const sinceRaw = url.searchParams.get("since");
+    const since = typeof sinceRaw === "string" && sinceRaw.trim() && /^[0-9a-zA-Z :.\-]+$/.test(sinceRaw.trim()) ? sinceRaw.trim() : "";
+    const args = ["--user-unit=agent-herder.service", "--no-pager", "-n", String(lineCount), "--output=short-iso"];
+    if (since) args.push("--since", since);
+    try {
+      const result = await new Promise<{ stdout: string; stderr: string; err: string | null }>((resolve) => {
+        execFile("/usr/bin/journalctl", args, { timeout: 8_000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+          resolve({ stdout: stdout ?? "", stderr: stderr ?? "", err: err ? err.message : null });
+        });
+      });
+      const out = result.stdout.trim();
+      const logLines = out ? out.split("\n") : [];
+      return sendJson(response, 200, {
+        at: new Date().toISOString(),
+        unit: "agent-herder.service",
+        lines: logLines,
+        truncated: logLines.length >= lineCount,
+        since: since || undefined,
+        error: result.err && !logLines.length ? result.err : undefined,
+      });
+    } catch (cause) {
+      return sendJson(response, 500, { ok: false, error: `Логи недоступны: ${(cause as Error).message}` });
+    }
+  }
+
   if (url.pathname === "/api/autopilot/policy" && (request.method === "GET" || request.method === "PUT")) {
     if (!autopilotPolicyStore) return sendJson(response, 503, { error: "Autopilot policy store is disabled" });
     if (request.method === "GET") return sendJson(response, 200, await autopilotPolicyStore.readEffective());
@@ -3321,6 +3351,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 200, { goals: [], source: "unavailable", reason: "runtime_state_unavailable" });
     }
   }
+// The short id travels with every listed session so callers can reference
+  // one chat without copying its full native id.
+  const withSessionShortIds = (rows: AgentSession[]) => rows.map((row) => ({ ...row, shortId: sessionShortId(row.harness, row.id) }));
   if (request.method === "GET" && url.pathname === "/api/sessions") {
     const filters = {
       harness: url.searchParams.get("harness") || undefined,
@@ -3348,13 +3381,13 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       const truncated = visible.length < total;
       return sendJson(response, 200, url.searchParams.get("inventory") === "1"
         ? { sessions: projectSessionInventory(visible), warming: snapshot.warming, total, limit: asked, truncated }
-        : { ...snapshot, sessions: visible, total, limit: asked, truncated });
+        : { ...snapshot, sessions: withSessionShortIds(visible), total, limit: asked, truncated });
     }
     const sessions = await supervisor.listSessions(filters);
     const total = sessions.length;
     const visible = sessionListWindow(orderSessionListForPanel(sessions), asked);
     sendJson(response, 200, {
-      sessions: url.searchParams.get("inventory") === "1" ? projectSessionInventory(visible) : visible,
+      sessions: url.searchParams.get("inventory") === "1" ? projectSessionInventory(visible) : withSessionShortIds(visible),
       warming: false,
       total,
       limit: asked,

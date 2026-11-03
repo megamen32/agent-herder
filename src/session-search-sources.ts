@@ -184,13 +184,47 @@ async function* sqliteSessions(harness:'opencode'|'zcode'|'hermes',path:string,o
 /** Read persisted source files only. No adapter caps, native writes or model calls. */
 export async function* scanSessionSearchSources(options:Options={}):AsyncGenerator<SearchSourceSession>{
  options={...options};
+ /** Browser-chat harnesses keep a durable per-account inventory mirror on
+  * disk. Reading it gives the search the native conversation ids and titles,
+  * so a pasted deep link resolves to the exact chat even while the browser
+  * tab itself is closed. Synthetic all-'a' scopes are test fixtures and are
+  * never indexed. Message text stays unindexed for now: these rows are
+  * metadata-only identities. */
+ async function* browserChatInventory(harness:'chatgpt'|'zai',options:Options):AsyncGenerator<SearchSourceSession>{
+  const root=process.env.AGENT_HERDER_BROWSER_CHAT_INVENTORY_ROOT||join(homedir(),'.local/state/agent-herder/browser-chat-inventory');
+  const cwd=join(homedir(),'.browser-chat',harness);
+  const scopes=await readdir(join(root,harness),{withFileTypes:true}).catch(()=>undefined);
+  if(!scopes){options.onIssue?.('browser_inventory_root_missing');return;}
+  for(const scope of scopes){
+   check(options.signal);
+   if(!scope.isDirectory()||/^a{16,}$/.test(scope.name))continue;
+   let stored:{chats?:unknown};
+   try{stored=JSON.parse(await readFile(join(root,harness,scope.name,'inventory.json'),'utf8')) as {chats?:unknown};}
+   catch{options.onIssue?.('browser_inventory_unreadable');continue;}
+   if(!Array.isArray(stored.chats))continue;
+   for(const chat of stored.chats){
+    check(options.signal);
+    if(!chat||typeof chat!=='object')continue;
+    const record=chat as Record<string,unknown>;
+    const id=str(record.id);
+    if(!id)continue;
+    const title=str(record.title);
+    // The stored ids are raw native conversation ids; the adapter address is
+    // the provider-scoped encoding of the driver route id, so the rows match
+    // exactly what listSessions reports and what a caller may send to.
+    const nativeSessionId=harness==='zai'?`zai::${encodeURIComponent('route:'+id)}`:`chatgpt::${encodeURIComponent(id)}`;
+    yield {harness,nativeSessionId,title:title||nativeSessionId,cwd,revision:JSON.stringify(chat),contentUnavailable:true,chunks:(async function*(){})()};
+   }
+  }
+ }
  const home=homedir();const sources:Array<{harness:string;source:string;scan:()=>AsyncGenerator<SearchSourceSession>}>= [
   {harness:'codex',source:process.env.CODEX_HOME||join(home,'.codex'),scan:()=>codex(options)},
   {harness:'minimax-code',source:process.env.MINIMAX_CODE_SESSION_STORE||join(home,'.minimax/v2/sessions'),scan:()=>minimax(options)},
   ...(['opencode','zcode','hermes'] as const).map(harness=>{const source=harness==='opencode'?process.env.OPENCODE_DB_PATH||join(home,'.local/share/opencode/opencode.db'):harness==='zcode'?process.env.ZCODE_DB_PATH||join(home,'.zcode/cli/db/db.sqlite'):process.env.HERMES_STATE_DB||join(process.env.HERMES_HOME||join(home,'.hermes'),'state.db');return {harness,source,scan:()=>sqliteSessions(harness,source,options)};}),
   {harness:'claude',source:process.env.CLAUDE_PROJECTS_DIR||join(home,'.claude/projects'),scan:async function*(){for await(const p of files(process.env.CLAUDE_PROJECTS_DIR||join(home,'.claude/projects'),options.signal))if(p.endsWith('.jsonl')){const session=await safeJsonSession(p,'claude',options);if(session)yield session;}}},
+  ...(['chatgpt','zai'] as const).map(harness=>({harness,source:process.env.AGENT_HERDER_BROWSER_CHAT_INVENTORY_ROOT||join(home,'.local/state/agent-herder/browser-chat-inventory'),scan:()=>browserChatInventory(harness,options)})),
  ];
  const originalIssue=options.onIssue;
  for(const source of sources){let sessions=0,textSessions=0,missingContent=0,chunks=0;let issue:string|undefined;options.onIssue=(reason)=>{issue=reason;originalIssue?.(reason);};try{check(options.signal);for await(const session of source.scan()){const original=session.chunks;let hasText=false;if(session.contentUnavailable)missingContent++;session.chunks=(async function*(){try{for await(const chunk of original){if(!hasText){hasText=true;textSessions++;}chunks++;yield chunk;}}catch(error){issue='native_session_content_read_failed';throw error;}})();yield session;sessions++;}options.onStatus?.({harness:source.harness,source:source.source,state:issue?'partial':'complete',sessions,catalogSessions:sessions,textSessions,missingContent,chunks,...(issue?{reason:issue}:{})});}catch(error){check(options.signal);options.onStatus?.({harness:source.harness,source:source.source,state:sessions?'partial':'unavailable',sessions,reason:error instanceof Error?error.message:'source_read_failed'});}}
- for(const harness of ['qoder','fast-agent','chatgpt'])options.onStatus?.({harness,source:'native-persisted-reader',state:'unsupported',sessions:0,reason:'native_persisted_history_reader_not_available'});
+ for(const harness of ['qoder','fast-agent'])options.onStatus?.({harness,source:'native-persisted-reader',state:'unsupported',sessions:0,reason:'native_persisted_history_reader_not_available'});
 }

@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {DatabaseSync} from 'node:sqlite';
 import {scanSessionSearchSources,type SearchSourceStatus} from '../src/session-search-sources.js';
 const roots:string[]=[];afterEach(async()=>{vi.unstubAllEnvs();await Promise.all(roots.splice(0).map(p=>rm(p,{recursive:true,force:true})));});
-async function fixture(){const root=await mkdtemp(join(tmpdir(),'search-sources-'));roots.push(root);for(const key of ['CODEX_HOME','MINIMAX_CODE_SESSION_STORE','OPENCODE_DB_PATH','ZCODE_DB_PATH','HERMES_STATE_DB','CLAUDE_PROJECTS_DIR'])vi.stubEnv(key,join(root,key));return root;}
+async function fixture(){const root=await mkdtemp(join(tmpdir(),'search-sources-'));roots.push(root);for(const key of ['CODEX_HOME','MINIMAX_CODE_SESSION_STORE','OPENCODE_DB_PATH','ZCODE_DB_PATH','HERMES_STATE_DB','CLAUDE_PROJECTS_DIR','AGENT_HERDER_BROWSER_CHAT_INVENTORY_ROOT'])vi.stubEnv(key,join(root,key));return root;}
 describe('persisted session search sources',()=>{
  it('streams every Codex message and preserves catalog identity and title beyond UI caps',async()=>{
   const root=await fixture(),home=join(root,'CODEX_HOME');await mkdir(home,{recursive:true});const path=join(root,'archived.jsonl');

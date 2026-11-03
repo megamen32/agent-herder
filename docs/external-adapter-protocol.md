@@ -137,3 +137,66 @@ the bridge to a Go subprocess means:
 
 This is what makes `--max-old-space-size=512` realistic without giving
 up the heavy harness bridges.
+
+
+## Wiring an external adapter to a harness (Go adapter for every driver)
+
+The supervisor accepts external adapter processes for ANY harness through one
+environment variable (JSON array):
+
+    AGENT_HERDER_EXTERNAL_ADAPTERS='[
+      {"harness":"codex","command":"/home/roomhacker/agents-projects/agent-herder/external-adapters/go/session-reader/session-reader-adapter"},
+      {"harness":"claude","command":"/abs/path/adapter","args":["--flag"],"env":{"CLAUDE_PROJECTS_DIR":"/srv/claude"}}
+    ]'
+
+Rules:
+- `command` must be absolute; `args`, `cwd`, `env`, `requestTimeoutMs` and
+  `shutdownGraceMs` are optional; up to 12 entries; one entry per harness.
+- The external process must speak AHAP and answer `initialize`. When it
+  does, it takes over the harness's read surface — exactly the methods it
+  declared in `initialize` — while the builtin TypeScript adapter keeps
+  control, delivery and every optional surface the subprocess does not
+  implement.
+- When the process cannot start or does not answer, the supervisor logs one
+  line and falls back to the builtin TypeScript adapter, so a broken binary
+  never takes a driver down.
+
+`external-adapters/go/session-reader` is the generic read-only Go adapter for
+every driver with an on-disk session store (codex, opencode, zcode, hermes,
+claude; minimax-code keeps its dedicated Phase A port). It advertises only
+`init`, `listSessions`, `getSession` and `getSessionMessages`, so a harness
+routed to it keeps control and delivery on its builtin adapter surface until
+the Go port implements them.
+
+## Runtime split semantics (how the supervisor wires an external adapter)
+
+Two wiring points apply the same split:
+
+- `applyExternalAdapterOverrides` wraps the harness factories, so the adapter
+  registry serves the split adapter when it lazily creates one.
+- `applyExternalAdapterOverridesToLiveAdapters` runs once after the startup
+  init barrier (`await Promise.allSettled(inits)` in `src/index.ts`) and wraps
+  every live adapter whose harness has an entry; the mesh, the fleet API and
+  the autopilot all read the same adapter map, so every later call is served
+  by the split.
+
+Routing rules inside the split adapter:
+
+- Methods the subprocess declared (typically `init`, `listSessions`,
+  `getSession`, `getSessionMessages`, `subscribeEvents`) go to the subprocess.
+- Everything else — `sendMessage`, `stopTurn`, `createSession`, resume,
+  permission and coordination surfaces — goes to the builtin adapter.
+- `type` and `name` come from the subprocess, so logs and the registry show
+  which binary serves the reads; `controlCapabilities` stays the builtin's,
+  because the builtin still drives the harness.
+- Events from both sides fan out to one listener.
+- When the subprocess dies, its next call is served by the builtin adapter
+  and the failure is logged: a crashed binary degrades read latency instead
+  of taking the harness down.
+
+The live runtime configuration (drop-in
+`~/.config/systemd/user/agent-herder.service.d/60-external-adapters.conf`)
+routes every driver with an on-disk session store to its Go adapter: codex,
+opencode, zcode, hermes and claude share
+`external-adapters/go/session-reader/session-reader-adapter`, and minimax-code
+keeps its dedicated `external-adapters/go/minimax-code/minimax-code-adapter`.

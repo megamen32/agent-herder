@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import {isShortSessionId,sessionShortId} from './session-short-id.js';
 import {mkdirSync,chmodSync} from 'node:fs';
 import {homedir,hostname} from 'node:os';
 import {dirname,join} from 'node:path';
@@ -216,11 +217,24 @@ export class SessionSearchIndex {
   // prefix and the provider-scoped encodings of both.
   const linkIds=deepLinkSessionIds(input.query);
   if(linkIds.length){
-   const forms=linkIds.flatMap(id=>[id,'route:'+id,'route%3A'+id,'zai::'+id,'zai::route%3A'+id,'zai::route:'+id]);
+   const forms=linkIds.flatMap(id=>[id,'route:'+id,'route%3A'+id,'zai::'+id,'zai::route%3A'+id,'zai::route:'+id,'chatgpt::'+id]);
    const identity=this.db.prepare(`SELECT harness,native_id,title,cwd,revision FROM sessions WHERE native_id IN (${forms.map(()=>'?').join(',')}) ${harnesses.length?'AND harness IN ('+harnesses.map(()=>'?').join(',')+')':''}`).all(...forms,...harnesses) as Array<{harness:string;native_id:string;title:string;cwd:string;revision:string}>;
    for(const row of identity){
     const key=JSON.stringify([row.harness,row.native_id]);if(seen.has(key))continue;seen.add(key);
-    results.push({hostId:this.hostId,harness:row.harness,nativeSessionId:row.native_id,title:row.title,cwd:row.cwd,revision:row.revision,chunkId:'identity',snippet:'',rank:0});
+    results.push({hostId:this.hostId,harness:row.harness,nativeSessionId:row.native_id,title:row.title,cwd:row.cwd,revision:row.revision,chunkId:'identity',snippet:'',rank:0,shortId:sessionShortId(row.harness,row.native_id)});
+    if(results.length>=limit)break;
+   }
+  }
+  // A short id is an exact identity too: it resolves before lexical ranking,
+  // so a short id like z3f9a is never answered by an unrelated chat whose
+  // text happens to contain the same letters.
+  const shortQuery=input.query.trim().toLowerCase();
+  if(isShortSessionId(shortQuery)){
+   const rows=this.db.prepare(`SELECT harness,native_id,title,cwd,revision FROM sessions ${harnesses.length?'WHERE harness IN ('+harnesses.map(()=>'?').join(',')+')':''}`).all(...harnesses) as Array<{harness:string;native_id:string;title:string;cwd:string;revision:string}>;
+   for(const row of rows){
+    if(sessionShortId(row.harness,row.native_id)!==shortQuery)continue;
+    const key=JSON.stringify([row.harness,row.native_id]);if(seen.has(key))continue;seen.add(key);
+    results.push({hostId:this.hostId,harness:row.harness,nativeSessionId:row.native_id,title:row.title,cwd:row.cwd,revision:row.revision,chunkId:'identity',snippet:'',rank:0,shortId:shortQuery});
     if(results.length>=limit)break;
    }
   }
@@ -228,7 +242,7 @@ export class SessionSearchIndex {
   // Compute snippets only for winning sessions, not every matching message.
   const rows=this.db.prepare(`SELECT s.harness,s.native_id,s.title,s.cwd,s.revision,c.id,c.chunk_id,chunks_fts.rank rank FROM chunks_fts CROSS JOIN chunks c ON c.id=chunks_fts.rowid CROSS JOIN sessions s ON s.harness=c.harness AND s.native_id=c.native_id AND s.generation=c.generation WHERE chunks_fts MATCH ? AND rank MATCH 'bm25(4.0,1.0)' ${harnesses.length?'AND s.harness IN ('+harnesses.map(()=>'?').join(',')+')':''} ORDER BY rank`).iterate(match,...harnesses);
   const snippet=this.db.prepare("SELECT snippet(chunks_fts,1,'','', ' … ',24) snippet FROM chunks_fts WHERE rowid=? AND chunks_fts MATCH ?");
-  for(const row of rows){const key=JSON.stringify([row.harness,row.native_id]);if(seen.has(key))continue;seen.add(key);results.push({hostId:this.hostId,harness:row.harness,nativeSessionId:row.native_id,title:row.title,cwd:row.cwd,revision:row.revision,chunkId:row.chunk_id,snippet:snippet.get(row.id,match)?.snippet??'',rank:row.rank});if(results.length>=limit)break;}
+  for(const row of rows){const key=JSON.stringify([row.harness,row.native_id]);if(seen.has(key))continue;seen.add(key);results.push({hostId:this.hostId,harness:row.harness,nativeSessionId:row.native_id,title:row.title,cwd:row.cwd,revision:row.revision,chunkId:row.chunk_id,snippet:snippet.get(row.id,match)?.snippet??'',rank:row.rank,shortId:sessionShortId(String(row.harness),String(row.native_id))});if(results.length>=limit)break;}
   const status=this.status();
   const sources=new Map(status.sources.map((source:SearchSourceReceipt)=>[source.harness,source]));
   const requested=harnesses.length?[...new Set(harnesses)]:[...sources.keys()];

@@ -1,4 +1,5 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import type { AgentSession, HarnessAdapter } from "../types/index.js";
 import type { AutopilotRunnerInput } from "../autopilot-runner.js";
 import { liveHarnessPollingEnabled } from "../harness-runtime-settings.js";
@@ -49,6 +50,12 @@ export interface BrowserTurnObserverOptions {
   stallMs: number;
   /** The watchdog can be switched off while turn judging stays on. */
   autoContinue: boolean;
+  /** A running turn whose inventory stopped advancing gets one bounded
+   * driver-side refresh per this interval; 0 disables it. Default 5 min. */
+  staleRefreshMs?: number;
+  /** Durable file of the tracked turns: a herder restart mid-run still
+   * observes the running->idle transition of the turn that spanned it. */
+  turnsFile?: string;
   tickMs?: number;
   onError?: (message: string) => void;
 }
@@ -59,6 +66,7 @@ interface TrackedTurn {
   runningSince: number;
   stallBaseline?: number;
   nudgedActivity?: string;
+  lastStaleRefreshAt?: number;
 }
 
 export class BrowserTurnAutopilotObserver {
@@ -93,6 +101,73 @@ export class BrowserTurnAutopilotObserver {
     this.pauseAnnounced.clear();
   }
 
+  private get staleRefreshMs(): number {
+    return this.options.staleRefreshMs ?? 300_000;
+  }
+
+  /** One bounded driver-side re-read of the turn state of one chat. */
+  private async refreshStaleTurn(harness: string, session: AgentSession): Promise<void> {
+    const adapter = this.options.adapters.get(harness) as HarnessAdapter & { refreshSession?: (id: string) => Promise<boolean> };
+    if (typeof adapter?.refreshSession !== "function") return;
+    try {
+      await adapter.refreshSession(session.id);
+    } catch (error) {
+      this.options.onError?.(`stale turn refresh failed for ${harness}/${session.id}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /** Load the durable turns of the previous process: a restart mid-run
+   * still observes the running->idle transition of the turn that spanned
+   * it. A corrupt or missing file starts tracking from scratch. */
+  private loadTurns(): void {
+    const file = this.options.turnsFile;
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(readFileSync(file, "utf8")) as {
+        version?: number;
+        turns?: Record<string, { running?: boolean; activity?: string; runningSince?: number; lastStaleRefreshAt?: number }>;
+      };
+      if (parsed?.version !== 1 || !parsed.turns || typeof parsed.turns !== "object") return;
+      for (const [key, entry] of Object.entries(parsed.turns)) {
+        if (typeof entry?.running !== "boolean") continue;
+        const runningSince = typeof entry.runningSince === "number" && Number.isFinite(entry.runningSince) ? entry.runningSince : 0;
+        // A persisted running turn older than two hours is nonsense (the
+        // stall watchdog and the provider cap a turn far earlier); never
+        // let a stale file invent a transition that never happened.
+        if (entry.running && Date.now() - runningSince > 2 * 60 * 60 * 1000) continue;
+        this.tracked.set(key, {
+          running: entry.running,
+          activity: typeof entry.activity === "string" ? entry.activity : "",
+          runningSince,
+          ...(typeof entry.lastStaleRefreshAt === "number" && Number.isFinite(entry.lastStaleRefreshAt) ? { lastStaleRefreshAt: entry.lastStaleRefreshAt } : {}),
+        });
+      }
+    } catch { /* a missing or corrupt file starts from scratch */ }
+  }
+
+  /** Persist the tracked turns atomically (tmp + rename). */
+  private saveTurns(): void {
+    const file = this.options.turnsFile;
+    if (!file) return;
+    try {
+      const turns: Record<string, { running: boolean; activity: string; runningSince: number; lastStaleRefreshAt?: number }> = {};
+      for (const [key, state] of this.tracked) {
+        turns[key] = {
+          running: state.running,
+          activity: state.activity,
+          runningSince: state.runningSince,
+          ...(state.lastStaleRefreshAt ? { lastStaleRefreshAt: state.lastStaleRefreshAt } : {}),
+        };
+      }
+      const temporary = `${file}.${randomUUID()}.tmp`;
+      writeFileSync(temporary, JSON.stringify({ version: 1, turns }));
+      renameSync(temporary, file);
+    } catch (error) {
+      this.options.onError?.(`browser turn state save failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+
   /** Say the pause and the resume of one harness once, in the log. */
   private announcePause(harness: string, paused: boolean): void {
     if ((this.pauseAnnounced.get(harness) ?? false) === paused) return;
@@ -101,7 +176,10 @@ export class BrowserTurnAutopilotObserver {
   }
 
   /** One bounded observation pass over every bridged browser harness. */
+  private turnsLoaded = false;
+
   async observeOnce(): Promise<void> {
+    if (!this.turnsLoaded) { this.turnsLoaded = true; this.loadTurns(); }
     for (const harness of this.options.harnesses) {
       // The runtime switch of the owner governs the requests the herder
       // initiates, not the observation itself: a paused harness is still
@@ -129,9 +207,11 @@ export class BrowserTurnAutopilotObserver {
         seen.add(session.id);
         await this.track(harness, adapter, session);
       }
-      for (const [key] of this.tracked) {
-        if (key.startsWith(`${harness}:`) && !seen.has(key.slice(harness.length + 1))) this.tracked.delete(key);
+      let pruned = false;
+      if (sessions.length) for (const [key] of this.tracked) {
+        if (key.startsWith(`${harness}:`) && !seen.has(key.slice(harness.length + 1))) { this.tracked.delete(key); pruned = true; }
       }
+      if (pruned) this.saveTurns();
     }
   }
 
@@ -143,13 +223,34 @@ export class BrowserTurnAutopilotObserver {
     // One remote turn finished: the observed running→idle transition.
     if (previous?.running && !running) {
       this.tracked.set(key, { running, activity: session.lastActivity, runningSince: 0 });
+      this.saveTurns();
       await this.submitStop(harness, adapter, session);
       return;
     }
 
     const state: TrackedTurn = previous ?? { running, activity: session.lastActivity, runningSince: running ? Date.now() : 0 };
+    const wasRunning = previous?.running;
     state.running = running;
     state.activity = session.lastActivity;
+    // A new running burst restarts the clock: the stale refresh and the
+    // stall budget belong to one burst, not to the chat's lifetime.
+    if (!wasRunning && running) {
+      state.runningSince = Date.now();
+      state.lastStaleRefreshAt = 0;
+    }
+    // Stale running state: the inventory can silently freeze on a running
+    // turn (the page navigated away, the list revalidation stopped, or the
+    // provider cut the stream while the page kept spinning). One bounded
+    // driver-side refresh per staleRefreshMs re-reads the turn state from
+    // the provider's own API, so the next tick observes the real state and
+    // the finished turn still reaches the Stop consumer.
+    if (running && this.staleRefreshMs > 0 && liveHarnessPollingEnabled(harness)
+      && Date.now() - state.runningSince > this.staleRefreshMs
+      && Date.now() - (state.lastStaleRefreshAt ?? 0) > this.staleRefreshMs) {
+      state.lastStaleRefreshAt = Date.now();
+      this.saveTurns();
+      await this.refreshStaleTurn(harness, session);
+    }
 
     // Autocontinue watchdog: only a real remote update timestamp is stall
     // evidence; sidebar-order timestamps change on every poll and prove nothing.
@@ -173,6 +274,7 @@ export class BrowserTurnAutopilotObserver {
       }
     }
     this.tracked.set(key, state);
+    if (wasRunning !== running) this.saveTurns();
   }
 
   private async submitStop(harness: string, adapter: HarnessAdapter, session: AgentSession): Promise<void> {

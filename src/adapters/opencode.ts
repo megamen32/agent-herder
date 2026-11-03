@@ -505,8 +505,15 @@ export class OpenCodeAdapter implements HarnessAdapter {
   }
 
   async getSession(id: string): Promise<AgentSession | null> {
-    const detail = await this.client.getSession(id).catch(() => null);
-    if (!detail) return this.getSessionFromActiveList(id);
+    let readError: unknown;
+    const detail = await this.client.getSession(id).catch((error: unknown) => { readError = error; return null; });
+    if (!detail) {
+      const listed = await this.getSessionFromActiveList(id);
+      if (listed) return listed;
+      // A failed native status read must stay visible, never degrade into "not found"/idle.
+      if (readError instanceof Error && /status read failed/.test(readError.message)) throw readError;
+      return null;
+    }
     const result = this.toAgentSession(detail);
     const last = (await this.getSessionMessages(id, 1))?.at(-1);
     if (last) {
