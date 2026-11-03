@@ -7,8 +7,9 @@ refuses a node whose configuration and release disagree.
 
 Every step is verified against the facts: the whole payload of the manifest is
 recomputed on the node, the running process must come from the new release,
-and the endpoints must answer. If anything fails the node is put back on the
-previous release and restarted.
+and the endpoints must answer. Failure enters fenced rollback only while the
+exact configuration and process generation remain owned; unknown or replaced
+ownership is refused and requires read-only reconciliation.
 """
 import argparse
 import base64
@@ -203,13 +204,15 @@ def systemd_daemon_reload() -> bool:
 
 def restore_install(fleet: Path, config_path: Path, config_backup: Path,
                     release_sha: str, previous_sha: str, dropin_path: Path | None,
-                    dropin_snapshot: Path | None, restart_command: list) -> None:
+                    dropin_snapshot: Path | None, restart_command: list, before_restart=None) -> None:
     atomic_copy(config_backup, config_path)
     switch_current(fleet, previous_sha)
     if dropin_path and dropin_snapshot:
         restore_systemd_release_dropin(dropin_path, dropin_snapshot, release_sha)
         if not systemd_daemon_reload():
             print("rollback systemd daemon-reload failed")
+    if before_restart is not None:
+        before_restart()
     restart(restart_command)
 
 
@@ -448,7 +451,8 @@ def darwin_fleet_launchd_proof(fleet: Path, label: str) -> dict:
 
 class DarwinStoppedGeneration:
     """One in-process handoff, captured before any release-tree mutation."""
-    def __init__(self, fleet: Path, label: str, previous_sha: str, port: int, restart_command: list):
+    def __init__(self, fleet: Path, label: str, previous_sha: str, port: int, restart_command: list, release_gate, candidate_sha: str):
+        self.release_gate, self.candidate_sha = release_gate, candidate_sha
         self.fleet = fleet.resolve(strict=True)
         self.label, self.previous_sha, self.port = label, previous_sha, port
         self.proof = darwin_fleet_launchd_proof(fleet, label)
@@ -473,6 +477,53 @@ class DarwinStoppedGeneration:
         self.generation = subprocess.run(["ps", "-p", ",".join(self.owned_pids), "-o", "pid=,uid=,lstart=,command="],
                                         capture_output=True, text=True, check=True, timeout=5).stdout
         self.used = False
+        self.transaction_owned = False
+        self.receipt("captured")
+
+    def receipt(self, event, **observed):
+        """Diagnostic only: no capability, arbitrary argv or config plaintext."""
+        contract = getattr(getattr(self, "release_gate", None), "contract", {})
+        run_id = contract.get("run") if isinstance(contract, dict) else None
+        proof = getattr(self, "proof", {})
+        value = {"event": "darwin_previous_" + event,
+                 "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                 "timeNs": time.time_ns(), "run": run_id,
+                 "fleetDir": str(self.fleet), "unit": self.label,
+                 "previousSha": self.previous_sha,
+                 "expectedWrapperPid": str(proof.get("pid", "")),
+                 "capturedPids": getattr(self, "owned_pids", []),
+                 "expectedGenerationSha256": hashlib.sha256(
+                     getattr(self, "generation", "").encode()).hexdigest(),
+                 "expectedConfigSha256": hashlib.sha256(
+                     getattr(self, "config_bytes", b"")).hexdigest(),
+                 "expectedPlistSha256": getattr(self, "plist_sha", None)}
+        for key, path in (("observedConfigSha256", self.fleet / "node-config.json"),
+                          ("observedPlistSha256", Path(proof.get("plist", "/nonexistent")))):
+            try:
+                value[key] = sha256(path)
+            except (OSError, ValueError):
+                value[key] = "unavailable"
+        value.update(observed)
+        try:
+            print(json.dumps(value, sort_keys=True), flush=True)
+        except OSError:
+            # A diagnostic failure cannot replace an ownership refusal.
+            pass
+
+    def restore_receipt(self, result):
+        observed = {"restartReturnCode": result.returncode}
+        if "domain" not in getattr(self, "proof", {}):
+            self.receipt("restore_result", **observed, probeError="unavailable")
+            return
+        try:
+            probe = subprocess.run(["launchctl", "print", f"{self.proof['domain']}/{self.label}"],
+                                   capture_output=True, text=True, check=False, timeout=2)
+            fields = dict(re.findall(r"^\s*(state|pid)\s*=\s*(.*?)\s*$", probe.stdout, re.M))
+            observed.update(observedWrapperPid=fields.get("pid"),
+                            observedState=fields.get("state"), probeReturnCode=probe.returncode)
+        except (OSError, subprocess.SubprocessError):
+            observed["probeError"] = "unavailable"
+        self.receipt("restore_result", **observed)
 
     def check_configuration(self):
         if ((self.fleet / "node-config.json").read_bytes() != self.config_bytes
@@ -480,8 +531,34 @@ class DarwinStoppedGeneration:
                 or sha256(Path(self.proof["plist"])) != self.plist_sha):
             raise ValueError("launchagent_configuration_changed")
 
+    def check_configuration_after_candidate(self, candidate_sha):
+        actual = json.loads((self.fleet / "node-config.json").read_text())
+        expected = json.loads(self.config_bytes)
+        expected["sourceSha"] = candidate_sha
+        if (actual != expected or os.readlink(self.fleet / "current") != str(self.fleet / "releases" / candidate_sha)
+                or sha256(Path(self.proof["plist"])) != self.plist_sha):
+            raise ValueError("launchagent_candidate_configuration_changed")
+
+    def check_rollback_configuration(self, candidate_sha):
+        actual = json.loads((self.fleet / "node-config.json").read_text())
+        old = json.loads(self.config_bytes)
+        candidate = {**old, "sourceSha": candidate_sha}
+        links = {self.current, str(self.fleet / "releases" / self.previous_sha),
+                 str(self.fleet / "releases" / candidate_sha)}
+        if (actual not in (old, candidate) or os.readlink(self.fleet / "current") not in links
+                or sha256(Path(self.proof["plist"])) != self.plist_sha):
+            raise ValueError("launchagent_rollback_configuration_changed")
+
     def check_stopped(self):
+        self.receipt("owner_check_start")
         self.check_configuration()
+        self.check_stopped_owner()
+
+    def check_stopped_owner(self):
+        # Configuration may now be our candidate, but no new process owner is
+        # allowed to appear across the authority roundtrip.
+        if sha256(Path(self.proof["plist"])) != self.plist_sha:
+            raise ValueError("launchagent_plist_changed")
         for domain in (f"gui/{os.getuid()}", f"user/{os.getuid()}"):
             result = subprocess.run(["launchctl", "print", f"{domain}/{self.label}"],
                                     capture_output=True, text=True, check=False, timeout=5)
@@ -490,7 +567,11 @@ class DarwinStoppedGeneration:
                     continue
                 raise ValueError("launchagent_domain_unverifiable")
             fields = dict(re.findall(r"^\s*(path|state|pid|program)\s*=\s*(.*?)\s*$", result.stdout, re.M))
+            self.last_owner_observation = {"domain": domain,
+                "pid": fields.get("pid"), "state": fields.get("state")}
             if fields.get("pid") and fields["pid"] != str(self.proof["pid"]):
+                self.receipt("owner_mismatch", observedDomain=domain,
+                             observedWrapperPid=fields["pid"], observedState=fields.get("state"))
                 raise ValueError("launchagent_owner_changed")
             if (fields.get("path") != self.proof["plist"]
                     or fields.get("program") != self.proof["program"]
@@ -504,6 +585,7 @@ class DarwinStoppedGeneration:
             raise ValueError("launchagent_owned_process_or_listener_remains")
 
     def stop(self):
+        self.receipt("stop_requested")
         # Recheck the exact loaded owner immediately before targeted SIGTERM.
         self.check_configuration()
         if darwin_fleet_launchd_proof(self.fleet, self.label) != self.proof:
@@ -512,8 +594,21 @@ class DarwinStoppedGeneration:
                                     capture_output=True, text=True, check=True, timeout=5).stdout
         if generation != self.generation:
             raise ValueError("launchagent_process_generation_changed_before_stop")
+        self.release_gate.compare_revision(self.fleet / "node-config.json", self.previous_sha)
+        # Diagnostics may also block, so emit before the final ownership reads.
+        self.receipt("before_sigterm")
+        # The authority roundtrip may block. Never signal an owner that arrived
+        # during it, even when the lease itself remains valid.
+        self.check_configuration()
+        if darwin_fleet_launchd_proof(self.fleet, self.label) != self.proof:
+            raise ValueError("launchagent_generation_changed_during_authority_check")
+        fresh = subprocess.run(["ps", "-p", ",".join(self.owned_pids), "-o", "pid=,uid=,lstart=,command="],
+                               capture_output=True, text=True, check=True, timeout=5).stdout
+        if fresh != self.generation:
+            raise ValueError("launchagent_process_generation_changed_during_authority_check")
         result = subprocess.run(["launchctl", "kill", "SIGTERM", f"{self.proof['domain']}/{self.label}"],
                                 capture_output=True, text=True, check=False, timeout=5)
+        self.receipt("sigterm_result", signalReturnCode=result.returncode)
         if result.returncode:
             raise ValueError("launchagent_controlled_stop_failed")
         deadline = time.monotonic() + 30
@@ -536,17 +631,264 @@ class DarwinStoppedGeneration:
         self.used = True
         return self.proof
 
+    def transfer_to_transaction(self):
+        # In-process ownership transfer, immediately before config mutation.
+        # consume() alone does not transfer responsibility for preparation.
+        if getattr(self, "transaction_owned", False):
+            raise ValueError("launchagent_transaction_already_owned")
+        self.transaction_owned = True
+
     def restore_if_still_owned(self):
+        if getattr(self, "transaction_owned", False):
+            # _main owns all candidate capture/cleanup after this boundary.
+            # Do not probe old config or mask its primary result/exception.
+            return
         # A running replacement, even the old SHA, must never be restarted.
-        if running_release(self.fleet, self.label):
+        live = running_release(self.fleet, self.label)
+        self.receipt("restore_enter", observedLiveSha=live)
+        if live:
+            self.receipt("restore_skipped_running", observedLiveSha=live)
             return
         self.check_stopped()
-        if restart(self.restart_command).returncode:
+        self.release_gate.compare_cleanup_revision(self.fleet / "node-config.json", [self.previous_sha, self.candidate_sha])
+        live = running_release(self.fleet, self.label)
+        if live:
+            self.receipt("restore_skipped_after_gate", observedLiveSha=live)
+            return
+        self.receipt("restore_start")
+        self.check_stopped()
+        result = restart(self.restart_command)
+        self.restore_receipt(result)
+        if result.returncode:
             raise ValueError("launchagent_previous_restart_failed")
         ready = wait_release_ready(self.fleet, self.previous_sha, self.port, self.label,
             self.label, canonical_bearer=canonical_mcp_bearer(self.label))
+        self.receipt("restore_readiness", readinessReason=ready["reason"])
         if ready["reason"] != "ready":
             raise ValueError("launchagent_previous_readiness_" + ready["reason"])
+
+
+
+def recorded_processes_absent(pids):
+    result = subprocess.run(["ps", "-p", ",".join(pids), "-o", "pid="],
+                            capture_output=True, text=True, check=False, timeout=5)
+    if result.returncode == 0 and result.stdout.strip():
+        return False
+    if result.returncode != 1 or result.stdout.strip() or result.stderr.strip():
+        raise ValueError("launchagent_process_absence_unverifiable")
+    for pid in pids:
+        try:
+            os.kill(int(pid), 0)
+        except ProcessLookupError:
+            continue
+        except OSError:
+            raise ValueError("launchagent_process_absence_unverifiable") from None
+        return False
+    return True
+
+
+def candidate_entry_absent(fleet, candidate_sha):
+    result = subprocess.run(["ps", "-axo", "pid=,ppid=,command="],
+                            capture_output=True, text=True, check=False, timeout=5)
+    if result.returncode or result.stderr.strip():
+        raise ValueError("launchagent_candidate_census_unverifiable")
+    entry = str(fleet / "releases" / candidate_sha / "dist/index.js")
+    if any(entry in line for line in result.stdout.splitlines()):
+        raise ValueError("launchagent_candidate_survivor_unowned")
+
+
+class DarwinCandidateGeneration:
+    """The new wrapper must be the PID returned by this run's kickstart -p."""
+    def __init__(self, previous, candidate_sha, pid_output):
+        if not re.fullmatch(r"[1-9][0-9]*", pid_output.strip()):
+            raise ValueError("launchagent_candidate_pid_receipt_invalid")
+        self.previous, self.sha = previous, candidate_sha
+        self.pid = pid_output.strip()
+        self.snapshot = None
+        self.receipt("kickstart_pid")
+        self.proof = None
+
+    def capture(self, timeout=30):
+        """Read-only bounded startup wait; only strict running proof accepts."""
+        previous = self.previous
+        deadline = time.monotonic() + timeout
+        while True:
+            previous.release_gate.compare_revision(previous.fleet / "node-config.json", self.sha)
+            previous.check_configuration_after_candidate(self.sha)
+            if recorded_processes_absent([self.pid]):
+                candidate_entry_absent(previous.fleet, self.sha)
+                previous.check_stopped_owner()
+                self.receipt("exited_before_capture")
+                raise ValueError("launchagent_candidate_exited_before_capture")
+            observed = self._wrapper()
+            expected = [previous.proof["program"], "-I", "-S", "-B", previous.proof["entrypoint"]]
+            if shlex.split(observed.split(None, 7)[7]) != expected:
+                raise ValueError("launchagent_candidate_wrapper_command_mismatch")
+            if self.snapshot is None:
+                self.snapshot = observed
+                self.receipt("wrapper_captured", self.snapshot)
+            elif observed != self.snapshot:
+                raise ValueError("launchagent_candidate_generation_changed")
+            state = self._startup_state()
+            if state == "running":
+                proof = darwin_fleet_launchd_proof(previous.fleet, previous.label)
+                if (str(proof["pid"]) != self.pid or any(proof.get(k) != previous.proof.get(k)
+                        for k in ("domain", "plist", "program", "entrypoint"))):
+                    raise ValueError("launchagent_candidate_receipt_owner_mismatch")
+                self.proof = proof
+                # Recheck config, exact wrapper and direct children after proof.
+                pids, _ = self._generation()
+                self._check_listeners(pids)
+                return
+            if time.monotonic() >= deadline:
+                raise ValueError("launchagent_candidate_startup_timeout")
+            time.sleep(.25)
+
+    def check_accepted_generation(self):
+        pids, _ = self._generation()
+        self._check_listeners(pids)
+
+    def _check_listeners(self, pids):
+        result = subprocess.run(["/usr/sbin/lsof", "-nP",
+            f"-iTCP:{self.previous.port}", "-sTCP:LISTEN", "-t"],
+            capture_output=True, text=True, check=False, timeout=5)
+        listeners = result.stdout.split()
+        if (result.stderr.strip() or result.returncode not in (0, 1)
+                or (result.returncode == 1 and listeners)
+                or any(not pid.isdigit() or pid not in pids for pid in listeners)):
+            raise ValueError("launchagent_candidate_listener_unowned")
+
+    def _startup_state(self):
+        previous = self.previous
+        result = subprocess.run(["launchctl", "print",
+            f"{previous.proof['domain']}/{previous.label}"],
+            capture_output=True, text=True, check=False, timeout=5)
+        if result.returncode or result.stderr.strip():
+            raise ValueError("launchagent_candidate_startup_unverifiable")
+        fields = {}
+        for line in result.stdout.splitlines():
+            match = re.match(r"\s*(path|state|pid|program)\s*=\s*(.*?)\s*$", line)
+            if match:
+                key, value = match.groups()
+                if key in fields:
+                    raise ValueError("launchagent_candidate_startup_ambiguous")
+                fields[key] = value
+        if (fields.get("path") != previous.proof["plist"]
+                or fields.get("program") != previous.proof["program"]
+                or fields.get("pid") != self.pid):
+            raise ValueError("launchagent_candidate_receipt_owner_mismatch")
+        state = fields.get("state", "")
+        if not state or not re.fullmatch(r"[a-z][a-z -]{0,63}", state):
+            raise ValueError("launchagent_candidate_startup_state_unverifiable")
+        # Non-running observations authorize only another bounded read.
+        # They never authorize a signal, restart, adoption or successful capture.
+        return state
+
+    def receipt(self, event, generation=""):
+        # Normal output goes to the controller's retained protected log, never
+        # to the authority protocol. Do not log arbitrary argv or environment.
+        value = {"event": "darwin_candidate_" + event, "pid": self.pid,
+                 "fleetDir": str(self.previous.fleet), "unit": self.previous.label,
+                 "candidateSha": self.sha,
+                 "run": getattr(self.previous.release_gate, "contract", {}).get("run")}
+        if generation:
+            value["generationSha256"] = hashlib.sha256(generation.encode()).hexdigest()
+            value["processIdentities"] = [line.split()[:7] for line in generation.splitlines()
+                                          if len(line.split()) >= 7]
+        print(json.dumps(value, sort_keys=True), flush=True)
+
+    def _wrapper(self):
+        result = subprocess.run(["ps", "-p", self.pid, "-o", "pid=,uid=,lstart=,command="],
+                                capture_output=True, text=True, check=False, timeout=5)
+        rows = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        if (result.returncode or len(rows) != 1 or len(rows[0].split()) < 8
+                or rows[0].split()[:2] != [self.pid, str(os.getuid())]):
+            raise ValueError("launchagent_candidate_wrapper_unverified")
+        return rows[0]
+
+    def _generation(self):
+        previous = self.previous
+        previous.check_configuration_after_candidate(self.sha)
+        proof = darwin_fleet_launchd_proof(previous.fleet, previous.label)
+        if proof != self.proof or self._wrapper() != self.snapshot:
+            raise ValueError("launchagent_candidate_generation_changed")
+        processes = subprocess.run(["ps", "-axo", "pid=,ppid=,command="],
+                                   capture_output=True, text=True, check=True, timeout=5).stdout
+        children = [line.split(None, 2) for line in processes.splitlines()
+                    if len(line.split(None, 2)) == 3 and line.split(None, 2)[1] == self.pid]
+        entry = str(previous.fleet / "releases" / self.sha / "dist/index.js")
+        if len(children) > 1 or any(entry not in shlex.split(child[2]) for child in children):
+            raise ValueError("launchagent_candidate_children_unverified")
+        pids = [self.pid] + [child[0] for child in children]
+        generation = subprocess.run(["ps", "-p", ",".join(pids), "-o", "pid=,uid=,lstart=,command="],
+                                    capture_output=True, text=True, check=True, timeout=5).stdout
+        rows = [line.split() for line in generation.splitlines() if line.strip()]
+        if {line[0] for line in rows} != set(pids) or any(line[1] != str(os.getuid()) for line in rows):
+            raise ValueError("launchagent_candidate_processes_unverified")
+        return pids, generation
+
+    def stop_for_rollback(self):
+        previous = self.previous
+        if self.snapshot is None:
+            previous.release_gate.compare_cleanup_revision(previous.fleet / "node-config.json",
+                                                          [previous.previous_sha, self.sha])
+            if not recorded_processes_absent([self.pid]):
+                raise ValueError("launchagent_candidate_receipt_process_remains")
+            candidate_entry_absent(previous.fleet, self.sha)
+            previous.check_stopped_owner()
+            return
+        # If the exact wrapper exited, no signal is necessary, but a replacement
+        # or surviving candidate listener must not be mistaken for clean exit.
+        if recorded_processes_absent([self.pid]):
+            previous.release_gate.compare_cleanup_revision(previous.fleet / "node-config.json",
+                                                          [previous.previous_sha, self.sha])
+            candidate_entry_absent(previous.fleet, self.sha)
+            previous.check_stopped_owner()
+            return
+        before = self._generation()
+        self.receipt("rollback_generation", before[1])
+        previous.release_gate.compare_cleanup_revision(previous.fleet / "node-config.json",
+                                                      [previous.previous_sha, self.sha])
+        try:
+            after = self._generation()
+        except (OSError, ValueError, subprocess.SubprocessError):
+            # Natural startup failure can finish while the authority is checked.
+            # Prove complete exit; never turn an observation error into absence.
+            if not recorded_processes_absent(before[0]):
+                raise
+            previous.release_gate.compare_cleanup_revision(previous.fleet / "node-config.json",
+                                                          [previous.previous_sha, self.sha])
+            previous.check_configuration_after_candidate(self.sha)
+            candidate_entry_absent(previous.fleet, self.sha)
+            previous.check_stopped_owner()
+            self.receipt("exited_during_cleanup", before[1])
+            return
+        if after != before:
+            raise ValueError("launchagent_candidate_changed_during_cleanup")
+        result = subprocess.run(["launchctl", "kill", "SIGTERM",
+                                 f"{self.proof['domain']}/{previous.label}"],
+                                capture_output=True, text=True, check=False, timeout=5)
+        if result.returncode:
+            raise ValueError("launchagent_candidate_stop_failed")
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                # The captured candidate is expected to remain briefly after
+                # SIGTERM. Wait for those PIDs without re-signaling; only then
+                # apply the old stopped-owner proof to exclude replacements.
+                if not recorded_processes_absent(before[0]):
+                    raise ValueError("launchagent_candidate_processes_remain")
+                candidate_entry_absent(previous.fleet, self.sha)
+                previous.check_stopped_owner()
+                return
+            except ValueError as error:
+                if str(error) not in ("launchagent_candidate_processes_remain",
+                        "launchagent_new_owner_or_still_running",
+                        "launchagent_owned_process_or_listener_remains"):
+                    raise
+                if time.monotonic() >= deadline:
+                    raise ValueError("launchagent_candidate_stop_unverified") from None
+                time.sleep(.25)
 
 
 def systemd_release_dropin_path(unit: str, home: Path | None = None) -> Path:
@@ -982,7 +1324,7 @@ def _main(argv=None, stopped_generation=None, release_gate=None) -> int:
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--restart-cmd", required=True, help="command that restarts the node")
     parser.add_argument("--previous-sha", required=True)
-    parser.add_argument("--launchd-label", default="com.bezrabotnyi.agent-herder-fleet-node")
+    parser.add_argument("--launchd-label", default="")
     parser.add_argument("--release-local-packages", action="store_true",
                         help="copy the root package store into this release and bind agent-resume-mcp to this release's packages/agent-resume")
     parser.add_argument("--unit", default="agent-herder-fleet.service",
@@ -1017,6 +1359,7 @@ def _main(argv=None, stopped_generation=None, release_gate=None) -> int:
 
     before = disarm_state(fleet, state_dir)
     try:
+        release_gate.compare_revision(config_path, arguments.previous_sha)
         package_result = prepare_packages(fleet, arguments.sha, arguments.previous_sha,
                                           arguments.release_local_packages)
     except (OSError, RuntimeError, subprocess.SubprocessError, ValueError) as error:
@@ -1115,26 +1458,59 @@ def _main(argv=None, stopped_generation=None, release_gate=None) -> int:
                     print("systemd release drop-in restore failed:", rollback_error)
             return 1
 
+    candidate_generation = None
+    def rollback_restart_guard(restored=False):
+        release_gate.compare_cleanup_revision(config_path, (previous_sha, arguments.sha))
+        if stopped_generation is not None:
+            if restored:
+                stopped_generation.check_configuration_after_candidate(previous_sha)
+            else:
+                stopped_generation.check_rollback_configuration(arguments.sha)
+            stopped_generation.check_stopped_owner()
+
     config["sourceSha"] = arguments.sha
     config_mode = stat.S_IMODE(config_path.stat().st_mode)
+    if stopped_generation is not None:
+        stopped_generation.transfer_to_transaction()
     try:
         release_gate.compare_revision(config_path, previous_sha)
         atomic_write(config_path, (json.dumps(config, indent=1) + "\n").encode(), config_mode)
         switch_current(fleet, arguments.sha)
         if dropin_path and not systemd_daemon_reload():
             raise RuntimeError("systemd daemon-reload failed")
+        # A long preparation or a disconnected controller must not authorize
+        # a later service restart. Refusal uses the existing fenced rollback.
+        release_gate.compare_revision(config_path, arguments.sha)
+        if stopped_generation is not None:
+            stopped_generation.check_configuration_after_candidate(arguments.sha)
+            stopped_generation.check_stopped_owner()
+        if stopped_generation is not None:
+            # -p is documented by the target's launchctl: receipt of the started
+            # service PID, not an observation of an arbitrary same-SHA process.
+            command = arguments.restart_cmd.split()
+            restart_result = restart(command[:2] + ["-p"] + command[2:])
+            if restart_result.returncode == 0:
+                candidate_generation = DarwinCandidateGeneration(
+                    stopped_generation, arguments.sha, restart_result.stdout)
+                candidate_generation.capture()
+        else:
+            restart_result = restart(arguments.restart_cmd.split())
     except (OSError, RuntimeError, ValueError) as error:
         print("release configuration switch failed:", error)
         try:
             release_gate.compare_cleanup_revision(config_path, (previous_sha, arguments.sha))
+            if stopped_generation is not None:
+                if candidate_generation is not None:
+                    candidate_generation.stop_for_rollback()
+                rollback_restart_guard()
             restore_install(fleet, config_path, backup, arguments.sha, previous_sha,
-                            dropin_path, dropin_snapshot, arguments.restart_cmd.split())
+                            dropin_path, dropin_snapshot, arguments.restart_cmd.split(),
+                            before_restart=(lambda: rollback_restart_guard(True)) if stopped_generation is not None else None)
         except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as rollback_error:
             print("rollback configuration restore failed:", rollback_error)
         return 1
     print(f"switched: current -> releases/{arguments.sha}")
 
-    restart_result = restart(arguments.restart_cmd.split())
     if restart_result.returncode != 0:
         print("release restart command failed:", restart_result.returncode)
     readiness = wait_release_ready(fleet, arguments.sha, arguments.port,
@@ -1159,6 +1535,10 @@ def _main(argv=None, stopped_generation=None, release_gate=None) -> int:
 
     try:
         release_gate.check()
+        if candidate_generation is not None:
+            # Readiness must still belong to this run's receipt after the
+            # authority roundtrip, not a later process with the same SHA.
+            candidate_generation.check_accepted_generation()
     except (OSError, RuntimeError, ValueError) as error:
         print("release cancelled before acceptance:", error)
         failed += 1
@@ -1166,8 +1546,13 @@ def _main(argv=None, stopped_generation=None, release_gate=None) -> int:
         print("rolling back to", previous_sha)
         try:
             release_gate.compare_cleanup_revision(config_path, (previous_sha, arguments.sha))
+            if stopped_generation is not None:
+                if candidate_generation is not None:
+                    candidate_generation.stop_for_rollback()
+                rollback_restart_guard()
             restore_install(fleet, config_path, backup, arguments.sha, previous_sha,
-                            dropin_path, dropin_snapshot, arguments.restart_cmd.split())
+                            dropin_path, dropin_snapshot, arguments.restart_cmd.split(),
+                            before_restart=(lambda: rollback_restart_guard(True)) if stopped_generation is not None else None)
         except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
             print("rollback configuration restore failed:", error)
             return 1

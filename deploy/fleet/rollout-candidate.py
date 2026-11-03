@@ -1,29 +1,21 @@
 #!/usr/bin/env python3
-"""Roll one release candidate out to one node, in one command.
+"""Roll one verified release candidate out to one configured fleet node.
 
-    python3 deploy/fleet/rollout-candidate.py --sha <sha> --node 44
-    python3 deploy/fleet/rollout-candidate.py --sha <sha> --node 100 --dry-run
+    python3 deploy/fleet/rollout-candidate.py --sha <sha> --node linux-a \\
+      --deployment-config /absolute/private/deployment.json --dry-run
 
-The order of the nodes is the order of the owner: 44 and 88 first, the owner
-node 100 last. This command is the only thing that touches a node. The
-acceptance is a separate command, so the facts of a node are read by a
-program that changes nothing.
+For mutation, supply the existing protected --release-proof on the controller.
+The private settings file selects the exact target, interpreter and authority
+mapping; there is no repository topology fallback or fleet-wide default.
+The configured controller supports fleet nodes only. Owner profiles are
+explicitly refused; the legacy explicit owner node-side workflow is separate.
 
-What happens on the node:
-  * the superseded releases move to rollback/ - the bytes stay, and the
-    budget of releases/ holds: at most two directories and 512 MiB;
-  * the release is unpacked into releases/<sha>;
-  * the node is switched to it: on a fleet node the `current` symlink and the
-    sourceSha of node-config.json, on the owner node the `current` symlink, the
-    sourceSha of node-config.json and the systemd drop-in that points at the
-    release - the working directory of the owner node stays the checkout, the
-    live data paths must not move;
-  * the node is restarted and the port is waited for;
-  * the point of rollback stays real: on the owner node the saved drop-in
-    points at the release that actually exists, wherever it now lives.
-
-The emergency pause noticeplace-ai-pause.service is a system unit: it is
-never stopped, never changed and never disabled by this command.
+Superseded releases remain recoverable in rollback/. Existing release budgets,
+payload checks, target locks, authority fences, revision CAS and authenticated
+readiness remain mandatory. Darwin startup and rollback are tied to exact
+captured process generations. Unknown ownership or transport outcome is retained
+for read-only reconciliation, never treated as permission to retry or signal
+another process. No unrelated service or security setting is changed.
 """
 import argparse
 import importlib.util
@@ -42,6 +34,10 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import release_rules  # noqa: E402
 from release_gate import ReleaseGate
+from remote_release_gate import RemoteReleaseGate, remote_frames, run_authorized_ssh, deployment_target
+import uuid
+import re
+from deployment_config import load_config, validate_node, descriptor_digest, verify_descriptor, load_remote_descriptor
 
 DEFAULT_CATALOG = Path.home() / "agents-projects/.fleet-candidate"
 BUDGET_MIB = 512
@@ -49,8 +45,27 @@ MAX_RELEASES = 2
 PACKAGED = ("dist", "packages", "package.json", "package-lock.json", "build-manifest.json")
 
 
-def load_nodes() -> dict:
-    return json.loads((HERE / "nodes.json").read_text())
+def remote_python_command(node):
+    node = validate_node(node)
+    return [node["pythonBin"], "-I", "-B"]
+
+
+def verify_remote_python(ssh, node):
+    node = validate_node(node)
+    command = remote_python_command(node) + ["-c",
+        "import sys,json; print(json.dumps(dict(version='.'.join(map(str,sys.version_info[:3])),executable=sys.executable)))"]
+    result = subprocess.run(ssh + [" ".join(shlex.quote(x) for x in command)],
+                            capture_output=True, text=True, check=True, timeout=30)
+    try:
+        observed = json.loads(result.stdout)
+    except ValueError:
+        raise RuntimeError("release_remote_python_version_unverified") from None
+    if observed != {"version": node["pythonVersion"], "executable": node["pythonExecutable"]}:
+        raise RuntimeError("release_remote_python_identity_changed")
+
+
+def load_nodes(path=None) -> dict:
+    return load_config(path)
 
 
 def node_spec(topology: dict, node_id: str) -> dict:
@@ -67,9 +82,10 @@ def expand(value: str) -> str:
 def remote_live_sha(node: dict) -> str:
     """The release the node runs now, read from the node itself."""
     fleet = expand(node["fleetDir"])
-    command = ["ssh", "-o", "ConnectTimeout=30", "-p", str(node.get("sshPort", 22)),
-               f"{node['sshUser']}@{node['address']}", f"readlink {fleet}/current"]
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    command = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
+               "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=2", "-p", str(node.get("sshPort", 22)),
+               f"{node['sshUser']}@{node['address']}", "readlink " + shlex.quote(fleet + "/current")]
+    result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=30)
     if result.returncode != 0:
         return ""
     return os.path.basename(result.stdout.strip())
@@ -231,15 +247,19 @@ def switch_current(catalog: Path, sha: str) -> None:
 
 
 def _leased_node_side_fleet(arguments, release_gate) -> int:
+    release_gate.compare_revision(Path(arguments.fleet_dir).expanduser() / "node-config.json", arguments.previous_sha)
+    if arguments.sha == arguments.previous_sha:
+        print("already current; no preparation or restart")
+        return 0
     if sys.platform == "darwin":
         # Keep the handoff in this process, never in a caller-supplied flag or
         # proof file. Stop the exact existing owner before touching releases.
         spec = importlib.util.spec_from_file_location("fleet_rollout_owned", HERE / "rollout-node.py")
         rollout = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(rollout)
-        label = "com.bezrabotnyi.agent-herder-fleet-node"
+        label = arguments.unit
         handoff = rollout.DarwinStoppedGeneration(Path(arguments.fleet_dir).expanduser(), label,
-            arguments.previous_sha, arguments.web_port, shlex.split(arguments.restart_cmd))
+            arguments.previous_sha, arguments.web_port, shlex.split(arguments.restart_cmd), release_gate, arguments.sha)
         try:
             handoff.stop()
             return _node_side_fleet(arguments, rollout, handoff, release_gate)
@@ -254,6 +274,11 @@ def _node_side_fleet(arguments, rollout=None, handoff=None, release_gate=None) -
     fleet = Path(arguments.fleet_dir).expanduser()
     sha = arguments.sha
     release = fleet / "releases" / sha
+    release_gate.compare_revision(fleet / "node-config.json", arguments.previous_sha)
+    if sha == arguments.previous_sha:
+        print("already current; no preparation or restart")
+        return 0
+    release_gate.candidate_descends_from(arguments.previous_sha, sha)
     trim_releases(fleet / "releases", fleet / "rollback", sha, arguments.previous_sha,
                   keep_pair=True)
     if release.exists():
@@ -265,6 +290,7 @@ def _node_side_fleet(arguments, rollout=None, handoff=None, release_gate=None) -
             trash = trash.with_name(trash.name + "-x")
         shutil.move(str(release), str(trash))
         print("partial release kept aside:", trash)
+    release_gate.compare_revision(fleet / "node-config.json", arguments.previous_sha)
     unpack_release(Path(arguments.archive), release)
     command = [sys.executable, str(HERE / "rollout-node.py"),
                "--kind", "fleet",
@@ -275,6 +301,7 @@ def _node_side_fleet(arguments, rollout=None, handoff=None, release_gate=None) -
                "--previous-sha", arguments.previous_sha,
                "--release-local-packages",
                "--unit", arguments.unit,
+               "--launchd-label", arguments.unit,
                "--state-dir", arguments.state_dir]
     if rollout is None:
         spec = importlib.util.spec_from_file_location("fleet_rollout_owned", HERE / "rollout-node.py")
@@ -469,6 +496,25 @@ def _leased_node_side_owner(arguments, release_gate) -> int:
 
 
 def node_side(arguments) -> int:
+    if arguments.authority_stdio:
+        if (arguments.kind != "fleet" or arguments.release_proof
+                or not getattr(arguments, "deployment_descriptor", "")
+                or not re.fullmatch(r"[a-f0-9]{64}", getattr(arguments, "descriptor_sha", ""))
+                or not re.fullmatch(r"[a-f0-9]{32}", arguments.authority_run)):
+            raise RuntimeError("release_remote_command_refused")
+        descriptor = load_remote_descriptor(arguments.deployment_descriptor, arguments.descriptor_sha)
+        expected = {"expected_host":"hostId","unit":"unit","fleet_dir":"fleetDir",
+                    "state_dir":"stateDir","web_port":"webPort","restart_cmd":"restartCmd"}
+        if any(getattr(arguments,key) != descriptor[field] for key,field in expected.items()):
+            raise RuntimeError("release_remote_command_refused")
+        contract = {"run": arguments.authority_run, "hostId": arguments.expected_host,
+                    "fleetDir": arguments.fleet_dir, "unit": arguments.unit,
+                    "previousSha": arguments.previous_sha, "candidateSha": arguments.sha,
+                    "descriptor":descriptor, "descriptorDigest":arguments.descriptor_sha}
+        with RemoteReleaseGate(contract, remote_frames()) as gate:
+            result = _leased_node_side_fleet(arguments, gate)
+            gate.finish(0 if result == 0 else 1)
+            return result
     target_root = Path(arguments.catalog if arguments.kind == "owner" else arguments.fleet_dir).expanduser().resolve()
     with ReleaseGate(arguments.release_proof, target={"fleetDir": str(target_root), "unit": arguments.unit}) as gate:
         if arguments.kind != "owner":
@@ -501,15 +547,40 @@ def node_side(arguments) -> int:
             raise
 
 
+def finish_staged_rollout(command, gate, contract, ssh, stage):
+    # An exception is UNKNOWN: retain evidence and do not send another command.
+    result = run_authorized_ssh(command, gate, contract)
+    if not re.fullmatch(r"/tmp/herder-release\.[A-Za-z0-9]{8}", stage):
+        raise RuntimeError("release_remote_staging_invalid")
+    cleanup = ("import os,stat,shutil,sys; p=sys.argv[1]; s=os.lstat(p); "
+               "assert stat.S_ISDIR(s.st_mode) and s.st_uid==os.getuid() "
+               "and stat.S_IMODE(s.st_mode)==0o700; shutil.rmtree(p)")
+    cmd = ["python3", "-c", cleanup, stage]
+    try:
+        cleaned = subprocess.run(ssh + [" ".join(shlex.quote(x) for x in cmd)],
+                                 capture_output=True, text=True, timeout=30, check=False)
+        if cleaned.returncode:
+            print("confirmed rollout; private staging cleanup pending:", stage)
+    except (OSError, subprocess.TimeoutExpired):
+        print("confirmed rollout; private staging cleanup pending:", stage)
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sha", required=True)
     parser.add_argument("--release-proof", default="", help="protected proof path on the target authority host; never transferred")
-    parser.add_argument("--node", default="", help="node id of deploy/fleet/nodes.json")
+    parser.add_argument("--node", default="", help="node id from private deployment configuration")
+    parser.add_argument("--deployment-config", default="")
+    parser.add_argument("--deployment-descriptor", default="", help=argparse.SUPPRESS)
+    parser.add_argument("--descriptor-sha", default="", help=argparse.SUPPRESS)
     parser.add_argument("--catalog", default=str(DEFAULT_CATALOG))
     parser.add_argument("--dry-run", action="store_true",
                         help="print the plan and check the preconditions; change nothing")
     parser.add_argument("--node-side", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--authority-stdio", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--authority-run", default="", help=argparse.SUPPRESS)
+    parser.add_argument("--expected-host", default="", help=argparse.SUPPRESS)
     parser.add_argument("--kind", choices=["owner", "fleet"], default="")
     parser.add_argument("--archive", default="")
     parser.add_argument("--fleet-dir", default="")
@@ -523,14 +594,18 @@ def main() -> int:
     parser.add_argument("--node-config", default="",
                         help="the native values of the node as JSON (the owner node writes them into its config)")
     arguments = parser.parse_args()
-    if not arguments.dry_run and not arguments.release_proof:
+    if arguments.authority_stdio and not arguments.node_side:
+        parser.error("--authority-stdio requires --node-side")
+    if not arguments.dry_run and not arguments.release_proof and not arguments.authority_stdio:
         parser.error("--release-proof is required for rollout")
 
     if arguments.node_side:
         return node_side(arguments)
 
-    topology = load_nodes()
+    topology = load_nodes(arguments.deployment_config)
     node = node_spec(topology, arguments.node)
+    node = validate_node(node)
+    pinned_descriptor = descriptor_digest(node)
     catalog = Path(arguments.catalog).expanduser()
     release = catalog / "releases" / arguments.sha
 
@@ -590,36 +665,64 @@ def main() -> int:
             print(f"  {last_step + 1}. the acceptance is a separate command: accept-node.py")
             return 0
 
-        remote_archive = f"/tmp/rel-{arguments.sha}.tar"
         if node["kind"] != "owner":
+            node = verify_descriptor(node, pinned_descriptor)
+            target = deployment_target(node)
             host = f"{node['sshUser']}@{node['address']}"
             ssh_port = str(node.get("sshPort", 22))
-            # the node side runs this same script: it and the module of the
-            # rules travel with it, or the node has nothing to start
-            for local, remote in ((archive, remote_archive),
-                                  (HERE / "rollout-candidate.py", "/tmp/rollout-candidate.py"),
-                                  (HERE / "rollout-node.py", "/tmp/rollout-node.py"),
-                                  (HERE / "accept-node.py", "/tmp/accept-node.py"),
-                                  (HERE / "release_rules.py", "/tmp/release_rules.py"),
-                                  (HERE / "release_gate.py", "/tmp/release_gate.py")):
-                command = ["scp", "-q", "-P", ssh_port, str(local), f"{host}:{remote}"]
-                copied = subprocess.run(command, capture_output=True, text=True, check=False)
-                if copied.returncode != 0:
-                    print(f"transfer failed: {copied.stderr.strip()}")
-                    return 1
-            side = ["python3", "/tmp/rollout-candidate.py", "--node-side",
-                    "--kind", "fleet", "--sha", arguments.sha, "--release-proof", arguments.release_proof,
-                    "--archive", remote_archive,
-                    "--fleet-dir", expand(node["fleetDir"]),
-                    "--previous-sha", live_sha,
-                    "--restart-cmd", node["restartCmd"],
-                    "--web-port", str(node["webPort"]),
-                    "--unit", node["unit"],
-                    "--state-dir", expand(node["stateDir"])]
-            # the remote side takes a shell line: every argument is quoted, or
-            # a command with spaces arrives as several arguments
-            command = ["ssh", "-o", "ConnectTimeout=30", "-p", ssh_port, host,
-                       " ".join(shlex.quote(item) for item in side)]
+            fleet_dir = expand(node["fleetDir"])
+            contract = {"run": uuid.uuid4().hex, "hostId": node["hostId"],
+                        "fleetDir": fleet_dir, "unit": node["unit"],
+                        "previousSha": live_sha, "candidateSha": arguments.sha,
+                        "descriptor": node, "descriptorDigest": pinned_descriptor}
+            # Proof and ledger never leave this authority. Its OS locks span
+            # staging, remote mutation, readiness and any guarded rollback.
+            with ReleaseGate(arguments.release_proof, target=target) as gate:
+                gate.candidate_descends_from(live_sha, arguments.sha)
+                ssh = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
+                       "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=10",
+                       "-o", "ServerAliveCountMax=2", "-p", ssh_port, host]
+                verify_remote_python(ssh, node)
+                gate.check()
+                staged = subprocess.run(ssh + ["umask 077; mktemp -d /tmp/herder-release.XXXXXXXX"],
+                                        capture_output=True, text=True, check=True, timeout=30)
+                stage = staged.stdout.strip()
+                if not re.fullmatch(r"/tmp/herder-release\.[A-Za-z0-9]{8}", stage):
+                    raise RuntimeError("release_remote_staging_invalid")
+                remote_archive = stage + "/release.tar"
+                for local, remote in ((archive, remote_archive),
+                        *((HERE / name, stage + "/" + name) for name in
+                          ("rollout-candidate.py", "rollout-node.py", "accept-node.py",
+                           "release_rules.py", "release_gate.py", "remote_release_gate.py", "deployment_config.py"))):
+                    gate.check()
+                    copied = subprocess.run(["scp", "-q", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
+                                             "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=10",
+                                             "-o", "ServerAliveCountMax=2", "-P", ssh_port,
+                                             str(local), f"{host}:{remote}"], check=False, timeout=120)
+                    if copied.returncode != 0:
+                        raise RuntimeError("release_remote_transfer_failed")
+                with tempfile.NamedTemporaryFile(mode="w", prefix="herder-descriptor-", suffix=".json") as selected:
+                    os.chmod(selected.name, 0o600)
+                    json.dump(verify_descriptor(node, pinned_descriptor), selected, sort_keys=True)
+                    selected.flush()
+                    gate.check()
+                    copied = subprocess.run(["scp", "-q", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
+                        "-o", "ConnectTimeout=10", "-P", ssh_port, selected.name,
+                        f"{host}:{stage}/descriptor.json"], check=False, timeout=30)
+                    if copied.returncode:
+                        raise RuntimeError("release_remote_descriptor_transfer_failed")
+                side = remote_python_command(node) + [stage + "/rollout-candidate.py", "--node-side",
+                        "--authority-stdio", "--authority-run", contract["run"],
+                        "--deployment-descriptor", stage + "/descriptor.json", "--descriptor-sha", pinned_descriptor,
+                        "--expected-host", node["hostId"], "--kind", "fleet",
+                        "--sha", arguments.sha, "--archive", remote_archive,
+                        "--fleet-dir", fleet_dir, "--previous-sha", live_sha,
+                        "--restart-cmd", node["restartCmd"], "--web-port", str(node["webPort"]),
+                        "--unit", node["unit"], "--state-dir", expand(node["stateDir"])]
+                command = ssh + [" ".join(shlex.quote(item) for item in side)]
+                # Keep staged artifacts on an uncertain outcome for diagnosis;
+                # never automatically retry an accepted or unknown operation.
+                return finish_staged_rollout(command, gate, contract, ssh, stage)
         else:
             side = ["python3", str(Path(__file__).resolve()), "--node-side",
                     "--kind", "owner", "--sha", arguments.sha, "--release-proof", arguments.release_proof,

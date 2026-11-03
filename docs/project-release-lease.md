@@ -126,7 +126,7 @@ target binding, revision checks and rollback rules remain mandatory.
 ## Registered GPTAdmin root MCP child (different from owner fleet node)
 
 The registered child of `gptadmin-hub.service` starts
-`/home/roomhacker/agents-projects/agent-herder/dist/index.js` under root.
+`/home/operator/agents-projects/agent-herder/dist/index.js` under root.
 The regular `rollout-candidate.py --node 100` deploys the separate UID1000
 `agent-herder.service` and **does not** update this registered root child.
 
@@ -134,7 +134,7 @@ For the existing root authority, use only the independently verified canonical
 ledger at `/root/.local/state/agent-herder/project-release-leases.json`.
 The owner coordinates acquisition **once** through the existing native admin CLI;
 the deployment target must be exactly
-`{"fleetDir":"/home/roomhacker/agents-projects/agent-herder","unit":"gptadmin-hub.service"}`.
+`{"fleetDir":"/home/operator/agents-projects/agent-herder","unit":"gptadmin-hub.service"}`.
 The unit name is the OS-lock identity; the installer does not restart the hub.
 
 After a validated, target-bound proof is available, execute the new
@@ -170,3 +170,59 @@ keep the operation bounded within its TTL, check ownership immediately before
 mutations and renew explicitly as needed. Native updater serialization,
 expected-revision compare-and-swap and rollback guards remain separate required
 boundaries; a project-only lease does not replace them.
+
+## Portable deployment configuration
+
+The updater does not load repository topology. Supply an explicit local
+--deployment-config /absolute/private/deployment.json, or set
+AGENT_HERDER_DEPLOYMENT_CONFIG. The file must be outside any Git worktree,
+owned by the current controller user, mode0600, regular and not a symlink.
+Use deploy/fleet/deployment.example.json only as a synthetic schema example.
+Its documentation-network addresses and example identities are not deployable
+defaults. The legacy repository nodes.json is intentionally empty.
+
+Each selected node declares its exact host/address/SSH user and port, platform,
+UID/home, absolute fleet and state directories, service unit, web port and
+existing Python executable/version. Darwin additionally declares the loaded
+user/gui domain. The updater derives the restart command from those fields;
+arbitrary commands and SSH options are not settings. Missing fields, unknown
+keys, duplicate hosts or authority mappings and unsafe paths are refused.
+
+authorityTarget is an explicit local lease tuple (fleetDir and unit)
+on the controller. It is not inferred from the remote filesystem. Keep the
+mapping aligned with the actual existing release authority. The protected
+lease proof and ledger remain on that authority and are never transferred.
+No credentials or new persistent access are created by these settings.
+
+The normalized selected descriptor is frozen by SHA-256. Only that descriptor,
+not the complete deployment configuration, is copied into this run's private
+SSH staging directory. The remote process validates its fields and digest,
+actual hostname, UID/home/platform and its unit lock. The authority handshake
+binds that digest alongside the run, target and revisions. A changed mapping or
+descriptor cannot reuse the old handshake. Existing lease/fence checks,
+pre-mutation CAS checks, exact-generation rollback and UNKNOWN-outcome
+reconciliation remain mandatory.
+
+Portable bundle manifests use delivery3 and contain source/payload hashes and
+relative build-tool identity, not deployment nodes, exclusions, private refs,
+builder paths or operational receipts. Target selection and acceptance evidence
+belong to the operator's private deployment records, separate from the immutable
+portable bundle. This changes future builds only; never edit an already accepted
+release manifest to retrofit this format.
+
+Before publication, review every newly introduced commit and packaged artifact,
+including examples and tests. Do not merge private maintenance ancestry into a
+public branch. Removing current configuration does not erase values already
+published in historical commits. Keep local deployment plans, credentials,
+process receipts and incident records out of Git and out of release archives.
+
+Profiles sharing one existing serialized authority namespace must explicitly use
+the same nonempty authorityGroup and identical tuple. A group cannot name two
+tuples, and duplicate tuples without the same group are refused. This preserves
+shared authority locking without fabricating target paths; the remote descriptor
+digest still binds the exact selected host and target.
+
+This portable configured controller currently admits fleet profiles only.
+Owner profiles are rejected rather than silently ignoring their configured
+identity or authority. The existing explicit owner node-side workflow is
+separate; no owner runtime is changed by this refactor.

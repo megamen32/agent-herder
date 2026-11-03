@@ -86,6 +86,7 @@ class RolloutNodeInstallTests(unittest.TestCase):
     def test_darwin_failure_restoration_targets_only_unchanged_stopped_owner(self):
         handoff = rollout.DarwinStoppedGeneration.__new__(rollout.DarwinStoppedGeneration)
         handoff.fleet, handoff.label, handoff.previous_sha, handoff.port = pathlib.Path("/fleet"), "owned", "b"*40, 18789
+        handoff.release_gate, handoff.candidate_sha = Mock(), "a"*40
         handoff.restart_command = ["launchctl", "kickstart", "-k", "user/501/owned"]
         with (patch.object(rollout, "running_release", return_value=""),
               patch.object(handoff, "check_stopped") as check,
@@ -220,10 +221,10 @@ class RolloutNodeInstallTests(unittest.TestCase):
             python = home / "Python"
             python.write_text("")
             python.chmod(0o700)
-            plist_path = home / "Library/LaunchAgents/com.bezrabotnyi.agent-herder-fleet-node.plist"
+            plist_path = home / "Library/LaunchAgents/org.example.herder.plist"
             plist_path.parent.mkdir(parents=True)
             plist_path.write_bytes(plistlib.dumps({
-                "Label": "com.bezrabotnyi.agent-herder-fleet-node",
+                "Label": "org.example.herder",
                 "ProgramArguments": [str(python), "-I", "-S", "-B", str(watchdog)],
                 "RunAtLoad": True,
                 "KeepAlive": False,
@@ -238,7 +239,7 @@ class RolloutNodeInstallTests(unittest.TestCase):
             with (patch.object(rollout.Path, "home", return_value=home),
                   patch.object(rollout.os, "getuid", return_value=os.getuid()),
                   patch.object(rollout.subprocess, "run", side_effect=launchctl)):
-                proof = rollout.darwin_fleet_launchd_proof(fleet, "com.bezrabotnyi.agent-herder-fleet-node")
+                proof = rollout.darwin_fleet_launchd_proof(fleet, "org.example.herder")
             self.assertEqual(proof["domain"], f"user/{os.getuid()}")
             self.assertEqual(proof["pid"], "456")
 
@@ -248,10 +249,10 @@ class RolloutNodeInstallTests(unittest.TestCase):
             fleet = home / ".local/share/agent-herder/fleet"
             fleet.mkdir(parents=True)
             (fleet / "mac-node-watchdog.py").write_text("# installed watchdog\n")
-            plist_path = home / "Library/LaunchAgents/com.bezrabotnyi.agent-herder-fleet-node.plist"
+            plist_path = home / "Library/LaunchAgents/org.example.herder.plist"
             plist_path.parent.mkdir(parents=True)
             plist_path.write_bytes(plistlib.dumps({
-                "Label": "com.bezrabotnyi.agent-herder-fleet-node",
+                "Label": "org.example.herder",
                 "ProgramArguments": ["/usr/bin/python3", "-I", "-S", "-B", "/tmp/other.py"],
                 "RunAtLoad": True,
                 "KeepAlive": False,
@@ -260,7 +261,7 @@ class RolloutNodeInstallTests(unittest.TestCase):
             with (patch.object(rollout.Path, "home", return_value=home),
                   patch.object(rollout.os, "getuid", return_value=os.getuid())):
                 with self.assertRaisesRegex(ValueError, "launchagent_program_mismatch"):
-                    rollout.darwin_fleet_launchd_proof(fleet, "com.bezrabotnyi.agent-herder-fleet-node")
+                    rollout.darwin_fleet_launchd_proof(fleet, "org.example.herder")
 
     @patch.object(rollout, "canonical_mcp_bearer", return_value="fixture-only")
     def test_darwin_fleet_install_uses_verified_launchd_domain_and_never_systemd(self, _bearer):
@@ -274,11 +275,11 @@ class RolloutNodeInstallTests(unittest.TestCase):
             (fleet / "current").symlink_to(fleet / "releases" / previous)
             config = fleet / "node-config.json"
             config.write_text(__import__("json").dumps({"sourceSha": previous, "nodeBin": "/usr/bin/node"}))
-            label = "com.bezrabotnyi.agent-herder-fleet-node"
+            label = "org.example.herder"
             restart_cmd = f"launchctl kickstart -k user/{os.getuid()}/{label}"
             argv = ["rollout-node.py", "--fleet-dir", str(fleet), "--sha", target,
                     "--port", "19091", "--restart-cmd", restart_cmd,
-                    "--previous-sha", previous, "--unit", label, "--kind", "fleet"]
+                    "--previous-sha", previous, "--unit", label, "--launchd-label", label, "--kind", "fleet"]
             order = []
             with (patch.object(sys, "argv", argv),
                   patch.object(sys, "platform", "darwin"),
@@ -485,7 +486,7 @@ class RolloutNodeInstallTests(unittest.TestCase):
                   patch.object(rollout, "process_environment_value", return_value="/state"),
                   patch.object(rollout, "unit_entrypoint", return_value=(
                       "/usr/bin/python3 -I -S -B "
-                      "/home/roomhacker/.local/share/agent-herder/fleet/bootstrap.py")),
+                      "/home/operator/.local/share/agent-herder/fleet/bootstrap.py")),
                   patch.object(rollout, "prepare_packages", return_value="unchanged"),
                   patch.object(rollout, "verify_payload", return_value={
                       "source_sha_ok": True, "missing": [], "extra": [], "mismatched": []}),
@@ -536,7 +537,7 @@ class RolloutNodeInstallTests(unittest.TestCase):
                   patch.object(rollout, "system_pause_state", return_value="inactive"),
                   patch.object(rollout, "process_environment_value", return_value="/state"),
                   patch.object(rollout, "unit_entrypoint", return_value=(
-                      "/usr/local/bin/node /home/roomhacker/releases/x/dist/index.js")),
+                      "/usr/local/bin/node /home/operator/releases/x/dist/index.js")),
                   patch.object(rollout, "prepare_packages", return_value="unchanged"),
                   patch.object(rollout, "verify_payload", return_value={
                       "source_sha_ok": True, "missing": [], "extra": [], "mismatched": []}),

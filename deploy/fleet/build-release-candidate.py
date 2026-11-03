@@ -3,7 +3,7 @@
 
 One command builds the release and the manifest for a given sha, so the
 candidate is never frozen on a head that has already moved. The build happens
-in its own worktree and its own catalog: the live runtime on server-100 and
+in its own worktree and its own catalog: the existing owner runtime and
 the fleet nodes are never touched, and the manifest of the installed release
 is never overwritten.
 
@@ -38,6 +38,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import stat
@@ -368,8 +369,6 @@ def write_bundle_manifest(sha: str, release: Path, catalog: Path, worktree: Path
     the same head: the entries of a file that changed are never carried over,
     they are computed again from the release that is on the disk.
     """
-    topology = json.loads((HERE / "nodes.json").read_text())
-    branch, refs = remote_ref_for(sha)
     dist_manifest = json.loads((release / "dist" / "fleet-deployment-manifest.json").read_text())
     payload = dist_manifest["payload"]
     entries = release_rules.bundle_entries(release, exclude=(BUNDLE_MANIFEST,))
@@ -389,18 +388,12 @@ def write_bundle_manifest(sha: str, release: Path, catalog: Path, worktree: Path
             previous = {}
     document = {
         "kind": "release-build-manifest",
-        "delivery": 2,
+        "delivery": 3,
         "sourceSha": sha,
-        "sourceBranch": branch or "unknown",
-        "sourceRef": branch or "unknown",
-        "sourceRefs": refs,
         "builtAt": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime()),
         "builder": {
-            "script": str(Path(__file__).resolve()),
+            "script": "deploy/fleet/build-release-candidate.py",
             "commit": run(["git", "-C", str(worktree), "rev-parse", "HEAD"]),
-            "catalog": str(catalog),
-            "release": str(release),
-            "worktree": str(worktree),
             "sourceTreeDirty": bool(run(["git", "-C", str(worktree), "status", "--porcelain"])),
         },
         "bundleFingerprint": fingerprint,
@@ -411,8 +404,7 @@ def write_bundle_manifest(sha: str, release: Path, catalog: Path, worktree: Path
         "bundleSize": size,
         "supersedes": {
             "bundleFingerprint": previous.get("bundleFingerprint"),
-            "builtAt": previous.get("builtAt"),
-        } if previous.get("bundleFingerprint") else None,
+        } if isinstance(previous.get("bundleFingerprint"), str) and re.fullmatch(r"[a-f0-9]{64}", previous["bundleFingerprint"]) else None,
         "artifacts": {
             "dist": {
                 "files": len(payload),
@@ -438,14 +430,12 @@ def write_bundle_manifest(sha: str, release: Path, catalog: Path, worktree: Path
             "workspacePackage": "node_modules/agent-resume-mcp -> ../packages/agent-resume (inside the release)",
             "storePolicy": "the root package store of the node is never modified; it keeps the package of the rollback release",
             "dependencyRule": "deploy/fleet/release-rules.py: the runtime set of package-lock.json of this platform, without dev packages",
-            "ownerNode100": {
+            "ownerNode": {
                 "execStart": "<release>/dist/index.js through the systemd drop-in 10-release-exec.conf",
-                "workingDirectory": "%h/agents-projects/agent-herder (unchanged: the live data paths must not move)",
+                "workingDirectory": "operator-configured existing working directory; live data paths stay unchanged",
             },
         },
-        "installNodes": topology["nodes"],
-        "excluded": topology["excluded"],
-        "acceptance": topology["acceptance"],
+        "deployment": {"configuration": "external-private", "targetsEmbedded": False},
     }
     # The manifest is written aside and put in place. A write over an
     # existing file would keep its inode, and that inode may belong to

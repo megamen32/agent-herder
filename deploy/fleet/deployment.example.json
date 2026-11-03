@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "linux-a",
+      "kind": "fleet",
+      "hostId": "linux-a.example.invalid",
+      "address": "192.0.2.10",
+      "sshPort": 22,
+      "sshUser": "operator",
+      "unit": "example-herder.service",
+      "webPort": 18080,
+      "platform": "linux",
+      "uid": 1001,
+      "home": "/home/operator",
+      "pythonBin": "/usr/bin/python3.12",
+      "pythonVersion": "3.12.8",
+      "pythonExecutable": "/usr/bin/python3.12",
+      "fleetDir": "/home/operator/fleet",
+      "stateDir": "/home/operator/state",
+      "authorityTarget": {
+        "fleetDir": "/srv/release-authority/linux-a",
+        "unit": "example-herder.service"
+      }
+    },
+    {
+      "id": "linux-b",
+      "kind": "fleet",
+      "hostId": "linux-b.example.invalid",
+      "address": "192.0.2.11",
+      "sshPort": 22,
+      "sshUser": "operator",
+      "unit": "example-herder.service",
+      "webPort": 18080,
+      "platform": "linux",
+      "uid": 1001,
+      "home": "/home/operator",
+      "pythonBin": "/usr/bin/python3.12",
+      "pythonVersion": "3.12.8",
+      "pythonExecutable": "/usr/bin/python3.12",
+      "fleetDir": "/home/operator/fleet",
+      "stateDir": "/home/operator/state",
+      "authorityTarget": {
+        "fleetDir": "/srv/release-authority/linux-b",
+        "unit": "example-herder.service"
+      }
+    },
+    {
+      "id": "darwin-a",
+      "kind": "fleet",
+      "hostId": "darwin-a.example.invalid",
+      "address": "192.0.2.12",
+      "sshPort": 22,
+      "sshUser": "operator",
+      "unit": "org.example.herder",
+      "webPort": 18081,
+      "platform": "darwin",
+      "uid": 501,
+      "home": "/Users/operator",
+      "pythonBin": "/opt/example/bin/python3.12",
+      "pythonVersion": "3.12.8",
+      "pythonExecutable": "/opt/example/bin/python3.12",
+      "fleetDir": "/Users/operator/fleet",
+      "stateDir": "/Users/operator/state",
+      "launchdDomain": "user/501",
+      "authorityTarget": {
+        "fleetDir": "/srv/release-authority/darwin-a",
+        "unit": "org.example.herder"
+      }
+    }
+  ]
+}

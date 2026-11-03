@@ -66,11 +66,11 @@ class FleetMemoryBudgetCoverageTest(unittest.TestCase):
                              'the shared memory drop-in must name node ' + node)
 
     def test_fleet_nodes_44_and_88_share_one_unit(self):
-        topology = json.loads((DEPLOY / 'nodes.json').read_text())
-        fleet = {node['id']: node for node in topology['nodes'] if node.get('kind') == 'fleet'}
-        self.assertEqual(sorted(fleet), ['44', '88'])
+        topology = json.loads((DEPLOY / 'deployment.example.json').read_text())
+        fleet = {node['id']: node for node in topology['nodes'] if node.get('kind') == 'fleet' and node.get('platform') == 'linux'}
+        self.assertEqual(sorted(fleet), ['linux-a', 'linux-b'])
         self.assertEqual({node['unit'] for node in fleet.values()},
-                         {'agent-herder-fleet.service'})
+                         {'example-herder.service'})
 
 
 if __name__ == '__main__':

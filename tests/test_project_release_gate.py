@@ -111,7 +111,13 @@ class ReleaseGateTests(unittest.TestCase):
     def test_rollout_candidate_forwards_proof_and_packages_gate(self):
         source=(Path(__file__).resolve().parents[1]/"deploy/fleet/rollout-candidate.py").read_text()
         self.assertIn('"--release-proof", arguments.release_proof',source)
-        self.assertIn('(HERE / "release_gate.py", "/tmp/release_gate.py")',source)
+        self.assertIn('"release_rules.py", "release_gate.py", "remote_release_gate.py"',source)
+        self.assertIn('with ReleaseGate(arguments.release_proof, target=target) as gate:',source)
+        self.assertIn('return finish_staged_rollout(command, gate, contract, ssh, stage)',source)
+        remote=source[source.index('side = remote_python_command(node)'):source.index('command = ssh +')]
+        self.assertNotIn('--release-proof',remote)
+        self.assertIn('--authority-stdio',remote)
+        self.assertNotIn('"/tmp/release_gate.py"',source)
         self.assertIn('rollout._main(command[2:], stopped_generation=handoff, release_gate=release_gate)',source)
 
 if __name__ == "__main__": unittest.main()
