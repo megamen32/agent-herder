@@ -409,6 +409,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
         chats?: Array<{ id: string; title: string; updatedAt?: number; asyncStatus?: number }>;
       }>(await this.tools.call("evaluate_script", { pageId: page.id, function: CHATGPT_LIST_API_SCRIPT }));
       this.requestTrace.ingestBrowserHttp(data.trace);
+      if (data?.scope && /^[a-f0-9]{64}$/.test(data.scope)) this.accountScope = data.scope;
       if (data.scope && /^[a-f0-9]{64}$/.test(data.scope) && Array.isArray(data.chats)) {
         this.accountScope = data.scope;
         this.inventoryCache.setAccountScope(data.scope);
@@ -440,7 +441,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
         console.warn("[chatgpt] list API " + classification + "; falling back to sidebar DOM");
       }
     } catch { /* The site may change its private API; retain the DOM fallback. */ }
-    this.accountScope = undefined;
+    if (!data?.scope || !/^[a-f0-9]{64}$/.test(data.scope)) this.accountScope = undefined;
     return this.listFromSidebarDom(s);
   }
 

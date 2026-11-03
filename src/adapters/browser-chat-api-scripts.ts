@@ -46,7 +46,7 @@ export const CHATGPT_LIST_API_SCRIPT = `async () => {
     trace.push({operation:'conversation_list',endpoint:'/backend-api/conversations',http_status:200, latency_ms:0,retry_after_s:null,backoff_ms:0,intercepted:true,age_ms:Math.max(0,Date.now()-inv.at)});
     return {scope: globalThis.__herderChatGptScope || '', chats: inv.chats, source:'intercepted', trace};
   }
-  if (Date.now() < (globalThis.__herderChatGptReadCooldownUntil || 0)) return {error:'read_cooldown',trace};
+  if (Date.now() < (globalThis.__herderChatGptReadCooldownUntil || 0)) return {error:'read_cooldown',trace,scope:globalThis.__herderChatGptScope||''};
   const sessionResponse = await tracedFetch('auth_session','/api/auth/session','/api/auth/session',{credentials:'same-origin'});
   if (!sessionResponse.ok) return {error:'session_unavailable',trace};
   const session = await sessionResponse.json();
@@ -66,7 +66,7 @@ export const CHATGPT_LIST_API_SCRIPT = `async () => {
     }
     if(trace.length && response.status === 429)
       trace[trace.length-1].backoff_ms = Math.max(0, globalThis.__herderChatGptReadCooldownUntil-Date.now());
-    return {error:'list_http_'+response.status,trace};
+    return {error:'list_http_'+response.status,trace,scope:globalThis.__herderChatGptScope||''};
   }
   const data=await response.json();
   globalThis.__herderChatGptScope = scope;
