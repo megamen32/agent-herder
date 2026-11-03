@@ -163,7 +163,7 @@ export class BrowserTurnAutopilotObserver {
       ? Date.parse(session.lastActivity)
       : undefined;
     if (running && liveHarnessPollingEnabled(harness) && this.options.autoContinue && semantics === "remote-update-time" && updatedAt !== undefined
-      && evidence !== "native-last-run") {
+      && !(evidence && evidence.startsWith("native-"))) {
       if (state.stallBaseline !== updatedAt) {
         state.stallBaseline = updatedAt;
         state.nudgedActivity = undefined;
