@@ -150,7 +150,14 @@ export function splitExternalAdapter(external: ExternalProcessAdapter, builtin: 
         const externalMethod = externalValue as (...args: unknown[]) => unknown;
         return async (...args: unknown[]): Promise<unknown> => {
           try {
-            return await externalMethod.apply(external, args);
+            const served = await externalMethod.apply(external, args);
+            // An exact lookup the external reader cannot resolve (its store does not hold the
+            // session) must not shadow the builtin adapter, which also knows the native active list.
+            if (method === "getSession" && (served === null || served === undefined)) {
+              const builtinLookup = Reflect.get(target, method, target);
+              if (typeof builtinLookup === "function") return (builtinLookup as (...lookupArgs: unknown[]) => unknown).apply(target, args);
+            }
+            return served;
           } catch (error) {
             const reason = (error instanceof Error ? error.message : String(error)).slice(0, 200);
             console.error(`[agent-herder] external adapter call failed for ${harness}.${method} (${reason}); builtin adapter serving this call`);

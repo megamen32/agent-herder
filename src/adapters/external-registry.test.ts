@@ -205,6 +205,20 @@ describe("external adapter registry", () => {
     expect(calls).toEqual(["findNamedSessions", "invalidateHistory", "getNativeWorkspaceDirectory:s1"]);
   });
 
+  it("serves an exact getSession the external reader cannot resolve from the builtin adapter", async () => {
+    const row = { id: "ses_live", harness: "opencode" } as unknown as import("../types/index.js").AgentSession;
+    const builtin = builtinStub({ async getSession(id: string) { return id === "ses_live" ? row : null; } });
+    const external = {
+      type: "opencode", name: "go reader",
+      declaredMethods: new Set(["init", "getSession"]),
+      isReady: () => true, init: async () => undefined, stop: async () => undefined,
+      getSession: async () => null,
+    } as unknown as import("./external-process.js").ExternalProcessAdapter;
+    const hybrid = splitExternalAdapter(external, builtin);
+    expect(await hybrid.getSession("ses_live")).toBe(row);
+    expect(await hybrid.getSession("ses_missing")).toBeNull();
+  });
+
   it("overrides factory entries from the environment before the registry captures them", async () => {
     const factories = new Map<string, () => Promise<HarnessAdapter>>([
       ["opencode", async () => ({ marker: "builtin" } as unknown as HarnessAdapter)],
