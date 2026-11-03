@@ -49,4 +49,18 @@ describe('fleet HTTP and native MCP envelopes (focused integration; expected 3s,
    expect(service.create).toHaveBeenLastCalledWith(scoped);
   }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
  });
+ it('answers the access check of the panel over the loopback instead of losing it',async()=>{
+  const service={snapshot:vi.fn(async()=>({state:'unknown'})),create:vi.fn(),control:vi.fn()};
+  const handler=createFleetApiHandler(service as any,'88');
+  const server=createServer(async(req,res)=>{if(!await handler(req,res)){res.writeHead(404);res.end();}});
+  await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));const port=(server.address() as any).port;const base=`http://127.0.0.1:${port}`;
+  try{
+   // The panel asks this over the loopback, where the owner request is
+   // direct. The answer is the same one the other branches give.
+   expect((await fetch(base+'/api/fleet/access')).status).toBe(204);
+   expect((await fetch(base+'/api/fleet/access',{method:'POST'})).status).toBe(405);
+   expect(service.snapshot).not.toHaveBeenCalled();
+   expect(service.create).not.toHaveBeenCalled();
+  }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+ });
 });
