@@ -46,6 +46,9 @@ export interface BrowserTurnObserverOptions {
   /** Cheap enablement probe: a disabled session must never create a job. */
   enabled: (input: AutopilotRunnerInput) => Promise<boolean>;
   held: (harness: string, sessionId: string) => Promise<boolean>;
+  /** Chat commands of a finished turn (/pilot): returns true when a new
+   * command ran and was answered, so the Stop of that turn is skipped. */
+  handleTurnCommands?: (harness: string, sessionId: string, cwd: string, messages: ReadonlyArray<{ id?: string; role?: string; text?: string }>) => Promise<boolean>;
   /** A running turn without remote progress for this long counts as stalled. */
   stallMs: number;
   /** The watchdog can be switched off while turn judging stays on. */
@@ -284,14 +287,28 @@ export class BrowserTurnAutopilotObserver {
     // fingerprint of the new turn differs from the already-judged one even
     // when the prewarm pipeline is paused and no revision signal arrives.
     try { await adapter.invalidateHistory?.(session.id); } catch { /* cache invalidation must never block the Stop submission */ }
-    // Fingerprint first: it warms the same history cache the consumer reads.
-    let fingerprint: string | undefined;
+    // The messages of the finished turn, read once: its fingerprint and its
+    // chat commands come from the same read.
+    let messages: ReadonlyArray<{ id?: string; role: string; text?: string }> | undefined;
     try {
-      fingerprint = await this.turnFingerprint(adapter, session.id);
+      messages = (await adapter.getSessionMessages?.(session.id, 10)) ?? undefined;
     } catch (error) {
-      this.options.onError?.(`${harness} turn fingerprint failed for ${session.id}: ${error instanceof Error ? error.message : String(error)}`);
+      this.options.onError?.(`${harness} turn read failed for ${session.id}: ${error instanceof Error ? error.message : String(error)}`);
       return;
     }
+    if (!messages || !messages.length) return;
+    // The owner may talk to the herder from the chat itself: a turn whose
+    // newest user message is a chat command (/pilot) is that command
+    // exchange, not work. The command runs, its answer lands in the chat,
+    // and the Stop of this turn is skipped — there is nothing to judge.
+    if (this.options.handleTurnCommands) {
+      try {
+        if (await this.options.handleTurnCommands(harness, session.id, session.cwd, messages)) return;
+      } catch (error) {
+        this.options.onError?.(`chat command handling failed for ${harness}/${session.id}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    const fingerprint = this.fingerprintOf(messages);
     if (!fingerprint) return;
     const input: AutopilotRunnerInput = {
       harness: harness as AutopilotRunnerInput["harness"],
@@ -308,9 +325,11 @@ export class BrowserTurnAutopilotObserver {
     }
   }
 
-  private async turnFingerprint(adapter: HarnessAdapter, sessionId: string): Promise<string | undefined> {
-    const messages = await adapter.getSessionMessages?.(sessionId, 8);
-    if (!messages || !messages.length) return undefined;
+  /** The immutable identity of a finished turn: the fingerprint of its newest
+   * messages. The messages are already read — the same read scans the chat
+   * commands of the turn. */
+  private fingerprintOf(messages: ReadonlyArray<{ id?: string; role: string; text?: string }>): string | undefined {
+    if (!messages.length) return undefined;
     return createHash("sha256")
       .update(JSON.stringify(messages.map((message) => [message.id, message.role, (message.text ?? "").slice(-1200)])))
       .digest("hex")

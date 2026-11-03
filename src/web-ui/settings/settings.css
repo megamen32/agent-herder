@@ -369,3 +369,23 @@
     flex: 1 1 auto;
   }
 }
+
+/* Страница одного харнесса: имя-ссылка в таблице и список запросов. */
+.herder-settings-harness-link {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+.herder-settings-harness-link:hover,
+.herder-settings-harness-link:focus-visible {
+  text-decoration: underline;
+}
+.herder-settings-request-list {
+  margin: 0.35rem 0 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.3rem;
+}
+.herder-settings-request-list li {
+  margin: 0;
+}

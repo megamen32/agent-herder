@@ -105,4 +105,35 @@ describe("BrowserTurnAutopilotObserver", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("runs a /pilot command turn and skips its Stop", async () => {
+    let status: "running" | "idle" = "running";
+    const messages = [
+      { id: "u1", role: "user", text: "/pilot on" },
+      { id: "a1", role: "assistant", text: "готово" },
+    ];
+    const adapter = makeAdapter(() => [session(status)]);
+    (adapter.getSessionMessages as ReturnType<typeof vi.fn>).mockImplementation(async () => messages);
+    const handleTurnCommands = vi.fn(async (_harness: string, _sessionId: string, _cwd: string, _messages: unknown) => true);
+    const { observer, submit } = makeObserver(adapter, { handleTurnCommands });
+    await observer.observeOnce();
+    status = "idle";
+    await observer.observeOnce();
+    expect(handleTurnCommands).toHaveBeenCalledTimes(1);
+    expect(handleTurnCommands.mock.calls[0]![0]).toBe("zai");
+    expect(handleTurnCommands.mock.calls[0]![3]).toEqual(messages);
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("a turn without a command still fires its Stop through the same read", async () => {
+    let status: "running" | "idle" = "running";
+    const adapter = makeAdapter(() => [session(status)]);
+    const handleTurnCommands = vi.fn(async () => false);
+    const { observer, submit } = makeObserver(adapter, { handleTurnCommands });
+    await observer.observeOnce();
+    status = "idle";
+    await observer.observeOnce();
+    expect(handleTurnCommands).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
 });
