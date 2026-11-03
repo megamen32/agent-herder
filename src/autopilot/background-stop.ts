@@ -55,6 +55,7 @@ export class BackgroundAutopilotStop {
               lastUserMessage: before.lastUser ?? input.lastUserMessage,
               lastAssistantMessage: before.lastAssistant ?? input.lastAssistantMessage,
               nativeReportObservation: before.nativeReportObservation,
+              messages: before.messages,
               nativeFence: async () => {
                 const current = await this.snapshot(adapter, input);
                 if (!current || current.fingerprint !== before.fingerprint) return false;
