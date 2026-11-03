@@ -21,7 +21,7 @@ export const CHATGPT_LIST_API_SCRIPT = `async () => {
     return r;
   };
   if (location.origin !== 'https://chatgpt.com') return {error:'wrong_origin'};
-  if (!globalThis.__herderChatGptHook) {
+    if (!globalThis.__herderChatGptHook && typeof window !== 'undefined' && typeof window.fetch === 'function') {
     globalThis.__herderChatGptHook = true; globalThis.__herderChatGptInventory = null;
     const origFetch = window.fetch;
     window.fetch = async function(input, init) {
@@ -70,9 +70,37 @@ export const CHATGPT_LIST_API_SCRIPT = `async () => {
   }
   const data=await response.json();
   globalThis.__herderChatGptScope = scope;
-  return {scope,trace,source:'own_fetch',chats:(data.items||[]).filter(x=>x.id && x.title && !x.is_archived && !x.is_temporary_chat)
+  return {scope,trace,source:'own_fetch',chats:(data.items||[]).filter(x => x.id && x.title && !x.is_archived && !x.is_temporary_chat)
    .map(x=>({id:x.id,title:x.title,updatedAt:x.update_time,createdAt:x.create_time,asyncStatus:x.async_status}))};
-}`
+}`;
+
+/** Passive list for the paused harness: reads only what the page already
+ * holds — the intercept stash of the site's own /backend-api/conversations
+ * responses. Never fetches: no auth session, no conversation list, no
+ * cooldown. Answers with whatever age the stash has; an empty stash answers
+ * an empty list and the driver falls back to its durable inventory or the
+ * visible sidebar. This is the "hook" the owner means: the site feeds the
+ * herder, the herder asks the site for nothing. */
+export const CHATGPT_LIST_API_PASSIVE_SCRIPT = `async () => {
+  if (location.origin !== 'https://chatgpt.com') return {error:'wrong_origin'};
+    if (!globalThis.__herderChatGptHook && typeof window !== 'undefined' && typeof window.fetch === 'function') {
+    globalThis.__herderChatGptHook = true; globalThis.__herderChatGptInventory = null;
+    const origFetch = window.fetch;
+    window.fetch = async function(input, init) {
+      const url = typeof input === 'string' ? input : (input && input.url) || '';
+      const resp = await origFetch.apply(this, arguments);
+      try {
+        if (url.indexOf('/backend-api/conversations') >= 0 && url.indexOf('/backend-api/conversations/') < 0 && resp.ok) {
+          const clone = resp.clone(); const data = await clone.json();
+          if (data && Array.isArray(data.items)) { globalThis.__herderChatGptInventory = { at: Date.now(), total: typeof data.total === 'number' ? data.total : data.items.length, chats: data.items.filter(x => x.id && x.title && !x.is_archived && !x.is_temporary_chat).map(x => ({id:x.id,title:x.title,updatedAt:x.update_time,createdAt:x.create_time,asyncStatus:x.async_status})) }; }
+        }
+      } catch(e) {}
+      return resp;
+    };
+  }
+  const inv = globalThis.__herderChatGptInventory;
+  return {scope: globalThis.__herderChatGptScope || '', chats: inv && Array.isArray(inv.chats) ? inv.chats : [], source:'passive', trace: []};
+}`;
 
 /** Paginated full scan of EVERY conversation (one-time at init or via the
  * Web UI rescan button). offset=0,100,200… with 15s gap; respects 429. */
@@ -89,13 +117,18 @@ export const CHATGPT_FULL_SCAN_SCRIPT = `async () => {
     return r;
   };
   if (location.origin !== 'https://chatgpt.com') return {error:'wrong_origin'};
-  if (!globalThis.__herderChatGptHook) {
+    if (!globalThis.__herderChatGptHook && typeof window !== 'undefined' && typeof window.fetch === 'function') {
     globalThis.__herderChatGptHook = true; globalThis.__herderChatGptInventory = null;
     const origFetch = window.fetch;
     window.fetch = async function(input, init) {
       const url = typeof input === 'string' ? input : (input && input.url) || '';
       const resp = await origFetch.apply(this, arguments);
-      try { if (url.indexOf('/backend-api/conversations') >= 0 && url.indexOf('/backend-api/conversations/') < 0 && resp.ok) { const clone = resp.clone(); const data = await clone.json(); if (data && Array.isArray(data.items)) { globalThis.__herderChatGptInventory = { at: Date.now(), total: typeof data.total === 'number' ? data.total : data.items.length, chats: data.items.filter(x => x.id && x.title && !x.is_archived && !x.is_temporary_chat).map(x => ({id:x.id,title:x.title,updatedAt:x.update_time,createdAt:x.create_time,asyncStatus:x.async_status})) }; } } } catch(e) {}
+      try {
+        if (url.indexOf('/backend-api/conversations') >= 0 && url.indexOf('/backend-api/conversations/') < 0 && resp.ok) {
+          const clone = resp.clone(); const data = await clone.json();
+          if (data && Array.isArray(data.items)) { globalThis.__herderChatGptInventory = { at: Date.now(), total: typeof data.total === 'number' ? data.total : data.items.length, chats: data.items.filter(x => x.id && x.title && !x.is_archived && !x.is_temporary_chat).map(x => ({id:x.id,title:x.title,updatedAt:x.update_time,createdAt:x.create_time,asyncStatus:x.async_status})) }; }
+        }
+      } catch(e) {}
       return resp;
     };
   }
@@ -123,7 +156,7 @@ export const CHATGPT_FULL_SCAN_SCRIPT = `async () => {
     await new Promise(r => setTimeout(r, 15000));
   }
   return {scope, trace, pages, total: total || all.length, chats: all, source:'full_scan'};
-}`;;
+}`;
 
 export function chatgptMessagesApiScript(chatId: string): string {
   return `async () => {

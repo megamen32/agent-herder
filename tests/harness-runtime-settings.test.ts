@@ -48,7 +48,9 @@ describe("the document of the runtime switches", () => {
     expect(harnessPollingEnabled(document, "chatgpt")).toBe(false);
     // An explicit per-harness true must not outvote the master switch.
     expect(harnessPollingEnabled(document, "zai")).toBe(false);
-    expect(harnessPromptPollingEnabled(document, "chatgpt")).toBe(false);
+    // The modal-prompt poller reads the local page through CDP: the master
+    // pause of the site requests does not stop the dialog watcher.
+    expect(harnessPromptPollingEnabled(document, "chatgpt")).toBe(true);
     // The hooks of a harness are an independent switch: a paused site keeps
     // its hooks, and a silent harness keeps its polling.
     expect(harnessHooksEnabled(document, "chatgpt")).toBe(true);
@@ -69,13 +71,13 @@ describe("the document of the runtime switches", () => {
       harnesses: { chatgpt: { promptPollingEnabled: false } },
     };
     expect(harnessPromptPollingEnabled(document, "chatgpt")).toBe(false);
-    // The prompt poller belongs to the harness: polling off means the
-    // prompt poller off even without its own override.
+    // The prompt poller is a local CDP watcher, not a site request: the
+    // pause of the polling leaves it running until its own switch says no.
     const paused = {
       ...emptyHarnessRuntimeSettings(),
       harnesses: { chatgpt: { pollingEnabled: false } },
     };
-    expect(harnessPromptPollingEnabled(paused, "chatgpt")).toBe(false);
+    expect(harnessPromptPollingEnabled(paused, "chatgpt")).toBe(true);
     // Another harness is not affected by the ChatGPT override.
     expect(harnessPromptPollingEnabled(document, "zai")).toBe(true);
   });

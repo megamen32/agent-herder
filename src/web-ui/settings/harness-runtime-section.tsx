@@ -67,9 +67,9 @@ async function saveHarnessRuntime(change: Record<string, unknown>): Promise<Harn
 
 /** What one harness is, in the words of the table. */
 export function harnessKindText(id: string): string {
-  return BROWSER_HARNESSES.has(id)
-    ? "браузерный чат: харнесс опрашивает сайт"
-    : "хук-плагин: харнесс сам подключается к Herder";
+  if (id === "chatgpt") return "браузерный чат: пассивно через intercept hook";
+  if (id === "zai") return "браузерный чат: харнесс опрашивает сайт";
+  return "хук-плагин: харнесс сам подключается к Herder";
 }
 
 /** The state of the site polling, in one line. */
@@ -77,7 +77,7 @@ export function pollingStateText(view: HarnessRuntimeView | null): string {
   if (!view) return "Состояние запросов к сайтам читается…";
   return view.pollingEnabled
     ? "Фоновые запросы к сайтам выполняются: инвентаризация чатов, прогрев истории, опрос диалогов ChatGPT."
-    : "Все фоновые запросы к сайтам приостановлены. Сохранённые данные остаются доступны, явные действия (открытие чата, отправка сообщения) работают.";
+    : "Инициативные запросы харнессов к сайтам приостановлены. ChatGPT продолжает наблюдение пассивно — перехват ответов самой страницы (intercept hook) и локальные CDP-снапшоты; Z.ai заморожен до возобновления. Явные действия (открытие чата, отправка сообщения, пересканирование) работают.";
 }
 
 export function HarnessRuntimeSection(): React.ReactElement {
@@ -118,7 +118,7 @@ export function HarnessRuntimeSection(): React.ReactElement {
     await apply(
       { pollingEnabled: !view.pollingEnabled },
       view.pollingEnabled
-        ? "Все фоновые запросы к сайтам приостановлены. Продолжения браузерных чатов (автопилот ChatGPT/Z.ai) не отправляются, пока пуллинг выключен."
+        ? "Инициативные запросы к сайтам приостановлены. ChatGPT продолжает работать пассивно (intercept hook); автопилот Z.ai возобновится после включения пуллинга."
         : "Фоновые запросы к сайтам возобновлены со следующего такта опроса.",
     );
   };
@@ -157,8 +157,10 @@ export function HarnessRuntimeSection(): React.ReactElement {
           перезапуска.
         </p>
         <p className="herder-settings-hint">
-          Пока пуллинг приостановлен, автопилот браузерных чатов (ChatGPT, Z.ai) не видит
-          окончания ходов и их продолжения не отправляются. Хук-харнессы (Claude Code, Codex,
+          Пока пуллинг приостановлен: ChatGPT видит окончание ходов через intercept hook —
+          автопилот продолжает работать, опрос модальных диалогов («продолжить в чате») идёт
+          локальными снапшотами и паузой не останавливается. Z.ai окончаний ходов не видит —
+          его автопилот возобновится после включения пуллинга. Хук-харнессы (Claude Code, Codex,
           MiniMax Code) работают как раньше. Явные действия — открытие чата, отправка сообщения —
           остаются доступными.
         </p>
@@ -185,9 +187,9 @@ export function HarnessRuntimeSection(): React.ReactElement {
       <section className="herder-settings-block" aria-label="Харнессы">
         <h2>Харнессы</h2>
         <p className="herder-settings-hint">
-          Каждый харнесс — одна строка. Браузерные (chatgpt, zai) настраивают запросы к сайту и
-          прогрев истории; ChatGPT — ещё и опрос модальных диалогов (разрешения и «продолжить в
-          чате»). Хуки можно выключить у любого харнесса отдельно, не трогая остальные.
+          Каждый харнесс — одна строка. ChatGPT: запросы к сайту (пауза не глушит пассивный
+          intercept-путь), опрос модальных диалогов и прогрев истории. Z.ai: запросы к сайту и
+          прогрев истории. Хуки можно выключить у любого харнесса отдельно, не трогая остальные.
         </p>
         <table className="herder-settings-table">
           <thead>

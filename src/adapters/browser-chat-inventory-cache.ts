@@ -53,8 +53,11 @@ export class BrowserChatInventoryCache {
     for (const e of entries) {
       if (!e || !e.id || !e.title) continue;
       const prev = this.chats.get(e.id);
+      // asyncStatus is authoritative per response: the site omits the field
+      // when the conversation has no async task, so an absent value clears a
+      // stale one — a finished turn must stop looking running.
       this.chats.set(e.id, { id: e.id, title: e.title, updatedAt: e.updatedAt ?? prev?.updatedAt,
-        createdAt: e.createdAt ?? prev?.createdAt, asyncStatus: e.asyncStatus ?? prev?.asyncStatus, seenAt: Date.now() });
+        createdAt: e.createdAt ?? prev?.createdAt, asyncStatus: e.asyncStatus, seenAt: Date.now() });
     }
   }
   mergeFull(entries: InventoryEntry[]): void {
@@ -63,7 +66,7 @@ export class BrowserChatInventoryCache {
       if (!e || !e.id || !e.title) continue;
       const prev = this.chats.get(e.id);
       next.set(e.id, { id: e.id, title: e.title, updatedAt: e.updatedAt ?? prev?.updatedAt,
-        createdAt: e.createdAt ?? prev?.createdAt, asyncStatus: e.asyncStatus ?? prev?.asyncStatus, seenAt: prev?.seenAt || Date.now() });
+        createdAt: e.createdAt ?? prev?.createdAt, asyncStatus: e.asyncStatus, seenAt: prev?.seenAt || Date.now() });
     }
     this.chats = next; this.scannedAt = Date.now();
   }

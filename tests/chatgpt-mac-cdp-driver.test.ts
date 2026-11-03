@@ -1,11 +1,13 @@
-import { CHATGPT_LIST_API_SCRIPT } from "../src/adapters/browser-chat-api-scripts.js";
+import { CHATGPT_LIST_API_SCRIPT, CHATGPT_LIST_API_PASSIVE_SCRIPT } from "../src/adapters/browser-chat-api-scripts.js";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { runInNewContext } from "node:vm";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CHATGPT_LIST_API_SCRIPT, CHATGPT_MAC_SNAPSHOT, ChatGptMacCdpDriver, parseChatGptPages, pickChatGptPage } from "../src/adapters/chatgpt-mac-cdp-driver.js";
+import { CHATGPT_MAC_SNAPSHOT, ChatGptMacCdpDriver, parseChatGptPages, pickChatGptPage } from "../src/adapters/chatgpt-mac-cdp-driver.js";
 import { parseChromeEvaluation, type ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
+// The driver now owns a durable inventory cache; every test keeps its own
+// private root so nothing ever touches the state directory of the host.
 let _invDir: string;
 beforeEach(() => { _invDir = mkdtempSync(join(tmpdir(), "chatgpt-inv-")); process.env.AGENT_HERDER_BROWSER_CHAT_INVENTORY_ROOT = _invDir; });
 afterEach(() => { rmSync(_invDir, { recursive: true, force: true }); delete process.env.AGENT_HERDER_BROWSER_CHAT_INVENTORY_ROOT; });
@@ -335,5 +337,17 @@ describe("dots workspace dashboard", () => {
     const driver = new ChatGptMacCdpDriver(tools, undefined, 0);
     await driver.sendMessage({ chatId: ID, text: "hello from herder" });
     expect(navs).toEqual(["https://chatgpt.com/c/" + ID]);
+  });
+});
+
+
+describe("the passive list script of the paused harness", () => {
+  it("reads the intercept stash and never fetches", () => {
+    // The passive script is the "hook" of the owner: the site feeds the
+    // herder, the herder asks the site for nothing.
+    expect(CHATGPT_LIST_API_PASSIVE_SCRIPT).toContain("source:'passive'");
+    expect(CHATGPT_LIST_API_PASSIVE_SCRIPT).toContain("__herderChatGptInventory");
+    expect(CHATGPT_LIST_API_PASSIVE_SCRIPT).not.toContain("tracedFetch");
+    expect(CHATGPT_LIST_API_PASSIVE_SCRIPT).not.toContain("await fetch(");
   });
 });
