@@ -98,16 +98,17 @@ body { font-size: 15px; -webkit-font-smoothing: antialiased; }
   gap: 14px;
 }
 .codex-navigation-items { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.codex-navigation button {
+.codex-navigation button, .codex-navigation a {
   width: 40px; height: 40px;
   border-radius: 11px;
   display: grid; place-items: center;
   color: var(--muted);
+  text-decoration: none;
   transition: background-color .15s ease, color .15s ease, transform .12s ease;
 }
-.codex-navigation button:hover { background: var(--surface-hover); color: var(--text); }
-.codex-navigation button:active { transform: scale(.94); }
-.codex-navigation button.active {
+.codex-navigation button:hover, .codex-navigation a:hover { background: var(--surface-hover); color: var(--text); }
+.codex-navigation button:active, .codex-navigation a:active { transform: scale(.94); }
+.codex-navigation button.active, .codex-navigation a.active {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
 }
