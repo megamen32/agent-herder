@@ -408,6 +408,10 @@ export interface HarnessRuntimeHarnessView {
   prewarmLimitOverride: number | null;
   hooksEnabled: boolean;
   hooksOverride: boolean | null;
+  /** The durable full inventory of a browser harness, as the settings page
+   * reads it: the passive listing needs no request. Absent on native
+   * harnesses and before the first scan. */
+  inventory?: { chats: number; scannedAt: number };
 }
 
 /** The whole page of the settings: the master switches and every harness. */

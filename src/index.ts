@@ -5,6 +5,7 @@ import { harnessRuntimeCapabilities } from "./types/harness-runtime.js";
 import { registerProjectReleaseTools } from "./mcp/project-release-tools.js";
 import { BackgroundAutopilotStop } from "./autopilot/background-stop.js";
 import { BrowserTurnAutopilotObserver } from "./autopilot/browser-turn-observer.js";
+import { ChatCommandPipeline } from "./autopilot/chat-commands.js";
 import { NativeTurnAutopilotObserver } from "./autopilot/native-turn-observer.js";
 import { deliverAutopilotGoal } from "./autopilot/continuation-delivery.js";
 import { evaluateAutopilotStop, runAutopilotCommand } from "./autopilot-runner.js";
@@ -1293,11 +1294,26 @@ async function main() {
   const browserAutopilotHarnesses = (process.env.AGENT_HERDER_BROWSER_AUTOPILOT_HARNESSES ?? "zai,chatgpt")
     .split(",").map((value) => value.trim()).filter(Boolean)
     .filter((harness) => adapters.has(harness));
+  // Chat commands (/pilot): the owner toggles the autopilot of one session
+  // from the chat itself — on the site or in the herder composer — and the
+  // answer lands in the same chat.
+  const chatCommandPipeline = new ChatCommandPipeline({
+    run: (input) => autopilotSessionCommand(input),
+    reply: (harness, sessionId, text, inputId) => processSupervisor.sendMessage(harness, sessionId, {
+      message: text,
+      origin: "automation",
+      queue: true,
+      ...(inputId ? { inputId } : {}),
+    }),
+    ledgerPath: join(autopilotStateDir, "chat-commands.json"),
+    onError: (message) => console.error(`[agent-herder] ${message}`),
+  });
   const browserTurnObserver = browserAutopilotHarnesses.length
     ? new BrowserTurnAutopilotObserver({
         harnesses: browserAutopilotHarnesses,
         adapters,
         supervisor: processSupervisor,
+        handleTurnCommands: (harness, sessionId, cwd, messages) => chatCommandPipeline.handleTurnMessages(harness, sessionId, cwd, messages),
         submit: (input) => backgroundAutopilotStop!.submit(input),
         enabled: async (input) => (await runAutopilotCommand({ ...input, command: "status" })).enabled === true,
         held: (harness, id) => humanStopStore.isHeld(harness, id),
@@ -1455,6 +1471,7 @@ async function main() {
       backgroundAutopilotStop,
       autopilotPolicyStore,
       autopilotSessionStore,
+      chatCommands: chatCommandPipeline,
       sessionAutostartStore,
       autoCompactService,
       autoCompactStore,
