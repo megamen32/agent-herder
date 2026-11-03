@@ -91,7 +91,6 @@ import { registerChatGptWakeTools } from "./mcp/chatgpt-wake-tools.js";
 import { WakeBindingStore } from "./chatgpt-wake-binding.js";
 import { registerSessionTools } from "./mcp/session-tools.js";
 import {withCatalogProjection} from "./mcp/catalog-projection.js";
-import { withToolConsolidation } from "./mcp/tool-consolidation.js";
 import { UserMessageDelivery } from "./user-message-delivery.js";
 import { DeferredDeliverySweeper } from "./deferred-delivery-sweeper.js";
 import {SessionQueueControl} from "./session-queue-control.js";
@@ -918,9 +917,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     server.server.onclose = () => { unsubscribe(); };
   }
 
-  const hiddenByConsolidation = new Set<string>();
   withCatalogProjection(server, () => {
-    withToolConsolidation(server, () => {
     server.registerTool("qa_control", {
       description: "Control only synthetic QA fixtures bound to the existing OpenCode/ZCode QA session references. Project and actor are fixed by the isolated backend. Permission, direction, cancel and /stop never call a native adapter, production Stop, or Notice Place.",
       inputSchema: z.object({
@@ -959,8 +956,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     options.chatgptWakeBindings,
     options.chatgptWakeAdapters,
     );
-    }, hiddenByConsolidation);
-  }, hiddenByConsolidation);
+  });
   return server;
 }
 

@@ -6,7 +6,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { withCatalogProjection } from "../src/mcp/catalog-projection.js";
-import { withToolConsolidation } from "../src/mcp/tool-consolidation.js";
 import { GptAdminMesh } from "../src/mesh/gptadmin.js";
 import { FleetCabinetService } from "../src/mesh/fleet-service.js";
 
@@ -37,14 +36,14 @@ afterEach(async () => {
 const text = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }] });
 
 /**
- * The production registration shape: the list_sessions family and the
- * deliver facade consolidate exactly the machine endpoints the fleet reads,
- * and the policy file hides them on top of that.
+ * The production registration shape: the machine endpoints the fleet reads
+ * are registered under their own names, and the policy file tries to hide
+ * them on top of that.
  */
 async function consolidatedHerder(): Promise<Client> {
   const server = new McpServer({ name: "herder-catalog-fixture", version: "1" });
   const hidden = new Set<string>();
-  withCatalogProjection(server, () => withToolConsolidation(server, () => {
+  withCatalogProjection(server, () => {
     server.registerTool("mesh_snapshot", { inputSchema: z.object({ limit: z.number().int().min(1).max(12).default(12) }).strict() }, async () => text({ hostId: "100", sessions: [], harnesses: [], complete: true }));
     server.registerTool("mesh_discover", { inputSchema: z.object({ limit: z.number().int().min(1).max(12).default(12) }).strict() }, async () => text({ sessions: [], hosts: [], complete: true }));
     server.registerTool("mesh_route", { inputSchema: z.object({}).strict() }, async () => text({ state: "admitted" }));
@@ -54,7 +53,7 @@ async function consolidatedHerder(): Promise<Client> {
     server.registerTool("list_agents", { inputSchema: z.object({}).strict() }, async () => text([]));
     server.registerTool("list_active_sessions", { inputSchema: z.object({}).strict() }, async () => text([]));
     server.registerTool("deliver", { inputSchema: z.object({ sessionId: z.string(), message: z.string() }).strict() }, async () => text({}));
-  }, hidden), hidden);
+  }, hidden);
   const client = new Client({ name: "mesh-catalog-client", version: "1" }, { versionNegotiation: { mode: "auto" } });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   connections.push({ client, server });
@@ -64,7 +63,7 @@ async function consolidatedHerder(): Promise<Client> {
 }
 
 describe("peer capability registry stays discoverable", () => {
-  it("advertises the machine endpoints under consolidation and policy hiding", async () => {
+  it("advertises the machine endpoints even under policy hiding", async () => {
     const client = await consolidatedHerder();
     const names = (await client.listTools()).tools.map(tool => tool.name);
     for (const endpoint of ["mesh_snapshot", "mesh_deliver", "fleet_node_info", "fleet_session_page", "list_agents"]) {
