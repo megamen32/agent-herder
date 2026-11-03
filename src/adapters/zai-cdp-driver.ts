@@ -1,4 +1,6 @@
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
+import { BrowserChatDraftStore } from "./browser-chat-drafts.js";
+import { submitFirstChatMessage } from "./browser-chat-new-page.js";
 import type { SessionMessageView } from "../types/index.js";
 import { ZAI_LIST_API_SCRIPT, zaiMessagesApiScript, ZAI_LIST_PROJECTS_SCRIPT, zaiMoveToProjectScript } from "./browser-chat-api-scripts.js";
 import { MacMiniChromeTransport, parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
@@ -86,11 +88,12 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   readonly browserFeatures = {
     nativeConversationIds: false, // Sidebar title IDs until ZAI native API is adopted.
     queueAfterGeneration: true,
-    chatCreation: false,
+    chatCreation: true,
     accountArchiveViaCdp: false,
     projects: true,
   } as const;
   private readonly cache = new Map<string, BrowserChat>();
+  private readonly drafts = new BrowserChatDraftStore("zai");
   private operation: Promise<void> = Promise.resolve();
   private lastSubmittedAt = 0;
   private accountScope: string | undefined;
@@ -172,6 +175,10 @@ export class ZaiCdpDriver implements BrowserChatDriver {
    * The private HTTP history endpoint will separately verify its existence.
    */
   getKnownChat(id: string): BrowserChat | null {
+    if (id.startsWith("draft:")) {
+      const draft = this.drafts.get(id);
+      return draft ? this.drafts.asChat(draft) : null;
+    }
     return this.routeRecord(id);
   }
 
@@ -268,8 +275,25 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     return result;
   }
 
+  /** Z.ai allocates the native route after the first message, not on /new.
+   * Create only a durable local draft until the user explicitly sends text.
+   */
+  async createChat(input: { title?: string }): Promise<BrowserChat> {
+    return this.exclusive(async () => {
+      if (!this.accountScope) await this.listUnlocked();
+      await this.drafts.useScope(this.accountScope);
+      const title = input.title && !/^zai-\d{12,}/i.test(input.title)
+        ? input.title : undefined;
+      return this.drafts.create(title);
+    });
+  }
+
   async listChats(): Promise<readonly BrowserChat[]> {
-    return this.exclusive(() => this.listUnlocked());
+    return this.exclusive(async () => {
+      const native = await this.listUnlocked();
+      await this.drafts.useScope(this.accountScope);
+      return this.drafts.merge(native);
+    });
   }
 
   /** Switches only when the currently selected page is safely idle. */
@@ -336,6 +360,8 @@ export class ZaiCdpDriver implements BrowserChatDriver {
 
   async getChat(id: string): Promise<BrowserChat | null> {
     return this.exclusive(async () => {
+      const draft = this.drafts.get(id);
+      if (draft) return this.drafts.asChat(draft);
       // Don't return the old cached working=false value: a queued delivery
       // polls this method until the site's square Stop disappears.
       const page = await this.page();
@@ -379,6 +405,12 @@ export class ZaiCdpDriver implements BrowserChatDriver {
    * selecting or reloading the user's currently open conversation.
    */
   async getMessages(chatId: string): Promise<SessionMessageView[] | null> {
+    if (chatId.startsWith("draft:")) {
+      const draft = this.drafts.get(chatId);
+      if (!draft) return null;
+      if (!draft.remoteId) return [];
+      chatId = draft.remoteId;
+    }
     let nativeId = chatId.startsWith("route:") ? chatId.slice(6) : "";
     if (!nativeId && chatId.startsWith("sidebar:")) {
       const title = parseTitleId(chatId);
@@ -429,8 +461,33 @@ export class ZaiCdpDriver implements BrowserChatDriver {
 
   async sendMessage(input: { chatId: string; text: string; waitForCompletion?: boolean }): Promise<{ assistantText?: string }> {
     return this.exclusive(async () => {
-      const { chatId, text } = input;
+      let { chatId, text } = input;
       if (!text.trim() || text.length > MAX_MESSAGE_CHARS) throw new Error("Invalid ZAI message size");
+      if (chatId.startsWith("draft:")) {
+        await this.listUnlocked();
+        await this.drafts.useScope(this.accountScope);
+        const draft = await this.drafts.startSend(chatId);
+        if (draft.remoteId) {
+          chatId = draft.remoteId;
+        } else {
+          const receipt = await submitFirstChatMessage(this.tools,"zai",text);
+          if (!receipt.clicked) {
+            await this.drafts.resetPreClick(chatId);
+            throw new Error("ZAI first message not submitted: "+(receipt.reason||"unknown"));
+          }
+          if (!receipt.remoteId) {
+            await this.drafts.markUncertain(chatId);
+            throw new Error("ZAI submission outcome unknown: "+(receipt.reason||"no native route"));
+          }
+          await this.drafts.admit(chatId,receipt.remoteId);
+          const created=this.recordChat(receipt.remoteId,draft.title,
+            new Date().toISOString(),"/c/"+receipt.remoteId.slice(6));
+          created.working=true;
+          this.cache.set(receipt.remoteId,created);
+          this.lastSubmittedAt=Date.now();
+          return {};
+        }
+      }
       const known = this.cache.get(chatId) ?? (await this.listUnlocked()).find(chat => chat.id === chatId)
         ?? (chatId.startsWith("route:") ? (this.routeRecord(chatId) ?? undefined) : undefined);
       if (!known) throw new Error("ZAI chat is not in the authenticated browser inventory");

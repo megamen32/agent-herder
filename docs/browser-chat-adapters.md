@@ -152,3 +152,44 @@ behind its predecessor. When the fetch completes, the web UI's 8-second
 refresh makes its messages visible without discarding any previously
 shown content. A failed request is throttled for 30 seconds so an
 unreachable private API cannot keep hammering Chrome or the site.
+
+## Creating a new ChatGPT or Z.ai conversation (feature branch)
+
+Both sites show a blank new-chat composer at their root `/`, but do
+**not** assign a persistent native conversation ID until the user sends
+their first message. The browser adapter therefore supports explicit
+`createSession(harness="chatgpt"|"zai")` in two safe stages:
+
+1. The Create button saves an empty **local draft** with a stable
+   `chatgpt::draft%3A<uuid>` or `zai::draft%3A<uuid>` session ID.
+   It appears immediately in the Agent Herder list and survives a service
+   restart. No external request, model generation or synthetic message is
+   sent during this stage.
+2. Only after the user types a real first message, the site driver opens
+   an **independent background tab** in the existing authenticated Mac mini
+   Chrome and submits once from the site's own blank composer. It confirms
+   the exact site origin, blank route, editor content, idle Stop state and
+   one enabled Send button. After the site's own `/c/<uuid>` route appears,
+   the draft is durably linked to that ID. It retains the same Herder session
+   ID, avoiding chat-list duplicates and broken client links.
+
+The two drivers share the local draft store and background-tab admission
+helper but keep their own composer and Send selectors. Drafts are stored
+in mode-0600 JSON files inside mode-0700 directories, split by provider
+and SHA-256 account scope. Neither tokens, cookies nor prompt text are
+stored in draft metadata. Each account has at most 100 drafts.
+
+An aborted pre-click operation returns the draft to pending. Once a click
+may have occurred, a missing response or missing native route is marked
+**uncertain**, including across restarts. The operation is never
+automatically replayed, so a timeout cannot silently create duplicate chats.
+New chat tabs stay open after the first successful submission; existing
+personal chat tabs are never navigated during initial creation.
+
+The Create dialog suppresses the irrelevant folder and initial-model
+selectors for browser chats and explains the draft semantics. Site-specific
+model switching remains available on an actual native conversation afterward.
+
+Safety/acceptance: tests exercise both providers with simulated page tools.
+No personal first message was sent during implementation, and this feature
+is not deployed by creating the source branch.

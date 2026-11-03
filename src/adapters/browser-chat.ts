@@ -15,6 +15,8 @@ export interface BrowserChat {
   cwd?: string;
   /** Only a currently selected generating chat has a real Stop control. */
   stopVisible?: boolean;
+  /** Local empty chat awaiting the user's first message on the site. */
+  pendingRemoteCreation?: boolean;
   /** Origin of the working signal when it is not the observed page's own DOM. */
   workingSource?: "native-last-run" | "native-async-status";
 }
@@ -278,10 +280,14 @@ export class BrowserChatAdapter implements HarnessAdapter {
       throw new Error("This browser provider does not create chats");
     }
     const chat = await this.driver.createChat({ title: options.name });
+    // A newly created draft must immediately appear in the UI before the
+    // next full browser inventory refresh.
+    this.inventory.set(chat.id,chat);
+    const session=this.toSession(chat);
     return {
-      ...this.toSession(chat),
+      ...session,
       meta: {
-        ...this.toSession(chat).meta,
+        ...session.meta,
         ...(options.model ? { model: options.model } : {}),
       },
     };
@@ -325,12 +331,20 @@ export class BrowserChatAdapter implements HarnessAdapter {
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
     try {
+      const nativeId = this.nativeId(id);
       await this.driver.sendMessage({
-        chatId: this.nativeId(id),
+        chatId: nativeId,
         text: options.message,
         waitForCompletion: options.queue !== true,
       });
-      this.historyCache.invalidate(this.nativeId(id));
+      // After the first message, the draft's real route has been verified.
+      // Refresh its display metadata without waiting for an unrelated
+      // 100-chat listing or changing the stable Herder session ID.
+      if (nativeId.startsWith("draft:")) {
+        const updated = this.driver.getKnownChat?.(nativeId);
+        if (updated) this.inventory.set(nativeId,updated);
+      }
+      this.historyCache.invalidate(nativeId);
       return { ok: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -412,6 +426,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
         transport: chat.sourceRoute ? "browser-owned-page" : "owned-chat-page",
         browserProvider: chat.providerId ?? this.provider.id,
         stopVisible: chat.stopVisible === true,
+        pendingRemoteCreation: chat.pendingRemoteCreation === true,
         timestampSemantics: chat.updatedAtSemantics ?? "native-or-visible-order",
         ...(chat.workingSource ? { runningEvidence: chat.workingSource } : {}),
       },
