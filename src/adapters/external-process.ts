@@ -142,6 +142,16 @@ export class ExternalProcessAdapter implements HarnessAdapter {
         if (line.trim()) console.error("[agent-herder] external_adapter stderr " + this.config.harness + ": " + line.slice(0, 300));
       }
     });
+    // A spawn failure (missing binary, no execute permission) surfaces as an
+    // 'error' event, not a thrown exception: without a listener Node would
+    // raise it as an uncaught exception and take the supervisor down.
+    child.on("error", (error) => {
+      for (const [id, pending] of this.pending) {
+        clearTimeout(pending.timer);
+        pending.reject(new Error("external_adapter_spawn_failed: " + String((error as Error)?.message || error).slice(0, 200)));
+        this.pending.delete(id);
+      }
+    });
     child.on("exit", (code, signal) => {
       // Reject every pending request: the subprocess is gone.
       for (const [id, pending] of this.pending) {
@@ -298,12 +308,17 @@ export class ExternalProcessAdapter implements HarnessAdapter {
   /** Stop the subprocess cleanly. Safe to call multiple times. */
   async stop(): Promise<void> {
     if (!this.child) return;
-    try { await this.rpc<void>("shutdown", {}, ); } catch { /* adapter may already be gone */ }
-    await delay(this.shutdownGraceMs);
-    if (this.child && !this.child.killed) {
+    try { await this.rpc<void>("shutdown", {}); } catch { /* adapter may already be gone */ }
+    // The grace window only has to cover a subprocess that is still alive:
+    // one that already exited after answering shutdown must not make every
+    // caller wait the full grace period.
+    const alive = () => !!this.child && !this.child.killed && this.child.exitCode === null && this.child.signalCode === null;
+    const deadline = Date.now() + this.shutdownGraceMs;
+    while (alive() && Date.now() < deadline) await delay(50);
+    if (alive()) {
       this.child.kill("SIGTERM");
       await delay(500);
-      if (this.child && !this.child.killed) this.child.kill("SIGKILL");
+      if (alive()) this.child.kill("SIGKILL");
     }
     this.child = undefined;
   }

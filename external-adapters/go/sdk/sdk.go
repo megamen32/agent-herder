@@ -110,6 +110,9 @@ func Serve(h Handler) error {
 			continue
 		}
 		if err := srv.handleLine(line); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
 			return err
 		}
 	}

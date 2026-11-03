@@ -137,3 +137,30 @@ the bridge to a Go subprocess means:
 
 This is what makes `--max-old-space-size=512` realistic without giving
 up the heavy harness bridges.
+
+
+## Wiring an external adapter to a harness (Go adapter for every driver)
+
+The supervisor accepts external adapter processes for ANY harness through one
+environment variable (JSON array):
+
+    AGENT_HERDER_EXTERNAL_ADAPTERS='[
+      {"harness":"codex","command":"/home/roomhacker/agents-projects/agent-herder/external-adapters/go/session-reader/session-reader-adapter"},
+      {"harness":"claude","command":"/abs/path/adapter","args":["--flag"],"env":{"CLAUDE_PROJECTS_DIR":"/srv/claude"}}
+    ]'
+
+Rules:
+- `command` must be absolute; `args`, `cwd`, `env`, `requestTimeoutMs` and
+  `shutdownGraceMs` are optional; up to 12 entries; one entry per harness.
+- The external process must speak AHAP and answer `initialize`. When it does,
+  it takes over that harness's adapter slot.
+- When the process cannot start or does not answer, the supervisor logs one
+  line and falls back to the builtin TypeScript adapter, so a broken binary
+  never takes a driver down.
+
+`external-adapters/go/session-reader` is the generic read-only Go adapter for
+every driver with an on-disk session store (codex, opencode, zcode, hermes,
+claude; minimax-code keeps its dedicated Phase A port). It advertises only
+`init`, `listSessions`, `getSession` and `getSessionMessages`, so a harness
+routed to it keeps control and delivery on its builtin adapter surface until
+the Go port implements them.

@@ -26,6 +26,7 @@ import { QaControlBackend } from "./qa-control.js";
 
 import { HarnessAdapter, type SendMessageResult, type AgentSession } from "./types/index.js";
 import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter, MinimaxCodeAdapter, configuredBrowserProviderIds, loadBrowserChatProviderAdapter } from "./adapters/index.js";
+import { applyExternalAdapterOverrides } from "./adapters/external-registry.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
@@ -332,6 +333,9 @@ function configureAdapterRegistry(): void {
     sessionStore: process.env.MINIMAX_CODE_SESSION_STORE,
     cwd: process.env.MINIMAX_CODE_CWD,
   }));
+  // Env-configured external adapter processes (AHAP) may take over any harness;
+  // a binary that cannot start leaves the builtin factory in place.
+  applyExternalAdapterOverrides(adapterFactories);
   for (const definition of [
     ["opencode", "OpenCode", "OpenCode HTTP control adapter", ENABLE_OPENCODE],
     ["claude", "Claude", "Claude SDK or CLI adapter", ENABLE_CLAUDE],
