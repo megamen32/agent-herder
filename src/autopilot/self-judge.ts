@@ -12,7 +12,7 @@ const stateMap = new Map<string, SelfJudgeState>();
 const nextUid = () => randomBytes(4).toString("hex");
 
 type SnapshotMessage = { role: string; text: string };
-const userTexts = (input: { messages?: SnapshotMessage[] }): string[] =>
+const userTexts = (input: { messages?: SnapshotMessage[] | null }): string[] =>
   (input.messages ?? []).filter(m => m.role === "user").map(m => (m.text ?? "").slice(0, 200));
 
 const workPrompt = (uidValue: string, users: string[]): string => {
