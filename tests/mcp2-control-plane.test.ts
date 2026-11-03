@@ -81,16 +81,13 @@ describe("MCP2 control-plane surface", () => {
     const events = new HerderEventBus();
     const jobs = new HerderJobRegistry(events);
     const client = await connect({ events, jobs });
-    const result = await client.callTool({ name: "job", arguments: { action: "list", limit: 10 } });
+    const result = await client.callTool({ name: "job_list", arguments: { limit: 10 } });
     expect(result.structuredContent).toEqual({ jobs: [] });
-    // Legacy direct names retain their validated handler, but are no longer
-    // separately advertised.
-    const legacy = await client.callTool({ name: "job_list", arguments: { limit: 10 } });
-    expect(legacy.structuredContent).toEqual(result.structuredContent);
+    // The consolidation facade layer is gone: the original name is the tool.
     const catalog = (await client.listTools()).tools;
-    const tool = catalog.find((entry) => entry.name === "job");
+    const tool = catalog.find((entry) => entry.name === "job_list");
     expect(tool?.inputSchema).toMatchObject({ type: "object" });
-    expect(catalog.some((entry) => entry.name === "job_list")).toBe(false);
+    expect(catalog.some((entry) => entry.name === "job")).toBe(false);
   });
 
   it("returns a stable fallback instead of input_required when the client lacks elicitation", async () => {

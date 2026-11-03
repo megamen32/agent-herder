@@ -60,7 +60,9 @@ describe("ZAI native listing keeps chats without a title", () => {
       scope: string; chats: Array<{ id: string; title: string }>;
     };
     expect(result.scope).toBe("61".repeat(32));
-    expect(result.chats.map(chat => chat.id)).toEqual(listed.map(chat => chat.id));
+    // The script orders the account list by updatedAt, newest first.
+    const byUpdate = [...listed].sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
+    expect(result.chats.map(chat => chat.id)).toEqual(byUpdate.map(chat => chat.id));
     expect(result.chats.find(chat => chat.id === listed[0]!.id)?.title).toBe("");
     expect(result.chats.find(chat => chat.id === listed[1]!.id)?.title).toBe("");
     expect(result.chats.find(chat => chat.id === listed[2]!.id)?.title).toBe("Named");
