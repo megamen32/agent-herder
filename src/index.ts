@@ -8,6 +8,7 @@ import { BrowserTurnAutopilotObserver } from "./autopilot/browser-turn-observer.
 import { NativeTurnAutopilotObserver } from "./autopilot/native-turn-observer.js";
 import { deliverAutopilotGoal } from "./autopilot/continuation-delivery.js";
 import { evaluateAutopilotStop, runAutopilotCommand } from "./autopilot-runner.js";
+import { selfJudgeEvaluate } from "./autopilot/self-judge.js";
 import { PendingQuestionGate } from "./autopilot/pending-question-gate.js";
 import { AutoCompactStore, AutoCompactService } from "./autocontinue/auto-compact.js";
 import { createHash,randomUUID } from "node:crypto";
@@ -1210,7 +1211,7 @@ async function main() {
   const stopCompletionNoticeSweeper = startCompletionNoticeSweeper();
   process.once("exit", stopCompletionNoticeSweeper);
   const stopPendingQuestions = new PendingQuestionGate({ humanRequests, choices: choiceRegistry });
-  backgroundAutopilotStop = new BackgroundAutopilotStop({ jobs: herderJobs, adapters, evaluate: evaluateAutopilotStop,
+  backgroundAutopilotStop = new BackgroundAutopilotStop({ jobs: herderJobs, adapters, evaluate: async (input) => { const e = await autopilotPolicyStore.readEffective(); return e.policy.judgeMode === "self" ? selfJudgeEvaluate(input) : evaluateAutopilotStop(input); },
     held: (harness, id) => humanStopStore.isHeld(harness, id),
     allowed: async input => {
       stopPendingQuestions.invalidate();
