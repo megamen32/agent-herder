@@ -2120,6 +2120,35 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 500, { ok: false, error: (error as Error).message });
     }
   }
+  if (url.pathname === "/api/logs" && request.method === "GET") {
+    response.setHeader("cache-control", "no-store");
+    const rawLines = Number(url.searchParams.get("lines"));
+    const lineCount = Number.isFinite(rawLines) && rawLines > 0 ? Math.min(Math.trunc(rawLines), 2000) : 400;
+    const sinceRaw = url.searchParams.get("since");
+    const since = typeof sinceRaw === "string" && sinceRaw.trim() && /^[0-9a-zA-Z :.\-]+$/.test(sinceRaw.trim()) ? sinceRaw.trim() : "";
+    const args = ["--user-unit=agent-herder.service", "--no-pager", "-n", String(lineCount), "--output=short-iso"];
+    if (since) args.push("--since", since);
+    try {
+      const result = await new Promise<{ stdout: string; stderr: string; err: string | null }>((resolve) => {
+        execFile("/usr/bin/journalctl", args, { timeout: 8_000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+          resolve({ stdout: stdout ?? "", stderr: stderr ?? "", err: err ? err.message : null });
+        });
+      });
+      const out = result.stdout.trim();
+      const logLines = out ? out.split("\n") : [];
+      return sendJson(response, 200, {
+        at: new Date().toISOString(),
+        unit: "agent-herder.service",
+        lines: logLines,
+        truncated: logLines.length >= lineCount,
+        since: since || undefined,
+        error: result.err && !logLines.length ? result.err : undefined,
+      });
+    } catch (cause) {
+      return sendJson(response, 500, { ok: false, error: `Логи недоступны: ${(cause as Error).message}` });
+    }
+  }
+
   if (url.pathname === "/api/autopilot/policy" && (request.method === "GET" || request.method === "PUT")) {
     if (!autopilotPolicyStore) return sendJson(response, 503, { error: "Autopilot policy store is disabled" });
     if (request.method === "GET") return sendJson(response, 200, await autopilotPolicyStore.readEffective());
