@@ -125,17 +125,20 @@ target binding, revision checks and rollback rules remain mandatory.
 
 ## Registered GPTAdmin root MCP child (different from owner fleet node)
 
-The registered child of `gptadmin-hub.service` starts
-`/home/operator/agents-projects/agent-herder/dist/index.js` under root.
-The regular `rollout-candidate.py --node 100` deploys the separate UID1000
-`agent-herder.service` and **does not** update this registered root child.
+A registered MCP child and the owner fleet service may use different operating
+system users, entrypoints and release authorities. Updating one does not update
+the other. The portable configured controller rejects owner profiles; owner
+updates remain a separate legacy explicit node-side workflow.
 
-For the existing root authority, use only the independently verified canonical
-ledger at `/root/.local/state/agent-herder/project-release-leases.json`.
-The owner coordinates acquisition **once** through the existing native admin CLI;
-the deployment target must be exactly
-`{"fleetDir":"/home/operator/agents-projects/agent-herder","unit":"gptadmin-hub.service"}`.
-The unit name is the OS-lock identity; the installer does not restart the hub.
+The registered-child installer below is also a separate existing deployment
+integration, not parameterized by the portable fleet configuration. Verify its
+actual entrypoint, service lock identity, OS user and canonical ledger before
+using it. Do not substitute an illustrative path or infer authority from a home
+directory. For example, the synthetic tuple
+{"fleetDir":"/srv/example/agent-herder","unit":"example-hub.service"}
+illustrates the shape only; it must be replaced by the independently verified
+existing child target. Acquire once through that target's existing native admin
+CLI. The unit name is the OS-lock identity, not permission to restart the hub.
 
 After a validated, target-bound proof is available, execute the new
 `deploy/fleet/rollout-mcp-child.py --sha <verified-full-sha> --release-proof <protected-path>`
