@@ -89,6 +89,10 @@ export class ExternalProcessAdapter implements HarnessAdapter {
   private readonly requestTimeoutMs: number;
   private readonly shutdownGraceMs: number;
   private stderrBuffer = "";
+  /** True once the subprocess exited; no RPC can be served afterwards. */
+  private exited = false;
+  /** Method names the subprocess declared in initialize(); empty before init(). */
+  private readonly declared = new Set<string>();
 
   constructor(private readonly config: ExternalAdapterConfig) {
     this.type = config.harness;
@@ -103,6 +107,7 @@ export class ExternalProcessAdapter implements HarnessAdapter {
   }
 
   private ensureChild(): ChildProcess {
+    if (this.exited) throw new Error("external_adapter_exited: the subprocess terminated; a supervisor restart re-enables it");
     if (this.child && !this.child.killed) return this.child;
     const env: Record<string, string> = {
       AHAP_VERSION,
@@ -153,6 +158,10 @@ export class ExternalProcessAdapter implements HarnessAdapter {
       }
     });
     child.on("exit", (code, signal) => {
+      // The subprocess is gone for good: mark the adapter dead so later
+      // RPCs fail fast instead of writing into a respawned, uninitialized child.
+      this.exited = true;
+      this.child = undefined;
       // Reject every pending request: the subprocess is gone.
       for (const [id, pending] of this.pending) {
         clearTimeout(pending.timer);
@@ -234,6 +243,7 @@ export class ExternalProcessAdapter implements HarnessAdapter {
       autopilotStateDir: process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR,
     });
     this.initResult = result;
+    for (const method of result.capabilities?.methods ?? []) this.declared.add(method);
     if (result.capabilities?.controlCapabilities) {
       this.controlCapabilities = {
         ...this.controlCapabilities,
@@ -251,7 +261,10 @@ export class ExternalProcessAdapter implements HarnessAdapter {
     this.initialized = true;
   }
 
-  isReady(): boolean { return this.initialized && !!this.child && !this.child.killed; }
+  isReady(): boolean { return this.initialized && !this.exited && !!this.child && !this.child.killed; }
+
+  /** The method names the subprocess declared in its initialize reply. */
+  get declaredMethods(): ReadonlySet<string> { return this.declared; }
 
   subscribeEvents(handler: (event: HarnessEvent) => void): () => void {
     this.eventListeners.add(handler);
