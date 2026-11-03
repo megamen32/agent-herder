@@ -32,6 +32,20 @@ describe("BrowserChatInventoryCache", () => {
     expect(list[1].id).toBe("b");
   });
 
+  it("clears a stale asyncStatus when the fresh response omits it", () => {
+    // The site omits async_status for a conversation without an async task:
+    // the fresh absence must clear yesterday's lingering value, or a finished
+    // turn keeps looking running and the observer never sees it end.
+    const c = new BrowserChatInventoryCache("chatgpt", dir);
+    c.setAccountScope(SCOPE);
+    c.merge([{ id: "a", title: "Alpha", updatedAt: 1000, asyncStatus: 3, seenAt: Date.now() }]);
+    expect(c.list()[0].asyncStatus).toBe(3);
+    c.merge([{ id: "a", title: "Alpha", updatedAt: 2000, seenAt: Date.now() }]);
+    expect(c.list()[0].asyncStatus).toBeUndefined();
+    c.mergeFull([{ id: "a", title: "Alpha", updatedAt: 3000, seenAt: Date.now() }]);
+    expect(c.list()[0].asyncStatus).toBeUndefined();
+  });
+
   it("mergeFull replaces the inventory and stamps scannedAt", () => {
     const c = new BrowserChatInventoryCache("chatgpt", dir);
     c.setAccountScope(SCOPE);
