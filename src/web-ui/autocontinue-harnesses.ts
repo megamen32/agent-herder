@@ -1,4 +1,4 @@
-export const AUTOCONTINUE_HARNESS_IDS = ['codex','zcode','claude','opencode','hermes','qoder','fast-agent','chatgpt'] as const;
+export const AUTOCONTINUE_HARNESS_IDS = ['codex','zcode','claude','opencode','hermes','qoder','fast-agent','chatgpt','zai'] as const;
 export type AutocontinueHarness = typeof AUTOCONTINUE_HARNESS_IDS[number];
 export type WebSessionAutostartHarness = {harness:AutocontinueHarness;enabled:boolean;source:'harness'|'global'|'default';updatedAt?:string};
 type ReadSettings = <T>(path:string,init?:RequestInit)=>Promise<T>;
