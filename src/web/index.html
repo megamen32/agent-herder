@@ -604,21 +604,6 @@
       body[data-view="detail"] .sidebar, body[data-view="tree"] .sidebar { display: block; }
       body[data-view="detail"] .detail, body[data-view="tree"] .detail { display: block; }
     }
-  /* The settings view: one page for the runtime switches of every harness. */
-  body[data-view="settings"] .toolbar, body[data-view="settings"] .layout { display: none; }
-  .settings-pane { display: none; }
-  body[data-view="settings"] .settings-pane { display: block; }
-  .settings-section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin: 12px 0; }
-  .settings-section h3 { margin: 0 0 6px; font-size: .95rem; }
-  .settings-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-  .settings-row:last-child { border-bottom: 0; }
-  .settings-row .grow { flex: 1 1 260px; min-width: 220px; }
-  .settings-row .hint { flex-basis: 100%; margin: 2px 0 0; }
-  .switch-state { font-variant-numeric: tabular-nums; min-width: 132px; text-align: center; }
-  .switch-state[data-on="true"] { background: linear-gradient(180deg, #16a34a, #15803d); }
-  .switch-state[data-on="false"] { background: linear-gradient(180deg, #64748b, #475569); }
-  .settings-row .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .prewarm-input { width: 64px; }
   </style>
 </head>
 <body data-view="tree">
@@ -631,7 +616,6 @@
     <div class="topbar-actions">
       <button class="secondary mobile-back" id="backButton" type="button">Back to tree</button>
       <button class="secondary" id="refreshButton" type="button">Refresh now</button>
-      <button class="secondary" id="settingsButton" type="button">Настройки</button>
       <button class="secondary" id="pollingToggle" type="button">Pause polling</button>
     </div>
   </header>
@@ -688,35 +672,6 @@
     <button id="newOrResumeSession" type="button">Create/resume &amp; send</button>
     <span class="hint" id="namedSessionStatus" role="status" aria-live="polite"></span>
   </details>
-
-  <section class="settings-pane" id="settingsPane" aria-label="Runtime settings of the harnesses">
-    <div class="pane-head">
-      <h2>Настройки харнессов</h2>
-      <div class="hint">Запросы к сайтам (пуллинг) и хуки каждого харнесса. Изменения применяются сразу, без перезапуска. Явные действия (открытие чата, отправка сообщения) остаются доступными.</div>
-    </div>
-    <div class="pane-body">
-      <p class="error" id="settingsError" role="status" aria-live="polite"></p>
-      <div class="settings-section">
-        <h3>Общие переключатели</h3>
-        <div class="settings-row">
-          <div class="grow"><strong>Запросы к сайтам (пуллинг)</strong>
-            <div class="hint">Инвентаризация чатов, прогрев истории и опрос модальных окон ChatGPT / Z.ai. Выключите, чтобы прекратить все фоновые запросы (например, при 429).</div>
-          </div>
-          <button class="small switch-state" id="pollingMaster" type="button">…</button>
-        </div>
-        <div class="settings-row">
-          <div class="grow"><strong>Хуки (общий выключатель)</strong>
-            <div class="hint">Хук-плагины Claude Code / Codex / MiniMax Code: продолжение ходов и контроль инструментов. Общий рычаг хуков.</div>
-          </div>
-          <button class="small switch-state" id="hooksMaster" type="button">…</button>
-        </div>
-      </div>
-      <div class="settings-section">
-        <h3>Харнессы</h3>
-        <div id="harnessCards">Загрузка…</div>
-      </div>
-    </div>
-  </section>
 
   <div class="layout">
     <aside class="sidebar">
@@ -795,11 +750,6 @@
     newOrResumeSession: document.getElementById("newOrResumeSession"),
     namedSessionStatus: document.getElementById("namedSessionStatus"),
     adapterRegistry: document.getElementById("adapterRegistry"),
-    settingsButton: document.getElementById("settingsButton"),
-    settingsError: document.getElementById("settingsError"),
-    pollingMaster: document.getElementById("pollingMaster"),
-    hooksMaster: document.getElementById("hooksMaster"),
-    harnessCards: document.getElementById("harnessCards"),
   };
 
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -857,87 +807,6 @@
         await refreshAll();
       });
     });
-  }
-
-  let harnessRuntimeCache = null;
-
-  function setSwitchState(button, on, onText, offText) {
-    button.dataset.on = on ? "true" : "false";
-    button.textContent = on ? (onText || "Включено") : (offText || "Выключено");
-  }
-
-  async function loadHarnessRuntime() {
-    const { response, data } = await fetchJson("/api/harness-runtime");
-    if (!response.ok) {
-      setError(elements.settingsError, data?.error || "Настройки харнессов недоступны");
-      return;
-    }
-    harnessRuntimeCache = data;
-    setSwitchState(elements.pollingMaster, data.pollingEnabled === true, "Запросы: вкл", "Запросы: выкл");
-    renderHarnessCards(data);
-    setError(elements.settingsError, "");
-    const hooks = await fetchJson("/api/hooks");
-    if (hooks.response.ok) {
-      const hooksOn = hooks.data?.hooksEnabled === true || hooks.data?.state?.hooksEnabled === true;
-      setSwitchState(elements.hooksMaster, hooksOn, "Хуки: вкл", "Хуки: выкл");
-    }
-  }
-
-  function renderHarnessCards(data) {
-    const harnesses = data.harnesses || [];
-    elements.harnessCards.innerHTML = harnesses.map((h) => {
-      const browser = h.id === "chatgpt" || h.id === "zai";
-      const isChatGpt = h.id === "chatgpt";
-      const flag = (v) => (v === null || v === undefined) ? "" : " *";
-      const kind = browser ? "пуллинг сайта" : "хук-плагин (без пуллинга сайта)";
-      return `<div class="settings-row">
-        <div class="grow"><strong>${esc(h.name || h.id)}</strong> <span class="hint">${esc(h.id)} · ${esc(kind)}</span></div>
-        <div class="controls">
-          ${browser ? `<button class="small switch-state" data-harness="${esc(h.id)}" data-field="pollingEnabled" data-on="${h.pollingEnabled}">${h.pollingEnabled ? "Пуллинг: вкл" : "Пуллинг: выкл"}${flag(h.pollingOverride)}</button>` : ""}
-          ${isChatGpt ? `<button class="small switch-state" data-harness="${esc(h.id)}" data-field="promptPollingEnabled" data-on="${h.promptPollingEnabled}">${h.promptPollingEnabled ? "Диалоги: вкл" : "Диалоги: выкл"}${flag(h.promptPollingOverride)}</button>` : ""}
-          <button class="small switch-state" data-harness="${esc(h.id)}" data-field="hooksEnabled" data-on="${h.hooksEnabled}">${h.hooksEnabled ? "Хуки: вкл" : "Хуки: выкл"}${flag(h.hooksOverride)}</button>
-          ${browser ? `<label class="hint">Прогрев истории: <input type="number" min="0" max="100" step="1" value="${h.prewarmLimit}" class="prewarm-input" data-harness="${esc(h.id)}"> чатов</label>` : ""}
-        </div>
-      </div>`;
-    }).join("") || "Харнессы не найдены";
-    elements.harnessCards.querySelectorAll("button[data-harness]").forEach((button) => {
-      button.addEventListener("click", () => {
-        void changeHarnessRuntime(button.dataset.harness, button.dataset.field, button.dataset.on !== "true");
-      });
-    });
-    elements.harnessCards.querySelectorAll(".prewarm-input[data-harness]").forEach((input) => {
-      input.addEventListener("change", () => { void changeHarnessRuntime(input.dataset.harness, "prewarmLimit", Math.max(0, Math.min(100, Math.floor(Number(input.value) || 0)))); });
-    });
-  }
-
-  async function changeHarnessRuntime(harness, field, value) {
-    const { response, data } = await fetchJson("/api/harness-runtime", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ harnesses: { [harness]: { [field]: value } }, actor: "web-panel", reason: "панель настроек харнессов" }),
-    });
-    if (!response.ok) setError(elements.settingsError, data?.error || "Изменение не применено");
-    await loadHarnessRuntime();
-  }
-
-  async function changeGlobalPolling(enabled) {
-    const { response, data } = await fetchJson("/api/harness-runtime", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ pollingEnabled: enabled, actor: "web-panel", reason: "общий переключатель пуллинга" }),
-    });
-    if (!response.ok) setError(elements.settingsError, data?.error || "Изменение не применено");
-    await loadHarnessRuntime();
-  }
-
-  async function changeHooksRuntime(enabled) {
-    const { response, data } = await fetchJson("/api/hooks/prohibitions", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ source: "owner", hooksEnabled: enabled, actor: "web-panel", reason: "панель настроек харнессов" }),
-    });
-    if (!response.ok) setError(elements.settingsError, data?.error || "Рычаг хуков не перемещён");
-    await loadHarnessRuntime();
   }
 
   function currentHash() {
@@ -1779,19 +1648,10 @@
   function wireControls() {
     elements.refreshButton.addEventListener("click", refreshAll);
     elements.pollingToggle.addEventListener("click", () => setPaused(!state.paused));
-    elements.settingsButton.addEventListener("click", () => {
-      const inSettings = document.body.dataset.view === "settings";
-      document.body.dataset.view = inSettings ? "tree" : "settings";
-      elements.settingsButton.textContent = inSettings ? "Настройки" : "К списку сессий";
-      if (!inSettings) void loadHarnessRuntime();
-    });
-    elements.pollingMaster.addEventListener("click", () => { void changeGlobalPolling(elements.pollingMaster.dataset.on !== "true"); });
-    elements.hooksMaster.addEventListener("click", () => { void changeHooksRuntime(elements.hooksMaster.dataset.on !== "true"); });
     elements.createNamedSession.addEventListener("click", () => submitNamedSession(false));
     elements.newOrResumeSession.addEventListener("click", () => submitNamedSession(true));
     elements.backButton.addEventListener("click", () => {
       returnToTree();
-      elements.settingsButton.textContent = "Настройки";
     });
     elements.applyFilters.addEventListener("click", () => {
       state.filters.harness = elements.harnessFilter.value;

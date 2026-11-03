@@ -22,6 +22,7 @@ import { ConnectionsSection } from "./connections-section.js";
 import { McpConnectionSection } from "./mcp-connection-section.js";
 import { IndexingSection } from "./indexing-section.js";
 import { RuntimeSection } from "./runtime-section.js";
+import { HarnessRuntimeSection } from "./harness-runtime-section.js";
 import { ProjectsSection } from "./projects-section.js";
 import { FleetConfirmation } from "./fleet-confirmation.js";
 import { CommonSettingsSection } from "./common-settings-section.js";
@@ -42,7 +43,7 @@ import "./settings.css";
  * contour; the herder does not touch it, it only gives it a place.
  */
 
-export type SettingsTab = "settings" | "projects" | "hooks";
+export type SettingsTab = "settings" | "harnesses" | "projects" | "hooks";
 
 /**
  * The one line that says how the state of a setting is in effect.
@@ -95,8 +96,8 @@ export function SettingsScreen({
     <section className="herder-settings-page" aria-label="Настройки herder">
       <header className="herder-settings-header">
         <div>
-          <h1>{tab === "projects" ? "Проекты" : tab === "hooks" ? "Хуки" : "Настройки Herder"}</h1>
-          <p>{tab === "projects" ? "Среды, разрешённые модели и маршруты запуска для каждого проекта." : tab === "hooks" ? "Подключение событий агентских сред к Herder." : "Настройки Herder: значения, применение, журнал изменений и откат."}</p>
+          <h1>{tab === "projects" ? "Проекты" : tab === "hooks" ? "Хуки" : tab === "harnesses" ? "Харнессы" : "Настройки Herder"}</h1>
+          <p>{tab === "projects" ? "Среды, разрешённые модели и маршруты запуска для каждого проекта." : tab === "hooks" ? "Подключение событий агентских сред к Herder." : tab === "harnesses" ? "Настройки каждого харнесса: запросы к сайтам (пуллинг), опрос диалогов ChatGPT, прогрев истории и хуки." : "Настройки Herder: значения, применение, журнал изменений и откат."}</p>
         </div>
         <div className="herder-settings-tabs" role="tablist" aria-label="Разделы настроек">
           <button
@@ -107,6 +108,15 @@ export function SettingsScreen({
             onClick={() => onTabChange("settings")}
           >
             Настройки
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "harnesses"}
+            className={tab === "harnesses" ? "herder-settings-tab herder-settings-tab-active" : "herder-settings-tab"}
+            onClick={() => onTabChange("harnesses")}
+          >
+            Харнессы
           </button>
           <button
             type="button"
@@ -129,6 +139,7 @@ export function SettingsScreen({
         </div>
       </header>
       <div className="herder-settings-panel" role="tabpanel">
+        {tab === "harnesses" && <HarnessRuntimeSection />}
         {tab === "settings" && <McpConnectionSection />}
         {tab === "settings" && <IndexingSection />}
         {tab === "settings" && <section aria-label="Автоматизация" className="settings-automation-links"><h2>Автоматизация</h2><p>Управление автопилотом, продолжением работы и запуском новых сессий. Каждая группа настроек — отдельная страница со своей ссылкой.</p><ul className="settings-link-list"><li><a href="?page=autopilot">Автопилот <small>?page=autopilot</small></a></li><li><a href="?page=autocontinue">Автопродолжение <small>?page=autocontinue</small></a></li><li><a href="?page=launch-policy">Запуск сессий <small>?page=launch-policy</small></a></li></ul></section>}
