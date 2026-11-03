@@ -3609,7 +3609,6 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const receipt = await userMessageDelivery?.reconcile(harness, sessionId, inputId, route.kind === "scoped" ? route.adapter : undefined);
     return sendJson(response, receipt ? 200 : 404, receipt || { error: "Доставка сообщения не найдена; автоматический повтор запрещён" });
   }
-<<<<<<< HEAD
   // List projects for a browser-chat harness (ZAI: /api/v1/projects).
   const projectsMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/projects$/);
   if (projectsMatch && request.method === "GET") {
@@ -3633,8 +3632,6 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     try { return sendJson(response, 200, await adapter.moveToProject({ chatId: sessionId, projectId: body.projectId })); }
     catch (error) { return sendJson(response, 502, { error: error instanceof Error ? error.message : String(error) }); }
   }
-=======
->>>>>>> feat/intercept-pause-20261103T053000Z
   // Full paginated rescan of every ChatGPT conversation (Web UI button / Ctrl+Shift+R).
   const rescanMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/rescan$/);
   if (rescanMatch && request.method === "POST") {

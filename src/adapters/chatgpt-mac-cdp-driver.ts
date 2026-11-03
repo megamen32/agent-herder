@@ -1,10 +1,6 @@
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import type { HarnessEvent, SessionMessageView } from "../types/index.js";
-<<<<<<< HEAD
-import { CHATGPT_LIST_API_SCRIPT, CHATGPT_FULL_SCAN_SCRIPT, chatgptMessagesApiScript } from "./browser-chat-api-scripts.js";
-=======
 import { CHATGPT_LIST_API_SCRIPT, CHATGPT_LIST_API_PASSIVE_SCRIPT, CHATGPT_FULL_SCAN_SCRIPT, chatgptMessagesApiScript } from "./browser-chat-api-scripts.js";
->>>>>>> feat/intercept-pause-20261103T053000Z
 import { BrowserChatInventoryCache } from "./browser-chat-inventory-cache.js";
 import { ChatGptRequestTrace } from "./chatgpt-request-trace.js";
 import { MacMiniChromeTransport, parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
@@ -174,15 +170,12 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     projects: true,
   } as const;
   private readonly cache = new Map<string, BrowserChat>();
-<<<<<<< HEAD
-=======
   /** The list of this driver answers without one site request while the
    * polling of the harness is paused: the intercept stash of the page, the
    * durable inventory of the account and the visible sidebar DOM. */
   readonly passiveInventory = true;
   /** Durable full inventory of the verified account; the intercept hook of
    * the page keeps it fresh without one list request of the herder's own. */
->>>>>>> feat/intercept-pause-20261103T053000Z
   private readonly inventoryCache = new BrowserChatInventoryCache("chatgpt");
   private inventoryLoaded = false;
   private readonly requestTrace = new ChatGptRequestTrace();
@@ -390,11 +383,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       id, title, updatedAt: typeof at === "number" && at > 0
         ? new Date(at < 1e12 ? at * 1000 : at).toISOString() : new Date().toISOString(),
       working: selected ? this.busy(s) : nativeRunning,
-<<<<<<< HEAD
-      ...(nativeRunning ? { workingSource: "native-async-status" } : {}),
-=======
       ...(nativeRunning ? { workingSource: "native-async-status" as const } : {}),
->>>>>>> feat/intercept-pause-20261103T053000Z
       stopVisible: selected && s.phase === "generating",
       unread: false, updatedAtSemantics: typeof at === "number" && Number.isFinite(at) && at > 0 ? "remote-update-time" : "observed-sidebar-order",
       sourceRoute: ORIGIN + "/c/" + id,
@@ -423,11 +412,8 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
         if (!this.inventoryLoaded) { await this.inventoryCache.load(); this.inventoryLoaded = true; }
         this.inventoryCache.merge(data.chats.map(entry => ({ id: entry.id, title: entry.title, updatedAt: entry.updatedAt, asyncStatus: entry.asyncStatus, seenAt: Date.now() })));
         void this.inventoryCache.save();
-<<<<<<< HEAD
-=======
         // The one-time full scan is a burst of the site's own requests: it
         // belongs to the running state alone, never to the paused one.
->>>>>>> feat/intercept-pause-20261103T053000Z
         if (!this.inventoryCache.lastScannedAt) void this.fullScan().catch(() => undefined);
         const seen = new Set<string>();
         const chats: BrowserChat[] = [];
@@ -511,12 +497,6 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     return chats;
   }
 
-<<<<<<< HEAD
-  async fullScan(): Promise<{ count: number; pages: number }> {
-    return this.exclusive(async () => {
-      const page = await this.page();
-      const result = parseChromeEvaluation<{ scope?: string; error?: string; trace?: unknown; pages?: number; source?: string; chats?: Array<{ id: string; title: string; updatedAt?: number }> }>(await this.tools.call("evaluate_script", { pageId: page.id, function: CHATGPT_FULL_SCAN_SCRIPT }));
-=======
   /** Full paginated scan of every conversation: offset=0,100,200… with a 15s
    * gap between pages, respecting the 429 cooldown of the page. An explicit
    * action of the owner (the rescan button or the very first run), so it may
@@ -525,20 +505,14 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     return this.exclusive(async () => {
       const page = await this.page();
       const result = parseChromeEvaluation<{ scope?: string; error?: string; trace?: unknown; pages?: number; chats?: Array<{ id: string; title: string; updatedAt?: number; asyncStatus?: number }> }>(await this.tools.call("evaluate_script", { pageId: page.id, function: CHATGPT_FULL_SCAN_SCRIPT }));
->>>>>>> feat/intercept-pause-20261103T053000Z
       this.requestTrace.ingestBrowserHttp(result.trace);
       if (result.scope && /^[a-f0-9]{64}$/.test(result.scope)) {
         this.accountScope = result.scope;
         this.inventoryCache.setAccountScope(result.scope);
         if (!this.inventoryLoaded) { await this.inventoryCache.load(); this.inventoryLoaded = true; }
       }
-<<<<<<< HEAD
-      if (result.source === "full_scan" && Array.isArray(result.chats) && result.chats.length) {
-        this.inventoryCache.mergeFull(result.chats.map(c => ({ id: c.id, title: c.title, updatedAt: c.updatedAt, seenAt: Date.now() })));
-=======
       if (Array.isArray(result.chats) && result.chats.length) {
         this.inventoryCache.mergeFull(result.chats.map(c => ({ id: c.id, title: c.title, updatedAt: c.updatedAt, asyncStatus: c.asyncStatus, seenAt: Date.now() })));
->>>>>>> feat/intercept-pause-20261103T053000Z
         void this.inventoryCache.save();
         console.log("[chatgpt] full scan: " + result.chats.length + " chats across " + (result.pages || 0) + " pages");
       }
