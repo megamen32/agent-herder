@@ -106,7 +106,13 @@ export function splitExternalAdapter(external: ExternalProcessAdapter, builtin: 
       if (typeof prop !== "string") return Reflect.get(target, prop, target);
       if (prop === "type") return external.type;
       if (prop === "name") return external.name;
-      if (prop === "isReady") return (): boolean => target.isReady?.() ?? true;
+      if (prop === "isReady") {
+        // A live external reader keeps the harness readable even while the builtin
+        // native transport is down: the split adapter is ready when either side can
+        // serve the next call. The mesh discovery gate relies on this to keep listing
+        // sessions through the Go reader instead of starving the whole host.
+        return (): boolean => (target.isReady?.() ?? true) || (advertised.has("listSessions") && external.isReady());
+      }
       if (prop === "init") {
         return async (): Promise<void> => {
           // Both sides initialize: the external is idempotent (a no-op after

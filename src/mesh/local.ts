@@ -7,7 +7,7 @@ import type {HarnessAdapter} from "../types/index.js";
 import type {SessionSupervisor} from "../session-supervisor.js";
 import type {UserMessageDelivery} from "../user-message-delivery.js";
 import {handleSendMessage} from "../mcp-tools/handlers.js";
-import {compactSession,parseNativeReceipt,addressKey,type MeshAddress,type MeshSession,type NativeReceipt,type NativeStopReceipt,type NativeRenameReceipt,type MeshSessionLabel} from "./protocol.js";
+import {compactSession,parseNativeReceipt,addressKey,lastActivityKey,type MeshAddress,type MeshSession,type NativeReceipt,type NativeStopReceipt,type NativeRenameReceipt,type MeshSessionLabel} from "./protocol.js";
 import type {MeshDelivery} from "./gptadmin.js";
 import {MeshDeliveryLedger} from "./delivery-ledger.js";
 import {inventoryHarnesses} from "./inventory.js";
@@ -88,7 +88,7 @@ export class LocalHarnessMesh {
   // behind a hung provider consumed that window before later harnesses started.
   await Promise.all(inventoryHarnesses.map(inspect));
   this.ids.clear();for(const [key,value]of freshIds)this.ids.set(key,value);
-  const sorted=sessions.sort((a,b)=>b.lastActivity.localeCompare(a.lastActivity)).slice(0,limit);
+  const sorted=sessions.sort((a,b)=>lastActivityKey(b.lastActivity).localeCompare(lastActivityKey(a.lastActivity))).slice(0,limit);
   if(sessions.length>limit){complete=false;limited=true;}
   return {hostId:this.hostId,sessions:sorted,harnesses,complete,limited};
  }

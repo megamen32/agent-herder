@@ -2,7 +2,7 @@ import { open, readdir, stat } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { MINIMAX_CODE_SESSION_STORE } from "../adapters/minimax-code-store.js";
-import { addressKey, type MeshSession } from "./protocol.js";
+import { addressKey, lastActivityKey, type MeshSession } from "./protocol.js";
 
 /** Harness name of a native MiniMax Code session. */
 export const MINIMAX_CODE_HARNESS = "minimax-code";
@@ -282,7 +282,7 @@ export async function observeMinimaxCode(
     // An exact lookup reads one session and stops.
     if (nativeSessionId) break;
   }
-  sessions.sort((left, right) => right.lastActivity.localeCompare(left.lastActivity));
+  sessions.sort((left, right) => lastActivityKey(right.lastActivity).localeCompare(lastActivityKey(left.lastActivity)));
   const limited = sessions.slice(0, limit);
   // More sessions than the window or the limit means an incomplete answer.
   return { sessions: limited, complete: enumerated.length < MAX_ENUMERATED_DIRECTORIES && candidates.length <= MAX_SCAN_DIRECTORIES && found <= limit };

@@ -25,10 +25,15 @@ export function projectObservation(session: {cwd:string;meta?:Record<string,unkn
   const currentCwd=typeof meta.activeCwd==="string" && typeof meta.projectSource==="string" ? meta.activeCwd : null;
   return {launchCwd,currentCwd,source:currentCwd ? String(meta.projectSource) : "unverified",...(currentCwd&&typeof meta.workspaceHostId==="string"?{hostId:meta.workspaceHostId}:{}),...(currentCwd&&typeof meta.workspaceExpiresAt==="string"?{expiresAt:meta.workspaceExpiresAt}:{})};
 }
+/** A native row without a parseable activity timestamp must never break the whole
+ * mesh read: it sorts as the oldest session instead of crashing the snapshot. */
+export function lastActivityKey(value:unknown):string{
+  return typeof value==="string" ? value : "";
+}
 export function compactSession(hostId:string,session:SessionInput): MeshSession {
   const address={hostId,harness:session.harness,nativeSessionId:typeof session.meta?.nativeSessionId==="string" ? session.meta.nativeSessionId : session.id};
   addressKey(address);
-  return {address,project:projectObservation(session),status:session.status,title:session.title.slice(0,160),lastActivity:session.lastActivity,shortId:sessionShortId(session.harness,address.nativeSessionId),...(typeof session.meta?.createdAt === "string" && Number.isFinite(Date.parse(session.meta.createdAt)) ? {createdAt:session.meta.createdAt} : {}),...(session.model?{model:session.model}:{})};
+  return {address,project:projectObservation(session),status:session.status,title:session.title.slice(0,160),lastActivity:lastActivityKey(session.lastActivity),shortId:sessionShortId(session.harness,address.nativeSessionId),...(typeof session.meta?.createdAt === "string" && Number.isFinite(Date.parse(session.meta.createdAt)) ? {createdAt:session.meta.createdAt} : {}),...(session.model?{model:session.model}:{})};
 }
 /** Unwrap only documented GPTAdmin and MCP envelopes; never infer success from ACK. */
 export function unwrapResult(value:unknown): Record<string,unknown> {

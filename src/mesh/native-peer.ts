@@ -8,7 +8,7 @@ import {join} from "node:path";
 import {observeCodex} from "./native-observer.js";
 import {NativeCodexClient} from "./native-codex.js";
 import {MeshDeliveryLedger} from "./delivery-ledger.js";
-import {addressKey,type MeshAddress,type MeshSession} from "./protocol.js";
+import {addressKey,lastActivityKey,type MeshAddress,type MeshSession} from "./protocol.js";
 import {inventoryHarnesses} from "./inventory.js";
 import {deliverSharedCodex} from "./shared-delivery.js";
 import {MINIMAX_CODE_HARNESS,observeMinimaxCode} from "./native-minimax-code.js";
@@ -44,7 +44,7 @@ server.registerTool("mesh_snapshot",{description:"Bounded native host and curren
  const merged=new Map<string,MeshSession>();
  for(const list of sources)for(const session of list){const key=addressKey(session.address);if(!merged.has(key))merged.set(key,session);}
  // The limit is one budget for both platforms, not one budget per source.
- const sessions=[...merged.values()].sort((a,b)=>b.lastActivity.localeCompare(a.lastActivity)).slice(0,limit);
+ const sessions=[...merged.values()].sort((a,b)=>lastActivityKey(b.lastActivity).localeCompare(lastActivityKey(a.lastActivity))).slice(0,limit);
  if(merged.size>limit)complete=false;
  const harnesses=inventoryHarnesses.map(harness=>{
   const observed=harness==="codex"||harness===MINIMAX_CODE_HARNESS;
