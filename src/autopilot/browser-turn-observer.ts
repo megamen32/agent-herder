@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AgentSession, HarnessAdapter } from "../types/index.js";
 import type { AutopilotRunnerInput } from "../autopilot-runner.js";
+import { liveHarnessPollingEnabled } from "../harness-runtime-settings.js";
 
 /**
  * Turn bridge for browser chat harnesses (Z.ai, ChatGPT).
@@ -65,6 +66,7 @@ export class BrowserTurnAutopilotObserver {
   private readonly probed = new Map<string, { at: number; enabled: boolean }>();
   private timer?: ReturnType<typeof setInterval>;
   private inFlight = false;
+  private readonly pauseAnnounced = new Map<string, boolean>();
 
   constructor(private readonly options: BrowserTurnObserverOptions) {}
 
@@ -88,11 +90,31 @@ export class BrowserTurnAutopilotObserver {
     this.timer = undefined;
     this.tracked.clear();
     this.probed.clear();
+    this.pauseAnnounced.clear();
+  }
+
+  /** Say the pause and the resume of one harness once, in the log. */
+  private announcePause(harness: string, paused: boolean): void {
+    if ((this.pauseAnnounced.get(harness) ?? false) === paused) return;
+    this.pauseAnnounced.set(harness, paused);
+    console.error(`[agent-herder] browser polling ${paused ? "paused" : "resumed"} for ${harness} (harness runtime settings)`);
   }
 
   /** One bounded observation pass over every bridged browser harness. */
   async observeOnce(): Promise<void> {
     for (const harness of this.options.harnesses) {
+      // The runtime switch of the owner: a paused harness makes no request
+      // at all — no inventory poll, no history fingerprint, no nudge. The
+      // pause also forgets the turns it was tracking, so a resume re-learns
+      // the state of the site instead of judging a stale transition.
+      if (!liveHarnessPollingEnabled(harness)) {
+        this.announcePause(harness, true);
+        for (const [key] of this.tracked) {
+          if (key.startsWith(`${harness}:`)) this.tracked.delete(key);
+        }
+        continue;
+      }
+      this.announcePause(harness, false);
       const adapter = this.options.adapters.get(harness);
       if (!adapter?.listSessions) continue;
       let sessions: AgentSession[];

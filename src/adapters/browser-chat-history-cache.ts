@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
 import type { SessionMessageView } from "../types/index.js";
+import { liveHarnessPollingEnabled, liveHarnessPrewarmLimit } from "../harness-runtime-settings.js";
 
 /** Durable local cache for the latest 100 chats of one VERIFIED browser account.
  * Reads are stale-while-revalidate; slow authenticated fetches never hide a
@@ -171,6 +172,11 @@ export class BrowserChatHistoryCache {
     this.running = true;
     try {
       while (this.queue.length && this.dir) {
+        if (!liveHarnessPollingEnabled(this.provider)) {
+          const dropped = this.queue.length;
+          if (dropped) console.warn("[browser-chat] prewarm queue dropped: polling paused for " + this.provider);
+          this.queue.length = 0; this.queued.clear(); break;
+        }
         if (Date.now() < this.cooldownUntil) {
           const dropped = this.queue.length;
           if (dropped) console.warn("[browser-chat] prewarm queue paused on cache cooldown; dropped " + dropped + " pending history fetches");
@@ -219,20 +225,19 @@ export class BrowserChatHistoryCache {
 
   prewarm(items: readonly (string | { id: string; revision?: string })[]): void {
     if (!this.dir || Date.now() < this.cooldownUntil) return;
-    const configured = Number(process.env.AGENT_HERDER_BROWSER_CHAT_PREWARM_LIMIT);
-    if (configured === 0) {
+    // The runtime switch of the owner: a paused harness prewarms nothing.
+    if (!liveHarnessPollingEnabled(this.provider)) return;
+    const limit = Math.min(BrowserChatHistoryCache.LIMIT, liveHarnessPrewarmLimit(this.provider));
+    if (limit === 0) {
       // Explicit emergency pause; never prune stored history. The pause used
       // to be completely silent while it froze every turn fingerprint: make
       // it visible at a bounded rate so an operator can see the tradeoff.
       if (Date.now() - this.lastPrewarmDisabledLogAt > 3_600_000) {
         this.lastPrewarmDisabledLogAt = Date.now();
-        console.warn("[browser-chat] history prewarm is disabled (AGENT_HERDER_BROWSER_CHAT_PREWARM_LIMIT=0); stale turn fingerprints degrade autopilot continuation");
+        console.warn("[browser-chat] history prewarm is disabled for " + this.provider + " (prewarm limit 0); stale turn fingerprints degrade autopilot continuation");
       }
       return;
     }
-    const limit = Number.isFinite(configured) && configured >= 1
-      ? Math.min(BrowserChatHistoryCache.LIMIT, Math.floor(configured))
-      : BrowserChatHistoryCache.LIMIT;
     for (const item of items.slice(0, limit)) {
       const id = typeof item === "string" ? item : item.id;
       const revision = typeof item === "string" ? undefined : item.revision;
@@ -256,6 +261,7 @@ export class BrowserChatHistoryCache {
       // chat (prewarm disabled or the chat is outside the warmed inventory):
       // when a revision is known and unchanged, the request budget must hold.
       const staleByClock = !this.revisions.has(id) &&
+        liveHarnessPollingEnabled(this.provider) &&
         Date.now() - saved.at > BrowserChatHistoryCache.STALE_RESYNC_MS;
       if (this.dirty.has(id) || staleByClock ||
           (saved.revision !== undefined && this.revisions.has(id) && saved.revision !== this.revisions.get(id))) this.enqueue(id,true);

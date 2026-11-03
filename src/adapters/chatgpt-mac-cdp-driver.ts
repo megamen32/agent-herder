@@ -3,6 +3,7 @@ import type { HarnessEvent, SessionMessageView } from "../types/index.js";
 import { CHATGPT_LIST_API_SCRIPT, chatgptMessagesApiScript } from "./browser-chat-api-scripts.js";
 import { ChatGptRequestTrace } from "./chatgpt-request-trace.js";
 import { MacMiniChromeTransport, parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
+import { liveHarnessPromptPollingEnabled } from "../harness-runtime-settings.js";
 
 const ORIGIN = "https://chatgpt.com";
 const MAX_MESSAGE = 16_000;
@@ -225,6 +226,9 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   }
 
   private async pollOnce(): Promise<void> {
+    // The runtime switch of the owner: a paused harness stops this poller
+    // too — even a CDP snapshot is a request the paused site does not see.
+    if (!liveHarnessPromptPollingEnabled("chatgpt")) return;
     if (this.promptPollInFlight) return;
     if (Date.now() < this.promptPollErrorUntil) return;
     if (Date.now() - this.lastSeen429At < ChatGptMacCdpDriver.PROMPT_BACKOFF_AFTER_429_MS) return;
