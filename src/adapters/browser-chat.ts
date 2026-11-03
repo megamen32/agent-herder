@@ -49,12 +49,18 @@ export interface BrowserChatDriver {
   listModels?(signal?: AbortSignal): Promise<string[]>;
   supportsModelSwitch?(): boolean;
   changeModel?(input: { chatId: string; model: string }, signal?: AbortSignal): Promise<{ ok: boolean; error?: string }>;
+  /** List the account's projects (ZAI: /api/v1/projects). Returns [] when unsupported. */
+  listProjects?(): Promise<Array<{ id: string; name: string; chatCount?: number; archived?: boolean }>>;
+  /** Move a chat into a project (ZAI: PATCH /api/v1/chats/<id> with project_id). */
+  moveToProject?(input: { chatId: string; projectId: string }): Promise<{ ok: boolean; error?: string }>;
   /** Explicit site contract. Feature reporting must not be inferred from the common base. */
   browserFeatures?: {
     nativeConversationIds: boolean;
     queueAfterGeneration: boolean;
     chatCreation: boolean;
     accountArchiveViaCdp: boolean;
+    /** The site has a Projects feature and chats can be moved into one. */
+    projects: boolean;
   };
 }
 export interface BrowserChatProvider { id: string; name: string; harness: HarnessType; cwd: string }
@@ -91,6 +97,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
     modelSwitch: false,
     subagents: false,
     events: false,
+    projects: false,
   };
   private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
   private promptEventsUnsubscribe?: () => void;
@@ -126,6 +133,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
       // emits modal-prompt events; otherwise the supervisor would call
       // subscribeEvents and get nothing.
       events: supportsPromptEvents,
+      projects: driver.browserFeatures?.projects ?? false,
     };
     if (supportsPromptEvents) {
       // The unsubscribe is held for the adapter's lifetime: the driver emits
@@ -140,6 +148,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
       queueAfterGeneration: false,
       chatCreation: typeof driver.createChat === "function",
       accountArchiveViaCdp: false,
+      projects: false,
     };
   }
 
@@ -229,6 +238,17 @@ export class BrowserChatAdapter implements HarnessAdapter {
     return chats
       .filter((chat) => chat.title.trim() === normalized)
       .map((chat) => this.toSession(chat));
+  }
+
+  /** List projects via the driver when supported (ZAI). */
+  async listProjects(): Promise<Array<{ id: string; name: string; chatCount?: number; archived?: boolean }>> {
+    if (typeof this.driver.listProjects !== "function") return [];
+    return this.driver.listProjects();
+  }
+  /** Move a chat into a project via the driver when supported (ZAI). */
+  async moveToProject(input: { chatId: string; projectId: string }): Promise<{ ok: boolean; error?: string }> {
+    if (typeof this.driver.moveToProject !== "function") return { ok: false, error: "этот агент не поддерживает перемещение в проект" };
+    return this.driver.moveToProject(input);
   }
 
   /** Launch one ChatGPT session: a new disposable chat becomes the session. */

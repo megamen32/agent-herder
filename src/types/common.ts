@@ -136,6 +136,9 @@ export interface HarnessCapabilities {
   modelSwitch: boolean;
   subagents: boolean;
   events: boolean;
+  /** Move-to-project is supported (ChatGPT Projects). The Web UI shows a
+  // "Переместить в проект" action only for harnesses with this capability. */
+  projects?: boolean;
 }
 
 export interface SendMessageResult {
@@ -592,5 +595,6 @@ export function getHarnessCapabilities(adapter: HarnessAdapter): HarnessCapabili
   ])) as unknown as HarnessCapabilities;
   if (adapter.controlCapabilities?.imageInput) capabilities.imageInput = true;
   if (adapter.controlCapabilities?.steer) capabilities.steer = true;
+  if (adapter.controlCapabilities?.projects) capabilities.projects = true;
   return capabilities;
 }

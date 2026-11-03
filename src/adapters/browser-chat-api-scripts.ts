@@ -196,3 +196,28 @@ export function zaiMessagesApiScript(chatId: string): string {
     return {messages:tail};
   }`;
 }
+
+
+/** List the account's ZAI projects (chat.z.ai/project/<uuid>). Read-only. */
+export const ZAI_LIST_PROJECTS_SCRIPT = `async () => {
+  const r = await fetch('/api/v1/projects',{credentials:'same-origin'});
+  if (!r.ok) return {error:'projects_http_'+r.status};
+  const d = await r.json();
+  return {projects: (Array.isArray(d)?d:[]).filter(p=>p&&p.id&&p.name)
+    .map(p=>({id:p.id,name:p.name,chatCount:p.chat_count||0,archived:!!p.archived}))};
+}`;
+
+/** Move a ZAI chat into a project: PATCH /api/v1/chats/<id> with {project_id}. */
+export function zaiMoveToProjectScript(chatId: string, projectId: string): string {
+  return `async () => {
+    const id=${JSON.stringify(chatId)};
+    const pid=${JSON.stringify(projectId)};
+    if (location.origin !== 'https://chat.z.ai' || !/^[a-f0-9-]{12,80}$/i.test(id))
+      return {error:'invalid_chat'};
+    const r = await fetch('/api/v1/chats/'+encodeURIComponent(id),
+      {method:'PATCH',credentials:'same-origin',
+       headers:{'content-type':'application/json'},
+       body:JSON.stringify({project_id:pid})});
+    return {ok:r.ok,status:r.status};
+  }`;
+}

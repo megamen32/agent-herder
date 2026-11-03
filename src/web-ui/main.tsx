@@ -770,7 +770,7 @@ function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, load
           {hasChildren ? <button className="session-fold" aria-label={`Дочерние сессии: ${title}`} onClick={() => onToggleChildren(key)}>{collapsedChildren.has(key) ? "›" : "⌄"}</button> : <span className="session-fold-placeholder" />}
           <div className="session-card">
             <SessionSidebarRow session={session} title={title} selected={key === activeKey} pinned={pins.includes(sessionPinKey(session) ?? '')}
-              canPin={!!pinScope && !!sessionPinKey(session)} statusClass={statusClassValue} statusOverride={decision || awaitingPermission ? label : undefined}
+              canPin={!!pinScope && !!sessionPinKey(session)} canMoveToProject={session.harness === "chatgpt" || session.harness === "zai"} onMoveToProject={() => { /* move-to-project: выбор проекта + ChatGPT API — готовится */ }} statusClass={statusClassValue} statusOverride={decision || awaitingPermission ? label : undefined}
               autopilotOn={isSessionOnAutopilot ? isSessionOnAutopilot(session.harness, session.id) : false}
               onSelect={() => onSelect(key)} onPin={() => {const pin = sessionPinKey(session); if (pin) onPin(pin);}} />
             {decision && <div className="choice-card" aria-label={`Варианты автопилота для ${title}`}>
@@ -2072,7 +2072,7 @@ function App() {
   // capabilities.modelSwitch решает, показывать ли чип вообще: неподдерживаемый харнесс прячем.
   React.useEffect(() => {
     let cancelled = false;
-    void api<{ adapters?: Array<{ id: string; active?: boolean; capabilities?: { modelSwitch?: boolean; imageInput?: boolean; steer?: boolean } | null }> }>("/api/adapters")
+    void api<{ adapters?: Array<{ id: string; active?: boolean; capabilities?: { modelSwitch?: boolean; imageInput?: boolean; steer?: boolean; projects?: boolean } | null }> }>("/api/adapters")
       .then((result) => { if (!cancelled) setHarnessAdapters(Array.isArray(result.adapters) ? result.adapters : []); })
       .catch(() => { if (!cancelled) setHarnessAdapters([]); });
     return () => { cancelled = true; };

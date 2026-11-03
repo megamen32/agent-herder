@@ -1,6 +1,6 @@
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import type { SessionMessageView } from "../types/index.js";
-import { ZAI_LIST_API_SCRIPT, zaiMessagesApiScript } from "./browser-chat-api-scripts.js";
+import { ZAI_LIST_API_SCRIPT, zaiMessagesApiScript, ZAI_LIST_PROJECTS_SCRIPT, zaiMoveToProjectScript } from "./browser-chat-api-scripts.js";
 import { MacMiniChromeTransport, parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
 
 type ZaiPhase = "generating" | "idle" | "unknown";
@@ -88,6 +88,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     queueAfterGeneration: true,
     chatCreation: false,
     accountArchiveViaCdp: false,
+    projects: true,
   } as const;
   private readonly cache = new Map<string, BrowserChat>();
   private operation: Promise<void> = Promise.resolve();
@@ -683,6 +684,27 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     });
   }
 
+  /** List the account's ZAI projects (chat.z.ai/project/<uuid>). */
+  async listProjects(): Promise<Array<{ id: string; name: string; chatCount: number; archived: boolean }>> {
+    return this.exclusive(async () => {
+      const page = await this.page();
+      const result = parseChromeEvaluation<{ error?: string; projects?: Array<{ id: string; name: string; chatCount: number; archived: boolean }> }>(
+        await this.tools.call("evaluate_script", { pageId: page.id, function: ZAI_LIST_PROJECTS_SCRIPT }));
+      if (result.error || !Array.isArray(result.projects)) return [];
+      return result.projects;
+    });
+  }
+
+  /** Move a ZAI chat into a project: PATCH /api/v1/chats/<id> with {project_id}. */
+  async moveToProject(input: { chatId: string; projectId: string }): Promise<{ ok: boolean; error?: string }> {
+    return this.exclusive(async () => {
+      const page = await this.page();
+      const result = parseChromeEvaluation<{ ok: boolean; status?: number; error?: string }>(
+        await this.tools.call("evaluate_script", { pageId: page.id, function: zaiMoveToProjectScript(input.chatId, input.projectId) }));
+      if (!result.ok) return { ok: false, error: result.error || ("move_http_" + (result.status || 0)) };
+      return { ok: true };
+    });
+  }
 }
 
 /** Provider module loaded by the shared BrowserChatAdapter. No new Chrome instance. */

@@ -3609,6 +3609,29 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const receipt = await userMessageDelivery?.reconcile(harness, sessionId, inputId, route.kind === "scoped" ? route.adapter : undefined);
     return sendJson(response, receipt ? 200 : 404, receipt || { error: "Доставка сообщения не найдена; автоматический повтор запрещён" });
   }
+  // List projects for a browser-chat harness (ZAI: /api/v1/projects).
+  const projectsMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/projects$/);
+  if (projectsMatch && request.method === "GET") {
+    const harness = decodeURIComponent(projectsMatch[1]);
+    const adapter = adapters.get(harness) as (HarnessAdapter & { listProjects?: () => Promise<Array<{ id: string; name: string }>> }) | undefined;
+    if (!adapter) return sendJson(response, 404, { error: "unknown harness" });
+    if (typeof adapter.listProjects !== "function") return sendJson(response, 501, { error: "этот агент не имеет проектов" });
+    try { return sendJson(response, 200, { projects: await adapter.listProjects() }); }
+    catch (error) { return sendJson(response, 502, { error: error instanceof Error ? error.message : String(error) }); }
+  }
+  // Move a chat into a project (ZAI: PATCH /api/v1/chats/<id> with project_id).
+  const moveMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/move-to-project$/);
+  if (moveMatch && request.method === "POST") {
+    const harness = decodeURIComponent(moveMatch[1]);
+    const sessionId = decodeURIComponent(moveMatch[2]);
+    const adapter = adapters.get(harness) as (HarnessAdapter & { moveToProject?: (i: { chatId: string; projectId: string }) => Promise<{ ok: boolean; error?: string }> }) | undefined;
+    if (!adapter) return sendJson(response, 404, { error: "unknown harness" });
+    if (typeof adapter.moveToProject !== "function") return sendJson(response, 501, { error: "этот агент не поддерживает перемещение в проект" });
+    const body = await readJson(request);
+    if (typeof body.projectId !== "string") return sendJson(response, 400, { error: "projectId is required" });
+    try { return sendJson(response, 200, await adapter.moveToProject({ chatId: sessionId, projectId: body.projectId })); }
+    catch (error) { return sendJson(response, 502, { error: error instanceof Error ? error.message : String(error) }); }
+  }
   // The reserved activity path is never a harness/session pair: it has its own reader.
   const sessionMatch = url.pathname === "/api/sessions/activity/goals" ? null : url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)$/);
   if (sessionMatch && request.method === "GET") {
