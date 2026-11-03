@@ -1953,15 +1953,17 @@ function App() {
     void loadCreateModels(createHarness);
     void loadCwdSuggestions(cwd.endsWith("/") ? cwd : `${cwd}/`);
   };
+  const browserNewChat = createHarness === "chatgpt" || createHarness === "zai";
   const createNewSession = async () => {
-    if (!createCwd.trim() || creatingSession) return;
+    if ((!browserNewChat && !createCwd.trim()) || creatingSession) return;
     setCreatingSession(true);
     setCreateSessionError(undefined);
     const generatedName = `${createHarness.replace(/[^a-z0-9-]/gi, "-")}-${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14)}-${crypto.randomUUID().slice(0, 8)}`;
     try {
       const created = await api<{ sessionId?: string }>("/api/sessions", {
         method: "POST",
-        body: JSON.stringify({ harness: createHarness, name: generatedName, cwd: createCwd.trim(), model: createModel.trim() || undefined, ...(createHarness === "codex" ? { serviceTier: createServiceTier } : {}) }),
+        body: JSON.stringify({ harness: createHarness, name: generatedName, cwd: browserNewChat ? "/" : createCwd.trim(),
+          model: browserNewChat ? undefined : (createModel.trim() || undefined), ...(createHarness === "codex" ? { serviceTier: createServiceTier } : {}) }),
       });
       if (!created.sessionId) throw new Error("Сервер не вернул созданную сессию");
       setShowCreateSession(false);
@@ -2588,10 +2590,12 @@ function App() {
         {showCreateSession && <div className="composer-create-panel"><div className="composer-create-machine"><button type="button" className="quiet-button" onClick={() => setShowCreateSession(false)}>Отмена</button><span>Создание на машине: {directory.hosts.find(host => host.hostId === directory.localHostId)?.label || "Текущая машина"}</span><button type="button" className="quiet-button" onClick={() => {setFleetCreationMode(true);setShowFleet(true);}}>Выбрать другую машину</button></div>
           <div className="composer-create-row" data-codex={createHarness === "codex"}>
             <label>Агент<select value={createHarness} onChange={(event) => { const harness = event.target.value; setCreateHarness(harness); setCreateModel(""); setCreateModels([]); void loadCreateModels(harness); }}>{(createAdapters.length ? createAdapters : [{ id: "fast-agent", name: "Fast Agent", active: true, ready: true, status: "active" }]).map((adapter) => <option key={adapter.id} value={adapter.id} disabled={!adapter.active}>{adapter.name}{adapter.active ? "" : ` · ${adapter.status}`}</option>)}</select></label>
-            <label className="cwd-picker">Папка<input value={createCwd} onChange={(event) => { const value = event.target.value; setCreateCwd(value); void loadCwdSuggestions(value); }} onFocus={() => void loadCwdSuggestions(createCwd.endsWith("/") ? createCwd : `${createCwd}/`)} onBlur={() => window.setTimeout(() => setCwdSuggestionsOpen(false), 120)} placeholder="/home/roomhacker/project" autoComplete="off" />{cwdSuggestionsOpen && cwdSuggestions.length > 0 && <div className="cwd-suggestions">{cwdSuggestions.map((item) => <button type="button" key={item.path} onMouseDown={(event) => event.preventDefault()} onClick={() => { setCreateCwd(`${item.path}/`); void loadCwdSuggestions(`${item.path}/`); }}><span className="cwd-folder">▱</span><span>{item.name}</span><small>{item.path}</small></button>)}</div>}</label>
-            <label>Модель{createModels.length > 0 ? <select value={createModel} onChange={(event) => setCreateModel(event.target.value)}>{createModels.map((model) => <option key={model} value={model}>{model === "anthropic.MiniMax-M3.1-Flash" ? "MiniMax M3.1 Flash" : model}</option>)}</select> : createModelsRefreshing ? <select disabled><option>загрузка моделей…</option></select> : <input value={createModel} onChange={(event) => setCreateModel(event.target.value)} placeholder="модель (кэш пуст)" />}</label>
+            {browserNewChat
+              ? <p className="composer-create-browser-note" role="status">Пустой чат будет сохранён как локальный черновик. На сайте он появится после первого отправленного вами сообщения.</p>
+              : <label className="cwd-picker">Папка<input value={createCwd} onChange={(event) => { const value = event.target.value; setCreateCwd(value); void loadCwdSuggestions(value); }} onFocus={() => void loadCwdSuggestions(createCwd.endsWith("/") ? createCwd : `${createCwd}/`)} onBlur={() => window.setTimeout(() => setCwdSuggestionsOpen(false), 120)} placeholder="/home/roomhacker/project" autoComplete="off" />{cwdSuggestionsOpen && cwdSuggestions.length > 0 && <div className="cwd-suggestions">{cwdSuggestions.map((item) => <button type="button" key={item.path} onMouseDown={(event) => event.preventDefault()} onClick={() => { setCreateCwd(`${item.path}/`); void loadCwdSuggestions(`${item.path}/`); }}><span className="cwd-folder">▱</span><span>{item.name}</span><small>{item.path}</small></button>)}</div>}</label>}
+            {!browserNewChat && <label>Модель{createModels.length > 0 ? <select value={createModel} onChange={(event) => setCreateModel(event.target.value)}>{createModels.map((model) => <option key={model} value={model}>{model === "anthropic.MiniMax-M3.1-Flash" ? "MiniMax M3.1 Flash" : model}</option>)}</select> : createModelsRefreshing ? <select disabled><option>загрузка моделей…</option></select> : <input value={createModel} onChange={(event) => setCreateModel(event.target.value)} placeholder="модель (кэш пуст)" />}</label>}
             {createHarness === "codex" && <label>Режим Codex<select aria-label="Режим Codex" title="Fast расходует больше квоты." value={createServiceTier} onChange={(event) => setCreateServiceTier(event.target.value as "normal" | "fast")}><option value="normal">Normal</option><option value="fast">Fast</option></select></label>}
-            <button type="button" className="primary-button composer-create-submit" disabled={creatingSession || !createCwd.trim()} onClick={() => void createNewSession()}>{creatingSession ? "…" : "Создать"}</button>
+            <button type="button" className="primary-button composer-create-submit" disabled={creatingSession || (!browserNewChat && !createCwd.trim())} onClick={() => void createNewSession()}>{creatingSession ? "…" : "Создать"}</button>
           </div>
           {createSessionError && <div className="create-session-error">{createSessionError}</div>}
         </div>}
