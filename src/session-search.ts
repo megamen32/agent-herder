@@ -18,6 +18,23 @@ export function lexicalMatch(query:string):string {
  return words.map(word=>'"'+word.replaceAll('"','""')+'"').join(' AND ');
 }
 
+/** Stable native chat ids a pasted deep link can carry: chat.z.ai / chatgpt.com
+ * conversation paths (/c/<id>) and bare UUIDs. The link names one exact
+ * conversation, so the search must look at the id it carries, not at the URL text. */
+export function deepLinkSessionIds(query:string):string[]{
+ if(typeof query!=='string'||query.length>1000)return [];
+ const ids=new Set<string>();
+ for(const pattern of [
+  /https?:\/\/[^\s]*chat\.z\.ai\/c\/([a-f0-9-]{12,80})/gi,
+  /https?:\/\/[^\s]*chatgpt\.com\/c\/([a-f0-9-]{12,80})/gi,
+  /\b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b/gi,
+ ]){
+  // The bare-UUID pattern has no capture group: its whole match is the id.
+  for(const match of query.matchAll(pattern))ids.add((match[1]??match[0])!.toLowerCase());
+ }
+ return [...ids];
+}
+
 export class SessionSearchIndex {
  private readonly db:DatabaseSync;
  private ingesting=false;
@@ -192,11 +209,25 @@ export class SessionSearchIndex {
   if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error('search_limit_invalid');
   const harnesses=input.harnesses??[];
   if(harnesses.length>32||harnesses.some(h=>!h||h.length>64))throw new Error('search_harness_invalid');
+  const results=[];const seen=new Set<string>();
+  // A pasted deep link carries an exact native identity: identity rows come
+  // first, before any lexical ranking, so the named chat is the first result.
+  // The id forms mirror what adapters store: a raw native id, the ZAI route
+  // prefix and the provider-scoped encodings of both.
+  const linkIds=deepLinkSessionIds(input.query);
+  if(linkIds.length){
+   const forms=linkIds.flatMap(id=>[id,'route:'+id,'route%3A'+id,'zai::'+id,'zai::route%3A'+id,'zai::route:'+id]);
+   const identity=this.db.prepare(`SELECT harness,native_id,title,cwd,revision FROM sessions WHERE native_id IN (${forms.map(()=>'?').join(',')}) ${harnesses.length?'AND harness IN ('+harnesses.map(()=>'?').join(',')+')':''}`).all(...forms,...harnesses) as Array<{harness:string;native_id:string;title:string;cwd:string;revision:string}>;
+   for(const row of identity){
+    const key=JSON.stringify([row.harness,row.native_id]);if(seen.has(key))continue;seen.add(key);
+    results.push({hostId:this.hostId,harness:row.harness,nativeSessionId:row.native_id,title:row.title,cwd:row.cwd,revision:row.revision,chunkId:'identity',snippet:'',rank:0});
+    if(results.length>=limit)break;
+   }
+  }
   // The hidden FTS rank column gives SQLite its indexed rank-order iterator.
   // Compute snippets only for winning sessions, not every matching message.
   const rows=this.db.prepare(`SELECT s.harness,s.native_id,s.title,s.cwd,s.revision,c.id,c.chunk_id,chunks_fts.rank rank FROM chunks_fts CROSS JOIN chunks c ON c.id=chunks_fts.rowid CROSS JOIN sessions s ON s.harness=c.harness AND s.native_id=c.native_id AND s.generation=c.generation WHERE chunks_fts MATCH ? AND rank MATCH 'bm25(4.0,1.0)' ${harnesses.length?'AND s.harness IN ('+harnesses.map(()=>'?').join(',')+')':''} ORDER BY rank`).iterate(match,...harnesses);
   const snippet=this.db.prepare("SELECT snippet(chunks_fts,1,'','', ' … ',24) snippet FROM chunks_fts WHERE rowid=? AND chunks_fts MATCH ?");
-  const results=[];const seen=new Set<string>();
   for(const row of rows){const key=JSON.stringify([row.harness,row.native_id]);if(seen.has(key))continue;seen.add(key);results.push({hostId:this.hostId,harness:row.harness,nativeSessionId:row.native_id,title:row.title,cwd:row.cwd,revision:row.revision,chunkId:row.chunk_id,snippet:snippet.get(row.id,match)?.snippet??'',rank:row.rank});if(results.length>=limit)break;}
   const status=this.status();
   const sources=new Map(status.sources.map((source:SearchSourceReceipt)=>[source.harness,source]));

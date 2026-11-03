@@ -61,6 +61,7 @@ import { AutopilotPolicyRevisionConflictError, AutopilotPolicyStore } from "../a
 import { parseNoticeIncident, readIncidentBinding, NoticeIncidentBindingError, isHealthPlanId, HEALTH_PLAN_IDS, type HealthPlanId } from "../autopilot/notice-incident.js";
 import { noticeplaceAttemptOutcome } from '../automation/noticeplace-attempt-outcome.js';
 import { resolveAutopilotStateDir } from "../autopilot/state-dir.js";
+import { HarnessRuntimeSettingsError, HarnessRuntimeSettingsStore, harnessRuntimeView } from "../harness-runtime-settings.js";
 import { AutopilotSessionStore, parseNoticeAttempt, type AutopilotHarness } from "../autopilot/session-store.js";
 import { autopilotGoalApi, recordGoalHumanInput, stopGoalForSession } from "./autopilot-goal-api.js";
 import { isMcpConnectionOwnerRequest as isGoalControlOwnerRequest } from "./fleet-wiring.js";
@@ -2081,6 +2082,43 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     });
     return sendJson(response, recorded ? 200 : 400, { ok: recorded });
   }
+  // The runtime switches of the harnesses: what may poll its site and what
+  // may keep its hooks. A change acts on the next tick of every poller and
+  // on the next run of every hook script: no restart, no redeploy.
+  if (url.pathname === "/api/harness-runtime" && (request.method === "GET" || request.method === "PUT")) {
+    response.setHeader("cache-control", "no-store");
+    const store = harnessRuntimeSettingsStoreOf();
+    const adapterList = () => [...adapters.entries()].map(([id, adapter]) => ({ id, name: adapter.name }));
+    if (request.method === "GET") {
+      return sendJson(response, 200, harnessRuntimeView(await store.read(), adapterList()));
+    }
+    if (!isHooksOwnerRequest(request)) {
+      return sendJson(response, 403, { ok: false, error: "Настройки харнессов меняет только владелец панели." });
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = await readJson(request);
+    } catch (error) {
+      return sendJson(response, 400, { ok: false, error: `Некорректное тело запроса: ${(error as Error).message}` });
+    }
+    try {
+      const updated = await store.update({
+        ...(typeof body.pollingEnabled === "boolean" ? { pollingEnabled: body.pollingEnabled } : {}),
+        ...(body.harnesses && typeof body.harnesses === "object" && !Array.isArray(body.harnesses)
+          ? { harnesses: body.harnesses as Record<string, never> }
+          : {}),
+      }, {
+        by: typeof body.actor === "string" && body.actor.trim() ? body.actor.trim() : "owner",
+        reason: typeof body.reason === "string" ? body.reason.trim() : "",
+      });
+      return sendJson(response, 200, harnessRuntimeView(updated, adapterList()));
+    } catch (error) {
+      if (error instanceof HarnessRuntimeSettingsError) {
+        return sendJson(response, 400, { ok: false, code: error.code, error: error.message });
+      }
+      return sendJson(response, 500, { ok: false, error: (error as Error).message });
+    }
+  }
   if (url.pathname === "/api/autopilot/policy" && (request.method === "GET" || request.method === "PUT")) {
     if (!autopilotPolicyStore) return sendJson(response, 503, { error: "Autopilot policy store is disabled" });
     if (request.method === "GET") return sendJson(response, 200, await autopilotPolicyStore.readEffective());
@@ -3930,6 +3968,20 @@ function isAutopilotHarness(value: string): value is AutopilotHarness {
  * One service per process, so the cache of the state of the lever is shared
  * by every request instead of being rebuilt for each of them.
  */
+let harnessRuntimeSettingsStore: HarnessRuntimeSettingsStore | undefined;
+let harnessRuntimeSettingsStoreDirectory = "";
+
+function harnessRuntimeSettingsStoreOf(): HarnessRuntimeSettingsStore {
+  // The store follows the runtime state directory like the hooks service: a
+  // node that moves its state must not keep the switches of another one.
+  const directory = resolveAutopilotStateDir();
+  if (!harnessRuntimeSettingsStore || harnessRuntimeSettingsStoreDirectory !== directory) {
+    harnessRuntimeSettingsStore = HarnessRuntimeSettingsStore.forRuntime();
+    harnessRuntimeSettingsStoreDirectory = directory;
+  }
+  return harnessRuntimeSettingsStore;
+}
+
 let hooksService: HooksService | undefined;
 let hooksServiceDirectory = "";
 

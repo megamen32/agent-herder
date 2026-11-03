@@ -171,9 +171,37 @@ export function selectionAfterSessionRefresh(current: string | undefined, linked
   return current && sessions.some((session) => sessionKey(session) === current) ? current : undefined;
 }
 
+/**
+ * Stable chat ids a pasted deep link can carry: chat.z.ai / chatgpt.com
+ * conversation paths (/c/<id>) and bare UUIDs. A link the owner pastes into
+ * the search box names one exact conversation, so the search must look at
+ * the id it carries, not at the URL text.
+ */
+export function sessionQueryLinkIds(query: string): string[] {
+  const trimmed = query.trim();
+  if (!trimmed || trimmed.length > 512) return [];
+  const ids = new Set<string>();
+  for (const pattern of [
+    /https?:\/\/[^\s]*chat\.z\.ai\/c\/([a-f0-9-]{12,80})/gi,
+    /https?:\/\/[^\s]*chatgpt\.com\/c\/([a-f0-9-]{12,80})/gi,
+    /\b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b/gi,
+  ]) {
+    // The bare-UUID pattern has no capture group: its whole match is the id.
+    for (const match of trimmed.matchAll(pattern)) ids.add((match[1] ?? match[0])!.toLowerCase());
+  }
+  return [...ids];
+}
+
 export function matchesSessionQuery(session: Pick<SessionListSession, "id" | "harness" | "title" | "cwd" | "lastMessage">, query: string): boolean {
   const normalized = query.trim().toLocaleLowerCase();
   if (!normalized) return true;
+  const linkIds = sessionQueryLinkIds(query);
+  if (linkIds.length) {
+    // A pasted link carries a native conversation id: it matches the plain,
+    // route-prefixed and provider-scoped id forms a session row can carry.
+    const id = session.id.toLocaleLowerCase();
+    if (linkIds.some((link) => id === link || id.endsWith(":" + link) || id.includes(link))) return true;
+  }
   return [session.id, session.harness, session.title, session.cwd, session.lastMessage || ""]
     .some((value) => value.toLocaleLowerCase().includes(normalized));
 }

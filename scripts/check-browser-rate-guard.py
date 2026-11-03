@@ -11,7 +11,7 @@ adapters=pathlib.Path(entry).parent/'adapters'
 cache=(adapters/'browser-chat-history-cache.js').read_text()
 api=(adapters/'browser-chat-api-scripts.js').read_text()
 checks={
- 'metadata cache without TTL sweep': 'REFRESH_AFTER_MS' not in cache and 'configured === 0' in cache,
+ 'metadata cache without TTL sweep': 'REFRESH_AFTER_MS' not in cache and ('configured === 0' in cache or 'limit === 0' in cache),
  'serialized request spacing': 'REQUEST_GAP_MS' in cache and 'requestTail' in cache,
  'shared read 429 cooldown': api.count('__herderChatGptReadCooldownUntil') >= 4,
 }

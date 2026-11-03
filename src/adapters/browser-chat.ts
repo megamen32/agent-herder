@@ -1,6 +1,7 @@
-import type { AgentSession, ControlResult, CreateSessionOptions, HarnessAdapter, HarnessCapabilities, HarnessType, ListSessionsOptions, SendMessageOptions, SendMessageResult, SetPermissionsOptions } from "../types/index.js";
+import type { AgentSession, ControlResult, CreateSessionOptions, HarnessAdapter, HarnessCapabilities, HarnessEvent, HarnessType, ListSessionsOptions, SendMessageOptions, SendMessageResult, SetPermissionsOptions } from "../types/index.js";
 import { localSessionHostId, type SessionMessageView } from "../types/index.js";
 import { BrowserChatHistoryCache } from "./browser-chat-history-cache.js";
+import { liveHarnessPollingEnabled } from "../harness-runtime-settings.js";
 /** Normalized browser chat; native IDs belong to their provider driver. */
 export interface BrowserChat {
   id: string;
@@ -39,6 +40,11 @@ export interface BrowserChatDriver {
    * Never navigates to another chat to find a Stop button.
    */
   stopTurn?(chatId: string, signal?: AbortSignal): Promise<{ stopped: boolean; error?: string }>;
+  /** Subscribe to modal-prompt events emitted when the driver answers (or
+   * skips) a permission / 'Continue in Work?' prompt on the owned browser
+   * page. The adapter forwards these as HarnessEvent of kind
+   * permission.requested / permission.resolved into the shared bus. */
+  subscribePromptEvents?(handler: (event: HarnessEvent) => void): () => void;
   createChat?(input: { title?: string }, signal?: AbortSignal): Promise<BrowserChat>;
   listModels?(signal?: AbortSignal): Promise<string[]>;
   supportsModelSwitch?(): boolean;
@@ -86,11 +92,15 @@ export class BrowserChatAdapter implements HarnessAdapter {
     subagents: false,
     events: false,
   };
+  private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
+  private promptEventsUnsubscribe?: () => void;
   readonly runtimeCapabilities = BROWSER_RUNTIME_CAPS;
   readonly lazyDiscovery = true;
   private readonly inventory = new Map<string, BrowserChat>();
   private inventoryAt = 0;
   private inventoryRefresh: Promise<void> | undefined;
+  /** The harness whose runtime switch gates this adapter's site requests. */
+  private readonly pollingHarness: "chatgpt" | "zai";
   private readonly historyCache: BrowserChatHistoryCache;
 
 
@@ -100,17 +110,31 @@ export class BrowserChatAdapter implements HarnessAdapter {
     private readonly cwd = provider.cwd,
     private readonly scopedIds = false,
   ) {
+    this.pollingHarness = provider.id === "zai" ? "zai" : "chatgpt";
     this.historyCache = new BrowserChatHistoryCache(
-      provider.id === "zai" ? "zai" : "chatgpt",
+      this.pollingHarness,
       nativeId => this.driver.getMessages?.(nativeId) ?? Promise.resolve(null),
     );
     this.type = provider.harness;
     this.name = provider.name;
+    const supportsPromptEvents = typeof driver.subscribePromptEvents === "function";
     this.controlCapabilities = {
       ...BrowserChatAdapter.browserCapabilities,
       cancelTurn: typeof driver.stopTurn === "function",
       modelSwitch: driver.supportsModelSwitch?.() ?? typeof driver.changeModel === "function",
+      // Advertise event emission only when the underlying driver actually
+      // emits modal-prompt events; otherwise the supervisor would call
+      // subscribeEvents and get nothing.
+      events: supportsPromptEvents,
     };
+    if (supportsPromptEvents) {
+      // The unsubscribe is held for the adapter's lifetime: the driver emits
+      // permission.requested / permission.resolved events whenever it
+      // answers (or skips) a modal prompt, and the adapter fans them out to
+      // every registered listener (the supervisor, the permission-control
+      // notice-bridge, the UI event bus).
+      this.promptEventsUnsubscribe = driver.subscribePromptEvents?.((event) => this.emitEvent(event));
+    }
     this.browserFeatures = driver.browserFeatures ?? {
       nativeConversationIds: false,
       queueAfterGeneration: false,
@@ -166,21 +190,29 @@ export class BrowserChatAdapter implements HarnessAdapter {
   }
 
   async init(): Promise<void> {
+    // The startup scan is a request to the site like any other: a paused
+    // harness starts with an empty inventory and serves nothing until the
+    // owner resumes it.
+    if (!liveHarnessPollingEnabled(this.pollingHarness)) return;
     this.updateInventory(await this.driver.listChats());
   }
 
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
     void options;
+    const polling = liveHarnessPollingEnabled(this.pollingHarness);
     if (this.inventory.size) {
       // Cached titles and session identity are also stale-while-revalidate.
       // Never block selected-chat details on an unrelated 100-chat API list.
-      if (Date.now() - this.inventoryAt > 60_000 && !this.inventoryRefresh) {
+      // A paused harness serves its cached inventory and makes no list call:
+      // the pause of the owner stops the constant requests, not the reads.
+      if (polling && Date.now() - this.inventoryAt > 60_000 && !this.inventoryRefresh) {
         this.inventoryRefresh = this.driver.listChats().then(chats => {
           this.updateInventory(chats);
         }).catch(() => undefined).finally(() => { this.inventoryRefresh = undefined; });
       }
       return [...this.inventory.values()].map(chat => this.toSession(chat));
     }
+    if (!polling) return [];
     const chats = await this.driver.listChats();
     this.updateInventory(chats);
     return chats.map(chat => this.toSession(chat));
@@ -189,7 +221,12 @@ export class BrowserChatAdapter implements HarnessAdapter {
   async findNamedSessions(name: string, cwd: string): Promise<AgentSession[]> {
     void cwd;
     const normalized = name.trim();
-    return (await this.driver.listChats())
+    // A paused harness answers from the cached inventory: a name lookup is
+    // not worth one more request to a site the owner paused.
+    const chats = liveHarnessPollingEnabled(this.pollingHarness)
+      ? await this.driver.listChats()
+      : [...this.inventory.values()];
+    return chats
       .filter((chat) => chat.title.trim() === normalized)
       .map((chat) => this.toSession(chat));
   }
@@ -298,6 +335,24 @@ export class BrowserChatAdapter implements HarnessAdapter {
 
   async setPermissions(_sessionId: string, _options: SetPermissionsOptions): Promise<{ ok: boolean; error?: string }> {
     return { ok: false, error: "Browser chat permissions are controlled by their provider" };
+  }
+
+  async invalidateHistory(id: string): Promise<void> {
+    // A completed remote turn changed this conversation: drop the cached
+    // copy AND wait for the fresh read, so the turn fingerprint computed
+    // immediately afterwards cannot repeat the already-judged identity.
+    await this.historyCache.refreshNow(this.nativeId(id)).catch(() => undefined);
+  }
+
+  subscribeEvents(handler: (event: HarnessEvent) => void): () => void {
+    this.eventListeners.add(handler);
+    return () => { this.eventListeners.delete(handler); };
+  }
+
+  private emitEvent(event: HarnessEvent): void {
+    for (const handler of this.eventListeners) {
+      try { handler(event); } catch { /* a listener must never break the adapter */ }
+    }
   }
 
   private toSession(chat: BrowserChat): AgentSession {

@@ -173,11 +173,11 @@ const splitKey = (key: string) => {
 const readSessionFromHash = (): string | undefined => {
   return sessionTurnLinkFromHash(window.location.hash)?.sessionKey;
 };
-type HerderPage = "chat" | "statistics" | "search" | "machines" | "projects" | "settings" | "hooks" | "jobs" | "autopilot" | "autocontinue" | "launch-policy";
+type HerderPage = "chat" | "statistics" | "search" | "machines" | "projects" | "settings" | "harnesses" | "hooks" | "jobs" | "autopilot" | "autocontinue" | "launch-policy";
 const GROUP_THINKING_TOOLS_STORAGE_KEY = "agent-herder.group-thinking-tools";
 const readPage = (): HerderPage => {
   const page = new URLSearchParams(window.location.search).get("page");
-  return ["statistics","search","machines","projects","settings","hooks","jobs","autopilot","autocontinue","launch-policy"].includes(page || "") ? page as HerderPage : "chat";
+  return ["statistics","search","machines","projects","settings","harnesses","hooks","jobs","autopilot","autocontinue","launch-policy"].includes(page || "") ? page as HerderPage : "chat";
 };
 const readTurnFromHash = (): string | undefined => sessionTurnLinkFromHash(window.location.hash)?.turnId;
 const permissionModeAttemptsStorageKey = (hostId: string, harness: string, sessionId: string): string =>
@@ -905,11 +905,11 @@ function App() {
   const [showJobs, setShowJobs] = React.useState(() => readPage() === "jobs");
   const [showQuota, setShowQuota] = React.useState(false);
   const [showSearch, setShowSearch] = React.useState(() => readPage() === "search");
-  const [showProjects, setShowProjects] = React.useState(() => ["projects","settings","hooks"].includes(readPage()));
+  const [showProjects, setShowProjects] = React.useState(() => ["projects","settings","harnesses","hooks"].includes(readPage()));
   // The screen of the settings has two tabs: the settings of the herder
   // and the models of the projects. The second tab belongs to the
   // Projects contour; the herder only gives it a place.
-  const [settingsTab, setSettingsTab] = React.useState<"settings" | "projects" | "hooks">(() => readPage() === "projects" ? "projects" : readPage() === "hooks" ? "hooks" : "settings");
+  const [settingsTab, setSettingsTab] = React.useState<"settings" | "harnesses" | "projects" | "hooks">(() => readPage() === "projects" ? "projects" : readPage() === "harnesses" ? "harnesses" : readPage() === "hooks" ? "hooks" : "settings");
   const [advancedSearchQuery, setAdvancedSearchQuery] = React.useState<string | undefined>(() => new URLSearchParams(window.location.search).get("q") || undefined);
   const consumeAdvancedSearchInitialQuery = React.useCallback(() => setAdvancedSearchQuery(undefined), []);
   const [showFleet, setShowFleet] = React.useState(() => readPage() === "machines");
@@ -2024,8 +2024,8 @@ function App() {
       const next = readPage(); pageRef.current = next;
       setShowSearch(next === "search"); setShowFleet(next === "machines");
       setShowJobs(next === "jobs"); setShowStatistics(next === "statistics");
-      setShowProjects(["projects","settings","hooks"].includes(next));
-      if (["projects","settings","hooks"].includes(next)) setSettingsTab(next as "projects" | "settings" | "hooks");
+      setShowProjects(["projects","settings","harnesses","hooks"].includes(next));
+      if (["projects","settings","harnesses","hooks"].includes(next)) setSettingsTab(next as "projects" | "settings" | "harnesses" | "hooks");
       setAutomationSettings(["autocontinue","autopilot","launch-policy"].includes(next) ? next as "autocontinue" | "autopilot" | "launch-policy" : undefined);
       setShowQuota(false); setMobileView("chat");
       if (next === "search") setAdvancedSearchQuery(new URLSearchParams(window.location.search).get("q") || undefined);

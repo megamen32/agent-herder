@@ -200,12 +200,17 @@ export class ZaiCdpDriver implements BrowserChatDriver {
         this.accountScope = data.scope;
         const chats: BrowserChat[] = [];
         for (const item of data.chats) {
-          if (!/^[a-f0-9-]{12,80}$/i.test(item.id) || !item.title) continue;
+          if (!/^[a-f0-9-]{12,80}$/i.test(item.id)) continue;
+          // A chat without a title is still a real conversation of the account:
+          // keep it with the stable untitled label (the same one routeRecord
+          // uses) instead of dropping it from the inventory. Selection is by
+          // exact route identity, so the shared label stays safe.
+          const title = typeof item.title === "string" && item.title.trim() ? item.title : "ZAI conversation";
           const selected = state.path === "/c/" + item.id;
           const updatedAt = typeof item.updatedAt === "number" && Number.isFinite(item.updatedAt) && item.updatedAt > 0
             ? new Date(item.updatedAt < 1e12 ? item.updatedAt * 1000 : item.updatedAt).toISOString()
             : observedAt;
-          const chat = this.recordChat("route:" + item.id, item.title, updatedAt,
+          const chat = this.recordChat("route:" + item.id, title, updatedAt,
             selected ? state.path : undefined);
           if (typeof item.updatedAt === "number" && Number.isFinite(item.updatedAt) && item.updatedAt > 0) {
             chat.updatedAtSemantics = "remote-update-time";

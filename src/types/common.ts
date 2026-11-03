@@ -409,6 +409,10 @@ export interface HarnessAdapter {
 
   /** Read the native active set without scanning historical sessions, when available. */
   listActiveSessions?(): Promise<AgentSession[]>;
+  /** Drop the adapter's cached history for one session: the next history
+   * read re-fetches it. Used when a completed remote turn is known to have
+   * changed the conversation, so a cached fingerprint cannot go stale. */
+  invalidateHistory?(sessionId: string): Promise<void>;
 
   /** Completeness evidence for the most recent listSessions() call, when supported. */
   getSessionSnapshotReceipt?(): SessionSnapshotReceipt;
