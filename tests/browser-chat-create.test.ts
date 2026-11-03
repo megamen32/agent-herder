@@ -48,6 +48,20 @@ describe("durable local draft",()=>{
       await expect(afterRestart.create()).rejects.toThrow(/verif/i);
     });
   }
+  it("rejects stale in-flight account reads after a concurrent login switch",async()=>{
+    const p=await root();
+    const a=new BrowserChatDraftStore("chatgpt",p);
+    await a.useScope(ACCOUNT);
+    const chatA=await a.create("Account A draft");
+    await a.useScope(OTHER);
+    const chatB=await a.create("Account B draft");
+    const restored=new BrowserChatDraftStore("chatgpt",p);
+    await Promise.all([restored.useScope(ACCOUNT),restored.useScope(OTHER)]);
+    expect(restored.get(chatA.id)).toBeUndefined();
+    expect(restored.get(chatB.id)?.title).toBe("Account B draft");
+    expect(restored.verified).toBe(true);
+  });
+
   it("blocks duplicate first-message submissions after an uncertain click",async()=>{
     const p=await root();
     const s=new BrowserChatDraftStore("chatgpt",p);
@@ -105,6 +119,10 @@ class NewChatPageFixture implements ChromePageTools {
     if(name==="evaluate_script"){
       const source=String(args.function);
       expect(() => new Function("return ("+source+")")).not.toThrow();
+      if(source.includes("/api/auth/session") ||
+        source.includes("/api/v1/chats/?page=")) {
+        return json({scope:ACCOUNT,chats:[]});
+      }
       if(source.includes("ready:!!editor")){
         return json({origin:this.origin,path:"/",ready:true,empty:true});
       }
@@ -156,6 +174,21 @@ describe("browser first-message admission",()=>{
       const receipt=await submitFirstChatMessage(tools,site,"User-written prompt");
       expect(receipt).toMatchObject({clicked:true,uncertain:true});
       expect(tools.closed).toBe(false);
+    });
+  }
+});
+
+describe("new-page account verification",()=>{
+  for(const site of ["chatgpt","zai"] as const){
+    it(site+" never fills or sends when the new tab has a different authenticated account",async()=>{
+      const tools=new NewChatPageFixture(site);
+      const receipt=await submitFirstChatMessage(tools,site,"Never send me",OTHER);
+      expect(receipt).toMatchObject({clicked:false,uncertain:false,
+        reason:"New-chat account identity could not be verified"});
+      expect(tools.calls.map(x=>x.name)).not.toContain("fill");
+      expect(tools.calls.filter(x=>x.name==="evaluate_script" &&
+        String(x.args.function).includes("send_not_ready"))).toHaveLength(0);
+      expect(tools.closed).toBe(true);
     });
   }
 });
