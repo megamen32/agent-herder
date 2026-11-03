@@ -155,16 +155,16 @@ export class BrowserTurnAutopilotObserver {
     // Autocontinue watchdog: only a real remote update timestamp is stall
     // evidence; sidebar-order timestamps change on every poll and prove nothing.
     const semantics = (session.meta as { timestampSemantics?: string } | undefined)?.timestampSemantics;
-    // A native-API running chat (another browser tab, or no herder-owned tab
-    // at all) freezes its remote timestamps for the whole run: a long honest
-    // turn must never be nudged as stalled on that frozen evidence. Only a
+    // A native-API running chat (ZAI last_run.status, ChatGPT async_status)
+    // freezes its remote timestamps for the whole run: a long honest turn
+    // must never be nudged as stalled on that frozen evidence. Only a
     // DOM-observed page proves a stall through missing remote progress.
     const evidence = (session.meta as { runningEvidence?: string } | undefined)?.runningEvidence;
     const updatedAt = typeof session.lastActivity === "string" && Number.isFinite(Date.parse(session.lastActivity))
       ? Date.parse(session.lastActivity)
       : undefined;
     if (running && this.options.autoContinue && semantics === "remote-update-time" && updatedAt !== undefined
-      && evidence !== "native-last-run") {
+      && !(evidence && evidence.startsWith("native-"))) {
       if (state.stallBaseline !== updatedAt) {
         state.stallBaseline = updatedAt;
         state.nudgedActivity = undefined;

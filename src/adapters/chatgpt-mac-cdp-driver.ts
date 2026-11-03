@@ -362,12 +362,19 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS;
   }
 
-  private toChat(id: string, title: string, s: Snapshot, at?: number): BrowserChat {
+  private toChat(id: string, title: string, s: Snapshot, at?: number, asyncStatus?: number): BrowserChat {
     const selected = s.path.endsWith("/c/" + id);
+    // ChatGPT's conversation list exposes async_status per chat: non-zero
+    // marks a conversation with an active background operation (a generation
+    // that continued after the driver navigated away, or another async task).
+    // That is the only honest busy signal for a conversation not open in the
+    // observed tab; the DOM Stop control exists only on the selected page.
+    const nativeRunning = !selected && typeof asyncStatus === "number" && asyncStatus !== 0;
     return {
       id, title, updatedAt: typeof at === "number" && at > 0
         ? new Date(at < 1e12 ? at * 1000 : at).toISOString() : new Date().toISOString(),
-      working: selected && this.busy(s),
+      working: selected ? this.busy(s) : nativeRunning,
+      ...(nativeRunning ? { workingSource: "native-async-status" } : {}),
       stopVisible: selected && s.phase === "generating",
       unread: false, updatedAtSemantics: typeof at === "number" && Number.isFinite(at) && at > 0 ? "remote-update-time" : "observed-sidebar-order",
       sourceRoute: ORIGIN + "/c/" + id,
@@ -382,7 +389,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     try {
       const data = parseChromeEvaluation<{
         scope?: string; error?: string; trace?: unknown;
-        chats?: Array<{ id: string; title: string; updatedAt?: number }>;
+        chats?: Array<{ id: string; title: string; updatedAt?: number; asyncStatus?: number }>;
       }>(await this.tools.call("evaluate_script", { pageId: page.id, function: CHATGPT_LIST_API_SCRIPT }));
       this.requestTrace.ingestBrowserHttp(data.trace);
       if (data.scope && /^[a-f0-9]{64}$/.test(data.scope) && Array.isArray(data.chats)) {
@@ -392,7 +399,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
         for (const entry of data.chats) {
           if (!NATIVE_CHAT_ID.test(entry.id) || seen.has(entry.id) || !entry.title) continue;
           seen.add(entry.id);
-          chats.push(this.toChat(entry.id, entry.title, s, entry.updatedAt));
+          chats.push(this.toChat(entry.id, entry.title, s, entry.updatedAt, entry.asyncStatus));
         }
         const selected = s.path.match(/\/c\/([a-f0-9-]{28,80})$/i)?.[1];
         if (selected && NATIVE_CHAT_ID.test(selected) && !seen.has(selected)) {
