@@ -1,8 +1,37 @@
 import { parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
-import { CHATGPT_LIST_API_SCRIPT, ZAI_LIST_API_SCRIPT } from "./browser-chat-api-scripts.js";
+import { ZAI_LIST_API_SCRIPT } from "./browser-chat-api-scripts.js";
 
 export type BrowserChatSite = "chatgpt" | "zai";
 const SITE_ORIGIN = {chatgpt:"https://chatgpt.com",zai:"https://chat.z.ai"} as const;
+
+/** An explicit create/send verifies only the logged-in account, not the whole
+ * ChatGPT inventory. Background polling may remain paused independently.
+ * Auth material remains in the browser and never crosses CDP. */
+export const CHATGPT_CREATE_SCOPE_SCRIPT = `async () => {
+  if(location.origin!=="https://chatgpt.com")return {error:"wrong_origin"};
+  if(Date.now()<(globalThis.__herderChatGptReadCooldownUntil||0))return {error:"read_cooldown"};
+  const abort=new AbortController();const timer=setTimeout(()=>abort.abort(),10000);
+  try{
+    const response=await fetch('/api/auth/session',{credentials:'same-origin',cache:'no-store',signal:abort.signal});
+    if(!response.ok)return {error:'session_http_'+response.status};
+    const session=await response.json();
+    if(typeof session.account?.id!=='string'||!session.account.id)return {error:'account_unavailable'};
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(session.account.id));
+    return {scope:[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('')};
+  }finally{clearTimeout(timer)}
+}`;
+
+export async function verifyNewChatAccountScope(
+  tools:ChromePageTools,site:BrowserChatSite,pageId:number,
+):Promise<string> {
+  const data=parseChromeEvaluation<{scope?:string;error?:string}>(
+    await tools.call('evaluate_script',{pageId,function:
+      site==='chatgpt'?CHATGPT_CREATE_SCOPE_SCRIPT:ZAI_LIST_API_SCRIPT}));
+  if(typeof data.scope!=='string'||!/^[a-f0-9]{64}$/.test(data.scope))
+    throw new Error(site+' account verification unavailable: '+(data.error||'unverified'));
+  return data.scope;
+}
+
 
 function pages(text:string): Array<{id:number;url:string}> {
   return text.split("\n").flatMap(line=>{
@@ -86,6 +115,24 @@ function firstMessageClickScript(site:BrowserChatSite,text:string):string {
   }`;
 }
 
+/** Read only the new tab's native error surface; never inspect other chats. */
+export function newChatPostClickProbe(site:BrowserChatSite):string {
+  const selectors=site==='zai'
+    ? '[role="alert"],[class*="border-red-600"],[class*="bg-red-600"]'
+    : '[role="alert"],[data-testid="conversation-error"],[data-testid="conversation-turn-error"]';
+  return `() => {
+    const errors=[...document.querySelectorAll(${JSON.stringify(selectors)})]
+      .filter(e=>e.getClientRects().length>0).map(e=>(e.innerText||e.textContent||'').trim()).join(String.fromCharCode(10));
+    const rejection=/current concurrent conversation limit has been reached/i.test(errors)
+      ? 'concurrent_conversation_limit'
+      : /too many requests|rate limit|слишком много запросов/i.test(errors)
+        ? 'rate_limit'
+        : /usage (?:cap|limit)|quota (?:exceeded|exhausted)|лимит.{0,25}исчерпан/i.test(errors)
+          ? 'usage_limit' : undefined;
+    return {origin:location.origin,path:location.pathname,rejection};
+  }`;
+}
+
 export interface NewChatSubmitReceipt {
   /** True means the site's own Send button was clicked exactly once. */
   clicked:boolean;
@@ -111,12 +158,8 @@ export async function submitFirstChatMessage(
   if (expectedScope !== undefined) {
     let verified=false;
     try {
-      const result=parseChromeEvaluation<{scope?:string;error?:string}>(
-        await tools.call("evaluate_script", {
-          pageId,
-          function:site==="chatgpt"?CHATGPT_LIST_API_SCRIPT:ZAI_LIST_API_SCRIPT,
-        }));
-      verified=/^[a-f0-9]{64}$/.test(expectedScope) && result.scope===expectedScope;
+      const actual=await verifyNewChatAccountScope(tools,site,pageId);
+      verified=/^[a-f0-9]{64}$/.test(expectedScope) && actual===expectedScope;
     }catch { /* no auth proof means do not send */ }
     if (!verified) {
       await tools.call("close_page",{pageId}).catch(()=>undefined);
@@ -154,9 +197,10 @@ export async function submitFirstChatMessage(
   const origin=SITE_ORIGIN[site];
   for(let i=0;i<18;i++){
     try{
-      const observed=parseChromeEvaluation<{origin:string;path:string}>(
-        await tools.call("evaluate_script",{pageId,function:
-          "() => ({origin:location.origin,path:location.pathname})"}));
+      const observed=parseChromeEvaluation<{origin:string;path:string;rejection?:string}>(
+        await tools.call("evaluate_script",{pageId,function:newChatPostClickProbe(site)}));
+      if(observed.rejection)return {clicked:true,uncertain:true,reason:
+        site+" rejected the first message: "+observed.rejection+"; no automatic retry"};
       const id=observed.path.match(/^\/c\/([a-f0-9-]{12,80})$/i)?.[1];
       if(observed.origin===origin&&id)return {clicked:true,uncertain:false,
         remoteId:site==="zai"?"route:"+id:id};

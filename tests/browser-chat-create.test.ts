@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { BrowserChatDraftStore } from "../src/adapters/browser-chat-drafts.js";
 import { BrowserChatAdapter } from "../src/adapters/browser-chat.js";
 import { createNamedSession } from "../src/named-session.js";
-import { openOwnedBlankChatPage, submitFirstChatMessage } from "../src/adapters/browser-chat-new-page.js";
+import { openOwnedBlankChatPage, submitFirstChatMessage, newChatPostClickProbe } from "../src/adapters/browser-chat-new-page.js";
 import { ChatGptMacCdpDriver } from "../src/adapters/chatgpt-mac-cdp-driver.js";
 import { ZaiCdpDriver } from "../src/adapters/zai-cdp-driver.js";
 import type { ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
@@ -74,11 +74,12 @@ describe("durable local draft",()=>{
     await s.admit(d.id,GPT_NATIVE);
     const admitted=await s.startSend(d.id);
     expect(admitted).toMatchObject({state:"admitted",remoteId:GPT_NATIVE});
-    const merged=s.merge([{id:GPT_NATIVE,title:"native",unread:false,working:false,
+    const merged=s.merge([{id:GPT_NATIVE,title:"native",unread:true,working:true,stopVisible:true,
       updatedAt:new Date().toISOString()}]);
     expect(merged).toHaveLength(1);
     expect(merged[0]?.id).toBe(d.id);
     expect(merged[0]?.pendingRemoteCreation).toBe(false);
+    expect(merged[0]).toMatchObject({working:true,stopVisible:true,unread:true});
   });
   it("rolls back only a proven pre-click failure",async()=>{
     const s=new BrowserChatDraftStore("zai",await root());
@@ -101,6 +102,7 @@ class NewChatPageFixture implements ChromePageTools {
   failBeforeClick=false;
   ambiguousClick=false;
   nativeRoute=true;
+  rejection:string|undefined;
   constructor(readonly site:"chatgpt"|"zai",readonly timeoutOnOpen=false) {}
   get origin(){return this.site==="chatgpt"?"https://chatgpt.com":"https://chat.z.ai"}
   get remoteRoute(){return "/c/"+(this.site==="chatgpt"?GPT_NATIVE:ZAI_NATIVE)}
@@ -132,7 +134,7 @@ class NewChatPageFixture implements ChromePageTools {
         this.clicked=true;return json({submitted:true});
       }
       if(source.includes("path:location.pathname")){
-        return json({origin:this.origin,path:this.clicked&&this.nativeRoute?this.remoteRoute:"/"});
+        return json({origin:this.origin,path:this.clicked&&this.nativeRoute?this.remoteRoute:"/",rejection:this.rejection});
       }
       throw Error("unexpected script");
     }
@@ -368,4 +370,39 @@ describe("native Agent Herder create-session API contract",()=>{
       expect(sends).toBe(0);
     });
   }
+});
+
+describe("native provider rejection after first Send",()=>{
+  it("does not mark a route allocated during a Z.ai concurrency rejection as accepted",async()=>{
+    const tools=new NewChatPageFixture("zai");
+    tools.rejection="concurrent_conversation_limit";
+    const receipt=await submitFirstChatMessage(tools,"zai","fixture prompt",ACCOUNT);
+    expect(receipt).toMatchObject({clicked:true,uncertain:true});
+    expect(receipt.remoteId).toBeUndefined();
+    expect(receipt.reason).toContain("concurrent_conversation_limit");
+    expect(tools.calls.filter(c=>c.name==="fill")).toHaveLength(1);
+    expect(tools.closed).toBe(false);
+  });
+  it("recognizes the site's observed red concurrency error without reading other chats",()=>{
+    const source=newChatPostClickProbe("zai");
+    const result=runInNewContext("("+source+")()",{
+      location:{origin:"https://chat.z.ai",pathname:"/c/"+ZAI_NATIVE},
+      document:{querySelectorAll:(selector:string)=>{
+        expect(selector).toContain("border-red-600");
+        return [{getClientRects:()=>[1],innerText:"Your current concurrent conversation limit has been reached. Please try again later."}];
+      }},
+    });
+    expect(result).toMatchObject({rejection:"concurrent_conversation_limit"});
+  });
+  it("verifies a ChatGPT create action without calling conversation inventory",async()=>{
+    const p=await root();vi.stubEnv("AGENT_HERDER_BROWSER_DRAFT_ROOT",p);
+    const tools=new NewChatIntegratedFixture("chatgpt");
+    const driver=new ChatGptMacCdpDriver(tools);
+    const chat=await driver.createChat({title:"Explicit new chat"});
+    expect(chat.pendingRemoteCreation).toBe(true);
+    const code=tools.calls.filter(c=>c.name==="evaluate_script").map(c=>String(c.args.function));
+    expect(code.some(c=>c.includes("/api/auth/session"))).toBe(true);
+    expect(code.some(c=>c.includes("/backend-api/conversations?offset"))).toBe(false);
+    expect(tools.calls.some(c=>c.name==="fill")).toBe(false);
+  });
 });

@@ -102,10 +102,12 @@ export class BrowserChatDraftStore {
     return this.asChat(data);
   }
 
-  asChat(data: BrowserChatDraft): BrowserChat {
+  asChat(data: BrowserChatDraft, native?: BrowserChat): BrowserChat {
     return {
-      id:data.id,title:data.title,working:data.state==="sending",
-      unread:false,stopVisible:false,updatedAt:data.createdAt,
+      ...native,
+      id:data.id,title:data.title,working:native?.working ?? data.state==="sending",
+      unread:native?.unread ?? false,stopVisible:native?.stopVisible ?? false,
+      updatedAt:native?.updatedAt ?? data.createdAt,
       updatedAtSemantics:"local-draft",
       pendingRemoteCreation:data.state!=="admitted",
       ...(data.remoteId?{sourceRoute:
@@ -117,7 +119,7 @@ export class BrowserChatDraftStore {
   /** Keep the stable Herder ID after first send, hide duplicate native listing. */
   merge(chats: readonly BrowserChat[]): BrowserChat[] {
     const admitted=new Set([...this.items.values()].map(x=>x.remoteId).filter(Boolean));
-    return [...this.list(),...chats.filter(x=>!admitted.has(x.id))];
+    return [...[...this.items.values()].map(d=>this.asChat(d,chats.find(c=>c.id===d.remoteId))),...chats.filter(x=>!admitted.has(x.id))];
   }
 
   async startSend(id: string): Promise<BrowserChatDraft> {

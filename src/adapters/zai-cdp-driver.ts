@@ -1,6 +1,6 @@
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import { BrowserChatDraftStore } from "./browser-chat-drafts.js";
-import { submitFirstChatMessage } from "./browser-chat-new-page.js";
+import { submitFirstChatMessage, verifyNewChatAccountScope } from "./browser-chat-new-page.js";
 import type { SessionMessageView } from "../types/index.js";
 import { ZAI_LIST_API_SCRIPT, ZAI_LIST_API_PASSIVE_SCRIPT, zaiMessagesApiScript, ZAI_LIST_PROJECTS_SCRIPT, zaiMoveToProjectScript } from "./browser-chat-api-scripts.js";
 import { BrowserChatInventoryCache } from "./browser-chat-inventory-cache.js";
@@ -186,7 +186,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   getKnownChat(id: string): BrowserChat | null {
     if (id.startsWith("draft:")) {
       const draft = this.drafts.get(id);
-      return draft ? this.drafts.asChat(draft) : null;
+      return draft ? this.drafts.asChat(draft, draft.remoteId ? this.cache.get(draft.remoteId) : undefined) : null;
     }
     return this.routeRecord(id);
   }
@@ -368,7 +368,8 @@ export class ZaiCdpDriver implements BrowserChatDriver {
    */
   async createChat(input: { title?: string }): Promise<BrowserChat> {
     return this.exclusive(async () => {
-      if (!this.accountScope) await this.listUnlocked();
+      const ownerPage=await this.page();
+      this.accountScope=await verifyNewChatAccountScope(this.tools,"zai",ownerPage.id);
       await this.drafts.useScope(this.accountScope);
       const title = input.title && !/^zai-\d{12,}/i.test(input.title)
         ? input.title : undefined;
@@ -449,7 +450,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   async getChat(id: string): Promise<BrowserChat | null> {
     return this.exclusive(async () => {
       const draft = this.drafts.get(id);
-      if (draft) return this.drafts.asChat(draft);
+      if (draft) return this.drafts.asChat(draft, draft.remoteId ? this.cache.get(draft.remoteId) : undefined);
       // Don't return the old cached working=false value: a queued delivery
       // polls this method until the site's square Stop disappears.
       const page = await this.page();
@@ -552,7 +553,8 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       let { chatId, text } = input;
       if (!text.trim() || text.length > MAX_MESSAGE_CHARS) throw new Error("Invalid ZAI message size");
       if (chatId.startsWith("draft:")) {
-        await this.listUnlocked();
+        const ownerPage=await this.page();
+        this.accountScope=await verifyNewChatAccountScope(this.tools,"zai",ownerPage.id);
         await this.drafts.useScope(this.accountScope);
         const draft = await this.drafts.startSend(chatId);
         if (draft.remoteId) {
@@ -726,7 +728,8 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   /** A model is selected only for the verified, idle target conversation. */
   async changeModel(input: { chatId: string; model: string }): Promise<{ ok: boolean; error?: string }> {
     return this.exclusive(async () => {
-      const { chatId, model } = input;
+      const model=input.model;
+      const chatId=this.drafts.get(input.chatId)?.remoteId ?? input.chatId;
       if (!/^[\w.\-]{3,110}$/.test(model) || !model.startsWith("GLM-")) {
         return { ok: false, error: "Invalid Z.ai model name" };
       }
@@ -795,6 +798,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   /** Clicking Stop never navigates to or changes a different chat. */
   async stopTurn(chatId: string): Promise<{ stopped: boolean; error?: string }> {
     return this.exclusive(async () => {
+      chatId=this.drafts.get(chatId)?.remoteId ?? chatId;
       const page = await this.page();
       const known = this.cache.get(chatId) ?? (await this.listUnlocked()).find(chat => chat.id === chatId);
       if (!known) return { stopped: false, error: "Z.ai chat not in authenticated inventory" };

@@ -217,4 +217,28 @@ The UI shows ChatGPT and Z.ai as separate create-session choices with no
 filesystem folder or model defaults for local browser drafts. It explains
 that the empty chat appears on the site after its first real message.
 
-No test messages were sent to personal ChatGPT or Z.ai accounts.
+Authorized acceptance used two newly created, clearly labelled test chats only. Existing conversations were not sent messages or stopped.
+
+### Live acceptance, 2026-11-03
+
+The creation path now verifies ChatGPT account identity using the explicit
+session-auth endpoint only. It does not depend on or re-enable background
+conversation polling; the account digest alone crosses CDP.
+
+ChatGPT: one new local draft, one user test prompt, a native conversation
+route, and one assistant reply containing the test marker were verified.
+The first API history read returned HTTP 429; it did not trigger another
+message submission. A later read of the exact new tab confirmed the one
+user message and one assistant reply.
+
+Z.ai: local draft and new-page first Send were exercised. The site rejected
+generation with its native concurrent-conversation-limit error, and the
+history endpoint returned HTTP 403. This is not successful generation.
+The first-message admission helper now inspects that native error surface
+before accepting a new route; it fails closed and never resends on an
+unknown or rejected outcome. No existing user's generation was stopped to
+free a slot, and no account limit was bypassed.
+
+After binding, the local draft's stable ID resolves to its native ID for
+Stop/model controls; merged session metadata preserves the native working
+state rather than flattening every admitted chat to idle.
