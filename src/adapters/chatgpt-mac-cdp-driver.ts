@@ -441,7 +441,6 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
         console.warn("[chatgpt] list API " + classification + "; falling back to sidebar DOM");
       }
     } catch { /* The site may change its private API; retain the DOM fallback. */ }
-    if (!data?.scope || !/^[a-f0-9]{64}$/.test(data.scope)) this.accountScope = undefined;
     return this.listFromSidebarDom(s);
   }
 
