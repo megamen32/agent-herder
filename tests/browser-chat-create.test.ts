@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BrowserChatDraftStore } from "../src/adapters/browser-chat-drafts.js";
 import { BrowserChatAdapter } from "../src/adapters/browser-chat.js";
+import { createNamedSession } from "../src/named-session.js";
 import { openOwnedBlankChatPage, submitFirstChatMessage } from "../src/adapters/browser-chat-new-page.js";
 import { ChatGptMacCdpDriver } from "../src/adapters/chatgpt-mac-cdp-driver.js";
 import { ZaiCdpDriver } from "../src/adapters/zai-cdp-driver.js";
@@ -297,6 +298,41 @@ describe("atomic first-send safety in the site's own browser DOM",()=>{
       state.sendButtons=1;
       expect(evaluate()).toMatchObject({submitted:true});
       expect(state.clicks).toBe(1);
+    });
+  }
+});
+
+describe("native Agent Herder create-session API contract",()=>{
+  for(const site of ["chatgpt","zai"] as const){
+    it(site+" resolves an immediately selectable new draft without browser messages",async()=>{
+      const disk=await root();
+      vi.stubEnv("AGENT_HERDER_NAMED_SESSION_STORE",join(disk,"named-sessions.json"));
+      let creates=0,sends=0;
+      const saved=new Map<string,{id:string;title:string;working:boolean;unread:boolean;updatedAt:string;pendingRemoteCreation:boolean}>();
+      const driver={
+        listChats:async()=>[...saved.values()],
+        getChat:async(id:string)=>saved.get(id)||null,
+        sendMessage:async()=>{sends++;return{}},
+        createChat:async({title}:{title?:string})=>{
+          creates++;
+          const c={id:"draft:"+GPT_NATIVE,title:title||"Новый чат",working:false,unread:false,
+            updatedAt:new Date().toISOString(),pendingRemoteCreation:true};
+          saved.set(c.id,c);return c;
+        },
+      };
+      const adapter=new BrowserChatAdapter(driver,{
+        id:site,name:site,cwd:"/home/roomhacker/.browser-chat/"+site,harness:site,
+      },"/home/roomhacker/.browser-chat/"+site,true);
+      const name=site+"-20261103-000000-"+String(Math.random()).slice(2,10);
+      const result=await createNamedSession(new Map([[site,adapter]]),{
+        harness:site,cwd:"/",name,
+      });
+      expect(result).toMatchObject({ok:true,created:true,harness:site});
+      const id=result.sessionId!;
+      expect(id).toBe(site+"::"+encodeURIComponent("draft:"+GPT_NATIVE));
+      expect((await adapter.getSession(id))?.meta?.pendingRemoteCreation).toBe(true);
+      expect(creates).toBe(1);
+      expect(sends).toBe(0);
     });
   }
 });
