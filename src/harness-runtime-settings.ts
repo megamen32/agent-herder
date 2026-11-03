@@ -5,8 +5,11 @@
  * restart: may a harness keep making its background requests to its site,
  * and may the plugin hooks of a harness keep running. The browser harnesses
  * (ChatGPT, Z.ai) are watched by polling — the inventory list, the history
- * prewarm, the modal-prompt poller — and a site that answers 429 makes that
- * polling a burden the owner may want to lift for a while. The native
+ * prewarm — and a site that answers 429 makes that polling a burden the
+ * owner may want to lift for a while. The pause stops the requests the
+ * herder initiates; the passive paths (the ChatGPT intercept hook of the
+ * page, the local CDP snapshots of the modal-prompt poller) keep running.
+ * The native
  * harnesses (Claude Code, Codex, MiniMax Code, …) reach the herder through
  * their plugin hooks instead, so pausing the requests of a site and
  * silencing the hooks of a harness are two independent switches, and the
@@ -38,7 +41,8 @@ export const DEFAULT_PREWARM_LIMIT = 100;
 export interface HarnessRuntimeHarnessEntry {
   /** False pauses every background request this harness makes to its site. */
   pollingEnabled?: boolean;
-  /** The ChatGPT modal-prompt poller (periodic CDP snapshots). */
+  /** The ChatGPT modal-prompt poller (periodic CDP snapshots; its own
+   * switch — the pause of the site requests does not stop it). */
   promptPollingEnabled?: boolean;
   /** The history prewarm budget of this harness in chats; 0 disables prewarm. */
   prewarmLimit?: number;
@@ -165,10 +169,12 @@ export function harnessPollingEnabled(document: HarnessRuntimeSettingsDocument, 
   return document.harnesses[harness]?.pollingEnabled !== false;
 }
 
-/** May the ChatGPT modal-prompt poller run? It is one more request the site
- * sees, so the pause of the harness pauses it too. */
+/** May the ChatGPT modal-prompt poller run? Its snapshots read the local
+ * page through CDP and send nothing to the site, so the poller stands on its
+ * own switch: the pause of the site requests does not silence the watcher
+ * of the permission prompts and the "Continue in Work?" dialog. */
 export function harnessPromptPollingEnabled(document: HarnessRuntimeSettingsDocument, harness: string): boolean {
-  return harnessPollingEnabled(document, harness) && document.harnesses[harness]?.promptPollingEnabled !== false;
+  return document.harnesses[harness]?.promptPollingEnabled !== false;
 }
 
 /** The history prewarm budget of one harness, in chats. The override of the

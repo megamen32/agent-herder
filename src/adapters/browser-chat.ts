@@ -16,7 +16,7 @@ export interface BrowserChat {
   /** Only a currently selected generating chat has a real Stop control. */
   stopVisible?: boolean;
   /** Origin of the working signal when it is not the observed page's own DOM. */
-  workingSource?: "native-last-run";
+  workingSource?: "native-last-run" | "native-async-status";
 }
 
 /** A browser transport owns its authenticated page and implements these operations. */
@@ -36,6 +36,15 @@ export interface BrowserChatDriver {
     input: { chatId: string; text: string; waitForCompletion?: boolean },
     signal?: AbortSignal,
   ): Promise<{ assistantText?: string }>;
+  /** Full paginated scan of every conversation (ChatGPT only). Paginates
+   * offset=0,100,200… with a 15s gap; respects 429. Used by the Web UI
+   * "Пересканировать чаты" button / Ctrl+Shift+R. */
+  fullScan?(): Promise<{ count: number; pages: number }>;
+  /** True when listChats() keeps answering without one site request while
+   * the polling of the harness is paused (the intercept stash of the page
+   * plus the durable inventory). A paused harness without this flag serves
+   * only what it already holds in memory. */
+  readonly passiveInventory?: boolean;
   /** Stop only the actively generating turn of this exact conversation.
    * Never navigates to another chat to find a Stop button.
    */
@@ -192,27 +201,31 @@ export class BrowserChatAdapter implements HarnessAdapter {
   async init(): Promise<void> {
     // The startup scan is a request to the site like any other: a paused
     // harness starts with an empty inventory and serves nothing until the
-    // owner resumes it.
-    if (!liveHarnessPollingEnabled(this.pollingHarness)) return;
+    // owner resumes it — unless its driver answers passively (the ChatGPT
+    // intercept hook and its durable inventory need no request at all).
+    if (!liveHarnessPollingEnabled(this.pollingHarness) && this.driver.passiveInventory !== true) return;
     this.updateInventory(await this.driver.listChats());
   }
 
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
     void options;
     const polling = liveHarnessPollingEnabled(this.pollingHarness);
+    // A passive driver (the ChatGPT intercept hook) keeps the inventory
+    // fresh without one request of the herder's own, so its stale-while-
+    // revalidate continues through the pause; every other paused harness
+    // serves what it already holds and makes no list call at all.
+    const revalidating = polling || this.driver.passiveInventory === true;
     if (this.inventory.size) {
       // Cached titles and session identity are also stale-while-revalidate.
       // Never block selected-chat details on an unrelated 100-chat API list.
-      // A paused harness serves its cached inventory and makes no list call:
-      // the pause of the owner stops the constant requests, not the reads.
-      if (polling && Date.now() - this.inventoryAt > 60_000 && !this.inventoryRefresh) {
+      if (revalidating && Date.now() - this.inventoryAt > 60_000 && !this.inventoryRefresh) {
         this.inventoryRefresh = this.driver.listChats().then(chats => {
           this.updateInventory(chats);
         }).catch(() => undefined).finally(() => { this.inventoryRefresh = undefined; });
       }
       return [...this.inventory.values()].map(chat => this.toSession(chat));
     }
-    if (!polling) return [];
+    if (!revalidating) return [];
     const chats = await this.driver.listChats();
     this.updateInventory(chats);
     return chats.map(chat => this.toSession(chat));
@@ -229,6 +242,14 @@ export class BrowserChatAdapter implements HarnessAdapter {
     return chats
       .filter((chat) => chat.title.trim() === normalized)
       .map((chat) => this.toSession(chat));
+  }
+
+  /** Delegate to the driver's fullScan when the browser site supports it
+   * (ChatGPT). Returns {count:0,pages:0} when unsupported so callers can
+   * treat the absence uniformly. */
+  async fullScan(): Promise<{ count: number; pages: number }> {
+    if (typeof this.driver.fullScan !== "function") return { count: 0, pages: 0 };
+    return this.driver.fullScan();
   }
 
   /** Launch one ChatGPT session: a new disposable chat becomes the session. */

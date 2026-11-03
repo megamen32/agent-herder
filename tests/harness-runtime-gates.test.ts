@@ -82,11 +82,14 @@ describe("the browser turn observer obeys the runtime switch", () => {
     expect(listSessions).toHaveBeenCalledTimes(1);
   });
 
-  it("makes no request at all while the harness is paused", async () => {
+  it("still reads the passive inventory while the harness is paused", async () => {
+    // The pause stops the requests the herder initiates, not the
+    // observation: the adapter decides what a paused harness may answer
+    // without a request of its own.
     const { adapter, listSessions } = fakeAdapter();
     await pauseHarness("zai");
     await observerFor(adapter).observeOnce();
-    expect(listSessions).not.toHaveBeenCalled();
+    expect(listSessions).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -158,6 +161,32 @@ describe("the browser chat adapter obeys the runtime switch", () => {
     expect(built.listChats).not.toHaveBeenCalled();
     expect(await adapter.listSessions()).toEqual([]);
     expect(built.listChats).not.toHaveBeenCalled();
+  });
+
+  it("keeps revalidating a passive driver through the pause", async () => {
+    // The ChatGPT driver answers from the intercept stash and its durable
+    // inventory without one site request, so the paused harness keeps its
+    // cache revalidation: the autopilot still sees finished turns.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const chats = [{
+      id: "c1", title: "Chat 1", unread: false, working: false, updatedAt: new Date().toISOString(),
+    }];
+    const listChats = vi.fn(async () => chats);
+    const driver = {
+      listChats,
+      getMessages: async () => null,
+      getAccountScope: () => "b".repeat(64),
+      passiveInventory: true,
+    } as unknown as BrowserChatDriver;
+    const adapter = adapterOf(driver);
+    await pauseHarness("chatgpt");
+    await adapter.init();
+    expect(listChats).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(Date.now() + 120_000);
+    const sessions = await adapter.listSessions();
+    expect(sessions).toHaveLength(1);
+    expect(listChats).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 });
 

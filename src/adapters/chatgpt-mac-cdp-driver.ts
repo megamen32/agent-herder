@@ -1,9 +1,10 @@
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import type { HarnessEvent, SessionMessageView } from "../types/index.js";
-import { CHATGPT_LIST_API_SCRIPT, chatgptMessagesApiScript } from "./browser-chat-api-scripts.js";
+import { CHATGPT_LIST_API_SCRIPT, CHATGPT_LIST_API_PASSIVE_SCRIPT, CHATGPT_FULL_SCAN_SCRIPT, chatgptMessagesApiScript } from "./browser-chat-api-scripts.js";
+import { BrowserChatInventoryCache } from "./browser-chat-inventory-cache.js";
 import { ChatGptRequestTrace } from "./chatgpt-request-trace.js";
 import { MacMiniChromeTransport, parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
-import { liveHarnessPromptPollingEnabled } from "../harness-runtime-settings.js";
+import { liveHarnessPollingEnabled, liveHarnessPromptPollingEnabled } from "../harness-runtime-settings.js";
 
 const ORIGIN = "https://chatgpt.com";
 const MAX_MESSAGE = 16_000;
@@ -168,6 +169,14 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     accountArchiveViaCdp: true,
   } as const;
   private readonly cache = new Map<string, BrowserChat>();
+  /** The list of this driver answers without one site request while the
+   * polling of the harness is paused: the intercept stash of the page, the
+   * durable inventory of the account and the visible sidebar DOM. */
+  readonly passiveInventory = true;
+  /** Durable full inventory of the verified account; the intercept hook of
+   * the page keeps it fresh without one list request of the herder's own. */
+  private readonly inventoryCache = new BrowserChatInventoryCache("chatgpt");
+  private inventoryLoaded = false;
   private readonly requestTrace = new ChatGptRequestTrace();
   private operation: Promise<void> = Promise.resolve();
   private lastSubmittedAt = 0;
@@ -361,12 +370,19 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS;
   }
 
-  private toChat(id: string, title: string, s: Snapshot, at?: number): BrowserChat {
+  private toChat(id: string, title: string, s: Snapshot, at?: number, asyncStatus?: number): BrowserChat {
     const selected = s.path.endsWith("/c/" + id);
+    // ChatGPT's conversation list exposes async_status per chat: non-zero
+    // marks a conversation with an active background operation (a generation
+    // that continued after the driver navigated away, or another async task).
+    // That is the only honest busy signal for a conversation not open in the
+    // observed tab; the DOM Stop control exists only on the selected page.
+    const nativeRunning = !selected && typeof asyncStatus === "number" && asyncStatus !== 0;
     return {
       id, title, updatedAt: typeof at === "number" && at > 0
         ? new Date(at < 1e12 ? at * 1000 : at).toISOString() : new Date().toISOString(),
-      working: selected && this.busy(s),
+      working: selected ? this.busy(s) : nativeRunning,
+      ...(nativeRunning ? { workingSource: "native-async-status" as const } : {}),
       stopVisible: selected && s.phase === "generating",
       unread: false, updatedAtSemantics: typeof at === "number" && Number.isFinite(at) && at > 0 ? "remote-update-time" : "observed-sidebar-order",
       sourceRoute: ORIGIN + "/c/" + id,
@@ -376,22 +392,35 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   private async listUnlocked(): Promise<BrowserChat[]> {
     const page = await this.page();
     const s = await this.snapshot(page.id);
+    // The runtime switch of the owner: while the site requests of this
+    // harness are paused, the list answers from passive sources only — the
+    // responses the site itself made (the intercept hook) plus the durable
+    // inventory — and never from a fetch the herder initiates.
+    if (!liveHarnessPollingEnabled("chatgpt")) return this.listPassive(s, page.id);
     // The real authenticated list API returns 100 native IDs immediately.
     // It does not navigate or change the user's selected chat.
     try {
       const data = parseChromeEvaluation<{
         scope?: string; error?: string; trace?: unknown;
-        chats?: Array<{ id: string; title: string; updatedAt?: number }>;
+        chats?: Array<{ id: string; title: string; updatedAt?: number; asyncStatus?: number }>;
       }>(await this.tools.call("evaluate_script", { pageId: page.id, function: CHATGPT_LIST_API_SCRIPT }));
       this.requestTrace.ingestBrowserHttp(data.trace);
       if (data.scope && /^[a-f0-9]{64}$/.test(data.scope) && Array.isArray(data.chats)) {
         this.accountScope = data.scope;
+        this.inventoryCache.setAccountScope(data.scope);
+        if (!this.inventoryLoaded) { await this.inventoryCache.load(); this.inventoryLoaded = true; }
+        this.inventoryCache.merge(data.chats.map(entry => ({ id: entry.id, title: entry.title, updatedAt: entry.updatedAt, asyncStatus: entry.asyncStatus, seenAt: Date.now() })));
+        void this.inventoryCache.save();
+        // The one-time full scan is a burst of the site's own requests: it
+        // belongs to the running state alone, never to the paused one.
+        if (!this.inventoryCache.lastScannedAt) void this.fullScan().catch(() => undefined);
         const seen = new Set<string>();
         const chats: BrowserChat[] = [];
-        for (const entry of data.chats) {
+        const source = this.inventoryCache.size > data.chats.length ? this.inventoryCache.list() : data.chats;
+        for (const entry of source) {
           if (!NATIVE_CHAT_ID.test(entry.id) || seen.has(entry.id) || !entry.title) continue;
           seen.add(entry.id);
-          chats.push(this.toChat(entry.id, entry.title, s, entry.updatedAt));
+          chats.push(this.toChat(entry.id, entry.title, s, entry.updatedAt, entry.asyncStatus));
         }
         const selected = s.path.match(/\/c\/([a-f0-9-]{28,80})$/i)?.[1];
         if (selected && NATIVE_CHAT_ID.test(selected) && !seen.has(selected)) {
@@ -408,6 +437,49 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       }
     } catch { /* The site may change its private API; retain the DOM fallback. */ }
     this.accountScope = undefined;
+    return this.listFromSidebarDom(s);
+  }
+
+  /** The list of the paused harness. Every source here is read without one
+   * request of the herder's own: the intercept stash the page holds, the
+   * durable inventory of the account, and the visible sidebar DOM. */
+  private async listPassive(s: Snapshot, pageId: number): Promise<BrowserChat[]> {
+    try {
+      const data = parseChromeEvaluation<{
+        scope?: string; error?: string;
+        chats?: Array<{ id: string; title: string; updatedAt?: number; asyncStatus?: number }>;
+      }>(await this.tools.call("evaluate_script", { pageId, function: CHATGPT_LIST_API_PASSIVE_SCRIPT }));
+      const scope = (data.scope && /^[a-f0-9]{64}$/.test(data.scope) ? data.scope : undefined) ?? this.accountScope;
+      if (scope) {
+        this.inventoryCache.setAccountScope(scope);
+        if (!this.inventoryLoaded) { await this.inventoryCache.load(); this.inventoryLoaded = true; }
+        if (Array.isArray(data.chats) && data.chats.length) {
+          this.inventoryCache.merge(data.chats.map(entry => ({ id: entry.id, title: entry.title, updatedAt: entry.updatedAt, asyncStatus: entry.asyncStatus, seenAt: Date.now() })));
+          void this.inventoryCache.save();
+        }
+        if (this.inventoryCache.size) {
+          const seen = new Set<string>();
+          const chats: BrowserChat[] = [];
+          for (const entry of this.inventoryCache.list()) {
+            if (!NATIVE_CHAT_ID.test(entry.id) || seen.has(entry.id) || !entry.title) continue;
+            seen.add(entry.id);
+            chats.push(this.toChat(entry.id, entry.title, s, entry.updatedAt, entry.asyncStatus));
+          }
+          const selected = s.path.match(/\/c\/([a-f0-9-]{28,80})$/i)?.[1];
+          if (selected && NATIVE_CHAT_ID.test(selected) && !seen.has(selected)) {
+            chats.unshift(this.toChat(selected, this.cache.get(selected)?.title || "ChatGPT conversation", s));
+          }
+          for (const chat of chats) this.cache.set(chat.id, chat);
+          return chats;
+        }
+      }
+    } catch { /* passive listing must never throw */ }
+    return this.listFromSidebarDom(s);
+  }
+
+  /** The last resort of every list path: the chats the observed sidebar
+   * actually shows. A pure DOM read — no request of any kind. */
+  private listFromSidebarDom(s: Snapshot): BrowserChat[] {
     const seen = new Set<string>();
     const chats: BrowserChat[] = [];
     for (const { id, title } of s.chats) {
@@ -422,6 +494,29 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     }
     for (const chat of chats) this.cache.set(chat.id, chat);
     return chats;
+  }
+
+  /** Full paginated scan of every conversation: offset=0,100,200… with a 15s
+   * gap between pages, respecting the 429 cooldown of the page. An explicit
+   * action of the owner (the rescan button or the very first run), so it may
+   * run even while the periodic polling stays paused. */
+  async fullScan(): Promise<{ count: number; pages: number }> {
+    return this.exclusive(async () => {
+      const page = await this.page();
+      const result = parseChromeEvaluation<{ scope?: string; error?: string; trace?: unknown; pages?: number; chats?: Array<{ id: string; title: string; updatedAt?: number; asyncStatus?: number }> }>(await this.tools.call("evaluate_script", { pageId: page.id, function: CHATGPT_FULL_SCAN_SCRIPT }));
+      this.requestTrace.ingestBrowserHttp(result.trace);
+      if (result.scope && /^[a-f0-9]{64}$/.test(result.scope)) {
+        this.accountScope = result.scope;
+        this.inventoryCache.setAccountScope(result.scope);
+        if (!this.inventoryLoaded) { await this.inventoryCache.load(); this.inventoryLoaded = true; }
+      }
+      if (Array.isArray(result.chats) && result.chats.length) {
+        this.inventoryCache.mergeFull(result.chats.map(c => ({ id: c.id, title: c.title, updatedAt: c.updatedAt, asyncStatus: c.asyncStatus, seenAt: Date.now() })));
+        void this.inventoryCache.save();
+        console.log("[chatgpt] full scan: " + result.chats.length + " chats across " + (result.pages || 0) + " pages");
+      }
+      return { count: this.inventoryCache.size, pages: Number(result.pages) || 0 };
+    });
   }
 
   async listChats(): Promise<readonly BrowserChat[]> {
