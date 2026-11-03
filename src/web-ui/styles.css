@@ -1022,3 +1022,11 @@ details.activity-group .message-activity-rows { padding: 4px 10px; }
   .chat-header-chat:not(.chat-header-noactive) .header-actions { position: absolute; top: 8px; right: 16px; margin-left: 0; pointer-events: auto; }
   .chat-header-chat:not(.chat-header-noactive) .chat-menu { top: 48px; right: 16px; pointer-events: auto; }
 }
+
+/* ---------- Флайаут разделов: кнопка «Ещё» в левом рейле ---------- */
+/* Заменяет меню «···» из правого верхнего угла: тот же набор настроек,
+   но выскакивает из левого сайдбара, как в чате GPT. */
+.chat-menu.nav-flyout { position: fixed; top: 14px; left: 68px; right: auto; z-index: 100; min-width: 280px; max-height: calc(100dvh - 28px); }
+@media (max-width: 900px) {
+  .chat-menu.nav-flyout { left: 9px; right: 9px; min-width: 0; }
+}

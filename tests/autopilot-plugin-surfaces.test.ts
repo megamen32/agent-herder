@@ -38,7 +38,8 @@ describe("/autopilot plugin surfaces", () => {
     ]));
     expect(codexStop).toContain('decision: "block"');
     expect(codexStop).toContain('payload = await readContext(true)');
-    expect(webUi).toContain('["codex", "opencode", "claude", "hermes", "zcode"]');
+    expect(webUi).toContain('activeSession.harness in AUTOPILOT_HARNESS_LABELS');
+    expect(webUi).not.toContain('!["codex", "opencode", "claude", "hermes", "zcode"].includes(activeSession.harness)');
     expect(opencode).toContain('command !== "autopilot"');
     expect(opencode).toContain("config.command.autopilot");
     expect(opencode).toContain('event.type !== "session.idle"');

@@ -48,7 +48,7 @@ describe("mobile chat and session controls", () => {
 
   it("exposes the required mobile controls", () => {
     expect(main).toContain('aria-label="Поиск сессий"');
-    expect(main).toContain('aria-label="Меню чата"');
+    expect(main).toContain('aria-label="Меню разделов"');
     expect(main).toContain('aria-label="Прокрутить к последним"');
     expect(main).toContain("scrollToBottom");
     expect(main).toContain("chatMenuOpen");
@@ -153,25 +153,25 @@ describe("mobile chat and session controls", () => {
 
   it("shows every automation control supported by the active harness", () => {
     const headerStart = main.indexOf('<div className="header-actions">');
-    const headerEnd = main.indexOf("{chatMenuOpen &&", headerStart);
+    const headerEnd = main.indexOf("</header>", headerStart);
     const header = main.slice(headerStart, headerEnd);
     // Один список настроек на весь экран: и меню чата, и шестерёнка в шапке.
     const menuStart = main.indexOf('const chatMenuContent = (');
-    const menuEnd = main.indexOf("Квота</button>", menuStart);
+    const menuEnd = main.indexOf("Квота</a>", menuStart);
     const menu = main.slice(menuStart, menuEnd);
 
     expect(headerStart).toBeGreaterThan(-1);
     expect(menuStart).toBeGreaterThan(-1);
     expect(main).toContain('const AUTOCONTINUE_HARNESSES = new Set<string>(AUTOCONTINUE_HARNESS_IDS)');
     expect(header).toContain('aria-label="Панель сессии"');
-    expect(header).toContain('aria-label="Меню чата"');
+    expect(main).toContain('className="chat-menu nav-flyout"');
     for (const label of ['>Машины<', '>Задачи<', '>Статистика<', '>Автопилот<', '>Автопродолжение<']) expect(header).not.toContain(label);
     expect(main).toContain('onMachines={() => { setShowSearch(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setShowProjects(false); setMobileView("chat"); setFleetCreationMode(false);setShowFleet(true)');
     expect(main).toContain('Автопилот · общие настройки (в этом чате');
     expect(main).toContain('Автопродолжение · общие настройки (в этом чате');
     expect(menu).toContain('Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})');
     expect(menu).toContain('Автопилот · общие настройки (в этом чате ${activeAutopilotEnabled ? "включён" : "выключен"})');
-    expect(main).toContain('<div className="chat-menu" aria-label="Меню чата"><button type="button" className="chat-menu-close"');
+    expect(main).toContain('<div className="chat-menu nav-flyout" aria-label="Меню разделов"><button type="button" className="chat-menu-close"');
     expect(main).toContain('{chatMenuContent}</div>}');
     expect(main).toContain('settingsMenu={chatMenuContent}');
   });
@@ -206,7 +206,7 @@ describe("mobile chat and session controls", () => {
     // Правая панель показывается по выбору владельца, и выбор переживает перезагрузку.
     expect(main).toContain('React.useState(() => initialPanelLayout(window.location.search,window.self!==window.top))');
     expect(main).toContain('writePanelLayout(layout)');
-    expect(main).toContain('aria-label="Меню чата" aria-expanded={chatMenuOpen}');
+    expect(main).toContain('{chatMenuOpen && <div className="chat-menu nav-flyout"');
     expect(main).toContain('Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})');
     expect(main).toContain('Автопилот · общие настройки (в этом чате ${activeAutopilotEnabled ? "включён" : "выключен"})');
     expect(polish).toContain('.header-actions .desktop-chat-menu, .header-actions .session-inspector-button { display: grid; }');
@@ -218,7 +218,7 @@ describe("mobile chat and session controls", () => {
     const list = main.slice(main.indexOf("function SessionList("), main.indexOf("function App("));
     expect(list).toContain('className="quiet-button sessions-machines-button" onClick={onMachines}>Машины</button>');
     const render = main.slice(main.indexOf('<SessionList '));
-    expect(render).toContain('onMachines={() => { setShowSearch(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setShowProjects(false); setMobileView("chat"); setFleetCreationMode(false); setShowFleet(true); setAutomationSettings(undefined); }}');
+    expect(render).toContain('onMachines={() => { setShowSearch(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setShowProjects(false); setMobileView("chat"); setFleetCreationMode(false); setShowFleet(true); setShowLogs(false); setAutomationSettings(undefined); }}');
   });
 
   it("keeps the existing chat menu available throughout mobile and tablet widths", () => {

@@ -15,14 +15,20 @@ describe("separate mechanism pages with independent harness settings", () => {
       mode:'autocontinue',available:new Set(AUTOCONTINUE_HARNESS_IDS),loaded:new Set(Object.keys(result.settings)),
       failed:new Set(result.failed),enabled:new Set(['hermes']),onToggle:()=>{},
     }));
-    // Unsupported harnesses stay visible but disabled and clearly named.
-    expect(html).toContain('Пока не поддерживается');
-    expect(html).toContain('Пока недоступные агенты');
-    expect(html).toMatch(/role="switch" aria-label="Автопродолжение · Z\.ai"[^>]*disabled=""/);
+    // Z.ai is now a supported recovery target with its own live switch.
+    expect(html).toMatch(/role="switch" aria-label="Автопродолжение · Z\.ai" aria-checked="false"[^>]*>/);
     expect(html).toContain('Не удалось загрузить');
     expect(html).toMatch(/role="switch" aria-label="Автопродолжение · Hermes" aria-checked="true"[^>]*>/);
     expect(html).toMatch(/role="switch" aria-label="Автопродолжение · Qoder"[^>]*disabled=""/);
     for(const name of ['OpenCode','Claude Code','Fast Agent','ChatGPT'])expect(html).toMatch(new RegExp(`role="switch" aria-label="Автопродолжение · ${name}"[^>]*(?<!disabled="")>`));
+    // Unsupported harnesses stay visible but disabled and clearly named.
+    const withoutZai=renderToStaticMarkup(createElement(HarnessAutomationSettings,{
+      mode:'autocontinue',available:new Set(AUTOCONTINUE_HARNESS_IDS.filter(h=>h!=='zai')),loaded:new Set(Object.keys(result.settings)),
+      failed:new Set(result.failed),enabled:new Set(['hermes']),onToggle:()=>{},
+    }));
+    expect(withoutZai).toContain('Пока не поддерживается');
+    expect(withoutZai).toContain('Пока недоступные агенты');
+    expect(withoutZai).toMatch(/role="switch" aria-label="Автопродолжение · Z\.ai"[^>]*disabled=""/);
   });
   it("renders only Autopilot switches on the Autopilot page", () => {
     const html = renderToStaticMarkup(createElement(HarnessAutomationSettings, {

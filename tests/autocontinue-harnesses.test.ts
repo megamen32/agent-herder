@@ -3,25 +3,25 @@ import {loadAutocontinueHarnesses,saveAutocontinueHarness,AUTOCONTINUE_HARNESS_I
 
 // Fast unit expected <1s/max3s: actual settings requests, no native input or live policy writes.
 describe('independent recovery settings for every supported harness',()=>{
- it('loads all eight existing API settings without substituting another harness',async()=>{
+ it('loads all nine existing API settings without substituting another harness',async()=>{
   const calls:string[]=[];
   const result=await loadAutocontinueHarnesses(async(path)=>{
    calls.push(path);const harness=path.split('/').at(-1)!;
    return {harness,enabled:harness==='hermes',source:'harness'} as any;
   });
-  expect(calls).toHaveLength(8);
+  expect(calls).toHaveLength(9);
   expect(Object.keys(result.settings)).toEqual([...AUTOCONTINUE_HARNESS_IDS]);
   expect(result.settings.hermes?.enabled).toBe(true);
   expect(result.settings.opencode?.enabled).toBe(false);
   expect(result.failed).toEqual([]);
  });
- it('keeps seven real responses when one settings endpoint fails',async()=>{
+ it('keeps eight real responses when one settings endpoint fails',async()=>{
   const result=await loadAutocontinueHarnesses(async(path)=>{
    const harness=path.split('/').at(-1)!;
    if(harness==='qoder')throw new Error('unavailable');
    return {harness,enabled:true,source:'global'} as any;
   });
-  expect(Object.keys(result.settings)).toHaveLength(7);
+  expect(Object.keys(result.settings)).toHaveLength(8);
   expect(result.settings.qoder).toBeUndefined();
   expect(result.failed).toEqual(['qoder']);
  });

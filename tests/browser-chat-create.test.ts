@@ -99,6 +99,7 @@ class NewChatPageFixture implements ChromePageTools {
   created=false;
   clicked=false;
   closed=false;
+  inheritedDraft=false;
   failBeforeClick=false;
   ambiguousClick=false;
   nativeRoute=true;
@@ -126,7 +127,7 @@ class NewChatPageFixture implements ChromePageTools {
         return json({scope:ACCOUNT,chats:[]});
       }
       if(source.includes("ready:!!editor")){
-        return json({origin:this.origin,path:"/",ready:true,empty:true});
+        return json({origin:this.origin,path:"/",ready:true,empty:!this.inheritedDraft});
       }
       if(source.includes("send_not_ready")){
         if(this.ambiguousClick)throw Error("transport lost after click");
@@ -176,6 +177,22 @@ describe("browser first-message admission",()=>{
       const receipt=await submitFirstChatMessage(tools,site,"User-written prompt");
       expect(receipt).toMatchObject({clicked:true,uncertain:true});
       expect(tools.closed).toBe(false);
+    });
+  }
+});
+
+describe("inherited draft safety",()=>{
+  for(const site of ["chatgpt","zai"] as const){
+    it(site+" refuses inherited drafts without filling, closing or sending",async()=>{
+      const tools=new NewChatPageFixture(site);
+      tools.inheritedDraft=true;
+      const receipt=await submitFirstChatMessage(tools,site,"Synthetic prompt");
+      expect(receipt.clicked).toBe(false);
+      expect(receipt.uncertain).toBe(false);
+      expect(receipt.reason).toContain("contains a draft");
+      expect(tools.calls.map(x=>x.name)).not.toContain("fill");
+      expect(tools.calls.map(x=>x.name)).not.toContain("close_page");
+      expect(tools.clicked).toBe(false);
     });
   }
 });
