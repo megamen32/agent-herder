@@ -488,9 +488,25 @@ export class OpenCodeAdapter implements HarnessAdapter {
     return payload as NamedSessionRow[];
   }
 
+  /**
+   * Fallback for a session the detailed read cannot resolve. list_active_sessions
+   * builds its rows from the native active index plus an exact per-id read, so a
+   * session it reports must stay addressable by the same id. The detailed read
+   * swallows transport errors and then only scans a bounded window, which made
+   * a live session answer "Session not found" while the list still showed it.
+   */
+  private async getSessionFromActiveList(id: string): Promise<AgentSession | null> {
+    try {
+      const active = await this.listActiveSessions();
+      return active.find((session) => session.id === id) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   async getSession(id: string): Promise<AgentSession | null> {
-    const detail = await this.client.getSession(id);
-    if (!detail) return null;
+    const detail = await this.client.getSession(id).catch(() => null);
+    if (!detail) return this.getSessionFromActiveList(id);
     const result = this.toAgentSession(detail);
     const last = (await this.getSessionMessages(id, 1))?.at(-1);
     if (last) {
