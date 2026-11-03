@@ -67,7 +67,7 @@ const harnessSchema = z.enum(["opencode", "claude", "codex", "qoder", "hermes", 
 const sessionSchema = z.object({
   id: z.string(), harness: harnessSchema, status: z.enum(["running", "idle", "needs_input", "stopped", "error"]), title: z.string(), cwd: z.string(), hostId: z.string(), launchCwd: z.string().optional(), lastActivity: z.string(),
   model: z.string().optional(), needsPermission: z.boolean(), permissionDetails: z.object({ id: z.string(), type: z.string(), description: z.string(), toolName: z.string().optional(), details: z.string().optional() }).optional(),
-  messageCount: z.number().optional(), costUsd: z.number().optional(), durationSec: z.number().optional(), lastMessage: z.string().optional(), meta: z.record(z.string(), z.unknown()).optional(),
+  messageCount: z.number().optional(), costUsd: z.number().optional(), durationSec: z.number().optional(), lastMessage: z.string().optional(), shortId: z.string().optional(), meta: z.record(z.string(), z.unknown()).optional(),
 });
 
 /** Work target of a live session: the machine it works on and the directory it works in. */

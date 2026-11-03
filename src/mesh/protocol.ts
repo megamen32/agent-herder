@@ -1,7 +1,9 @@
+import { sessionShortId } from "../session-short-id.js";
+
 /** Stable native address. Project is observed state, never an address component. */
 export interface MeshAddress { hostId: string; harness: string; nativeSessionId: string }
 export interface ProjectObservation { launchCwd: string | null; currentCwd: string | null; source: string; hostId?: string; expiresAt?: string }
-export interface MeshSession { address: MeshAddress; project: ProjectObservation; status: string; title: string; lastActivity: string; createdAt?: string; model?: string }
+export interface MeshSession { address: MeshAddress; project: ProjectObservation; status: string; title: string; lastActivity: string; createdAt?: string; model?: string; shortId?: string }
 export interface NativeReceipt { state: "queued" | "admitted" | "not_attempted" | "unknown"; inputId: string; jobId?:string; turnId?: string; retryable: boolean; reason?:string; retryAfterMs?:number }
 /** Receipt of one native stop. An unproven stop is never replayed. */
 export interface NativeStopReceipt extends NativeReceipt { hostId: string; harness: string; nativeSessionId: string; /** The manual stop of the session was recorded on this host. */
@@ -26,7 +28,7 @@ export function projectObservation(session: {cwd:string;meta?:Record<string,unkn
 export function compactSession(hostId:string,session:SessionInput): MeshSession {
   const address={hostId,harness:session.harness,nativeSessionId:typeof session.meta?.nativeSessionId==="string" ? session.meta.nativeSessionId : session.id};
   addressKey(address);
-  return {address,project:projectObservation(session),status:session.status,title:session.title.slice(0,160),lastActivity:session.lastActivity,...(typeof session.meta?.createdAt === "string" && Number.isFinite(Date.parse(session.meta.createdAt)) ? {createdAt:session.meta.createdAt} : {}),...(session.model?{model:session.model}:{})};
+  return {address,project:projectObservation(session),status:session.status,title:session.title.slice(0,160),lastActivity:session.lastActivity,shortId:sessionShortId(session.harness,address.nativeSessionId),...(typeof session.meta?.createdAt === "string" && Number.isFinite(Date.parse(session.meta.createdAt)) ? {createdAt:session.meta.createdAt} : {}),...(session.model?{model:session.model}:{})};
 }
 /** Unwrap only documented GPTAdmin and MCP envelopes; never infer success from ACK. */
 export function unwrapResult(value:unknown): Record<string,unknown> {

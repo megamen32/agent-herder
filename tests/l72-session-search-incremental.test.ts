@@ -61,7 +61,7 @@ function readRevisions(path:string):Record<string,string>{
 async function fixture(){
  const root=await mkdtemp(join(tmpdir(),'l72-session-search-'));
  roots.push(root);
- for(const key of ['CODEX_HOME','MINIMAX_CODE_SESSION_STORE','OPENCODE_DB_PATH','ZCODE_DB_PATH','HERMES_STATE_DB','CLAUDE_PROJECTS_DIR'])vi.stubEnv(key,join(root,key));
+ for(const key of ['CODEX_HOME','MINIMAX_CODE_SESSION_STORE','OPENCODE_DB_PATH','ZCODE_DB_PATH','HERMES_STATE_DB','CLAUDE_PROJECTS_DIR','AGENT_HERDER_BROWSER_CHAT_INVENTORY_ROOT'])vi.stubEnv(key,join(root,key));
  const path=join(root,'OPENCODE_DB_PATH');
  const db=new DatabaseSync(path);
  db.exec(`CREATE TABLE session(id TEXT PRIMARY KEY,title TEXT NOT NULL,directory TEXT NOT NULL,time_created INTEGER NOT NULL,time_updated INTEGER NOT NULL);
@@ -144,7 +144,7 @@ describe('session search reads a native database incrementally',()=>{
  it('keeps the exact content hash when the source publishes no change key',async()=>{
   const root=await mkdtemp(join(tmpdir(),'l72-session-search-'));
   roots.push(root);
-  for(const key of ['CODEX_HOME','MINIMAX_CODE_SESSION_STORE','OPENCODE_DB_PATH','ZCODE_DB_PATH','CLAUDE_PROJECTS_DIR'])vi.stubEnv(key,join(root,key));
+  for(const key of ['CODEX_HOME','MINIMAX_CODE_SESSION_STORE','OPENCODE_DB_PATH','ZCODE_DB_PATH','CLAUDE_PROJECTS_DIR','AGENT_HERDER_BROWSER_CHAT_INVENTORY_ROOT'])vi.stubEnv(key,join(root,key));
   const path=join(root,'hermes.db');
   const db=new DatabaseSync(path);
   db.exec('CREATE TABLE sessions(id TEXT PRIMARY KEY,title TEXT NOT NULL,cwd TEXT NOT NULL,message_count INTEGER DEFAULT 0);CREATE TABLE messages(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,content TEXT,timestamp REAL NOT NULL);CREATE INDEX idx_messages_session ON messages(session_id,timestamp)');

@@ -29,6 +29,7 @@ import type { HarnessType } from "session-convert";
 import { LineageStore } from "../lineage-store.js";
 import { SessionNotFoundError, SessionSupervisor } from "../session-supervisor.js";
 import type { AgentSession, HarnessAdapter, SessionDetails } from "../types/index.js";
+import { sessionShortId } from "../session-short-id.js";
 import type { AgentHerderSessionConverter, ConvertSessionInput } from "../session-convert.js";
 import { askHuman, HumanRequestLockUnavailableError, HumanRequestRegistry, resumeHumanRequestOnce } from "../human-request/index.js";
 import { boundedHumanAnswer } from "../human-request/resume-admission.js";
@@ -3321,6 +3322,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 200, { goals: [], source: "unavailable", reason: "runtime_state_unavailable" });
     }
   }
+// The short id travels with every listed session so callers can reference
+  // one chat without copying its full native id.
+  const withSessionShortIds = (rows: AgentSession[]) => rows.map((row) => ({ ...row, shortId: sessionShortId(row.harness, row.id) }));
   if (request.method === "GET" && url.pathname === "/api/sessions") {
     const filters = {
       harness: url.searchParams.get("harness") || undefined,
@@ -3348,13 +3352,13 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       const truncated = visible.length < total;
       return sendJson(response, 200, url.searchParams.get("inventory") === "1"
         ? { sessions: projectSessionInventory(visible), warming: snapshot.warming, total, limit: asked, truncated }
-        : { ...snapshot, sessions: visible, total, limit: asked, truncated });
+        : { ...snapshot, sessions: withSessionShortIds(visible), total, limit: asked, truncated });
     }
     const sessions = await supervisor.listSessions(filters);
     const total = sessions.length;
     const visible = sessionListWindow(orderSessionListForPanel(sessions), asked);
     sendJson(response, 200, {
-      sessions: url.searchParams.get("inventory") === "1" ? projectSessionInventory(visible) : visible,
+      sessions: url.searchParams.get("inventory") === "1" ? projectSessionInventory(visible) : withSessionShortIds(visible),
       warming: false,
       total,
       limit: asked,

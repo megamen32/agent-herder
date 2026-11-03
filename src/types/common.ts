@@ -236,6 +236,8 @@ export interface AgentSession {
   durationSec?: number;
   /** Preview of the last message in the session (truncated) */
   lastMessage?: string;
+  /** Stable short reference (for example z3f9a) derived from harness and native id; presentation layers fill it. */
+  shortId?: string;
   /** Harness-specific extra data */
   meta?: Record<string, unknown>;
 }
