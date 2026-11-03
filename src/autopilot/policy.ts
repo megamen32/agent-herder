@@ -26,6 +26,8 @@ export type AutopilotPolicy = {
   maxContinuationsPerSession: number;
   timeout: { mode: "hold" | "auto_continue"; delayMs: number };
   card: { includeUserMessage: boolean; includeAssistantMessage: boolean; includeReason: boolean };
+  /** Self-judge (cheater) mode: the model signals completion via goal_review/goal_complete markers instead of the LLM judge. */
+  judgeMode?: "llm" | "self";
 };
 
 export type PersistedAutopilotPolicy = {
@@ -60,6 +62,7 @@ export function createDefaultAutopilotPolicy(): AutopilotPolicy {
     maxContinuationsPerSession: DEFAULT_MAX_CONTINUATIONS,
     timeout: { mode: "auto_continue", delayMs: DEFAULT_AUTOPILOT_DELAY_MS },
     card: { includeUserMessage: true, includeAssistantMessage: true, includeReason: true },
+    judgeMode: "llm",
   };
 }
 
@@ -92,7 +95,9 @@ export function createCodexSelectorFromStopSession(input: { sessionId: string; c
 /** Strictly validate policy JSON and normalize allowlist ordering for stable revisions. */
 export function normalizeAutopilotPolicy(value: unknown): AutopilotPolicy {
   const object = objectValue(value, "policy");
-  exactKeys(object, ["schemaVersion", "enabled", "harnesses", "scope", "maxContinuationsPerSession", "timeout", "card"], "policy");
+  const judgeMode = object.judgeMode === "self" ? "self" : "llm";
+  const { judgeMode: _omitJudgeMode, ...policyKeys } = object;
+  exactKeys(policyKeys, ["schemaVersion", "enabled", "harnesses", "scope", "maxContinuationsPerSession", "timeout", "card"], "policy");
   if (object.schemaVersion !== AUTOPILOT_POLICY_SCHEMA_VERSION) throw new Error("unknown policy schemaVersion");
   if (typeof object.enabled !== "boolean") throw new Error("policy.enabled must be boolean");
   const maxContinuations = object.maxContinuationsPerSession;
@@ -109,6 +114,7 @@ export function normalizeAutopilotPolicy(value: unknown): AutopilotPolicy {
     maxContinuationsPerSession: maxContinuations,
     timeout: normalizeTimeout(object.timeout),
     card: normalizeCard(object.card),
+    judgeMode,
   };
 }
 
