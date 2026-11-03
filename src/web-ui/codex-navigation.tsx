@@ -1,7 +1,7 @@
 import * as React from "react";
 
 type NavigationProps = {
-  active: "chat" | "jobs" | "statistics" | "machines" | "search" | "projects" | "settings";
+  active: "chat" | "jobs" | "statistics" | "machines" | "search" | "projects" | "settings" | "logs";
   chatsOpen: boolean;
   onSettings: () => void;
   onChat: () => void;
@@ -11,6 +11,7 @@ type NavigationProps = {
   onMachines: () => void;
   onSearch: () => void;
   onProjects: () => void;
+  onLogs: () => void;
 };
 
 const paths = {
@@ -22,6 +23,7 @@ const paths = {
   search: "M10.5 3a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15ZM16 16l5 5",
   projects: "M3 6h7v6H3ZM14 6h7v6h-7ZM3 16h7v4H3ZM14 16h7v4h-7Z",
   settings: "M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6",
+  logs: "M4 4h16v12H4ZM8 20h8M12 16v4M7 8h10M7 12h6",
 };
 
 export function CodexNavigation(props: NavigationProps) {
@@ -33,6 +35,7 @@ export function CodexNavigation(props: NavigationProps) {
     { id: "search", label: "Поиск", action: props.onSearch },
     { id: "jobs", label: "Операции", action: props.onJobs },
     { id: "statistics", label: "Статистика", action: props.onStatistics },
+    { id: "logs", label: "Логи", action: props.onLogs },
     { id: "settings", label: "Настройки", action: props.onSettings },
   ] as const;
   return <nav className="codex-navigation" aria-label="Основная навигация">

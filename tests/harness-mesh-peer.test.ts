@@ -11,7 +11,7 @@ describe("native leaf snapshot (focused integration; expected 2s, maximum 15s)",
   const client=new Client({name:"mesh-compact-regression",version:"1"});const [ct,st]=InMemoryTransport.createLinkedPair();
   try{await server.connect(st);await client.connect(ct);const result=await client.callTool({name:"mesh_snapshot",arguments:{limit:1}});
    const content=result.content as Array<{type:string;text:string}>;const snapshot=JSON.parse(content[0]!.text);
-   expect(snapshot.harnesses).toHaveLength(9);expect(snapshot.complete).toBe(false);expect(content[0]!.text).not.toContain("repairPlan");
+   expect(snapshot.harnesses).toHaveLength(10);expect(snapshot.complete).toBe(false);expect(content[0]!.text).not.toContain("repairPlan");
    expect(snapshot.harnesses.find((h:any)=>h.harness==="opencode").reason).toBe("native_transport_not_registered");
   }finally{await client.close();await server.close();}
  });

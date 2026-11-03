@@ -53,6 +53,7 @@ export type AutopilotRunnerInput = {
   transcriptPath?: string | null;
   stopHookActive?: boolean;
   model?: string;
+  messages?: Array<{ role: string; text?: string }> | null;
   nativeReportObservation?: NativeReportObservation;
   /** Internal native idle/history fingerprint gate supplied by BackgroundAutopilotStop. */
   nativeFence?: () => Promise<boolean | NativeFenceRead>;

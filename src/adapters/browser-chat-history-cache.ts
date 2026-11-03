@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
 import type { SessionMessageView } from "../types/index.js";
 import { liveHarnessPollingEnabled, liveHarnessPrewarmLimit } from "../harness-runtime-settings.js";
+import { getChatGptBayesBackoff, BAYES_TARGET_CHATGPT_HISTORY, BAYES_TARGET_ZAI_HISTORY } from "./chatgpt-bayes-backoff.js";
 
 /** Durable local cache for the latest 100 chats of one VERIFIED browser account.
  * Reads are stale-while-revalidate; slow authenticated fetches never hide a
@@ -147,7 +148,11 @@ export class BrowserChatHistoryCache {
         return fresh;
       } catch (error) {
         const is429 = /429/.test(String(error));
-        const cooldownMs = is429 ? 60_000 : 300_000;
+        // The Bayesian estimator is fed once by the driver's trace ingest;
+        // here we only consume its verdict. The flat 60s stays as a floor.
+        const cooldownMs = is429
+          ? Math.max(60_000, getChatGptBayesBackoff().remainingCooldownMs(this.provider === "chatgpt" ? BAYES_TARGET_CHATGPT_HISTORY : BAYES_TARGET_ZAI_HISTORY))
+          : 300_000;
         this.cooldownUntil = Date.now() + cooldownMs;
         this.lastFailureAt.set(id, Date.now());
         console.warn("[browser-chat] history fetch " + (is429 ? "429 rate-limited" : "failed") + "; cooldown " + (cooldownMs / 1000) + "s");

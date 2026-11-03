@@ -3,6 +3,7 @@ import { projectReleaseLeases } from "../project-release-lease.js";
 import {meshDiscoveryTimeoutMs} from "../mesh/discovery-timeout.js";
 import type { ResumeAfterService } from "../resume-after.js";
 import { HarnessAdapter, AgentSession } from "../types/index.js";
+import { isShortSessionId, sessionShortId } from "../session-short-id.js";
 import { z } from "zod";
 import {
   ListAgentsSchema,
@@ -156,6 +157,23 @@ export async function findSession(
       continue;
     }
   }
+  // A short id (z3f9a) names one session indirectly: resolve it through the
+  // same bounded listing the callers already see. Exact native ids keep the
+  // direct path above, so this fallback only runs when nothing matched.
+  if (isShortSessionId(sessionId)) {
+    const matches: Array<{ adapter: HarnessAdapter; session: AgentSession }> = [];
+    for (const adapter of searchAdapters) {
+      try {
+        for (const row of await adapter.listSessions({ limit: 200 })) {
+          if (sessionShortId(row.harness, row.id) === sessionId) matches.push({ adapter, session: row });
+        }
+      } catch {
+        continue;
+      }
+    }
+    if (matches.length === 1) return matches[0]!;
+    if (matches.length > 1) throw new Error(`short_id_ambiguous:${sessionId}`);
+  }
   return null;
 }
 
@@ -284,7 +302,8 @@ export async function listAgentsResult(
       ? {...session, cwd:activeCwd, hostId, meta:{...session.meta,launchCwd:session.meta?.launchCwd??session.cwd,activeCwd,workspaceHostId:hostId,workspaceExpiresAt:declared?.expiresAt,projectSource:declared?.source??"coordination_activity"}}
       : {...session, hostId};
     // The stored project, goal and stage travel with the session metadata.
-    return withSessionLabelMeta(projected);
+    // The short id travels with the row so MCP callers can reference the chat.
+    return { ...withSessionLabelMeta(projected), shortId: sessionShortId(session.harness, session.id) };
   });
 
   // Filter by status

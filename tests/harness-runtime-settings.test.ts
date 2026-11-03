@@ -43,11 +43,14 @@ describe("the document of the runtime switches", () => {
     expect(harnessPrewarmLimit(document, "chatgpt")).toBe(DEFAULT_PREWARM_LIMIT);
   });
 
-  it("pauses every harness when the master switch is off", () => {
+  it("lets a per-harness override outvote the master switch (ChatGPT 429 must not block Z.ai)", () => {
     const document = { ...emptyHarnessRuntimeSettings(), pollingEnabled: false, harnesses: { zai: { pollingEnabled: true } } };
+    // Global off + no override: the harness stays paused.
     expect(harnessPollingEnabled(document, "chatgpt")).toBe(false);
-    // An explicit per-harness true must not outvote the master switch.
-    expect(harnessPollingEnabled(document, "zai")).toBe(false);
+    // Global off + explicit per-harness true: the harness polls anyway. The
+    // master switch is the default, not a hard gate, so ChatGPT's 429 (which
+    // only the owner mapped to a global pause) no longer reaches Z.ai.
+    expect(harnessPollingEnabled(document, "zai")).toBe(true);
     // The modal-prompt poller reads the local page through CDP: the master
     // pause of the site requests does not stop the dialog watcher.
     expect(harnessPromptPollingEnabled(document, "chatgpt")).toBe(true);

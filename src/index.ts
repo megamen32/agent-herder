@@ -26,6 +26,7 @@ import { QaControlBackend } from "./qa-control.js";
 
 import { HarnessAdapter, type SendMessageResult, type AgentSession } from "./types/index.js";
 import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter, MinimaxCodeAdapter, configuredBrowserProviderIds, loadBrowserChatProviderAdapter } from "./adapters/index.js";
+import { applyExternalAdapterOverrides, applyExternalAdapterOverridesToLiveAdapters } from "./adapters/external-registry.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
@@ -332,6 +333,9 @@ function configureAdapterRegistry(): void {
     sessionStore: process.env.MINIMAX_CODE_SESSION_STORE,
     cwd: process.env.MINIMAX_CODE_CWD,
   }));
+  // Env-configured external adapter processes (AHAP) may take over any harness;
+  // a binary that cannot start leaves the builtin factory in place.
+  applyExternalAdapterOverrides(adapterFactories);
   for (const definition of [
     ["opencode", "OpenCode", "OpenCode HTTP control adapter", ENABLE_OPENCODE],
     ["claude", "Claude", "Claude SDK or CLI adapter", ENABLE_CLAUDE],
@@ -557,6 +561,13 @@ async function initAdapters() {
   }
 
   await Promise.allSettled(inits);
+
+  // Env-configured external adapter processes (AHAP) take over the read
+  // surface of live harnesses configured through AGENT_HERDER_EXTERNAL_ADAPTERS;
+  // control and delivery stay on the builtin adapters, and a binary that
+  // cannot start changes nothing. Applied after the init barrier so the
+  // split wraps the final adapter set (lazy transports included).
+  await applyExternalAdapterOverridesToLiveAdapters(adapters);
 
   const names = [...adapters.keys()].join(", ");
   console.error(`[agent-herder] Ready with harnesses: ${names || "none"}`);
@@ -1275,6 +1286,10 @@ async function main() {
   // Browser chats (Z.ai, ChatGPT) publish no native turn events: this bridge
   // turns observed running→idle transitions into the same durable Stop
   // submissions and nudges a turn that stopped making remote progress.
+  const browserStaleRefreshRaw = process.env.AGENT_HERDER_BROWSER_STALE_REFRESH_MS?.trim();
+  const browserStaleRefreshMs = browserStaleRefreshRaw !== undefined && Number.isFinite(Number(browserStaleRefreshRaw))
+    ? Math.max(0, Number(browserStaleRefreshRaw))
+    : 300_000;
   const browserAutopilotHarnesses = (process.env.AGENT_HERDER_BROWSER_AUTOPILOT_HARNESSES ?? "zai,chatgpt")
     .split(",").map((value) => value.trim()).filter(Boolean)
     .filter((harness) => adapters.has(harness));
@@ -1288,6 +1303,8 @@ async function main() {
         held: (harness, id) => humanStopStore.isHeld(harness, id),
         stallMs: Number(process.env.AGENT_HERDER_BROWSER_AUTOCONTINUE_STALL_MS || 1_200_000),
         autoContinue: process.env.AGENT_HERDER_BROWSER_AUTOCONTINUE !== "0",
+        staleRefreshMs: browserStaleRefreshMs,
+        turnsFile: join(autopilotStateDir, "browser-turn-observer.json"),
         onError: (message) => console.error(`[agent-herder] ${message}`),
       })
     : undefined;

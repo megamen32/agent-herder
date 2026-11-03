@@ -89,6 +89,10 @@ export class ExternalProcessAdapter implements HarnessAdapter {
   private readonly requestTimeoutMs: number;
   private readonly shutdownGraceMs: number;
   private stderrBuffer = "";
+  /** True once the subprocess exited; no RPC can be served afterwards. */
+  private exited = false;
+  /** Method names the subprocess declared in initialize(); empty before init(). */
+  private readonly declared = new Set<string>();
 
   constructor(private readonly config: ExternalAdapterConfig) {
     this.type = config.harness;
@@ -103,6 +107,7 @@ export class ExternalProcessAdapter implements HarnessAdapter {
   }
 
   private ensureChild(): ChildProcess {
+    if (this.exited) throw new Error("external_adapter_exited: the subprocess terminated; a supervisor restart re-enables it");
     if (this.child && !this.child.killed) return this.child;
     const env: Record<string, string> = {
       AHAP_VERSION,
@@ -142,7 +147,21 @@ export class ExternalProcessAdapter implements HarnessAdapter {
         if (line.trim()) console.error("[agent-herder] external_adapter stderr " + this.config.harness + ": " + line.slice(0, 300));
       }
     });
+    // A spawn failure (missing binary, no execute permission) surfaces as an
+    // 'error' event, not a thrown exception: without a listener Node would
+    // raise it as an uncaught exception and take the supervisor down.
+    child.on("error", (error) => {
+      for (const [id, pending] of this.pending) {
+        clearTimeout(pending.timer);
+        pending.reject(new Error("external_adapter_spawn_failed: " + String((error as Error)?.message || error).slice(0, 200)));
+        this.pending.delete(id);
+      }
+    });
     child.on("exit", (code, signal) => {
+      // The subprocess is gone for good: mark the adapter dead so later
+      // RPCs fail fast instead of writing into a respawned, uninitialized child.
+      this.exited = true;
+      this.child = undefined;
       // Reject every pending request: the subprocess is gone.
       for (const [id, pending] of this.pending) {
         clearTimeout(pending.timer);
@@ -224,6 +243,7 @@ export class ExternalProcessAdapter implements HarnessAdapter {
       autopilotStateDir: process.env.AGENT_HERDER_AUTOPILOT_STATE_DIR,
     });
     this.initResult = result;
+    for (const method of result.capabilities?.methods ?? []) this.declared.add(method);
     if (result.capabilities?.controlCapabilities) {
       this.controlCapabilities = {
         ...this.controlCapabilities,
@@ -241,7 +261,10 @@ export class ExternalProcessAdapter implements HarnessAdapter {
     this.initialized = true;
   }
 
-  isReady(): boolean { return this.initialized && !!this.child && !this.child.killed; }
+  isReady(): boolean { return this.initialized && !this.exited && !!this.child && !this.child.killed; }
+
+  /** The method names the subprocess declared in its initialize reply. */
+  get declaredMethods(): ReadonlySet<string> { return this.declared; }
 
   subscribeEvents(handler: (event: HarnessEvent) => void): () => void {
     this.eventListeners.add(handler);
@@ -298,12 +321,17 @@ export class ExternalProcessAdapter implements HarnessAdapter {
   /** Stop the subprocess cleanly. Safe to call multiple times. */
   async stop(): Promise<void> {
     if (!this.child) return;
-    try { await this.rpc<void>("shutdown", {}, ); } catch { /* adapter may already be gone */ }
-    await delay(this.shutdownGraceMs);
-    if (this.child && !this.child.killed) {
+    try { await this.rpc<void>("shutdown", {}); } catch { /* adapter may already be gone */ }
+    // The grace window only has to cover a subprocess that is still alive:
+    // one that already exited after answering shutdown must not make every
+    // caller wait the full grace period.
+    const alive = () => !!this.child && !this.child.killed && this.child.exitCode === null && this.child.signalCode === null;
+    const deadline = Date.now() + this.shutdownGraceMs;
+    while (alive() && Date.now() < deadline) await delay(50);
+    if (alive()) {
       this.child.kill("SIGTERM");
       await delay(500);
-      if (this.child && !this.child.killed) this.child.kill("SIGKILL");
+      if (alive()) this.child.kill("SIGKILL");
     }
     this.child = undefined;
   }

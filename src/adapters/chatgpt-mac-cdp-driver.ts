@@ -5,6 +5,7 @@ import type { HarnessEvent, SessionMessageView } from "../types/index.js";
 import { CHATGPT_LIST_API_SCRIPT, CHATGPT_LIST_API_PASSIVE_SCRIPT, CHATGPT_FULL_SCAN_SCRIPT, chatgptMessagesApiScript } from "./browser-chat-api-scripts.js";
 import { BrowserChatInventoryCache } from "./browser-chat-inventory-cache.js";
 import { ChatGptRequestTrace } from "./chatgpt-request-trace.js";
+import { getChatGptBayesBackoff, BAYES_TARGET_CHATGPT_LIST, BAYES_TARGET_CHATGPT_HISTORY } from "./chatgpt-bayes-backoff.js";
 import { MacMiniChromeTransport, parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
 import { liveHarnessPollingEnabled, liveHarnessPromptPollingEnabled } from "../harness-runtime-settings.js";
 
@@ -245,6 +246,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     if (this.promptPollInFlight) return;
     if (Date.now() < this.promptPollErrorUntil) return;
     if (Date.now() - this.lastSeen429At < ChatGptMacCdpDriver.PROMPT_BACKOFF_AFTER_429_MS) return;
+    if (Date.now() < getChatGptBayesBackoff().cooldownUntilMs(BAYES_TARGET_CHATGPT_LIST)) return;
     this.promptPollInFlight = true;
     try {
       const page = await this.page().catch(() => null);
@@ -393,6 +395,30 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     };
   }
 
+  /** Feed every observed upstream outcome into the Bayesian backoff. This
+   * is the single recording point per HTTP outcome (the trace ingest), so
+   * the history cache and the prompt poller only consume verdicts and never
+   * double-count. */
+  private feedBackoff(trace: unknown): void {
+    if (!Array.isArray(trace)) return;
+    const backoff = getChatGptBayesBackoff();
+    for (const entry of trace as Array<Record<string, unknown>>) {
+      if (!entry || typeof entry !== "object") continue;
+      const status = entry.http_status;
+      if (typeof status !== "number") continue;
+      const target = entry.operation === "conversation_list" ? BAYES_TARGET_CHATGPT_LIST
+        : entry.operation === "conversation_read" ? BAYES_TARGET_CHATGPT_HISTORY : null;
+      if (!target) continue;
+      if (status === 429) {
+        const retry = typeof entry.retry_after_s === "number" && Number.isFinite(entry.retry_after_s)
+          ? entry.retry_after_s : undefined;
+        backoff.record429(target, undefined, retry);
+      } else if (status >= 200 && status < 400) {
+        backoff.recordSuccess(target);
+      }
+    }
+  }
+
   private async listUnlocked(): Promise<BrowserChat[]> {
     const page = await this.page();
     const s = await this.snapshot(page.id);
@@ -401,6 +427,11 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     // responses the site itself made (the intercept hook) plus the durable
     // inventory — and never from a fetch the herder initiates.
     if (!liveHarnessPollingEnabled("chatgpt")) return this.listPassive(s, page.id);
+    // Bayesian 429 verdict: while the adaptive cooldown is active the list
+    // answers from passive sources instead of spending another request.
+    if (Date.now() < getChatGptBayesBackoff().cooldownUntilMs(BAYES_TARGET_CHATGPT_LIST)) {
+      return this.listPassive(s, page.id);
+    }
     // The real authenticated list API returns 100 native IDs immediately.
     // It does not navigate or change the user's selected chat.
     try {
@@ -409,6 +440,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
         chats?: Array<{ id: string; title: string; updatedAt?: number; asyncStatus?: number }>;
       }>(await this.tools.call("evaluate_script", { pageId: page.id, function: CHATGPT_LIST_API_SCRIPT }));
       this.requestTrace.ingestBrowserHttp(data.trace);
+      this.feedBackoff(data.trace);
       if (data?.scope && /^[a-f0-9]{64}$/.test(data.scope)) this.accountScope = data.scope;
       if (data.scope && /^[a-f0-9]{64}$/.test(data.scope) && Array.isArray(data.chats)) {
         this.accountScope = data.scope;
@@ -509,6 +541,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       const page = await this.page();
       const result = parseChromeEvaluation<{ scope?: string; error?: string; trace?: unknown; pages?: number; chats?: Array<{ id: string; title: string; updatedAt?: number; asyncStatus?: number }> }>(await this.tools.call("evaluate_script", { pageId: page.id, function: CHATGPT_FULL_SCAN_SCRIPT }));
       this.requestTrace.ingestBrowserHttp(result.trace);
+      this.feedBackoff(result.trace);
       if (result.scope && /^[a-f0-9]{64}$/.test(result.scope)) {
         this.accountScope = result.scope;
         this.inventoryCache.setAccountScope(result.scope);
@@ -590,6 +623,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     }>(await this.tools.call("evaluate_script",
       { pageId: page.id, function: chatgptMessagesApiScript(chatId) }));
     this.requestTrace.ingestBrowserHttp(result.trace);
+    this.feedBackoff(result.trace);
     if (result.error || !Array.isArray(result.messages)) {
       throw new Error("ChatGPT history unavailable: " + (result.error || "unexpected response"));
     }
