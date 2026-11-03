@@ -35,7 +35,7 @@ const closePrompt = (uidValue: string): string =>
 
 const markerRegex = /goal_(review|complete|closed):([a-f0-9]{8})/i;
 
-export async function selfJudgeEvaluate(input: AutopilotRunnerInput & { messages?: SnapshotMessage[] }): Promise<Record<string, unknown>> {
+export async function selfJudgeEvaluate(input: AutopilotRunnerInput selfJudgeEvaluate(input: AutopilotRunnerInput & { messages?: SnapshotMessage[] }) { messages?: SnapshotMessage[] | null }): Promise<Record<string, unknown>> {
   const key = `${input.harness}:${input.sessionId}`;
   let state = stateMap.get(key);
   if (!state) state = { stage: "work", uid: nextUid() };
