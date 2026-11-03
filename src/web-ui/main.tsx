@@ -50,6 +50,7 @@ import { groupSessionMessages, joinAssistantTurnMessages } from "./message-group
 import { projectDeliveredChat, resolveDeliveredImages } from "./delivered-chat.js";
 import {sidebarEntries, sessionPinKey, projectLocalSessionHost} from './session-pins.js';
 import {SessionSidebarRow, useSessionPins} from './session-sidebar.js';
+import {RescanButton} from './rescan-button.js';
 import { DetailsReadGate } from "./details-read-gate.js";
 import { MessageAdmissionDispatcher, appendOutboxEntry, beginOutboxAttempt, canDeleteOutboxEntry, canSteerOutboxEntry, cancelOutcomeOfJob, classifyMessageDelivery, deliveryConnectionFailure, deliveryModeLabel, isOutboxUnfinished, isTerminalJobState, newInputId, outboxStatusLabel, planContinuation, readDefaultDeliveryMode, readDeliveryModePinned, readOutboxJobId, readStoredOutbox, reconcileMessageStatus, removeOutboxEntry, updateOutboxEntry, withOutboxJobId, writeDefaultDeliveryMode, writeDeliveryModePinned, writeStoredOutbox, type CancelOutcome, type DeliveryMode, type OutboxEntry } from "./composer-delivery.js";
 import { formatJsonPayload, readJsonRenderingOptOut, splitSystemBlocks, writeJsonRenderingOptOut } from "./json-rendering.js";
@@ -173,11 +174,11 @@ const splitKey = (key: string) => {
 const readSessionFromHash = (): string | undefined => {
   return sessionTurnLinkFromHash(window.location.hash)?.sessionKey;
 };
-type HerderPage = "chat" | "statistics" | "search" | "machines" | "projects" | "settings" | "hooks" | "jobs" | "autopilot" | "autocontinue" | "launch-policy";
+type HerderPage = "chat" | "statistics" | "search" | "machines" | "projects" | "settings" | "harnesses" | "hooks" | "jobs" | "autopilot" | "autocontinue" | "launch-policy";
 const GROUP_THINKING_TOOLS_STORAGE_KEY = "agent-herder.group-thinking-tools";
 const readPage = (): HerderPage => {
   const page = new URLSearchParams(window.location.search).get("page");
-  return ["statistics","search","machines","projects","settings","hooks","jobs","autopilot","autocontinue","launch-policy"].includes(page || "") ? page as HerderPage : "chat";
+  return ["statistics","search","machines","projects","settings","harnesses","hooks","jobs","autopilot","autocontinue","launch-policy"].includes(page || "") ? page as HerderPage : "chat";
 };
 const readTurnFromHash = (): string | undefined => sessionTurnLinkFromHash(window.location.hash)?.turnId;
 const permissionModeAttemptsStorageKey = (hostId: string, harness: string, sessionId: string): string =>
@@ -758,6 +759,7 @@ function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, load
     {settingsOpen&&<details className="session-cache-settings"><summary>Быстрое открытие сессий</summary><label>Хранить просмотр в этом браузере<select aria-label="Срок кэша сессий" value={cacheSettings.hours} onChange={e=>onCacheSettings({...cacheSettings,hours:Number(e.target.value)})}><option value={0}>Выключено</option><option value={24}>Сутки</option><option value={72}>3 дня</option><option value={168}>Неделя</option></select></label><label>Размер кэша<select aria-label="Размер кэша сессий" value={cacheSettings.maxMiB} onChange={e=>onCacheSettings({...cacheSettings,maxMiB:Number(e.target.value)})}>{[16,32,64].map(size=><option key={size} value={size}>{size} МБ</option>)}</select></label><small>Только открытые сессии. История остальных остаётся на их машине. При открытии сохранённый просмотр обновляется.</small><button className="quiet-button" onClick={onCacheClear}>Очистить сохранённый просмотр</button></details>}
     {directoryStatus&&<details className="directory-status"><summary>Подключение машин</summary><small role="status">{directoryStatus}</small>{onLoadMore&&<button className="quiet-button" onClick={onLoadMore}>Показать ещё сессии</button>}</details>}
     {pinError && <div className="session-pin-error" role="alert">{pinError}</div>}
+    <RescanButton/>
     <div className="session-list" role="list" aria-label="Сессии">
       {entries.slice(0,windowSize).map(({ session, depth, hasChildren }) => {
         const key = keyOf(session);
@@ -770,7 +772,7 @@ function SessionList({ entries, pins, pinScope, onPin, pinError, activeKey, load
           {hasChildren ? <button className="session-fold" aria-label={`Дочерние сессии: ${title}`} onClick={() => onToggleChildren(key)}>{collapsedChildren.has(key) ? "›" : "⌄"}</button> : <span className="session-fold-placeholder" />}
           <div className="session-card">
             <SessionSidebarRow session={session} title={title} selected={key === activeKey} pinned={pins.includes(sessionPinKey(session) ?? '')}
-              canPin={!!pinScope && !!sessionPinKey(session)} statusClass={statusClassValue} statusOverride={decision || awaitingPermission ? label : undefined}
+              canPin={!!pinScope && !!sessionPinKey(session)} canMoveToProject={session.harness === "chatgpt" || session.harness === "zai"} onMoveToProject={() => { /* move-to-project: выбор проекта + ChatGPT API — готовится */ }} statusClass={statusClassValue} statusOverride={decision || awaitingPermission ? label : undefined}
               autopilotOn={isSessionOnAutopilot ? isSessionOnAutopilot(session.harness, session.id) : false}
               onSelect={() => onSelect(key)} onPin={() => {const pin = sessionPinKey(session); if (pin) onPin(pin);}} />
             {decision && <div className="choice-card" aria-label={`Варианты автопилота для ${title}`}>
@@ -905,11 +907,11 @@ function App() {
   const [showJobs, setShowJobs] = React.useState(() => readPage() === "jobs");
   const [showQuota, setShowQuota] = React.useState(false);
   const [showSearch, setShowSearch] = React.useState(() => readPage() === "search");
-  const [showProjects, setShowProjects] = React.useState(() => ["projects","settings","hooks"].includes(readPage()));
+  const [showProjects, setShowProjects] = React.useState(() => ["projects","settings","harnesses","hooks"].includes(readPage()));
   // The screen of the settings has two tabs: the settings of the herder
   // and the models of the projects. The second tab belongs to the
   // Projects contour; the herder only gives it a place.
-  const [settingsTab, setSettingsTab] = React.useState<"settings" | "projects" | "hooks">(() => readPage() === "projects" ? "projects" : readPage() === "hooks" ? "hooks" : "settings");
+  const [settingsTab, setSettingsTab] = React.useState<"settings" | "harnesses" | "projects" | "hooks">(() => readPage() === "projects" ? "projects" : readPage() === "harnesses" ? "harnesses" : readPage() === "hooks" ? "hooks" : "settings");
   const [advancedSearchQuery, setAdvancedSearchQuery] = React.useState<string | undefined>(() => new URLSearchParams(window.location.search).get("q") || undefined);
   const consumeAdvancedSearchInitialQuery = React.useCallback(() => setAdvancedSearchQuery(undefined), []);
   const [showFleet, setShowFleet] = React.useState(() => readPage() === "machines");
@@ -1951,15 +1953,17 @@ function App() {
     void loadCreateModels(createHarness);
     void loadCwdSuggestions(cwd.endsWith("/") ? cwd : `${cwd}/`);
   };
+  const browserNewChat = createHarness === "chatgpt" || createHarness === "zai";
   const createNewSession = async () => {
-    if (!createCwd.trim() || creatingSession) return;
+    if ((!browserNewChat && !createCwd.trim()) || creatingSession) return;
     setCreatingSession(true);
     setCreateSessionError(undefined);
     const generatedName = `${createHarness.replace(/[^a-z0-9-]/gi, "-")}-${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14)}-${crypto.randomUUID().slice(0, 8)}`;
     try {
       const created = await api<{ sessionId?: string }>("/api/sessions", {
         method: "POST",
-        body: JSON.stringify({ harness: createHarness, name: generatedName, cwd: createCwd.trim(), model: createModel.trim() || undefined, ...(createHarness === "codex" ? { serviceTier: createServiceTier } : {}) }),
+        body: JSON.stringify({ harness: createHarness, name: generatedName, cwd: browserNewChat ? "/" : createCwd.trim(),
+          model: browserNewChat ? undefined : (createModel.trim() || undefined), ...(createHarness === "codex" ? { serviceTier: createServiceTier } : {}) }),
       });
       if (!created.sessionId) throw new Error("Сервер не вернул созданную сессию");
       setShowCreateSession(false);
@@ -2024,8 +2028,8 @@ function App() {
       const next = readPage(); pageRef.current = next;
       setShowSearch(next === "search"); setShowFleet(next === "machines");
       setShowJobs(next === "jobs"); setShowStatistics(next === "statistics");
-      setShowProjects(["projects","settings","hooks"].includes(next));
-      if (["projects","settings","hooks"].includes(next)) setSettingsTab(next as "projects" | "settings" | "hooks");
+      setShowProjects(["projects","settings","harnesses","hooks"].includes(next));
+      if (["projects","settings","harnesses","hooks"].includes(next)) setSettingsTab(next as "projects" | "settings" | "harnesses" | "hooks");
       setAutomationSettings(["autocontinue","autopilot","launch-policy"].includes(next) ? next as "autocontinue" | "autopilot" | "launch-policy" : undefined);
       setShowQuota(false); setMobileView("chat");
       if (next === "search") setAdvancedSearchQuery(new URLSearchParams(window.location.search).get("q") || undefined);
@@ -2072,7 +2076,7 @@ function App() {
   // capabilities.modelSwitch решает, показывать ли чип вообще: неподдерживаемый харнесс прячем.
   React.useEffect(() => {
     let cancelled = false;
-    void api<{ adapters?: Array<{ id: string; active?: boolean; capabilities?: { modelSwitch?: boolean; imageInput?: boolean; steer?: boolean } | null }> }>("/api/adapters")
+    void api<{ adapters?: Array<{ id: string; active?: boolean; capabilities?: { modelSwitch?: boolean; imageInput?: boolean; steer?: boolean; projects?: boolean } | null }> }>("/api/adapters")
       .then((result) => { if (!cancelled) setHarnessAdapters(Array.isArray(result.adapters) ? result.adapters : []); })
       .catch(() => { if (!cancelled) setHarnessAdapters([]); });
     return () => { cancelled = true; };
@@ -2586,10 +2590,12 @@ function App() {
         {showCreateSession && <div className="composer-create-panel"><div className="composer-create-machine"><button type="button" className="quiet-button" onClick={() => setShowCreateSession(false)}>Отмена</button><span>Создание на машине: {directory.hosts.find(host => host.hostId === directory.localHostId)?.label || "Текущая машина"}</span><button type="button" className="quiet-button" onClick={() => {setFleetCreationMode(true);setShowFleet(true);}}>Выбрать другую машину</button></div>
           <div className="composer-create-row" data-codex={createHarness === "codex"}>
             <label>Агент<select value={createHarness} onChange={(event) => { const harness = event.target.value; setCreateHarness(harness); setCreateModel(""); setCreateModels([]); void loadCreateModels(harness); }}>{(createAdapters.length ? createAdapters : [{ id: "fast-agent", name: "Fast Agent", active: true, ready: true, status: "active" }]).map((adapter) => <option key={adapter.id} value={adapter.id} disabled={!adapter.active}>{adapter.name}{adapter.active ? "" : ` · ${adapter.status}`}</option>)}</select></label>
-            <label className="cwd-picker">Папка<input value={createCwd} onChange={(event) => { const value = event.target.value; setCreateCwd(value); void loadCwdSuggestions(value); }} onFocus={() => void loadCwdSuggestions(createCwd.endsWith("/") ? createCwd : `${createCwd}/`)} onBlur={() => window.setTimeout(() => setCwdSuggestionsOpen(false), 120)} placeholder="/home/roomhacker/project" autoComplete="off" />{cwdSuggestionsOpen && cwdSuggestions.length > 0 && <div className="cwd-suggestions">{cwdSuggestions.map((item) => <button type="button" key={item.path} onMouseDown={(event) => event.preventDefault()} onClick={() => { setCreateCwd(`${item.path}/`); void loadCwdSuggestions(`${item.path}/`); }}><span className="cwd-folder">▱</span><span>{item.name}</span><small>{item.path}</small></button>)}</div>}</label>
-            <label>Модель{createModels.length > 0 ? <select value={createModel} onChange={(event) => setCreateModel(event.target.value)}>{createModels.map((model) => <option key={model} value={model}>{model === "anthropic.MiniMax-M3.1-Flash" ? "MiniMax M3.1 Flash" : model}</option>)}</select> : createModelsRefreshing ? <select disabled><option>загрузка моделей…</option></select> : <input value={createModel} onChange={(event) => setCreateModel(event.target.value)} placeholder="модель (кэш пуст)" />}</label>
+            {browserNewChat
+              ? <p className="composer-create-browser-note" role="status">Пустой чат будет сохранён как локальный черновик. На сайте он появится после первого отправленного вами сообщения.</p>
+              : <label className="cwd-picker">Папка<input value={createCwd} onChange={(event) => { const value = event.target.value; setCreateCwd(value); void loadCwdSuggestions(value); }} onFocus={() => void loadCwdSuggestions(createCwd.endsWith("/") ? createCwd : `${createCwd}/`)} onBlur={() => window.setTimeout(() => setCwdSuggestionsOpen(false), 120)} placeholder="/home/roomhacker/project" autoComplete="off" />{cwdSuggestionsOpen && cwdSuggestions.length > 0 && <div className="cwd-suggestions">{cwdSuggestions.map((item) => <button type="button" key={item.path} onMouseDown={(event) => event.preventDefault()} onClick={() => { setCreateCwd(`${item.path}/`); void loadCwdSuggestions(`${item.path}/`); }}><span className="cwd-folder">▱</span><span>{item.name}</span><small>{item.path}</small></button>)}</div>}</label>}
+            {!browserNewChat && <label>Модель{createModels.length > 0 ? <select value={createModel} onChange={(event) => setCreateModel(event.target.value)}>{createModels.map((model) => <option key={model} value={model}>{model === "anthropic.MiniMax-M3.1-Flash" ? "MiniMax M3.1 Flash" : model}</option>)}</select> : createModelsRefreshing ? <select disabled><option>загрузка моделей…</option></select> : <input value={createModel} onChange={(event) => setCreateModel(event.target.value)} placeholder="модель (кэш пуст)" />}</label>}
             {createHarness === "codex" && <label>Режим Codex<select aria-label="Режим Codex" title="Fast расходует больше квоты." value={createServiceTier} onChange={(event) => setCreateServiceTier(event.target.value as "normal" | "fast")}><option value="normal">Normal</option><option value="fast">Fast</option></select></label>}
-            <button type="button" className="primary-button composer-create-submit" disabled={creatingSession || !createCwd.trim()} onClick={() => void createNewSession()}>{creatingSession ? "…" : "Создать"}</button>
+            <button type="button" className="primary-button composer-create-submit" disabled={creatingSession || (!browserNewChat && !createCwd.trim())} onClick={() => void createNewSession()}>{creatingSession ? "…" : "Создать"}</button>
           </div>
           {createSessionError && <div className="create-session-error">{createSessionError}</div>}
         </div>}

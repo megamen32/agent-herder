@@ -26,7 +26,7 @@ async function connect() {
 }
 
 describe("ordinary Agent Herder catalog", () => {
-  it("consolidates duplicated public tools without unregistering any native handler", async () => {
+  it("advertises every registered tool under its own name except the internal readers", async () => {
     const client = await connect();
     // Observe the same SDK catalog without projection; no registration or
     // configuration changes between requests, and no production opt-out.
@@ -36,13 +36,17 @@ describe("ordinary Agent Herder catalog", () => {
     const names = projected.map(tool => tool.name);
     expect(baseline.map(tool => tool.name)).toEqual(expect.arrayContaining(["session_search_local", "list_active_sessions_local"]));
     for (const tool of projected) expect(tool).toEqual(baseline.find(original => original.name === tool.name));
-    expect(projected.length).toBeLessThan(baseline.length - 20);
-    expect(projected.length).toBeLessThanOrEqual(50);
-    console.info("catalog consolidation: " + baseline.length + " registered -> " + projected.length + " visible");
-    expect(names).toEqual(expect.arrayContaining(["model", "stop", "rename", "session_info", "list_sessions", "job", "workspace", "resume_after", "deliver", "create_session"]));
-    for (const hidden of ["session_search_local", "list_active_sessions_local", "send_message", "stop_agent", "list_agents", "job_list", "change_model", "resume_after_status"]) {
-      expect(names).not.toContain(hidden);
-      expect(baseline.map(tool => tool.name)).toContain(hidden);
+    // The consolidation facade layer is gone: projection hides only the two
+    // documented internal readers, and nothing else.
+    expect(baseline.length - projected.length).toBe(2);
+    console.info("catalog projection: " + baseline.length + " registered -> " + projected.length + " visible");
+    expect(names).toEqual(expect.arrayContaining(["resume_after", "deliver", "create_session", "send_message", "stop_agent", "rename_session", "list_agents", "job_list", "change_model", "resume_after_status"]));
+    for (const internal of ["session_search_local", "list_active_sessions_local"]) {
+      expect(names).not.toContain(internal);
+      expect(baseline.map(tool => tool.name)).toContain(internal);
+    }
+    for (const facade of ["model", "stop", "rename", "session_info", "list_sessions", "job", "workspace", "search", "service_tier", "session_queue", "coordination_note"]) {
+      expect(names).not.toContain(facade);
     }
   });
 

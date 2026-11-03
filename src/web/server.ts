@@ -61,6 +61,7 @@ import { AutopilotPolicyRevisionConflictError, AutopilotPolicyStore } from "../a
 import { parseNoticeIncident, readIncidentBinding, NoticeIncidentBindingError, isHealthPlanId, HEALTH_PLAN_IDS, type HealthPlanId } from "../autopilot/notice-incident.js";
 import { noticeplaceAttemptOutcome } from '../automation/noticeplace-attempt-outcome.js';
 import { resolveAutopilotStateDir } from "../autopilot/state-dir.js";
+import { HarnessRuntimeSettingsError, HarnessRuntimeSettingsStore, harnessRuntimeView } from "../harness-runtime-settings.js";
 import { AutopilotSessionStore, parseNoticeAttempt, type AutopilotHarness } from "../autopilot/session-store.js";
 import { autopilotGoalApi, recordGoalHumanInput, stopGoalForSession } from "./autopilot-goal-api.js";
 import { isMcpConnectionOwnerRequest as isGoalControlOwnerRequest } from "./fleet-wiring.js";
@@ -2081,6 +2082,43 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     });
     return sendJson(response, recorded ? 200 : 400, { ok: recorded });
   }
+  // The runtime switches of the harnesses: what may poll its site and what
+  // may keep its hooks. A change acts on the next tick of every poller and
+  // on the next run of every hook script: no restart, no redeploy.
+  if (url.pathname === "/api/harness-runtime" && (request.method === "GET" || request.method === "PUT")) {
+    response.setHeader("cache-control", "no-store");
+    const store = harnessRuntimeSettingsStoreOf();
+    const adapterList = () => [...adapters.entries()].map(([id, adapter]) => ({ id, name: adapter.name }));
+    if (request.method === "GET") {
+      return sendJson(response, 200, harnessRuntimeView(await store.read(), adapterList()));
+    }
+    if (!isHooksOwnerRequest(request)) {
+      return sendJson(response, 403, { ok: false, error: "Настройки харнессов меняет только владелец панели." });
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = await readJson(request);
+    } catch (error) {
+      return sendJson(response, 400, { ok: false, error: `Некорректное тело запроса: ${(error as Error).message}` });
+    }
+    try {
+      const updated = await store.update({
+        ...(typeof body.pollingEnabled === "boolean" ? { pollingEnabled: body.pollingEnabled } : {}),
+        ...(body.harnesses && typeof body.harnesses === "object" && !Array.isArray(body.harnesses)
+          ? { harnesses: body.harnesses as Record<string, never> }
+          : {}),
+      }, {
+        by: typeof body.actor === "string" && body.actor.trim() ? body.actor.trim() : "owner",
+        reason: typeof body.reason === "string" ? body.reason.trim() : "",
+      });
+      return sendJson(response, 200, harnessRuntimeView(updated, adapterList()));
+    } catch (error) {
+      if (error instanceof HarnessRuntimeSettingsError) {
+        return sendJson(response, 400, { ok: false, code: error.code, error: error.message });
+      }
+      return sendJson(response, 500, { ok: false, error: (error as Error).message });
+    }
+  }
   if (url.pathname === "/api/autopilot/policy" && (request.method === "GET" || request.method === "PUT")) {
     if (!autopilotPolicyStore) return sendJson(response, 503, { error: "Autopilot policy store is disabled" });
     if (request.method === "GET") return sendJson(response, 200, await autopilotPolicyStore.readEffective());
@@ -3571,6 +3609,43 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const receipt = await userMessageDelivery?.reconcile(harness, sessionId, inputId, route.kind === "scoped" ? route.adapter : undefined);
     return sendJson(response, receipt ? 200 : 404, receipt || { error: "Доставка сообщения не найдена; автоматический повтор запрещён" });
   }
+  // List projects for a browser-chat harness (ZAI: /api/v1/projects).
+  const projectsMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/projects$/);
+  if (projectsMatch && request.method === "GET") {
+    const harness = decodeURIComponent(projectsMatch[1]);
+    const adapter = adapters.get(harness) as (HarnessAdapter & { listProjects?: () => Promise<Array<{ id: string; name: string }>> }) | undefined;
+    if (!adapter) return sendJson(response, 404, { error: "unknown harness" });
+    if (typeof adapter.listProjects !== "function") return sendJson(response, 501, { error: "этот агент не имеет проектов" });
+    try { return sendJson(response, 200, { projects: await adapter.listProjects() }); }
+    catch (error) { return sendJson(response, 502, { error: error instanceof Error ? error.message : String(error) }); }
+  }
+  // Move a chat into a project (ZAI: PATCH /api/v1/chats/<id> with project_id).
+  const moveMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/move-to-project$/);
+  if (moveMatch && request.method === "POST") {
+    const harness = decodeURIComponent(moveMatch[1]);
+    const sessionId = decodeURIComponent(moveMatch[2]);
+    const adapter = adapters.get(harness) as (HarnessAdapter & { moveToProject?: (i: { chatId: string; projectId: string }) => Promise<{ ok: boolean; error?: string }> }) | undefined;
+    if (!adapter) return sendJson(response, 404, { error: "unknown harness" });
+    if (typeof adapter.moveToProject !== "function") return sendJson(response, 501, { error: "этот агент не поддерживает перемещение в проект" });
+    const body = await readJson(request);
+    if (typeof body.projectId !== "string") return sendJson(response, 400, { error: "projectId is required" });
+    try { return sendJson(response, 200, await adapter.moveToProject({ chatId: sessionId, projectId: body.projectId })); }
+    catch (error) { return sendJson(response, 502, { error: error instanceof Error ? error.message : String(error) }); }
+  }
+  // Full paginated rescan of every ChatGPT conversation (Web UI button / Ctrl+Shift+R).
+  const rescanMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/rescan$/);
+  if (rescanMatch && request.method === "POST") {
+    const harness = decodeURIComponent(rescanMatch[1]);
+    const adapter = adapters.get(harness) as (HarnessAdapter & { fullScan?: () => Promise<{ count: number; pages: number }> }) | undefined;
+    if (!adapter) return sendJson(response, 404, { error: "unknown harness" });
+    if (typeof adapter.fullScan !== "function") return sendJson(response, 501, { error: "этот агент не поддерживает пересканирование чатов" });
+    try {
+      const result = await adapter.fullScan();
+      return sendJson(response, 200, { ok: true, harness, count: result.count, pages: result.pages });
+    } catch (error) {
+      return sendJson(response, 502, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
   // The reserved activity path is never a harness/session pair: it has its own reader.
   const sessionMatch = url.pathname === "/api/sessions/activity/goals" ? null : url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)$/);
   if (sessionMatch && request.method === "GET") {
@@ -3930,6 +4005,20 @@ function isAutopilotHarness(value: string): value is AutopilotHarness {
  * One service per process, so the cache of the state of the lever is shared
  * by every request instead of being rebuilt for each of them.
  */
+let harnessRuntimeSettingsStore: HarnessRuntimeSettingsStore | undefined;
+let harnessRuntimeSettingsStoreDirectory = "";
+
+function harnessRuntimeSettingsStoreOf(): HarnessRuntimeSettingsStore {
+  // The store follows the runtime state directory like the hooks service: a
+  // node that moves its state must not keep the switches of another one.
+  const directory = resolveAutopilotStateDir();
+  if (!harnessRuntimeSettingsStore || harnessRuntimeSettingsStoreDirectory !== directory) {
+    harnessRuntimeSettingsStore = HarnessRuntimeSettingsStore.forRuntime();
+    harnessRuntimeSettingsStoreDirectory = directory;
+  }
+  return harnessRuntimeSettingsStore;
+}
+
 let hooksService: HooksService | undefined;
 let hooksServiceDirectory = "";
 

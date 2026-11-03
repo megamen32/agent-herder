@@ -4,6 +4,7 @@ import { open } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 import { runAutopilotCommand, type AutopilotRunnerInput } from "./autopilot-runner.js";
+import { liveHarnessHooksEnabled } from "./harness-runtime-settings.js";
 
 export type ClaudeStopHookInput = {
   hook_event_name: "Stop";
@@ -22,6 +23,10 @@ export async function runClaudeAutopilotHook(
 ): Promise<{ decision: "block"; reason: string } | Record<string, never>> {
   if (input.hook_event_name !== "Stop") return {};
   if (!input.session_id?.trim() || !input.cwd?.trim()) throw new Error("Claude Stop hook requires session_id and cwd");
+
+  // The runtime switch of the harness: a silenced harness answers the plugin
+  // with an empty decision and runs nothing.
+  if (!liveHarnessHooksEnabled("claude")) return {};
 
   const context = await readTranscriptContext(input.transcript_path ?? null);
   if (isAutopilotControlTurn(context.lastUserMessage)) return {};

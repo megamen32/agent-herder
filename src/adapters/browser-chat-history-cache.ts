@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
 import type { SessionMessageView } from "../types/index.js";
+import { liveHarnessPollingEnabled, liveHarnessPrewarmLimit } from "../harness-runtime-settings.js";
 
 /** Durable local cache for the latest 100 chats of one VERIFIED browser account.
  * Reads are stale-while-revalidate; slow authenticated fetches never hide a
@@ -14,6 +15,13 @@ export class BrowserChatHistoryCache {
   private static readonly MAX_COMPRESSED_BYTES = 400_000;
   private static readonly MAX_JSON_BYTES = 500_000;
   private static readonly REQUEST_GAP_MS = 15_000;
+  /** A saved history older than this is re-fetched on read even when
+   * prewarm is disabled or revision metadata is absent: the browser-turn
+   * observer derives its turn fingerprint from the newest cached messages,
+   * and a frozen cache makes every later turn deduplicate as the identity
+   * that was already judged, silently stopping autopilot continuation. */
+  private static readonly STALE_RESYNC_MS = 90 * 60_000;
+  private lastPrewarmDisabledLogAt = 0;
   private revisions = new Map<string, string>();
   private dirty = new Set<string>();
   private invalidations = new Map<string, number>();
@@ -164,6 +172,11 @@ export class BrowserChatHistoryCache {
     this.running = true;
     try {
       while (this.queue.length && this.dir) {
+        if (!liveHarnessPollingEnabled(this.provider)) {
+          const dropped = this.queue.length;
+          if (dropped) console.warn("[browser-chat] prewarm queue dropped: polling paused for " + this.provider);
+          this.queue.length = 0; this.queued.clear(); break;
+        }
         if (Date.now() < this.cooldownUntil) {
           const dropped = this.queue.length;
           if (dropped) console.warn("[browser-chat] prewarm queue paused on cache cooldown; dropped " + dropped + " pending history fetches");
@@ -174,7 +187,9 @@ export class BrowserChatHistoryCache {
         const scope = this.scope;
         const old = await this.load(id);
         if (this.scope !== scope) continue;
-        if (!old || this.dirty.has(id) || (old.revision !== undefined && this.revisions.has(id) && old.revision !== this.revisions.get(id))) {
+        if (!old || this.dirty.has(id) ||
+            (old.revision !== undefined && this.revisions.has(id) && old.revision !== this.revisions.get(id)) ||
+            (!this.revisions.has(id) && Date.now() - old.at > BrowserChatHistoryCache.STALE_RESYNC_MS)) {
           await this.refresh(id);
         } else if (old.revision === undefined && this.revisions.has(id)) {
           // Migrate legacy cache metadata without downloading all histories.
@@ -191,13 +206,38 @@ export class BrowserChatHistoryCache {
   /** Mark a known successful foreground send as changed without a TTL sweep. */
   invalidate(id: string): void { this.dirty.add(id); this.invalidations.set(id, (this.invalidations.get(id) || 0) + 1); }
 
+  /** Invalidate and WAIT for a fresh read (bounded). The turn-observer
+   * calls this at the running->idle transition: the fingerprint it computes
+   * right afterwards must reflect the finished turn, so a stale-while-
+   * revalidate fast path is not enough. The wait survives a short global
+   * 429 cooldown but never blocks longer than maxWaitMs. */
+  async refreshNow(id: string, maxWaitMs = 90_000): Promise<SessionMessageView[] | null> {
+    if (!this.dir) return null;
+    this.invalidate(id);
+    const deadline = Date.now() + maxWaitMs;
+    while (Date.now() < this.cooldownUntil && Date.now() < deadline) {
+      const slice = Math.min(5_000, this.cooldownUntil - Date.now(), deadline - Date.now());
+      if (slice <= 0) break;
+      await new Promise(resolve => setTimeout(resolve, slice));
+    }
+    return this.refresh(id);
+  }
+
   prewarm(items: readonly (string | { id: string; revision?: string })[]): void {
     if (!this.dir || Date.now() < this.cooldownUntil) return;
-    const configured = Number(process.env.AGENT_HERDER_BROWSER_CHAT_PREWARM_LIMIT);
-    if (configured === 0) return; // Explicit emergency pause; never prune stored history.
-    const limit = Number.isFinite(configured) && configured >= 1
-      ? Math.min(BrowserChatHistoryCache.LIMIT, Math.floor(configured))
-      : BrowserChatHistoryCache.LIMIT;
+    // The runtime switch of the owner: a paused harness prewarms nothing.
+    if (!liveHarnessPollingEnabled(this.provider)) return;
+    const limit = Math.min(BrowserChatHistoryCache.LIMIT, liveHarnessPrewarmLimit(this.provider));
+    if (limit === 0) {
+      // Explicit emergency pause; never prune stored history. The pause used
+      // to be completely silent while it froze every turn fingerprint: make
+      // it visible at a bounded rate so an operator can see the tradeoff.
+      if (Date.now() - this.lastPrewarmDisabledLogAt > 3_600_000) {
+        this.lastPrewarmDisabledLogAt = Date.now();
+        console.warn("[browser-chat] history prewarm is disabled for " + this.provider + " (prewarm limit 0); stale turn fingerprints degrade autopilot continuation");
+      }
+      return;
+    }
     for (const item of items.slice(0, limit)) {
       const id = typeof item === "string" ? item : item.id;
       const revision = typeof item === "string" ? undefined : item.revision;
@@ -217,7 +257,14 @@ export class BrowserChatHistoryCache {
     if (!this.dir) return null;
     const saved = await this.load(id);
     if (saved) {
-      if (this.dirty.has(id) || (saved.revision !== undefined && this.revisions.has(id) && saved.revision !== this.revisions.get(id))) this.enqueue(id,true);
+      // Wall-clock self-heal fires ONLY when no revision signal exists for the
+      // chat (prewarm disabled or the chat is outside the warmed inventory):
+      // when a revision is known and unchanged, the request budget must hold.
+      const staleByClock = !this.revisions.has(id) &&
+        liveHarnessPollingEnabled(this.provider) &&
+        Date.now() - saved.at > BrowserChatHistoryCache.STALE_RESYNC_MS;
+      if (this.dirty.has(id) || staleByClock ||
+          (saved.revision !== undefined && this.revisions.has(id) && saved.revision !== this.revisions.get(id))) this.enqueue(id,true);
       return saved.messages.slice(-Math.max(1,limit));
     }
     // Don't wait behind the whole 100-chat warmup when a user opens a chat.

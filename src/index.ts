@@ -8,6 +8,7 @@ import { BrowserTurnAutopilotObserver } from "./autopilot/browser-turn-observer.
 import { NativeTurnAutopilotObserver } from "./autopilot/native-turn-observer.js";
 import { deliverAutopilotGoal } from "./autopilot/continuation-delivery.js";
 import { evaluateAutopilotStop, runAutopilotCommand } from "./autopilot-runner.js";
+import { selfJudgeEvaluate } from "./autopilot/self-judge.js";
 import { PendingQuestionGate } from "./autopilot/pending-question-gate.js";
 import { AutoCompactStore, AutoCompactService } from "./autocontinue/auto-compact.js";
 import { createHash,randomUUID } from "node:crypto";
@@ -90,7 +91,6 @@ import { registerChatGptWakeTools } from "./mcp/chatgpt-wake-tools.js";
 import { WakeBindingStore } from "./chatgpt-wake-binding.js";
 import { registerSessionTools } from "./mcp/session-tools.js";
 import {withCatalogProjection} from "./mcp/catalog-projection.js";
-import { withToolConsolidation } from "./mcp/tool-consolidation.js";
 import { UserMessageDelivery } from "./user-message-delivery.js";
 import { DeferredDeliverySweeper } from "./deferred-delivery-sweeper.js";
 import {SessionQueueControl} from "./session-queue-control.js";
@@ -917,9 +917,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     server.server.onclose = () => { unsubscribe(); };
   }
 
-  const hiddenByConsolidation = new Set<string>();
   withCatalogProjection(server, () => {
-    withToolConsolidation(server, () => {
     server.registerTool("qa_control", {
       description: "Control only synthetic QA fixtures bound to the existing OpenCode/ZCode QA session references. Project and actor are fixed by the isolated backend. Permission, direction, cancel and /stop never call a native adapter, production Stop, or Notice Place.",
       inputSchema: z.object({
@@ -958,8 +956,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     options.chatgptWakeBindings,
     options.chatgptWakeAdapters,
     );
-    }, hiddenByConsolidation);
-  }, hiddenByConsolidation);
+  });
   return server;
 }
 
@@ -1210,7 +1207,7 @@ async function main() {
   const stopCompletionNoticeSweeper = startCompletionNoticeSweeper();
   process.once("exit", stopCompletionNoticeSweeper);
   const stopPendingQuestions = new PendingQuestionGate({ humanRequests, choices: choiceRegistry });
-  backgroundAutopilotStop = new BackgroundAutopilotStop({ jobs: herderJobs, adapters, evaluate: evaluateAutopilotStop,
+  backgroundAutopilotStop = new BackgroundAutopilotStop({ jobs: herderJobs, adapters, evaluate: async (input) => { const e = await autopilotPolicyStore.readEffective(); return e.policy.judgeMode === "self" ? selfJudgeEvaluate(input) : evaluateAutopilotStop(input); },
     held: (harness, id) => humanStopStore.isHeld(harness, id),
     allowed: async input => {
       stopPendingQuestions.invalidate();

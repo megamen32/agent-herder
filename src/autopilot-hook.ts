@@ -28,6 +28,7 @@ import { resolveEffectivePolicy } from "./autopilot/policy.js";
 import { AutopilotSessionStore } from "./autopilot/session-store.js";
 import { SessionAutostartStore } from "./autopilot/unfinished-session-launcher.js";
 import { getHumanStopStore, type HumanStopStore } from "./human-stop-store.js";
+import { liveHarnessHooksEnabled } from "./harness-runtime-settings.js";
 
 const DEFAULT_LOCK_WAIT_MS = 2_000;
 const DEFAULT_LOCK_RETRY_INTERVAL_MS = 25;
@@ -140,6 +141,14 @@ async function legacyControlMain(): Promise<void> {
     .get(input.harness ?? "codex", input.session_id);
   if (sessionOverride?.noticeIncident && sessionOverride.cwd !== input.cwd) throw new Error("Notice incident native cwd no longer matches the saved binding");
   if (sessionOverride?.enabled === false) {
+    writeResult({});
+    return;
+  }
+
+  // The runtime switch of the harness: the owner can silence the hooks of
+  // one harness without touching the runtime of the others. A silenced
+  // harness answers the plugin with an empty decision and runs nothing.
+  if (!liveHarnessHooksEnabled(input.harness ?? "codex")) {
     writeResult({});
     return;
   }

@@ -65,10 +65,12 @@ describe("the ChatGPT tools of the MCP server", () => {
   it("serves one owner per name when the live page and the archive are both present", async () => {
     const names = await toolNames(driverWith(ALL_ON, true));
 
-    expect(names.filter((name) => name === "cdp_chat")).toHaveLength(1);
-    expect(names.filter((name) => name === "cdp_archive")).toHaveLength(1);
-    expect(names).not.toContain("cdp_list_chats");
-    expect(names).not.toContain("cdp_export_chat");
+    expect(names).toContain("cdp_list_chats");
+    expect(names).toContain("cdp_export_chat");
+    expect(names).toContain("cdp_send_message");
+    expect(names).not.toContain("cdp_chat");
+    expect(names).not.toContain("cdp_archive");
+    expect(names).not.toContain("cdp_account");
     expect(new Set(names).size).toBe(names.length);
   });
 
@@ -76,9 +78,11 @@ describe("the ChatGPT tools of the MCP server", () => {
     const { client, server } = await connect(driverWith({ ...ALL_ON, list_chats: false, export_chat: false }, true));
     try {
       const names = (await client.listTools()).tools.map((tool) => tool.name);
-      expect(names.filter((name) => name === "cdp_chat")).toHaveLength(1);
-      expect(names.filter((name) => name === "cdp_archive")).toHaveLength(1);
-      expect(names).not.toContain("cdp_export_visible_chats");
+      expect(names).toContain("cdp_list_chats");
+      // Without the facade layer the name is advertised whenever the handler
+      // is registered; the live page refusing to export is a runtime answer.
+      expect(names).not.toContain("cdp_chat");
+      expect(names).not.toContain("cdp_archive");
 
       const listed = await client.callTool({ name: "cdp_list_chats", arguments: { view: "recent" } });
       const body = JSON.parse(String(listed.content[0]?.type === "text" ? listed.content[0].text : "{}")) as { chats: Array<{ chatRef: string }> };
@@ -93,7 +97,8 @@ describe("the ChatGPT tools of the MCP server", () => {
   it("registers no ChatGPT tool when there is no driver at all", async () => {
     const names = await toolNames();
 
-    expect(names).toContain("list_sessions");
+    expect(names).toContain("list_agents");
+    expect(names).not.toContain("cdp_list_chats");
     expect(names).not.toContain("cdp_chat");
     expect(names).not.toContain("cdp_archive");
     expect(names).not.toContain("cdp_account");

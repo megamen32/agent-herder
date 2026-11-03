@@ -1,8 +1,12 @@
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
-import type { SessionMessageView } from "../types/index.js";
-import { CHATGPT_LIST_API_SCRIPT, chatgptMessagesApiScript } from "./browser-chat-api-scripts.js";
+import { BrowserChatDraftStore } from "./browser-chat-drafts.js";
+import { submitFirstChatMessage } from "./browser-chat-new-page.js";
+import type { HarnessEvent, SessionMessageView } from "../types/index.js";
+import { CHATGPT_LIST_API_SCRIPT, CHATGPT_LIST_API_PASSIVE_SCRIPT, CHATGPT_FULL_SCAN_SCRIPT, chatgptMessagesApiScript } from "./browser-chat-api-scripts.js";
+import { BrowserChatInventoryCache } from "./browser-chat-inventory-cache.js";
 import { ChatGptRequestTrace } from "./chatgpt-request-trace.js";
 import { MacMiniChromeTransport, parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
+import { liveHarnessPollingEnabled, liveHarnessPromptPollingEnabled } from "../harness-runtime-settings.js";
 
 const ORIGIN = "https://chatgpt.com";
 const MAX_MESSAGE = 16_000;
@@ -10,11 +14,19 @@ const POST_SEND_GUARD_MS = 1_800;
 const NATIVE_CHAT_ID = /^[a-f0-9]{8}-[a-f0-9-]{20,75}$/i;
 type Phase = "idle" | "generating" | "unknown";
 export type Page = { id: number; url: string; selected?: boolean; conversation?: boolean };
+/** One modal prompt that the page is currently showing to the user.
+ * Collected by the same evaluate_script call as the rest of the snapshot,
+ * with no extra HTTP request: it never triggers a 429. Buttons carry only
+ * their visible label / aria-label / disabled state. */
+export type ModalPromptKind = "permission" | "work_continue" | "unknown_modal";
+export interface ModalPromptButton { label: string; ariaLabel?: string; disabled?: boolean; }
+export interface ModalPrompt { role: string; title: string; body: string; buttons: ModalPromptButton[]; }
 type Snapshot = {
   origin: string; path: string; authenticated: boolean; composer: boolean;
   phase: Phase; draftPresent: boolean;
   chats: Array<{ id: string; title: string }>;
   pageResources?: unknown;
+  modalPrompts?: ModalPrompt[];
 };
 
 export function parseChatGptPages(text: string): Page[] {
@@ -97,6 +109,44 @@ export const CHATGPT_MAC_SNAPSHOT = `() => {
       }
     }
   }catch{pageResources=[];}
+  // Collect every visible modal dialog so the driver can answer permission
+  // and 'Continue in Work?' prompts without an extra round trip. Read-only:
+  // only role, names and disabled state leave the page.
+  const modalPrompts = [];
+  try {
+    const isVisible = node => !!node && node.getClientRects().length > 0;
+    const modalRoots = [...document.querySelectorAll('[role="dialog"],[role="alertdialog"],[aria-modal="true"]')].filter(isVisible);
+    for (const root of modalRoots) {
+      const name = (root.getAttribute('aria-label') || '').trim();
+      const heading = root.querySelector('h1,h2,h3,[role="heading"]');
+      const title = name || (heading ? (heading.textContent || '').trim() : '');
+      const textParts = [];
+      const walk = (node) => {
+        if (textParts.length >= 40) return;
+        if (node.nodeType === Node.TEXT_NODE) {
+          const t = (node.nodeValue || '').trim();
+          if (t) textParts.push(t);
+          return;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+        const tag = node.tagName.toLowerCase();
+        if (tag === 'script' || tag === 'style') return;
+        for (const child of node.childNodes) walk(child);
+      };
+      walk(root);
+      const dialogButtons = [...root.querySelectorAll('button')].filter(isVisible);
+      modalPrompts.push({
+        role: root.getAttribute('role') || (root.getAttribute('aria-modal') === 'true' ? 'modal' : 'dialog'),
+        title: String(title).slice(0, 200),
+        body: textParts.join(' | ').slice(0, 300),
+        buttons: dialogButtons.slice(0, 12).map(b => ({
+          label: (b.getAttribute('aria-label') || b.textContent || '').trim().slice(0, 120),
+          ariaLabel: (b.getAttribute('aria-label') || '').trim().slice(0, 120) || undefined,
+          disabled: !!b.disabled,
+        })).filter(b => b.label),
+      });
+    }
+  } catch { modalPrompts.length = 0; }
   return {
     origin:location.origin,path:location.pathname,
     authenticated:!!document.querySelector('button[aria-label="Открыть меню профиля"],button[aria-label="Open profile menu"]'),
@@ -105,6 +155,7 @@ export const CHATGPT_MAC_SNAPSHOT = `() => {
     draftPresent:!!(editor?.textContent||'').trim(),
     chats:chats.slice(0,300),
     pageResources:pageResources.slice(-40),
+    modalPrompts:modalPrompts.slice(0,8),
   };
 }`;
 
@@ -116,15 +167,143 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   readonly browserFeatures = {
     nativeConversationIds: true,
     queueAfterGeneration: true,
-    chatCreation: false,
+    chatCreation: true,
     accountArchiveViaCdp: true,
+    projects: true,
   } as const;
   private readonly cache = new Map<string, BrowserChat>();
+  private readonly drafts = new BrowserChatDraftStore("chatgpt");
+  /** The list of this driver answers without one site request while the
+   * polling of the harness is paused: the intercept stash of the page, the
+   * durable inventory of the account and the visible sidebar DOM. */
+  readonly passiveInventory = true;
+  /** Durable full inventory of the verified account; the intercept hook of
+   * the page keeps it fresh without one list request of the herder's own. */
+  private readonly inventoryCache = new BrowserChatInventoryCache("chatgpt");
+  private inventoryLoaded = false;
   private readonly requestTrace = new ChatGptRequestTrace();
   private operation: Promise<void> = Promise.resolve();
   private lastSubmittedAt = 0;
   private accountScope: string | undefined;
   getAccountScope(): string | undefined { return this.accountScope; }
+
+  // --------------------------------------------------------------
+  // Modal-prompt polling + permission/continue-in-work auto-answer.
+  // The poller reuses the same MacMiniChromeTransport and the same
+  // CHATGPT_MAC_SNAPSHOT script; evaluate_script and take_snapshot go
+  // through the local CDP WebSocket and cannot trigger HTTP 429 from
+  // chatgpt.com. The poller respects the existing 429 cooldown in three
+  // independent ways: (1) the page-side globalThis
+  // __herderChatGptReadCooldownUntil timestamp is probed each cycle; (2) a
+  // 429 seen in pageResources backs the poller off for 60s; (3) the poller
+  // never runs while an exclusive operation is in flight. Clicks happen in
+  // one atomic evaluate_script that re-locates the chosen button inside the
+  // dialog root and only then clicks; a stale snapshot can never click the
+  // wrong button.
+  private static readonly PROMPT_POLL_INTERVAL_MS = 5_000;
+  private static readonly PROMPT_BACKOFF_AFTER_429_MS = 60_000;
+  private static readonly PROMPT_BACKOFF_AFTER_ERROR_MS = 15_000;
+  private promptPollTimer: ReturnType<typeof setInterval> | undefined;
+  private promptPollInFlight = false;
+  private lastSeen429At = 0;
+  private promptPollErrorUntil = 0;
+  private readonly promptListeners = new Set<(event: HarnessEvent) => void>();
+
+  /** Subscribe to permission.requested / permission.resolved events emitted
+   * by this driver when it answers (or skips) a modal prompt. Returns an
+   * unsubscribe function. BrowserChatAdapter forwards these into the shared
+   * Herder event bus. */
+  subscribePromptEvents(handler: (event: HarnessEvent) => void): () => void {
+    this.promptListeners.add(handler);
+    return () => { this.promptListeners.delete(handler); };
+  }
+
+  /** Begin periodic modal-prompt polling. */
+  startPromptPolling(opts: { intervalMs?: number } = {}): void {
+    const intervalMs = opts.intervalMs && Number.isFinite(opts.intervalMs)
+      ? Math.max(2_000, Math.min(60_000, Math.round(opts.intervalMs)))
+      : ChatGptMacCdpDriver.PROMPT_POLL_INTERVAL_MS;
+    if (this.promptPollTimer) clearInterval(this.promptPollTimer);
+    this.promptPollTimer = setInterval(() => { void this.pollOnce().catch(() => undefined); }, intervalMs);
+    if (typeof this.promptPollTimer.unref === "function") this.promptPollTimer.unref();
+  }
+
+  stopPromptPolling(): void {
+    if (this.promptPollTimer) { clearInterval(this.promptPollTimer); this.promptPollTimer = undefined; }
+  }
+
+  private emitPromptEvent(event: HarnessEvent): void {
+    for (const handler of this.promptListeners) {
+      try { handler(event); } catch { /* a listener must never break the driver */ }
+    }
+  }
+
+  private async pollOnce(): Promise<void> {
+    // The runtime switch of the owner: a paused harness stops this poller
+    // too — even a CDP snapshot is a request the paused site does not see.
+    if (!liveHarnessPromptPollingEnabled("chatgpt")) return;
+    if (this.promptPollInFlight) return;
+    if (Date.now() < this.promptPollErrorUntil) return;
+    if (Date.now() - this.lastSeen429At < ChatGptMacCdpDriver.PROMPT_BACKOFF_AFTER_429_MS) return;
+    this.promptPollInFlight = true;
+    try {
+      const page = await this.page().catch(() => null);
+      if (!page) return;
+      const probe = parseChromeEvaluation<{ cooldownUntil: number | null }>(
+        await this.tools.call("evaluate_script", { pageId: page.id, function:
+          `() => ({cooldownUntil: typeof globalThis.__herderChatGptReadCooldownUntil === 'number' ? globalThis.__herderChatGptReadCooldownUntil : null})` }),
+      );
+      if (probe.cooldownUntil && Date.now() < probe.cooldownUntil) return;
+      await this.snapshot(page.id).catch(() => null);
+    } catch (error) {
+      this.promptPollErrorUntil = Date.now() + ChatGptMacCdpDriver.PROMPT_BACKOFF_AFTER_ERROR_MS;
+      console.error("[agent-herder] chatgpt_prompt poll_error " + String((error as Error)?.message || error).slice(0, 200));
+    } finally {
+      this.promptPollInFlight = false;
+    }
+  }
+
+  /** Classify each modal prompt and click the chosen button for the kinds
+   * we auto-answer. Always emits a permission.* event to listeners,
+   * including when no matching button is found, so the Herder UI can
+   * surface that a prompt was seen but not handled. */
+  private async respondToModalPrompts(pageId: number, prompts: readonly ModalPrompt[]): Promise<void> {
+    for (const prompt of prompts) {
+      const classification = classifyModalPrompt(prompt);
+      const chosen = classification.chosen;
+      const baseEvent = {
+        harness: "chatgpt" as const,
+        at: new Date().toISOString(),
+        data: {
+          title: prompt.title, body: prompt.body, kind: classification.kind,
+          buttons: prompt.buttons.map(b => b.label),
+          chosenLabel: chosen?.label, chosenPatternId: chosen?.patternId,
+        },
+      };
+      this.emitPromptEvent({ kind: "permission.requested", ...baseEvent, permissionId: classification.fingerprint });
+      if (!chosen) continue;
+      try {
+        const script = buildPromptClickScript(prompt, chosen);
+        const receipt = parseChromeEvaluation<{ clicked: boolean; reason?: string; label?: string }>(
+          await this.tools.call("evaluate_script", { pageId, function: script }));
+        this.emitPromptEvent({
+          kind: "permission.resolved", ...baseEvent, permissionId: classification.fingerprint,
+          data: { ...baseEvent.data, clicked: receipt.clicked, reason: receipt.reason, finalLabel: receipt.label },
+        });
+        if (receipt.clicked) {
+          console.error("[agent-herder] chatgpt_prompt clicked " + JSON.stringify({
+            kind: classification.kind, label: chosen.label, patternId: chosen.patternId,
+            title: prompt.title.slice(0, 80),
+          }));
+        }
+      } catch (error) {
+        this.emitPromptEvent({
+          kind: "permission.resolved", ...baseEvent, permissionId: classification.fingerprint,
+          data: { ...baseEvent.data, clicked: false, error: String((error as Error)?.message || error).slice(0, 200) },
+        });
+      }
+    }
+  }
 
 
   constructor(private readonly tools: ChromePageTools, private readonly pinnedPageId?: number, private readonly openWaitMs = 5_000) {}
@@ -167,12 +346,22 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       kind: "dom_cache_read", initiator: "herder_browser", executor: "herder_cdp",
       operation: "snapshot", endpoint: "other", latency_ms: Date.now()-started,
     });
+    if (Array.isArray(result.pageResources)) {
+      for (const r of result.pageResources as Array<Record<string, unknown>>) {
+        if (r && r.http_status === 429) { this.lastSeen429At = Date.now(); break; }
+      }
+    }
     if (result.origin !== ORIGIN || !result.authenticated ||
       !["idle", "generating", "unknown"].includes(result.phase)) {
       // The composer is not required here: a /dots/home workspace dashboard has
       // no editor but is still an authenticated listing surface. sendMessage
       // navigates such a tab to /c/<id> and re-checks the composer there.
       throw new Error("ChatGPT Mac mini tab is not an authenticated page");
+    }
+    if (result.modalPrompts && result.modalPrompts.length) {
+      void this.respondToModalPrompts(pageId, result.modalPrompts).catch((error) => {
+        console.error("[agent-herder] chatgpt_prompt respond_error " + String((error as Error)?.message || error).slice(0, 200));
+      });
     }
     return result;
   }
@@ -197,7 +386,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       id, title, updatedAt: typeof at === "number" && at > 0
         ? new Date(at < 1e12 ? at * 1000 : at).toISOString() : new Date().toISOString(),
       working: selected ? this.busy(s) : nativeRunning,
-      ...(nativeRunning ? { workingSource: "native-async-status" } : {}),
+      ...(nativeRunning ? { workingSource: "native-async-status" as const } : {}),
       stopVisible: selected && s.phase === "generating",
       unread: false, updatedAtSemantics: typeof at === "number" && Number.isFinite(at) && at > 0 ? "remote-update-time" : "observed-sidebar-order",
       sourceRoute: ORIGIN + "/c/" + id,
@@ -207,6 +396,11 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   private async listUnlocked(): Promise<BrowserChat[]> {
     const page = await this.page();
     const s = await this.snapshot(page.id);
+    // The runtime switch of the owner: while the site requests of this
+    // harness are paused, the list answers from passive sources only — the
+    // responses the site itself made (the intercept hook) plus the durable
+    // inventory — and never from a fetch the herder initiates.
+    if (!liveHarnessPollingEnabled("chatgpt")) return this.listPassive(s, page.id);
     // The real authenticated list API returns 100 native IDs immediately.
     // It does not navigate or change the user's selected chat.
     try {
@@ -217,9 +411,17 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       this.requestTrace.ingestBrowserHttp(data.trace);
       if (data.scope && /^[a-f0-9]{64}$/.test(data.scope) && Array.isArray(data.chats)) {
         this.accountScope = data.scope;
+        this.inventoryCache.setAccountScope(data.scope);
+        if (!this.inventoryLoaded) { await this.inventoryCache.load(); this.inventoryLoaded = true; }
+        this.inventoryCache.merge(data.chats.map(entry => ({ id: entry.id, title: entry.title, updatedAt: entry.updatedAt, asyncStatus: entry.asyncStatus, seenAt: Date.now() })));
+        void this.inventoryCache.save();
+        // The one-time full scan is a burst of the site's own requests: it
+        // belongs to the running state alone, never to the paused one.
+        if (!this.inventoryCache.lastScannedAt) void this.fullScan().catch(() => undefined);
         const seen = new Set<string>();
         const chats: BrowserChat[] = [];
-        for (const entry of data.chats) {
+        const source = this.inventoryCache.size > data.chats.length ? this.inventoryCache.list() : data.chats;
+        for (const entry of source) {
           if (!NATIVE_CHAT_ID.test(entry.id) || seen.has(entry.id) || !entry.title) continue;
           seen.add(entry.id);
           chats.push(this.toChat(entry.id, entry.title, s, entry.updatedAt, entry.asyncStatus));
@@ -239,6 +441,49 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       }
     } catch { /* The site may change its private API; retain the DOM fallback. */ }
     this.accountScope = undefined;
+    return this.listFromSidebarDom(s);
+  }
+
+  /** The list of the paused harness. Every source here is read without one
+   * request of the herder's own: the intercept stash the page holds, the
+   * durable inventory of the account, and the visible sidebar DOM. */
+  private async listPassive(s: Snapshot, pageId: number): Promise<BrowserChat[]> {
+    try {
+      const data = parseChromeEvaluation<{
+        scope?: string; error?: string;
+        chats?: Array<{ id: string; title: string; updatedAt?: number; asyncStatus?: number }>;
+      }>(await this.tools.call("evaluate_script", { pageId, function: CHATGPT_LIST_API_PASSIVE_SCRIPT }));
+      const scope = (data.scope && /^[a-f0-9]{64}$/.test(data.scope) ? data.scope : undefined) ?? this.accountScope;
+      if (scope) {
+        this.inventoryCache.setAccountScope(scope);
+        if (!this.inventoryLoaded) { await this.inventoryCache.load(); this.inventoryLoaded = true; }
+        if (Array.isArray(data.chats) && data.chats.length) {
+          this.inventoryCache.merge(data.chats.map(entry => ({ id: entry.id, title: entry.title, updatedAt: entry.updatedAt, asyncStatus: entry.asyncStatus, seenAt: Date.now() })));
+          void this.inventoryCache.save();
+        }
+        if (this.inventoryCache.size) {
+          const seen = new Set<string>();
+          const chats: BrowserChat[] = [];
+          for (const entry of this.inventoryCache.list()) {
+            if (!NATIVE_CHAT_ID.test(entry.id) || seen.has(entry.id) || !entry.title) continue;
+            seen.add(entry.id);
+            chats.push(this.toChat(entry.id, entry.title, s, entry.updatedAt, entry.asyncStatus));
+          }
+          const selected = s.path.match(/\/c\/([a-f0-9-]{28,80})$/i)?.[1];
+          if (selected && NATIVE_CHAT_ID.test(selected) && !seen.has(selected)) {
+            chats.unshift(this.toChat(selected, this.cache.get(selected)?.title || "ChatGPT conversation", s));
+          }
+          for (const chat of chats) this.cache.set(chat.id, chat);
+          return chats;
+        }
+      }
+    } catch { /* passive listing must never throw */ }
+    return this.listFromSidebarDom(s);
+  }
+
+  /** The last resort of every list path: the chats the observed sidebar
+   * actually shows. A pure DOM read — no request of any kind. */
+  private listFromSidebarDom(s: Snapshot): BrowserChat[] {
     const seen = new Set<string>();
     const chats: BrowserChat[] = [];
     for (const { id, title } of s.chats) {
@@ -255,11 +500,55 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     return chats;
   }
 
+  /** Full paginated scan of every conversation: offset=0,100,200… with a 15s
+   * gap between pages, respecting the 429 cooldown of the page. An explicit
+   * action of the owner (the rescan button or the very first run), so it may
+   * run even while the periodic polling stays paused. */
+  async fullScan(): Promise<{ count: number; pages: number }> {
+    return this.exclusive(async () => {
+      const page = await this.page();
+      const result = parseChromeEvaluation<{ scope?: string; error?: string; trace?: unknown; pages?: number; chats?: Array<{ id: string; title: string; updatedAt?: number; asyncStatus?: number }> }>(await this.tools.call("evaluate_script", { pageId: page.id, function: CHATGPT_FULL_SCAN_SCRIPT }));
+      this.requestTrace.ingestBrowserHttp(result.trace);
+      if (result.scope && /^[a-f0-9]{64}$/.test(result.scope)) {
+        this.accountScope = result.scope;
+        this.inventoryCache.setAccountScope(result.scope);
+        if (!this.inventoryLoaded) { await this.inventoryCache.load(); this.inventoryLoaded = true; }
+      }
+      if (Array.isArray(result.chats) && result.chats.length) {
+        this.inventoryCache.mergeFull(result.chats.map(c => ({ id: c.id, title: c.title, updatedAt: c.updatedAt, asyncStatus: c.asyncStatus, seenAt: Date.now() })));
+        void this.inventoryCache.save();
+        console.log("[chatgpt] full scan: " + result.chats.length + " chats across " + (result.pages || 0) + " pages");
+      }
+      return { count: this.inventoryCache.size, pages: Number(result.pages) || 0 };
+    });
+  }
+
+  /** A blank ChatGPT composer has no server ID until the first user prompt.
+   * Create a durable local draft; do not spend quota or touch the current tab.
+   */
+  async createChat(input: { title?: string }): Promise<BrowserChat> {
+    return this.exclusive(async () => {
+      if (!this.accountScope) await this.listUnlocked();
+      await this.drafts.useScope(this.accountScope);
+      // The regular Herder new-session form submits an autogenerated name;
+      // don't display that opaque slug as a human chat title.
+      const title = input.title && !/^chatgpt-\d{12,}/i.test(input.title)
+        ? input.title : undefined;
+      return this.drafts.create(title);
+    });
+  }
+
   async listChats(): Promise<readonly BrowserChat[]> {
-    return this.exclusive(() => this.listUnlocked());
+    return this.exclusive(async () => {
+      const native = await this.listUnlocked();
+      await this.drafts.useScope(this.accountScope);
+      return this.drafts.merge(native);
+    });
   }
 
   getKnownChat(id: string): BrowserChat | null {
+    if (id.startsWith("draft:")) return this.drafts.get(id)
+      ? this.drafts.asChat(this.drafts.get(id)!) : null;
     if (!NATIVE_CHAT_ID.test(id)) return null;
     this.requestTrace.record({
       kind: "dom_cache_read", initiator: "herder_browser", executor: "herder_cdp",
@@ -275,6 +564,8 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
 
   async getChat(id: string): Promise<BrowserChat | null> {
     return this.exclusive(async () => {
+      const draft = this.drafts.get(id);
+      if (draft) return this.drafts.asChat(draft);
       if (!NATIVE_CHAT_ID.test(id)) return null;
       return (await this.listUnlocked()).find(c => c.id === id) ?? null;
     });
@@ -282,6 +573,12 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
 
   /** Authenticated read-only conversation API; never navigate to load history. */
   async getMessages(chatId: string): Promise<SessionMessageView[] | null> {
+    if (chatId.startsWith("draft:")) {
+      const draft = this.drafts.get(chatId);
+      if (!draft) return null;
+      if (!draft.remoteId) return [];
+      chatId = draft.remoteId;
+    }
     if (!NATIVE_CHAT_ID.test(chatId)) return null;
     const page = await this.page();
     const result = parseChromeEvaluation<{
@@ -327,8 +624,41 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
 
   async sendMessage(input: { chatId: string; text: string; waitForCompletion?: boolean }): Promise<{ assistantText?: string }> {
     return this.exclusive(async () => {
-      const { chatId, text } = input;
-      if (!NATIVE_CHAT_ID.test(chatId) || !text.trim() || text.length > MAX_MESSAGE) {
+      let { chatId, text } = input;
+      if (!text.trim() || text.length > MAX_MESSAGE) {
+        throw new Error("Invalid ChatGPT conversation or message");
+      }
+      if (chatId.startsWith("draft:")) {
+        // Revalidate account ownership before touching the remote account.
+        await this.listUnlocked();
+        await this.drafts.useScope(this.accountScope);
+        const draft = await this.drafts.startSend(chatId);
+        if (draft.remoteId) {
+          chatId = draft.remoteId;
+        } else {
+          const receipt = await submitFirstChatMessage(this.tools,"chatgpt",text,this.accountScope);
+          if (!receipt.clicked) {
+            await this.drafts.resetPreClick(chatId);
+            throw new Error("ChatGPT first message not submitted: "+(receipt.reason||"unknown"));
+          }
+          if (!receipt.remoteId) {
+            await this.drafts.markUncertain(chatId);
+            throw new Error("ChatGPT submission outcome unknown: "+(receipt.reason||"no native route"));
+          }
+          await this.drafts.admit(chatId,receipt.remoteId);
+          // This exact native route came from the tab we ourselves opened
+          // and verified, not an untrusted guess from another chat's title.
+          this.cache.set(receipt.remoteId, {
+            id:receipt.remoteId,title:draft.title,unread:false,working:true,
+            updatedAt:new Date().toISOString(),
+            sourceRoute:ORIGIN+"/c/"+receipt.remoteId,
+            updatedAtSemantics:"first-message-confirmed",
+          });
+          this.lastSubmittedAt = Date.now();
+          return {};
+        }
+      }
+      if (!NATIVE_CHAT_ID.test(chatId)) {
         throw new Error("Invalid ChatGPT conversation or message");
       }
       const known = this.cache.get(chatId) ?? (await this.listUnlocked()).find(c => c.id === chatId);
@@ -551,6 +881,133 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
 
 }
 
+// ---------------------------------------------------------------------------
+// Modal-prompt classification + atomic click script builder. Patterns are
+// anchored (^...$) so 'Allow' cannot match inside 'Allow all'. Two kinds
+// are auto-answered: 'permission' clicks Allow; 'work_continue' clicks the
+// 'stay in chat' button when ChatGPT proposes Continue in Work. 'unknown_modal'
+// is reported but never clicked.
+interface ChosenButton { label: string; patternId: string; }
+interface ModalClassification { kind: ModalPromptKind; fingerprint: string; chosen: ChosenButton | null; reason?: string; }
+
+const ALLOW_PATTERNS: ReadonlyArray<[RegExp, string]> = [
+  [/^Allow$/, "allow_exact"],
+  [/^Allow once$/, "allow_once"],
+  [/^Always allow$/, "always_allow"],
+  [/^Approve$/, "approve"],
+  [/^Approve access$/, "approve_access"],
+  [/^Grant access$/, "grant_access"],
+  [/^Continue$/, "continue"],
+  [/^Continue anyway$/, "continue_anyway"],
+  [/^Confirm$/, "confirm"],
+  [/^Confirm access$/, "confirm_access"],
+  [/^OK$/, "ok"],
+  [/^Yes$/, "yes"],
+  [/^Yes, allow$/, "yes_allow"],
+  [/^Разрешить$/, "razreshit"],
+  [/^Разрешить один раз$/, "razreshit_once"],
+  [/^Всегда разрешять$/, "vsegda_allow"],
+  [/^Одобрить$/, "odobrit"],
+  [/^Одобрить доступ$/, "odobrit_access"],
+  [/^Предоставить доступ$/, "grant_ru"],
+  [/^Продолжить$/, "prodolzhit"],
+  [/^Продолжить в любом случае$/, "prodolzhit_anyway"],
+  [/^Подтвердить$/, "podtverdit"],
+  [/^Подтвердить доступ$/, "podtverdit_access"],
+  [/^ОК$/, "ok_ru"],
+  [/^Да$/, "da"],
+  [/^Да, разрешить$/, "da_allow"],
+];
+
+const WORK_STAY_PATTERNS: ReadonlyArray<[RegExp, string]> = [
+  [/^No, continue in chat$/, "no_continue_in_chat"],
+  [/^Continue in chat$/, "continue_in_chat"],
+  [/^Stay in chat$/, "stay_in_chat"],
+  [/^No, stay here$/, "no_stay_here"],
+  [/^Not now, keep in chat$/, "not_now_keep_in_chat"],
+  [/^Not now$/, "not_now"],
+  [/^Нет, продолжить в чате$/, "net_prodolzhit_v_chate"],
+  [/^Продолжить в чате$/, "prodolzhit_v_chate"],
+  [/^Остаться в чате$/, "ostatsya_v_chate"],
+  [/^Нет, остаться здесь$/, "net_ostatsya_zdes"],
+  [/^Не сейчас, остаться в чате$/, "ne_seychas_ostatsya"],
+  [/^Не сейчас$/, "ne_seychas"],
+];
+
+const WORK_OPEN_PATTERNS: ReadonlyArray<RegExp> = [
+  /^Continue in Work$/i, /^Open in Work$/i, /^Open in Workspaces$/i,
+  /^Try in Work$/i, /^Switch to Work$/i, /^Continue in Workspaces$/i,
+  /^Продолжить в Work$/i, /^Открыть в Work$/i,
+  /^Открыть в рабочих пространствах$/i, /^Перейти в Work$/i,
+  /^Продолжить в рабочих пространствах$/i,
+];
+
+function matchFirst(label: string, patterns: ReadonlyArray<[RegExp, string]>): ChosenButton | null {
+  for (const [pat, patternId] of patterns) { if (pat.test(label)) return { label, patternId }; }
+  return null;
+}
+
+function anyMatch(label: string, patterns: ReadonlyArray<RegExp>): boolean {
+  for (const pat of patterns) if (pat.test(label)) return true;
+  return false;
+}
+
+function classifyModalPrompt(prompt: ModalPrompt): ModalClassification {
+  const fingerprintSeed = prompt.role + "|" + prompt.title.slice(0, 80);
+  let hash = 0;
+  for (let i = 0; i < fingerprintSeed.length; i++) {
+    hash = ((hash << 5) - hash + fingerprintSeed.charCodeAt(i)) | 0;
+  }
+  const fingerprint = "cgmodal_" + (hash >>> 0).toString(16).padStart(8, "0");
+  const labels = prompt.buttons.map(b => b.label).filter(Boolean);
+  const hasWorkOpen = labels.some(l => anyMatch(l, WORK_OPEN_PATTERNS));
+  const workStay = labels.map(l => matchFirst(l, WORK_STAY_PATTERNS)).find((x): x is ChosenButton => x !== null) ?? null;
+  if (hasWorkOpen || workStay) {
+    return { kind: "work_continue", fingerprint, chosen: workStay, reason: workStay ? undefined : "no_stay_button" };
+  }
+  const allow = labels.map(l => matchFirst(l, ALLOW_PATTERNS)).find((x): x is ChosenButton => x !== null) ?? null;
+  if (allow) return { kind: "permission", fingerprint, chosen: allow };
+  return { kind: "unknown_modal", fingerprint, chosen: null, reason: "no_matching_button" };
+}
+
+/** Atomic evaluate_script that re-locates the chosen button inside the
+ * dialog root by exact aria-label or textContent and only then clicks. */
+function buildPromptClickScript(prompt: ModalPrompt, chosen: ChosenButton): string {
+  const label = JSON.stringify(chosen.label);
+  const titleSeed = JSON.stringify(prompt.title.slice(0, 80));
+  return `() => {
+    const wantedLabel = ${label};
+    const wantedTitle = ${titleSeed};
+    const visible = node => !!node && node.getClientRects().length > 0;
+    const modalRoots = [...document.querySelectorAll('[role="dialog"],[role="alertdialog"],[aria-modal="true"]')].filter(visible);
+    if (!modalRoots.length) return {clicked:false,reason:'no_modal_present'};
+    const matchRoot = modalRoots.find(root => {
+      const name = (root.getAttribute('aria-label') || '').trim();
+      if (name && name === wantedTitle) return true;
+      const heading = root.querySelector('h1,h2,h3,[role="heading"]');
+      const ht = heading ? (heading.textContent || '').trim() : '';
+      return ht && ht === wantedTitle;
+    }) || modalRoots[0];
+    const buttons = [...matchRoot.querySelectorAll('button')].filter(visible).filter(b => !b.disabled);
+    const match = buttons.find(b => {
+      const aria = (b.getAttribute('aria-label') || '').trim();
+      const text = (b.textContent || '').trim();
+      return aria === wantedLabel || text === wantedLabel;
+    });
+    if (!match) return {clicked:false,reason:'button_not_found',label:wantedLabel};
+    let p = match; let inModal = false;
+    while (p) {
+      const role = p.getAttribute && p.getAttribute('role');
+      const modal = p.getAttribute && p.getAttribute('aria-modal');
+      if (role === 'dialog' || role === 'alertdialog' || modal === 'true') { inModal = true; break; }
+      p = p.parentElement;
+    }
+    if (!inModal) return {clicked:false,reason:'button_left_modal'};
+    match.click();
+    return {clicked:true,label:match.getAttribute('aria-label') || match.textContent || ''};
+  }`;
+}
+
 /** One built-in authenticated ChatGPT instance on the existing Mac mini CDP owner. */
 export async function createBrowserChatDriver(): Promise<BrowserChatDriver> {
   const raw = process.env.AGENT_HERDER_CHATGPT_PAGE_ID?.trim();
@@ -558,5 +1015,13 @@ export async function createBrowserChatDriver(): Promise<BrowserChatDriver> {
   if (raw && (!Number.isSafeInteger(pageId) || !pageId || pageId < 1)) {
     throw new Error("Invalid AGENT_HERDER_CHATGPT_PAGE_ID");
   }
-  return new ChatGptMacCdpDriver(new MacMiniChromeTransport(), pageId);
+  const driver = new ChatGptMacCdpDriver(new MacMiniChromeTransport(), pageId);
+  if (process.env.AGENT_HERDER_CHATGPT_PROMPT_POLLING?.trim().toLowerCase() !== "off") {
+    const intervalRaw = Number(process.env.AGENT_HERDER_CHATGPT_PROMPT_POLL_INTERVAL_MS);
+    const intervalMs = Number.isFinite(intervalRaw) && intervalRaw > 0
+      ? Math.min(60_000, Math.max(2_000, Math.round(intervalRaw)))
+      : undefined;
+    driver.startPromptPolling({ intervalMs });
+  }
+  return driver;
 }

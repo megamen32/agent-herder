@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AgentSession, HarnessAdapter } from "../types/index.js";
 import type { AutopilotRunnerInput } from "../autopilot-runner.js";
+import { liveHarnessPollingEnabled } from "../harness-runtime-settings.js";
 
 /**
  * Turn bridge for browser chat harnesses (Z.ai, ChatGPT).
@@ -65,6 +66,7 @@ export class BrowserTurnAutopilotObserver {
   private readonly probed = new Map<string, { at: number; enabled: boolean }>();
   private timer?: ReturnType<typeof setInterval>;
   private inFlight = false;
+  private readonly pauseAnnounced = new Map<string, boolean>();
 
   constructor(private readonly options: BrowserTurnObserverOptions) {}
 
@@ -88,11 +90,30 @@ export class BrowserTurnAutopilotObserver {
     this.timer = undefined;
     this.tracked.clear();
     this.probed.clear();
+    this.pauseAnnounced.clear();
+  }
+
+  /** Say the pause and the resume of one harness once, in the log. */
+  private announcePause(harness: string, paused: boolean): void {
+    if ((this.pauseAnnounced.get(harness) ?? false) === paused) return;
+    this.pauseAnnounced.set(harness, paused);
+    console.error(`[agent-herder] browser polling ${paused ? "paused" : "resumed"} for ${harness} (harness runtime settings${paused ? "; passive observation only" : ""})`);
   }
 
   /** One bounded observation pass over every bridged browser harness. */
   async observeOnce(): Promise<void> {
     for (const harness of this.options.harnesses) {
+      // The runtime switch of the owner governs the requests the herder
+      // initiates, not the observation itself: a paused harness is still
+      // observed through whatever reaches the adapter without a request of
+      // the herder's own. The ChatGPT intercept hook keeps feeding the
+      // inventory through the pause, so running→idle transitions still
+      // arrive and the Stop consumer still judges them; a harness without a
+      // passive path simply serves its frozen inventory and no transition is
+      // ever seen. The stall watchdog alone stays dark until the resume: a
+      // nudge sends a message, and a message is a site action the owner
+      // paused.
+      this.announcePause(harness, !liveHarnessPollingEnabled(harness));
       const adapter = this.options.adapters.get(harness);
       if (!adapter?.listSessions) continue;
       let sessions: AgentSession[];
@@ -141,7 +162,7 @@ export class BrowserTurnAutopilotObserver {
     const updatedAt = typeof session.lastActivity === "string" && Number.isFinite(Date.parse(session.lastActivity))
       ? Date.parse(session.lastActivity)
       : undefined;
-    if (running && this.options.autoContinue && semantics === "remote-update-time" && updatedAt !== undefined
+    if (running && liveHarnessPollingEnabled(harness) && this.options.autoContinue && semantics === "remote-update-time" && updatedAt !== undefined
       && !(evidence && evidence.startsWith("native-"))) {
       if (state.stallBaseline !== updatedAt) {
         state.stallBaseline = updatedAt;
@@ -156,6 +177,11 @@ export class BrowserTurnAutopilotObserver {
 
   private async submitStop(harness: string, adapter: HarnessAdapter, session: AgentSession): Promise<void> {
     if (typeof session.cwd !== "string" || !session.cwd.startsWith("/")) return;
+    // A finished remote turn changed the conversation history. Drop the
+    // adapter's cached copy for this chat BEFORE fingerprinting, so the
+    // fingerprint of the new turn differs from the already-judged one even
+    // when the prewarm pipeline is paused and no revision signal arrives.
+    try { await adapter.invalidateHistory?.(session.id); } catch { /* cache invalidation must never block the Stop submission */ }
     // Fingerprint first: it warms the same history cache the consumer reads.
     let fingerprint: string | undefined;
     try {

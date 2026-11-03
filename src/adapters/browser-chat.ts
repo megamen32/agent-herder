@@ -1,6 +1,7 @@
-import type { AgentSession, ControlResult, CreateSessionOptions, HarnessAdapter, HarnessCapabilities, HarnessType, ListSessionsOptions, SendMessageOptions, SendMessageResult, SetPermissionsOptions } from "../types/index.js";
+import type { AgentSession, ControlResult, CreateSessionOptions, HarnessAdapter, HarnessCapabilities, HarnessEvent, HarnessType, ListSessionsOptions, SendMessageOptions, SendMessageResult, SetPermissionsOptions } from "../types/index.js";
 import { localSessionHostId, type SessionMessageView } from "../types/index.js";
 import { BrowserChatHistoryCache } from "./browser-chat-history-cache.js";
+import { liveHarnessPollingEnabled } from "../harness-runtime-settings.js";
 /** Normalized browser chat; native IDs belong to their provider driver. */
 export interface BrowserChat {
   id: string;
@@ -14,6 +15,8 @@ export interface BrowserChat {
   cwd?: string;
   /** Only a currently selected generating chat has a real Stop control. */
   stopVisible?: boolean;
+  /** Local empty chat awaiting the user's first message on the site. */
+  pendingRemoteCreation?: boolean;
   /** Origin of the working signal when it is not the observed page's own DOM. */
   workingSource?: "native-last-run" | "native-async-status";
 }
@@ -35,20 +38,40 @@ export interface BrowserChatDriver {
     input: { chatId: string; text: string; waitForCompletion?: boolean },
     signal?: AbortSignal,
   ): Promise<{ assistantText?: string }>;
+  /** Full paginated scan of every conversation (ChatGPT only). Paginates
+   * offset=0,100,200… with a 15s gap; respects 429. Used by the Web UI
+   * "Пересканировать чаты" button / Ctrl+Shift+R. */
+  fullScan?(): Promise<{ count: number; pages: number }>;
+  /** True when listChats() keeps answering without one site request while
+   * the polling of the harness is paused (the intercept stash of the page
+   * plus the durable inventory). A paused harness without this flag serves
+   * only what it already holds in memory. */
+  readonly passiveInventory?: boolean;
   /** Stop only the actively generating turn of this exact conversation.
    * Never navigates to another chat to find a Stop button.
    */
   stopTurn?(chatId: string, signal?: AbortSignal): Promise<{ stopped: boolean; error?: string }>;
+  /** Subscribe to modal-prompt events emitted when the driver answers (or
+   * skips) a permission / 'Continue in Work?' prompt on the owned browser
+   * page. The adapter forwards these as HarnessEvent of kind
+   * permission.requested / permission.resolved into the shared bus. */
+  subscribePromptEvents?(handler: (event: HarnessEvent) => void): () => void;
   createChat?(input: { title?: string }, signal?: AbortSignal): Promise<BrowserChat>;
   listModels?(signal?: AbortSignal): Promise<string[]>;
   supportsModelSwitch?(): boolean;
   changeModel?(input: { chatId: string; model: string }, signal?: AbortSignal): Promise<{ ok: boolean; error?: string }>;
+  /** List the account's projects (ZAI: /api/v1/projects). Returns [] when unsupported. */
+  listProjects?(): Promise<Array<{ id: string; name: string; chatCount?: number; archived?: boolean }>>;
+  /** Move a chat into a project (ZAI: PATCH /api/v1/chats/<id> with project_id). */
+  moveToProject?(input: { chatId: string; projectId: string }): Promise<{ ok: boolean; error?: string }>;
   /** Explicit site contract. Feature reporting must not be inferred from the common base. */
   browserFeatures?: {
     nativeConversationIds: boolean;
     queueAfterGeneration: boolean;
     chatCreation: boolean;
     accountArchiveViaCdp: boolean;
+    /** The site has a Projects feature and chats can be moved into one. */
+    projects: boolean;
   };
 }
 export interface BrowserChatProvider { id: string; name: string; harness: HarnessType; cwd: string }
@@ -85,12 +108,17 @@ export class BrowserChatAdapter implements HarnessAdapter {
     modelSwitch: false,
     subagents: false,
     events: false,
+    projects: false,
   };
+  private readonly eventListeners = new Set<(event: HarnessEvent) => void>();
+  private promptEventsUnsubscribe?: () => void;
   readonly runtimeCapabilities = BROWSER_RUNTIME_CAPS;
   readonly lazyDiscovery = true;
   private readonly inventory = new Map<string, BrowserChat>();
   private inventoryAt = 0;
   private inventoryRefresh: Promise<void> | undefined;
+  /** The harness whose runtime switch gates this adapter's site requests. */
+  private readonly pollingHarness: "chatgpt" | "zai";
   private readonly historyCache: BrowserChatHistoryCache;
 
 
@@ -100,22 +128,38 @@ export class BrowserChatAdapter implements HarnessAdapter {
     private readonly cwd = provider.cwd,
     private readonly scopedIds = false,
   ) {
+    this.pollingHarness = provider.id === "zai" ? "zai" : "chatgpt";
     this.historyCache = new BrowserChatHistoryCache(
-      provider.id === "zai" ? "zai" : "chatgpt",
+      this.pollingHarness,
       nativeId => this.driver.getMessages?.(nativeId) ?? Promise.resolve(null),
     );
     this.type = provider.harness;
     this.name = provider.name;
+    const supportsPromptEvents = typeof driver.subscribePromptEvents === "function";
     this.controlCapabilities = {
       ...BrowserChatAdapter.browserCapabilities,
       cancelTurn: typeof driver.stopTurn === "function",
       modelSwitch: driver.supportsModelSwitch?.() ?? typeof driver.changeModel === "function",
+      // Advertise event emission only when the underlying driver actually
+      // emits modal-prompt events; otherwise the supervisor would call
+      // subscribeEvents and get nothing.
+      events: supportsPromptEvents,
+      projects: driver.browserFeatures?.projects ?? false,
     };
+    if (supportsPromptEvents) {
+      // The unsubscribe is held for the adapter's lifetime: the driver emits
+      // permission.requested / permission.resolved events whenever it
+      // answers (or skips) a modal prompt, and the adapter fans them out to
+      // every registered listener (the supervisor, the permission-control
+      // notice-bridge, the UI event bus).
+      this.promptEventsUnsubscribe = driver.subscribePromptEvents?.((event) => this.emitEvent(event));
+    }
     this.browserFeatures = driver.browserFeatures ?? {
       nativeConversationIds: false,
       queueAfterGeneration: false,
       chatCreation: typeof driver.createChat === "function",
       accountArchiveViaCdp: false,
+      projects: false,
     };
   }
 
@@ -166,21 +210,33 @@ export class BrowserChatAdapter implements HarnessAdapter {
   }
 
   async init(): Promise<void> {
+    // The startup scan is a request to the site like any other: a paused
+    // harness starts with an empty inventory and serves nothing until the
+    // owner resumes it — unless its driver answers passively (the ChatGPT
+    // intercept hook and its durable inventory need no request at all).
+    if (!liveHarnessPollingEnabled(this.pollingHarness) && this.driver.passiveInventory !== true) return;
     this.updateInventory(await this.driver.listChats());
   }
 
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
     void options;
+    const polling = liveHarnessPollingEnabled(this.pollingHarness);
+    // A passive driver (the ChatGPT intercept hook) keeps the inventory
+    // fresh without one request of the herder's own, so its stale-while-
+    // revalidate continues through the pause; every other paused harness
+    // serves what it already holds and makes no list call at all.
+    const revalidating = polling || this.driver.passiveInventory === true;
     if (this.inventory.size) {
       // Cached titles and session identity are also stale-while-revalidate.
       // Never block selected-chat details on an unrelated 100-chat API list.
-      if (Date.now() - this.inventoryAt > 60_000 && !this.inventoryRefresh) {
+      if (revalidating && Date.now() - this.inventoryAt > 60_000 && !this.inventoryRefresh) {
         this.inventoryRefresh = this.driver.listChats().then(chats => {
           this.updateInventory(chats);
         }).catch(() => undefined).finally(() => { this.inventoryRefresh = undefined; });
       }
       return [...this.inventory.values()].map(chat => this.toSession(chat));
     }
+    if (!revalidating) return [];
     const chats = await this.driver.listChats();
     this.updateInventory(chats);
     return chats.map(chat => this.toSession(chat));
@@ -189,9 +245,33 @@ export class BrowserChatAdapter implements HarnessAdapter {
   async findNamedSessions(name: string, cwd: string): Promise<AgentSession[]> {
     void cwd;
     const normalized = name.trim();
-    return (await this.driver.listChats())
+    // A paused harness answers from the cached inventory: a name lookup is
+    // not worth one more request to a site the owner paused.
+    const chats = liveHarnessPollingEnabled(this.pollingHarness)
+      ? await this.driver.listChats()
+      : [...this.inventory.values()];
+    return chats
       .filter((chat) => chat.title.trim() === normalized)
       .map((chat) => this.toSession(chat));
+  }
+
+  /** List projects via the driver when supported (ZAI). */
+  async listProjects(): Promise<Array<{ id: string; name: string; chatCount?: number; archived?: boolean }>> {
+    if (typeof this.driver.listProjects !== "function") return [];
+    return this.driver.listProjects();
+  }
+  /** Move a chat into a project via the driver when supported (ZAI). */
+  async moveToProject(input: { chatId: string; projectId: string }): Promise<{ ok: boolean; error?: string }> {
+    if (typeof this.driver.moveToProject !== "function") return { ok: false, error: "этот агент не поддерживает перемещение в проект" };
+    return this.driver.moveToProject(input);
+  }
+
+  /** Delegate to the driver's fullScan when the browser site supports it
+   * (ChatGPT). Returns {count:0,pages:0} when unsupported so callers can treat
+   * the absence uniformly. */
+  async fullScan(): Promise<{ count: number; pages: number }> {
+    if (typeof this.driver.fullScan !== "function") return { count: 0, pages: 0 };
+    return this.driver.fullScan();
   }
 
   /** Launch one ChatGPT session: a new disposable chat becomes the session. */
@@ -200,10 +280,14 @@ export class BrowserChatAdapter implements HarnessAdapter {
       throw new Error("This browser provider does not create chats");
     }
     const chat = await this.driver.createChat({ title: options.name });
+    // A newly created draft must immediately appear in the UI before the
+    // next full browser inventory refresh.
+    this.inventory.set(chat.id,chat);
+    const session=this.toSession(chat);
     return {
-      ...this.toSession(chat),
+      ...session,
       meta: {
-        ...this.toSession(chat).meta,
+        ...session.meta,
         ...(options.model ? { model: options.model } : {}),
       },
     };
@@ -247,12 +331,20 @@ export class BrowserChatAdapter implements HarnessAdapter {
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
     try {
+      const nativeId = this.nativeId(id);
       await this.driver.sendMessage({
-        chatId: this.nativeId(id),
+        chatId: nativeId,
         text: options.message,
         waitForCompletion: options.queue !== true,
       });
-      this.historyCache.invalidate(this.nativeId(id));
+      // After the first message, the draft's real route has been verified.
+      // Refresh its display metadata without waiting for an unrelated
+      // 100-chat listing or changing the stable Herder session ID.
+      if (nativeId.startsWith("draft:")) {
+        const updated = this.driver.getKnownChat?.(nativeId);
+        if (updated) this.inventory.set(nativeId,updated);
+      }
+      this.historyCache.invalidate(nativeId);
       return { ok: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -300,6 +392,24 @@ export class BrowserChatAdapter implements HarnessAdapter {
     return { ok: false, error: "Browser chat permissions are controlled by their provider" };
   }
 
+  async invalidateHistory(id: string): Promise<void> {
+    // A completed remote turn changed this conversation: drop the cached
+    // copy AND wait for the fresh read, so the turn fingerprint computed
+    // immediately afterwards cannot repeat the already-judged identity.
+    await this.historyCache.refreshNow(this.nativeId(id)).catch(() => undefined);
+  }
+
+  subscribeEvents(handler: (event: HarnessEvent) => void): () => void {
+    this.eventListeners.add(handler);
+    return () => { this.eventListeners.delete(handler); };
+  }
+
+  private emitEvent(event: HarnessEvent): void {
+    for (const handler of this.eventListeners) {
+      try { handler(event); } catch { /* a listener must never break the adapter */ }
+    }
+  }
+
   private toSession(chat: BrowserChat): AgentSession {
     return {
       id: this.scopedId(chat.id),
@@ -316,6 +426,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
         transport: chat.sourceRoute ? "browser-owned-page" : "owned-chat-page",
         browserProvider: chat.providerId ?? this.provider.id,
         stopVisible: chat.stopVisible === true,
+        pendingRemoteCreation: chat.pendingRemoteCreation === true,
         timestampSemantics: chat.updatedAtSemantics ?? "native-or-visible-order",
         ...(chat.workingSource ? { runningEvidence: chat.workingSource } : {}),
       },

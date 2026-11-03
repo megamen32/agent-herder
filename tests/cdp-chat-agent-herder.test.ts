@@ -2,7 +2,7 @@ import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAgentHerderMcpServer } from "../src/index.js";
 import type { ChatRecord, CdpChatDriver, CdpChatPage, MessageRecord, PageIdentity } from "../src/cdp-chat.js";
 import type { ChatGptAccountExportDriver } from "../src/chatgpt-account-archive.js";
@@ -10,6 +10,9 @@ import { ChatGptHistoryArchive, type ChatGptHistoryArchiveDriver, type ChatGptHi
 
 const connected: Array<{ client: Client; server: { close(): Promise<void> } }> = [];
 
+// Catalog contract fixtures must not inherit the host-specific production
+// hide file: assert the advertised surface, not a tuned discovery set.
+beforeEach(() => vi.stubEnv("AGENT_HERDER_CATALOG_POLICY_FILE", "/dev/null"));
 afterEach(async () => {
   await Promise.all(connected.splice(0).map(async ({ client, server }) => {
     await client.close();
@@ -146,12 +149,12 @@ async function connect(driver: CdpChatDriver, options?: { cdpHistoryArchive?: Ch
 }
 
 describe("Agent Herder CDP chat capability", () => {
-  it("advertises consolidated CDP operations with legacy handlers still callable", async () => {
+  it("advertises the original CDP operations with their handlers callable", async () => {
     const client = await connect(fakeDriver());
     const names = (await client.listTools()).tools.map((tool) => tool.name);
-    expect(names).toEqual(expect.arrayContaining(["deliver", "cdp_chat", "cdp_archive", "cdp_account", "cdp_edit_message", "cdp_download_media"]));
-    for (const hidden of ["send_message", "cdp_new_chat", "cdp_list_chats", "cdp_export_chat", "cdp_send_message", "cdp_request_account_export"]) {
-      expect(names).not.toContain(hidden);
+    expect(names).toEqual(expect.arrayContaining(["deliver", "cdp_list_chats", "cdp_edit_message", "cdp_download_media"]));
+    for (const facade of ["cdp_chat", "cdp_archive", "cdp_account", "cdp_send"]) {
+      expect(names).not.toContain(facade);
     }
     const listed = await client.callTool({ name: "cdp_list_chats", arguments: { view: "recent" } });
     expect(listed.isError).not.toBe(true);
@@ -162,17 +165,20 @@ describe("Agent Herder CDP chat capability", () => {
     const client = await connect(archiveOnlyDriver());
     const names = (await client.listTools()).tools.map((tool) => tool.name);
     expect(names).toContain("deliver");
-    expect(names).toContain("cdp_account");
+    expect(names).toContain("cdp_request_account_export");
     expect(names).not.toContain("cdp_chat");
+    expect(names).not.toContain("cdp_archive");
     expect(names).not.toContain("cdp_new_chat");
-    await expect(client.callTool({ name: "cdp_chat", arguments: { action: "new", confirmation: "NEW_CHAT", idempotencyKey: "absent" } }))
+    await expect(client.callTool({ name: "cdp_new_chat", arguments: { confirmation: "NEW_CHAT", idempotencyKey: "absent" } }))
       .rejects.toThrow(/not found/i);
   });
 
-  it("advertises consolidated history archive actions without fixture send", async () => {
+  it("advertises history archive actions without fixture send", async () => {
     const client = await connect(historyOnlyDriver());
     const names = (await client.listTools()).tools.map((tool) => tool.name);
-    expect(names).toEqual(expect.arrayContaining(["cdp_chat", "cdp_archive"]));
+    expect(names).toEqual(expect.arrayContaining(["cdp_list_chats"]));
+    expect(names).not.toContain("cdp_chat");
+    expect(names).not.toContain("cdp_archive");
     expect(names).not.toContain("cdp_send_message");
     expect(names).not.toContain("cdp_new_chat");
     const listed = await client.callTool({ name: "cdp_list_chats", arguments: { view: "recent" } });
@@ -231,7 +237,7 @@ describe("Agent Herder CDP chat capability", () => {
     connected.push({ client, server });
 
     const names = (await client.listTools()).tools.map((tool) => tool.name);
-    expect(names).toContain("list_sessions");
+    expect(names).toContain("list_agents");
     expect(names).not.toContain("cdp_chat");
     expect(names).not.toContain("cdp_archive");
     expect(names).not.toContain("cdp_reconcile_visible_chats");
