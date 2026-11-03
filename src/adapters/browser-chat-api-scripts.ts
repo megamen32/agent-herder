@@ -131,8 +131,11 @@ export const ZAI_LIST_API_SCRIPT = `async () => {
     const batch=await r.json();
     if(!Array.isArray(batch))return {error:'list_shape'};
     for(const x of batch){
-      if(!x?.id||!x.title||seen.has(x.id))continue;
-      seen.add(x.id);chats.push({id:x.id,title:x.title,updatedAt:x.updated_at,
+      // A chat without a title is still a real conversation: keep it with an
+      // empty title; the driver assigns the stable untitled label. Dropping
+      // it here would make the chat invisible to the whole inventory.
+      if(!x?.id||seen.has(x.id))continue;
+      seen.add(x.id);chats.push({id:x.id,title:typeof x.title==='string'?x.title:'',updatedAt:x.updated_at,
         unread:!!x.has_unread_msg,
         lastRunStatus:typeof x.last_run?.status==='string'?x.last_run.status:undefined});
     }

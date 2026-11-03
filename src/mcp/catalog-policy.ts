@@ -6,6 +6,20 @@ import { join } from "node:path";
 /** Discovery only. These exact peer endpoints remain registered and callable. */
 const internalReaders = new Set(["session_search_local", "list_active_sessions_local"]);
 
+/**
+ * The peer capability registry: peer herders and the fleet services prove
+ * native capability from the ADVERTISED catalog before calling — GPTAdmin
+ * mesh discovery and the fleet cabinet snapshot require mesh_snapshot, the
+ * exact-route resolution and the native peer readiness require mesh_deliver,
+ * owner identity checks read fleet_node_info, inventory paging reads
+ * fleet_session_page and the singleton peer requires list_agents
+ * (src/mesh/gptadmin.ts, src/mesh/fleet-service.ts, src/mesh/native-peer.ts,
+ * src/mesh/singleton-peer.ts). No projection layer may hide these names:
+ * an unregistered endpoint never appears either way, so keeping them
+ * discoverable only restores the proofs the fleet already depends on.
+ */
+const capabilityRegistry = new Set(["mesh_snapshot", "mesh_deliver", "fleet_node_info", "fleet_session_page", "list_agents"]);
+
 interface CatalogPolicyFile {
   hide?: unknown;
   show?: unknown;
@@ -32,6 +46,7 @@ function extraCatalogPolicy(): { hide: Set<string>; show: Set<string> } {
 
 export function projectToolCatalog(result: ListToolsResult, dynamicHidden: ReadonlySet<string> = new Set()): ListToolsResult {
   const extra = extraCatalogPolicy();
-  const hidden = new Set([...internalReaders, ...dynamicHidden, ...extra.hide].filter(name => !extra.show.has(name)));
+  const hidden = new Set([...internalReaders, ...dynamicHidden, ...extra.hide]
+    .filter(name => !extra.show.has(name) && !capabilityRegistry.has(name)));
   return { ...result, tools: result.tools.filter(tool => !hidden.has(tool.name)) };
 }

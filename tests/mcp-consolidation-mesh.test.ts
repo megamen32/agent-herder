@@ -38,7 +38,10 @@ it("keeps discoverable exact local and remote target delivery with old direct al
   const { client, server, ordinary, local, remote } = await connect(true);
   try {
     const advertised = (await client.listTools()).tools;
-    expect(advertised.map(tool => tool.name)).toEqual(["deliver"]);
+    // mesh_deliver stays advertised: it is the peer capability proof the mesh
+    // route resolution reads from the catalog (mesh_route stays hidden — no
+    // capability check reads it, the deliver facade routes remote targets).
+    expect(advertised.map(tool => tool.name)).toEqual(["deliver", "mesh_deliver"]);
     const schema = advertised[0]?.inputSchema;
     expect(JSON.stringify(schema)).toContain("target");
     const localMessage = { target: { hostId: localHost, harness: "opencode", nativeSessionId: "worker-1" }, sender, inputId: "local-exact", message: "work delta" };
