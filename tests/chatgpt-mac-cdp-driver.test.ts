@@ -76,11 +76,47 @@ describe("ChatGPT on existing Mac mini CDP", () => {
     await expect(driver.sendMessage({ chatId: ID, text: "hold" })).rejects.toThrow(/already running/);
     expect(fixture.actions.every(action => ["list_pages", "evaluate_script"].includes(action))).toBe(true);
   });
-  it("does not navigate away from another conversation with unknown state", async () => {
+  it("navigates to recover when another conversation is in unknown state", async () => {
+    // Regression: a stale tab on a different conversation in phase=unknown used
+    // to throw "composer unavailable" without trying to navigate, which blocked
+    // every chatgpt send when the picked tab was stuck. The fix: navigate to
+    // the target chat and let the post-navigate snapshot loop decide.
+    const initialPath = "/c/123e4567-e89b-42d3-a456-426614174000";
+    const navs: string[] = [];
+    let navigated = false;
+    const tools: ChromePageTools = {
+      call: async (name, args = {}) => {
+        if (name === "list_pages") return "6: ChatGPT (https://chatgpt.com" + initialPath + ")";
+        if (name === "navigate_page") { navigated = true; navs.push(String(args.url)); return "ok"; }
+        if (name === "take_snapshot") return 'uid=1_7 textbox "Спросить ChatGPT"';
+        if (name === "fill") return "ok";
+        if (name === "evaluate_script") {
+          const fn = String(args.function);
+          if (fn === CHATGPT_LIST_API_SCRIPT) return json({ scope: "a".repeat(64), chats: [{ id: ID, title: "Workspace chat" }] });
+          if (fn.includes("editor.innerText")) return json({ value: "" });
+          if (fn.includes("const expected")) return json({ submitted: true });
+          // Before navigation: phase=unknown on a different conversation.
+          // After navigation: phase=idle on the target chat, composer present.
+          const path = navigated ? "/c/" + ID : initialPath;
+          return json({ origin: "https://chatgpt.com", path, authenticated: true, composer: navigated,
+            phase: navigated ? "idle" : "unknown", draftPresent: false,
+            chats: navigated ? [{ id: ID, title: "Workspace chat" }] : [] });
+        }
+        throw Error("unexpected tool: " + name);
+      },
+    };
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0);
+    await driver.sendMessage({ chatId: ID, text: "recover and send" });
+    expect(navs).toEqual(["https://chatgpt.com/c/" + ID]);
+  });
+  it("still refuses to send when the target chat itself is in unknown state", async () => {
+    // On the target chat in unknown phase, navigation cannot recover: we are
+    // already where we need to be and the composer is still missing. This is
+    // the one case where "unknown" still fails closed.
     const fixture = new BrowserFixture();
     const driver = new ChatGptMacCdpDriver(fixture);
     await driver.listChats();
-    fixture.path = "/c/123e4567-e89b-42d3-a456-426614174000";
+    // fixture.path defaults to "/c/" + ID (the target chat)
     fixture.phase = "unknown";
     await expect(driver.sendMessage({ chatId: ID, text: "hold" })).rejects.toThrow(/unavailable/);
     expect(fixture.actions.every(action => ["list_pages", "evaluate_script"].includes(action))).toBe(true);

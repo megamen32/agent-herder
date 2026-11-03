@@ -708,9 +708,15 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       if (state.phase === "generating" || Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS) {
         throw new Error("prompt is already running; browser queue must wait");
       }
-      // Only the authenticated workspace dashboard may lack a composer and
-      // report unknown state before navigation. Unknown chat state fails closed.
-      if (state.phase !== "idle" && state.path !== "/dots/home") {
+      // Unknown phase fails closed ONLY when the picked tab is already on the
+      // target chat: navigation cannot recover a broken target. A different
+      // conversation, the workspace dashboard, or any other authenticated
+      // path in unknown state may still recover once we navigate to the
+      // target chat — the post-navigate snapshot loop below either confirms
+      // a ready composer or throws "target or idle state not confirmed".
+      // Without this relaxation, one stuck tab on a stale conversation
+      // blocked every chatgpt send (autotest: chatgpt-mac-cdp-driver.test.ts).
+      if (state.phase === "unknown" && state.path === "/c/" + chatId) {
         throw new Error("ChatGPT composer unavailable; message not sent");
       }
       if (state.path !== "/c/" + chatId) {
