@@ -10,7 +10,8 @@ is never overwritten.
     python3 deploy/fleet/build-release-candidate.py --sha 492628e
 
 The release is built from the committed head and nothing else:
-  * the build happens in its own worktree with its own package tree;
+  * the build happens in its own worktree with its own package tree, and the
+  * worktree and its candidate branch are removed again after a successful build;
   * the release carries no copy of the packages: its node_modules is a set of
     links into the shared store of the area, one directory per lock file,
     named by sha256(package-lock.json) of the release; the workspace package
@@ -175,6 +176,22 @@ def prepare_worktree(sha: str, worktrees: Path) -> Path:
         run(["git", "-C", str(REPO), "worktree", "add", str(worktree), "-b", branch, sha])
     materialize_packages(worktree)
     return worktree
+
+
+def cleanup_worktree(sha: str, worktree: Path) -> None:
+    """Remove the build worktree and its candidate branch after a fully
+    successful build. The release directory is the durable artifact; a
+    leftover worktree and branch per sha is exactly how the repository
+    accumulates divergent copies again. A failed build keeps its worktree
+    for debugging."""
+    branch = f"fleet/candidate-{sha[:8]}"
+    try:
+        run(["git", "-C", str(REPO), "worktree", "remove", str(worktree), "--force"])
+        run(["git", "-C", str(REPO), "branch", "-D", branch])
+        run(["git", "-C", str(REPO), "worktree", "prune"])
+        print(f"worktree cleaned: {worktree} (branch {branch} deleted)")
+    except Exception as error:
+        print(f"worktree cleanup skipped: {error}")
 
 
 def build(worktree: Path):
@@ -544,6 +561,8 @@ def main() -> int:
         print(f"[{'OK ' if ok else 'FAIL'}] {name}: {detail}")
         failed += 0 if ok else 1
     print(f"== {len(results) - failed}/{len(results)} checks passed ==")
+    if not failed and not arguments.skip_build:
+        cleanup_worktree(sha, worktree)
     return 1 if failed else 0
 
 
