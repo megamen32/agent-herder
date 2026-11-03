@@ -3631,6 +3631,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (typeof body.projectId !== "string") return sendJson(response, 400, { error: "projectId is required" });
     try { return sendJson(response, 200, await adapter.moveToProject({ chatId: sessionId, projectId: body.projectId })); }
     catch (error) { return sendJson(response, 502, { error: error instanceof Error ? error.message : String(error) }); }
+  }
   // Full paginated rescan of every ChatGPT conversation (Web UI button / Ctrl+Shift+R).
   const rescanMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/rescan$/);
   if (rescanMatch && request.method === "POST") {
