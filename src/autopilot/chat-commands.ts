@@ -106,9 +106,10 @@ export type ChatCommandReply = (
  * chat is generating another turn, and the reply lands once it ends. */
 const BUSY_REPLY_PATTERN = /prompt is already running|already has an active writer|composer is unavailable|queue must wait/i;
 
-/** The retries of one busy reply: every 20 seconds, a few times. */
-const BUSY_REPLY_ATTEMPTS = 4;
-const BUSY_REPLY_DELAY_MS = 20_000;
+/** The retries of one busy reply: a long agent turn can generate for
+ * minutes, so the window spans five minutes, not seconds. */
+const BUSY_REPLY_ATTEMPTS = 10;
+const BUSY_REPLY_DELAY_MS = 30_000;
 
 /** What one executed command answers. */
 export interface ChatCommandOutcome {
@@ -176,7 +177,8 @@ export class ChatCommandPipeline {
   /** A command from the herder's own composer: it runs at once, and its
    * answer is both returned to the caller and delivered into the chat. */
   async handleDirect(command: ChatCommand, harness: string, sessionId: string, cwd?: string): Promise<ChatCommandOutcome> {
-    return await this.execute(command, harness, sessionId, cwd);
+    const replyInputId = `pilot-direct-${randomUUID().slice(0, 8)}`;
+    return await this.execute(command, harness, sessionId, cwd, replyInputId);
   }
 
   private async execute(
@@ -249,7 +251,9 @@ export class ChatCommandPipeline {
   private sourceText(source: string): string {
     if (source === "session") return "настройка этой сессии";
     if (source === "goal-session") return "цель этой сессии";
-    if (source === "policy") return "общая настройка автопилота";
+    if (source === "policy" || source === "persisted") return "общие настройки автопилота";
+    if (source === "legacy") return "унаследованное состояние";
+    if (source === "default") return "значение по умолчанию";
     if (source === "plugin-default") return "настройка среды";
     return source;
   }
