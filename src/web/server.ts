@@ -3631,6 +3631,19 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (typeof body.projectId !== "string") return sendJson(response, 400, { error: "projectId is required" });
     try { return sendJson(response, 200, await adapter.moveToProject({ chatId: sessionId, projectId: body.projectId })); }
     catch (error) { return sendJson(response, 502, { error: error instanceof Error ? error.message : String(error) }); }
+  // Full paginated rescan of every ChatGPT conversation (Web UI button / Ctrl+Shift+R).
+  const rescanMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/rescan$/);
+  if (rescanMatch && request.method === "POST") {
+    const harness = decodeURIComponent(rescanMatch[1]);
+    const adapter = adapters.get(harness) as (HarnessAdapter & { fullScan?: () => Promise<{ count: number; pages: number }> }) | undefined;
+    if (!adapter) return sendJson(response, 404, { error: "unknown harness" });
+    if (typeof adapter.fullScan !== "function") return sendJson(response, 501, { error: "этот агент не поддерживает пересканирование чатов" });
+    try {
+      const result = await adapter.fullScan();
+      return sendJson(response, 200, { ok: true, harness, count: result.count, pages: result.pages });
+    } catch (error) {
+      return sendJson(response, 502, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
   }
   // The reserved activity path is never a harness/session pair: it has its own reader.
   const sessionMatch = url.pathname === "/api/sessions/activity/goals" ? null : url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)$/);
