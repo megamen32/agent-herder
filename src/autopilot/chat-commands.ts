@@ -102,6 +102,14 @@ export type ChatCommandReply = (
   inputId?: string,
 ) => Promise<{ ok: boolean; error?: string } | undefined>;
 
+/** A refusal that means "the page is busy right now, try again": the browser
+ * chat is generating another turn, and the reply lands once it ends. */
+const BUSY_REPLY_PATTERN = /prompt is already running|already has an active writer|composer is unavailable|queue must wait/i;
+
+/** The retries of one busy reply: every 20 seconds, a few times. */
+const BUSY_REPLY_ATTEMPTS = 4;
+const BUSY_REPLY_DELAY_MS = 20_000;
+
 /** What one executed command answers. */
 export interface ChatCommandOutcome {
   ok: boolean;
@@ -121,6 +129,7 @@ export interface ChatCommandMessage {
 
 export class ChatCommandPipeline {
   private readonly ledger: ChatCommandLedger;
+  private readonly replyTimers = new Set<ReturnType<typeof setTimeout>>();
 
   constructor(private readonly options: {
     run: ChatCommandRunner;
@@ -252,14 +261,48 @@ export class ChatCommandPipeline {
     reply: string,
     outcome: Omit<ChatCommandOutcome, "reply">,
   ): Promise<ChatCommandOutcome> {
-    try {
-      const delivered = await this.options.reply(harness, sessionId, reply, inputId);
-      if (delivered && delivered.ok === false) {
-        this.options.onError?.(`chat command reply refused for ${harness}/${sessionId}: ${delivered.error ?? "unknown refusal"}`);
-      }
-    } catch (error) {
-      this.options.onError?.(`chat command reply failed for ${harness}/${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    this.deliverReply(harness, sessionId, reply, inputId);
     return { ...outcome, reply };
+  }
+
+  /** The answer of a command never blocks the command itself: the state is
+   * already durable, and the reply is delivered in the background — with a
+   * few retries while the browser page is busy generating another turn. */
+  private deliverReply(
+    harness: string,
+    sessionId: string,
+    text: string,
+    inputId: string | undefined,
+    attempt = 0,
+  ): void {
+    void this.options.reply(harness, sessionId, text, inputId)
+      .then((delivered) => {
+        const refusal = delivered && delivered.ok === false ? (delivered.error ?? "unknown refusal") : undefined;
+        if (!refusal) return;
+        if (attempt < BUSY_REPLY_ATTEMPTS && BUSY_REPLY_PATTERN.test(refusal)) {
+          this.options.onError?.(`chat command reply busy (${attempt + 1}/${BUSY_REPLY_ATTEMPTS}), retry in ${Math.round(BUSY_REPLY_DELAY_MS / 1000)}s: ${harness}/${sessionId}: ${refusal}`);
+          this.scheduleReplyRetry(harness, sessionId, text, inputId, attempt + 1);
+          return;
+        }
+        this.options.onError?.(`chat command reply refused for ${harness}/${sessionId}: ${refusal}`);
+      })
+      .catch((error) => {
+        this.options.onError?.(`chat command reply failed for ${harness}/${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+      });
+  }
+
+  private scheduleReplyRetry(
+    harness: string,
+    sessionId: string,
+    text: string,
+    inputId: string | undefined,
+    attempt: number,
+  ): void {
+    const timer = setTimeout(() => {
+      this.replyTimers.delete(timer);
+      this.deliverReply(harness, sessionId, text, inputId, attempt);
+    }, BUSY_REPLY_DELAY_MS);
+    this.replyTimers.add(timer);
+    if (typeof timer.unref === "function") timer.unref();
   }
 }
