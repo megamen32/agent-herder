@@ -121,6 +121,65 @@ describe("ChatGPT on existing Mac mini CDP", () => {
     await expect(driver.sendMessage({ chatId: ID, text: "hold" })).rejects.toThrow(/unavailable/);
     expect(fixture.actions.every(action => ["list_pages", "evaluate_script"].includes(action))).toBe(true);
   });
+
+  it("keeps a chat marked working for the TTL grace window after the tab navigates away", async () => {
+    // Regression: when the herder borrows the only ChatGPT tab to deliver a
+    // continuation to another chat, the adapter used to lose the running
+    // state of the chat that was generating (the site's async_status is not
+    // a reliable signal — /backend-api/conversations often returns an empty
+    // items list). The browser-turn-observer then never saw the running->idle
+    // transition of the original chat, so the autopilot's Stop consumer (and
+    // with it the /pilot command path) never fired.
+    //
+    // The fix: remember every chat we last saw generating on its own tab,
+    // keep it marked working for RECENTLY_GENERATING_TTL_MS (5 min), and
+    // clear it the next time its own tab returns and reports phase=idle.
+    const OTHER = "6ada477c-7014-83ed-82ae-7881dbe3e110";
+    let path = "/c/" + ID;
+    let phase: "idle" | "generating" | "unknown" = "generating";
+    const tools: ChromePageTools = {
+      call: async (name, args = {}) => {
+        if (name === "list_pages") return "6: ChatGPT (https://chatgpt.com" + path + ")";
+        if (name === "evaluate_script") {
+          const fn = String(args.function);
+          if (fn === CHATGPT_LIST_API_SCRIPT) {
+            // The site returns an empty items list — the regression scenario.
+            // The inventory cache supplies both chats from its durable cache.
+            return json({ scope: "a".repeat(64), chats: [
+              { id: ID, title: "Target chat", updatedAt: 1730000000, asyncStatus: 0 },
+              { id: OTHER, title: "Other chat", updatedAt: 1730000001, asyncStatus: 0 },
+            ] });
+          }
+          return json({ origin: "https://chatgpt.com", path, authenticated: true,
+            composer: phase === "idle", phase, draftPresent: false,
+            chats: path === "/c/" + ID ? [{ id: ID, title: "Target chat" }] : [{ id: OTHER, title: "Other chat" }] });
+        }
+        throw Error("unexpected tool: " + name);
+      },
+    };
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0);
+
+    // First poll: tab on /c/<ID> with phase=generating -> ID is working.
+    let chats = await driver.listChats();
+    expect(chats.find(c => c.id === ID)).toMatchObject({ working: true });
+    expect(chats.find(c => c.id === ID)?.workingSource).toBeUndefined(); // selected+generating has no workingSource
+
+    // The herder borrows the tab to deliver to OTHER: tab navigates away,
+    // phase becomes idle on OTHER. ID must STILL be working (recently
+    // generating, within TTL) — this is the regression under test.
+    path = "/c/" + OTHER;
+    phase = "idle";
+    chats = await driver.listChats();
+    expect(chats.find(c => c.id === ID)).toMatchObject({ working: true, workingSource: "recently-generating" });
+    expect(chats.find(c => c.id === OTHER)).toMatchObject({ working: false });
+
+    // The tab comes back to ID and sees phase=idle: the turn finished.
+    // recentlyGenerating clears immediately, working flips to false.
+    path = "/c/" + ID;
+    phase = "idle";
+    chats = await driver.listChats();
+    expect(chats.find(c => c.id === ID)).toMatchObject({ working: false });
+  });
   it("extracts sidebar route and recognizes idle voice control from real ChatGPT DOM selectors", () => {
     const nav = { getAttribute: (key: string) => key === "href" ? "/c/" + ID : key === "aria-label" ? "Fixture chat" : null,
       textContent: "Fixture chat" };
