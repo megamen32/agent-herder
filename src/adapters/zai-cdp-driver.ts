@@ -2,7 +2,9 @@ import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import { BrowserChatDraftStore } from "./browser-chat-drafts.js";
 import { submitFirstChatMessage } from "./browser-chat-new-page.js";
 import type { SessionMessageView } from "../types/index.js";
-import { ZAI_LIST_API_SCRIPT, zaiMessagesApiScript, ZAI_LIST_PROJECTS_SCRIPT, zaiMoveToProjectScript } from "./browser-chat-api-scripts.js";
+import { ZAI_LIST_API_SCRIPT, ZAI_LIST_API_PASSIVE_SCRIPT, zaiMessagesApiScript, ZAI_LIST_PROJECTS_SCRIPT, zaiMoveToProjectScript } from "./browser-chat-api-scripts.js";
+import { BrowserChatInventoryCache } from "./browser-chat-inventory-cache.js";
+import { liveHarnessPollingEnabled } from "../harness-runtime-settings.js";
 import { MacMiniChromeTransport, parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
 
 type ZaiPhase = "generating" | "idle" | "unknown";
@@ -92,8 +94,15 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     accountArchiveViaCdp: false,
     projects: true,
   } as const;
+  /** The paused harness still lists: the intercept stash of the page plus
+   * the durable inventory answer without one request of the herder's own. */
+  readonly passiveInventory = true;
   private readonly cache = new Map<string, BrowserChat>();
   private readonly drafts = new BrowserChatDraftStore("zai");
+  /** Durable full inventory of the verified account, shared with the
+   * intercept stash so a restart keeps every chat visible while paused. */
+  private readonly inventoryCache = new BrowserChatInventoryCache("zai");
+  private inventoryLoaded = false;
   private operation: Promise<void> = Promise.resolve();
   private lastSubmittedAt = 0;
   private accountScope: string | undefined;
@@ -197,6 +206,11 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     const page = await this.page();
     const state = await this.snapshot(page.id);
     const observedAt = new Date().toISOString();
+    // The runtime switch of the owner: while the site requests of this
+    // harness are paused, the list answers from passive sources only — the
+    // responses the site itself made (the intercept hook) plus the durable
+    // inventory — and never from a fetch the herder initiates.
+    if (!liveHarnessPollingEnabled("zai")) return this.listPassive(state, page.id);
     // Native Z.ai HTTP listing: two pages, 100 stable IDs, no sidebar clicks.
     try {
       const data = parseChromeEvaluation<{
@@ -206,6 +220,18 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       }>(await this.tools.call("evaluate_script", { pageId: page.id, function: ZAI_LIST_API_SCRIPT }));
       if (data.scope && /^[a-f0-9]{64}$/.test(data.scope) && Array.isArray(data.chats)) {
         this.accountScope = data.scope;
+        // Keep the durable inventory warm: the paused harness of the next
+        // list call (or a restarted herder) serves it without any request.
+        this.inventoryCache.setAccountScope(data.scope);
+        if (!this.inventoryLoaded) { await this.inventoryCache.load(); this.inventoryLoaded = true; }
+        this.inventoryCache.merge(data.chats.map(entry => ({
+          id: entry.id,
+          title: entry.title && entry.title.trim() ? entry.title : "ZAI conversation",
+          updatedAt: entry.updatedAt, lastRunStatus: entry.lastRunStatus, seenAt: Date.now(),
+        })));
+        // Awaited on purpose: a later list call (or a restarted herder) in
+        // the paused state must find the durable inventory already on disk.
+        await this.inventoryCache.save();
         const chats: BrowserChat[] = [];
         for (const item of data.chats) {
           if (!/^[a-f0-9-]{12,80}$/i.test(item.id)) continue;
@@ -248,6 +274,12 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       }
     } catch { /* Fallback to the verified sidebar, without writing to the page. */ }
     this.accountScope = undefined;
+    return this.listFromSidebarDom(state, observedAt);
+  }
+
+  /** The last resort of every list path: the chats the observed sidebar
+   * actually shows. A pure DOM read — no request of any kind. */
+  private listFromSidebarDom(state: ZaiSnapshot, observedAt = new Date().toISOString()): BrowserChat[] {
     const counts = new Map<string, number>();
     for (const title of state.titles) counts.set(title, (counts.get(title) || 0) + 1);
     const result: BrowserChat[] = [];
@@ -273,6 +305,62 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     }
     for (const chat of result) this.cache.set(chat.id, chat);
     return result;
+  }
+
+  /** The list of the paused harness. Every source here is read without one
+   * request of the herder's own: the intercept stash the page holds, the
+   * durable inventory of the account, and the visible sidebar DOM. */
+  private async listPassive(state: ZaiSnapshot, pageId: number): Promise<BrowserChat[]> {
+    try {
+      const data = parseChromeEvaluation<{
+        scope?: string; error?: string;
+        chats?: Array<{ id: string; title: string; updatedAt?: number; unread?: boolean; lastRunStatus?: string }>;
+      }>(await this.tools.call("evaluate_script", { pageId, function: ZAI_LIST_API_PASSIVE_SCRIPT }));
+      const scope = (data.scope && /^[a-f0-9]{64}$/.test(data.scope) ? data.scope : undefined) ?? this.accountScope;
+      if (scope) {
+        this.accountScope = scope;
+        this.inventoryCache.setAccountScope(scope);
+        if (!this.inventoryLoaded) { await this.inventoryCache.load(); this.inventoryLoaded = true; }
+        if (Array.isArray(data.chats) && data.chats.length) {
+          this.inventoryCache.merge(data.chats.map(entry => ({
+            id: entry.id,
+            title: entry.title && entry.title.trim() ? entry.title : "ZAI conversation",
+            updatedAt: entry.updatedAt, lastRunStatus: entry.lastRunStatus, seenAt: Date.now(),
+          })));
+          void this.inventoryCache.save();
+        }
+        if (this.inventoryCache.size) {
+          const chats: BrowserChat[] = [];
+          const current = state.path.match(/^\/c\/([a-f0-9-]{12,80})$/i)?.[1];
+          for (const entry of this.inventoryCache.list()) {
+            if (!/^[a-f0-9-]{12,80}$/i.test(entry.id)) continue;
+            const selected = current === entry.id;
+            const nativeRunning = entry.lastRunStatus === "running";
+            const updatedAt = typeof entry.updatedAt === "number" && Number.isFinite(entry.updatedAt) && entry.updatedAt > 0
+              ? new Date(entry.updatedAt < 1e12 ? entry.updatedAt * 1000 : entry.updatedAt).toISOString()
+              : new Date().toISOString();
+            const chat = this.recordChat("route:" + entry.id, entry.title || "ZAI conversation",
+              updatedAt, selected ? state.path : undefined);
+            if (typeof entry.updatedAt === "number" && entry.updatedAt > 0) chat.updatedAtSemantics = "remote-update-time";
+            chat.working = selected ? this.busy(state) : nativeRunning;
+            if (nativeRunning && !selected) chat.workingSource = "native-last-run";
+            chat.stopVisible = selected && state.phase === "generating";
+            chats.push(chat);
+            this.cache.set(chat.id, chat);
+          }
+          if (current && !chats.some(chat => chat.id === "route:" + current)) {
+            const chat = this.recordChat("route:" + current, state.selectedTitle || "ZAI conversation",
+              new Date().toISOString(), state.path);
+            chat.working = this.busy(state);
+            chat.stopVisible = state.phase === "generating";
+            chats.unshift(chat);
+            this.cache.set(chat.id, chat);
+          }
+          return chats.slice(0, 101);
+        }
+      }
+    } catch { /* passive listing must never throw */ }
+    return this.listFromSidebarDom(state);
   }
 
   /** Z.ai allocates the native route after the first message, not on /new.

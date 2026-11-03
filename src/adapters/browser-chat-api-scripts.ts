@@ -231,9 +231,45 @@ export function chatgptMessagesApiScript(chatId: string): string {
   }`;
 }
 
+/** Idempotent fetch hook for the ZAI tab: captures the /api/v1/chats list
+ * responses the SITE itself makes (and the account user_id of the detail
+ * fetches) so the herder serves the inventory passively while the owner
+ * paused its own requests. The hook never initiates a request. */
+const ZAI_FETCH_HOOK_SNIPPET = `  if (!globalThis.__herderZaiHook && typeof window !== 'undefined' && typeof window.fetch === 'function') {
+    globalThis.__herderZaiHook = true; globalThis.__herderZaiInventory = null;
+    const origFetch = window.fetch;
+    window.fetch = async function(input, init) {
+      const url = typeof input === 'string' ? input : (input && input.url) || '';
+      const resp = await origFetch.apply(this, arguments);
+      try {
+        const at = url.indexOf('/api/v1/chats/');
+        if (at >= 0 && resp.ok) {
+          const rest = url.slice(at + 14);
+          if (rest === '' || rest.charAt(0) === '?') {
+            const clone = resp.clone(); const data = await clone.json();
+            if (Array.isArray(data)) {
+              const fresh = data.filter(x => x && x.id).map(x => ({id:x.id,title:typeof x.title==='string'?x.title:'',updatedAt:x.updated_at,unread:!!x.has_unread_msg,lastRunStatus:typeof x.last_run?.status==='string'?x.last_run.status:undefined}));
+              const prev = globalThis.__herderZaiInventory;
+              const older = prev && Date.now() - prev.at < 300_000 ? prev.chats.filter(c => !fresh.some(n => n.id === c.id)) : [];
+              globalThis.__herderZaiInventory = { at: Date.now(), chats: fresh.concat(older) };
+            }
+          } else {
+            const detail = rest.split('?')[0];
+            if (detail.length >= 12 && detail.length <= 80 && /^[a-f0-9-]+$/.test(detail)) {
+              const clone = resp.clone(); const data = await clone.json();
+              if (data && data.user_id) globalThis.__herderZaiUserId = String(data.user_id);
+            }
+          }
+        }
+      } catch(e) {}
+      return resp;
+    };
+  }
+`;
+
 export const ZAI_LIST_API_SCRIPT = `async () => {
   if (location.origin !== 'https://chat.z.ai') return {error:'wrong_origin'};
-  const seen=new Set(),chats=[];
+${ZAI_FETCH_HOOK_SNIPPET}  const seen=new Set(),chats=[];
   for(let page=1;page<=2;page++){
     const r=await fetch('/api/v1/chats/?page='+page+'&type=all&channel=zai-web&project_id=',
       {credentials:'same-origin'});
@@ -259,7 +295,24 @@ export const ZAI_LIST_API_SCRIPT = `async () => {
   if(!info?.user_id)return {error:'account_unavailable'};
   const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(info.user_id)));
   const scope=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
+  globalThis.__herderZaiScope = scope;
   return {scope,chats:top};
+}`;
+
+
+/** The passive list of the paused ZAI harness: install the intercept hook,
+ * read the stash the site itself filled, and derive the account scope from
+ * the remembered user_id. Not one request of the herder's own. */
+export const ZAI_LIST_API_PASSIVE_SCRIPT = `async () => {
+  if (location.origin !== 'https://chat.z.ai') return {error:'wrong_origin'};
+${ZAI_FETCH_HOOK_SNIPPET}  const inv = globalThis.__herderZaiInventory;
+  let scope = globalThis.__herderZaiScope || '';
+  if (!scope && globalThis.__herderZaiUserId) {
+    const digest = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(globalThis.__herderZaiUserId)));
+    scope = [...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
+    globalThis.__herderZaiScope = scope;
+  }
+  return {scope, chats: inv && Array.isArray(inv.chats) ? inv.chats : [], source:'passive'};
 }`;
 
 export function zaiMessagesApiScript(chatId: string): string {

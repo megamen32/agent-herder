@@ -5,6 +5,10 @@ import { join } from "node:path";
 export type InventoryEntry = {
   id: string; title: string;
   updatedAt?: number; createdAt?: number; asyncStatus?: number;
+  /** ZAI: the native last_run status of the chat ('running' while the
+   * conversation generates outside the observed tab). Absent clears a
+   * stale running state, exactly like asyncStatus. */
+  lastRunStatus?: string;
   seenAt: number;
 };
 type Stored = { scope: string; scannedAt: number; chats: InventoryEntry[] };
@@ -57,7 +61,7 @@ export class BrowserChatInventoryCache {
       // when the conversation has no async task, so an absent value clears a
       // stale one — a finished turn must stop looking running.
       this.chats.set(e.id, { id: e.id, title: e.title, updatedAt: e.updatedAt ?? prev?.updatedAt,
-        createdAt: e.createdAt ?? prev?.createdAt, asyncStatus: e.asyncStatus, seenAt: Date.now() });
+        createdAt: e.createdAt ?? prev?.createdAt, asyncStatus: e.asyncStatus, lastRunStatus: e.lastRunStatus, seenAt: Date.now() });
     }
   }
   mergeFull(entries: InventoryEntry[]): void {
@@ -66,7 +70,7 @@ export class BrowserChatInventoryCache {
       if (!e || !e.id || !e.title) continue;
       const prev = this.chats.get(e.id);
       next.set(e.id, { id: e.id, title: e.title, updatedAt: e.updatedAt ?? prev?.updatedAt,
-        createdAt: e.createdAt ?? prev?.createdAt, asyncStatus: e.asyncStatus, seenAt: prev?.seenAt || Date.now() });
+        createdAt: e.createdAt ?? prev?.createdAt, asyncStatus: e.asyncStatus, lastRunStatus: e.lastRunStatus, seenAt: prev?.seenAt || Date.now() });
     }
     this.chats = next; this.scannedAt = Date.now();
   }

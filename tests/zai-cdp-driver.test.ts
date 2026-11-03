@@ -1,6 +1,10 @@
-import { ZAI_LIST_API_SCRIPT } from "../src/adapters/browser-chat-api-scripts.js";
+import { ZAI_LIST_API_SCRIPT, ZAI_LIST_API_PASSIVE_SCRIPT } from "../src/adapters/browser-chat-api-scripts.js";
 import { describe, expect, it, vi } from "vitest";
 import { runInNewContext } from "node:vm";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setHarnessRuntimeSettingsPathForTests } from "../src/harness-runtime-settings.js";
 import { ZaiCdpDriver, ZAI_ACTIVITY_SCRIPT, parseZaiPages, pickZaiPage } from "../src/adapters/zai-cdp-driver.js";
 import { ListAgentsSchema, AgentInfoSchema } from "../src/mcp-tools/definitions.js";
 import { parseChromeEvaluation, type ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
@@ -367,5 +371,90 @@ describe("ZAI draft preservation", () => {
     const driver = new ZaiCdpDriver(tools);
     await driver.sendMessage({ chatId: "route:123e4567-e89b-12d3-a456-426614174000", text: "herder msg" });
     expect(fills).toEqual(["herder msg", "user draft text"]);
+  });
+});
+
+describe("the paused harness serves passive inventory", () => {
+  it("installs the intercept hook and reads only the stash (no fetch of its own)", () => {
+    expect(ZAI_LIST_API_PASSIVE_SCRIPT).toContain("source:'passive'");
+    expect(ZAI_LIST_API_PASSIVE_SCRIPT).toContain("__herderZaiHook");
+    expect(ZAI_LIST_API_PASSIVE_SCRIPT).not.toContain("await fetch(");
+    // The active script keeps the same hook and remembers the account scope
+    // for the passive path of the next list call.
+    expect(ZAI_LIST_API_SCRIPT).toContain("__herderZaiHook");
+    expect(ZAI_LIST_API_SCRIPT).toContain("globalThis.__herderZaiScope = scope");
+  });
+
+  it("marks the driver passive so the adapter serves the paused harness", async () => {
+    expect(new ZaiCdpDriver(new MockChromeTools()).passiveInventory).toBe(true);
+  });
+
+  it("lists the durable inventory without the active API script while polling is paused", async () => {
+    const scope = "b".repeat(64);
+    const root = await mkdtemp(join(tmpdir(), "zai-passive-"));
+    const settingsPath = join(root, "harness-runtime-settings.json");
+    try {
+      vi.stubEnv("AGENT_HERDER_BROWSER_CHAT_INVENTORY_ROOT", join(root, "inv"));
+      await writeFile(settingsPath, JSON.stringify({ version: 1, pollingEnabled: true }), "utf8");
+      setHarnessRuntimeSettingsPathForTests(settingsPath);
+      // Prime the durable inventory while polling is enabled.
+      class ApiTools extends MockChromeTools {
+        override async call(name: string, args: Record<string, unknown> = {}): Promise<string> {
+          if (name === "evaluate_script" && args.function === ZAI_LIST_API_SCRIPT) {
+            return evalJson({ scope, chats: [
+              { id: "123e4567-e89b-12d3-a456-426614174010", title: "Durable one", updatedAt: 1730000000, lastRunStatus: "completed" },
+              { id: "123e4567-e89b-12d3-a456-426614174011", title: "Durable running", updatedAt: 1730000001, lastRunStatus: "running" },
+              { id: "123e4567-e89b-12d3-a456-426614174012", title: "", updatedAt: 1730000002 },
+            ] });
+          }
+          return super.call(name, args);
+        }
+      }
+      const priming = await new ZaiCdpDriver(new ApiTools()).listChats();
+      expect(priming.some(chat => chat.id === "route:123e4567-e89b-12d3-a456-426614174011")).toBe(true);
+
+      // Pause the harness (master switch off) and restart the driver: the
+      // list must come from the durable inventory, never from the active
+      // API script, and the passive script may not throw.
+      await writeFile(settingsPath, JSON.stringify({ version: 1, pollingEnabled: false }), "utf8");
+      class PassiveTools extends MockChromeTools {
+        activeCalls = 0;
+        passiveCalls = 0;
+        override async call(name: string, args: Record<string, unknown> = {}): Promise<string> {
+          if (name === "evaluate_script" && args.function === ZAI_LIST_API_SCRIPT) {
+            this.activeCalls += 1;
+            return evalJson({ error: "must_not_fetch" });
+          }
+          if (name === "evaluate_script" && args.function === ZAI_LIST_API_PASSIVE_SCRIPT) {
+            this.passiveCalls += 1;
+            return evalJson({ scope, chats: [], source: "passive" });
+          }
+          return super.call(name, args);
+        }
+      }
+      const tools = new PassiveTools();
+      const chats = await new ZaiCdpDriver(tools).listChats();
+      expect(tools.activeCalls).toBe(0);
+      expect(tools.passiveCalls).toBe(1);
+      expect(chats.find(chat => chat.id === "route:123e4567-e89b-12d3-a456-426614174010")).toMatchObject({ title: "Durable one" });
+      expect(chats.find(chat => chat.id === "route:123e4567-e89b-12d3-a456-426614174011"))
+        .toMatchObject({ working: true, workingSource: "native-last-run" });
+      // A chat without a title keeps the stable untitled label in the cache.
+      expect(chats.find(chat => chat.id === "route:123e4567-e89b-12d3-a456-426614174012"))
+        .toMatchObject({ title: "ZAI conversation" });
+
+      // With an empty durable inventory the passive list falls back to the
+      // visible sidebar DOM (a pure read) instead of returning nothing.
+      const bare = join(root, "bare-inventory");
+      vi.stubEnv("AGENT_HERDER_BROWSER_CHAT_INVENTORY_ROOT", bare);
+      const domTools = new PassiveTools();
+      const domChats = await new ZaiCdpDriver(domTools).listChats();
+      expect(domTools.activeCalls).toBe(0);
+      expect(domChats.some(chat => chat.id === "sidebar:Test%20fixture")).toBe(true);
+      vi.unstubAllEnvs();
+    } finally {
+      setHarnessRuntimeSettingsPathForTests(undefined);
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
