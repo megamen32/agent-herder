@@ -1286,6 +1286,10 @@ async function main() {
   // Browser chats (Z.ai, ChatGPT) publish no native turn events: this bridge
   // turns observed running→idle transitions into the same durable Stop
   // submissions and nudges a turn that stopped making remote progress.
+  const browserStaleRefreshRaw = process.env.AGENT_HERDER_BROWSER_STALE_REFRESH_MS?.trim();
+  const browserStaleRefreshMs = browserStaleRefreshRaw !== undefined && Number.isFinite(Number(browserStaleRefreshRaw))
+    ? Math.max(0, Number(browserStaleRefreshRaw))
+    : 300_000;
   const browserAutopilotHarnesses = (process.env.AGENT_HERDER_BROWSER_AUTOPILOT_HARNESSES ?? "zai,chatgpt")
     .split(",").map((value) => value.trim()).filter(Boolean)
     .filter((harness) => adapters.has(harness));
@@ -1299,6 +1303,8 @@ async function main() {
         held: (harness, id) => humanStopStore.isHeld(harness, id),
         stallMs: Number(process.env.AGENT_HERDER_BROWSER_AUTOCONTINUE_STALL_MS || 1_200_000),
         autoContinue: process.env.AGENT_HERDER_BROWSER_AUTOCONTINUE !== "0",
+        staleRefreshMs: browserStaleRefreshMs,
+        turnsFile: join(autopilotStateDir, "browser-turn-observer.json"),
         onError: (message) => console.error(`[agent-herder] ${message}`),
       })
     : undefined;
