@@ -244,7 +244,6 @@ export class BrowserChatAdapter implements HarnessAdapter {
       .map((chat) => this.toSession(chat));
   }
 
-<<<<<<< HEAD
   /** List projects via the driver when supported (ZAI). */
   async listProjects(): Promise<Array<{ id: string; name: string; chatCount?: number; archived?: boolean }>> {
     if (typeof this.driver.listProjects !== "function") return [];
@@ -254,14 +253,14 @@ export class BrowserChatAdapter implements HarnessAdapter {
   async moveToProject(input: { chatId: string; projectId: string }): Promise<{ ok: boolean; error?: string }> {
     if (typeof this.driver.moveToProject !== "function") return { ok: false, error: "этот агент не поддерживает перемещение в проект" };
     return this.driver.moveToProject(input);
-=======
+  }
+
   /** Delegate to the driver's fullScan when the browser site supports it
    * (ChatGPT). Returns {count:0,pages:0} when unsupported so callers can treat
    * the absence uniformly. */
   async fullScan(): Promise<{ count: number; pages: number }> {
     if (typeof this.driver.fullScan !== "function") return { count: 0, pages: 0 };
     return this.driver.fullScan();
->>>>>>> rescan-ui-20261102T203000Z
   }
 
   /** Launch one ChatGPT session: a new disposable chat becomes the session. */
