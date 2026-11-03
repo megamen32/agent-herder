@@ -26,7 +26,7 @@ import { QaControlBackend } from "./qa-control.js";
 
 import { HarnessAdapter, type SendMessageResult, type AgentSession } from "./types/index.js";
 import { OpenCodeAdapter, ClaudeCodeAdapter, ClaudeSDKAdapter, CodexAdapter, CodexAppServerAdapter, AcpAdapter, HermesAdapter, ZcodeAdapter, FastAgentFileAdapter, MinimaxCodeAdapter, configuredBrowserProviderIds, loadBrowserChatProviderAdapter } from "./adapters/index.js";
-import { applyExternalAdapterOverrides } from "./adapters/external-registry.js";
+import { applyExternalAdapterOverrides, applyExternalAdapterOverridesToLiveAdapters } from "./adapters/external-registry.js";
 import { HumanRequestRegistry } from "./human-request/index.js";
 import { ChoiceRegistry } from "./autopilot/choice-registry.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
@@ -561,6 +561,13 @@ async function initAdapters() {
   }
 
   await Promise.allSettled(inits);
+
+  // Env-configured external adapter processes (AHAP) take over the read
+  // surface of live harnesses configured through AGENT_HERDER_EXTERNAL_ADAPTERS;
+  // control and delivery stay on the builtin adapters, and a binary that
+  // cannot start changes nothing. Applied after the init barrier so the
+  // split wraps the final adapter set (lazy transports included).
+  await applyExternalAdapterOverridesToLiveAdapters(adapters);
 
   const names = [...adapters.keys()].join(", ");
   console.error(`[agent-herder] Ready with harnesses: ${names || "none"}`);
