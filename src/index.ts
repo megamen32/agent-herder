@@ -56,6 +56,17 @@ import { AnthropicMiniMaxSummarizer, CacheHandoffService, FastAgentMiniMaxSummar
 import { acquireAgentHerderSingleton } from "./singleton.js";
 import { AdapterRegistry, type AdapterFactory } from "./adapter-registry.js";
 import { boundResumeReceiptQuery, createWebServer, resumeSelectedTarget } from "./web/server.js";
+import { SettingsStore } from "./web/settings-store.js";
+import { runSettingsCommand as runSettingsCommandShared } from "./settings-management.js";
+
+/**
+ * The store of the settings of this node.
+ *
+ * The web, the MCP tool of the node and the command of the settings use this
+ * one store, so a change made through any of them is the same change and lands
+ * in the same audit journal.
+ */
+const settingsStore = new SettingsStore();
 import { AgentResumeClient, type ResumeReceipt, type ResumeTransportRequest } from "./resume-transport.js";
 import { createConfiguredFleetApiHandler, createManagedFleetHttpGuard, isManagedFleetNode } from "./web/fleet-wiring.js";
 import { loadSecretEnvironment } from "./web/settings-store.js";
@@ -761,7 +772,7 @@ function registerTools(
   registerSessionSearchTools(server,{transport:new FleetDirectTransport(fleetPeers()),peers:fleetPeers().map(peer=>({hostId:peer.hostId,target:`mcp:shell:${peer.hostId}:AgentHerder`}))});
   registerHarnessMeshTools(server, { adapters, gptadmin: new FleetDirectTransport(fleetPeers()), deliveryPolicy: readLaunchPolicyStateForGate, userMessageDelivery, trustedIngress: trustedMeshIngress, ...(inventorySupervisor?{supervisor:inventorySupervisor}:{}) });
   registerWorkspaceTools(server, { transport: workspaceTransport, locateTransport: new FleetDirectTransport(fleetPeers()) });
-  registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, launchPolicyRevision: readLaunchPolicyRevision, fleetTransport: workspaceTransport, fleetPeers: fleetPeers().filter(peer => peer.hostId !== "MacBook-Pro-User.local").map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), sessionReadTransport: new FleetDirectTransport(fleetPeers()), sessionReadPeers: fleetPeers().map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), policyRevisionLedgerPath: fleetPolicyRevisionLedgerPath(autopilotStateDir) });
+  registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, launchPolicyRevision: readLaunchPolicyRevision, fleetTransport: workspaceTransport, fleetPeers: fleetPeers().filter(peer => peer.hostId !== "MacBook-Pro-User.local").map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), sessionReadTransport: new FleetDirectTransport(fleetPeers()), sessionReadPeers: fleetPeers().map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), policyRevisionLedgerPath: fleetPolicyRevisionLedgerPath(autopilotStateDir), settings: settingsStore });
   // The common settings of the fleet: a node that has no owner of the document
   // named in its environment registers no tool and claims nothing.
   const commonSettings = commonSettingsService({ hooks: hooksLeverFromStore(hooksLeverStore) });
@@ -972,7 +983,24 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
   return server;
 }
 
+/**
+ * The command of the settings: `agent-herder settings read|apply|rollback`.
+ *
+ * The command is a thin door to the shared implementation: the web, the MCP
+ * tool of the node and this command change the settings through one code.
+ */
+async function runSettingsCommand(argv: string[]): Promise<void> {
+  process.exitCode = await runSettingsCommandShared(argv, settingsStore);
+}
+
 async function main() {
+  // The command of the settings answers and leaves: the server is not started
+  // for it, and the store it uses is the same one the web and the MCP tool
+  // of the node use.
+  if (process.argv[2] === "settings") {
+    await runSettingsCommand(process.argv.slice(3));
+    return;
+  }
   const releaseSingleton = acquireAgentHerderSingleton();
   process.once("exit", releaseSingleton);
 
