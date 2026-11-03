@@ -155,3 +155,18 @@ root child and verify its actual owner-aware behavior using the documented
 return the same canonical project key. Do not repeat unknown acquisitions or
 force a hub/consumer restart. Manual rollback remains subject to the existing
 release ownership and recovery policy.
+
+### Project-only acquisition
+
+The CLI already uses the same optional deploymentTarget schema as MCP. Omit
+deploymentTarget entirely for a project-only lease; when supplied, it must
+contain both fleetDir and unit. Supplying just one field is rejected before any
+ledger transaction. Herder's target-bound rollout requirements are unchanged.
+
+A project-only lease protects canonical repository coordination, not an actual
+deployment target. Without a target, the store does not retain a
+deployment-in-progress marker after expiry or session cancellation. Callers must
+keep the operation bounded within its TTL, check ownership immediately before
+mutations and renew explicitly as needed. Native updater serialization,
+expected-revision compare-and-swap and rollback guards remain separate required
+boundaries; a project-only lease does not replace them.
