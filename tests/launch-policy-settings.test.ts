@@ -149,7 +149,7 @@ describe("new session launch policy settings", () => {
   it("exposes launch policy as its own desktop and mobile settings entry", () => {
     expect(main).toContain('"autocontinue" | "autopilot" | "launch-policy"');
     expect(main).toContain('aria-label="Новая сессия"');
-    expect(main).toContain('>Настройки запуска новых сессий</button>');
+    expect(main).toContain('>Настройки запуска новых сессий</a>');
     expect(main).toContain('setAutomationSettings("launch-policy")');
     expect(main).toContain("<LaunchPolicySettings onOpenProjects=");
   });
