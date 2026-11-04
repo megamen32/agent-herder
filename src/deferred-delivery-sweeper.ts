@@ -92,13 +92,16 @@ export class DeferredDeliverySweeper {
       if (!parked.length) return outcome;
       const bySession = new Map<string, DeferredMessage[]>();
       for (const message of parked) {
-        const list = bySession.get(message.sessionId) ?? [];
+        if (!message.harness || !this.harnesses.has(message.harness)) { outcome.skipped++; continue; }
+        const key = JSON.stringify([message.harness, message.sessionId]);
+        const list = bySession.get(key) ?? [];
         list.push(message);
-        bySession.set(message.sessionId, list);
+        bySession.set(key, list);
       }
       let budget = this.maxSessionsPerCycle;
-      for (const [sessionId, messages] of bySession) {
+      for (const messages of bySession.values()) {
         messages.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        const sessionId = messages[0]!.sessionId;
         const adapter = await this.adapterFor(messages[0]!);
         // Ineligible sessions (legacy parks without a harness tag) never
         // consume the cycle budget: hundreds of them would otherwise starve

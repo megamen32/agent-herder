@@ -50,6 +50,44 @@ afterEach(() => {
 });
 
 describe('deferred delivery sweeper', () => {
+  it.each(['legacy-first', 'legacy-last'])('isolates untagged records when %s', async (order) => {
+    const send = vi.fn(async () => ({ ok: true }));
+    const adapters = new Map<string, HarnessAdapter>([['opencode', adapterFor(idle(), send)]]);
+    if (order === 'legacy-first') await deferredMessages.add('ses-idle', 'legacy');
+    const eligible = await deferredMessages.add('ses-idle', 'eligible', 'opencode');
+    if (order === 'legacy-last') await deferredMessages.add('ses-idle', 'legacy');
+    expect(await new DeferredDeliverySweeper(adapters).sweep()).toEqual({ delivered: 1, kept: 0, skipped: 1 });
+    expect(send).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledWith('ses-idle', expect.objectContaining({ message: 'eligible', inputId: `deferred-${eligible.id}` }));
+    expect((await deferredMessages.list('ses-idle')).map(m => m.message)).toEqual(['legacy']);
+  });
+
+  it('routes identical session IDs independently for each harness', async () => {
+    const first = vi.fn(async () => ({ ok: true }));
+    const second = vi.fn(async () => ({ ok: true }));
+    const adapters = new Map<string, HarnessAdapter>([
+      ['opencode', adapterFor(idle(), first)],
+      ['codex', adapterFor(idle({ harness: 'codex' }), second)],
+    ]);
+    await deferredMessages.add('ses-idle', 'opencode message', 'opencode');
+    await deferredMessages.add('ses-idle', 'codex message', 'codex');
+    expect(await new DeferredDeliverySweeper(adapters).sweep()).toEqual({ delivered: 2, kept: 0, skipped: 0 });
+    expect(first).toHaveBeenCalledWith('ses-idle', expect.objectContaining({ message: 'opencode message' }));
+    expect(second).toHaveBeenCalledWith('ses-idle', expect.objectContaining({ message: 'codex message' }));
+  });
+
+  it('ignores untagged and unsupported records sharing an eligible target before spending budget', async () => {
+    process.env.AGENT_HERDER_DEFERRED_SWEEP_SESSIONS_PER_CYCLE = '1';
+    const send = vi.fn(async () => ({ ok: true }));
+    const adapters = new Map<string, HarnessAdapter>([['opencode', adapterFor(idle(), send)]]);
+    await deferredMessages.add('ses-idle', 'legacy');
+    await deferredMessages.add('ses-idle', 'unsupported', 'zcode');
+    await deferredMessages.add('ses-idle', 'eligible', 'opencode');
+    expect(await new DeferredDeliverySweeper(adapters).sweep()).toEqual({ delivered: 1, kept: 0, skipped: 2 });
+    expect(send).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledWith('ses-idle', expect.objectContaining({ message: 'eligible' }));
+    expect(await deferredMessages.list('ses-idle')).toHaveLength(2);
+  });
   it('delivers a parked message to an idle session and clears it from the store', async () => {
     const send = vi.fn(async () => ({ ok: true }));
     const adapters = new Map<string, HarnessAdapter>([['opencode', adapterFor(idle(), send)]]);
