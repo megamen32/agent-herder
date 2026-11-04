@@ -229,3 +229,21 @@ This portable configured controller currently admits fleet profiles only.
 Owner profiles are rejected rather than silently ignoring their configured
 identity or authority. The existing explicit owner node-side workflow is
 separate; no owner runtime is changed by this refactor.
+
+## Deploy guard: only main reaches live
+
+Rollout (build-release-candidate.py, rollout-candidate.py node and controller paths, via
+ReleaseGate.candidate_descends_from) enforces in deploy/fleet/main_guard.py, with no flag bypass:
+
+1. After a fresh fetch, the candidate commit must be reachable from origin/main. Otherwise:
+   "ОТКАЗ: ветка не влита в main, сделай PR / REFUSED: open a PR", with git log of the commits outside main.
+2. The really running live revision must be an ancestor of the candidate. Otherwise:
+   "в live есть коммиты, которых нет в main: влей их, потом выкатывай", with git log of those commits.
+3. node-config.json sourceSha, the current symlink and (owner node) the running process release
+   must agree, else error with a fix hint (release_live_revision_mismatch /
+   release_revision_changed_since_admission).
+
+Emergency only: set AGENT_HERDER_EMERGENCY_UNMERGED_ROLLOUT="<reason>" in the environment; the use is
+appended first to ~/.local/state/agent-herder/rollout-journal.jsonl (an unwritable journal refuses).
+Tests: tests/test_main_guard.py. The lease ledger check itself (project_release_lease check) has no
+revision knowledge and is unchanged; the rules run at the rollout gate that holds the lease.
