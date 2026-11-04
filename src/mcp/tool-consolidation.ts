@@ -122,6 +122,8 @@ const families: readonly Family[] = [
     { value: "list", tool: "cdp_list_chats" },
     { value: "search", tool: "cdp_search_chat" },
     { value: "send", tool: "cdp_send_message" },
+    { value: "edit", tool: "cdp_edit_message" },
+    { value: "download", tool: "cdp_download_media" },
   ] },
   { name: "cdp_archive", selector: "action", choices: [
     { value: "chat", tool: "cdp_export_chat", async: false },

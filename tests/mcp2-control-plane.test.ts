@@ -83,11 +83,12 @@ describe("MCP2 control-plane surface", () => {
     const client = await connect({ events, jobs });
     const result = await client.callTool({ name: "job_list", arguments: { limit: 10 } });
     expect(result.structuredContent).toEqual({ jobs: [] });
-    // The consolidation facade layer is gone: the original name is the tool.
+    // The v2 facade layer: the original name stays callable while the
+    // selector facade is the advertised entry.
     const catalog = (await client.listTools()).tools;
-    const tool = catalog.find((entry) => entry.name === "job_list");
+    const tool = catalog.find((entry) => entry.name === "job");
     expect(tool?.inputSchema).toMatchObject({ type: "object" });
-    expect(catalog.some((entry) => entry.name === "job")).toBe(false);
+    expect(catalog.some((entry) => entry.name === "job_list")).toBe(false);
   });
 
   it("returns a stable fallback instead of input_required when the client lacks elicitation", async () => {
