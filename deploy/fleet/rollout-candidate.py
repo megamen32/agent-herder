@@ -384,7 +384,7 @@ def owner_listens(pid: int, port: int) -> bool:
     return False
 
 
-def wait_owner_ready(unit: str, release: Path, port: int, previous_identity, attempts=30) -> bool:
+def wait_owner_ready(unit: str, release: Path, port: int, previous_identity, attempts=120) -> bool:
     import urllib.request
     expected_entry = str((release / "dist/index.js").resolve())
     for _ in range(attempts):

@@ -36,6 +36,11 @@ class OwnerReadiness(unittest.TestCase):
         self.assertEqual(self.ready(self.new, listens=False), (False, False))
     def test_missing_process_rejected(self):
         self.assertEqual(self.ready(None), (False, False))
+    def test_accepts_new_release_after_observed_slow_startup(self):
+        with patch.object(rollout, "owner_process_identity", return_value=self.new), \
+             patch.object(rollout, "owner_listens", side_effect=[False] * 65 + [True]), \
+             patch.object(rollout.time, "sleep"), patch("urllib.request.urlopen"):
+            self.assertTrue(rollout.wait_owner_ready("test.service", self.release, 9999, self.old))
     def test_process_changed_during_http_rejected(self):
         with patch.object(rollout, "owner_process_identity", side_effect=[self.new, self.old]), \
              patch.object(rollout, "owner_listens", return_value=True), \
