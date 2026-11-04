@@ -48,6 +48,7 @@ import { creationModels } from "./creation-models.js";
 import { isLongVisibleMessage, readCollapseLongMessages, writeCollapseLongMessages } from "./message-collapse.js";
 import { MessageActivityRows, groupMessagePartSegments } from "./message-activity.js";
 import { groupSessionMessages, joinAssistantTurnMessages } from "./message-groups.js";
+import { normalizeSessionMessages } from "./session-message-normalize.js";
 import { projectDeliveredChat, resolveDeliveredImages } from "./delivered-chat.js";
 import {sidebarEntries, sessionPinKey, projectLocalSessionHost} from './session-pins.js';
 import {SessionSidebarRow, useSessionPins} from './session-sidebar.js';
@@ -1294,7 +1295,7 @@ function App() {
     const { harness, id } = splitKey(key);
     const base = `/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/details`;
     setDetailsError(undefined);
-    if(hydrateFull){setDetailsVerified(false);if(directory.scope&&directory.localHostId){void viewCache.get<SessionDetails>(directory.scope,{hostId:directory.localHostId,harness,nativeSessionId:id}).then(r=>{if(r&&r.value.session?.id===id&&r.value.session?.harness===harness&&detailsReadGateRef.current.isCurrent(requestId)&&!liveLoaded){setDetails(r.value);setCachedDetails(true);setDetailsLoading(false);}});}}
+    if(hydrateFull){setDetailsVerified(false);if(directory.scope&&directory.localHostId){void viewCache.get<SessionDetails>(directory.scope,{hostId:directory.localHostId,harness,nativeSessionId:id}).then(r=>{if(r&&r.value.session?.id===id&&r.value.session?.harness===harness&&detailsReadGateRef.current.isCurrent(requestId)&&!liveLoaded){setDetails({...r.value,messages:normalizeSessionMessages(r.value.messages)});setCachedDetails(true);setDetailsLoading(false);}});}}
     let liveLoaded=false;
     // Фоновое обновление по событию (hydrateFull=false) приходит постоянно, пока
     // активны сессии. Раньше оно гасило details и включало detailsLoading, поэтому
@@ -1311,6 +1312,7 @@ function App() {
     try {
       const latestStartedAt = performance.now();
       const latest = await api<SessionDetails>(`${base}?limit=12&quick=1`);
+      latest.messages = normalizeSessionMessages(latest.messages);
       if (!detailsReadGateRef.current.isCurrent(requestId)) return;
       if(latest.session?.id!==id||latest.session?.harness!==harness)throw new Error('Не удалось подтвердить выбранную сессию');
       liveLoaded=true;setCachedDetails(false);setDetailsVerified(true);
@@ -1328,6 +1330,7 @@ function App() {
       await new Promise((resolve) => window.setTimeout(resolve, 40));
       const hydrateStartedAt = performance.now();
       const full = await api<SessionDetails>(`${base}?limit=50`);
+      full.messages = normalizeSessionMessages(full.messages);
       if (!detailsReadGateRef.current.isCurrent(requestId)) return;
       setHydrateTimingMs(performance.now() - hydrateStartedAt);
       if(full.session?.id!==id||full.session?.harness!==harness)throw new Error('Не удалось подтвердить выбранную сессию');
