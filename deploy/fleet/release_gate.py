@@ -10,7 +10,11 @@ import os
 import time
 import subprocess
 import re
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import main_guard  # noqa: E402
 
 
 class ReleaseGate:
@@ -80,17 +84,12 @@ class ReleaseGate:
         self.check()
         actual = json.loads(Path(config_path).read_text()).get("sourceSha")
         if actual != expected_sha:
-            raise RuntimeError("release_revision_changed_since_admission")
+            raise RuntimeError(main_guard.revision_mismatch_message(actual, expected_sha))
 
     def candidate_descends_from(self, previous_sha, candidate_sha):
+        """Candidate must be in origin/main and descend from the live revision."""
         self.check()
-        if not all(re.fullmatch(r"[a-f0-9]{40}", sha) for sha in (previous_sha, candidate_sha)):
-            raise RuntimeError("release_revision_invalid")
-        result = subprocess.run(["git", "--git-dir", self.proof["project"], "merge-base",
-                                 "--is-ancestor", previous_sha, candidate_sha],
-                                capture_output=True, timeout=10)
-        if result.returncode != 0:
-            raise RuntimeError("release_candidate_would_discard_live_commits")
+        main_guard.check_deployable(["git", "--git-dir", self.proof["project"]], previous_sha, candidate_sha)
 
     def compare_cleanup_revision(self, config_path, allowed_shas):
         # Cleanup can outlive TTL but never ownership/fence or observed generation.

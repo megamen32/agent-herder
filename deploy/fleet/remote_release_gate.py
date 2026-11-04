@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 
+import main_guard
 from deployment_config import validate_node, verify_descriptor, descriptor_digest
 
 
@@ -194,8 +195,9 @@ class RemoteReleaseGate:
         self.check()
         if expected_sha not in (self.contract["previousSha"], self.contract["candidateSha"]):
             raise RuntimeError("release_authority_revision_refused")
-        if self._config(config_path) != expected_sha:
-            raise RuntimeError("release_revision_changed_since_admission")
+        actual = self._config(config_path)
+        if actual != expected_sha:
+            raise RuntimeError(main_guard.revision_mismatch_message(actual, expected_sha))
 
     def candidate_descends_from(self, previous_sha, candidate_sha):
         if (previous_sha, candidate_sha) != (self.contract["previousSha"], self.contract["candidateSha"]):

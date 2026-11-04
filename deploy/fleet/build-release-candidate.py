@@ -49,6 +49,7 @@ import time
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import release_rules  # noqa: E402
+import main_guard  # noqa: E402
 
 REPO = Path.home() / "agents-projects/agent-herder"
 DEFAULT_WORKTREES = Path.home() / "agents-projects/.worktrees"
@@ -511,6 +512,17 @@ def main() -> int:
     arguments = parser.parse_args()
 
     sha = run(["git", "-C", str(REPO), "rev-parse", arguments.sha])
+    try:
+        main_guard.check_deployable(["git", "-C", str(REPO)], "", sha)
+        live = Path(arguments.catalog) / "current"
+        config_file = Path(arguments.catalog) / "node-config.json"
+        if live.is_symlink() and config_file.is_file():
+            live_sha = os.path.basename(os.readlink(live))
+            main_guard.reconcile_live(json.loads(config_file.read_text()).get("sourceSha"), live_sha)
+            main_guard.check_deployable(["git", "-C", str(REPO)], live_sha, sha, fetch=False)
+    except main_guard.MainGuardError as error:
+        print(error)
+        return 1
     store = REPO / "node_modules"
     store_before = release_rules.mutable_state(store)
     node_config_before = snapshot_node_config(Path(arguments.catalog) / "node-config.json")

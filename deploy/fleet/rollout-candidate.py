@@ -34,6 +34,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import release_rules  # noqa: E402
 from release_gate import ReleaseGate
+import main_guard
 from remote_release_gate import RemoteReleaseGate, remote_frames, run_authorized_ssh, deployment_target
 import uuid
 import re
@@ -636,6 +637,22 @@ def main() -> int:
         # there, not guessed here.
         live_sha = remote_live_sha(node)
 
+    try:
+        if node["kind"] == "owner":
+            # Three witnesses of the live revision must agree: the config of
+            # the node, the current symlink and the running process.
+            config_file = catalog / "node-config.json"
+            config_sha = json.loads(config_file.read_text()).get("sourceSha") if config_file.is_file() else None
+            identity = owner_process_identity(node["unit"])
+            process_sha = main_guard.sha_of_release_path(" ".join(identity[2])) if identity else None
+            main_guard.reconcile_live(config_sha, live_sha, process_sha)
+        if arguments.dry_run:
+            # Live gate check happens under the lease; the dry run reports it early.
+            main_guard.check_deployable(["git", "-C", str(HERE)], live_sha, arguments.sha)
+    except main_guard.MainGuardError as error:
+        print(error)
+        return 1
+
     with tempfile.TemporaryDirectory() as temporary:
         archive = Path(temporary) / f"rel-{arguments.sha}.tar"
         pack_release(release, archive)
@@ -693,7 +710,7 @@ def main() -> int:
                 for local, remote in ((archive, remote_archive),
                         *((HERE / name, stage + "/" + name) for name in
                           ("rollout-candidate.py", "rollout-node.py", "accept-node.py",
-                           "release_rules.py", "release_gate.py", "remote_release_gate.py", "deployment_config.py"))):
+                           "release_rules.py", "release_gate.py", "remote_release_gate.py", "main_guard.py", "deployment_config.py"))):
                     gate.check()
                     copied = subprocess.run(["scp", "-q", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
                                              "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=10",

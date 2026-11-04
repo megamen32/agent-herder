@@ -67,6 +67,9 @@ class ReleaseGateTests(unittest.TestCase):
         git("config","user.name","Test");git("config","user.email","test@example.invalid")
         git("commit","--allow-empty","-qm","one");old=git("rev-parse","HEAD")
         git("commit","--allow-empty","-qm","two");new=git("rev-parse","HEAD")
+        origin=self.root/"origin.git"
+        subprocess.run(["git","init","-q","--bare",str(origin)],check=True)
+        git("remote","add","origin",str(origin));git("branch","-M","main");git("push","-q","origin","main")
         key=str(repo/".git")
         self.proof["project"]=key;self.proof_path.write_text(json.dumps(self.proof))
         self.state.write_text(json.dumps(dict(version=1,projects={key:dict(fence=1,lease=self.lease)})))
