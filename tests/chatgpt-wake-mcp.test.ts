@@ -45,41 +45,41 @@ async function connectedClient(jobs: HerderJobRegistry = new HerderJobRegistry()
 describe("chatgpt wake binding MCP behavior", () => {
   it("session_identity without native metadata stays fail-closed for a ChatGPT caller", async () => {
     const client = await connectedClient();
-    const missing = await client.callTool({ name: "session_identity", arguments: {} });
+    const missing = await client.callTool({ name: "session_info", arguments: { detail: "identity" } });
     expect(missing.isError).toBe(true);
     expect(missing.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("caller_session_unavailable") });
   });
 
   it("refuses to register a binding whose owner session does not exist", async () => {
     const client = await connectedClient();
-    const register = await client.callTool({ name: "chatgpt_wake_binding_register", arguments: {
+    const register = await client.callTool({ name: "chatgpt_wake", arguments: Object.assign({ action: "register" }, {
       bindingId: "wb-mcp", secret: "s".repeat(20),
       owner: { harness: "opencode", sessionId: "ses_does_not_exist" },
-    } });
+    })});
     expect(register.isError).toBe(true);
     expect(register.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("owner_unverified") });
   });
 
   it("refuses an unknown harness instead of guessing an owner", async () => {
     const client = await connectedClient();
-    const register = await client.callTool({ name: "chatgpt_wake_binding_register", arguments: {
+    const register = await client.callTool({ name: "chatgpt_wake", arguments: Object.assign({ action: "register" }, {
       bindingId: "wb-mcp", secret: "s".repeat(20),
       owner: { harness: "codex", sessionId: "ses_does_not_exist" },
-    } });
+    })});
     expect(register.isError).toBe(true);
     expect(register.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("owner_unknown_harness") });
   });
 
   it("registers a validated owner and returns exactly that owner on verification", async () => {
     const client = await connectedClient();
-    const register = await client.callTool({ name: "chatgpt_wake_binding_register", arguments: {
+    const register = await client.callTool({ name: "chatgpt_wake", arguments: Object.assign({ action: "register" }, {
       bindingId: "wb-mcp", secret: "s".repeat(20),
       owner: { harness: "opencode", sessionId: owned.id },
-    } });
+    })});
     expect(register.isError).not.toBe(true);
-    const verified = await client.callTool({ name: "chatgpt_wake_binding_verify", arguments: {
+    const verified = await client.callTool({ name: "chatgpt_wake", arguments: Object.assign({ action: "verify" }, {
       bindingId: "wb-mcp", secret: "s".repeat(20),
-    } });
+    })});
     expect(verified.isError).not.toBe(true);
     expect((verified.structuredContent as { owner: { harness: string; sessionId: string } }).owner)
       .toEqual({ harness: "opencode", sessionId: owned.id });
@@ -87,13 +87,13 @@ describe("chatgpt wake binding MCP behavior", () => {
 
   it("fails closed on a wrong secret and never echoes the secret back", async () => {
     const client = await connectedClient();
-    await client.callTool({ name: "chatgpt_wake_binding_register", arguments: {
+    await client.callTool({ name: "chatgpt_wake", arguments: Object.assign({ action: "register" }, {
       bindingId: "wb-mcp", secret: "s".repeat(20),
       owner: { harness: "opencode", sessionId: owned.id },
-    } });
-    const wrong = await client.callTool({ name: "chatgpt_wake_binding_verify", arguments: {
+    })});
+    const wrong = await client.callTool({ name: "chatgpt_wake", arguments: Object.assign({ action: "verify" }, {
       bindingId: "wb-mcp", secret: "x".repeat(20),
-    } });
+    })});
     expect(wrong.isError).toBe(true);
     expect(wrong.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("chatgpt_wake_binding_unverified") });
     expect(JSON.stringify(wrong)).not.toContain("s".repeat(20));
@@ -101,13 +101,13 @@ describe("chatgpt wake binding MCP behavior", () => {
 
   it("does not let one binding resolve to another owner (cross-chat substitution)", async () => {
     const client = await connectedClient();
-    await client.callTool({ name: "chatgpt_wake_binding_register", arguments: {
+    await client.callTool({ name: "chatgpt_wake", arguments: Object.assign({ action: "register" }, {
       bindingId: "wb-mcp", secret: "s".repeat(20),
       owner: { harness: "opencode", sessionId: owned.id },
-    } });
-    const other = await client.callTool({ name: "chatgpt_wake_binding_verify", arguments: {
+    })});
+    const other = await client.callTool({ name: "chatgpt_wake", arguments: Object.assign({ action: "verify" }, {
       bindingId: "wb-other", secret: "s".repeat(20),
-    } });
+    })});
     expect(other.isError).toBe(true);
     expect(other.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("chatgpt_wake_binding_unverified") });
   });
@@ -115,26 +115,26 @@ describe("chatgpt wake binding MCP behavior", () => {
   it("delivers the terminal job result exactly once through chatgpt_wake_await", async () => {
     const jobs = new HerderJobRegistry();
     const client = await connectedClient(jobs);
-    await client.callTool({ name: "chatgpt_wake_binding_register", arguments: {
+    await client.callTool({ name: "chatgpt_wake", arguments: Object.assign({ action: "register" }, {
       bindingId: "wb-mcp", secret: "s".repeat(20),
       owner: { harness: "opencode", sessionId: owned.id },
-    } });
+    })});
     const job = jobs.start({
       kind: "wake-fixture",
       run: async () => ({ answer: 42 }),
     });
     await new Promise((resolve) => setTimeout(resolve, 50));
-    const delivered = await client.callTool({ name: "chatgpt_wake_await", arguments: {
+    const delivered = await client.callTool({ name: "chatgpt_wake", arguments: Object.assign({ action: "await" }, {
       bindingId: "wb-mcp", secret: "s".repeat(20), jobId: job.id, timeoutMs: 5_000,
-    } });
+    })});
     expect(delivered.isError).not.toBe(true);
     const payload = delivered.structuredContent as { owner: { sessionId: string }; job: { state: string; result: { answer: number } } };
     expect(payload.owner.sessionId).toBe(owned.id);
     expect(payload.job.state).toBe("completed");
     expect(payload.job.result).toEqual({ answer: 42 });
-    const second = await client.callTool({ name: "chatgpt_wake_await", arguments: {
+    const second = await client.callTool({ name: "chatgpt_wake", arguments: Object.assign({ action: "await" }, {
       bindingId: "wb-mcp", secret: "s".repeat(20), jobId: job.id, timeoutMs: 5_000,
-    } });
+    })});
     expect(second.isError).toBe(true);
     expect(second.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("already_done") });
   });

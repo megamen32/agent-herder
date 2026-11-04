@@ -182,6 +182,7 @@ export const StopAgentSchema = z.object({
   sessionId: z.string().describe("Session ID to stop."),
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "zai", "minimax-code", "browser-chat"]).optional().describe("Harness (optional if ID is unique)."),
   hostId: z.string().trim().min(1).max(512).optional().describe("Machine that owns the session. Omitted stops a session of this machine; another machine is stopped through its own native session."),
+  inputId: z.string().trim().min(1).max(256).optional().describe("Stable intent key: a retried stop with the same inputId is answered from the receipt ledger instead of stopping twice."),
 });
 
 export const RespondPermissionSchema = z.object({

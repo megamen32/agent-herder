@@ -5,6 +5,8 @@ import type { ResumeAfterService } from "../resume-after.js";
 import { HarnessAdapter, AgentSession } from "../types/index.js";
 import { isShortSessionId, sessionShortId } from "../session-short-id.js";
 import { z } from "zod";
+import { getHumanStopStore } from "../human-stop-store.js";
+import { MeshDeliveryLedger } from "../mesh/delivery-ledger.js";
 import {
   ListAgentsSchema,
   AgentInfoSchema,
@@ -32,7 +34,7 @@ import { createNamedSession, newOrResumeNamedSession, deliverNamedSession, selec
 import { automationDisarmDecisionWithWork, sessionWorkKey, AutomationDisarmStore } from "../automation-disarm/index.js";
 import { homedir, hostname } from "node:os";
 import { createHash } from "node:crypto";
-import { relative, resolve, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { realpath } from "node:fs/promises";
 import { auditWorktrees } from "../worktree-audit.js";
 import { BrowserWakeService } from "../browser-wake.js";
@@ -41,7 +43,7 @@ import type { UserMessageDelivery, UserMessageRoute } from "../user-message-deli
 import type { TrustedMeshIngress } from "../mesh/authenticated-ingress.js";
 import { coordinationNotes, normalizeHostId } from "../coordination-notes.js";
 import { withSessionLabelMeta } from "../session-labels.js";
-import { unwrapResult } from "../mesh/protocol.js";
+import { unwrapResult, type NativeReceipt } from "../mesh/protocol.js";
 import type { GptAdminTransport } from "../mesh/gptadmin.js";
 import { fleetDirectTransport } from "../mesh/fleet-direct-transport.js";
 import { isCoordinationActive, sendCurrentTurnOnly, skippedCoordination, previousCoordinationReceipt } from "../coordination-active-delivery.js";
@@ -422,6 +424,12 @@ export function withSessionHost(session: AgentSession): AgentSession {
 
 export async function agentInfoResult(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<AgentSession | null> {
   const parsed = AgentInfoSchema.parse(args);
+  // A fleet read must never activate a cold lazy runtime: only an adapter
+  // with a native existing-owner read seam may answer before it is ready.
+  for (const name of parsed.harness ? [parsed.harness] : [...adapters.keys()]) {
+    const adapter = adapters.get(name) as (HarnessAdapter & { nativeReadWithoutActivation?: boolean }) | undefined;
+    if (adapter?.lazyStart && !adapter.nativeReadWithoutActivation && (!adapter.isReady || !adapter.isReady())) throw new Error("fleet_session_native_not_ready");
+  }
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   const session = found ? await found.adapter.getSession(found.session.id, {includeMetrics:true}) : null;
   return session ? withSessionLabelMeta(withSessionHost(session)) : null;
@@ -771,67 +779,142 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
   return JSON.stringify(await deliverNamedSession(adapters,{harness:parsed.harness!,name:parsed.name!,cwd:parsed.cwd!,message:await compactAutomaticMessage(deliveredMessage),inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),create:parsed.create,activation:parsed.activation,mode:parsed.mode,model:parsed.model,sourceSessionId:parsed.sourceSessionId,sourceHarness:parsed.sourceHarness,sourceSessions:parsed.sourceSessions}));
 }
 
+/** The admission receipt of one stop: the fleet peer transport reads the same
+ * fields the local caller reads, so one command answers both. */
+export type StopAgentReceipt = {
+  state: "admitted" | "not_attempted" | "unknown";
+  held: boolean;
+  hostId: string;
+  sessionId: string;
+  harness?: string;
+  reason?: string;
+  retryable?: boolean;
+  inputId?: string;
+};
+export type StopAgentOutcome = { text: string; structured: StopAgentReceipt };
+
+function stopAgentText(receipt: StopAgentReceipt): string {
+  const label = receipt.harness ? `[${receipt.harness}] ` : "";
+  if (receipt.state === "admitted") {
+    return receipt.held
+      ? `Stopped agent ${label}${receipt.sessionId}.`
+      : `Stopped agent ${label}${receipt.sessionId}, but the hold was not recorded: automatic deliveries may still reach this session.`;
+  }
+  if (receipt.state === "unknown") {
+    return `Failed to stop agent ${label}${receipt.sessionId}: the stop is unproven and must not be replayed.`;
+  }
+  return `Failed to stop agent: ${receipt.reason ?? "native_stop_failed"}`;
+}
+
 export async function handleStopAgent(
   adapters: Map<string, HarnessAdapter>,
   args: unknown,
-  deps?: { transport?: GptAdminTransport; localHostId?: string },
-): Promise<string> {
+  deps?: { transport?: GptAdminTransport; localHostId?: string; ledgerPath?: string },
+): Promise<StopAgentOutcome> {
   const parsed = StopAgentSchema.parse(args);
   const localHostId = deps?.localHostId || hostname();
   const owner = parsed.hostId ? normalizeHostId(parsed.hostId, localHostId) : localHostId;
   // A session of another machine is stopped there, by its own native adapter.
   if (owner !== localHostId) return stopRemoteSession(parsed, owner, deps?.transport);
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
-  if (!found) return `Session '${parsed.sessionId}' not found.`;
-
-  await holdManualStop(found.session);
-
-  const stopStartedAt = Date.now();
-  const result = await found.adapter.stopSession(parsed.sessionId);
-  if (result.ok) {
-    await projectReleaseLeases.endSession({ hostId: localHostId, harness: found.session.harness, nativeSessionId: parsed.sessionId }, stopStartedAt);
-    // Manual stop records a durable handoff but must not wake the stopped session.
-    await recordProjectLifecycle({ harness: found.session.harness, sessionId: parsed.sessionId, cwd: found.session.cwd, event: "end", at: new Date(stopStartedAt).toISOString() }).catch(() => undefined);
-    return `Stopped agent [${found.session.harness}] ${parsed.sessionId}.`;
+  const base: StopAgentReceipt = {
+    state: "not_attempted",
+    held: false,
+    hostId: localHostId,
+    sessionId: parsed.sessionId,
+    ...(found?.session.harness ? { harness: found.session.harness } : {}),
+    ...(parsed.inputId ? { inputId: parsed.inputId } : {}),
+  };
+  if (!found) {
+    const structured: StopAgentReceipt = { ...base, reason: "native_session_not_found", retryable: true };
+    return { text: `Session '${parsed.sessionId}' not found.`, structured };
   }
-  return `Failed to stop agent: ${result.error}`;
+  const stopOnce = async (): Promise<StopAgentReceipt> => {
+    await holdManualStop(found.session);
+    const held = await getHumanStopStore().isHeld(found.session.harness, found.session.id).catch(() => false);
+    const stopStartedAt = Date.now();
+    let result: Awaited<ReturnType<typeof found.adapter.stopSession>>;
+    try {
+      result = await found.adapter.stopSession(parsed.sessionId);
+    } catch {
+      return { ...base, state: "unknown", held, reason: "native_stop_unknown", retryable: false };
+    }
+    if (result.ok) {
+      await projectReleaseLeases.endSession({ hostId: localHostId, harness: found.session.harness, nativeSessionId: parsed.sessionId }, stopStartedAt);
+      // Manual stop records a durable handoff but must not wake the stopped session.
+      await recordProjectLifecycle({ harness: found.session.harness, sessionId: parsed.sessionId, cwd: found.session.cwd, event: "end", at: new Date(stopStartedAt).toISOString() }).catch(() => undefined);
+      return { ...base, state: "admitted", held, reason: held ? "native_session_stopped" : "native_session_stopped_without_hold", retryable: false };
+    }
+    return { ...base, state: "not_attempted", held, reason: result.error || "native_stop_failed", retryable: true };
+  };
+  if (!parsed.inputId) {
+    const structured = await stopOnce();
+    return { text: stopAgentText(structured), structured };
+  }
+  // One stable intent stops the session once; an unproven stop keeps its receipt.
+  const ledger = new MeshDeliveryLedger(deps?.ledgerPath ?? join(homedir(), ".local/state/agent-herder/harness-mesh-receipts.json"));
+  const receipt = await ledger.once(
+    { target: { hostId: localHostId, harness: found.session.harness, nativeSessionId: parsed.sessionId }, sender: { hostId: localHostId, harness: found.session.harness, nativeSessionId: parsed.sessionId }, inputId: parsed.inputId, message: "stop" },
+    async () => {
+      const outcome = await stopOnce();
+      const recorded: NativeReceipt & { reason?: string; held?: boolean } = {
+        state: outcome.state,
+        inputId: parsed.inputId as string,
+        retryable: outcome.retryable ?? false,
+        ...(outcome.reason ? { reason: outcome.reason } : {}),
+        ...(outcome.held !== undefined ? { held: outcome.held } : {}),
+      };
+      return recorded;
+    },
+  );
+  const state = receipt.state === "admitted" || receipt.state === "not_attempted" || receipt.state === "unknown" ? receipt.state : "unknown";
+  const held = (receipt as NativeReceipt & { held?: boolean }).held === true;
+  const structured: StopAgentReceipt = { ...base, state, held, ...(receipt.reason ? { reason: receipt.reason } : {}), ...(receipt.retryable !== undefined ? { retryable: receipt.retryable } : {}) };
+  return { text: stopAgentText(structured), structured };
 }
 
 /**
  * Stop one native session of another machine through the fleet peer transport.
  *
- * The address is checked against the machine the call really reaches, and an
- * unproven stop is reported as such instead of being replayed.
+ * The peer answers with the same stop_agent admission receipt its local path
+ * produces; the address is checked against the machine the call really
+ * reaches, and an unproven stop is reported as such instead of being replayed.
  */
 async function stopRemoteSession(
   parsed: z.infer<typeof StopAgentSchema>,
   hostId: string,
   transport?: GptAdminTransport,
-): Promise<string> {
-  if (!parsed.harness) return `Session '${parsed.sessionId}' lives on host '${hostId}': name its harness to stop it there.`;
+): Promise<StopAgentOutcome> {
+  const refused = (text: string, reason: string): StopAgentOutcome => ({
+    text,
+    structured: { state: "not_attempted", held: false, hostId, sessionId: parsed.sessionId, ...(parsed.harness ? { harness: parsed.harness } : {}), reason, retryable: true },
+  });
+  if (!parsed.harness) return refused(`Session '${parsed.sessionId}' lives on host '${hostId}': name its harness to stop it there.`, "remote_harness_required");
   const peer = transport ?? fleetDirectTransport();
   const inputId = createHash("sha256").update([hostId, parsed.harness, parsed.sessionId].join("|")).digest("hex");
   let reply: Record<string, unknown>;
   try {
-    reply = unwrapResult(await peer.call(`mcp:shell:${hostId}:AgentHerder`, "mesh_stop", {
-      target: { hostId, harness: parsed.harness, nativeSessionId: parsed.sessionId },
+    reply = unwrapResult(await peer.call(`mcp:shell:${hostId}:AgentHerder`, "stop_agent", {
+      sessionId: parsed.sessionId,
+      harness: parsed.harness,
       inputId,
     }));
   } catch (error) {
-    return `Failed to stop agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}': ${error instanceof Error ? error.message : String(error)}`;
+    return refused(`Failed to stop agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}': ${error instanceof Error ? error.message : String(error)}`, "remote_stop_unreachable");
   }
-  const state = String(reply.state ?? "");
+  const state = reply.state === "admitted" || reply.state === "unknown" || reply.state === "not_attempted" ? reply.state : "unknown";
   // The hold of the stop is the fence: a session that is stopped but not held
   // is still open to automatic deliveries, and that is said out loud.
   const held = reply.held === true || reply.reason === "native_session_stopped";
   const reason = typeof reply.reason === "string" && reply.reason ? `: ${reply.reason}` : "";
+  const structured: StopAgentReceipt = { state, held, hostId, sessionId: parsed.sessionId, harness: parsed.harness, ...(typeof reply.reason === "string" && reply.reason ? { reason: reply.reason } : {}), ...(typeof reply.retryable === "boolean" ? { retryable: reply.retryable } : {}), inputId };
   if (state === "admitted") {
-    if (held) return `Stopped agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}'.`;
-    return `Stopped agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}', but the hold was not recorded there: automatic deliveries may still reach that session.`;
+    if (held) return { text: `Stopped agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}'.`, structured };
+    return { text: `Stopped agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}', but the hold was not recorded there: automatic deliveries may still reach that session.`, structured };
   }
-  if (state === "unknown") return `Stop of agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}' is unproven and must not be replayed.`;
-  if (held) return `Agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}' was held, but the stop failed${reason}`;
-  return `Failed to stop agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}'${reason}`;
+  if (state === "unknown") return { text: `Stop of agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}' is unproven and must not be replayed.`, structured };
+  if (held) return { text: `Agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}' was held, but the stop failed${reason}`, structured };
+  return { text: `Failed to stop agent [${parsed.harness}] ${parsed.sessionId} on host '${hostId}'${reason}`, structured };
 }
 
 export async function handleRespondPermission(

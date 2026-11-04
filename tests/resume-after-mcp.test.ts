@@ -467,7 +467,7 @@ describe("MCP dependency wait through native adapter events",()=>{
     await emit("b");await emit("b");
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({id:"owner",options:{message:"merge the actual work",origin:"automation",inputId:"resume-after:"+wait.id}});
-    const status=await client.callTool({name:"resume_after_status",arguments:{waitId:wait.id}});
+    const status=await client.callTool({name:"resume_after",arguments:{action:"status",waitId:wait.id}});
     expect((status.structuredContent as any).wait.state).toBe("resumed");
     const retry=await client.callTool({name:"resume_after",arguments:{owner:ref("owner"),dependencies:[ref("a"),ref("b")],message:"merge the actual work",requestId:"native-join"}});
     expect((retry.structuredContent as any).wait.id).toBe(wait.id);expect(sent).toHaveLength(1);

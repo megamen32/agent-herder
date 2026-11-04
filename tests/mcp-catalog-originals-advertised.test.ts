@@ -42,16 +42,26 @@ describe("the consolidated catalog (v2: selector facades plus protected proofs)"
     }
   });
 
-  it("hides the superseded original names from discovery but keeps them callable", async () => {
+  it("hides the superseded originals; fleet wire names stay callable and legacy duplicates are refused", async () => {
     const names = await advertisedNames();
-    for (const hidden of ["stop_agent", "rename_session", "mesh_stop", "mesh_rename_session", "fleet_session_view", "job_list", "job_get", "job_cancel", "coordination_note_create", "list_models", "change_model", "save_message_to_file", "workspace_declare", "workspace_status", "send_message", "new_or_resume"]) {
+    for (const hidden of ["stop_agent", "rename_session", "job_list", "job_get", "job_cancel", "coordination_note_create", "list_models", "change_model", "save_message_to_file", "workspace_declare", "workspace_status", "send_message", "new_or_resume"]) {
       expect(names).not.toContain(hidden);
     }
-    // Hidden tools stay registered and callable: the fleet's direct transports
-    // and existing callers still address these exact names.
+    // The legacy fleet wire names are not registered at all anymore.
+    for (const gone of ["mesh_stop", "mesh_rename_session", "fleet_session_view"]) {
+      expect(names).not.toContain(gone);
+      const probe = await connect();
+      await expect(probe.callTool({ name: gone, arguments: {} })).rejects.toThrow(/not found|unknown tool/i);
+    }
+    // Hidden fleet wire names stay registered and callable: the direct
+    // transports still address these exact names.
     const client = await connect();
-    const result = await client.callTool({ name: "job_list", arguments: {} });
-    const text = JSON.stringify(result.content ?? "");
-    expect(text).not.toMatch(/Unknown tool|not found/i);
+    const fleetWire = await client.callTool({ name: "job_list", arguments: {} });
+    expect(JSON.stringify(fleetWire.content ?? "")).not.toMatch(/Unknown tool|not found/i);
+    // A hidden original without a fleet role no longer answers its legacy
+    // name: the consolidated command is the one public path.
+    const legacy = await client.callTool({ name: "change_model", arguments: { harness: "codex", model: "gpt-6-luna" } });
+    expect(legacy.isError).toBe(true);
+    expect(JSON.stringify(legacy.content ?? "")).toContain("legacy_tool_removed");
   });
 });

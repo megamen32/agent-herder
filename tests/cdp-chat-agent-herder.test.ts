@@ -149,16 +149,19 @@ async function connect(driver: CdpChatDriver, options?: { cdpHistoryArchive?: Ch
 }
 
 describe("Agent Herder CDP chat capability", () => {
-  it("advertises the original CDP operations with their handlers callable", async () => {
+  it("answers the CDP operations only through the selector facades", async () => {
     const client = await connect(fakeDriver());
     const names = (await client.listTools()).tools.map((tool) => tool.name);
     expect(names).toEqual(expect.arrayContaining(["deliver", "cdp_chat", "cdp_archive", "cdp_account"]));
-    // The originals stay callable under their own names but only the
-    // selector facades are advertised.
+    // The originals are neither advertised nor callable anymore: the
+    // selector facades are the one public path.
     for (const original of ["cdp_list_chats", "cdp_edit_message", "cdp_download_media"]) {
       expect(names).not.toContain(original);
     }
-    const listed = await client.callTool({ name: "cdp_list_chats", arguments: { view: "recent" } });
+    const refused = await client.callTool({ name: "cdp_list_chats", arguments: { view: "recent" } });
+    expect(refused.isError).toBe(true);
+    expect(JSON.stringify(refused.content)).toContain("legacy_tool_removed");
+    const listed = await client.callTool({ name: "cdp_chat", arguments: { action: "list", view: "recent" } });
     expect(listed.isError).not.toBe(true);
     expect(names.filter((name) => name === "deliver")).toHaveLength(1);
   });
@@ -185,7 +188,7 @@ describe("Agent Herder CDP chat capability", () => {
     expect(names).not.toContain("cdp_list_chats");
     expect(names).not.toContain("cdp_send_message");
     expect(names).not.toContain("cdp_new_chat");
-    const listed = await client.callTool({ name: "cdp_list_chats", arguments: { view: "recent" } });
+    const listed = await client.callTool({ name: "cdp_chat", arguments: { action: "list", view: "recent" } });
     const body = JSON.parse(String(listed.content[0]?.type === "text" ? listed.content[0].text : "{}")) as { chats: Array<{ chatRef: string }> };
     expect(body.chats).toHaveLength(1);
     expect(body.chats[0]?.chatRef).toBeTruthy();
@@ -197,14 +200,14 @@ describe("Agent Herder CDP chat capability", () => {
       const driver = historyOnlyDriver();
       const sharedHistory = new ChatGptHistoryArchive(driver.historyArchiveDriver!, { archiveRoot: root });
       const first = await connect(driver, { cdpHistoryArchive: sharedHistory });
-      const listed = await first.callTool({ name: "cdp_list_chats", arguments: { view: "recent" } });
+      const listed = await first.callTool({ name: "cdp_chat", arguments: { action: "list", view: "recent" } });
       const listedBody = JSON.parse(String(listed.content[0]?.type === "text" ? listed.content[0].text : "{}")) as { chats: Array<{ chatRef: string }> };
 
       // A second HTTP transport gets a new MCP server, but the BrowserClaw page
       // and history archive belong to the long-lived Agent Herder process.
       const second = await connect(driver, { cdpHistoryArchive: sharedHistory });
 
-      const exported = await second.callTool({ name: "cdp_export_chat", arguments: { chatRef: listedBody.chats[0]!.chatRef, maxSegments: 2 } });
+      const exported = await second.callTool({ name: "cdp_archive", arguments: { action: "chat", chatRef: listedBody.chats[0]!.chatRef, maxSegments: 2 } });
       expect(exported.isError).not.toBe(true);
       expect(JSON.parse(String(exported.content[0]?.type === "text" ? exported.content[0].text : "{}"))).toMatchObject({ status: "complete" });
     } finally {
@@ -218,15 +221,15 @@ describe("Agent Herder CDP chat capability", () => {
     const second = await connect(driver);
 
     const created = await first.callTool({
-      name: "cdp_new_chat",
-      arguments: { confirmation: "NEW_CHAT", idempotencyKey: "fixture-1", title: "Session one" },
+      name: "cdp_chat",
+      arguments: { action: "new", confirmation: "NEW_CHAT", idempotencyKey: "fixture-1", title: "Session one" },
     });
     const fixture = JSON.parse(String(created.content[0]?.type === "text" ? created.content[0].text : "{}")) as { chatRef: string };
     expect(fixture.chatRef).toMatch(/^cdpchat:v1:chat:/);
 
     const rejected = await second.callTool({
-      name: "cdp_export_chat",
-      arguments: { chatRef: fixture.chatRef, format: "json" },
+      name: "cdp_archive",
+      arguments: { action: "chat", chatRef: fixture.chatRef, format: "json" },
     });
     expect(rejected.isError).toBe(true);
     expect(JSON.stringify(rejected)).toMatch(/invalid_chat_ref|unknown|page lease/i);

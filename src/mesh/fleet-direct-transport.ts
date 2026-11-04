@@ -6,6 +6,7 @@ import {createHash} from 'node:crypto';
 import {hostname,userInfo} from 'node:os';
 import type {GptAdminTransport} from './gptadmin.js';
 import type {DeliveryResponseResourceBinding} from '../mcp/delivery-response-resources.js';
+import {FLEET_DIRECT_TOOLS} from './fleet-tool-allowlist.js';
 /** Reuses owner-authorized fleet SSH, transporting HTTP to each existing singleton. Never starts MCP stdio or a native controller. */
 export type DirectPeer={hostId:string;sshHost:string;sshPort?:number;nativeUser:string;port:number;python:string};
 export const directFleetPeers:readonly DirectPeer[]=[
@@ -62,7 +63,7 @@ const peerFailure=(stderr:string):string=>{
  return 'direct_peer_unavailable';
 };
 const macSessionReadTimeoutMs=20_000;
-const macSessionReadTools=new Set(['fleet_node_info','fleet_session_view']);
+const macSessionReadTools=new Set(['fleet_node_info','agent_info']);
 const bridge=String.raw`import sys,json,socket,pwd,os,time,urllib.request,urllib.parse,urllib.error,uuid,signal,stat,re,shlex,hashlib
 body=sys.stdin.buffer.read(16385)
 if len(body)>16384:raise RuntimeError('request_limit')
@@ -294,13 +295,15 @@ export class FleetDirectTransport implements GptAdminTransport {
  readSessionPage(target:string,cursor?:string,limit=100):Promise<unknown>{return this.call(target,'fleet_session_page',{limit,...(cursor?{cursor}:{})});}
  schema(target:string):Promise<unknown>{const peer=this.peer(target);return this.rpc(peer,'tools/list',{},this.readDeadline(peer,'schema'));}
  async call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
-  if(!['list_active_sessions_local','model_quotas','fleet_node_info','mesh_snapshot','create_session','fleet_session_page','fleet_session_view','session_search_local','list_agents','send_message','mesh_deliver','mesh_stop','mesh_rename_session','workspace_probe','workspace_reserve','workspace_owners','automation_disarm','common_settings_read','common_settings_status','common_settings_notice','common_settings_opt_in','common_settings_restore','session_queue_processing_get','session_queue_processing_resume','job_get'].includes(tool))throw new Error('direct_tool_not_authorized');
+  if(!FLEET_DIRECT_TOOLS.includes(tool))throw new Error('direct_tool_not_authorized');
   if(tool==='mesh_deliver' && (args.sender as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
   if(tool==='workspace_reserve' && (args.owner as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
-  if(tool==='mesh_stop' && (args.target as any)?.hostId!==this.peer(target).hostId)throw new Error('direct_stop_host_mismatch');
+  // A stop writes the state of one native session of the peer itself, so an
+  // explicit owning machine must be the machine the call really reaches.
+  if(tool==='stop_agent' && typeof args.hostId==='string' && args.hostId!==this.peer(target).hostId)throw new Error('direct_stop_host_mismatch');
   // A rename writes the title of one native session of the peer itself, so
   // the peer must be the machine the call really reaches.
-  if(tool==='mesh_rename_session' && (args.target as any)?.hostId!==this.peer(target).hostId)throw new Error('direct_rename_host_mismatch');
+  if(tool==='rename_session' && typeof args.hostId==='string' && args.hostId!==this.peer(target).hostId)throw new Error('direct_rename_host_mismatch');
   const peer=this.peer(target);
   const key=peerAvailabilityKey(peer);
   // A node that is down is not asked again and again: the ask costs its full

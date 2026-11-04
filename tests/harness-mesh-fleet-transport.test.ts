@@ -22,7 +22,7 @@ describe('GPTAdmin tenant fleet transport (focused integration; expected 2s, max
   const t=new FleetGptAdminTransport({endpoint:'https://hub.test/mcp',headersProvider:()=>({}),fetch:fake as any});
   expect(await t.call('peer','mesh_snapshot',{limit:1})).toEqual({hostId:'roomhacker-server-100',sessions:[]});
   expect((await t.schema('peer') as any).tools[0].inputSchema).toEqual({type:'object'});
-  for(const tool of ['fleet_node_info','fleet_session_page','fleet_session_view','create_session'])await t.call('peer',tool,{},tool==='create_session'?'stable-once':undefined);
+  for(const tool of ['fleet_node_info','fleet_session_page','agent_info','create_session'])await t.call('peer',tool,{},tool==='create_session'?'stable-once':undefined);
   expect(requests.filter(r=>r.name==='schema').every(r=>r.arguments.detail==='full')).toBe(true);
   const create=requests.filter(r=>r.name==='exec'&&String(r.arguments.code).includes('"create_session"'));
   expect(create).toHaveLength(1);
@@ -60,7 +60,7 @@ describe('facade identity/deadline fences (focused integration; expected 1s, max
   await expect(t.readSession('mcp:shell:server-44:AgentHerder','codex','missing-id')).rejects.toThrow('fleet_session_not_found');
   call.mockImplementation(async(_target,tool)=>tool==='fleet_node_info'
    ?{hostId:'server-44'}
-   :{hostId:'server-44',details:{session:{id:'foreign-id',harness:'codex'}}});
+   :{session:{id:'foreign-id',harness:'codex',hostId:'server-44'}});
   await expect(t.readSession('mcp:shell:server-44:AgentHerder','codex','requested-id')).rejects.toThrow('fleet_session_identity_mismatch');
  });
  it('rejects a foreign JSON-RPC result instead of accepting it as initialization or native receipt',async()=>{

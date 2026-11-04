@@ -7,19 +7,17 @@ import type {HarnessAdapter} from "../types/index.js";
 import type {SessionSupervisor} from "../session-supervisor.js";
 import type {UserMessageDelivery} from "../user-message-delivery.js";
 import {handleSendMessage} from "../mcp-tools/handlers.js";
-import {compactSession,parseNativeReceipt,addressKey,lastActivityKey,type MeshAddress,type MeshSession,type NativeReceipt,type NativeStopReceipt,type NativeRenameReceipt,type MeshSessionLabel} from "./protocol.js";
+import {compactSession,parseNativeReceipt,addressKey,lastActivityKey,type MeshSession,type NativeReceipt,type NativeRenameReceipt} from "./protocol.js";
 import type {MeshDelivery} from "./gptadmin.js";
 import {MeshDeliveryLedger} from "./delivery-ledger.js";
 import {inventoryHarnesses} from "./inventory.js";
 import {coordinationNotes,type CoordinationNoteStore} from "../coordination-notes.js";
 import {checkDeliveryModel,deliveryRefusalText,resolveSessionWorkDirectory,type ProjectModelPolicyStateProvider} from "../project-model-delivery-gate.js";
 import {automationDisarmDecisionWithWork,sessionWorkKey,AutomationDisarmStore} from "../automation-disarm/index.js";
-import {automaticDeliveryHeld,holdManualStop} from "../human-stop-actions.js";
-import {getHumanStopStore} from "../human-stop-store.js";
+import {automaticDeliveryHeld} from "../human-stop-actions.js";
 import {MINIMAX_CODE_HARNESS_CWD} from "../adapters/minimax-code-store.js";
 import {MINIMAX_CODE_HARNESS,observeMinimaxCode} from "./native-minimax-code.js";
 import {isTrustedMeshIngress,type TrustedMeshIngress} from "./authenticated-ingress.js";
-import {composeSessionTitle,mergeSessionLabel,writeSessionLabel} from "../session-labels.js";
 /**
  * Receipt of one native rename.
  *
@@ -203,69 +201,5 @@ export class LocalHarnessMesh {
   const observed=await observeMinimaxCode(1,undefined,this.hostId,nativeSessionId).catch(()=>null);
   const session=observed?.sessions[0];
   return session?{nativeSessionId:session.address.nativeSessionId,status:session.status,cwd:session.project.currentCwd??session.project.launchCwd??MINIMAX_CODE_HARNESS_CWD}:null;
- }
- /** Stop one exact native session of this host. An unproven stop is never replayed. */ async stop(request:{target:MeshAddress;inputId:string}):Promise<NativeStopReceipt>{
-  addressKey(request.target);
-  const rejected=(reason:string,retryable=true,state:"not_attempted"|"unknown"="not_attempted"):NativeStopReceipt=>({state,inputId:request.inputId,hostId:request.target.hostId,harness:request.target.harness,nativeSessionId:request.target.nativeSessionId,retryable,reason});
-  if(request.target.hostId!==this.hostId)return rejected("native_host_identity_mismatch");
-  const adapter=this.deps.adapters.get(request.target.harness);
-  if(!adapter)return rejected("adapter_not_registered");
-  const sessionId=this.ids.get(addressKey(request.target))||request.target.nativeSessionId;
-  const session=await adapter.getSession(sessionId).catch(()=>null);
-  if(!session)return rejected("native_session_not_found");
-  if(compactSession(this.hostId,session).address.nativeSessionId!==request.target.nativeSessionId)return rejected("native_session_identity_mismatch");
-  // One stable intent stops the session once; an unproven stop keeps its receipt.
-  const receipt=await this.ledger.once({target:request.target,sender:request.target,inputId:request.inputId,message:"stop"},async()=>{
-   // The fence of the stop: the same manual hold the local path writes, on
-   // this host, so the delivery path of this host sees the stopped session.
-   await holdManualStop(session);
-   const held=await getHumanStopStore().isHeld(session.harness,session.id).catch(()=>false);
-   let result;
-   try{result=await adapter.stopSession(sessionId);}catch{return {state:"unknown" as const,inputId:request.inputId,retryable:false,reason:"native_stop_unknown",held};}
-   if(!result.ok)return {state:"not_attempted" as const,inputId:request.inputId,retryable:true,reason:result.error||"native_stop_failed",held};
-   return {state:"admitted" as const,inputId:request.inputId,retryable:false,reason:held?"native_session_stopped":"native_session_stopped_without_hold",held};
-  });
-  return {...receipt,hostId:this.hostId,harness:request.target.harness,nativeSessionId:request.target.nativeSessionId};
- }
- /**
- * Rename one exact native session of this host.
- *
- * Only the title of the same session changes: no session is created, no
- * model turn starts and no active turn is interrupted. The receipt carries
- * the native titles of the readback, so a caller sees what the harness
- * really shows.
- */
- async rename(request:{target:MeshAddress;title?:string;project?:string;goal?:string;stage?:string}):Promise<MeshRenameReceipt>{
-  addressKey(request.target);
-  const rejected=(reason:string,state:"not_attempted"|"unsupported"|"not_found"="not_attempted"):MeshRenameReceipt=>({state,hostId:this.hostId,harness:request.target.harness,nativeSessionId:request.target.nativeSessionId,reason});
-  if(request.target.hostId!==this.hostId)return rejected("native_host_identity_mismatch");
-  const adapter=this.deps.adapters.get(request.target.harness);
-  if(!adapter)return rejected("adapter_not_registered");
-  const sessionId=this.ids.get(addressKey(request.target))||request.target.nativeSessionId;
-  const session=await adapter.getSession(sessionId).catch(()=>null);
-  if(!session)return rejected("native_session_not_found","not_found");
-  if(compactSession(this.hostId,session).address.nativeSessionId!==request.target.nativeSessionId)return rejected("native_session_identity_mismatch");
-  const patch={project:request.project,goal:request.goal,stage:request.stage};
-  const hasFields=request.project!==undefined||request.goal!==undefined||request.stage!==undefined;
-  const merged=hasFields?await mergeSessionLabel(session.harness,session.id,patch):await mergeSessionLabel(session.harness,session.id,{});
-  const title=request.title?.trim()||composeSessionTitle(merged);
-  if(!title)return rejected("native_title_required");
-  // The metadata of the session belongs to Herder and is stored first and on
-  // its own: it does not depend on what the harness can or cannot do with a name.
-  const label:MeshSessionLabel=hasFields?await writeSessionLabel(session.harness,session.id,patch):merged;
-  // The native name is an optional operation of the harness. The receipt tells
-  // the two outcomes apart with renamed: the name changed, or it did not change
-  // and the receipt says why. A rename that did not happen never takes the
-  // stored metadata away.
-  if(typeof adapter.renameSession!=="function"){
-   const renameError=`У среды '${session.harness}' нет нативного канала переименования: имя сессии осталось прежним.`;
-   return {state:"unsupported",renamed:false,hostId:this.hostId,harness:session.harness,nativeSessionId:session.id,previousTitle:null,title,label,renameError,message:`Метка сохранена. Имя сессии не изменилось — ${renameError}`};
-  }
-  const result=await adapter.renameSession(session.id,{title});
-  if(!result.ok){
-   const renameError=result.error||"Нативное переименование не удалось.";
-   return {state:"not_attempted",renamed:false,hostId:this.hostId,harness:session.harness,nativeSessionId:session.id,previousTitle:result.previousTitle??null,title,label,renameError,message:`Метка сохранена. Имя сессии не изменилось — ${renameError}`};
-  }
-  return {state:"renamed",renamed:true,hostId:this.hostId,harness:session.harness,nativeSessionId:session.id,previousTitle:result.previousTitle??null,title:result.title??title,nativeTitle:result.title??title,label,message:`Сохранено. Название сессии: «${result.title??title}».`};
  }
 }

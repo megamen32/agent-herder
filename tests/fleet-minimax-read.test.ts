@@ -1,6 +1,7 @@
 import {expect,it,vi} from "vitest";
 import {FleetCabinetService} from "../src/mesh/fleet-service.js";
 import {registerFleetNodeTools} from "../src/mesh/fleet-node.js";
+import {FLEET_DIRECT_TOOLS} from "../src/mesh/fleet-tool-allowlist.js";
 
 it("reads an existing MiniMax session through Fleet without granting native creation",async()=>{
  const hostId="mac",readSession=vi.fn(async()=>({hostId,details:{session:{id:"mvs_old",harness:"minimax-code"}}}));
@@ -10,6 +11,11 @@ it("reads an existing MiniMax session through Fleet without granting native crea
  expect(readSession).toHaveBeenCalledWith("mcp:shell:mac:AgentHerder","minimax-code","mvs_old");
  await expect(service.requestSession({hostId,harness:"minimax-code",nativeSessionId:"mvs_old"},{operation:"stop",inputId:"visibility-must-not-stop"})).rejects.toThrow("fleet_session_invalid");
  const tools=new Map<string,any>();registerFleetNodeTools({registerTool:(name:string,schema:any,handler:any)=>tools.set(name,{schema,handler})} as any,{adapters:new Map()});
- expect(tools.get("fleet_session_view").schema.inputSchema.safeParse({harness:"minimax-code",sessionId:"mvs_old"}).success).toBe(true);
+ // The legacy fleet read name is gone: the fleet reads native sessions
+ // through the canonical agent_info command on the same allowlist.
+ expect(tools.has("fleet_session_view")).toBe(false);
+ expect(FLEET_DIRECT_TOOLS).toContain("agent_info");
+ expect(FLEET_DIRECT_TOOLS).not.toContain("mesh_stop");
+ expect(FLEET_DIRECT_TOOLS).not.toContain("fleet_session_view");
  expect(tools.get("fleet_create_session").schema.inputSchema.safeParse({inputId:"a".repeat(64),harness:"minimax-code",name:"x",cwd:"/tmp"}).success).toBe(false);
 });
