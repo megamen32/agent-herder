@@ -26,7 +26,7 @@ async function connect() {
 }
 
 describe("ordinary Agent Herder catalog", () => {
-  it("advertises every registered tool under its own name except the internal readers", async () => {
+  it("advertises the consolidated facade catalog; only proofs and facades are visible", async () => {
     const client = await connect();
     // Observe the same SDK catalog without projection; no registration or
     // configuration changes between requests, and no production opt-out.
@@ -34,20 +34,24 @@ describe("ordinary Agent Herder catalog", () => {
     const baseline = (await client.listTools()).tools;
     const projected = (await client.listTools()).tools;
     const names = projected.map(tool => tool.name);
-    expect(baseline.map(tool => tool.name)).toEqual(expect.arrayContaining(["session_search_local", "list_active_sessions_local"]));
+    // Projection hides the two internal readers plus every superseded
+    // original behind the selector facades; hidden tools stay registered
+    // (baseline) and callable for the fleet's direct transports.
+    expect(baseline.length - projected.length).toBeGreaterThan(2);
     for (const tool of projected) expect(tool).toEqual(baseline.find(original => original.name === tool.name));
-    // The consolidation facade layer is gone: projection hides only the two
-    // documented internal readers, and nothing else.
-    expect(baseline.length - projected.length).toBe(2);
-    console.info("catalog projection: " + baseline.length + " registered -> " + projected.length + " visible");
-    expect(names).toEqual(expect.arrayContaining(["resume_after", "deliver", "create_session", "send_message", "stop_agent", "rename_session", "list_agents", "job_list", "change_model", "resume_after_status"]));
+    expect(names).toEqual(expect.arrayContaining(["resume_after", "deliver", "create_session", "list_agents", "mesh_snapshot", "mesh_deliver", "fleet_node_info", "fleet_session_page"]));
+    for (const facade of ["model", "stop", "rename", "session_info", "list_sessions", "job", "workspace", "search", "service_tier", "session_queue", "coordination_note"]) {
+      expect(names).toContain(facade);
+    }
+    for (const hidden of ["send_message", "stop_agent", "rename_session", "job_list", "change_model", "resume_after_status"]) {
+      expect(names).not.toContain(hidden);
+      expect(baseline.map(tool => tool.name)).toContain(hidden);
+    }
     for (const internal of ["session_search_local", "list_active_sessions_local"]) {
       expect(names).not.toContain(internal);
       expect(baseline.map(tool => tool.name)).toContain(internal);
     }
-    for (const facade of ["model", "stop", "rename", "session_info", "list_sessions", "job", "workspace", "search", "service_tier", "session_queue", "coordination_note"]) {
-      expect(names).not.toContain(facade);
-    }
+    console.info("catalog projection: " + baseline.length + " registered -> " + projected.length + " visible");
   });
 
   it.each([

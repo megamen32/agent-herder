@@ -17,8 +17,11 @@ const internalReaders = new Set(["session_search_local", "list_active_sessions_l
  * src/mesh/singleton-peer.ts). No projection layer may hide these names:
  * an unregistered endpoint never appears either way, so keeping them
  * discoverable only restores the proofs the fleet already depends on.
+ * fleet-service.ts additionally reads create_session from the advertised
+ * catalog to report the host's session-creation capability (createHarnesses),
+ * so it stays discoverable under any projection as well.
  */
-const capabilityRegistry = new Set(["mesh_snapshot", "mesh_deliver", "fleet_node_info", "fleet_session_page", "list_agents"]);
+const capabilityRegistry = new Set(["mesh_snapshot", "mesh_deliver", "fleet_node_info", "fleet_session_page", "list_agents", "create_session"]);
 
 interface CatalogPolicyFile {
   hide?: unknown;

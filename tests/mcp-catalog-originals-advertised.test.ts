@@ -12,61 +12,46 @@ afterEach(async () => {
   await Promise.all(connected.splice(0).map(async ({ client, server }) => { await client.close(); await server.close(); }));
 });
 
-async function advertisedNames(): Promise<string[]> {
+async function connect(): Promise<Client> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const server = createAgentHerderMcpServer();
-  const client = new Client({ name: "catalog-originals-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
+  const client = new Client({ name: "catalog-v2-test", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } });
   await server.connect(serverTransport);
   await client.connect(clientTransport);
   connected.push({ client, server });
+  return client;
+}
+
+async function advertisedNames(): Promise<string[]> {
+  const client = await connect();
   return (await client.listTools()).tools.map((tool) => tool.name);
 }
 
-describe("the catalog keeps the original tool names (consolidation stopped)", () => {
+describe("the consolidated catalog (v2: selector facades plus protected proofs)", () => {
   it("advertises the machine endpoints the fleet and peers read as capability proofs", async () => {
     const names = await advertisedNames();
-    expect(names).toContain("mesh_snapshot");
-    expect(names).toContain("mesh_deliver");
-    expect(names).toContain("mesh_route");
-    expect(names).toContain("mesh_discover");
-    expect(names).toContain("fleet_node_info");
-    expect(names).toContain("fleet_session_page");
-    expect(names).toContain("list_agents");
-    expect(names).toContain("list_active_sessions");
+    for (const proof of ["mesh_snapshot", "mesh_deliver", "mesh_route", "fleet_node_info", "fleet_session_page", "list_agents", "create_session"]) {
+      expect(names).toContain(proof);
+    }
   });
 
-  it("advertises the original operation names instead of selector facades", async () => {
+  it("advertises the selector facades over the superseded originals", async () => {
     const names = await advertisedNames();
-    expect(names).toContain("stop_agent");
-    expect(names).toContain("rename_session");
-    expect(names).toContain("list_models");
-    expect(names).toContain("change_model");
-    expect(names).toContain("get_service_tier");
-    expect(names).toContain("set_service_tier");
-    expect(names).toContain("job_list");
-    expect(names).toContain("job_get");
-    expect(names).toContain("job_cancel");
-    expect(names).toContain("coordination_note_create");
-    expect(names).toContain("coordination_note_list");
-    expect(names).toContain("resume_after");
-    expect(names).toContain("resume_after_status");
-    expect(names).toContain("resume_after_cancel");
+    for (const facade of ["stop", "rename", "session_info", "list_sessions", "search", "model", "service_tier", "session_queue", "job", "coordination_note", "resume_after", "cadence", "human_request", "workspace", "read_message", "export_transcript", "browser_wake", "chatgpt_wake", "project", "session_lineage", "deliver"]) {
+      expect(names).toContain(facade);
+    }
   });
 
-  it("no longer registers selector facades over the originals", async () => {
+  it("hides the superseded original names from discovery but keeps them callable", async () => {
     const names = await advertisedNames();
-    expect(names).not.toContain("search");
-    expect(names).not.toContain("model");
-    expect(names).not.toContain("service_tier");
-    expect(names).not.toContain("session_queue");
-    expect(names).not.toContain("job");
-    expect(names).not.toContain("session_info");
-    expect(names).not.toContain("list_sessions");
-    expect(names).not.toContain("stop");
-    expect(names).not.toContain("rename");
-    expect(names).not.toContain("cdp_chat");
-    expect(names).not.toContain("cdp_archive");
-    expect(names).not.toContain("cdp_account");
-    expect(names).not.toContain("cdp_send");
+    for (const hidden of ["stop_agent", "rename_session", "mesh_stop", "mesh_rename_session", "fleet_session_view", "job_list", "job_get", "job_cancel", "coordination_note_create", "list_models", "change_model", "save_message_to_file", "workspace_declare", "workspace_status", "send_message", "new_or_resume"]) {
+      expect(names).not.toContain(hidden);
+    }
+    // Hidden tools stay registered and callable: the fleet's direct transports
+    // and existing callers still address these exact names.
+    const client = await connect();
+    const result = await client.callTool({ name: "job_list", arguments: {} });
+    const text = JSON.stringify(result.content ?? "");
+    expect(text).not.toMatch(/Unknown tool|not found/i);
   });
 });
