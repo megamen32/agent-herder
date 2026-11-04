@@ -151,7 +151,7 @@
 
 /* Labels and creation flow clarified by the independent novice review. */
 .codex-navigation { padding-inline: 4px; }
-.codex-navigation button { width: 52px; height: 58px; display: flex; flex-direction: column; gap: 5px; justify-content: center; }
+.codex-navigation button, .codex-navigation a { width: 52px; height: 58px; display: flex; flex-direction: column; align-items: center; gap: 5px; justify-content: center; }
 .codex-navigation .nav-label { font-size: 9.5px; line-height: 12px; font-weight: 400; white-space: nowrap; }
 .settings-dialog-body .session-settings-link > button { border: 1px solid var(--border); border-radius: 9px; padding: 10px 14px; background: var(--surface-hover); color: var(--text); }
 @media (min-width: 1181px) { .oc-app:not(.no-inspector) { grid-template-columns: 60px 296px minmax(0,1fr) 320px; } }
@@ -317,4 +317,28 @@
 .inspector-scrim { display: none; }
 @media (min-width: 901px) and (max-width: 1180px) {
   .inspector-scrim { display: block; position: fixed; inset: 0; z-index: 44; background: rgb(0 0 0 / 35%); }
+}
+
+/* Keep chat controls on one compact line, including on narrow screens. */
+.chat-header-chat { min-height: 30px; height: 30px; padding: 0 8px; gap: 6px; }
+.chat-header-chat .chat-heading { align-items: center; overflow: hidden; }
+.chat-header-chat .chat-heading h2 { font-size: 13px; line-height: 20px; white-space: nowrap; }
+.chat-header-chat .chat-heading .chat-session-state { margin-top: 0; white-space: nowrap; }
+.chat-header-chat .header-actions .icon-button { width: 28px; height: 28px; }
+.chat-header-chat .mobile-back { padding: 0 4px; height: 28px; }
+@container chat-pane (min-width: 1200px) {
+  .chat-header-chat:not(.chat-header-noactive) .chat-heading { top: 1px; flex-direction: row; align-items: center; gap: 6px; height: 28px; }
+  .chat-header-chat:not(.chat-header-noactive) .header-actions { top: 1px; }
+}
+.remote-chat-pane .chat-header.chat-header { display: flex; min-height: 30px; height: 30px; padding: 0 6px; gap: 4px; }
+.remote-chat-pane .chat-header .chat-heading { display: flex; align-items: center; gap: 4px; overflow: hidden; }
+.remote-chat-pane .chat-header .chat-heading h2 { flex: 0 1 auto; min-width: 0; font-size: 12px; line-height: 20px; white-space: nowrap; }
+.remote-chat-pane .chat-header .chat-session-state { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; }
+.remote-chat-pane .chat-header .header-actions { flex-wrap: nowrap; gap: 2px; }
+.remote-chat-pane .chat-header.chat-header .header-actions button, .remote-chat-pane .chat-header.chat-header .header-actions summary, .remote-chat-pane .chat-header.chat-header .mobile-back { min-width: 0; min-height: 0; height: 28px; padding: 0 4px; font-size: 11px; white-space: nowrap; }
+.remote-chat-pane .chat-header .mobile-back { flex: none; }
+.remote-chat-pane .chat-header .header-actions summary { display: flex; align-items: center; }
+@media (max-width: 380px) {
+  .remote-chat-pane .chat-header.chat-header .mobile-back { font-size: 0; }
+  .remote-chat-pane .chat-header .mobile-back::before { content: '←'; font-size: 14px; }
 }
