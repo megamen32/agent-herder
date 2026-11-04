@@ -152,9 +152,11 @@ describe("Agent Herder CDP chat capability", () => {
   it("advertises the original CDP operations with their handlers callable", async () => {
     const client = await connect(fakeDriver());
     const names = (await client.listTools()).tools.map((tool) => tool.name);
-    expect(names).toEqual(expect.arrayContaining(["deliver", "cdp_list_chats", "cdp_edit_message", "cdp_download_media"]));
-    for (const facade of ["cdp_chat", "cdp_archive", "cdp_account", "cdp_send"]) {
-      expect(names).not.toContain(facade);
+    expect(names).toEqual(expect.arrayContaining(["deliver", "cdp_chat", "cdp_archive", "cdp_account"]));
+    // The originals stay callable under their own names but only the
+    // selector facades are advertised.
+    for (const original of ["cdp_list_chats", "cdp_edit_message", "cdp_download_media"]) {
+      expect(names).not.toContain(original);
     }
     const listed = await client.callTool({ name: "cdp_list_chats", arguments: { view: "recent" } });
     expect(listed.isError).not.toBe(true);
@@ -165,7 +167,8 @@ describe("Agent Herder CDP chat capability", () => {
     const client = await connect(archiveOnlyDriver());
     const names = (await client.listTools()).tools.map((tool) => tool.name);
     expect(names).toContain("deliver");
-    expect(names).toContain("cdp_request_account_export");
+    expect(names).toContain("cdp_account");
+    expect(names).not.toContain("cdp_request_account_export");
     expect(names).not.toContain("cdp_chat");
     expect(names).not.toContain("cdp_archive");
     expect(names).not.toContain("cdp_new_chat");
@@ -176,9 +179,10 @@ describe("Agent Herder CDP chat capability", () => {
   it("advertises history archive actions without fixture send", async () => {
     const client = await connect(historyOnlyDriver());
     const names = (await client.listTools()).tools.map((tool) => tool.name);
-    expect(names).toEqual(expect.arrayContaining(["cdp_list_chats"]));
-    expect(names).not.toContain("cdp_chat");
-    expect(names).not.toContain("cdp_archive");
+    // The archive fallback owns cdp_list_chats, so both facades exist and
+    // action=list on cdp_chat routes to that archive handler.
+    expect(names).toEqual(expect.arrayContaining(["cdp_archive", "cdp_chat"]));
+    expect(names).not.toContain("cdp_list_chats");
     expect(names).not.toContain("cdp_send_message");
     expect(names).not.toContain("cdp_new_chat");
     const listed = await client.callTool({ name: "cdp_list_chats", arguments: { view: "recent" } });

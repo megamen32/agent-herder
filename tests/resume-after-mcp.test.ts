@@ -450,10 +450,10 @@ describe("MCP dependency wait through native adapter events",()=>{
     cleanup.push(async()=>{await client.close();await server.close();});
     const tools=(await client.listTools()).tools.map(t=>t.name);
     expect(tools).toContain("resume_after");
-    // No facade hides the operation names any more: status and cancel stay
-    // advertised under their own names.
-    expect(tools).toContain("resume_after_status");
-    expect(tools).toContain("resume_after_cancel");
+    // The v2 facade: status and cancel hide behind the resume_after selector
+    // but stay callable under their own names.
+    expect(tools).not.toContain("resume_after_status");
+    expect(tools).not.toContain("resume_after_cancel");
     const registration=await client.callTool({name:"resume_after",arguments:{owner:ref("owner"),dependencies:[ref("a"),ref("b")],message:"merge the actual work",requestId:"native-join"}});
     expect(registration.isError).not.toBe(true);
     const wait=(registration.structuredContent as any).wait;
