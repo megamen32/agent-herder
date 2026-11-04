@@ -55,10 +55,10 @@ export class FleetGptAdminTransport implements GptAdminTransport {
  async readSession(target:string,harness:string,sessionId:string):Promise<unknown>{
   const hostId=target.match(/^mcp:shell:([^:]+):AgentHerder$/)?.[1];if(!hostId||!['codex','zcode','opencode'].includes(harness)||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))throw new Error('fleet_session_invalid');
   const info=unwrapResult(await this.call(target,'fleet_node_info',{}));if(info.hostId!==hostId)throw new Error('native_owner_identity_mismatch');
-  const result=unwrapResult(await this.call(target,'fleet_session_view',{harness,sessionId}));const details=result.details as Record<string,any>|undefined;
-  if(result.hostId!==hostId)throw new Error('native_owner_identity_mismatch');
-  if(result.found===false&&result.reason==='native_session_not_found')throw new Error('fleet_session_not_found');
-  if(details?.session?.id!==sessionId||details.session.harness!==harness)throw new Error('fleet_session_identity_mismatch');return result;
+  const result=unwrapResult(await this.call(target,'agent_info',{sessionId,harness}));const session=result.session as Record<string,any>|undefined|null;
+  if(!session)throw new Error('fleet_session_not_found');
+  if(session.hostId!==hostId)throw new Error('native_owner_identity_mismatch');
+  if(session.id!==sessionId||session.harness!==harness)throw new Error('fleet_session_identity_mismatch');return result;
  }
  readSessionPage(target:string,cursor?:string,limit=100):Promise<unknown>{return this.call(target,'fleet_session_page',{limit,...(cursor?{cursor}:{})});}
  schema(target:string):Promise<unknown>{return this.facade('schema',{target,detail:'full'},Date.now()+(this.options.readDeadlineMs??10000));}

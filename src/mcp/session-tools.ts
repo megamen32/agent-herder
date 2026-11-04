@@ -240,8 +240,9 @@ export function registerSessionTools(server: McpServer, deps: {
     const peer = transport ?? new FleetDirectTransport(fleetPeers().filter((candidate) => candidate.hostId !== "MacBook-Pro-User.local"));
     let reply: Record<string, unknown>;
     try {
-      reply = unwrapResult(await peer.call(`mcp:shell:${hostId}:AgentHerder`, "mesh_rename_session", {
-        target: { hostId, harness: args.harness, nativeSessionId: args.sessionId },
+      reply = unwrapResult(await peer.call(`mcp:shell:${hostId}:AgentHerder`, "rename_session", {
+        sessionId: args.sessionId,
+        harness: args.harness,
         ...(args.title ? { title: args.title } : {}),
         ...(args.project ? { project: args.project } : {}),
         ...(args.goal ? { goal: args.goal } : {}),
@@ -535,6 +536,7 @@ export function registerSessionTools(server: McpServer, deps: {
       harness: z.string().optional(),
       hostId: z.string().optional(),
       renamed: z.boolean().optional(),
+      state: z.enum(["renamed", "unsupported", "not_attempted", "not_found"]).optional(),
       previousTitle: z.string().nullable().optional(),
       title: z.string().optional(),
       nativeTitle: z.string().optional(),
@@ -552,7 +554,7 @@ export function registerSessionTools(server: McpServer, deps: {
     const found = await findSession(route.adapters, args.sessionId, route.args.harness);
     if (!found) {
       const error = `Session '${args.sessionId}' was not found.`;
-      return { content: [{ type: "text" as const, text: error }], structuredContent: { ok: false, supported: false, error } };
+      return { content: [{ type: "text" as const, text: error }], structuredContent: { ok: false, supported: false, state: "not_found", error } };
     }
     const adapter = found.adapter;
     const patch = { project: args.project, goal: args.goal, stage: args.stage };
@@ -565,7 +567,7 @@ export function registerSessionTools(server: McpServer, deps: {
     const title = args.title?.trim() || composeSessionTitle(merged);
     if (!title) {
       const error = "A session title is required: give a title, a project name, or a task goal.";
-      return { content: [{ type: "text" as const, text: error }], structuredContent: { ok: false, supported: true, sessionId: args.sessionId, harness: found.session.harness, hostId: owner, error } };
+      return { content: [{ type: "text" as const, text: error }], structuredContent: { ok: false, supported: true, state: "not_attempted", sessionId: args.sessionId, harness: found.session.harness, hostId: owner, error } };
     }
     // The metadata is written first and on its own: it belongs to Herder and
     // does not depend on what the harness can or cannot do with a name.
@@ -591,10 +593,12 @@ export function registerSessionTools(server: McpServer, deps: {
         renameError = result.error || "Нативное переименование не удалось.";
       }
     }
+    const state = renamed ? "renamed" as const : typeof adapter.renameSession !== "function" ? "unsupported" as const : "not_attempted" as const;
     publishSessionsChanged();
     const structured = {
       ok: true,
       supported: true,
+      state,
       sessionId: args.sessionId,
       harness: found.session.harness,
       hostId: owner,
@@ -720,19 +724,19 @@ export function registerSessionTools(server: McpServer, deps: {
     return { content: [{ type: "text" as const, text: result }] };
   });
   server.registerTool("deliver", { description: "Deliver a message to an agent. Existing targets default to current-turn-only delivery; idle/completed targets are skipped without deferred debt. Newly created named targets receive their initial task. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed. deliverIn (seconds) or deliverAt (RFC3339) schedules the message through the durable resume-after service: exact sessionId targets of this machine, the target must exist, a model override is refused, busy sessions queue the message at fire time; status via resume_after_status, cancel via resume_after_cancel with the owner from the schedule receipt. Omit both to deliver immediately.", inputSchema: DeliverSchema }, async(args)=>{ const route=await sessionRoute(args);if(route.denied)throw new Error("project_session_scope_unavailable");if(route.hostTargetUnavailable)throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);await assertDeliveryModelAllowed(route.adapters,{sessionId:args.sessionId,harness:args.harness,cwd:args.cwd,model:args.model});if(args.deliverIn!==undefined||args.deliverAt!==undefined){const result=await scheduleDeliver(route.adapters,deps.resumeAfter,route.args);return {content:[{type:"text" as const,text:result}]};}const result=await handleDeliver(route.adapters,route.args);publishSessionsChanged();return {content:[{type:"text" as const,text:result}]}; });
-  server.registerTool("stop_agent", { description: "Stop / abort a running agent session. A session of another machine is stopped there, through its own native session.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional().describe("Machine that owns the session. Omitted stops a session of this machine.") }) }, async (args) => {
+  server.registerTool("stop_agent", { description: "Stop / abort a running agent session. A session of another machine is stopped there, through its own native session. inputId deduplicates retries of one stable stop intent; the structured receipt carries the admission state (admitted/not_attempted/unknown) and the manual-stop hold.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional().describe("Machine that owns the session. Omitted stops a session of this machine."), inputId: z.string().trim().min(1).max(256).optional().describe("Stable intent key: a retried stop with the same inputId is answered from the receipt ledger instead of stopping twice.") }), outputSchema: z.object({ state: z.enum(["admitted", "not_attempted", "unknown"]), held: z.boolean(), hostId: z.string(), harness: z.string().optional(), sessionId: z.string(), reason: z.string().optional(), retryable: z.boolean().optional(), inputId: z.string().optional() }) }, async (args) => {
     const owner = typeof args.hostId === "string" ? normalizeHostId(args.hostId, hostname()) : hostname();
     // Another machine owns its own native session, so the stop runs there.
     if (owner !== hostname()) {
       const result = await handleStopAgent(deps.adapters, args, { transport: peerTransport, localHostId: hostname() });
       publishSessionsChanged();
-      return { content: [{ type: "text" as const, text: result }] };
+      return { content: [{ type: "text" as const, text: result.text }], structuredContent: result.structured };
     }
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
     if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     const result = await handleStopAgent(route.adapters, route.args); publishSessionsChanged();
-    return { content: [{ type: "text" as const, text: result }] };
+    return { content: [{ type: "text" as const, text: result.text }], structuredContent: result.structured };
   });
   server.registerTool("respond_permission", { description: "Respond to a pending permission request (allow/deny). OpenCode, Claude SDK, and ZCode support this.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), permissionId: z.string(), response: z.enum(["allow", "deny"]), remember: z.boolean().optional() }) }, async (args) => {
     const route = await sessionRoute(args);

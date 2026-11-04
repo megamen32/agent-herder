@@ -1,6 +1,6 @@
 import {expect,it,vi} from 'vitest';
 import {ZcodeAdapter} from '../src/adapters/zcode.js';
-import {registerFleetNodeTools} from '../src/mesh/fleet-node.js';
+import {agentInfoResult} from '../src/mcp-tools/handlers.js';
 import {SessionSupervisor} from '../src/session-supervisor.js';
 
 it('reads exact quick ZCode details without enumerating unrelated sessions',async()=>{
@@ -41,18 +41,17 @@ it('reads a pending permission from the existing official owner before reporting
 
 it('allows Fleet to read an official existing-owner seam while lazy initialization is false',async()=>{
  const session={id:'known',harness:'zcode',status:'needs_input',needsPermission:true,cwd:'/repo',title:'Task',hostId:'h',lastActivity:new Date().toISOString(),permissionDetails:{id:'perm',type:'permission',description:'Approval required'}};
- const tools=new Map<string,any>();
  const getSession=vi.fn(async()=>session);
- registerFleetNodeTools({registerTool:(name:string,_schema:any,handler:any)=>tools.set(name,handler)} as any,{adapters:new Map([['zcode',{lazyStart:true,isReady:()=>false,nativeReadWithoutActivation:true} as any]]),readSupervisor:{getSession,getSessionDetails:async()=>({session,messages:[],history:{source:'unavailable'}})} as any});
- const result=await tools.get('fleet_session_view')({harness:'zcode',sessionId:'known'});
- expect(result.structuredContent.details.session).toMatchObject({status:'needs_input',needsPermission:true,permissionDetails:{id:'perm'}});
- expect(getSession).toHaveBeenCalledOnce();
+ // The fleet reads native sessions through agent_info now: an adapter with
+ // a native existing-owner read seam answers while lazy initialization is false.
+ const read=await agentInfoResult(new Map([['zcode',{lazyStart:true,isReady:()=>false,nativeReadWithoutActivation:true,getSession} as any]]),{sessionId:'known',harness:'zcode'});
+ expect(read).toMatchObject({status:'needs_input',needsPermission:true,permissionDetails:{id:'perm'}});
+ expect(getSession).toHaveBeenCalled();
 });
 
 it('keeps sleeping adapters without an existing-owner read seam blocked',async()=>{
- const tools=new Map<string,any>(),getSession=vi.fn();
- registerFleetNodeTools({registerTool:(name:string,_schema:any,handler:any)=>tools.set(name,handler)} as any,{adapters:new Map([['zcode',{lazyStart:true,isReady:()=>false} as any]]),readSupervisor:{getSession} as any});
- await expect(tools.get('fleet_session_view')({harness:'zcode',sessionId:'known'})).rejects.toThrow('fleet_session_native_not_ready');
+ const getSession=vi.fn();
+ await expect(agentInfoResult(new Map([['zcode',{lazyStart:true,isReady:()=>false,getSession} as any]]),{sessionId:'known',harness:'zcode'})).rejects.toThrow('fleet_session_native_not_ready');
  expect(getSession).not.toHaveBeenCalled();
 });
 

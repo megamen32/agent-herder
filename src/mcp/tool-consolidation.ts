@@ -1,5 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { FLEET_DIRECT_TOOLS } from "../mesh/fleet-tool-allowlist.js";
+import { capabilityRegistry, internalReaders } from "./catalog-policy.js";
 
 /**
  * Public action facades over existing, independently validated SDK handlers.
@@ -29,7 +31,6 @@ const families: readonly Family[] = [
   ] },
   { name: "session_info", selector: "detail", choices: [
     { value: "agent", tool: "agent_info" },
-    { value: "latest", tool: "fleet_session_view" },
     { value: "identity", tool: "session_identity" },
   ] },
   { name: "list_sessions", selector: "scope", choices: [
@@ -194,7 +195,6 @@ function registerTargetFacade(
   hidden: Set<string>,
   name: "stop" | "rename",
   originalName: "stop_agent" | "rename_session",
-  hiddenPeer: string,
 ): void {
   const original = captured.get(originalName);
   if (!original || !(original.schema instanceof z.ZodObject)) return;
@@ -231,7 +231,6 @@ function registerTargetFacade(
     callback,
   ]);
   hidden.add(originalName);
-  if (captured.has(hiddenPeer)) hidden.add(hiddenPeer);
 }
 
 export function withToolConsolidation(
@@ -240,6 +239,8 @@ export function withToolConsolidation(
   hidden: Set<string>,
 ): void {
   const captured = new Map<string, Captured>();
+  // Where a hidden original public command now lives, for the refusal text.
+  const legacyCommand = new Map<string, string>();
   const original = server.registerTool;
   server.registerTool = new Proxy(original, {
     apply(target, receiver, args) {
@@ -267,8 +268,8 @@ export function withToolConsolidation(
     server.registerTool = original;
   }
 
-  registerTargetFacade(server, captured, hidden, "stop", "stop_agent", "mesh_stop");
-  registerTargetFacade(server, captured, hidden, "rename", "rename_session", "mesh_rename_session");
+  registerTargetFacade(server, captured, hidden, "stop", "stop_agent");
+  registerTargetFacade(server, captured, hidden, "rename", "rename_session");
 
   for (const family of families) {
     const entries: Entry[] = family.choices
@@ -336,7 +337,10 @@ export function withToolConsolidation(
       ]);
     }
     for (const entry of entries) {
-      if (entry.choice.tool !== family.name) hidden.add(entry.choice.tool);
+      if (entry.choice.tool !== family.name) {
+        hidden.add(entry.choice.tool);
+        legacyCommand.set(entry.choice.tool, `${family.name} ${family.selector}=${JSON.stringify(entry.choice.value)}`);
+      }
     }
   }
 
@@ -347,7 +351,25 @@ export function withToolConsolidation(
   // The catalog-policy capabilityRegistry pins mesh_deliver either way.
   if (captured.has("deliver")) {
     for (const oldName of ["send_message", "new_or_resume"]) {
-      if (captured.has(oldName)) hidden.add(oldName);
+      if (captured.has(oldName)) { hidden.add(oldName); legacyCommand.set(oldName, "deliver"); }
     }
+
+  // The fleet direct transport and the pinned peer proofs still call several
+  // originals by their exact wire names; every other hidden original is only
+  // an implementation detail of its facade now and no longer answers its
+  // legacy name. The consolidated command is the one public path.
+  const fleetCallable = new Set<string>([...FLEET_DIRECT_TOOLS, ...capabilityRegistry, ...internalReaders]);
+  for (const name of hidden) {
+    if (fleetCallable.has(name)) continue;
+    const entry = captured.get(name);
+    if (!entry) continue;
+    const command = legacyCommand.get(name);
+    const refusing = async (): Promise<never> => {
+      throw new Error(command
+        ? `legacy_tool_removed: call the consolidated command ${command} instead of ${name}`
+        : `legacy_tool_removed: ${name} is no longer callable; use its consolidated command`);
+    };
+    entry.handle.update({ callback: refusing as never });
+  }
   }
 }

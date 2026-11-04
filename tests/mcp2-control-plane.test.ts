@@ -81,10 +81,10 @@ describe("MCP2 control-plane surface", () => {
     const events = new HerderEventBus();
     const jobs = new HerderJobRegistry(events);
     const client = await connect({ events, jobs });
-    const result = await client.callTool({ name: "job_list", arguments: { limit: 10 } });
+    const result = await client.callTool({ name: "job", arguments: { action: "list", limit: 10 } });
     expect(result.structuredContent).toEqual({ jobs: [] });
-    // The v2 facade layer: the original name stays callable while the
-    // selector facade is the advertised entry.
+    // The consolidated catalog: the job facade is the one public path and
+    // the original name is neither advertised nor callable.
     const catalog = (await client.listTools()).tools;
     const tool = catalog.find((entry) => entry.name === "job");
     expect(tool?.inputSchema).toMatchObject({ type: "object" });
@@ -93,7 +93,7 @@ describe("MCP2 control-plane surface", () => {
 
   it("returns a stable fallback instead of input_required when the client lacks elicitation", async () => {
     const client = await connect();
-    const result = await client.callTool({ name: "human_request_resolve_interactive", arguments: { requestId: "11111111-1111-4111-8111-111111111111" } });
+    const result = await client.callTool({ name: "human_request", arguments: { action: "resolve_elicitation", requestId: "11111111-1111-4111-8111-111111111111" } });
     expect(result.isError).not.toBe(true);
     expect(result.content[0]?.type === "text" ? result.content[0].text : "").toContain("input_required");
     expect(result.content[0]?.type === "text" ? result.content[0].text : "").toContain("human_request_resolve");

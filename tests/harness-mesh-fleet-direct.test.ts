@@ -82,11 +82,14 @@ describe('owner direct route local logic only',()=>{
   expect(state.spawns.at(-1).body.params.name).toBe('mesh_deliver');
   await expect(t.call('mcp:shell:roomhacker-server-88:AgentHerder','mesh_deliver',{sender:{hostId:'forged'}})).rejects.toThrow('direct_sender_host_mismatch');
   await expect(t.call('mcp:shell:roomhacker-server-88:AgentHerder','workspace_reserve',{owner:{hostId:'forged'}})).rejects.toThrow('direct_sender_host_mismatch');
+  // The consolidated fleet wire names carry the same exact-peer guards.
+  await expect(t.call('mcp:shell:roomhacker-server-88:AgentHerder','stop_agent',{sessionId:'s',harness:'codex',hostId:'foreign'})).rejects.toThrow('direct_stop_host_mismatch');
+  await expect(t.call('mcp:shell:roomhacker-server-88:AgentHerder','rename_session',{sessionId:'s',harness:'codex',hostId:'foreign'})).rejects.toThrow('direct_rename_host_mismatch');
  });
  it('allows an explicit exact-host read of one native session without widening mutation tools',async()=>{
   const t=new FleetDirectTransport([macPeer]);state.reply={structuredContent:{hostId:'MacBook-Pro-User.local',found:true}};
-  await t.call('mcp:shell:MacBook-Pro-User.local:AgentHerder','fleet_session_view',{harness:'codex',sessionId:'native-exact'});
-  expect(state.spawns[0].body.params).toMatchObject({name:'fleet_session_view',arguments:{harness:'codex',sessionId:'native-exact'}});
+  await t.call('mcp:shell:MacBook-Pro-User.local:AgentHerder','agent_info',{sessionId:'native-exact',harness:'codex'});
+  expect(state.spawns[0].body.params).toMatchObject({name:'agent_info',arguments:{sessionId:'native-exact',harness:'codex'}});
   await expect(t.call('mcp:shell:MacBook-Pro-User.local:AgentHerder','shell_exec',{})).rejects.toThrow('direct_tool_not_authorized');
   expect(state.spawns).toHaveLength(1);
  });
@@ -94,11 +97,11 @@ describe('owner direct route local logic only',()=>{
   const target='mcp:shell:MacBook-Pro-User.local:AgentHerder';const t=new FleetDirectTransport([macPeer]);
   await t.schema(target);
   await t.call(target,'fleet_node_info',{});
-  await t.call(target,'fleet_session_view',{harness:'codex',sessionId:'native-exact'});
+  await t.call(target,'agent_info',{sessionId:'native-exact',harness:'codex'});
   await t.readSession(target,'codex','native-exact');
   expect(state.spawns.map(s=>s.body.timeoutMs)).toEqual([20000,20000,20000,20000]);
   const other=new FleetDirectTransport([peer]);
-  await other.call('mcp:shell:roomhacker-server-88:AgentHerder','fleet_session_view',{harness:'codex',sessionId:'native-exact'});
+  await other.call('mcp:shell:roomhacker-server-88:AgentHerder','agent_info',{sessionId:'native-exact',harness:'codex'});
   await other.readSession('mcp:shell:roomhacker-server-88:AgentHerder','codex','native-exact');
   expect(state.spawns.slice(4).map(s=>s.body.timeoutMs)).toEqual([10000,10000]);
  });
@@ -109,7 +112,7 @@ describe('owner direct route local logic only',()=>{
  });
  it('reports the bounded Python SIGALRM deadline with a stable diagnostic',async()=>{
   state.mode='exit';state.stderr='';state.exitSignal='SIGALRM';
-  await expect(new FleetDirectTransport([macPeer]).call('mcp:shell:MacBook-Pro-User.local:AgentHerder','fleet_session_view',{harness:'codex',sessionId:'native-exact'})).rejects.toThrow('direct_deadline');
+  await expect(new FleetDirectTransport([macPeer]).call('mcp:shell:MacBook-Pro-User.local:AgentHerder','agent_info',{sessionId:'native-exact',harness:'codex'})).rejects.toThrow('direct_deadline');
   expect(state.spawns).toHaveLength(1);
  });
  it('mutation requires exact durable receiver intent and never forwards retryable raw create_session',async()=>{

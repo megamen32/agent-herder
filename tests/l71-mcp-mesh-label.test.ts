@@ -6,7 +6,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { registerSessionTools } from "../src/mcp/session-tools.js";
-import { LocalHarnessMesh } from "../src/mesh/local.js";
 import { HerderEventBus } from "../src/herder-events.js";
 import { HerderJobRegistry } from "../src/herder-jobs.js";
 import { readSessionLabel, resetSessionLabelCache } from "../src/session-labels.js";
@@ -85,6 +84,7 @@ interface RenameAnswer {
   harness?: string;
   hostId?: string;
   renamed?: boolean;
+  state?: "renamed" | "unsupported" | "not_attempted" | "not_found";
   previousTitle?: string | null;
   title?: string;
   nativeTitle?: string;
@@ -109,10 +109,6 @@ async function callRename(client: Client, args: Record<string, unknown>): Promis
   const result = await client.callTool({ name: "rename_session", arguments: args });
   const text = result.content.map((block) => (typeof block.text === "string" ? block.text : "")).join("\n");
   return { answer: result.structuredContent as RenameAnswer, text };
-}
-
-function meshOf(adapters: Map<string, HarnessAdapter>, hostId = "host100"): LocalHarnessMesh {
-  return new LocalHarnessMesh({ hostId, adapters, ledgerPath: join(roots[roots.length - 1] ?? tmpdir(), "mesh-receipts.json") });
 }
 
 describe("the MCP rename of a harness without a native rename channel", () => {
@@ -246,93 +242,74 @@ describe("the MCP rename of a session of another machine", () => {
   });
 });
 
-describe("the mesh rename of a harness without a native rename channel", () => {
+describe("the peer-side rename of a harness without a native rename channel", () => {
   it("stores the metadata and says plainly that the name did not change", async () => {
     const session = fixtureSession("mvs-mesh-1");
-    const mesh = meshOf(new Map([["minimax-code", harnessWithoutRename(session)]]));
-    const receipt = await mesh.rename({
-      target: { hostId: "host100", harness: "minimax-code", nativeSessionId: "mvs-mesh-1" },
+    const client = await connectMcp(new Map([["minimax-code", harnessWithoutRename(session)]]));
+    const { answer, text } = await callRename(client, {
+      sessionId: "mvs-mesh-1", harness: "minimax-code",
       project: "Herder", goal: "починить метку", stage: "приёмка",
     });
-    expect(receipt.renamed).toBe(false);
-    expect(receipt.renameError).toContain("нет нативного канала переименования");
-    expect(receipt.label).toMatchObject({ project: "Herder", goal: "починить метку", stage: "приёмка" });
-    expect(receipt.title).toBe("починить метку | Herder");
+    // The same receipt the fleet wire reads: state tells the two outcomes apart.
+    expect(answer.state).toBe("unsupported");
+    expect(answer.renamed).toBe(false);
+    expect(answer.renameError).toContain("нет нативного канала переименования");
+    expect(answer.label).toMatchObject({ project: "Herder", goal: "починить метку", stage: "приёмка" });
+    expect(answer.title).toBe("починить метку | Herder");
     // The words are the words of the panel.
-    expect(receipt.message).toContain("Метка сохранена. Имя сессии не изменилось");
+    expect(text).toContain("Метка сохранена. Имя сессии не изменилось");
     expect(await readSessionLabel("minimax-code", "mvs-mesh-1")).toMatchObject({ project: "Herder" });
   });
 
   it("keeps the stored metadata when the native rename fails", async () => {
     const renames: string[] = [];
     const session = fixtureSession("mvs-mesh-2", "codex");
-    const mesh = meshOf(new Map([["codex", harnessWithRename(session, renames, "канал переименования занят")]]));
-    const receipt = await mesh.rename({
-      target: { hostId: "host100", harness: "codex", nativeSessionId: "mvs-mesh-2" },
+    const client = await connectMcp(new Map([["codex", harnessWithRename(session, renames, "канал переименования занят")]]));
+    const { answer } = await callRename(client, {
+      sessionId: "mvs-mesh-2", harness: "codex",
       project: "Herder", stage: "диагностика",
     });
-    expect(receipt.renamed).toBe(false);
-    expect(receipt.renameError).toBe("канал переименования занят");
-    expect(receipt.label).toMatchObject({ project: "Herder", stage: "диагностика" });
-    expect(receipt.previousTitle).toBe("было");
-    expect(receipt.message).toContain("Метка сохранена. Имя сессии не изменилось");
+    expect(answer.state).toBe("not_attempted");
+    expect(answer.renamed).toBe(false);
+    expect(answer.renameError).toBe("канал переименования занят");
+    expect(answer.label).toMatchObject({ project: "Herder", stage: "диагностика" });
+    expect(renames).toHaveLength(1);
     expect(await readSessionLabel("codex", "mvs-mesh-2")).toMatchObject({ project: "Herder" });
   });
 
   it("renames the session and stores the metadata", async () => {
     const renames: string[] = [];
     const session = fixtureSession("mvs-mesh-3", "codex");
-    const mesh = meshOf(new Map([["codex", harnessWithRename(session, renames)]]));
-    const receipt = await mesh.rename({
-      target: { hostId: "host100", harness: "codex", nativeSessionId: "mvs-mesh-3" },
-      project: "Herder", goal: "починить метку", stage: "приёмка",
+    const client = await connectMcp(new Map([["codex", harnessWithRename(session, renames)]]));
+    const { answer } = await callRename(client, {
+      sessionId: "mvs-mesh-3", harness: "codex",
+      project: "Herder", goal: "починить панель", stage: "приёмка",
     });
-    expect(receipt.renamed).toBe(true);
-    expect(receipt.state).toBe("renamed");
-    expect(receipt.renameError).toBeUndefined();
-    expect(receipt.nativeTitle).toBe("починить метку | Herder");
-    expect(receipt.previousTitle).toBe("было");
-    expect(receipt.message).toContain("Сохранено. Название сессии");
-    expect(renames).toEqual(["mvs-mesh-3 -> починить метку | Herder"]);
+    expect(answer.state).toBe("renamed");
+    expect(answer.renamed).toBe(true);
+    expect(answer.nativeTitle).toBe("починить панель | Herder");
+    expect(renames).toEqual(["mvs-mesh-3 -> починить панель | Herder"]);
     expect(await readSessionLabel("codex", "mvs-mesh-3")).toMatchObject({ project: "Herder" });
   });
 });
 
-describe("the honest refusals of the mesh rename", () => {
-  it("refuses a session of another machine", async () => {
-    const session = fixtureSession("mvs-mesh-4");
-    const mesh = meshOf(new Map([["minimax-code", harnessWithoutRename(session)]]));
-    const receipt = await mesh.rename({
-      target: { hostId: "host88", harness: "minimax-code", nativeSessionId: "mvs-mesh-4" },
-      project: "Herder",
-    });
-    expect(receipt.state).toBe("not_attempted");
-    expect(receipt.reason).toBe("native_host_identity_mismatch");
-    expect(receipt.renamed).toBeUndefined();
-    expect(await readSessionLabel("minimax-code", "mvs-mesh-4")).toEqual({});
+describe("the honest refusals of the peer-side rename", () => {
+  it("refuses a session that is not there", async () => {
+    const session = fixtureSession("mvs-mesh-6");
+    const client = await connectMcp(new Map([["minimax-code", harnessWithoutRename(session)]]));
+    const { answer } = await callRename(client, { sessionId: "absent", harness: "minimax-code", project: "Herder" });
+    expect(answer.state).toBe("not_found");
+    expect(answer.ok).toBe(false);
+    expect(answer.renamed).toBeUndefined();
+    expect(await readSessionLabel("minimax-code", "absent")).toEqual({});
   });
 
   it("refuses a harness that is not registered", async () => {
-    const mesh = meshOf(new Map());
-    const receipt = await mesh.rename({
-      target: { hostId: "host100", harness: "minimax-code", nativeSessionId: "mvs-mesh-5" },
-      project: "Herder",
-    });
-    expect(receipt.state).toBe("not_attempted");
-    expect(receipt.reason).toBe("adapter_not_registered");
-    expect(receipt.renamed).toBeUndefined();
-  });
-
-  it("refuses a session that is not there", async () => {
-    const session = fixtureSession("mvs-mesh-6");
-    const mesh = meshOf(new Map([["minimax-code", harnessWithoutRename(session)]]));
-    const receipt = await mesh.rename({
-      target: { hostId: "host100", harness: "minimax-code", nativeSessionId: "absent" },
-      project: "Herder",
-    });
-    expect(receipt.state).toBe("not_found");
-    expect(receipt.reason).toBe("native_session_not_found");
-    expect(receipt.renamed).toBeUndefined();
-    expect(await readSessionLabel("minimax-code", "absent")).toEqual({});
+    const client = await connectMcp(new Map());
+    const { answer } = await callRename(client, { sessionId: "mvs-mesh-5", harness: "claude", project: "Herder" });
+    expect(answer.ok).toBe(false);
+    expect(answer.error).toContain("was not found");
+    expect(answer.renamed).toBeUndefined();
+    expect(await readSessionLabel("claude", "mvs-mesh-5")).toEqual({});
   });
 });

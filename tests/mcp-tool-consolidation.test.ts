@@ -84,7 +84,12 @@ describe("consolidated MCP facades preserve native semantics", () => {
     expect((await client.callTool({ name: "model", arguments: { action: "list" } })).content).toMatchObject([{ text: "models" }]);
     expect((await client.callTool({ name: "model", arguments: { action: "set", model: "allowed" } })).content).toMatchObject([{ text: "changed:allowed" }]);
     expect(change).toHaveBeenCalledWith({ model: "allowed" }, expect.anything());
-    expect((await client.callTool({ name: "change_model", arguments: { model: "legacy" } })).content).toMatchObject([{ text: "changed:legacy" }]);
+    // The legacy original no longer answers its old name: the consolidated
+    // command is the one public path.
+    const legacy = await client.callTool({ name: "change_model", arguments: { model: "legacy" } });
+    expect(legacy.isError).toBe(true);
+    expect(legacy.content).toMatchObject([{ text: expect.stringContaining("legacy_tool_removed") }]);
+    expect((await client.callTool({ name: "model", arguments: { action: "set", model: "again" } })).content).toMatchObject([{ text: "changed:again" }]);
     expect((await client.callTool({ name: "model", arguments: { action: "bogus", model: "unsafe" } })).isError).toBe(true);
     expect(change).toHaveBeenCalledTimes(2);
     expect((await client.callTool({ name: "stop", arguments: { target: { sessionId: "s1" } } })).content).toMatchObject([{ text: "stopped:s1" }]);

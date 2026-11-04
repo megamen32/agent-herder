@@ -80,13 +80,13 @@ describe("the ChatGPT tools of the MCP server", () => {
     const { client, server } = await connect(driverWith({ ...ALL_ON, list_chats: false, export_chat: false }, true));
     try {
       const names = (await client.listTools()).tools.map((tool) => tool.name);
-      // The facade layer hides the name from discovery while the archive
-      // fallback stays registered and callable under the original name.
+      // The facade is the one public path: the archive fallback answers
+      // through the selector, and the original name no longer answers.
       expect(names).not.toContain("cdp_list_chats");
       expect(names).toContain("cdp_chat");
       expect(names).toContain("cdp_archive");
 
-      const listed = await client.callTool({ name: "cdp_list_chats", arguments: { view: "recent" } });
+      const listed = await client.callTool({ name: "cdp_chat", arguments: { action: "list", view: "recent" } });
       const body = JSON.parse(String(listed.content[0]?.type === "text" ? listed.content[0].text : "{}")) as { chats: Array<{ chatRef: string }> };
       expect(body.chats).toHaveLength(1);
       expect(body.chats[0]?.chatRef).toBeTruthy();

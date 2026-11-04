@@ -74,7 +74,7 @@ export const STOP_CURRENT_ENDPOINT = "/api/settings/automation/stop-current";
  * with the reason: the screen never promises a stop that did not happen.
  */
 export const LEVER_SCOPE_NOTICE =
-  "Остановка области запрещает новые автоматические запуски и останавливает живые автоматические исполнители области — по одному, точным путём mesh_stop. Сессии, которые остановить не удалось, показаны ниже с причиной.";
+  "Остановка области запрещает новые автоматические запуски и останавливает живые автоматические исполнители области — по одному, точным путём stop_agent. Сессии, которые остановить не удалось, показаны ниже с причиной.";
 
 /**
  * What the lighter action does not do.
