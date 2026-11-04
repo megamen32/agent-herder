@@ -148,10 +148,6 @@ const families: readonly Family[] = [
     { value: "verify", tool: "chatgpt_wake_binding_verify" },
     { value: "await", tool: "chatgpt_wake_await" },
   ] },
-  { name: "project", selector: "action", choices: [
-    { value: "release_lease", tool: "project_release_lease" },
-    { value: "integration", tool: "project_integration" },
-  ] },
   { name: "session_lineage", selector: "action", choices: [
     { value: "parent", tool: "find_parent" },
     { value: "children", tool: "list_children" },

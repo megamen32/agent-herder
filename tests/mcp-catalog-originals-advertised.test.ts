@@ -37,14 +37,14 @@ describe("the consolidated catalog (v2: selector facades plus protected proofs)"
 
   it("advertises the selector facades over the superseded originals", async () => {
     const names = await advertisedNames();
-    for (const facade of ["stop", "rename", "session_info", "list_sessions", "search", "model", "service_tier", "session_queue", "job", "coordination_note", "resume_after", "cadence", "human_request", "workspace", "read_message", "export_transcript", "browser_wake", "chatgpt_wake", "project", "session_lineage", "deliver"]) {
+    for (const facade of ["stop", "rename", "session_info", "list_sessions", "search", "model", "service_tier", "session_queue", "job", "coordination_note", "resume_after", "cadence", "human_request", "workspace", "read_message", "export_transcript", "browser_wake", "chatgpt_wake", "session_lineage", "deliver"]) {
       expect(names).toContain(facade);
     }
   });
 
   it("hides the superseded originals; fleet wire names stay callable and legacy duplicates are refused", async () => {
     const names = await advertisedNames();
-    for (const hidden of ["stop_agent", "rename_session", "job_list", "job_get", "job_cancel", "coordination_note_create", "list_models", "change_model", "save_message_to_file", "workspace_declare", "workspace_status", "send_message", "new_or_resume"]) {
+    for (const hidden of ["stop_agent", "rename_session", "job_list", "job_get", "job_cancel", "coordination_note_create", "list_models", "change_model", "save_message_to_file", "workspace_declare", "workspace_status", "send_message", "new_or_resume", "project_release_lease", "project_integration"]) {
       expect(names).not.toContain(hidden);
     }
     // The legacy fleet wire names are not registered at all anymore.

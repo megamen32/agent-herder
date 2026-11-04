@@ -4,7 +4,12 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 /** Discovery only. These exact peer endpoints remain registered and callable. */
-export const internalReaders = new Set(["session_search_local", "list_active_sessions_local"]);
+export const internalReaders = new Set([
+  "session_search_local", "list_active_sessions_local",
+  // Operator tools of the release pipeline: never advertised to agents, but
+  // the rollout workers address these exact names.
+  "project_release_lease", "project_integration",
+]);
 
 /**
  * The peer capability registry: peer herders and the fleet services prove
