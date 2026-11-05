@@ -48,17 +48,18 @@ function ActivityIcon({ label }: { label: string }) {
   </svg>;
 }
 
-function ToolDetails({ entries, label }: { entries: ToolEntry[]; label: string }) {
+export function ToolDetails({ entries, label, initiallyOpen = false }: { entries: ToolEntry[]; label: string; initiallyOpen?: boolean }) {
+  const [open, setOpen] = React.useState(initiallyOpen);
   const failed = entries.some(({ part, result }) => part.error || result?.error);
-  return <details className={`tool-actions tool-action-row${failed ? " tool-actions-failed" : ""}`}>
+  return <details open={open} className={`tool-actions tool-action-row${failed ? " tool-actions-failed" : ""}`} onToggle={event => setOpen(event.currentTarget.open)}>
     <summary><ActivityIcon label={label} /><span className="tool-action-name">{label}</span></summary>
-    <div className="tool-actions-body">
+    {open && <div className="tool-actions-body">
       {entries.map(({ part, result }, index) => <div className="tool-actions-item" key={index}>
         <b>{part.name || "Инструмент"} · {part.error || result?.error ? "Ошибка" : part.name === "subagent" ? "Взаимодействие" : result || part.type === "tool_result" ? "Готово" : "Вызов"}</b>
         {part.type === "tool_call" && part.input !== undefined && <><b>Вход</b><pre>{typeof part.input === "string" ? part.input : JSON.stringify(part.input, null, 2)}</pre></>}
         {(result?.output ?? part.output) !== undefined && <><b>Результат</b><pre>{result?.output ?? part.output}</pre></>}
       </div>)}
-    </div>
+    </div>}
   </details>;
 }
 

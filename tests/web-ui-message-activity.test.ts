@@ -1,9 +1,28 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MessageActivityRows, groupMessagePartSegments } from "../src/web-ui/message-activity.js";
+import { MessageActivityRows, ToolDetails, groupMessagePartSegments } from "../src/web-ui/message-activity.js";
 
 describe("message activity rows", () => {
+  it("does not serialize or render tool payloads while the row is closed", () => {
+    const serialize = vi.fn(() => ({ command: "large-input" }));
+    const html = renderToStaticMarkup(React.createElement(MessageActivityRows, { showReasoning: false, showTools: true, parts: [
+      { type: "tool_call", name: "read_file", input: { toJSON: serialize } },
+      { type: "tool_result", name: "read_file", output: "large-output" },
+    ] }));
+    expect(html).toContain("Прочитан файл");
+    expect(html).not.toContain("large-output");
+    expect(serialize).not.toHaveBeenCalled();
+  });
+
+  it("renders full input, output and status when a tool row is open", () => {
+    const html = renderToStaticMarkup(React.createElement(ToolDetails, { initiallyOpen: true, label: "Прочитан файл", entries: [
+      { part: { type: "tool_call", name: "read_file", input: { path: "/example" } }, result: { type: "tool_result", output: "file contents" } },
+    ] }));
+    expect(html).toContain("/example");
+    expect(html).toContain("file contents");
+    expect(html).toContain("Готово");
+  });
   it("preserves text-tool-text order while separating collapsible content from activity", () => {
     const parts = [
       { type: "text" as const, text: "Before" },
@@ -28,17 +47,14 @@ describe("message activity rows", () => {
     expect(html).toContain("Думаю");
     expect(html).toContain("Выполнил команды");
     expect(html).toContain("Прочитан файл");
-    expect(html).toContain("Вызов");
-    expect(html).toContain("Готово");
-    expect(html).toContain("Ошибка");
+    expect(html).toContain("tool-actions-failed");
     expect(html).toContain("Субагент");
     expect(html).toContain("Субагент reviewer");
-    expect(html).toContain("Взаимодействие");
-    expect(html).toContain("interacted");
+    expect(html).not.toContain("interacted");
     expect(html).not.toContain("command · git status --short");
     expect(html).not.toMatch(/<details[^>]* open/);
     expect(html).toContain("Reasoning body");
-    expect(html).toContain("permission denied");
+    expect(html).not.toContain("permission denied");
   });
 
   it("renders a neighboring call and result as one completed row", () => {
@@ -48,8 +64,7 @@ describe("message activity rows", () => {
     ] }));
     expect(html.match(/<details/g)).toHaveLength(1);
     expect(html).toContain("Выполнил команды");
-    expect(html).toContain("Готово");
-    expect(html).toContain("/workspace");
+    expect(html).not.toContain("/workspace");
     expect(html).not.toContain("Вызов</small>");
   });
 
@@ -64,7 +79,7 @@ describe("message activity rows", () => {
     const summary = html.match(/<summary[^>]*>(.*?)<\/summary>/)?.[1];
     expect(summary).not.toMatch(/pwd|git|Ошибка|Вызов|⌘/);
     expect(html).toContain("failed");
-    expect(html).toContain("Ошибка");
+    expect(html).toContain("tool-actions-failed");
   });
 
   it("labels image and MCP wrapper actions semantically without executing code", () => {
