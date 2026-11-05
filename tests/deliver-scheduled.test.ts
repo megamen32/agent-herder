@@ -43,12 +43,29 @@ describe("scheduleDeliver", () => {
       const result = scheduleDeliver(new Map([["opencode", stuck]]), service,
         { sessionId: "ses_test", harness: "opencode", inputId: "stable", message: "hi", deliverIn: 60 });
       const assertion = expect(result).rejects.toThrow(/session_lookup_timeout/);
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(50_000);
       await assertion;
       release({ id: "ses_test", harness: "opencode", status: "idle" });
       await vi.runAllTimersAsync();
       expect(registered).toHaveLength(0);
     } finally { vi.useRealTimers(); }
+  });
+  it("rejects immediately when the shared deadline is already exhausted, without registering a wait", async () => {
+    const { service, registered } = stubService();
+    const adapters = new Map([["codex", fakeAdapter()]]);
+    await expect(scheduleDeliver(adapters, service,
+      { sessionId: "s1", harness: "codex", inputId: "stable", message: "hi", deliverIn: 60 },
+      Date.now() - 1)).rejects.toThrow(/session_lookup_timeout/);
+    expect(registered).toHaveLength(0);
+  });
+  it("shares one deadline across phases: a slow lookup inside a small budget times out instead of hanging", async () => {
+    const { service, registered } = stubService();
+    let release!: (value: unknown) => void;
+    const slow = { getSession: () => new Promise(resolve => { setTimeout(() => release({ id: "s1", harness: "codex", status: "idle" }), 400); }) } as unknown as HarnessAdapter;
+    await expect(scheduleDeliver(new Map([["codex", slow]]), service,
+      { sessionId: "s1", harness: "codex", inputId: "stable", message: "hi", deliverIn: 60 },
+      Date.now() + 80)).rejects.toThrow(/session_lookup_timeout/);
+    expect(registered).toHaveLength(0);
   });
   it("rejects a call without a schedule trigger", async () => {
     const { service } = stubService();

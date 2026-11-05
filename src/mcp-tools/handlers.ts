@@ -179,12 +179,32 @@ export async function findSession(
   return null;
 }
 
-/** Bound read-only target resolution before a durable schedule is registered. */
-export async function boundedScheduledTarget<T>(read: Promise<T>): Promise<T> {
+/** One shared budget for a whole scheduled-delivery registration: route
+ * resolution, policy gate, target lookup and the durable register. Separate
+ * short clocks per phase turned slow-but-alive lookups (heavy host load,
+ * event-loop stalls) into hard registration failures, so the phases share one
+ * deadline that still answers inside the caller's MCP request timeout. */
+const SCHEDULED_DELIVERY_DEADLINE_MS = 45_000;
+
+/** Deadline for a scheduled-delivery registration that starts now. */
+export function scheduledDeliveryDeadline(startedAt: number = Date.now()): number {
+  return startedAt + SCHEDULED_DELIVERY_DEADLINE_MS;
+}
+
+/** Bound read-only target resolution before a durable schedule is registered.
+ * A timeout is retryable by design: the exact same call is safe to repeat,
+ * because a stable inputId (or the schedule fingerprint) deduplicates. */
+export async function boundedScheduledTarget<T>(
+  read: Promise<T>,
+  deadlineAt: number = scheduledDeliveryDeadline(),
+  timeoutMessage = "session_lookup_timeout: scheduled delivery was not registered; the target lookup was slow, so nothing was registered — the exact same call is safe to retry",
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    const remaining = deadlineAt - Date.now();
+    if (remaining <= 0) throw new Error(timeoutMessage);
     return await Promise.race([read, new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error("session_lookup_timeout: scheduled delivery was not registered")), 8_000);
+      timer = setTimeout(() => reject(new Error(timeoutMessage)), remaining);
     })]);
   } finally {
     if (timer) clearTimeout(timer);
@@ -1104,6 +1124,7 @@ export async function scheduleDeliver(
   adapters: Map<string, HarnessAdapter>,
   resumeAfter: ResumeAfterService | undefined,
   args: unknown,
+  deadlineAt: number = scheduledDeliveryDeadline(),
 ): Promise<string> {
   if (!resumeAfter) throw new Error("scheduled_delivery_unavailable: this runtime has no durable resume-after service");
   const parsed = DeliverSchema.parse(args);
@@ -1119,7 +1140,7 @@ export async function scheduleDeliver(
   if (!parsed.sessionId) {
     throw new Error("scheduled_delivery_needs_session_id: schedule deliveries with an exact sessionId target; named targets are resolved only at immediate delivery time");
   }
-  const found = await boundedScheduledTarget(findSession(adapters, parsed.sessionId, parsed.harness));
+  const found = await boundedScheduledTarget(findSession(adapters, parsed.sessionId, parsed.harness), deadlineAt);
   if (!found) throw new Error(`scheduled_delivery_target_missing: session '${parsed.sessionId}' not found`);
   const ref = { harness: found.session.harness, sessionId: found.session.id };
   if (parsed.message.length > 16000) {
@@ -1133,7 +1154,11 @@ export async function scheduleDeliver(
   // scheduling a second copy of the message.
   const requestId = parsed.inputId
     ?? `deliver-scheduled:${createHash("sha256").update(JSON.stringify([ref.harness, ref.sessionId, parsed.message, trigger])).digest("hex").slice(0, 40)}`;
-  const wait = await resumeAfter.register({ owner: ref, message: parsed.message, requestId, trigger });
+  const wait = await boundedScheduledTarget(
+    resumeAfter.register({ owner: ref, message: parsed.message, requestId, trigger }),
+    deadlineAt,
+    "scheduled_register_timeout: the durable registration was slow, so treat the schedule as not confirmed — the exact same call is safe to retry (an already-registered wait is returned unchanged)",
+  );
   if (wait.state !== "waiting") {
     return JSON.stringify({ ok: false, scheduled: false, waitId: wait.id, state: wait.state, reason: wait.reason ?? "the wait did not enter the waiting state" });
   }
