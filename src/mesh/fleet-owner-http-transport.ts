@@ -23,6 +23,13 @@ const peers:readonly Peer[]=Object.freeze([
 type Connection={context:FleetOwnerHttpContext;peer:Peer;initialized:boolean;initializing?:Promise<void>;sessionId?:string;inflight:number;used:number};
 type HttpResult={status:number;headers:IncomingHttpHeaders;data?:unknown};
 const record=(value:unknown):Record<string,any>|undefined=>value!==null&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,any>:undefined;
+const diagnosticErrors=new Set(['owner_http_context_missing','owner_http_context_invalid','owner_http_target_not_authorized','owner_http_generation_mismatch','owner_http_generation_capacity','owner_http_inflight_capacity','owner_http_deadline','owner_http_response_failed','owner_http_response_incomplete','owner_http_response_limit','owner_http_missing_rpc_response','owner_http_response_invalid','owner_http_request_failed','owner_http_request_limit','owner_http_rpc_identity_mismatch','owner_http_rpc_failed','owner_http_tool_failed','owner_http_protocol_unavailable','owner_http_session_invalid','owner_http_native_identity_mismatch','owner_http_session_identity_mismatch','owner_http_input_identity_mismatch']);
+function diagnosticCategory(error:unknown):string {
+ try{const message=error instanceof Error?error.message:'';return diagnosticErrors.has(message)||/^owner_http_http_[1-5][0-9]{2}$/.test(message)?message:'other';}catch{return 'other';}
+}
+function diagnosticLog(stage:string,category:string):void {
+ try{console.warn(`[agent-herder] fleet_owner_http stage=${stage} category=${category}`);}catch{/* diagnostics must never change delivery */}
+}
 
 /** Cookie authority is supplied only by the owner's verified HTTP request scope.
  * No credentials, journaling, roles, SSH routes or mutation retries are created here.
@@ -165,13 +172,17 @@ export class FleetOwnerHttpTransport implements GptAdminTransport {
  requestSession(target:string,harness:string,sessionId:string,control:FleetSessionControl):Promise<FleetSessionResponse>{
   if(!['codex','zcode','opencode'].includes(harness)||typeof sessionId!=='string'||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))return Promise.reject(new Error('owner_http_session_invalid'));
   const captured=fleetSessionControlSchema.parse(control),mutation=['message','stop','resume'].includes(captured.operation);
+  let stage='prepare';
   return this.operation(target,mutation?30000:15000,async(state,signal)=>{
-   await this.connect(state,signal);await this.info(state,signal);
+   stage='initialize';await this.connect(state,signal);stage='info';await this.info(state,signal);
    const path=`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(sessionId)}`;
+   stage='identity';
    const identity=await this.http(state,signal,'GET',path),session=record(record(identity.data)?.session);
    if(identity.status!==200||session?.id!==sessionId||session.harness!==harness)throw new Error('owner_http_session_identity_mismatch');
+   stage='admission';
    await assertRemoteCodexAdmission(captured.operation,{harness},()=>this.rpc(state,signal,'tools/call',{name:'model_quotas',arguments:{}}));
    let response:HttpResult;
+   stage=captured.operation==='details'?'details':captured.operation==='message-status'?'message_status':'action';
    if(captured.operation==='details')response=await this.http(state,signal,'GET',path+'/details?limit=40&quick=1');
    else if(captured.operation==='message-status')response=await this.http(state,signal,'GET',path+'/message-status?inputId='+encodeURIComponent(captured.inputId!));
    else {
@@ -182,7 +193,7 @@ export class FleetOwnerHttpTransport implements GptAdminTransport {
    if(captured.operation==='details'&&response.status===200){const received=record(record(response.data)?.session);if(received?.id!==sessionId||received.harness!==harness)throw new Error('owner_http_session_identity_mismatch');}
    if(captured.operation==='message-status'&&response.status===200&&record(response.data)?.inputId!==captured.inputId)throw new Error('owner_http_input_identity_mismatch');
    return {hostId:state.peer.hostId,status:response.status,body:response.data??{ok:false,error:'Удалённая сессия пока недоступна.',...(mutation?{admissionUnknown:true,nonRetryable:true}:{})}};
-  });
+  }).catch(error=>{diagnosticLog(stage,diagnosticCategory(error));throw error;});
  }
  readSession(target:string,harness:string,sessionId:string):Promise<unknown>{
   if(!['codex','zcode','opencode','minimax-code'].includes(harness)||typeof sessionId!=='string'||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))return Promise.reject(new Error('owner_http_session_invalid'));

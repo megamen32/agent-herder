@@ -199,6 +199,57 @@ describe('owner cookie native HTTP transport (fast unit; expected2s/max25s)',()=
 
 // Remote human controls reuse the existing owner API, not mesh AI delivery.
 describe('remote session human controls (focused integration; expected2s/max20s)',()=>{
+ it('records a safe initialization failure without logging credentials or changing the error',async()=>{
+  const log=vi.spyOn(console,'warn').mockImplementation(()=>{});try{
+   const f=fixture();f.setContext({cookie:'secret-cookie-value',credentialGeneration:'secret-generation'});f.hold();
+   const pending=f.transport.requestSession(target44,'codex','secret-session',{operation:'details'});
+   f.respond(f.calls[0],undefined,401);
+   await expect(pending).rejects.toThrow('owner_http_http_401');
+   expect(log).toHaveBeenCalledWith('[agent-herder] fleet_owner_http stage=initialize category=owner_http_http_401');
+   expect(JSON.stringify(log.mock.calls)).not.toMatch(/secret|cookie|generation/);
+  }finally{log.mockRestore();}
+ });
+ it('records session identity failure, preserving refusal and never writing',async()=>{
+  const log=vi.spyOn(console,'warn').mockImplementation(()=>{});try{
+   const f=fixture();await expect(f.transport.requestSession(target44,'codex','different',{operation:'stop',inputId:'private-id'})).rejects.toThrow('session_identity_mismatch');
+   expect(log).toHaveBeenCalledWith('[agent-herder] fleet_owner_http stage=identity category=owner_http_session_identity_mismatch');
+   expect(f.calls.some(c=>c.body?.humanRequested)).toBe(false);
+   expect(JSON.stringify(log.mock.calls)).not.toContain('private-id');
+  }finally{log.mockRestore();}
+ });
+ it('distinguishes native host verification and details identity failures',async()=>{
+  const log=vi.spyOn(console,'warn').mockImplementation(()=>{});try{
+   const info=fixture();info.setHandler(c=>c.body?.method==='initialize'?{protocolVersion:'2025-11-25'}:{structuredContent:{hostId:'wrong',nativeUser:'roomhacker'}});
+   await expect(info.transport.requestSession(target44,'codex','accepted-44',{operation:'details'})).rejects.toThrow('owner_http_native_identity_mismatch');
+   expect(log).toHaveBeenCalledWith('[agent-herder] fleet_owner_http stage=info category=owner_http_native_identity_mismatch');
+   const details=fixture();details.setHandler(c=>{
+    if(c.options.method==='GET')return {session:{id:String(c.options.path).includes('/details?')?'wrong':'accepted-44',harness:'codex'}};
+    if(c.body.method==='initialize')return {protocolVersion:'2025-11-25'};
+    return {structuredContent:{hostId:'server-44',nativeUser:'roomhacker'}};
+   });
+   await expect(details.transport.requestSession(target44,'codex','accepted-44',{operation:'details'})).rejects.toThrow('owner_http_session_identity_mismatch');
+   expect(log).toHaveBeenCalledWith('[agent-herder] fleet_owner_http stage=details category=owner_http_session_identity_mismatch');
+  }finally{log.mockRestore();}
+ });
+ it('never includes network error text or request contents in diagnostics',async()=>{
+  const log=vi.spyOn(console,'warn').mockImplementation(()=>{});try{
+   const f=fixture();f.hold();const pending=f.transport.requestSession(target44,'codex','private-session',{operation:'message',inputId:'private-input',message:'private-message'});
+   f.calls[0].req.emit('error',new Error('private-cookie private-url private-history'));
+   await expect(pending).rejects.toThrow('owner_http_request_failed');
+   expect(log).toHaveBeenCalledWith('[agent-herder] fleet_owner_http stage=initialize category=owner_http_request_failed');
+   expect(JSON.stringify(log.mock.calls)).not.toContain('private-');
+   expect(f.calls.filter(c=>c.body?.humanRequested)).toHaveLength(0);
+  }finally{log.mockRestore();}
+ });
+ it('maps unexpected errors to other without changing the original rejection',async()=>{
+  const log=vi.spyOn(console,'warn').mockImplementation(()=>{});try{
+   const original=new Error('private-message private-cookie');
+   const t=new FleetOwnerHttpTransport({ownerContext:()=>{throw original;}});
+   await expect(t.requestSession(target44,'codex','private-session',{operation:'details'})).rejects.toBe(original);
+   expect(log).toHaveBeenCalledWith('[agent-herder] fleet_owner_http stage=prepare category=other');
+   expect(JSON.stringify(log.mock.calls)).not.toContain('private-');
+  }finally{log.mockRestore();}
+ });
  it('sends exactly once to the selected owner/native SID with stable input and human origin',async()=>{
   const f=fixture();f.setHandler(c=>{if(c.options.method==='GET')return {session:{id:'accepted-44',harness:'codex'}};if(c.body.params?.name==='model_quotas')return {structuredContent:reportedCodexQuota()};if(c.body.humanRequested)return {ok:true,inputId:c.body.inputId,admitted:true};if(c.body.method==='initialize')return {protocolVersion:'2025-11-25',capabilities:{}};return {structuredContent:{hostId:'server-44',nativeUser:'roomhacker'}};});
   const r=await f.transport.requestSession(target44,'codex','accepted-44',{operation:'message',inputId:'owned-input',message:'hello',mode:'queue'});
