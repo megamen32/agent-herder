@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { HarnessAdapter } from "../types/index.js";
 import type { ResumeAfterService } from "../resume-after.js";
 import { sessionIdentity } from "../session-identity.js";
+import { normalizeSessionReference } from "../session-reference.js";
 import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import { UserMessageDelivery } from "../user-message-delivery.js";
@@ -16,6 +17,7 @@ import type { SendMessageResult } from "../types/index.js";
 import { trustedMeshIngressFromMcpAuthInfo } from "../mesh/authenticated-ingress.js";
 import {
   SendMessageSchema,
+  ExportTranscriptSchema,
   CreateSessionSchema,
   NewOrResumeSchema,
   DeliverSchema,
@@ -312,6 +314,7 @@ export function registerSessionTools(server: McpServer, deps: {
     return fail(`The rename of [${args.harness}] ${args.sessionId} on host '${hostId}' is unproven and must not be replayed${reason}`);
   }
   async function sessionRoute<T extends { sessionId?: string; harness?: string; hostId?: string }>(args: T) {
+    args = normalizeSessionReference(args);
     const hostId = normalizeHostId(args.hostId, hostname());
     if (!args.sessionId || !deps.integratorRuntime) return { adapters, args, denied: false, hostTargetUnavailable: hostId.toLowerCase() === hostname().toLowerCase() ? undefined : hostId };
     const resolution = await deps.integratorRuntime.adapterForSession({ hostId, harness: "codex", nativeSessionId: args.sessionId });
@@ -403,13 +406,13 @@ export function registerSessionTools(server: McpServer, deps: {
   server.registerTool("list_agents", { description: "Historical/session browsing. For a current global active inventory with actual code work hosts, multiple paths and freshness use list_active_sessions. List coding agent sessions, including ZCode. Filter by harness, status, age (maxAge seconds), folder (CWD prefix like ~/apps) or machine (hostId). Omitted hostId lists sessions of every machine. Can show last message preview.", inputSchema: z.object({
     harness: z.enum(["all", "opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "zai", "minimax-code", "browser-chat"]).optional().default("all"),
     status: z.enum(["all", "running", "idle", "needs_input", "stopped", "error"]).optional().default("all"),
-    limit: z.number().int().min(1).max(100).optional().default(20), maxAge: z.number().int().min(0).optional(), folder: z.string().optional(),
+    limit: z.number().int().min(1).max(100).optional().default(20), offset: z.number().int().min(0).max(10000).optional().default(0), query: z.string().trim().min(1).max(512).optional(), maxAge: z.number().int().min(0).optional(), folder: z.string().optional(),
     hostId: z.string().trim().min(1).max(512).optional().describe("Filter by machine. Omitted lists sessions of every machine."),
     includeLastMessage: z.boolean().optional().default(false),
   }), outputSchema: z.object({
     complete: z.boolean(), unavailable: z.array(z.object({harness:z.string(),error:z.string()})),
     sessions: z.array(sessionSchema), total: z.number().int().min(0), limited: z.boolean(),
-    filters: z.object({ harness: z.string(), status: z.string(), maxAge: z.number().optional(), folder: z.string().optional(), hostId: z.string().optional(), includeLastMessage: z.boolean() }),
+    filters: z.object({ harness: z.string(), status: z.string(), maxAge: z.number().optional(), folder: z.string().optional(), hostId: z.string().optional(), query: z.string().optional(), offset: z.number().optional(), includeLastMessage: z.boolean() }),
   }) }, async (args) => {
     const peer = selectedRemotePeer(args.hostId);
     if (peer) {
@@ -437,11 +440,13 @@ export function registerSessionTools(server: McpServer, deps: {
     const result = await readModelQuotas();
     return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
   });
-  server.registerTool("agent_info", { description: "Get detailed info about a specific session. Always shows model and last message. Select hostId and harness to read an existing session on another machine.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional() }), outputSchema: z.object({ session: sessionSchema.nullable() }) }, async (args) => {
+  server.registerTool("agent_info", { description: "Get detailed info about a specific session. Always shows model and last message. Select hostId and harness to read an existing session on another machine.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional() }), outputSchema: z.object({ session: sessionSchema.nullable(), candidates:z.array(z.object({id:z.string(),harness:z.string(),hostId:z.string().optional(),title:z.string(),cwd:z.string(),lastActivity:z.string()})).optional() }) }, async (args) => {
+    args = normalizeSessionReference(args);
     const requestedHost = normalizeHostId(args.hostId, hostname());
     if (requestedHost.toLowerCase() !== hostname().toLowerCase()) {
       const peer = (deps.routingPeers ?? fleetPeers()).find(candidate => candidate.hostId.toLowerCase() === requestedHost.toLowerCase());
-      if (!peer || !args.harness) throw new Error("remote_session_host_and_harness_required");
+      if (!peer) throw new Error(`host_target_unavailable:${requestedHost}`);
+      if (!args.harness) throw new Error("remote_session_harness_required");
       const scope = await deps.integratorRuntime?.adapterForSession({ hostId: peer.hostId, harness: args.harness, nativeSessionId: args.sessionId });
       if (scope?.kind === "deny") throw new Error("project_session_scope_unavailable");
       // Scoped sessions must remain on their configured adapter; the ordinary
@@ -463,8 +468,15 @@ export function registerSessionTools(server: McpServer, deps: {
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
     if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
-    const session = await agentInfoResult(route.adapters, route.args);
-    return { content: [{ type: "text" as const, text: session ? formatSession(session, true) : `Session '${args.sessionId}' not found.` }], structuredContent: { session } };
+    try {
+      const session = await agentInfoResult(route.adapters, route.args);
+      return { content: [{ type: "text" as const, text: session ? formatSession(session, true) : `Session '${args.sessionId}' not found. Searched local adapters: ${[...route.adapters.keys()].join(", ")}.` }], structuredContent: { session } };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (!message.startsWith("session_ambiguous:")) throw error;
+      const candidates = JSON.parse(message.slice("session_ambiguous:".length));
+      return {content:[{type:"text" as const,text:JSON.stringify({candidates})}],structuredContent:{session:null,candidates}};
+    }
   });
   server.registerTool("session_identity", {
     description:
@@ -619,7 +631,11 @@ export function registerSessionTools(server: McpServer, deps: {
   });
 
   server.registerTool("find_parent", { description: "Find the native parent session of an agent session.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }), outputSchema: z.object({ session: sessionSchema.nullable(), parent: sessionSchema.nullable(), supported: z.boolean(), error: z.string().optional() }) }, async (args) => {
-    const result = await findParentResult(adapters, args);
+    args = normalizeSessionReference(args);
+    const route = await sessionRoute(args);
+    if (route.denied) throw new Error("project_session_scope_unavailable");
+    if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
+    const result = await findParentResult(route.adapters, route.args);
     return { content: [{ type: "text" as const, text: formatFindParentResult(args.sessionId, result) }], structuredContent: result };
   });
   server.registerTool("list_children", { description: "List the native child sessions of an agent session.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }), outputSchema: z.object({ session: sessionSchema.nullable(), children: z.array(sessionSchema), supported: z.boolean(), error: z.string().optional() }) }, async (args) => {
@@ -630,13 +646,23 @@ export function registerSessionTools(server: McpServer, deps: {
     return { content: [{ type: "text" as const, text: formatListChildrenResult(args.sessionId, result) }], structuredContent: result };
   });
 
-  server.registerTool("export_transcript", { description: "Export the raw adapter-owned transcript and return a filesystem navigation card.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional() }) }, async (args) => {
+  server.registerTool("export_transcript", { description: "Export the raw adapter-owned transcript and return a filesystem navigation card.", inputSchema: ExportTranscriptSchema }, async (args) => {
+    args = normalizeSessionReference(args);
+    const remote = selectedRemotePeer(args.hostId);
+    if (remote) {
+      if (!args.harness) throw new Error("remote_session_harness_required");
+      const scope = await deps.integratorRuntime?.adapterForSession({hostId:remote.hostId,harness:args.harness,nativeSessionId:args.sessionId});
+      if (scope && scope.kind !== "ordinary") throw new Error("project_session_scope_unavailable");
+      const {hostId: _hostId, ...ownerArgs} = args;
+      return await (peerTransport ?? new FleetDirectTransport([remote])).call(`mcp:shell:${remote.hostId}:AgentHerder`, "export_transcript", ownerArgs) as {content:Array<{type:"text";text:string}>};
+    }
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
     if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     return { content: [{ type: "text" as const, text: await handleExportTranscript(route.adapters, route.args) }] };
   });
-  server.registerTool("export_transcript_async", { description: "Export a raw adapter-owned transcript as a Herder background job.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), ownerSessionId: z.string().optional() }) }, async (args) => {
+  server.registerTool("export_transcript_async", { description: "Export a raw adapter-owned transcript as a Herder background job.", inputSchema: ExportTranscriptSchema.extend({ownerSessionId: z.string().optional()}) }, async (args) => {
+    args = normalizeSessionReference(args);
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
     if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
@@ -660,6 +686,7 @@ export function registerSessionTools(server: McpServer, deps: {
   });
 
   server.registerTool("send_message", { description: "Send a message to an agent and wait up to 30 seconds for new visible assistant text. The result includes the existing delivery job reference and a read-only response resource; reading it never resends the message. Ordinary coordination defaults to mode:\"steer\" for the current active turn. Explicit queue and sync use the shared durable delivery and may start work according to the harness. Agent sends require authenticated owner-MCP ingress; sender fields are attribution only. Explicit humanRequested=true marks a human new task/send/resume. inputId deduplicates retries for 24 hours. Active coordination notes are injected automatically. fromSessionId/fromHarness add verified reply attribution, do not authenticate the caller. queue is intentional deferred work and may wait for current work to finish; it is not an immediate exchange. sync is a delivery mode and does not change the bounded response wait.", inputSchema: SendMessageSchema }, async (args, ctx) => {
+    args = normalizeSessionReference(args);
     const peer = selectedRemotePeer(args.hostId);
     if (peer) {
       if (!args.harness) throw new Error("remote_session_host_and_harness_required");
@@ -747,6 +774,7 @@ export function registerSessionTools(server: McpServer, deps: {
     return { content: [{ type: "text" as const, text: result }] };
   });
   server.registerTool("deliver", { description: "Deliver a message to an agent. Existing targets default to current-turn-only delivery; idle/completed targets are skipped without deferred debt. Newly created named targets receive their initial task. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed. deliverIn (seconds) or deliverAt (RFC3339) schedules the message through the durable resume-after service: exact sessionId targets of this machine, the target must exist, a model override is refused, busy sessions queue the message at fire time; status via resume_after_status, cancel via resume_after_cancel with the owner from the schedule receipt. Omit both to deliver immediately.", inputSchema: DeliverSchema }, async(args)=>{
+    args = normalizeSessionReference(args);
     const hostId = normalizeHostId(args.hostId, hostname());
     if (hostId.toLowerCase() !== hostname().toLowerCase()) {
       const peer = selectedRemotePeer(hostId);
@@ -771,6 +799,7 @@ export function registerSessionTools(server: McpServer, deps: {
     const result=await handleDeliver(route.adapters,route.args);publishSessionsChanged();return {content:[{type:"text" as const,text:result}]};
   });
   server.registerTool("stop_agent", { description: "Stop / abort a running agent session. A session of another machine is stopped there, through its own native session. inputId deduplicates retries of one stable stop intent; the structured receipt carries the admission state (admitted/not_attempted/unknown) and the manual-stop hold.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional().describe("Machine that owns the session. Omitted stops a session of this machine."), inputId: z.string().trim().min(1).max(256).optional().describe("Stable intent key: a retried stop with the same inputId is answered from the receipt ledger instead of stopping twice.") }), outputSchema: z.object({ state: z.enum(["admitted", "not_attempted", "unknown"]), held: z.boolean(), hostId: z.string(), harness: z.string().optional(), sessionId: z.string(), reason: z.string().optional(), retryable: z.boolean().optional(), inputId: z.string().optional() }) }, async (args) => {
+    args = normalizeSessionReference(args);
     const owner = typeof args.hostId === "string" ? normalizeHostId(args.hostId, hostname()) : hostname();
     // Another machine owns its own native session, so the stop runs there.
     if (owner !== hostname()) {

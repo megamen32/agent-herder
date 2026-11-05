@@ -56,6 +56,9 @@ export function normalizeHostId(input: string | undefined | null, localHostId: s
   const raw = typeof input === "string" ? input.trim() : "";
   if (!raw) return local;
   const lowered = raw.toLowerCase();
+  // The Codex desktop's discovered SSH alias for server 100 names this same
+  // machine; only collapse it when the local native hostname confirms that.
+  if (local.toLowerCase() === "roomhacker-server-100" && lowered === "remote-ssh-discovered:104.bezrabotnyi.com") return local;
   if (lowered === "localhost" || lowered === "127.0.0.1" || lowered === "::1" || lowered === "[::1]") return local;
   if (local && lowered === local.toLowerCase()) return local;
   return lowered;

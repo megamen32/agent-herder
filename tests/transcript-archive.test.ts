@@ -38,6 +38,36 @@ function transcript(id: string, cwd: string, body: string): ArchivedTranscript {
 }
 
 describe("TranscriptArchive", () => {
+  it("exports the requested adapter transcript even when the session cwd differs from the archive cwd", async () => {
+    const root = await workspace();
+    const outside = await workspace();
+    const session = { id:"target", harness:"codex" as const, status:"idle" as const, title:"target", cwd:outside, lastActivity:new Date().toISOString() };
+    const adapter = { type:"codex", name:"Codex", getSession:async () => session,
+      getRawTranscript:async () => ({ bytes:Buffer.from('{"type":"session_meta"}\n'), complete:true,
+        source:{kind:"native-api",location:"fixture",format:"jsonl"}, timestampCoverage:"native" }) } as unknown as HarnessAdapter;
+    const result = await handleExportTranscript(new Map([["codex",adapter]]), {sessionId:"target",harness:"codex"}, new TranscriptArchive({workspaceRoot:root}));
+    expect(result).toContain("Transcript exported:");
+    expect(await readFile(join(root,'.agent-herder/transcripts/codex/target.jsonl'),'utf8')).toContain('session_meta');
+  });
+  it("pages the tail of native messages and reports the retained full transcript", async () => {
+    const root=await workspace();
+    const session={id:"tail",harness:"codex" as const,status:"idle" as const,title:"tail",cwd:root,lastActivity:new Date().toISOString()};
+    const adapter={type:"codex",name:"Codex",getSession:async()=>session,
+      getSessionMessages:async()=>[1,2,3,4,5].map(i=>({id:String(i),role:"user",text:`message ${i}`})),
+      getRawTranscript:async()=>({bytes:Buffer.from("one\ntwo\nthree\n"),complete:true,source:{kind:"native-api",location:"fixture",format:"jsonl"},timestampCoverage:"native"})} as unknown as HarnessAdapter;
+    const result=JSON.parse(await handleExportTranscript(new Map([["codex",adapter]]),{sessionId:"tail",format:"messages",tail:4,offset:1,limit:2},new TranscriptArchive({workspaceRoot:root})));
+    expect(result.records.map((m:{id:string})=>m.id)).toEqual(["3","4"]);
+    expect(result.truncated).toBe(true); expect(result.fullPath).toContain("tail.jsonl");
+    const raw=JSON.parse(await handleExportTranscript(new Map([["codex",adapter]]),{sessionId:"tail",format:"raw",tail:2,limit:1,maxBytes:1024},new TranscriptArchive({workspaceRoot:root})));
+    expect(raw.records).toEqual(["two"]); expect(raw.truncated).toBe(true);
+  });
+  it("bounds the returned page while preserving the full export", async () => {
+    const root=await workspace(); const session={id:"large",harness:"codex" as const,status:"idle" as const,title:"large",cwd:root,lastActivity:new Date().toISOString()};
+    const body="x".repeat(5000); const adapter={type:"codex",name:"Codex",getSession:async()=>session,
+      getRawTranscript:async()=>({bytes:Buffer.from(body),complete:true,source:{kind:"native-api",location:"fixture",format:"text"},timestampCoverage:"native"})} as unknown as HarnessAdapter;
+    const result=JSON.parse(await handleExportTranscript(new Map([["codex",adapter]]),{sessionId:"large",format:"raw",maxBytes:1024},new TranscriptArchive({workspaceRoot:root})));
+    expect(result.truncated).toBe(true); expect(result.records).toEqual([]); expect((await readFile(result.fullPath,"utf8")).length).toBe(5000);
+  });
   it("exports the target and in-workspace lineage, records CWD exclusions, and atomically overwrites a session", async () => {
     const root = await workspace();
     const foreign = await workspace();
