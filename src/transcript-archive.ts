@@ -59,7 +59,7 @@ function fileStem(sessionId: string): string {
 }
 
 function harnessDirectory(harness: string): string {
-  if (["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent"].includes(harness)) return harness;
+  if (["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"].includes(harness)) return harness;
   throw new Error(`Unsupported transcript archive harness: ${harness}`);
 }
 
@@ -85,7 +85,7 @@ async function ensureSafeDirectory(root: string, directory: string): Promise<voi
 async function atomicWrite(path: string, content: Uint8Array | string): Promise<void> {
   await ensureSafeDirectory(dirname(path), dirname(path));
   const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  await writeFile(temporary, content, "utf8");
+  await writeFile(temporary, content, { encoding: "utf8", mode: 0o600 });
   await rename(temporary, path);
 }
 

@@ -1,4 +1,5 @@
-import type { AgentSession, ControlResult, CreateSessionOptions, HarnessAdapter, HarnessCapabilities, HarnessEvent, HarnessType, ListSessionsOptions, SendMessageOptions, SendMessageResult, SetPermissionsOptions } from "../types/index.js";
+import { chatgptConversationMessages } from "./chatgpt-full-conversation.js";
+import type { AgentSession, ControlResult, CreateSessionOptions, HarnessAdapter, HarnessCapabilities, HarnessEvent, HarnessType, RawTranscriptExport, ListSessionsOptions, SendMessageOptions, SendMessageResult, SetPermissionsOptions } from "../types/index.js";
 import { localSessionHostId, type SessionMessageView } from "../types/index.js";
 import { BrowserChatHistoryCache } from "./browser-chat-history-cache.js";
 import { liveHarnessPollingEnabled } from "../harness-runtime-settings.js";
@@ -32,6 +33,7 @@ export interface BrowserChatDriver {
   getKnownChat?(chatId: string): BrowserChat | null;
   /** Authenticated read-only owner API; no navigation or model turn. */
   getMessages?(chatId: string): Promise<SessionMessageView[] | null>;
+  getRawConversation?(chatId: string): Promise<unknown | null>;
   /** One bounded re-read of the turn state of one chat from the
    * provider's own API, merging the fresh result into the durable
    * inventory. Used by the browser turn observer when a running turn's
@@ -328,10 +330,28 @@ export class BrowserChatAdapter implements HarnessAdapter {
 
   async getSessionMessages(id: string, limit = 100): Promise<SessionMessageView[] | null> {
     const native = this.nativeId(id);
+    if (this.provider.id === "chatgpt" && limit > 100 && this.driver.getRawConversation) {
+      const raw = await this.driver.getRawConversation(native);
+      return raw ? chatgptConversationMessages(raw).slice(-Math.max(1, limit)) : null;
+    }
     if (!this.driver.getMessages) return null;
     if (this.historyCache.available) return this.historyCache.messages(native, limit);
     const live = await this.driver.getMessages(native);
     return live?.slice(-Math.max(1, limit)) ?? null;
+  }
+
+  async getRawTranscript(id: string, signal?: AbortSignal): Promise<RawTranscriptExport | null> {
+    if (!this.driver.getRawConversation) return null;
+    signal?.throwIfAborted();
+    const native = this.nativeId(id);
+    const data = await this.driver.getRawConversation(native);
+    signal?.throwIfAborted();
+    if (!data) return null;
+    return {
+      bytes: Buffer.from(JSON.stringify(data), "utf8"), complete: true,
+      source: { kind: "native-api", location: `https://chatgpt.com/c/${native}`, format: "json" },
+      timestampCoverage: "native", limitations: ["Attachment bytes are not included; the native conversation contains their references."],
+    };
   }
 
   /** One bounded driver-side re-read of the turn state of one chat. The

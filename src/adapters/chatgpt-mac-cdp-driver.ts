@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { chatgptFullConversationApiScript, chatgptConversationChunkScript, chatgptConversationCleanupScript } from "./chatgpt-full-conversation.js";
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import { BrowserChatDraftStore } from "./browser-chat-drafts.js";
 import { submitFirstChatMessage, verifyNewChatAccountScope } from "./browser-chat-new-page.js";
@@ -650,6 +652,27 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       if (!NATIVE_CHAT_ID.test(id)) return null;
       return (await this.listUnlocked()).find(c => c.id === id) ?? null;
     });
+  }
+
+  async getRawConversation(chatId: string): Promise<unknown | null> {
+    if (!NATIVE_CHAT_ID.test(chatId)) return null;
+    const page = await this.page();
+    const transferId = randomUUID();
+    try {
+      const result = parseChromeEvaluation<{ error?: string; transferId?: string; length?: number; chunkSize?: number }>(await this.tools.call("evaluate_script", { pageId: page.id, function: chatgptFullConversationApiScript(chatId, transferId) }));
+      if (result.error || result.transferId !== transferId || !Number.isInteger(result.length) || !Number.isInteger(result.chunkSize) || result.length! < 2 || result.length! > 100 * 1024 * 1024 || result.chunkSize !== 65536) throw new Error("ChatGPT history unavailable: " + (result.error || "unexpected response"));
+      const chunks: string[] = [];
+      for (let offset = 0; offset < result.length!; offset += result.chunkSize!) {
+        const chunk = parseChromeEvaluation<{ error?: string; offset?: number; text?: string }>(await this.tools.call("evaluate_script", { pageId: page.id, function: chatgptConversationChunkScript(transferId, offset, result.chunkSize!) }));
+        if (chunk.error || chunk.offset !== offset || typeof chunk.text !== "string" || chunk.text.length !== Math.min(result.chunkSize!, result.length! - offset)) throw new Error("ChatGPT history transfer incomplete: " + (chunk.error || "invalid chunk"));
+        chunks.push(chunk.text);
+      }
+      const data = JSON.parse(chunks.join("")) as { conversation_id?: string; mapping?: unknown };
+      if (data.conversation_id !== chatId || !data.mapping || typeof data.mapping !== "object") throw new Error("ChatGPT history transfer identity mismatch");
+      return data;
+    } finally {
+      await this.tools.call("evaluate_script", { pageId: page.id, function: chatgptConversationCleanupScript(transferId) }).catch(() => undefined);
+    }
   }
 
   /** Authenticated read-only conversation API; never navigate to load history. */
