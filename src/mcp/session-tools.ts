@@ -311,8 +311,8 @@ export function registerSessionTools(server: McpServer, deps: {
     return fail(`The rename of [${args.harness}] ${args.sessionId} on host '${hostId}' is unproven and must not be replayed${reason}`);
   }
   async function sessionRoute<T extends { sessionId?: string; harness?: string; hostId?: string }>(args: T) {
-    if (!args.sessionId || !deps.integratorRuntime) return { adapters, args, denied: false, hostTargetUnavailable: undefined as string | undefined };
     const hostId = normalizeHostId(args.hostId, hostname());
+    if (!args.sessionId || !deps.integratorRuntime) return { adapters, args, denied: false, hostTargetUnavailable: hostId.toLowerCase() === hostname().toLowerCase() ? undefined : hostId };
     const resolution = await deps.integratorRuntime.adapterForSession({ hostId, harness: "codex", nativeSessionId: args.sessionId });
     if (resolution.kind === "deny") return { adapters, args, denied: true, hostTargetUnavailable: undefined as string | undefined };
     if (resolution.kind === "ordinary") {
@@ -707,12 +707,34 @@ export function registerSessionTools(server: McpServer, deps: {
       : delivery }] };
   });
   server.registerTool("create_session", { description: "Create one named OpenCode, Codex, ZCode, or Fast Agent session in an absolute canonical working directory. Codex serviceTier defaults to normal; serviceTier is rejected for other harnesses.", inputSchema: CreateSessionSchema }, async (args) => {
+    const hostId = normalizeHostId(args.hostId, hostname());
+    if (hostId.toLowerCase() !== hostname().toLowerCase()) {
+      const peer = selectedRemotePeer(hostId);
+      if (!peer) throw new Error(`host_target_unavailable:${hostId}`);
+      if (args.sourceSessionId || args.sourceHarness || args.sourceSessions?.length) throw new Error("remote_create_source_check_unavailable");
+      if (!["codex", "zcode", "opencode"].includes(args.harness)) throw new Error("remote_create_harness_unsupported");
+      const transport = peerTransport ?? new FleetDirectTransport([peer]);
+      const target = `mcp:shell:${peer.hostId}:AgentHerder`;
+      const info = unwrapResult(await transport.call(target, "fleet_node_info", {}));
+      if (info.hostId !== peer.hostId || info.guardedNamedCreate !== true) throw new Error("remote_named_create_guard_unavailable");
+      const request = { harness: args.harness, name: args.name, cwd: args.cwd, ...(args.model ? { model: args.model } : {}), ...(args.serviceTier ? { serviceTier: args.serviceTier } : {}) };
+      const intent = createHash("sha256").update(JSON.stringify(["named-session-v1", peer.hostId, args.harness, args.name, args.cwd])).digest("hex");
+      const remote = unwrapResult(await transport.call(target, "create_session", request, intent));
+      const result = { ...remote, hostId: peer.hostId };
+      publishSessionsChanged();
+      return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
+    }
     await assertModelAllowedForDirectoryWithPolicy(deps.launchPolicy, args.cwd, args.model, args.harness);
     const result = await handleCreateSession(adapters, args); publishSessionsChanged();
     deliverMcpIntroForNamedResult(deps.supervisor, result, "human");
     return { content: [{ type: "text" as const, text: result }] };
   });
   server.registerTool("new_or_resume", { description: "Reuse the exact named session for harness+CWD or create it, then deliver one message. Codex serviceTier applies only when this call creates a new session; existing named sessions are never changed. OpenCode GLM 5.3 Flash uses MiniMax M3.1 Flash as its default fallback after a pre-admission HTTP 429 or provider quota rejection; fallbackModels overrides that route. Unknown/accepted delivery and manual stops never trigger fallback. Call model_quotas to inspect current provider allowances.", inputSchema: NewOrResumeSchema }, async (args) => {
+    const requestedHost = normalizeHostId(args.hostId, hostname());
+    if (requestedHost.toLowerCase() !== hostname().toLowerCase()) {
+      if (!selectedRemotePeer(requestedHost)) throw new Error(`host_target_unavailable:${requestedHost}`);
+      throw new Error("remote_named_delivery_unsupported");
+    }
     await assertModelAllowedForDirectoryWithPolicy(deps.launchPolicy, args.cwd, args.model, args.harness);
     // A fallback model is a model the project would run on, so the project
     // rules apply to it as well.
@@ -723,7 +745,23 @@ export function registerSessionTools(server: McpServer, deps: {
     deliverMcpIntroForNamedResult(deps.supervisor, result, args.humanRequested === false ? "automation" : "human");
     return { content: [{ type: "text" as const, text: result }] };
   });
-  server.registerTool("deliver", { description: "Deliver a message to an agent. Existing targets default to current-turn-only delivery; idle/completed targets are skipped without deferred debt. Newly created named targets receive their initial task. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed. deliverIn (seconds) or deliverAt (RFC3339) schedules the message through the durable resume-after service: exact sessionId targets of this machine, the target must exist, a model override is refused, busy sessions queue the message at fire time; status via resume_after_status, cancel via resume_after_cancel with the owner from the schedule receipt. Omit both to deliver immediately.", inputSchema: DeliverSchema }, async(args)=>{ const route=await sessionRoute(args);if(route.denied)throw new Error("project_session_scope_unavailable");if(route.hostTargetUnavailable)throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);await assertDeliveryModelAllowed(route.adapters,{sessionId:args.sessionId,harness:args.harness,cwd:args.cwd,model:args.model});if(args.deliverIn!==undefined||args.deliverAt!==undefined){const result=await scheduleDeliver(route.adapters,deps.resumeAfter,route.args);return {content:[{type:"text" as const,text:result}]};}const result=await handleDeliver(route.adapters,route.args);publishSessionsChanged();return {content:[{type:"text" as const,text:result}]}; });
+  server.registerTool("deliver", { description: "Deliver a message to an agent. Existing targets default to current-turn-only delivery; idle/completed targets are skipped without deferred debt. Newly created named targets receive their initial task. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed. deliverIn (seconds) or deliverAt (RFC3339) schedules the message through the durable resume-after service: exact sessionId targets of this machine, the target must exist, a model override is refused, busy sessions queue the message at fire time; status via resume_after_status, cancel via resume_after_cancel with the owner from the schedule receipt. Omit both to deliver immediately.", inputSchema: DeliverSchema }, async(args)=>{
+    const hostId = normalizeHostId(args.hostId, hostname());
+    if (hostId.toLowerCase() !== hostname().toLowerCase()) {
+      const peer = selectedRemotePeer(hostId);
+      if (!peer) throw new Error(`host_target_unavailable:${hostId}`);
+      if (!args.sessionId || !args.harness || !args.inputId || args.activation !== "always" || args.mode === "sync" || args.model || args.deliverIn !== undefined || args.deliverAt !== undefined || args.sourceSessionId || args.sourceHarness || args.sourceSessions?.length) throw new Error("remote_delivery_options_unsupported");
+      const scope = await deps.integratorRuntime?.adapterForSession({hostId:peer.hostId,harness:args.harness,nativeSessionId:args.sessionId});
+      if (scope?.kind === "deny") throw new Error("project_session_scope_unavailable");
+      if (scope && scope.kind !== "ordinary") throw new Error("remote_project_delivery_unsupported");
+      try {
+        return await (peerTransport ?? new FleetDirectTransport([peer])).call(`mcp:shell:${peer.hostId}:AgentHerder`, "send_message", {sessionId:args.sessionId,harness:args.harness,inputId:args.inputId,message:args.message,mode:"queue"}) as {content:Array<{type:"text";text:string}>};
+      } catch {
+        return {content:[{type:"text" as const,text:JSON.stringify({ok:false,delivery:"unknown",inputId:args.inputId,admissionUnknown:true,nonRetryable:true,error:"remote_delivery_outcome_unknown"})}]};
+      }
+    }
+    const route=await sessionRoute(args);if(route.denied)throw new Error("project_session_scope_unavailable");if(route.hostTargetUnavailable)throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);await assertDeliveryModelAllowed(route.adapters,{sessionId:args.sessionId,harness:args.harness,cwd:args.cwd,model:args.model});if(args.deliverIn!==undefined||args.deliverAt!==undefined){const result=await scheduleDeliver(route.adapters,deps.resumeAfter,route.args);return {content:[{type:"text" as const,text:result}]};}const result=await handleDeliver(route.adapters,route.args);publishSessionsChanged();return {content:[{type:"text" as const,text:result}]};
+  });
   server.registerTool("stop_agent", { description: "Stop / abort a running agent session. A session of another machine is stopped there, through its own native session. inputId deduplicates retries of one stable stop intent; the structured receipt carries the admission state (admitted/not_attempted/unknown) and the manual-stop hold.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional().describe("Machine that owns the session. Omitted stops a session of this machine."), inputId: z.string().trim().min(1).max(256).optional().describe("Stable intent key: a retried stop with the same inputId is answered from the receipt ledger instead of stopping twice.") }), outputSchema: z.object({ state: z.enum(["admitted", "not_attempted", "unknown"]), held: z.boolean(), hostId: z.string(), harness: z.string().optional(), sessionId: z.string(), reason: z.string().optional(), retryable: z.boolean().optional(), inputId: z.string().optional() }) }, async (args) => {
     const owner = typeof args.hostId === "string" ? normalizeHostId(args.hostId, hostname()) : hostname();
     // Another machine owns its own native session, so the stop runs there.

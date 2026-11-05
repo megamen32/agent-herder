@@ -15,6 +15,8 @@ import { readFleetPolicyRevisions, type FleetPolicyRevisionPeer, type FleetPolic
 import {unwrapResult} from './protocol.js';
 import { applySettingsValue, readSettings, rollbackSettingsValue } from '../settings-management.js';
 import type { SettingsStore } from '../web/settings-store.js';
+import { getHumanStopStore } from '../human-stop-store.js';
+import { realpath } from 'node:fs/promises';
 // One process generation across all MCP connections and authenticated contexts.
 const processGeneration=Date.now()-Math.floor(process.uptime()*1000);
 /** Attach to the existing local controller. No override, native activation, private writer or subprocess. */
@@ -117,7 +119,10 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
    }
    const adapter=deps.adapters.get(request.harness);
    if(!adapter?.createSession)return {state:'not_attempted',inputId:request.inputId,retryable:false,reason:'native_create_unavailable'};
-   const session=await adapter.createSession({name:request.name,cwd:request.cwd,...(request.model?{model:request.model}:{}),...(request.serviceTier?{serviceTier:request.serviceTier}:{})});
+   let cwd:string;
+   try { cwd=await realpath(request.cwd); } catch { return {state:'not_attempted',inputId:request.inputId,retryable:false,reason:'native_cwd_unavailable'}; }
+   if(await getHumanStopStore().findHeldNamed(request.harness,request.name,cwd))return {state:'not_attempted',inputId:request.inputId,retryable:false,reason:'human_stop_held'};
+   const session=await adapter.createSession({name:request.name,cwd,...(request.model?{model:request.model}:{}),...(request.serviceTier?{serviceTier:request.serviceTier}:{})});
    return {state:'created',inputId:request.inputId,address:{hostId:hostname(),harness:request.harness,nativeSessionId:session.id},launchCwd:session.cwd,retryable:false};
   });
   const result=receipt.state==='created'&&receipt.address&&receipt.launchCwd?{ok:true,created:true,harness:receipt.address.harness,sessionId:receipt.address.nativeSessionId,cwd:receipt.launchCwd,inputId:receipt.inputId}:{ok:false,created:false,state:receipt.state,inputId:receipt.inputId,...(receipt.reason?{reason:receipt.reason}:{})};
@@ -126,7 +131,7 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
  });
  server.registerTool('fleet_node_info',{description:'Read actual local Herder host/user identity and configured session-creation capability; project readiness is an explicit host-owned scoped preflight.',inputSchema:z.object({project:z.string().trim().min(1).max(512).optional()}).strict()},async(request?:{project?:string})=>{
   const project=request?.project;
-  const snapshot={hostId:hostname(),nativeUser:userInfo().username,platform:platform(),generation,createHarnesses:fleetHarnesses.filter(h=>typeof deps.adapters.get(h)?.createSession==='function'),...(deps.launchPolicyRevision?{launchPolicy:await deps.launchPolicyRevision()}:{})};
+  const snapshot={hostId:hostname(),nativeUser:userInfo().username,platform:platform(),generation,guardedNamedCreate:true,createHarnesses:fleetHarnesses.filter(h=>typeof deps.adapters.get(h)?.createSession==='function'),...(deps.launchPolicyRevision?{launchPolicy:await deps.launchPolicyRevision()}:{})};
   if(project===undefined)return {structuredContent:snapshot,content:[{type:'text' as const,text:JSON.stringify(snapshot)}]};
   const readiness=deps.integratorRuntime?await deps.integratorRuntime.readiness(project):undefined;
   // The route names the harness and the model a consumer must request. The values come from the route

@@ -1,0 +1,28 @@
+name: Fleet session routing
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  routing:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build:core
+      - name: Verify fleet creation, routing, and owner admission
+        run: npx vitest run --root . --config vitest.config.ts tests/mcp-host-default.test.ts tests/fleet-session-consumer-integration.test.ts tests/fleet-node-harness-routing.test.ts tests/harness-mesh-fleet-api.test.ts tests/harness-mesh-fleet-direct.test.ts tests/project-model-gate-tools.test.ts tests/zai-cdp-driver.test.ts tests/zai-queue-delivery.test.ts tests/browser-chat-create.test.ts

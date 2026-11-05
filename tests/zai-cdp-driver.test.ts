@@ -123,6 +123,39 @@ describe("Mac mini CDP ZAI provider", () => {
     expect((await driver.getChat("sidebar:Test%20fixture"))?.working).toBe(true);
     await expect(driver.sendMessage({ chatId: "sidebar:Unknown", text: "not allowed" })).rejects.toThrow(/not in/);
   });
+  it("refreshes a stale composer reference before sending, without clicking twice", async () => {
+    class StaleComposerTools extends MockChromeTools {
+      attempts = 0;
+      override async call(name: string, args: Record<string, unknown> = {}): Promise<string> {
+        if (name === "fill" && this.attempts++ === 0) throw new Error("Failed to interact with the element with uid 274_162. The element did not become interactive within the configured timeout.");
+        return super.call(name, args);
+      }
+    }
+    const tools = new StaleComposerTools();
+    const driver = new ZaiCdpDriver(tools);
+    await driver.listChats();
+    await driver.sendMessage({ chatId: "sidebar:Test%20fixture", text: "fixture-only" });
+    expect(tools.sent).toEqual(["fixture-only"]);
+    expect(tools.attempts).toBeGreaterThanOrEqual(2);
+    expect(tools.actions.filter(x => String(x.args.function).includes("const expected ="))).toHaveLength(1);
+  });
+  it("preserves a draft changed by the user while the composer reference expires", async () => {
+    class ChangedComposerTools extends MockChromeTools {
+      override async call(name: string, args: Record<string, unknown> = {}): Promise<string> {
+        if (name === "fill" && !this.draft) {
+          this.draft = "user draft";
+          throw new Error("The element did not become interactive within the configured timeout.");
+        }
+        return super.call(name, args);
+      }
+    }
+    const tools = new ChangedComposerTools();
+    const driver = new ZaiCdpDriver(tools);
+    await driver.listChats();
+    await expect(driver.sendMessage({ chatId: "sidebar:Test%20fixture", text: "fixture-only" })).rejects.toThrow(/draft changed/);
+    expect(tools.draft).toBe("user draft");
+    expect(tools.sent).toEqual([]);
+  });
   it("never sends while generating and notices the switch from busy to idle", async () => {
     const tools = new MockChromeTools();
     tools.page = state(route, ["Test fixture"], "Test fixture", "generating");

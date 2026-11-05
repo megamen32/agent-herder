@@ -653,7 +653,23 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       // Preserve any user draft across the herder's send and restore it after.
       const savedDraft = await this.readComposerDraft(page.id);
       try {
-        await this.tools.call("fill", { pageId: page.id, uid, value: text });
+        try {
+          await this.tools.call("fill", { pageId: page.id, uid, value: text });
+        } catch (error) {
+          // A stale snapshot reference can fail before the send click. Re-read
+          // both target and draft before one new fill; never replay a click.
+          if (!(error instanceof Error) || !/element did not become interactive/i.test(error.message)) throw error;
+          const refreshed = await this.snapshot(page.id);
+          if (!this.isSelected(chatId, known, refreshed) || this.busy(refreshed)) throw new Error("prompt is already running; ZAI queue must wait");
+          const currentDraft = await this.readComposerDraft(page.id);
+          if (currentDraft !== text) {
+            if (currentDraft !== savedDraft) throw new Error("ZAI composer draft changed; message not sent");
+            const freshSnapshot = await this.tools.call("take_snapshot", { pageId: page.id });
+            const freshUid = freshSnapshot.match(/uid=([\w-]+) textbox "Send a Message"/)?.[1];
+            if (!freshUid) throw new Error("ZAI message composer not found; message not sent");
+            await this.tools.call("fill", { pageId: page.id, uid: freshUid, value: text });
+          }
+        }
 
       // ONE atomic browser-side preflight+click: re-check Stop, exact target,
       // actual filled textarea and enabled Send immediately before the click.
@@ -728,7 +744,13 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       }
       return {};
       } finally {
-        await this.restoreComposerDraft(page.id, savedDraft).catch(() => undefined);
+        try {
+          const state = await this.snapshot(page.id);
+          const draft = await this.readComposerDraft(page.id);
+          if (this.isSelected(chatId, known, state) && (draft === "" || draft === text || draft === savedDraft)) {
+            await this.restoreComposerDraft(page.id, savedDraft);
+          }
+        } catch { /* preserve the current browser state when it cannot be verified */ }
       }
     });
   }
