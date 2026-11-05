@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { HarnessAdapter } from "../src/types/index.js";
 import type { ResumeAfterService, ResumeAfterWait } from "../src/resume-after.js";
 import { DeliverSchema } from "../src/mcp-tools/definitions.js";
@@ -34,6 +34,22 @@ function stubService(state: ResumeAfterWait["state"] = "waiting") {
 }
 
 describe("scheduleDeliver", () => {
+  it("fails safely when target lookup never returns, without registering a wait", async () => {
+    vi.useFakeTimers();
+    try {
+      const { service, registered } = stubService();
+      let release!: (value: unknown) => void;
+      const stuck = { getSession: () => new Promise(resolve => { release = resolve; }) } as unknown as HarnessAdapter;
+      const result = scheduleDeliver(new Map([["opencode", stuck]]), service,
+        { sessionId: "ses_test", harness: "opencode", inputId: "stable", message: "hi", deliverIn: 60 });
+      const assertion = expect(result).rejects.toThrow(/session_lookup_timeout/);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await assertion;
+      release({ id: "ses_test", harness: "opencode", status: "idle" });
+      await vi.runAllTimersAsync();
+      expect(registered).toHaveLength(0);
+    } finally { vi.useRealTimers(); }
+  });
   it("rejects a call without a schedule trigger", async () => {
     const { service } = stubService();
     await expect(scheduleDeliver(new Map([["codex", fakeAdapter()]]), service, { sessionId: "s1", message: "hi" }))

@@ -179,6 +179,18 @@ export async function findSession(
   return null;
 }
 
+/** Bound read-only target resolution before a durable schedule is registered. */
+export async function boundedScheduledTarget<T>(read: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([read, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("session_lookup_timeout: scheduled delivery was not registered")), 8_000);
+    })]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function isInsideWorkspace(workspaceRoot: string, sessionCwd: string): Promise<boolean> {
   let resolvedRoot: string;
   let resolvedCwd: string;
@@ -1107,7 +1119,7 @@ export async function scheduleDeliver(
   if (!parsed.sessionId) {
     throw new Error("scheduled_delivery_needs_session_id: schedule deliveries with an exact sessionId target; named targets are resolved only at immediate delivery time");
   }
-  const found = await findSession(adapters, parsed.sessionId, parsed.harness);
+  const found = await boundedScheduledTarget(findSession(adapters, parsed.sessionId, parsed.harness));
   if (!found) throw new Error(`scheduled_delivery_target_missing: session '${parsed.sessionId}' not found`);
   const ref = { harness: found.session.harness, sessionId: found.session.id };
   if (parsed.message.length > 16000) {
