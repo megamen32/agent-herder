@@ -1136,6 +1136,14 @@ export function createWebServer(dependencies: WebDependencies): Server {
       sendJson(response, 502, { error: (err as Error).message });
     }
   });
+  // The MCP streamable-http clients keep one loopback connection across
+  // calls. Node's default keepAliveTimeout (5s) closes that idle socket and
+  // a call landing on the half-closed socket surfaces as ECONNRESET on the
+  // client. Keep the socket open well beyond client idle gaps; headersTimeout
+  // must exceed keepAliveTimeout per Node's own requirement.
+  server.keepAliveTimeout = 65_000;
+  server.headersTimeout = 70_000;
+  server.requestTimeout = 300_000;
   server.once("close", () => {
     stopActiveInventory?.();
     stopActiveFleetInventory?.();

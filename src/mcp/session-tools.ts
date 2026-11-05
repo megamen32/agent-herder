@@ -42,6 +42,7 @@ import {
   handleDeliver,
   scheduleDeliver,
   boundedScheduledTarget,
+  scheduledDeliveryDeadline,
   handleStopAgent,
   handleRespondPermission,
   handleSetPermissions,
@@ -762,12 +763,13 @@ export function registerSessionTools(server: McpServer, deps: {
       }
     }
     const scheduled = args.deliverIn !== undefined || args.deliverAt !== undefined;
-    const route = await (scheduled ? boundedScheduledTarget(sessionRoute(args)) : sessionRoute(args));
+    const deadline = scheduledDeliveryDeadline();
+    const route = await (scheduled ? boundedScheduledTarget(sessionRoute(args), deadline) : sessionRoute(args));
     if (route.denied) throw new Error("project_session_scope_unavailable");
     if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     const policy = assertDeliveryModelAllowed(route.adapters, {sessionId:args.sessionId,harness:args.harness,cwd:args.cwd,model:args.model});
-    await (scheduled ? boundedScheduledTarget(policy) : policy);
-    if (scheduled) { const result=await scheduleDeliver(route.adapters,deps.resumeAfter,route.args);return {content:[{type:"text" as const,text:result}]}; }
+    await (scheduled ? boundedScheduledTarget(policy, deadline) : policy);
+    if (scheduled) { const result=await scheduleDeliver(route.adapters,deps.resumeAfter,route.args,deadline);return {content:[{type:"text" as const,text:result}]}; }
     const result=await handleDeliver(route.adapters,route.args);publishSessionsChanged();return {content:[{type:"text" as const,text:result}]};
   });
   server.registerTool("stop_agent", { description: "Stop / abort a running agent session. A session of another machine is stopped there, through its own native session. inputId deduplicates retries of one stable stop intent; the structured receipt carries the admission state (admitted/not_attempted/unknown) and the manual-stop hold.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional().describe("Machine that owns the session. Omitted stops a session of this machine."), inputId: z.string().trim().min(1).max(256).optional().describe("Stable intent key: a retried stop with the same inputId is answered from the receipt ledger instead of stopping twice.") }), outputSchema: z.object({ state: z.enum(["admitted", "not_attempted", "unknown"]), held: z.boolean(), hostId: z.string(), harness: z.string().optional(), sessionId: z.string(), reason: z.string().optional(), retryable: z.boolean().optional(), inputId: z.string().optional() }) }, async (args) => {
