@@ -156,6 +156,27 @@ describe("Mac mini CDP ZAI provider", () => {
     expect(tools.draft).toBe("user draft");
     expect(tools.sent).toEqual([]);
   });
+  it("does not restore the same queued text as a draft after confirmed submission", async () => {
+    const tools = new MockChromeTools();
+    tools.page = state(route, ["Test fixture"], "Test fixture");
+    tools.draft = "queued fixture";
+    const driver = new ZaiCdpDriver(tools);
+    await driver.listChats();
+    await driver.sendMessage({ chatId: "sidebar:Test%20fixture", text: "queued fixture" });
+    expect(tools.sent).toEqual(["queued fixture"]);
+    expect(tools.draft).toBe("");
+  });
+  it("keeps the matching draft when the send is rejected before the click", async () => {
+    const tools = new MockChromeTools();
+    tools.page = state(route, ["Test fixture"], "Test fixture");
+    tools.draft = "queued fixture";
+    tools.preClickBusy = true;
+    const driver = new ZaiCdpDriver(tools);
+    await driver.listChats();
+    await expect(driver.sendMessage({ chatId: "sidebar:Test%20fixture", text: "queued fixture" })).rejects.toThrow(/already running/);
+    expect(tools.sent).toEqual([]);
+    expect(tools.draft).toBe("queued fixture");
+  });
   it("never sends while generating and notices the switch from busy to idle", async () => {
     const tools = new MockChromeTools();
     tools.page = state(route, ["Test fixture"], "Test fixture", "generating");

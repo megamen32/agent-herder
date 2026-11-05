@@ -652,6 +652,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       if (!uid) throw new Error("ZAI message composer not found; message not sent");
       // Preserve any user draft across the herder's send and restore it after.
       const savedDraft = await this.readComposerDraft(page.id);
+      let confirmedSubmitted = false;
       try {
         try {
           await this.tools.call("fill", { pageId: page.id, uid, value: text });
@@ -742,13 +743,14 @@ export class ZaiCdpDriver implements BrowserChatDriver {
         !ROUTE_PATTERN.test(confirmation.path)) {
         throw new Error("ZAI submission admission unknown: do not retry automatically");
       }
+      confirmedSubmitted = true;
       return {};
       } finally {
         try {
           const state = await this.snapshot(page.id);
           const draft = await this.readComposerDraft(page.id);
           if (this.isSelected(chatId, known, state) && (draft === "" || draft === text || draft === savedDraft)) {
-            await this.restoreComposerDraft(page.id, savedDraft);
+            await this.restoreComposerDraft(page.id, confirmedSubmitted && savedDraft === text ? "" : savedDraft);
           }
         } catch { /* preserve the current browser state when it cannot be verified */ }
       }
