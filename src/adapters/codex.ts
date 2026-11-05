@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { createReadStream, existsSync, realpathSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { open, readFile, readdir, readlink, realpath, stat, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, join, relative, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import { spawnDetachedWorkload } from "../workload-launcher.js";
 import { assertCodexQuota, CodexQuotaBlockedError, type QuotaReader } from "../codex-quota-guard.js";
@@ -777,12 +777,13 @@ export class CodexAdapter implements HarnessAdapter {
 
   async getRawTranscript(id: string, signal?: AbortSignal): Promise<RawTranscriptExport | null> {
     try {
-      const result = await this.withCurrentSessionState<RawTranscriptExport>(id, async (state) => ({
-        bytes: await readFile(state.filePath, { signal }),
-        complete: true,
-        source: { kind: "native-file", location: state.filePath, format: "jsonl" },
-        timestampCoverage: "native",
-      }));
+      const result = await this.withCurrentSessionState<RawTranscriptExport>(id, async (state) => {
+        const [root, file] = await Promise.all([realpath(this.codexDir), realpath(state.filePath)]);
+        const path = relative(root, file);
+        if (!path || path === ".." || path.startsWith("../") || isAbsolute(path)) throw new Error("codex_transcript_outside_storage");
+        return { bytes: await readFile(file, { signal }), complete: true,
+          source: { kind: "native-file", location: file, format: "jsonl" }, timestampCoverage: "native" };
+      });
       return result ?? null;
     } catch {
       return null;

@@ -151,14 +151,17 @@ export async function findSession(
     ? [adapters.get(harness)].filter(Boolean) as HarnessAdapter[]
     : [...adapters.values()];
 
+  const exactMatches: Array<{ adapter: HarnessAdapter; session: AgentSession }> = [];
   for (const adapter of searchAdapters) {
     try {
       const session = await adapter.getSession(sessionId);
-      if (session) return { adapter, session };
+      if (session) exactMatches.push({ adapter, session });
     } catch {
       continue;
     }
   }
+  if (exactMatches.length === 1) return exactMatches[0]!;
+  if (exactMatches.length > 1) throw new Error(`session_ambiguous:${JSON.stringify(exactMatches.map(({session}) => ({id:session.id,harness:session.harness,hostId:session.hostId ?? hostname(),title:session.title,cwd:session.cwd,lastActivity:session.lastActivity})))}`);
   // A short id (z3f9a) names one session indirectly: resolve it through the
   // same bounded listing the callers already see. Exact native ids keep the
   // direct path above, so this fallback only runs when nothing matched.
@@ -211,7 +214,7 @@ async function exportRawLineage(
   signal?: AbortSignal,
 ): Promise<{ archive: TranscriptArchiveResult; targetRaw: ArchivedTranscript["raw"] } | null> {
   throwIfAborted(signal);
-  if (!adapter.getRawTranscript || !await isInsideWorkspace(archive.workspaceRoot, target.cwd)) return null;
+  if (!adapter.getRawTranscript || (target.harness !== "codex" && !await isInsideWorkspace(archive.workspaceRoot, target.cwd))) return null;
   const visited = new Set<string>();
   const related: ArchivedTranscript[] = [];
   const excluded: TranscriptArchiveResult["excluded"] = [];
@@ -225,7 +228,7 @@ async function exportRawLineage(
       excluded.push({ harness: session.harness, sessionId: session.id, reason: "foreign_harness" });
       return null;
     }
-    if (!await isInsideWorkspace(archive.workspaceRoot, session.cwd)) {
+    if (!targetSession && !await isInsideWorkspace(archive.workspaceRoot, session.cwd)) {
       excluded.push({ harness: session.harness, sessionId: session.id, reason: "outside_workspace" });
       return null;
     }
@@ -259,14 +262,14 @@ async function exportRawLineage(
   };
 
   const snapshot = await capture(target, true);
-  return snapshot ? { archive: await archive.exportLineage({ target: snapshot, related, excluded }, signal), targetRaw: snapshot.raw } : null;
+  return snapshot ? { archive: await archive.exportLineage({ target: snapshot, related, excluded, allowTargetOutsideWorkspace:true }, signal), targetRaw: snapshot.raw } : null;
 }
 
 export interface ListAgentsResult {
   sessions: AgentSession[];
   total: number;
   limited: boolean;
-  filters: { harness: string; status: string; maxAge?: number; folder?: string; hostId?: string; includeLastMessage: boolean };
+  filters: { harness: string; status: string; maxAge?: number; folder?: string; hostId?: string; includeLastMessage: boolean; query?: string; offset?: number };
   complete: boolean;
   unavailable: Array<{ harness: string; error: string }>;
 }
@@ -292,10 +295,12 @@ export async function listAgentsResult(
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const sessions = await Promise.race([
-        adapter.listSessions({limit:parsed.limit,...(adapter.type === "opencode" && parsed.folder ? {cwd:expandPath(parsed.folder)} : {})}),
+        adapter.listSessions({limit:parsed.query || parsed.offset ? 5000 : parsed.limit,...(adapter.type === "opencode" && parsed.folder ? {cwd:expandPath(parsed.folder)} : {})}),
         new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`Discovery exceeded ${discoveryTimeoutMs} ms`)), discoveryTimeoutMs); }),
       ]);
       discovered.push(...sessions);
+      const requested = parsed.query || parsed.offset ? (adapter.type === "opencode" ? 500 : 5000) : parsed.limit;
+      if (sessions.length >= requested) discoveryLimited = true;
       const receipt = adapter.getSessionSnapshotReceipt?.();
       if (receipt?.reason === "bounded_native_page") discoveryLimited = true;
       else if (receipt && !receipt.exhaustive) unavailable.push({harness:adapter.type,error:receipt.reason || "Incomplete native discovery"});
@@ -322,6 +327,10 @@ export async function listAgentsResult(
 
   // Filter by status
   let filtered = allSessions;
+  if (parsed.query) {
+    const needle = parsed.query.toLocaleLowerCase();
+    filtered = filtered.filter(s => [s.id, s.title, s.cwd].some(v => v.toLocaleLowerCase().includes(needle)));
+  }
   if (parsed.status !== "all") {
     filtered = filtered.filter((s) => s.status === parsed.status);
   }
@@ -355,7 +364,7 @@ export async function listAgentsResult(
   // Sort by last activity
   filtered.sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime());
 
-  const limited = filtered.slice(0, parsed.limit);
+  const limited = filtered.slice(parsed.offset, parsed.offset + parsed.limit);
 
   return {
     complete: unavailable.length === 0 && !discoveryLimited, unavailable,
@@ -364,8 +373,8 @@ export async function listAgentsResult(
       return {...rest, ...(parsed.includeLastMessage && index < 5 && lastMessage ? {lastMessage:lastMessage.slice(0,160)} : {})};
     }),
     total: filtered.length,
-    limited: filtered.length > parsed.limit || discoveryLimited,
-    filters: { harness: parsed.harness, status: parsed.status, ...(parsed.maxAge !== undefined ? { maxAge: parsed.maxAge } : {}), ...(parsed.folder ? { folder: parsed.folder } : {}), ...(parsed.hostId ? { hostId: normalizeHostId(parsed.hostId, hostname()) } : {}), includeLastMessage: parsed.includeLastMessage },
+    limited: filtered.length > parsed.offset + parsed.limit || discoveryLimited,
+    filters: { harness: parsed.harness, status: parsed.status, ...(parsed.maxAge !== undefined ? { maxAge: parsed.maxAge } : {}), ...(parsed.folder ? { folder: parsed.folder } : {}), ...(parsed.hostId ? { hostId: normalizeHostId(parsed.hostId, hostname()) } : {}), ...(parsed.query ? { query: parsed.query } : {}), offset: parsed.offset, includeLastMessage: parsed.includeLastMessage },
   };
 }
 
@@ -381,7 +390,7 @@ export function formatListAgentsResult(result: ListAgentsResult): string {
     return `${result.complete ? "No agent sessions found" : "Discovery incomplete; no matching sessions confirmed"}${filterStr}.${result.unavailable.map(x=>` ${x.harness}: ${x.error}`).join("")}`;
   }
   return [
-    `Found ${result.total} session(s)${parsed.harness !== "all" ? ` on ${parsed.harness}` : ""}${parsed.status !== "all" ? ` with status '${parsed.status}'` : ""}${parsed.maxAge ? ` from last ${formatDuration(parsed.maxAge)}` : ""}${parsed.folder ? ` under ${parsed.folder}` : ""}:`,
+    `Showing ${result.sessions.length} of ${result.total} discovered session(s)${result.complete ? "" : " (discovery incomplete)"}${parsed.harness !== "all" ? ` on ${parsed.harness}` : ""}${parsed.status !== "all" ? ` with status '${parsed.status}'` : ""}${parsed.maxAge ? ` from last ${formatDuration(parsed.maxAge)}` : ""}${parsed.folder ? ` under ${parsed.folder}` : ""}:`,
     "",
     ...result.sessions.map((session, index) => `[${session.harness}] ${session.id} | ${session.status} | ${session.title.slice(0,100)} | ${session.cwd}${parsed.includeLastMessage && index < 5 && session.lastMessage ? ` | ${session.lastMessage.slice(0,160)}` : ""}`),
     ...result.unavailable.map(x => `Incomplete: ${x.harness}: ${x.error}`),
@@ -521,11 +530,39 @@ export async function handleExportTranscript(
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
   if (!found) return `Session '${parsed.sessionId}' not found.`;
   if (!found.adapter.getRawTranscript) {
+    if (found.session.harness === "chatgpt") return "ChatGPT does not expose a native raw transcript through this adapter. Use the existing ChatGPT account export or the authorised browser history archive; neither is a complete native JSONL transcript.";
     return `Raw transcript export is not supported by the ${found.adapter.name} adapter.`;
   }
   try {
     const outcome = await exportRawLineage(found.adapter, found.session, archive, 50, signal);
     if (!outcome) return `Raw transcript unavailable for [${found.session.harness}] ${parsed.sessionId} within the MCP process CWD.`;
+    if (parsed.format) {
+      let records: unknown[];
+      let sourceTruncated = false;
+      if (parsed.format === "messages") {
+        const nativePage = await found.adapter.getSessionMessagesPage?.(found.session.id, 5000);
+        if (nativePage && nativePage.sessionId !== found.session.id) throw new Error("transcript_page_identity_mismatch");
+        if (!nativePage && !found.adapter.getSessionMessages) return `Structured messages are not supported by the ${found.adapter.name} adapter. Full raw transcript: ${outcome.archive.targetPath}`;
+        const messages = nativePage?.messages ?? await found.adapter.getSessionMessages?.(found.session.id, 5000);
+        if (!messages) return `Structured messages are unavailable. Full raw transcript: ${outcome.archive.targetPath}`;
+        records = messages;
+        sourceTruncated = !nativePage?.complete;
+      } else {
+        records = Buffer.from(outcome.targetRaw.bytes).toString("utf8").split("\n");
+        if (records.at(-1) === "") records.pop();
+      }
+      if (parsed.tail && records.length > parsed.tail) { records = records.slice(-parsed.tail); sourceTruncated = true; }
+      const total = records.length;
+      const page = records.slice(parsed.offset, parsed.offset + parsed.limit);
+      const selected: unknown[] = [];
+      let truncated = sourceTruncated || parsed.offset > 0 || parsed.offset + page.length < total || !outcome.targetRaw.complete;
+      for (const item of page) {
+        const candidate = [...selected, item];
+        if (Buffer.byteLength(JSON.stringify(candidate), "utf8") > parsed.maxBytes - 512) { truncated = true; break; }
+        selected.push(item);
+      }
+      return JSON.stringify({format:parsed.format,records:selected,offset:parsed.offset,total,truncated,fullPath:outcome.archive.targetPath});
+    }
     const target = outcome.archive.exported.find((entry) => entry.path === outcome.archive.targetPath);
     return buildTranscriptArchiveCard({
       targetPath: outcome.archive.targetPath,

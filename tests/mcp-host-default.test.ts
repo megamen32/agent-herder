@@ -26,6 +26,7 @@ describe("work machine defaults", () => {
     expect(normalizeHostId("LOCALHOST", local)).toBe(local);
     expect(normalizeHostId("127.0.0.1", local)).toBe(local);
     expect(normalizeHostId("::1", local)).toBe(local);
+    expect(normalizeHostId("remote-ssh-discovered:104.bezrabotnyi.com", "roomhacker-server-100")).toBe("roomhacker-server-100");
     expect(normalizeHostId("  Server-44 ", local)).toBe("server-44");
     expect(normalizeHostId("SERVER-44", local)).toBe("server-44");
     expect(normalizeHostId(local.toUpperCase(), local)).toBe(local);

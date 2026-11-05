@@ -33,6 +33,8 @@ export const ListAgentsSchema = z.object({
     .default("all")
     .describe("Filter by agent status."),
   limit: z.number().int().min(1).max(100).optional().default(20).describe("Max sessions to return."),
+  offset: z.number().int().min(0).max(10000).optional().default(0).describe("Number of matching sessions to skip."),
+  query: z.string().trim().min(1).max(512).optional().describe("Case-insensitive substring of ID, title, or working directory."),
   maxAge: z.number().int().min(0).optional().describe(
     "Maximum session age in seconds. Only return sessions active within this window. " +
     "Examples: 3600 = last hour, 86400 = last 24h, 604800 = last week. 0 or omit = no limit."
@@ -83,6 +85,12 @@ export const ListChildrenSchema = z.object({
 export const ExportTranscriptSchema = z.object({
   sessionId: z.string().describe("The session ID whose raw source should be exported."),
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "zai", "minimax-code", "browser-chat"]).optional().describe("Which harness owns the session. If omitted, searches all."),
+  hostId: hostTarget(HOST_TARGET_DESCRIPTION),
+  format: z.enum(["messages", "raw"]).optional(),
+  tail: z.number().int().min(1).max(5000).optional(),
+  offset: z.number().int().min(0).optional().default(0),
+  limit: z.number().int().min(1).max(5000).optional().default(100),
+  maxBytes: z.number().int().min(1024).max(262144).optional().default(65536),
 });
 
 const meshIdentity = (max:number) => z.string().min(1).max(max).regex(/^[^\x00-\x1f\x7f]*$/);

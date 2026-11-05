@@ -125,6 +125,7 @@ export class TranscriptArchive {
     target: ArchivedTranscript;
     related: ArchivedTranscript[];
     excluded?: TranscriptArchiveResult["excluded"];
+    allowTargetOutsideWorkspace?: boolean;
   }, signal?: AbortSignal): Promise<TranscriptArchiveResult> {
     throwIfAborted(signal);
     const snapshots = [input.target, ...input.related];
@@ -135,7 +136,7 @@ export class TranscriptArchive {
     throwIfAborted(signal);
     for (const snapshot of snapshots) {
       throwIfAborted(signal);
-      if (!await isRealPathInside(this.workspaceRoot, snapshot.cwd)) {
+      if (!(snapshot === input.target && input.allowTargetOutsideWorkspace) && !await isRealPathInside(this.workspaceRoot, snapshot.cwd)) {
         excluded.push({ harness: snapshot.harness, sessionId: snapshot.sessionId, reason: "outside_workspace" });
         continue;
       }

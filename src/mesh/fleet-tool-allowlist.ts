@@ -8,7 +8,7 @@
 export const FLEET_DIRECT_TOOLS: readonly string[] = [
   "list_active_sessions_local", "model_quotas", "fleet_node_info", "mesh_snapshot",
   "create_session", "fleet_session_page", "agent_info", "session_search_local",
-  "list_agents", "send_message", "mesh_deliver", "stop_agent", "rename_session",
+  "list_agents", "export_transcript", "send_message", "mesh_deliver", "stop_agent", "rename_session",
   "workspace_probe", "workspace_reserve", "workspace_owners", "automation_disarm",
   "common_settings_read", "common_settings_status", "common_settings_notice",
   "common_settings_opt_in", "common_settings_restore", "session_queue_processing_get",
