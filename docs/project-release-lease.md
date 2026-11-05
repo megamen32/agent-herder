@@ -1,7 +1,7 @@
 # Project release coordination
 
 Use one release authority host for a project. A task works in its own Git worktree
-and branch, commits scoped changes, pushes that branch, and opens a draft PR.
+and branch, commits scoped changes, pushes that branch, deploys to the agreed or own environment, exercises the real scenario, and only then opens a PR.
 A lease does not approve a PR, a merge, a deployment or a rollback.
 
 ## MCP contract
@@ -59,7 +59,7 @@ enforcement. Existing running services were not changed by this PR.
 
 ## Evidence required at handoff
 
-Record task/branch, pushed commit, draft PR, tested commit, release owner session,
+Record task/branch, pushed commit, PR (opened only after the real scenario passed), tested commit, release owner session,
 expiry and intended/live revision. Never record the lease capability. Report a
 prepared PR separately from a merged or deployed result.
 
@@ -92,7 +92,7 @@ Current lifecycle integration target is main. Projects using another target stay
 blocked for explicit configuration, not silently cleaned against a caller-chosen
 task branch. Hooks without original terminal timestamps retain unknown activity.
 This does not prove inactivity for sessions that never reported lifecycle events.
-Early draft PRs are useful visibility for unfinished branches; link only plans
+A PR is opened only after the real scenario passed, as the last step before integration; no early draft PRs. Link only plans
 whose content is safe for the actual audience. SSO protection must be verified,
 not inferred from a hostname.
 
