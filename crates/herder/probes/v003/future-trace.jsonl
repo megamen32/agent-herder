@@ -1,0 +1,5 @@
+{"direction": "client_to_server", "message": {"id": 0, "jsonrpc": "2.0", "method": "initialize", "params": {"capabilities": {"elicitation": {"form": {}, "url": {}}, "experimental": {"codex/auth-change": {}}}, "clientInfo": {"name": "codex-mcp-client", "title": "Codex", "version": "0.162.1"}, "protocolVersion": "2025-06-18"}}}
+{"direction": "server_to_client", "message": {"id": 0, "jsonrpc": "2.0", "result": {"capabilities": {"extensions": {"io.modelcontextprotocol/skills": {}, "io.modelcontextprotocol/tasks": {}}, "resources": {"listChanged": true, "subscribe": true}, "tools": {}}, "protocolVersion": "2026-07-28", "serverInfo": {"name": "v003-probe", "version": "1"}}}}
+{"direction": "client_to_server", "message": {"jsonrpc": "2.0", "method": "notifications/initialized"}}
+{"direction": "client_to_server", "message": {"id": 1, "jsonrpc": "2.0", "method": "tools/list", "params": {"_meta": {"progressToken": 0}}}}
+{"direction": "server_to_client", "message": {"id": 1, "jsonrpc": "2.0", "result": {"tools": []}}}

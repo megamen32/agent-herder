@@ -1,0 +1,21 @@
+{
+  "gate": "V003",
+  "status": "blocked",
+  "client": {"product": "Codex CLI", "version": "0.162.1", "command": "codex exec", "transport": "stdio", "profile": "temporary isolated CODEX_HOME; fake local model endpoint"},
+  "server": {"kind": "recording probe", "production": false, "baseline": "2026-07-28", "reference": "crates/herder/probes/v002-findings.md"},
+  "matrix": {
+    "wire_revision": {"required": "2026-07-28 with server/discover", "observed": "2025-06-18 in initialize", "result": "incompatible", "evidence": "crates/herder/probes/v003/strict-trace.jsonl"},
+    "discovery": {"required": "server/discover", "observed": "initialize; strict server replies -32601", "result": "incompatible"},
+    "legacy_tools_discovery": {"observed": "notifications/initialized then tools/list", "result": "observed only with legacy-style initialize response", "evidence": "crates/herder/probes/v003/legacy-trace.jsonl"},
+    "server_forced_future_revision": {"observed": "after a legacy initialize response claiming 2026-07-28, client still sends notifications/initialized and tools/list", "result": "not evidence of 2026 protocol support", "evidence": "crates/herder/probes/v003/future-trace.jsonl"},
+    "tasks": {"required": "io.modelcontextprotocol/tasks opt-in and get/update/cancel", "observed": "absent from initialize client capabilities", "result": "not negotiated; operations untested"},
+    "skills": {"required": "skills/list and skills/get plus resources/read", "observed": "probe advertised extension; no skills request during startup", "result": "not established; model-driven use untested"},
+    "subscriptions_listen": {"required": "listen and notifications", "observed": "probe advertised legacy resources.subscribe; no subscription request during startup", "result": "not established"},
+    "identity": {"observed": {"name": "codex-mcp-client", "title": "Codex", "version": "0.162.1"}, "result": "client product identity only; no session, user, owner or per-request identity established"},
+    "auth": {"observed": "stdio isolated local child", "result": "HTTP authentication and principal binding untested"}
+  },
+  "blocker": "The required v1 protocol begins with server/discover at 2026-07-28; this client sends legacy initialize at 2025-06-18. The declared no-downgrade contract cannot be met by the observed startup. Do not proceed as if Tasks, Skills, listen, or identity binding were supported.",
+  "unblock": "Obtain a Codex CLI version/configuration that actually sends the required v1 protocol and capabilities, or obtain an explicit owner decision to revise the no-downgrade contract; then repeat real-client and real-gateway acceptance including model-driven operations and identity.",
+  "reproduction": "python3 crates/herder/probes/v003/run.py",
+  "limits": "No real model response, tool invocation, deployed gateway, production service, or end-to-end acceptance was tested. The model endpoint is deliberately unreachable and timeout is expected. No conclusion is made about other Codex versions or unexercised features."
+}

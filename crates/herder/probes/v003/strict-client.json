@@ -1,0 +1,5 @@
+{
+  "timeout_seconds": 8,
+  "stdout": "{\"type\":\"thread.started\",\"thread_id\":\"01a1b34c-2158-7873-8de4-6e48144b289f\"}\n{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"error\",\"message\":\"Model metadata for `probe-model` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.\"}}\n{\"type\":\"turn.started\"}\n{\"type\":\"error\",\"message\":\"Reconnecting... waiting for network (Connection failed: error sending request)\"}\n",
+  "stderr": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home: AbsolutePathBuf(\"/tmp/v003-codex-hqkgeoh5\"))\nReading additional input from stdin...\n"
+}

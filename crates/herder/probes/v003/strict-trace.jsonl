@@ -1,0 +1,2 @@
+{"direction": "client_to_server", "message": {"id": 0, "jsonrpc": "2.0", "method": "initialize", "params": {"capabilities": {"elicitation": {"form": {}, "url": {}}, "experimental": {"codex/auth-change": {}}}, "clientInfo": {"name": "codex-mcp-client", "title": "Codex", "version": "0.162.1"}, "protocolVersion": "2025-06-18"}}}
+{"direction": "server_to_client", "message": {"error": {"code": -32601, "message": "v1 requires server/discover and MCP 2026-07-28"}, "id": 0, "jsonrpc": "2.0"}}
