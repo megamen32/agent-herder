@@ -439,6 +439,16 @@ export function registerSessionTools(server: McpServer, deps: {
     return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
   });
   server.registerTool("agent_info", { description: "Read a session with its latest user and assistant messages by default. Use view=messages for more messages or view=compact for metadata only. For the available full transcript call export_transcript; its result is a file, not the transcript text.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional(), view: z.enum(["recent", "compact", "messages"]).optional().default("recent"), limit: z.number().int().min(1).max(200).optional().default(20) }), outputSchema: z.object({ session: sessionSchema.nullable(), conversation: z.unknown().optional() }) }, async (args) => {
+    // Models occasionally combine the harness and exact native ID in one field.
+    // Only split a known harness followed by a single ID; never guess a target.
+    const prefixed = args.sessionId.trim().match(/^(\S+)\s+(\S+)$/);
+    if (prefixed) {
+      const parsedHarness = harnessSchema.safeParse(prefixed[1]);
+      if (parsedHarness.success) {
+        if (args.harness && args.harness !== parsedHarness.data) throw new Error("session_harness_mismatch: sessionId prefix and harness disagree; provide the exact ID and matching harness.");
+        args = { ...args, sessionId: prefixed[2]!, harness: parsedHarness.data };
+      }
+    }
     const respond = async (session: z.infer<typeof sessionSchema> | null, selected: Map<string, HarnessAdapter> | null, remoteMessages?: unknown) => {
       if (!session) return { content: [{ type: "text" as const, text: `Session '${args.sessionId}' not found.` }], structuredContent: { session } };
       if (args.view === "compact") return { content: [{ type: "text" as const, text: formatSession(session, true) }], structuredContent: { session, conversation: { status: "omitted", reason: "compact requested" } } };
@@ -454,8 +464,31 @@ export function registerSessionTools(server: McpServer, deps: {
         } else if (adapter?.getSessionMessages) messages = await adapter.getSessionMessages(session.id, 200);
       } catch { messages = null; }
       const reversed = messages ? [...messages].reverse() : [];
-      const latestUser = reversed.find(message => message.role === "user") ?? null;
-      const latestAssistant = reversed.find(message => message.role === "assistant") ?? null;
+      let latestUser = reversed.find(message => message.role === "user" && !!message.text?.trim()) ?? null;
+      let latestAssistant = reversed.find(message => message.role === "assistant" && !!message.text?.trim()) ?? null;
+      // The bounded recent window may consist entirely of tool calls. A
+      // complete Codex owner transcript lets us recover actual text messages
+      // without mistaking a command or reasoning item for an assistant answer.
+      if ((!latestUser || !latestAssistant) && session.harness === "codex" && selected?.get(session.harness)?.getRawTranscript) {
+        try {
+          const raw = await selected.get(session.harness)!.getRawTranscript!(session.id);
+          if (raw?.complete && raw.source.format === "jsonl") {
+            let userText: string | undefined, assistantText: string | undefined;
+            for (const line of Buffer.from(raw.bytes).toString("utf8").split("\n")) {
+              try {
+                const item = JSON.parse(line);
+                if (item.type !== "response_item" || item.payload?.type !== "message" || !Array.isArray(item.payload.content)) continue;
+                const role = item.payload.role;
+                if (role !== "user" && role !== "assistant") continue;
+                const text = item.payload.content.filter((part: any) => part.type === (role === "user" ? "input_text" : "output_text")).map((part: any) => part.text || "").join("\n").trim();
+                if (text) { if (role === "user") userText = text; else assistantText = text; }
+              } catch { /* An incomplete record does not establish a message. */ }
+            }
+            if (!latestUser && userText) latestUser = { id: "native-last-user", role: "user", text: userText, parts: [] };
+            if (!latestAssistant && assistantText) latestAssistant = { id: "native-last-assistant", role: "assistant", text: assistantText, parts: [] };
+          }
+        } catch { /* Preserve the explicit unavailable/partial result. */ }
+      }
       const visibleMessages = args.view === "messages" ? messages?.slice(-args.limit) ?? [] : undefined;
       const historyComplete = complete === true && args.view === "messages" && messages && messages.length <= args.limit ? true : complete === null ? null : false;
       const conversation = { status: messages ? (historyComplete === true ? "available" : "partial") : "unavailable", historyComplete, latestUser, latestAssistant, ...(visibleMessages ? { messages: visibleMessages } : {}) };
