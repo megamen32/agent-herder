@@ -1,0 +1,57 @@
+{
+  "label": "Notice Place: перевести один вызывающий маршрут",
+  "description": "Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях.",
+  "acceptance": "Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены.",
+  "affected_files": [
+    "consumer:noticeplace:paths-from-target.json"
+  ],
+  "depends_on": [
+    "A167"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 60
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 8,
+  "note": "Планирование, не запуск. Дорожка consumer:noticeplace. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+  "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+  "id": "A168",
+  "model": "gpt-6",
+  "created_at": "2026-11-07T01:41:24+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:41:24+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:41:24+03:00",
+      "note": "",
+      "changes": {
+        "label": "Notice Place: перевести один вызывающий маршрут",
+        "description": "Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях.",
+        "acceptance": "Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены.",
+        "affected_files": [
+          "consumer:noticeplace:paths-from-target.json"
+        ],
+        "depends_on": [
+          "A167"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 60
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 8,
+        "note": "Планирование, не запуск. Дорожка consumer:noticeplace. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+        "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+        "model": "gpt-6"
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

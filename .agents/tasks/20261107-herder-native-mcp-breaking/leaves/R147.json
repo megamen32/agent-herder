@@ -1,0 +1,65 @@
+{
+  "label": "Recovery Skill и краткий locator в MCP",
+  "kind": "task",
+  "status": "deferred",
+  "model": "gpt-6",
+  "description": "Один исходник Skill и локального RECOVERY.md; подставленный locator в server/workspace/nodes descriptions и client bootstrap; версия/хеш.",
+  "acceptance": "Агент знает путь до первого MCP-вызова; при отключённом MCP находит инструкцию и корректный claim без чтения исходников.",
+  "estimate_minutes": 45,
+  "estimate_over_limit_reason": "Прямое указание владельца: максимум 60 минут на лист.",
+  "depends_on": [
+    "R016",
+    "R144",
+    "R146"
+  ],
+  "affected_files": [
+    "skills/herder-recovery/"
+  ],
+  "owner": "unassigned",
+  "wait_reason": "Уточнение плана; реализация и делегирование не начаты.",
+  "note": "Заменён независимой ревизией 5, не выполнен и не исключён из требований. Исходный лист сохранён в history/revision-4-before-astra; покрытие см. ASTRA-REVIEW.md и WORKPLAN.md.",
+  "id": "R147",
+  "created_at": "2026-11-07T01:22:27+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:40:16+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:22:27+03:00",
+      "note": "",
+      "changes": {
+        "label": "Recovery Skill и краткий locator в MCP",
+        "kind": "task",
+        "status": "queued",
+        "model": "gpt-6",
+        "description": "Один исходник Skill и локального RECOVERY.md; подставленный locator в server/workspace/nodes descriptions и client bootstrap; версия/хеш.",
+        "acceptance": "Агент знает путь до первого MCP-вызова; при отключённом MCP находит инструкцию и корректный claim без чтения исходников.",
+        "estimate_minutes": 45,
+        "estimate_over_limit_reason": "Прямое указание владельца: максимум 60 минут на лист.",
+        "depends_on": [
+          "R016",
+          "R144",
+          "R146"
+        ],
+        "affected_files": [
+          "skills/herder-recovery/"
+        ],
+        "owner": "unassigned",
+        "wait_reason": "Уточнение плана; реализация и делегирование не начаты.",
+        "note": "Обязательный контракт RECOVERY-STORAGE.md. При объёме более часа разделить до исполнения."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T01:40:16+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Заменён независимой ревизией 5, не выполнен и не исключён из требований. Исходный лист сохранён в history/revision-4-before-astra; покрытие см. ASTRA-REVIEW.md и WORKPLAN.md."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

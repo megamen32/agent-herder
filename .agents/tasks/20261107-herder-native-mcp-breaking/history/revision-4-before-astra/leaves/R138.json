@@ -1,0 +1,53 @@
+{
+  "label": "Карточка координации при старте и восстановлении контекста",
+  "kind": "task",
+  "status": "queued",
+  "model": "gpt-6",
+  "description": "Общий context projector и native bridge используют context generation; snapshot при новом контексте, bounded delta при изменениях; capability для unsupported hooks.",
+  "acceptance": "Неизменный fingerprint не подавляет snapshot после compaction; инъекция не снимает STOP и не запускает новый ход.",
+  "estimate_minutes": 45,
+  "estimate_over_limit_reason": "Прямое указание владельца: каждый лист до 60 минут.",
+  "depends_on": [
+    "R135",
+    "R106"
+  ],
+  "affected_files": [
+    "crates/herder/src/application/context_projection.rs"
+  ],
+  "owner": "unassigned",
+  "wait_reason": "Планирование: реализация и назначение ещё не запрошены.",
+  "note": "Контракт COORDINATION.md. Если объём превышает час, разделить до исполнения.",
+  "id": "R138",
+  "created_at": "2026-11-07T01:14:16+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:14:16+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:14:16+03:00",
+      "note": "",
+      "changes": {
+        "label": "Карточка координации при старте и восстановлении контекста",
+        "kind": "task",
+        "status": "queued",
+        "model": "gpt-6",
+        "description": "Общий context projector и native bridge используют context generation; snapshot при новом контексте, bounded delta при изменениях; capability для unsupported hooks.",
+        "acceptance": "Неизменный fingerprint не подавляет snapshot после compaction; инъекция не снимает STOP и не запускает новый ход.",
+        "estimate_minutes": 45,
+        "estimate_over_limit_reason": "Прямое указание владельца: каждый лист до 60 минут.",
+        "depends_on": [
+          "R135",
+          "R106"
+        ],
+        "affected_files": [
+          "crates/herder/src/application/context_projection.rs"
+        ],
+        "owner": "unassigned",
+        "wait_reason": "Планирование: реализация и назначение ещё не запрошены.",
+        "note": "Контракт COORDINATION.md. Если объём превышает час, разделить до исполнения."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

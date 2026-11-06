@@ -1,0 +1,53 @@
+{
+  "label": "Нативные hooks и плагины: новый transport",
+  "kind": "task",
+  "status": "queued",
+  "model": "gpt-6",
+  "description": "Общий hook client к новому контракту; адаптеры hooks не содержат второй scheduler.",
+  "acceptance": "Повтор end-turn event не порождает два продолжения; поддерживаемые profiles не смешиваются.",
+  "estimate_minutes": 60,
+  "estimate_over_limit_reason": "Владелец явно разрешил до 60 минут на лист 2026-11-07; общие настройки LHC не изменены.",
+  "depends_on": [
+    "R025",
+    "R042"
+  ],
+  "affected_files": [
+    "integrations/"
+  ],
+  "owner": "unassigned",
+  "wait_reason": "Ожидает выходов depends_on и назначения при передаче реализации.",
+  "note": "Плановая оценка включает реализацию и указанную адресную проверку; при обнаружении объёма >60 минут разделить по конкретным результатам до начала. Не запускает работы автоматически.",
+  "id": "R106",
+  "created_at": "2026-11-07T01:02:22+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:02:22+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:02:22+03:00",
+      "note": "",
+      "changes": {
+        "label": "Нативные hooks и плагины: новый transport",
+        "kind": "task",
+        "status": "queued",
+        "model": "gpt-6",
+        "description": "Общий hook client к новому контракту; адаптеры hooks не содержат второй scheduler.",
+        "acceptance": "Повтор end-turn event не порождает два продолжения; поддерживаемые profiles не смешиваются.",
+        "estimate_minutes": 60,
+        "estimate_over_limit_reason": "Владелец явно разрешил до 60 минут на лист 2026-11-07; общие настройки LHC не изменены.",
+        "depends_on": [
+          "R025",
+          "R042"
+        ],
+        "affected_files": [
+          "integrations/"
+        ],
+        "owner": "unassigned",
+        "wait_reason": "Ожидает выходов depends_on и назначения при передаче реализации.",
+        "note": "Плановая оценка включает реализацию и указанную адресную проверку; при обнаружении объёма >60 минут разделить по конкретным результатам до начала. Не запускает работы автоматически."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

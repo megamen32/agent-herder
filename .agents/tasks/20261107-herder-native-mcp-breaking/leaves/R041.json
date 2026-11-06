@@ -1,0 +1,67 @@
+{
+  "label": "Codex: остановка и заявленные управляющие capabilities",
+  "kind": "task",
+  "status": "deferred",
+  "model": "gpt-6",
+  "description": "Native interruption, model/settings и permission surface только где реально доступны.",
+  "acceptance": "Каждая заявленная capability подтверждена; unsupported не маскируется success.",
+  "estimate_minutes": 60,
+  "estimate_over_limit_reason": "Владелец явно разрешил до 60 минут на лист 2026-11-07; общие настройки LHC не изменены.",
+  "depends_on": [
+    "R039",
+    "R021",
+    "R034",
+    "R030"
+  ],
+  "affected_files": [
+    "crates/herder/src/adapters/codex/control.rs"
+  ],
+  "owner": "unassigned",
+  "wait_reason": "Ожидает выходов depends_on и назначения при передаче реализации.",
+  "note": "Заменён независимой ревизией 5, не выполнен и не исключён из требований. Исходный лист сохранён в history/revision-4-before-astra; покрытие см. ASTRA-REVIEW.md и WORKPLAN.md.",
+  "id": "R041",
+  "created_at": "2026-11-07T01:02:18+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:39:50+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:02:18+03:00",
+      "note": "",
+      "changes": {
+        "label": "Codex: остановка и заявленные управляющие capabilities",
+        "kind": "task",
+        "status": "queued",
+        "model": "gpt-6",
+        "description": "Native interruption, model/settings и permission surface только где реально доступны.",
+        "acceptance": "Каждая заявленная capability подтверждена; unsupported не маскируется success.",
+        "estimate_minutes": 60,
+        "estimate_over_limit_reason": "Владелец явно разрешил до 60 минут на лист 2026-11-07; общие настройки LHC не изменены.",
+        "depends_on": [
+          "R039",
+          "R021",
+          "R034",
+          "R030"
+        ],
+        "affected_files": [
+          "crates/herder/src/adapters/codex/control.rs"
+        ],
+        "owner": "unassigned",
+        "wait_reason": "Ожидает выходов depends_on и назначения при передаче реализации.",
+        "note": "Плановая оценка включает реализацию и указанную адресную проверку; при обнаружении объёма >60 минут разделить по конкретным результатам до начала. Не запускает работы автоматически."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T01:39:50+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Заменён независимой ревизией 5, не выполнен и не исключён из требований. Исходный лист сохранён в history/revision-4-before-astra; покрытие см. ASTRA-REVIEW.md и WORKPLAN.md."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

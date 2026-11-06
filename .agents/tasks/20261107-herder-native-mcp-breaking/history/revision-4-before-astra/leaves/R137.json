@@ -1,0 +1,53 @@
+{
+  "label": "Атомарный claim общего checkout",
+  "kind": "task",
+  "status": "queued",
+  "model": "gpt-6",
+  "description": "Единый workspace authority, CAS claim/renew/release и fencing; конфликт с адресом владельца и инструкцией создать отдельный worktree.",
+  "acceptance": "Два одновременных claim дают одного победителя; partition не создаёт второго; TTL не объявляет живой процесс остановленным.",
+  "estimate_minutes": 60,
+  "estimate_over_limit_reason": "Прямое указание владельца: каждый лист до 60 минут.",
+  "depends_on": [
+    "R032",
+    "R136"
+  ],
+  "affected_files": [
+    "crates/herder/src/application/workspace_claim.rs"
+  ],
+  "owner": "unassigned",
+  "wait_reason": "Планирование: реализация и назначение ещё не запрошены.",
+  "note": "Контракт COORDINATION.md. Если объём превышает час, разделить до исполнения.",
+  "id": "R137",
+  "created_at": "2026-11-07T01:14:15+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:14:15+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:14:15+03:00",
+      "note": "",
+      "changes": {
+        "label": "Атомарный claim общего checkout",
+        "kind": "task",
+        "status": "queued",
+        "model": "gpt-6",
+        "description": "Единый workspace authority, CAS claim/renew/release и fencing; конфликт с адресом владельца и инструкцией создать отдельный worktree.",
+        "acceptance": "Два одновременных claim дают одного победителя; partition не создаёт второго; TTL не объявляет живой процесс остановленным.",
+        "estimate_minutes": 60,
+        "estimate_over_limit_reason": "Прямое указание владельца: каждый лист до 60 минут.",
+        "depends_on": [
+          "R032",
+          "R136"
+        ],
+        "affected_files": [
+          "crates/herder/src/application/workspace_claim.rs"
+        ],
+        "owner": "unassigned",
+        "wait_reason": "Планирование: реализация и назначение ещё не запрошены.",
+        "note": "Контракт COORDINATION.md. Если объём превышает час, разделить до исполнения."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

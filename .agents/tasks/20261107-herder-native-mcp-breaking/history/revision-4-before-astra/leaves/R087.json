@@ -1,0 +1,55 @@
+{
+  "label": "ChatGPT: создание и доставка сообщения",
+  "kind": "task",
+  "status": "queued",
+  "model": "gpt-6",
+  "description": "Native create/send/steer/queue где supported; native receipt привязан к request key.",
+  "acceptance": "Один вызов → одно native admission; неподдерживаемый mode не подменяется.",
+  "estimate_minutes": 60,
+  "estimate_over_limit_reason": "Владелец явно разрешил до 60 минут на лист 2026-11-07; общие настройки LHC не изменены.",
+  "depends_on": [
+    "R085",
+    "R019",
+    "R020"
+  ],
+  "affected_files": [
+    "crates/herder/src/adapters/chatgpt/write.rs"
+  ],
+  "owner": "unassigned",
+  "wait_reason": "Ожидает выходов depends_on и назначения при передаче реализации.",
+  "note": "Плановая оценка включает реализацию и указанную адресную проверку; при обнаружении объёма >60 минут разделить по конкретным результатам до начала. Не запускает работы автоматически.",
+  "id": "R087",
+  "created_at": "2026-11-07T01:02:21+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:02:21+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:02:21+03:00",
+      "note": "",
+      "changes": {
+        "label": "ChatGPT: создание и доставка сообщения",
+        "kind": "task",
+        "status": "queued",
+        "model": "gpt-6",
+        "description": "Native create/send/steer/queue где supported; native receipt привязан к request key.",
+        "acceptance": "Один вызов → одно native admission; неподдерживаемый mode не подменяется.",
+        "estimate_minutes": 60,
+        "estimate_over_limit_reason": "Владелец явно разрешил до 60 минут на лист 2026-11-07; общие настройки LHC не изменены.",
+        "depends_on": [
+          "R085",
+          "R019",
+          "R020"
+        ],
+        "affected_files": [
+          "crates/herder/src/adapters/chatgpt/write.rs"
+        ],
+        "owner": "unassigned",
+        "wait_reason": "Ожидает выходов depends_on и назначения при передаче реализации.",
+        "note": "Плановая оценка включает реализацию и указанную адресную проверку; при обнаружении объёма >60 минут разделить по конкретным результатам до начала. Не запускает работы автоматически."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

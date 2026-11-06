@@ -1,0 +1,57 @@
+{
+  "label": "SQLite схема и транзакционные границы",
+  "description": "Таблицы tasks/intents/messages/holds/lineage/settings; migration version.",
+  "acceptance": "Rollback transaction не оставляет half intent; новый schema version запрещает запись старому binary.",
+  "affected_files": [
+    "crates/herder/src/store/schema.sql"
+  ],
+  "depends_on": [
+    "A006"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 60
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 1,
+  "note": "Планирование, не запуск. Дорожка storage. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+  "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+  "id": "A011",
+  "model": "gpt-6",
+  "created_at": "2026-11-07T01:40:40+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:40:40+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:40:40+03:00",
+      "note": "",
+      "changes": {
+        "label": "SQLite схема и транзакционные границы",
+        "description": "Таблицы tasks/intents/messages/holds/lineage/settings; migration version.",
+        "acceptance": "Rollback transaction не оставляет half intent; новый schema version запрещает запись старому binary.",
+        "affected_files": [
+          "crates/herder/src/store/schema.sql"
+        ],
+        "depends_on": [
+          "A006"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 60
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 1,
+        "note": "Планирование, не запуск. Дорожка storage. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+        "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+        "model": "gpt-6"
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

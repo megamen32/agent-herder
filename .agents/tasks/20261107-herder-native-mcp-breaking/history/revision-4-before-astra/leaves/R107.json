@@ -1,0 +1,55 @@
+{
+  "label": "Web UI: сессии, последние сообщения и transcript",
+  "kind": "task",
+  "status": "queued",
+  "model": "gpt-6",
+  "description": "Типизированный клиент новых DTO; recent и remote resources отображаются без потерь.",
+  "acceptance": "Открытие и reload реальной сессии показывает обе роли и явный partial.",
+  "estimate_minutes": 60,
+  "estimate_over_limit_reason": "Владелец явно разрешил до 60 минут на лист 2026-11-07; общие настройки LHC не изменены.",
+  "depends_on": [
+    "R026",
+    "R029",
+    "R014"
+  ],
+  "affected_files": [
+    "src/web-ui/session/"
+  ],
+  "owner": "unassigned",
+  "wait_reason": "Ожидает выходов depends_on и назначения при передаче реализации.",
+  "note": "Плановая оценка включает реализацию и указанную адресную проверку; при обнаружении объёма >60 минут разделить по конкретным результатам до начала. Не запускает работы автоматически.",
+  "id": "R107",
+  "created_at": "2026-11-07T01:02:23+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:02:23+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:02:23+03:00",
+      "note": "",
+      "changes": {
+        "label": "Web UI: сессии, последние сообщения и transcript",
+        "kind": "task",
+        "status": "queued",
+        "model": "gpt-6",
+        "description": "Типизированный клиент новых DTO; recent и remote resources отображаются без потерь.",
+        "acceptance": "Открытие и reload реальной сессии показывает обе роли и явный partial.",
+        "estimate_minutes": 60,
+        "estimate_over_limit_reason": "Владелец явно разрешил до 60 минут на лист 2026-11-07; общие настройки LHC не изменены.",
+        "depends_on": [
+          "R026",
+          "R029",
+          "R014"
+        ],
+        "affected_files": [
+          "src/web-ui/session/"
+        ],
+        "owner": "unassigned",
+        "wait_reason": "Ожидает выходов depends_on и назначения при передаче реализации.",
+        "note": "Плановая оценка включает реализацию и указанную адресную проверку; при обнаружении объёма >60 минут разделить по конкретным результатам до начала. Не запускает работы автоматически."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

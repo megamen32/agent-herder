@@ -1,0 +1,83 @@
+{
+  "label": "Preflight cutover и резервная копия",
+  "description": "Проверить точные target/config/version/права, snapshot и maintenance window выбранного выпуска.",
+  "acceptance": "Нет неизвестных active writers/release effects; backup восстановим; fail-fast до остановки.",
+  "affected_files": [
+    "release/cutover/preflight.json"
+  ],
+  "depends_on": [
+    "A194",
+    "A189",
+    "A200",
+    "A201",
+    "A202",
+    "A203",
+    "A204",
+    "A205",
+    "A206",
+    "A207",
+    "A208",
+    "A209",
+    "A210",
+    "A211"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 45
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 10,
+  "note": "Планирование, не запуск. Дорожка release. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+  "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+  "id": "A212",
+  "model": "gpt-6",
+  "created_at": "2026-11-07T01:41:39+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:41:39+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:41:39+03:00",
+      "note": "",
+      "changes": {
+        "label": "Preflight cutover и резервная копия",
+        "description": "Проверить точные target/config/version/права, snapshot и maintenance window выбранного выпуска.",
+        "acceptance": "Нет неизвестных active writers/release effects; backup восстановим; fail-fast до остановки.",
+        "affected_files": [
+          "release/cutover/preflight.json"
+        ],
+        "depends_on": [
+          "A194",
+          "A189",
+          "A200",
+          "A201",
+          "A202",
+          "A203",
+          "A204",
+          "A205",
+          "A206",
+          "A207",
+          "A208",
+          "A209",
+          "A210",
+          "A211"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 45
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 10,
+        "note": "Планирование, не запуск. Дорожка release. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+        "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+        "model": "gpt-6"
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

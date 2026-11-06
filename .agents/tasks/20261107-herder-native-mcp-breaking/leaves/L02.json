@@ -1,0 +1,74 @@
+{
+  "id": "L02",
+  "parent": "M01",
+  "kind": "research",
+  "label": "Снять полный реестр публичных и скрытых команд",
+  "status": "deferred",
+  "depends_on": [
+    "L01"
+  ],
+  "estimate_minutes": 15,
+  "description": "Перечислить registerTool, facade aliases, HTTP routes, CLI и потребителей; дать каждой записи remove/migrate/internal.",
+  "acceptance": "Реестр включает скрытые callable имена и все действия CDP; нет потери неизвестной возможности.",
+  "affected_files": [
+    ".agents/tasks/20261107-herder-native-mcp-breaking/legacy-map.md"
+  ],
+  "owner": "lead-unassigned",
+  "model": "gpt-6",
+  "created_at": "2026-11-07T00:43:42+03:00",
+  "updated_at": "2026-11-07T01:02:17+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T00:43:42+03:00",
+      "note": "",
+      "changes": {
+        "id": "L02",
+        "parent": "M01",
+        "kind": "research",
+        "label": "Снять полный реестр публичных и скрытых команд",
+        "status": "queued",
+        "depends_on": [
+          "L01"
+        ],
+        "estimate_minutes": 15,
+        "description": "Перечислить registerTool, facade aliases, HTTP routes, CLI и потребителей; дать каждой записи remove/migrate/internal.",
+        "acceptance": "Реестр включает скрытые callable имена и все действия CDP; нет потери неизвестной возможности.",
+        "affected_files": [
+          "src/mcp/"
+        ],
+        "owner": "lead-unassigned",
+        "model": "gpt-6"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T00:45:01+03:00",
+      "note": "",
+      "changes": {
+        "affected_files": [
+          ".agents/tasks/20261107-herder-native-mcp-breaking/legacy-map.md"
+        ],
+        "wait_reason": "Выполнить после входных контрактов из depends_on; исполнитель будет назначен при передаче плана."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T01:02:17+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Владелец отклонил этот вариант плана 2026-11-07. Заменён полностью детализированными R-листьями; историческая оценка не действует.",
+        "result": "Не выполнено: отменено владельцем при пересмотре плана; это не завершённая работа."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "wait_reason": "Выполнить после входных контрактов из depends_on; исполнитель будет назначен при передаче плана.",
+  "note": "Владелец отклонил этот вариант плана 2026-11-07. Заменён полностью детализированными R-листьями; историческая оценка не действует.",
+  "result": "Не выполнено: отменено владельцем при пересмотре плана; это не завершённая работа.",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex"
+}

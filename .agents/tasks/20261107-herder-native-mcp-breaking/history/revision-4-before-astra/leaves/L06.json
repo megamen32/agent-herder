@@ -1,0 +1,76 @@
+{
+  "id": "L06",
+  "parent": "M01",
+  "kind": "task",
+  "label": "Описать чтение, поиск, экспорт и resources",
+  "status": "deferred",
+  "depends_on": [
+    "L02",
+    "L04"
+  ],
+  "estimate_minutes": 15,
+  "description": "nodes/list_sessions/search/export_transcript/models: recent, pagination, projects, source completeness.",
+  "acceptance": "Есть сообщения обеих ролей по умолчанию и доступный remote resource без выдуманной полноты.",
+  "affected_files": [
+    ".agents/tasks/20261107-herder-native-mcp-breaking/read-command-schemas.md"
+  ],
+  "owner": "lead-unassigned",
+  "model": "gpt-6",
+  "created_at": "2026-11-07T00:43:45+03:00",
+  "updated_at": "2026-11-07T01:02:17+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T00:43:45+03:00",
+      "note": "",
+      "changes": {
+        "id": "L06",
+        "parent": "M01",
+        "kind": "task",
+        "label": "Описать чтение, поиск, экспорт и resources",
+        "status": "queued",
+        "depends_on": [
+          "L02",
+          "L04"
+        ],
+        "estimate_minutes": 15,
+        "description": "nodes/list_sessions/search/export_transcript/models: recent, pagination, projects, source completeness.",
+        "acceptance": "Есть сообщения обеих ролей по умолчанию и доступный remote resource без выдуманной полноты.",
+        "affected_files": [
+          ".agents/tasks/20261107-herder-native-mcp-breaking/"
+        ],
+        "owner": "lead-unassigned",
+        "model": "gpt-6"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T00:45:06+03:00",
+      "note": "",
+      "changes": {
+        "affected_files": [
+          ".agents/tasks/20261107-herder-native-mcp-breaking/read-command-schemas.md"
+        ],
+        "wait_reason": "Выполнить после входных контрактов из depends_on; исполнитель будет назначен при передаче плана."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T01:02:17+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Владелец отклонил этот вариант плана 2026-11-07. Заменён полностью детализированными R-листьями; историческая оценка не действует.",
+        "result": "Не выполнено: отменено владельцем при пересмотре плана; это не завершённая работа."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "wait_reason": "Выполнить после входных контрактов из depends_on; исполнитель будет назначен при передаче плана.",
+  "note": "Владелец отклонил этот вариант плана 2026-11-07. Заменён полностью детализированными R-листьями; историческая оценка не действует.",
+  "result": "Не выполнено: отменено владельцем при пересмотре плана; это не завершённая работа.",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex"
+}

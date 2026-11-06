@@ -1,0 +1,61 @@
+{
+  "label": "Свежий агент при выключенном MCP",
+  "description": "Остановить только test daemon; read markers→claim→безопасный release через runner→receipt.",
+  "acceptance": "Ноль вопросов о назначении свободного owner, одна операция; повтор MCP видит тот же owner.",
+  "affected_files": [
+    "acceptance/recovery/offline/"
+  ],
+  "depends_on": [
+    "A179",
+    "A043",
+    "A166"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 60
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 7,
+  "note": "Планирование, не запуск. Дорожка qa. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+  "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+  "id": "A182",
+  "model": "gpt-6",
+  "created_at": "2026-11-07T01:41:29+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:41:29+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:41:29+03:00",
+      "note": "",
+      "changes": {
+        "label": "Свежий агент при выключенном MCP",
+        "description": "Остановить только test daemon; read markers→claim→безопасный release через runner→receipt.",
+        "acceptance": "Ноль вопросов о назначении свободного owner, одна операция; повтор MCP видит тот же owner.",
+        "affected_files": [
+          "acceptance/recovery/offline/"
+        ],
+        "depends_on": [
+          "A179",
+          "A043",
+          "A166"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 60
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 7,
+        "note": "Планирование, не запуск. Дорожка qa. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+        "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+        "model": "gpt-6"
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "label": "Остановка автопилота по цели/бюджету",
+  "description": "Existing goal judge contract как input; bounded continuation, явный failure.",
+  "acceptance": "Goal done, quota unknown/denied и HumanStop не вызывают retry-loop; одна continuation на turn.",
+  "affected_files": [
+    "crates/herder/src/automation/autopilot.rs"
+  ],
+  "depends_on": [
+    "A048"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 60
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 4,
+  "note": "Планирование, не запуск. Дорожка core. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+  "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+  "id": "A050",
+  "model": "gpt-6",
+  "created_at": "2026-11-07T01:40:50+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:40:50+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:40:50+03:00",
+      "note": "",
+      "changes": {
+        "label": "Остановка автопилота по цели/бюджету",
+        "description": "Existing goal judge contract как input; bounded continuation, явный failure.",
+        "acceptance": "Goal done, quota unknown/denied и HumanStop не вызывают retry-loop; одна continuation на turn.",
+        "affected_files": [
+          "crates/herder/src/automation/autopilot.rs"
+        ],
+        "depends_on": [
+          "A048"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 60
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 4,
+        "note": "Планирование, не запуск. Дорожка core. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+        "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+        "model": "gpt-6"
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "id": "L01",
+  "parent": "M01",
+  "label": "Записать согласованный дизайн и полный маршрут поставки",
+  "status": "done",
+  "estimate_minutes": 15,
+  "owner": "roomhacker",
+  "description": "Оформить SPEC.md с 17 инструментами, MCP Tasks/Skills/subscriptions, исправимыми ошибками, CI доказательствами, этапами и миграцией.",
+  "acceptance": "Спецификация сохранена, граф и страница собраны; состояние реализации явно не начато.",
+  "affected_files": [
+    ".agents/tasks/20261107-herder-native-mcp-breaking/SPEC.md"
+  ],
+  "model": "gpt-6",
+  "created_at": "2026-11-07T00:37:45+03:00",
+  "updated_at": "2026-11-07T00:45:17+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T00:37:45+03:00",
+      "note": "",
+      "changes": {
+        "id": "L01",
+        "parent": "M01",
+        "label": "Записать согласованный дизайн и полный маршрут поставки",
+        "status": "queued",
+        "estimate_minutes": 15,
+        "owner": "lead",
+        "description": "Оформить SPEC.md с 17 инструментами, MCP Tasks/Skills/subscriptions, исправимыми ошибками, CI доказательствами, этапами и миграцией.",
+        "acceptance": "Спецификация сохранена, граф и страница собраны; состояние реализации явно не начато.",
+        "affected_files": [
+          ".agents/tasks/20261107-herder-native-mcp-breaking/SPEC.md"
+        ],
+        "model": "gpt-6"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T00:38:51+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running",
+        "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T00:45:17+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "SPEC.md: 287 строк; 17 команд, MCP 2026-07-28/Tasks/Skills/subscriptions, error contract, CI findings, 9 стадий, миграция, rollback и acceptance. Граф/HTML/Markdown собраны и каноническая проверка проходит. Реализация, независимая критика, rollout и назначение workers не выполнялись."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "result": "SPEC.md: 287 строк; 17 команд, MCP 2026-07-28/Tasks/Skills/subscriptions, error contract, CI findings, 9 стадий, миграция, rollback и acceptance. Граф/HTML/Markdown собраны и каноническая проверка проходит. Реализация, независимая критика, rollout и назначение workers не выполнялись."
+}

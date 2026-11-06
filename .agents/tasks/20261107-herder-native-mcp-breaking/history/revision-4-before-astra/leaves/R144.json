@@ -1,0 +1,51 @@
+{
+  "label": "Автономный herder-recovery CLI",
+  "kind": "task",
+  "status": "queued",
+  "model": "gpt-6",
+  "description": "Отдельный небольшой binary: status/claim/renew/release/reconcile поверх той же библиотеки; local/SSH invocation и структурированные ошибки.",
+  "acceptance": "Работает при выключенных daemon/MCP и недоступной Herder DB; повтор claim с прежним request_key возвращает прежний исход.",
+  "estimate_minutes": 60,
+  "estimate_over_limit_reason": "Прямое указание владельца: максимум 60 минут на лист.",
+  "depends_on": [
+    "R143"
+  ],
+  "affected_files": [
+    "crates/herder-recovery/"
+  ],
+  "owner": "unassigned",
+  "wait_reason": "Уточнение плана; реализация и делегирование не начаты.",
+  "note": "Обязательный контракт RECOVERY-STORAGE.md. При объёме более часа разделить до исполнения.",
+  "id": "R144",
+  "created_at": "2026-11-07T01:22:26+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:22:26+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:22:26+03:00",
+      "note": "",
+      "changes": {
+        "label": "Автономный herder-recovery CLI",
+        "kind": "task",
+        "status": "queued",
+        "model": "gpt-6",
+        "description": "Отдельный небольшой binary: status/claim/renew/release/reconcile поверх той же библиотеки; local/SSH invocation и структурированные ошибки.",
+        "acceptance": "Работает при выключенных daemon/MCP и недоступной Herder DB; повтор claim с прежним request_key возвращает прежний исход.",
+        "estimate_minutes": 60,
+        "estimate_over_limit_reason": "Прямое указание владельца: максимум 60 минут на лист.",
+        "depends_on": [
+          "R143"
+        ],
+        "affected_files": [
+          "crates/herder-recovery/"
+        ],
+        "owner": "unassigned",
+        "wait_reason": "Уточнение плана; реализация и делегирование не начаты.",
+        "note": "Обязательный контракт RECOVERY-STORAGE.md. При объёме более часа разделить до исполнения."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

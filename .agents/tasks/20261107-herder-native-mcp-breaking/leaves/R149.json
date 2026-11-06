@@ -1,0 +1,65 @@
+{
+  "label": "Cutover владельцев и удаление старых fallback writers",
+  "kind": "task",
+  "status": "deferred",
+  "model": "gpt-6",
+  "description": "Одноразово перенести достоверное ownership в JSON при остановленных writers; retired Git/DB fallback paths отклоняют writes; import/rollback сохраняет fence.",
+  "acceptance": "После переключения один источник ownership; старый daemon/consumer не создаёт параллельного владельца; незавершённый release сверяется без replay.",
+  "estimate_minutes": 45,
+  "estimate_over_limit_reason": "Прямое указание владельца: максимум 60 минут на лист.",
+  "depends_on": [
+    "R119",
+    "R144",
+    "R145"
+  ],
+  "affected_files": [
+    "release/ownership-cutover/"
+  ],
+  "owner": "unassigned",
+  "wait_reason": "Уточнение плана; реализация и делегирование не начаты.",
+  "note": "Заменён независимой ревизией 5, не выполнен и не исключён из требований. Исходный лист сохранён в history/revision-4-before-astra; покрытие см. ASTRA-REVIEW.md и WORKPLAN.md.",
+  "id": "R149",
+  "created_at": "2026-11-07T01:22:28+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:40:17+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:22:28+03:00",
+      "note": "",
+      "changes": {
+        "label": "Cutover владельцев и удаление старых fallback writers",
+        "kind": "task",
+        "status": "queued",
+        "model": "gpt-6",
+        "description": "Одноразово перенести достоверное ownership в JSON при остановленных writers; retired Git/DB fallback paths отклоняют writes; import/rollback сохраняет fence.",
+        "acceptance": "После переключения один источник ownership; старый daemon/consumer не создаёт параллельного владельца; незавершённый release сверяется без replay.",
+        "estimate_minutes": 45,
+        "estimate_over_limit_reason": "Прямое указание владельца: максимум 60 минут на лист.",
+        "depends_on": [
+          "R119",
+          "R144",
+          "R145"
+        ],
+        "affected_files": [
+          "release/ownership-cutover/"
+        ],
+        "owner": "unassigned",
+        "wait_reason": "Уточнение плана; реализация и делегирование не начаты.",
+        "note": "Обязательный контракт RECOVERY-STORAGE.md. При объёме более часа разделить до исполнения."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T01:40:17+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Заменён независимой ревизией 5, не выполнен и не исключён из требований. Исходный лист сохранён в history/revision-4-before-astra; покрытие см. ASTRA-REVIEW.md и WORKPLAN.md."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

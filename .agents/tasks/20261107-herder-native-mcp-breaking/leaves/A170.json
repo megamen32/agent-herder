@@ -1,0 +1,61 @@
+{
+  "label": "UserIO: зафиксировать точный контракт потребителя",
+  "description": "Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route.",
+  "acceptance": "target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции.",
+  "affected_files": [
+    "integrations/consumers/userio/target.json"
+  ],
+  "depends_on": [
+    "A151",
+    "A035",
+    "A017"
+  ],
+  "estimate_minutes": {
+    "minimum": 20,
+    "maximum": 40
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 8,
+  "note": "Планирование, не запуск. Дорожка consumer:userio. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+  "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+  "id": "A170",
+  "model": "gpt-6",
+  "created_at": "2026-11-07T01:41:25+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:41:25+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:41:25+03:00",
+      "note": "",
+      "changes": {
+        "label": "UserIO: зафиксировать точный контракт потребителя",
+        "description": "Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route.",
+        "acceptance": "target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции.",
+        "affected_files": [
+          "integrations/consumers/userio/target.json"
+        ],
+        "depends_on": [
+          "A151",
+          "A035",
+          "A017"
+        ],
+        "estimate_minutes": {
+          "minimum": 20,
+          "maximum": 40
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 8,
+        "note": "Планирование, не запуск. Дорожка consumer:userio. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+        "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+        "model": "gpt-6"
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

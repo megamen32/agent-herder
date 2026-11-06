@@ -1,0 +1,61 @@
+{
+  "id": "L11",
+  "parent": "M01",
+  "kind": "task",
+  "label": "Релиз контракта и заданий исполнителям",
+  "status": "deferred",
+  "depends_on": [
+    "L10"
+  ],
+  "estimate_minutes": 15,
+  "description": "Опубликовать окончательные schemas/examples/acceptance matrix и назначения следующей стадии после сверки критики.",
+  "acceptance": "Контракт опубликован одной версией, ready задания имеют owner, exact paths, вход и приёмку.",
+  "affected_files": [
+    ".agents/tasks/20261107-herder-native-mcp-breaking/"
+  ],
+  "owner": "lead-unassigned",
+  "model": "gpt-6",
+  "created_at": "2026-11-07T00:44:16+03:00",
+  "updated_at": "2026-11-07T01:02:17+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T00:44:16+03:00",
+      "note": "",
+      "changes": {
+        "id": "L11",
+        "parent": "M01",
+        "kind": "task",
+        "label": "Релиз контракта и заданий исполнителям",
+        "status": "queued",
+        "depends_on": [
+          "L10"
+        ],
+        "estimate_minutes": 15,
+        "description": "Опубликовать окончательные schemas/examples/acceptance matrix и назначения следующей стадии после сверки критики.",
+        "acceptance": "Контракт опубликован одной версией, ready задания имеют owner, exact paths, вход и приёмку.",
+        "affected_files": [
+          ".agents/tasks/20261107-herder-native-mcp-breaking/"
+        ],
+        "owner": "lead-unassigned",
+        "model": "gpt-6"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T01:02:17+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Владелец отклонил этот вариант плана 2026-11-07. Заменён полностью детализированными R-листьями; историческая оценка не действует.",
+        "result": "Не выполнено: отменено владельцем при пересмотре плана; это не завершённая работа."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "note": "Владелец отклонил этот вариант плана 2026-11-07. Заменён полностью детализированными R-листьями; историческая оценка не действует.",
+  "result": "Не выполнено: отменено владельцем при пересмотре плана; это не завершённая работа.",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex"
+}

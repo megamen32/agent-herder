@@ -1,0 +1,74 @@
+{
+  "label": "LHC: общие команды и Git audit у владельца workflow",
+  "kind": "task",
+  "status": "queued",
+  "model": "gpt-6",
+  "description": "LHC использует общий workspace release/checkout и автономный recovery при отказе MCP; Git audit остаётся у LHC. Свободное владение занимается без назначения человеком.",
+  "acceptance": "При выключенном MCP агент видит canonical JSON, занимает свободную роль и продолжает; неверный путь не даёт ложного owner.",
+  "estimate_minutes": 60,
+  "estimate_over_limit_reason": "Владелец явно разрешил до 60 минут на лист 2026-11-07; общие настройки LHC не изменены.",
+  "depends_on": [
+    "R032",
+    "R031",
+    "R109",
+    "R145",
+    "R147"
+  ],
+  "affected_files": [
+    "consumer-change: Last Human Commit"
+  ],
+  "owner": "unassigned",
+  "wait_reason": "Ожидает выходов depends_on и назначения при передаче реализации.",
+  "note": "Плановая оценка включает реализацию и указанную адресную проверку; при обнаружении объёма >60 минут разделить по конкретным результатам до начала. Не запускает работы автоматически.",
+  "id": "R111",
+  "created_at": "2026-11-07T01:02:23+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:22:28+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:02:23+03:00",
+      "note": "",
+      "changes": {
+        "label": "LHC: общие команды и Git audit у владельца workflow",
+        "kind": "task",
+        "status": "queued",
+        "model": "gpt-6",
+        "description": "Новые инструкции/calls; Git worktree audit выполняет LHC, а сведения о сессиях берёт из workspace.",
+        "acceptance": "Обычный workflow объявляет пути и получает конфликт без чтения исходников Herder.",
+        "estimate_minutes": 60,
+        "estimate_over_limit_reason": "Владелец явно разрешил до 60 минут на лист 2026-11-07; общие настройки LHC не изменены.",
+        "depends_on": [
+          "R032",
+          "R031",
+          "R109"
+        ],
+        "affected_files": [
+          "consumer-change: Last Human Commit"
+        ],
+        "owner": "unassigned",
+        "wait_reason": "Ожидает выходов depends_on и назначения при передаче реализации.",
+        "note": "Плановая оценка включает реализацию и указанную адресную проверку; при обнаружении объёма >60 минут разделить по конкретным результатам до начала. Не запускает работы автоматически."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T01:22:28+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "R032",
+          "R031",
+          "R109",
+          "R145",
+          "R147"
+        ],
+        "description": "LHC использует общий workspace release/checkout и автономный recovery при отказе MCP; Git audit остаётся у LHC. Свободное владение занимается без назначения человеком.",
+        "acceptance": "При выключенном MCP агент видит canonical JSON, занимает свободную роль и продолжает; неверный путь не даёт ложного owner."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "label": "Гонка checkout и неполная межнодовая видимость",
+  "kind": "task",
+  "status": "queued",
+  "model": "gpt-6",
+  "description": "Детерминированная гонка двух claim, два instances, недоступная нода и real consumer отказ с переходом в отдельное дерево.",
+  "acceptance": "Один владелец checkout; loser получает исправимый вызов; scopes соседей видны; incomplete snapshot не утверждает одиночество.",
+  "estimate_minutes": 60,
+  "estimate_over_limit_reason": "Прямое указание владельца: каждый лист до 60 минут.",
+  "depends_on": [
+    "R137",
+    "R103",
+    "R104"
+  ],
+  "affected_files": [
+    "tests/native/workspace_coordination/"
+  ],
+  "owner": "unassigned",
+  "wait_reason": "Планирование: реализация и назначение ещё не запрошены.",
+  "note": "Контракт COORDINATION.md. Если объём превышает час, разделить до исполнения.",
+  "id": "R141",
+  "created_at": "2026-11-07T01:14:16+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:14:16+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:14:16+03:00",
+      "note": "",
+      "changes": {
+        "label": "Гонка checkout и неполная межнодовая видимость",
+        "kind": "task",
+        "status": "queued",
+        "model": "gpt-6",
+        "description": "Детерминированная гонка двух claim, два instances, недоступная нода и real consumer отказ с переходом в отдельное дерево.",
+        "acceptance": "Один владелец checkout; loser получает исправимый вызов; scopes соседей видны; incomplete snapshot не утверждает одиночество.",
+        "estimate_minutes": 60,
+        "estimate_over_limit_reason": "Прямое указание владельца: каждый лист до 60 минут.",
+        "depends_on": [
+          "R137",
+          "R103",
+          "R104"
+        ],
+        "affected_files": [
+          "tests/native/workspace_coordination/"
+        ],
+        "owner": "unassigned",
+        "wait_reason": "Планирование: реализация и назначение ещё не запрошены.",
+        "note": "Контракт COORDINATION.md. Если объём превышает час, разделить до исполнения."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

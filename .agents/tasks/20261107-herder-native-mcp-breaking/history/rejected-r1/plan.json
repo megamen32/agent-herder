@@ -1,0 +1,25 @@
+{
+  "title": "Agent Herder: единая архитектура и MCP 2026-07-28 без legacy",
+  "goal": "Подготовить полный план breaking change: 17 общих инструментов, ноды и независимые экземпляры harness, описывающие исправление ошибки, стандартные MCP Tasks, subscriptions и Skills; затем исполнители реализуют и доставят весь результат.",
+  "mode": "fullcycle",
+  "default_model": "gpt-6",
+  "recon": [
+    "Каталог укрупнён фасадами, но старые имена остаются вызываемыми :: src/mcp/tool-consolidation.ts:6-10",
+    "Адаптеры и capabilities частично индексируются по типу harness :: src/types/harness-runtime.ts; src/mesh/fleet-node.ts",
+    "CI обнаружил бесполезный Invalid input, отсутствие последних сообщений и потерю удалённых сообщений :: чат 01a1ac52-d25c-7050-a65d-3fca32642c26, два последних прочитанных хода",
+    "CI имеет реальные native probes, но общий production release не доказан :: .agents/tasks/20261105-deterministic-harness-ci/leaves/L43.json; L51.json; L53.json",
+    "Tasks 2026-07-28 имеют tasks/get, tasks/update, tasks/cancel и per-request capabilities; Skills имеют skills/list, skills/get, resources/read :: официальные спецификации MCP, прочитаны 2026-11-07"
+  ],
+  "acceptance_scenario": "После установки точного артефакта новый MCP-клиент обнаруживает ровно 17 команд и Skills; два экземпляра Codex на одной ноде и удалённый harness создают независимые сессии, получают ровно свои сообщения, возвращают recent user+assistant и полный transcript. Неверный вызов исправляется по ответу без исходников. MCP Tasks/подписки переживают reconnect; UNKNOWN не повторяется; STOP сохраняется; старые имена не вызываются. Все поддерживаемые реальные harness и потребители проверены по матрице.",
+  "business_result": "17 общих инструментов; MCP Tasks, subscriptions и Skills; исправимые ошибки; реальные multi-instance/native сценарии после полного удаления legacy.",
+  "current_progress": "Полный план и SPEC.md подготовлены; выполнен L01. Первая стадия имеет 10 следующих задач, остальные 8 стадий имеют цели, зависимости, оценки и приёмку. Реализация и передача исполнителям не начаты.",
+  "slots": 4,
+  "updated_at": "2026-11-07T00:45:20+03:00",
+  "revisions": [
+    {
+      "at": "2026-11-07T00:45:20+03:00",
+      "reason": "Владелец уточнил обязательное применение MCP 2026-07-28 и стандартных расширений.",
+      "summary": "Удалён предложенный operation; каталог 17 команд. Tasks, subscriptions, Skills и per-request capabilities включены в контракты, миграцию клиентов и приёмку."
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "label": "Native сценарий общения после компакции",
+  "kind": "task",
+  "status": "queued",
+  "model": "gpt-6",
+  "description": "На стенде A создаёт B, C пишет B; очистить model context, перезапустить Herder, восстановить адреса и ответить правильному отправителю.",
+  "acceptance": "Реальный клиент показывает A как создателя и отдельного C как отправителя; receipt подтверждает один ответ C; отсутствие native compact hook явно отражено.",
+  "estimate_minutes": 60,
+  "estimate_over_limit_reason": "Прямое указание владельца: каждый лист до 60 минут.",
+  "depends_on": [
+    "R138",
+    "R139",
+    "R042",
+    "R054"
+  ],
+  "affected_files": [
+    "tests/native/coordination_recovery/"
+  ],
+  "owner": "unassigned",
+  "wait_reason": "Планирование: реализация и назначение ещё не запрошены.",
+  "note": "Контракт COORDINATION.md. Если объём превышает час, разделить до исполнения.",
+  "id": "R140",
+  "created_at": "2026-11-07T01:14:16+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:14:16+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:14:16+03:00",
+      "note": "",
+      "changes": {
+        "label": "Native сценарий общения после компакции",
+        "kind": "task",
+        "status": "queued",
+        "model": "gpt-6",
+        "description": "На стенде A создаёт B, C пишет B; очистить model context, перезапустить Herder, восстановить адреса и ответить правильному отправителю.",
+        "acceptance": "Реальный клиент показывает A как создателя и отдельного C как отправителя; receipt подтверждает один ответ C; отсутствие native compact hook явно отражено.",
+        "estimate_minutes": 60,
+        "estimate_over_limit_reason": "Прямое указание владельца: каждый лист до 60 минут.",
+        "depends_on": [
+          "R138",
+          "R139",
+          "R042",
+          "R054"
+        ],
+        "affected_files": [
+          "tests/native/coordination_recovery/"
+        ],
+        "owner": "unassigned",
+        "wait_reason": "Планирование: реализация и назначение ещё не запрошены.",
+        "note": "Контракт COORDINATION.md. Если объём превышает час, разделить до исполнения."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

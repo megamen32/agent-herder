@@ -1,0 +1,53 @@
+{
+  "label": "JSON snapshot контекста для чтения без MCP",
+  "kind": "task",
+  "status": "queued",
+  "model": "gpt-6",
+  "description": "Атомарные scoped snapshots identity/creator/peers/workspaces/routes с freshness/revision/coverage и ACL; без credentials/закрытых сообщений.",
+  "acceptance": "После падения daemon доступны последние адреса и их давность; snapshot не выдаётся за canonical owner или receipt.",
+  "estimate_minutes": 45,
+  "estimate_over_limit_reason": "Прямое указание владельца: максимум 60 минут на лист.",
+  "depends_on": [
+    "R135",
+    "R142"
+  ],
+  "affected_files": [
+    "crates/herder/src/recovery/context_snapshot.rs"
+  ],
+  "owner": "unassigned",
+  "wait_reason": "Уточнение плана; реализация и делегирование не начаты.",
+  "note": "Обязательный контракт RECOVERY-STORAGE.md. При объёме более часа разделить до исполнения.",
+  "id": "R146",
+  "created_at": "2026-11-07T01:22:27+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:22:27+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:22:27+03:00",
+      "note": "",
+      "changes": {
+        "label": "JSON snapshot контекста для чтения без MCP",
+        "kind": "task",
+        "status": "queued",
+        "model": "gpt-6",
+        "description": "Атомарные scoped snapshots identity/creator/peers/workspaces/routes с freshness/revision/coverage и ACL; без credentials/закрытых сообщений.",
+        "acceptance": "После падения daemon доступны последние адреса и их давность; snapshot не выдаётся за canonical owner или receipt.",
+        "estimate_minutes": 45,
+        "estimate_over_limit_reason": "Прямое указание владельца: максимум 60 минут на лист.",
+        "depends_on": [
+          "R135",
+          "R142"
+        ],
+        "affected_files": [
+          "crates/herder/src/recovery/context_snapshot.rs"
+        ],
+        "owner": "unassigned",
+        "wait_reason": "Уточнение плана; реализация и делегирование не начаты.",
+        "note": "Обязательный контракт RECOVERY-STORAGE.md. При объёме более часа разделить до исполнения."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

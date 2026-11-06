@@ -1,0 +1,44 @@
+{
+  "title": "Agent Herder на Rust: переносимая архитектура, 17 команд, MCP без legacy",
+  "goal": "Полная новая реализация Agent Herder на Rust с общим интерфейсом адаптеров; инфраструктура задаётся конфигурацией; каждый рабочий лист <=60 минут.",
+  "mode": "fullcycle",
+  "default_model": "gpt-6",
+  "recon": [
+    "Владелец отверг обследование старой архитектуры и флота и установил максимум 60 минут на лист :: прямое сообщение владельца 2026-11-07",
+    "Официальный rmcp v3.9.0 содержит Tasks и Skills :: github.com/modelcontextprotocol/rust-sdk, tag rmcp-v3.9.0, crates/rmcp/src/model/{task,skill}.rs",
+    "Go SDK v1.8.0 поддерживает базовый MCP 2026-07-28; в прочитанном пакете mcp нет Tasks/Skills handlers :: официальный README и bounded scan 25 source files 2026-11-07",
+    "Обязательны recent user+assistant и конкретная диагностика неверного поля :: предоставленные владельцем примеры CI-чата, уже прочитанные в предыдущем ходе",
+    "Родство сессий уже сохраняется LineageStore на диске :: src/lineage-store.ts:48,133",
+    "Координация подставляется через hooks и message context :: src/coordination-notes.ts:277,575; src/web/server.ts:1761,1857",
+    "Определение собственной сессии и attribution отправителя различны :: src/mcp/session-tools.ts:470; src/message-provenance.ts:7",
+    "Владелец потребовал canonical storage на известной машине и работу по файлам при отказе MCP :: прямое сообщение владельца 2026-11-07",
+    "Ревизия 3 требует единственного workspace authority и durable context :: COORDINATION.md; RECOVERY-STORAGE.md уточняет authority как файловый источник владения"
+  ],
+  "acceptance_scenario": "После установки точного артефакта новый MCP-клиент обнаруживает ровно 17 команд и Skills; два экземпляра Codex на одной ноде и удалённый harness создают независимые сессии, получают ровно свои сообщения, возвращают recent user+assistant и полный transcript. Неверный вызов исправляется по ответу без исходников. MCP Tasks/подписки переживают reconnect; UNKNOWN не повторяется; STOP сохраняется; старые имена не вызываются. Все поддерживаемые реальные harness и потребители проверены по матрице. Дополнительно A создаёт B, C пишет B; после compaction и рестарта B восстанавливает родство/корреспонденцию и отвечает C. Гонка checkout имеет одного победителя; offline peers не дают ложного одиночества. Выключенный daemon/MCP не мешает прочитать canonical JSON и атомарно занять свободную роль через независимый CLI; после рестарта один owner/fence.",
+  "business_result": "17 общих инструментов; MCP Tasks, subscriptions и Skills; исправимые ошибки; реальные multi-instance/native сценарии после полного удаления legacy. При сломанном MCP свободное release/checkout владение доступно по объявленному файловому маршруту без назначения человеком.",
+  "current_progress": "Ревизия 4: canonical JSON ownership, автономный recovery CLI и локальный Skill; R142–R149. Изменён план, продукт не реализуется.",
+  "slots": 4,
+  "updated_at": "2026-11-07T01:22:29+03:00",
+  "revisions": [
+    {
+      "at": "2026-11-07T00:45:20+03:00",
+      "reason": "Владелец уточнил обязательное применение MCP 2026-07-28 и стандартных расширений.",
+      "summary": "Удалён предложенный operation; каталог 17 команд. Tasks, subscriptions, Skills и per-request capabilities включены в контракты, миграцию клиентов и приёмку."
+    },
+    {
+      "at": "2026-11-07T01:02:17+03:00",
+      "reason": "Прямая коррекция владельца: без обследования старой архитектуры/флота, все листья <=60 минут; выбрать Go/Rust.",
+      "summary": "Выбран Rust/rmcp 3.9.0. Старые крупные стадии отклонены; все работы от бинарника до независимой установленной приёмки описаны конкретными листьями."
+    },
+    {
+      "at": "2026-11-07T01:14:18+03:00",
+      "reason": "Владелец потребовал peer awareness, creator/sender memory и восстановление общения после compaction; разрешил узкое чтение текущего кода.",
+      "summary": "COORDINATION.md: единый session context, журнал переписки, reply_to, project roster, atomic workspace claim и native acceptance; R133–R141, общий каталог сохраняет 17 команд."
+    },
+    {
+      "at": "2026-11-07T01:22:29+03:00",
+      "reason": "Прямое уточнение владельца: отказ MCP Herder не должен останавливать работу из-за отсутствующего владельца; storage и recovery должны быть заранее известны.",
+      "summary": "Canonical JSON ownership при обоих маршрутах, самостоятельный recovery CLI, независимые инструкции и Skills, JSON context snapshots; 8 bounded задач, 17 MCP инструментов."
+    }
+  ]
+}

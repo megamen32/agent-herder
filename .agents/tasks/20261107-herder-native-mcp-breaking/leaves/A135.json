@@ -1,0 +1,59 @@
+{
+  "label": "Z AI: session list и recent",
+  "description": "Одна подтверждённая native read route → адреса/status/последние user+assistant.",
+  "acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен.",
+  "affected_files": [
+    "crates/herder/src/adapters/z_ai/read.rs"
+  ],
+  "depends_on": [
+    "A134",
+    "A028"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 60
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 5,
+  "note": "Планирование, не запуск. Дорожка adapter:z-ai. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+  "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+  "id": "A135",
+  "model": "gpt-6",
+  "created_at": "2026-11-07T01:41:14+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:41:14+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:41:14+03:00",
+      "note": "",
+      "changes": {
+        "label": "Z AI: session list и recent",
+        "description": "Одна подтверждённая native read route → адреса/status/последние user+assistant.",
+        "acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен.",
+        "affected_files": [
+          "crates/herder/src/adapters/z_ai/read.rs"
+        ],
+        "depends_on": [
+          "A134",
+          "A028"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 60
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 5,
+        "note": "Планирование, не запуск. Дорожка adapter:z-ai. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+        "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+        "model": "gpt-6"
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

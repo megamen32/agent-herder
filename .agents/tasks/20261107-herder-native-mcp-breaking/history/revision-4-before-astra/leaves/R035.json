@@ -1,0 +1,55 @@
+{
+  "label": "MCP input_required и внешний human_request",
+  "kind": "task",
+  "status": "queued",
+  "model": "gpt-6",
+  "description": "Стандартный запрос ввода внутри Task; external question correlation для Notice Place.",
+  "acceptance": "Ответ относится к одной сессии и возобновляет её один раз; нет двойного lifecycle.",
+  "estimate_minutes": 60,
+  "estimate_over_limit_reason": "Владелец явно разрешил до 60 минут на лист 2026-11-07; общие настройки LHC не изменены.",
+  "depends_on": [
+    "R011",
+    "R022",
+    "R013"
+  ],
+  "affected_files": [
+    "crates/herder/src/application/human.rs"
+  ],
+  "owner": "unassigned",
+  "wait_reason": "Ожидает выходов depends_on и назначения при передаче реализации.",
+  "note": "Плановая оценка включает реализацию и указанную адресную проверку; при обнаружении объёма >60 минут разделить по конкретным результатам до начала. Не запускает работы автоматически.",
+  "id": "R035",
+  "created_at": "2026-11-07T01:02:18+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:02:18+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:02:18+03:00",
+      "note": "",
+      "changes": {
+        "label": "MCP input_required и внешний human_request",
+        "kind": "task",
+        "status": "queued",
+        "model": "gpt-6",
+        "description": "Стандартный запрос ввода внутри Task; external question correlation для Notice Place.",
+        "acceptance": "Ответ относится к одной сессии и возобновляет её один раз; нет двойного lifecycle.",
+        "estimate_minutes": 60,
+        "estimate_over_limit_reason": "Владелец явно разрешил до 60 минут на лист 2026-11-07; общие настройки LHC не изменены.",
+        "depends_on": [
+          "R011",
+          "R022",
+          "R013"
+        ],
+        "affected_files": [
+          "crates/herder/src/application/human.rs"
+        ],
+        "owner": "unassigned",
+        "wait_reason": "Ожидает выходов depends_on и назначения при передаче реализации.",
+        "note": "Плановая оценка включает реализацию и указанную адресную проверку; при обнаружении объёма >60 минут разделить по конкретным результатам до начала. Не запускает работы автоматически."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

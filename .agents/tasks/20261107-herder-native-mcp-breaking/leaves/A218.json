@@ -1,0 +1,59 @@
+{
+  "label": "Независимая приёмка recovery",
+  "description": "Свежий tester по локальному Skill при выключенном test MCP; checkout conflict и release receipt.",
+  "acceptance": "Успешный claim без назначения человеком; UNKNOWN не повторён; wrong root не свободен.",
+  "affected_files": [
+    "acceptance/independent/recovery/"
+  ],
+  "depends_on": [
+    "A217",
+    "A182"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 60
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 11,
+  "note": "Планирование, не запуск. Дорожка qa. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+  "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+  "id": "A218",
+  "model": "gpt-6",
+  "created_at": "2026-11-07T01:41:41+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:41:41+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:41:41+03:00",
+      "note": "",
+      "changes": {
+        "label": "Независимая приёмка recovery",
+        "description": "Свежий tester по локальному Skill при выключенном test MCP; checkout conflict и release receipt.",
+        "acceptance": "Успешный claim без назначения человеком; UNKNOWN не повторён; wrong root не свободен.",
+        "affected_files": [
+          "acceptance/independent/recovery/"
+        ],
+        "depends_on": [
+          "A217",
+          "A182"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 60
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 11,
+        "note": "Планирование, не запуск. Дорожка qa. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+        "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+        "model": "gpt-6"
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}
