@@ -185,7 +185,7 @@ export function isArchivedSessionFailure(error: unknown): boolean {
 }
 
 export type QuotaFailureEvidence = {
-  classification: "quota_exhausted" | "provider_unavailable";
+  classification: "quota_exhausted" | "provider_unavailable" | "retry_limited";
   nativeTurnId: string;
   inputId: string;
   providerId: string;
@@ -406,7 +406,7 @@ function nativeLastTurn(session: AgentSession | null | undefined): NativeLastTur
 function normalizeQuotaFailureEvidence(value: unknown): QuotaFailureEvidence | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const input = value as Record<string, unknown>;
-  if (input.classification !== "quota_exhausted" && input.classification !== "provider_unavailable") return undefined;
+  if (input.classification !== "quota_exhausted" && input.classification !== "provider_unavailable" && input.classification !== "retry_limited") return undefined;
   const nativeTurnId = nonEmptyText(input.nativeTurnId);
   const inputId = nonEmptyText(input.inputId);
   const providerId = nonEmptyText(input.providerId);
@@ -1498,6 +1498,8 @@ export class UnfinishedSessionStore {
       if (session.harness !== "opencode") throw new Error("provider fallback requires an OpenCode terminal failure");
       waitForOriginal = false;
     }
+    if (evidence.classification === "retry_limited" && session.harness !== "codex")
+      throw new Error("native Codex 429 recovery cannot target a different harness");
     const normalized = normalizeRecordTarget({ harness: harnessType(session.harness), sessionId: session.id, cwd: session.cwd,
       model: session.model, title: session.title, threadSource: nonEmptyText(session.meta?.threadSource) });
     const candidates = quotaCandidateModels(fallbackModels, currentModel).filter(model => waitForOriginal || model !== currentModel);
@@ -1513,17 +1515,25 @@ export class UnfinishedSessionStore {
         && !isOperatorRecoveryEvidence(existing.quotaRecovery.evidence)
         && existing.quotaRecovery.evidence.nativeTurnId === evidence.nativeTurnId
         && existing.quotaRecovery.evidence.inputId === evidence.inputId) return { ...existing };
+      // A terminal Codex 429 may repeat after an accepted continuation. Carry
+      // the count across successive native turns; never create an infinite
+      // 429 -> wake -> 429 loop or replay the original native input.
+      const previous429Attempts = evidence.classification === "retry_limited"
+        && existing?.quotaRecovery?.evidence.classification === "retry_limited"
+        ? existing.quotaRecovery.attempts : 0;
+      const retryLimitReached = evidence.classification === "retry_limited"
+        && previous429Attempts >= 2;
       const quotaRecovery: QuotaRecoveryRecord = {
         evidence,
-        state: "waiting",
+        state: retryLimitReached ? "held" : "waiting",
         nextAttemptAt,
         candidateModels: candidates,
         waitForOriginal,
         candidateIndex: 0,
-        attempts: 0,
+        attempts: previous429Attempts,
         revision: (existing?.quotaRecovery?.revision ?? 0) + 1,
         updatedAt: nowIso,
-        reasonCode: "quota_waiting",
+        reasonCode: retryLimitReached ? "candidate_exhausted" : "quota_waiting",
       };
       const record: UnfinishedSessionRecord = {
         ...(existing ?? {
@@ -1537,7 +1547,7 @@ export class UnfinishedSessionStore {
         ...normalized,
         workspaceIdentity,
         updatedAt: nowIso,
-        state: "active",
+        state: retryLimitReached ? "exhausted" : "active",
         recoveryCause: evidence.classification === "provider_unavailable" ? "turn.failed" : "quota_exhausted",
         recoveryObservedAt: nowIso,
         recoveryTurnId: evidence.nativeTurnId,
@@ -1552,6 +1562,7 @@ export class UnfinishedSessionStore {
       delete record.activeInputId;
       delete record.recoveryBlockedReason;
       delete record.lastError;
+      if (retryLimitReached) delete record.nextAttemptAt;
       if (index < 0) file.sessions.push(record);
       else file.sessions[index] = record;
       sortRecords(file.sessions);

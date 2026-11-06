@@ -279,9 +279,17 @@ export function codexTerminalQuotaEvidence(value: unknown, model: string | null 
   const items = Array.isArray(turn.items) ? turn.items as Array<Record<string, unknown>> : [];
   const user = [...items].reverse().find(item => item.type === "userMessage" && typeof item.id === "string");
   const error = turn.error && typeof turn.error === "object" ? turn.error as Record<string, unknown> : {};
+  const nativeError = error.codexErrorInfo && typeof error.codexErrorInfo === "object"
+    ? error.codexErrorInfo as Record<string, unknown> : {};
+  const retryEnvelope = nativeError.response_too_many_failed_attempts;
+  const retry = retryEnvelope && typeof retryEnvelope === "object"
+    ? retryEnvelope as Record<string, unknown> : {};
+  const exhausted429 = retry.http_status_code === 429;
   return terminalQuotaFailure({ terminal: true, status: "failed", nativeTurnId: typeof turn.id === "string" ? turn.id : undefined,
     inputId: typeof user?.id === "string" ? user.id : undefined, providerId: "codex", modelId: model,
-    errorCode: typeof error.codexErrorInfo === "string" ? error.codexErrorInfo : undefined,
+    statusCode: exhausted429 ? 429 : undefined,
+    errorCode: exhausted429 ? "response_too_many_failed_attempts"
+      : typeof error.codexErrorInfo === "string" ? error.codexErrorInfo : undefined,
     errorMessage: typeof error.message === "string" ? error.message : undefined });
 }
 
@@ -1736,6 +1744,37 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     } catch { return {available: false, reason: "native_latest_turn_read_failed"}; }
   }
 
+  /** A failed Codex notification often omits user items. Only a matching
+   * bounded native SUMMARY page can establish the input identity needed for
+   * one safe same-session continuation. Never infer input from a rollout.
+   */
+  private async readFailedQuotaEvidence(
+    threadId: string,
+    expected: {id?: string; status?: string; completedAt?: string | number | null; error?: unknown},
+    model: string | null | undefined,
+  ): Promise<TerminalQuotaFailure | undefined> {
+    if (!expected.id || expected.status !== "failed" || !model) return undefined;
+    try {
+      const reply = await this.request("thread/turns/list", {
+        threadId, limit: 1, sortDirection: "desc", itemsView: "summary",
+      }) as {data?: Array<Record<string, unknown>>};
+      if (!Array.isArray(reply.data) || reply.data.length !== 1) return undefined;
+      const native = reply.data[0]!;
+      if (native.id !== expected.id || native.status !== "failed"
+        || native.itemsView !== "summary" || !Array.isArray(native.items)
+        || native.items.length > 256
+        || (expected.completedAt != null &&
+          threadTimestamp(native.completedAt as string | number | undefined) !== threadTimestamp(expected.completedAt ?? undefined))) return undefined;
+      const items = native.items as Array<Record<string, unknown>>;
+      if (items.filter(item => item?.type === "userMessage" && typeof item.id === "string").length !== 1)
+        return undefined;
+      return codexTerminalQuotaEvidence({
+        ...native,
+        ...(native.error == null && expected.error != null ? { error: expected.error } : {}),
+      }, model);
+    } catch { return undefined; }
+  }
+
   private async refreshActiveTurnId(id: string, model = this.threads.get(id)?.model): Promise<unknown> {
     try {
       const result = await this.request("thread/turns/list", {
@@ -1752,6 +1791,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       if (typeof latest?.id === "string" && typeof latest.status === "string") {
         const previous = this.lastNativeTurns.get(id);
         const quotaFailure = codexTerminalQuotaEvidence(latest, model)
+          ?? (latest.status === "failed" ? await this.readFailedQuotaEvidence(id, latest, model) : undefined)
           ?? (previous?.turnId === latest.id && latest.status === "failed" ? previous.quotaFailure : undefined);
         const capacityFailure = codexTerminalCapacityEvidence(latest, model);
         this.lastNativeTurns.set(id, {
@@ -3153,7 +3193,33 @@ export class CodexAppServerAdapter implements HarnessAdapter {
           data: { automationStop, turnId: completedTurn.id },
         });
       } else {
-        this.emitEvent({ kind: completedTurn?.status === "failed" ? "turn.failed" : "turn.completed", harness: "codex", sessionId: threadId, nativeType: message.method, status: completedTurn?.status === "failed" ? "error" : "idle", data: { turnId: completedTurn?.id, ...(this.lastNativeTurns.get(threadId)?.quotaFailure ? { quotaFailure: this.lastNativeTurns.get(threadId)!.quotaFailure, inputId: this.lastNativeTurns.get(threadId)!.inputId } : {}), ...(this.lastNativeTurns.get(threadId)?.capacityFailure ? { capacityFailure: this.lastNativeTurns.get(threadId)!.capacityFailure } : {}) } });
+        const emitCompleted = () => {
+          const state = this.lastNativeTurns.get(threadId);
+          if (!state || state.turnId !== completedTurn?.id) return;
+          this.emitEvent({
+            kind: completedTurn?.status === "failed" ? "turn.failed" : "turn.completed",
+            harness: "codex", sessionId: threadId, nativeType: message.method,
+            status: completedTurn?.status === "failed" ? "error" : "idle",
+            data: { turnId: completedTurn?.id,
+              ...(state.quotaFailure ? { quotaFailure: state.quotaFailure, inputId: state.inputId } : {}),
+              ...(state.capacityFailure ? { capacityFailure: state.capacityFailure } : {}) },
+          });
+        };
+        if (completedTurn?.status === "failed" && completedTurn.id && !this.lastNativeTurns.get(threadId)?.quotaFailure) {
+          // Settle the app-server completion immediately below; defer only the
+          // autopilot event until its exact native terminal input is verified.
+          void this.readFailedQuotaEvidence(threadId, completedTurn, this.threads.get(threadId)?.model)
+            .then((quotaFailure) => {
+              const state = this.lastNativeTurns.get(threadId);
+              if (!state || state.turnId !== completedTurn.id || this.activeTurns.has(threadId)) return;
+              if (quotaFailure) this.lastNativeTurns.set(threadId, {
+                ...state, quotaFailure, inputId: quotaFailure.inputId, userMessageId: quotaFailure.inputId,
+              });
+              emitCompleted();
+            }).catch(() => emitCompleted());
+        } else {
+          emitCompleted();
+        }
       }
       const completion = this.completions.get(threadId);
       if (completion) {
