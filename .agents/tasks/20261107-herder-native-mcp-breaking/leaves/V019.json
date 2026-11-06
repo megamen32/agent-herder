@@ -1,0 +1,55 @@
+{
+  "label": "Статический Skills manifest",
+  "description": "skills/list/get и resources/read с digest; directoryRead не объявлен.",
+  "acceptance": "Проверены manifest boundary, приватность и content hash; read не объявляет activation.",
+  "affected_files": [
+    "crates/herder/src/mcp/skills.rs"
+  ],
+  "depends_on": [
+    "V017"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 45
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 1,
+  "note": "v1, нулевая ревизия. Дорожка protocol; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "id": "V019",
+  "created_at": "2026-11-07T01:52:21+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:52:21+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:52:21+03:00",
+      "note": "",
+      "changes": {
+        "label": "Статический Skills manifest",
+        "description": "skills/list/get и resources/read с digest; directoryRead не объявлен.",
+        "acceptance": "Проверены manifest boundary, приватность и content hash; read не объявляет activation.",
+        "affected_files": [
+          "crates/herder/src/mcp/skills.rs"
+        ],
+        "depends_on": [
+          "V017"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 45
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 1,
+        "note": "v1, нулевая ревизия. Дорожка protocol; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+        "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

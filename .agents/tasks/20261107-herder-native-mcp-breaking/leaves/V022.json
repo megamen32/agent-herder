@@ -1,0 +1,55 @@
+{
+  "label": "Долговечный creator и native parent",
+  "description": "Создатель в create intent, native parent и происхождение отдельно.",
+  "acceptance": "Restart между intent и native receipt не меняет creator; неизвестное происхождение не угадано.",
+  "affected_files": [
+    "crates/herder/src/store/lineage.rs"
+  ],
+  "depends_on": [
+    "V012"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 45
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 1,
+  "note": "v1, нулевая ревизия. Дорожка core; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "id": "V022",
+  "created_at": "2026-11-07T01:52:22+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:52:22+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:52:22+03:00",
+      "note": "",
+      "changes": {
+        "label": "Долговечный creator и native parent",
+        "description": "Создатель в create intent, native parent и происхождение отдельно.",
+        "acceptance": "Restart между intent и native receipt не меняет creator; неизвестное происхождение не угадано.",
+        "affected_files": [
+          "crates/herder/src/store/lineage.rs"
+        ],
+        "depends_on": [
+          "V012"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 45
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 1,
+        "note": "v1, нулевая ревизия. Дорожка core; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+        "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

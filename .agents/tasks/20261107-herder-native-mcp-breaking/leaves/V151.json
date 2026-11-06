@@ -1,0 +1,67 @@
+{
+  "label": "Candidate: проверка соединённых consumers",
+  "description": "Сверить ранее полученные consumer proofs с API/schema digest RC; повторить затронутый основной путь.",
+  "acceptance": "Несовпадение digest требует отдельной адресной проверки; нельзя принять устаревший receipt.",
+  "affected_files": [
+    "acceptance/candidate/consumers/"
+  ],
+  "depends_on": [
+    "V145",
+    "V109",
+    "V112",
+    "V115",
+    "V118",
+    "V121",
+    "V124"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 45
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 10,
+  "note": "v1, нулевая ревизия. Дорожка clients; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "id": "V151",
+  "created_at": "2026-11-07T01:52:46+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:52:46+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:52:46+03:00",
+      "note": "",
+      "changes": {
+        "label": "Candidate: проверка соединённых consumers",
+        "description": "Сверить ранее полученные consumer proofs с API/schema digest RC; повторить затронутый основной путь.",
+        "acceptance": "Несовпадение digest требует отдельной адресной проверки; нельзя принять устаревший receipt.",
+        "affected_files": [
+          "acceptance/candidate/consumers/"
+        ],
+        "depends_on": [
+          "V145",
+          "V109",
+          "V112",
+          "V115",
+          "V118",
+          "V121",
+          "V124"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 45
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 10,
+        "note": "v1, нулевая ревизия. Дорожка clients; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+        "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

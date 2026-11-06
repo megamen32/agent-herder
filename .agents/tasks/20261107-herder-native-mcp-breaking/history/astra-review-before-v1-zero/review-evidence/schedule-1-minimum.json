@@ -1,0 +1,1316 @@
+[
+  {
+    "id": "A001",
+    "start": 0,
+    "end": 30,
+    "lane": "core"
+  },
+  {
+    "id": "A004",
+    "start": 30,
+    "end": 60,
+    "lane": "core"
+  },
+  {
+    "id": "A005",
+    "start": 60,
+    "end": 90,
+    "lane": "core"
+  },
+  {
+    "id": "A006",
+    "start": 90,
+    "end": 120,
+    "lane": "core"
+  },
+  {
+    "id": "A002",
+    "start": 120,
+    "end": 150,
+    "lane": "core"
+  },
+  {
+    "id": "A007",
+    "start": 150,
+    "end": 180,
+    "lane": "core"
+  },
+  {
+    "id": "A003",
+    "start": 180,
+    "end": 210,
+    "lane": "clients"
+  },
+  {
+    "id": "A008",
+    "start": 210,
+    "end": 240,
+    "lane": "security"
+  },
+  {
+    "id": "A009",
+    "start": 240,
+    "end": 270,
+    "lane": "core"
+  },
+  {
+    "id": "A011",
+    "start": 270,
+    "end": 300,
+    "lane": "storage"
+  },
+  {
+    "id": "A010",
+    "start": 300,
+    "end": 330,
+    "lane": "core"
+  },
+  {
+    "id": "A012",
+    "start": 330,
+    "end": 360,
+    "lane": "storage"
+  },
+  {
+    "id": "A013",
+    "start": 360,
+    "end": 390,
+    "lane": "storage"
+  },
+  {
+    "id": "A017",
+    "start": 390,
+    "end": 420,
+    "lane": "protocol"
+  },
+  {
+    "id": "A020",
+    "start": 420,
+    "end": 450,
+    "lane": "protocol"
+  },
+  {
+    "id": "A014",
+    "start": 450,
+    "end": 480,
+    "lane": "storage"
+  },
+  {
+    "id": "A021",
+    "start": 480,
+    "end": 510,
+    "lane": "protocol"
+  },
+  {
+    "id": "A022",
+    "start": 510,
+    "end": 540,
+    "lane": "core"
+  },
+  {
+    "id": "A015",
+    "start": 540,
+    "end": 570,
+    "lane": "storage"
+  },
+  {
+    "id": "A023",
+    "start": 570,
+    "end": 600,
+    "lane": "core"
+  },
+  {
+    "id": "A024",
+    "start": 600,
+    "end": 630,
+    "lane": "core"
+  },
+  {
+    "id": "A025",
+    "start": 630,
+    "end": 660,
+    "lane": "core"
+  },
+  {
+    "id": "A028",
+    "start": 660,
+    "end": 690,
+    "lane": "core"
+  },
+  {
+    "id": "A051",
+    "start": 690,
+    "end": 720,
+    "lane": "qa"
+  },
+  {
+    "id": "A029",
+    "start": 720,
+    "end": 750,
+    "lane": "core"
+  },
+  {
+    "id": "A052",
+    "start": 750,
+    "end": 775,
+    "lane": "adapter:codex"
+  },
+  {
+    "id": "A061",
+    "start": 775,
+    "end": 800,
+    "lane": "adapter:opencode"
+  },
+  {
+    "id": "A030",
+    "start": 800,
+    "end": 830,
+    "lane": "storage"
+  },
+  {
+    "id": "A053",
+    "start": 830,
+    "end": 860,
+    "lane": "adapter:codex"
+  },
+  {
+    "id": "A062",
+    "start": 860,
+    "end": 890,
+    "lane": "adapter:opencode"
+  },
+  {
+    "id": "A031",
+    "start": 890,
+    "end": 920,
+    "lane": "core"
+  },
+  {
+    "id": "A036",
+    "start": 920,
+    "end": 950,
+    "lane": "ownership"
+  },
+  {
+    "id": "A054",
+    "start": 950,
+    "end": 980,
+    "lane": "adapter:codex"
+  },
+  {
+    "id": "A063",
+    "start": 980,
+    "end": 1010,
+    "lane": "adapter:opencode"
+  },
+  {
+    "id": "A142",
+    "start": 1010,
+    "end": 1035,
+    "lane": "adapter:browser-chat"
+  },
+  {
+    "id": "A032",
+    "start": 1035,
+    "end": 1065,
+    "lane": "core"
+  },
+  {
+    "id": "A037",
+    "start": 1065,
+    "end": 1095,
+    "lane": "ownership"
+  },
+  {
+    "id": "A055",
+    "start": 1095,
+    "end": 1125,
+    "lane": "adapter:codex"
+  },
+  {
+    "id": "A064",
+    "start": 1125,
+    "end": 1155,
+    "lane": "adapter:opencode"
+  },
+  {
+    "id": "A143",
+    "start": 1155,
+    "end": 1185,
+    "lane": "adapter:browser-chat"
+  },
+  {
+    "id": "A027",
+    "start": 1185,
+    "end": 1215,
+    "lane": "storage"
+  },
+  {
+    "id": "A033",
+    "start": 1215,
+    "end": 1245,
+    "lane": "core"
+  },
+  {
+    "id": "A040",
+    "start": 1245,
+    "end": 1275,
+    "lane": "ownership"
+  },
+  {
+    "id": "A056",
+    "start": 1275,
+    "end": 1305,
+    "lane": "adapter:codex"
+  },
+  {
+    "id": "A065",
+    "start": 1305,
+    "end": 1335,
+    "lane": "adapter:opencode"
+  },
+  {
+    "id": "A070",
+    "start": 1335,
+    "end": 1360,
+    "lane": "adapter:claude"
+  },
+  {
+    "id": "A124",
+    "start": 1360,
+    "end": 1385,
+    "lane": "adapter:chatgpt"
+  },
+  {
+    "id": "A144",
+    "start": 1385,
+    "end": 1415,
+    "lane": "adapter:browser-chat"
+  },
+  {
+    "id": "A038",
+    "start": 1415,
+    "end": 1445,
+    "lane": "ownership"
+  },
+  {
+    "id": "A018",
+    "start": 1445,
+    "end": 1475,
+    "lane": "protocol"
+  },
+  {
+    "id": "A034",
+    "start": 1475,
+    "end": 1505,
+    "lane": "core"
+  },
+  {
+    "id": "A044",
+    "start": 1505,
+    "end": 1535,
+    "lane": "core"
+  },
+  {
+    "id": "A057",
+    "start": 1535,
+    "end": 1565,
+    "lane": "adapter:codex"
+  },
+  {
+    "id": "A066",
+    "start": 1565,
+    "end": 1595,
+    "lane": "adapter:opencode"
+  },
+  {
+    "id": "A071",
+    "start": 1595,
+    "end": 1625,
+    "lane": "adapter:claude"
+  },
+  {
+    "id": "A125",
+    "start": 1625,
+    "end": 1655,
+    "lane": "adapter:chatgpt"
+  },
+  {
+    "id": "A079",
+    "start": 1655,
+    "end": 1680,
+    "lane": "adapter:zcode"
+  },
+  {
+    "id": "A088",
+    "start": 1680,
+    "end": 1705,
+    "lane": "adapter:qoder"
+  },
+  {
+    "id": "A097",
+    "start": 1705,
+    "end": 1730,
+    "lane": "adapter:hermes"
+  },
+  {
+    "id": "A106",
+    "start": 1730,
+    "end": 1755,
+    "lane": "adapter:fast-agent"
+  },
+  {
+    "id": "A115",
+    "start": 1755,
+    "end": 1780,
+    "lane": "adapter:minimax-code"
+  },
+  {
+    "id": "A133",
+    "start": 1780,
+    "end": 1805,
+    "lane": "adapter:z-ai"
+  },
+  {
+    "id": "A145",
+    "start": 1805,
+    "end": 1835,
+    "lane": "adapter:browser-chat"
+  },
+  {
+    "id": "A039",
+    "start": 1835,
+    "end": 1865,
+    "lane": "ownership"
+  },
+  {
+    "id": "A046",
+    "start": 1865,
+    "end": 1895,
+    "lane": "core"
+  },
+  {
+    "id": "A058",
+    "start": 1895,
+    "end": 1925,
+    "lane": "adapter:codex"
+  },
+  {
+    "id": "A067",
+    "start": 1925,
+    "end": 1955,
+    "lane": "adapter:opencode"
+  },
+  {
+    "id": "A072",
+    "start": 1955,
+    "end": 1985,
+    "lane": "adapter:claude"
+  },
+  {
+    "id": "A080",
+    "start": 1985,
+    "end": 2015,
+    "lane": "adapter:zcode"
+  },
+  {
+    "id": "A089",
+    "start": 2015,
+    "end": 2045,
+    "lane": "adapter:qoder"
+  },
+  {
+    "id": "A098",
+    "start": 2045,
+    "end": 2075,
+    "lane": "adapter:hermes"
+  },
+  {
+    "id": "A107",
+    "start": 2075,
+    "end": 2105,
+    "lane": "adapter:fast-agent"
+  },
+  {
+    "id": "A116",
+    "start": 2105,
+    "end": 2135,
+    "lane": "adapter:minimax-code"
+  },
+  {
+    "id": "A126",
+    "start": 2135,
+    "end": 2165,
+    "lane": "adapter:chatgpt"
+  },
+  {
+    "id": "A134",
+    "start": 2165,
+    "end": 2195,
+    "lane": "adapter:z-ai"
+  },
+  {
+    "id": "A146",
+    "start": 2195,
+    "end": 2225,
+    "lane": "adapter:browser-chat"
+  },
+  {
+    "id": "A016",
+    "start": 2225,
+    "end": 2255,
+    "lane": "storage"
+  },
+  {
+    "id": "A041",
+    "start": 2255,
+    "end": 2285,
+    "lane": "ownership"
+  },
+  {
+    "id": "A183",
+    "start": 2285,
+    "end": 2315,
+    "lane": "migration"
+  },
+  {
+    "id": "A059",
+    "start": 2315,
+    "end": 2340,
+    "lane": "adapter:codex"
+  },
+  {
+    "id": "A068",
+    "start": 2340,
+    "end": 2365,
+    "lane": "adapter:opencode"
+  },
+  {
+    "id": "A073",
+    "start": 2365,
+    "end": 2395,
+    "lane": "adapter:claude"
+  },
+  {
+    "id": "A081",
+    "start": 2395,
+    "end": 2425,
+    "lane": "adapter:zcode"
+  },
+  {
+    "id": "A090",
+    "start": 2425,
+    "end": 2455,
+    "lane": "adapter:qoder"
+  },
+  {
+    "id": "A099",
+    "start": 2455,
+    "end": 2485,
+    "lane": "adapter:hermes"
+  },
+  {
+    "id": "A108",
+    "start": 2485,
+    "end": 2515,
+    "lane": "adapter:fast-agent"
+  },
+  {
+    "id": "A117",
+    "start": 2515,
+    "end": 2545,
+    "lane": "adapter:minimax-code"
+  },
+  {
+    "id": "A127",
+    "start": 2545,
+    "end": 2575,
+    "lane": "adapter:chatgpt"
+  },
+  {
+    "id": "A135",
+    "start": 2575,
+    "end": 2605,
+    "lane": "adapter:z-ai"
+  },
+  {
+    "id": "A026",
+    "start": 2605,
+    "end": 2635,
+    "lane": "core"
+  },
+  {
+    "id": "A147",
+    "start": 2635,
+    "end": 2665,
+    "lane": "adapter:browser-chat"
+  },
+  {
+    "id": "A042",
+    "start": 2665,
+    "end": 2695,
+    "lane": "ownership"
+  },
+  {
+    "id": "A060",
+    "start": 2695,
+    "end": 2725,
+    "lane": "adapter:codex"
+  },
+  {
+    "id": "A069",
+    "start": 2725,
+    "end": 2755,
+    "lane": "adapter:opencode"
+  },
+  {
+    "id": "A184",
+    "start": 2755,
+    "end": 2785,
+    "lane": "migration"
+  },
+  {
+    "id": "A074",
+    "start": 2785,
+    "end": 2815,
+    "lane": "adapter:claude"
+  },
+  {
+    "id": "A082",
+    "start": 2815,
+    "end": 2845,
+    "lane": "adapter:zcode"
+  },
+  {
+    "id": "A091",
+    "start": 2845,
+    "end": 2875,
+    "lane": "adapter:qoder"
+  },
+  {
+    "id": "A100",
+    "start": 2875,
+    "end": 2905,
+    "lane": "adapter:hermes"
+  },
+  {
+    "id": "A109",
+    "start": 2905,
+    "end": 2935,
+    "lane": "adapter:fast-agent"
+  },
+  {
+    "id": "A118",
+    "start": 2935,
+    "end": 2965,
+    "lane": "adapter:minimax-code"
+  },
+  {
+    "id": "A128",
+    "start": 2965,
+    "end": 2995,
+    "lane": "adapter:chatgpt"
+  },
+  {
+    "id": "A136",
+    "start": 2995,
+    "end": 3025,
+    "lane": "adapter:z-ai"
+  },
+  {
+    "id": "A047",
+    "start": 3025,
+    "end": 3055,
+    "lane": "core"
+  },
+  {
+    "id": "A148",
+    "start": 3055,
+    "end": 3085,
+    "lane": "adapter:browser-chat"
+  },
+  {
+    "id": "A043",
+    "start": 3085,
+    "end": 3115,
+    "lane": "ownership"
+  },
+  {
+    "id": "A151",
+    "start": 3115,
+    "end": 3145,
+    "lane": "release"
+  },
+  {
+    "id": "A185",
+    "start": 3145,
+    "end": 3175,
+    "lane": "migration"
+  },
+  {
+    "id": "A075",
+    "start": 3175,
+    "end": 3205,
+    "lane": "adapter:claude"
+  },
+  {
+    "id": "A083",
+    "start": 3205,
+    "end": 3235,
+    "lane": "adapter:zcode"
+  },
+  {
+    "id": "A092",
+    "start": 3235,
+    "end": 3265,
+    "lane": "adapter:qoder"
+  },
+  {
+    "id": "A101",
+    "start": 3265,
+    "end": 3295,
+    "lane": "adapter:hermes"
+  },
+  {
+    "id": "A110",
+    "start": 3295,
+    "end": 3325,
+    "lane": "adapter:fast-agent"
+  },
+  {
+    "id": "A119",
+    "start": 3325,
+    "end": 3355,
+    "lane": "adapter:minimax-code"
+  },
+  {
+    "id": "A129",
+    "start": 3355,
+    "end": 3385,
+    "lane": "adapter:chatgpt"
+  },
+  {
+    "id": "A137",
+    "start": 3385,
+    "end": 3415,
+    "lane": "adapter:z-ai"
+  },
+  {
+    "id": "A048",
+    "start": 3415,
+    "end": 3445,
+    "lane": "core"
+  },
+  {
+    "id": "A149",
+    "start": 3445,
+    "end": 3470,
+    "lane": "adapter:browser-chat"
+  },
+  {
+    "id": "A157",
+    "start": 3470,
+    "end": 3500,
+    "lane": "qa"
+  },
+  {
+    "id": "A186",
+    "start": 3500,
+    "end": 3530,
+    "lane": "migration"
+  },
+  {
+    "id": "A076",
+    "start": 3530,
+    "end": 3560,
+    "lane": "adapter:claude"
+  },
+  {
+    "id": "A084",
+    "start": 3560,
+    "end": 3590,
+    "lane": "adapter:zcode"
+  },
+  {
+    "id": "A093",
+    "start": 3590,
+    "end": 3620,
+    "lane": "adapter:qoder"
+  },
+  {
+    "id": "A102",
+    "start": 3620,
+    "end": 3650,
+    "lane": "adapter:hermes"
+  },
+  {
+    "id": "A111",
+    "start": 3650,
+    "end": 3680,
+    "lane": "adapter:fast-agent"
+  },
+  {
+    "id": "A120",
+    "start": 3680,
+    "end": 3710,
+    "lane": "adapter:minimax-code"
+  },
+  {
+    "id": "A130",
+    "start": 3710,
+    "end": 3740,
+    "lane": "adapter:chatgpt"
+  },
+  {
+    "id": "A138",
+    "start": 3740,
+    "end": 3770,
+    "lane": "adapter:z-ai"
+  },
+  {
+    "id": "A019",
+    "start": 3770,
+    "end": 3800,
+    "lane": "protocol"
+  },
+  {
+    "id": "A035",
+    "start": 3800,
+    "end": 3830,
+    "lane": "core"
+  },
+  {
+    "id": "A049",
+    "start": 3830,
+    "end": 3860,
+    "lane": "core"
+  },
+  {
+    "id": "A150",
+    "start": 3860,
+    "end": 3890,
+    "lane": "adapter:browser-chat"
+  },
+  {
+    "id": "A164",
+    "start": 3890,
+    "end": 3910,
+    "lane": "consumer:lhc"
+  },
+  {
+    "id": "A045",
+    "start": 3910,
+    "end": 3940,
+    "lane": "ownership"
+  },
+  {
+    "id": "A156",
+    "start": 3940,
+    "end": 3970,
+    "lane": "qa"
+  },
+  {
+    "id": "A159",
+    "start": 3970,
+    "end": 4000,
+    "lane": "web"
+  },
+  {
+    "id": "A165",
+    "start": 4000,
+    "end": 4030,
+    "lane": "consumer:lhc"
+  },
+  {
+    "id": "A187",
+    "start": 4030,
+    "end": 4060,
+    "lane": "migration"
+  },
+  {
+    "id": "A077",
+    "start": 4060,
+    "end": 4085,
+    "lane": "adapter:claude"
+  },
+  {
+    "id": "A085",
+    "start": 4085,
+    "end": 4115,
+    "lane": "adapter:zcode"
+  },
+  {
+    "id": "A094",
+    "start": 4115,
+    "end": 4145,
+    "lane": "adapter:qoder"
+  },
+  {
+    "id": "A103",
+    "start": 4145,
+    "end": 4175,
+    "lane": "adapter:hermes"
+  },
+  {
+    "id": "A112",
+    "start": 4175,
+    "end": 4205,
+    "lane": "adapter:fast-agent"
+  },
+  {
+    "id": "A121",
+    "start": 4205,
+    "end": 4235,
+    "lane": "adapter:minimax-code"
+  },
+  {
+    "id": "A131",
+    "start": 4235,
+    "end": 4260,
+    "lane": "adapter:chatgpt"
+  },
+  {
+    "id": "A139",
+    "start": 4260,
+    "end": 4290,
+    "lane": "adapter:z-ai"
+  },
+  {
+    "id": "A161",
+    "start": 4290,
+    "end": 4310,
+    "lane": "consumer:hub"
+  },
+  {
+    "id": "A167",
+    "start": 4310,
+    "end": 4330,
+    "lane": "consumer:noticeplace"
+  },
+  {
+    "id": "A170",
+    "start": 4330,
+    "end": 4350,
+    "lane": "consumer:userio"
+  },
+  {
+    "id": "A173",
+    "start": 4350,
+    "end": 4370,
+    "lane": "consumer:board"
+  },
+  {
+    "id": "A176",
+    "start": 4370,
+    "end": 4390,
+    "lane": "consumer:secretary"
+  },
+  {
+    "id": "A078",
+    "start": 4390,
+    "end": 4420,
+    "lane": "adapter:claude"
+  },
+  {
+    "id": "A132",
+    "start": 4420,
+    "end": 4450,
+    "lane": "adapter:chatgpt"
+  },
+  {
+    "id": "A158",
+    "start": 4450,
+    "end": 4480,
+    "lane": "clients"
+  },
+  {
+    "id": "A160",
+    "start": 4480,
+    "end": 4510,
+    "lane": "web"
+  },
+  {
+    "id": "A162",
+    "start": 4510,
+    "end": 4540,
+    "lane": "consumer:hub"
+  },
+  {
+    "id": "A166",
+    "start": 4540,
+    "end": 4570,
+    "lane": "consumer:lhc"
+  },
+  {
+    "id": "A168",
+    "start": 4570,
+    "end": 4600,
+    "lane": "consumer:noticeplace"
+  },
+  {
+    "id": "A171",
+    "start": 4600,
+    "end": 4630,
+    "lane": "consumer:userio"
+  },
+  {
+    "id": "A174",
+    "start": 4630,
+    "end": 4660,
+    "lane": "consumer:board"
+  },
+  {
+    "id": "A177",
+    "start": 4660,
+    "end": 4690,
+    "lane": "consumer:secretary"
+  },
+  {
+    "id": "A179",
+    "start": 4690,
+    "end": 4720,
+    "lane": "docs"
+  },
+  {
+    "id": "A180",
+    "start": 4720,
+    "end": 4750,
+    "lane": "docs"
+  },
+  {
+    "id": "A188",
+    "start": 4750,
+    "end": 4780,
+    "lane": "migration"
+  },
+  {
+    "id": "A086",
+    "start": 4780,
+    "end": 4805,
+    "lane": "adapter:zcode"
+  },
+  {
+    "id": "A095",
+    "start": 4805,
+    "end": 4830,
+    "lane": "adapter:qoder"
+  },
+  {
+    "id": "A104",
+    "start": 4830,
+    "end": 4855,
+    "lane": "adapter:hermes"
+  },
+  {
+    "id": "A113",
+    "start": 4855,
+    "end": 4880,
+    "lane": "adapter:fast-agent"
+  },
+  {
+    "id": "A122",
+    "start": 4880,
+    "end": 4905,
+    "lane": "adapter:minimax-code"
+  },
+  {
+    "id": "A140",
+    "start": 4905,
+    "end": 4930,
+    "lane": "adapter:z-ai"
+  },
+  {
+    "id": "A050",
+    "start": 4930,
+    "end": 4960,
+    "lane": "core"
+  },
+  {
+    "id": "A087",
+    "start": 4960,
+    "end": 4990,
+    "lane": "adapter:zcode"
+  },
+  {
+    "id": "A096",
+    "start": 4990,
+    "end": 5020,
+    "lane": "adapter:qoder"
+  },
+  {
+    "id": "A105",
+    "start": 5020,
+    "end": 5050,
+    "lane": "adapter:hermes"
+  },
+  {
+    "id": "A114",
+    "start": 5050,
+    "end": 5080,
+    "lane": "adapter:fast-agent"
+  },
+  {
+    "id": "A123",
+    "start": 5080,
+    "end": 5110,
+    "lane": "adapter:minimax-code"
+  },
+  {
+    "id": "A141",
+    "start": 5110,
+    "end": 5140,
+    "lane": "adapter:z-ai"
+  },
+  {
+    "id": "A152",
+    "start": 5140,
+    "end": 5170,
+    "lane": "qa"
+  },
+  {
+    "id": "A153",
+    "start": 5170,
+    "end": 5200,
+    "lane": "qa"
+  },
+  {
+    "id": "A154",
+    "start": 5200,
+    "end": 5230,
+    "lane": "qa"
+  },
+  {
+    "id": "A155",
+    "start": 5230,
+    "end": 5260,
+    "lane": "qa"
+  },
+  {
+    "id": "A163",
+    "start": 5260,
+    "end": 5290,
+    "lane": "consumer:hub"
+  },
+  {
+    "id": "A169",
+    "start": 5290,
+    "end": 5320,
+    "lane": "consumer:noticeplace"
+  },
+  {
+    "id": "A172",
+    "start": 5320,
+    "end": 5350,
+    "lane": "consumer:userio"
+  },
+  {
+    "id": "A175",
+    "start": 5350,
+    "end": 5380,
+    "lane": "consumer:board"
+  },
+  {
+    "id": "A178",
+    "start": 5380,
+    "end": 5410,
+    "lane": "consumer:secretary"
+  },
+  {
+    "id": "A181",
+    "start": 5410,
+    "end": 5440,
+    "lane": "qa"
+  },
+  {
+    "id": "A182",
+    "start": 5440,
+    "end": 5470,
+    "lane": "qa"
+  },
+  {
+    "id": "A189",
+    "start": 5470,
+    "end": 5500,
+    "lane": "migration"
+  },
+  {
+    "id": "A195",
+    "start": 5500,
+    "end": 5530,
+    "lane": "qa"
+  },
+  {
+    "id": "A190",
+    "start": 5530,
+    "end": 5555,
+    "lane": "build:linux-amd64"
+  },
+  {
+    "id": "A191",
+    "start": 5555,
+    "end": 5580,
+    "lane": "build:linux-arm64"
+  },
+  {
+    "id": "A192",
+    "start": 5580,
+    "end": 5605,
+    "lane": "build:macos-arm64"
+  },
+  {
+    "id": "A193",
+    "start": 5605,
+    "end": 5630,
+    "lane": "build:macos-amd64"
+  },
+  {
+    "id": "A194",
+    "start": 5630,
+    "end": 5660,
+    "lane": "release"
+  },
+  {
+    "id": "A196",
+    "start": 5660,
+    "end": 5690,
+    "lane": "review"
+  },
+  {
+    "id": "A197",
+    "start": 5690,
+    "end": 5720,
+    "lane": "release"
+  },
+  {
+    "id": "A198",
+    "start": 5720,
+    "end": 5750,
+    "lane": "release"
+  },
+  {
+    "id": "A199",
+    "start": 5750,
+    "end": 5780,
+    "lane": "release"
+  },
+  {
+    "id": "A211",
+    "start": 5780,
+    "end": 5810,
+    "lane": "clients"
+  },
+  {
+    "id": "A200",
+    "start": 5810,
+    "end": 5830,
+    "lane": "adapter:codex"
+  },
+  {
+    "id": "A201",
+    "start": 5830,
+    "end": 5850,
+    "lane": "adapter:opencode"
+  },
+  {
+    "id": "A202",
+    "start": 5850,
+    "end": 5870,
+    "lane": "adapter:claude"
+  },
+  {
+    "id": "A203",
+    "start": 5870,
+    "end": 5890,
+    "lane": "adapter:zcode"
+  },
+  {
+    "id": "A204",
+    "start": 5890,
+    "end": 5910,
+    "lane": "adapter:qoder"
+  },
+  {
+    "id": "A205",
+    "start": 5910,
+    "end": 5930,
+    "lane": "adapter:hermes"
+  },
+  {
+    "id": "A206",
+    "start": 5930,
+    "end": 5950,
+    "lane": "adapter:fast-agent"
+  },
+  {
+    "id": "A207",
+    "start": 5950,
+    "end": 5970,
+    "lane": "adapter:minimax-code"
+  },
+  {
+    "id": "A208",
+    "start": 5970,
+    "end": 5990,
+    "lane": "adapter:chatgpt"
+  },
+  {
+    "id": "A209",
+    "start": 5990,
+    "end": 6010,
+    "lane": "adapter:z-ai"
+  },
+  {
+    "id": "A210",
+    "start": 6010,
+    "end": 6030,
+    "lane": "adapter:browser-chat"
+  },
+  {
+    "id": "A212",
+    "start": 6030,
+    "end": 6060,
+    "lane": "release"
+  },
+  {
+    "id": "A213",
+    "start": 6060,
+    "end": 6090,
+    "lane": "release"
+  },
+  {
+    "id": "A214",
+    "start": 6090,
+    "end": 6120,
+    "lane": "qa"
+  },
+  {
+    "id": "A215",
+    "start": 6120,
+    "end": 6150,
+    "lane": "release"
+  },
+  {
+    "id": "A216",
+    "start": 6150,
+    "end": 6180,
+    "lane": "qa"
+  },
+  {
+    "id": "A217",
+    "start": 6180,
+    "end": 6210,
+    "lane": "qa"
+  },
+  {
+    "id": "A218",
+    "start": 6210,
+    "end": 6240,
+    "lane": "qa"
+  },
+  {
+    "id": "A219",
+    "start": 6240,
+    "end": 6270,
+    "lane": "release"
+  }
+]

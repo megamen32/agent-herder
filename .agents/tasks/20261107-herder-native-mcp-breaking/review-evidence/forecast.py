@@ -1,7 +1,7 @@
 from pathlib import Path
 import json,heapq,collections
 P=Path(__file__).resolve().parents[1]
-rows=json.loads((P/'review-evidence/revision5-input.json').read_text()); by={r['id']:r for r in rows}
+rows=json.loads((P/'review-evidence/v1-input.json').read_text()); by={r['id']:r for r in rows}
 def duration(r,b):return r['estimate_minutes'][b]
 def cp(b):
  finish={}; paths={}

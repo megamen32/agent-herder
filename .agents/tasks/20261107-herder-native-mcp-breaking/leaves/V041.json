@@ -1,0 +1,55 @@
+{
+  "label": "Единственная точка release admission",
+  "description": "Target-local lock, live claim check после lock, expected deployed revision.",
+  "acceptance": "Задержавшийся старый claim отвергнут; второй runner path запрещён конфигурацией.",
+  "affected_files": [
+    "crates/herder/src/ownership/release_runner.rs"
+  ],
+  "depends_on": [
+    "V039"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 60
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 2,
+  "note": "v1, нулевая ревизия. Дорожка ownership; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "id": "V041",
+  "created_at": "2026-11-07T01:52:25+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:52:25+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:52:25+03:00",
+      "note": "",
+      "changes": {
+        "label": "Единственная точка release admission",
+        "description": "Target-local lock, live claim check после lock, expected deployed revision.",
+        "acceptance": "Задержавшийся старый claim отвергнут; второй runner path запрещён конфигурацией.",
+        "affected_files": [
+          "crates/herder/src/ownership/release_runner.rs"
+        ],
+        "depends_on": [
+          "V039"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 60
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 2,
+        "note": "v1, нулевая ревизия. Дорожка ownership; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+        "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

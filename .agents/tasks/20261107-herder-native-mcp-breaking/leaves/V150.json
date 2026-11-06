@@ -1,0 +1,57 @@
+{
+  "label": "Candidate: контроль z-ai",
+  "description": "Один обязательный adapter lane повторён на финальном artifact без иных изменений.",
+  "acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.",
+  "affected_files": [
+    "acceptance/candidate/z-ai/"
+  ],
+  "depends_on": [
+    "V145",
+    "V096"
+  ],
+  "estimate_minutes": {
+    "minimum": 20,
+    "maximum": 45
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 10,
+  "note": "v1, нулевая ревизия. Дорожка adapter:z-ai; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "id": "V150",
+  "created_at": "2026-11-07T01:52:45+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:52:45+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:52:45+03:00",
+      "note": "",
+      "changes": {
+        "label": "Candidate: контроль z-ai",
+        "description": "Один обязательный adapter lane повторён на финальном artifact без иных изменений.",
+        "acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.",
+        "affected_files": [
+          "acceptance/candidate/z-ai/"
+        ],
+        "depends_on": [
+          "V145",
+          "V096"
+        ],
+        "estimate_minutes": {
+          "minimum": 20,
+          "maximum": 45
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 10,
+        "note": "v1, нулевая ревизия. Дорожка adapter:z-ai; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+        "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

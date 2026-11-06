@@ -1,0 +1,4228 @@
+[
+  {
+    "id": "A001",
+    "label": "Закрепить SDK и собрать минимальный wire probe",
+    "description": "Cargo.lock/toolchain и probe server/discover → tools/call на rmcp 3.9.0.",
+    "acceptance": "Записаны версии/feature flags; процесс запускается и отдаёт обязательный resultType. Если compile не проходит, точный минимальный failure и пересмотр до адаптеров.",
+    "affected_files": [
+      "crates/herder/Cargo.toml"
+    ],
+    "depends_on": [],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A002",
+    "label": "Проверить Tasks/Skills/subscriptions выбранного SDK",
+    "description": "Wire transcript get/update/cancel, skills/list/get/read и listen; без native эффектов.",
+    "acceptance": "Capabilities проверяются до возврата Task; отсутствуют tasks/list/result; найденные SDK пробелы названы.",
+    "affected_files": [
+      "tests/protocol/sdk_probe.rs"
+    ],
+    "depends_on": [
+      "A001"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A003",
+    "label": "Проверить конкретный основной MCP-клиент",
+    "description": "Один объявленный потребитель подключается к probe; revision/extensions/identity matrix.",
+    "acceptance": "Есть прямой trace реального клиента, не SDK talking to itself; unsupported блокирует gate и зависимую реализацию.",
+    "affected_files": [
+      "acceptance/contracts/primary-client.json"
+    ],
+    "depends_on": [
+      "A002"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "clients",
+    "stage": "Основа"
+  },
+  {
+    "id": "A004",
+    "label": "Конфигурация Node и HarnessInstance",
+    "description": "Typed config nodes/instances/profiles/authority/secret refs; duplicate ID validation.",
+    "acceptance": "Два профиля одного типа независимы; hostname/root не зашиты; диагностика неверного поля.",
+    "affected_files": [
+      "crates/herder/src/config.rs"
+    ],
+    "depends_on": [
+      "A001"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A005",
+    "label": "Типы адресов и capabilities",
+    "description": "Node/instance/session refs, supported/available/authorized отдельно; версии capability.",
+    "acceptance": "Одинаковые native IDs в разных instance не равны; offline не unsupported.",
+    "affected_files": [
+      "crates/herder/src/domain/address.rs"
+    ],
+    "depends_on": [
+      "A004"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A006",
+    "label": "Контракт pure core и native port",
+    "description": "DTO Admission/Unknown/Receipt и маленькие reader/control ports; enum registry.",
+    "acceptance": "Табличный pure decision test без I/O; fake submit различает never sent и unknown.",
+    "affected_files": [
+      "crates/herder/src/domain/adapter.rs"
+    ],
+    "depends_on": [
+      "A005"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A007",
+    "label": "Одна диагностическая схема ошибок",
+    "description": "field/received/expected/fix/effect/retry/receipt; redaction секретов.",
+    "acceptance": "Wrong mode и conflict reply_to дают однозначный исправляемый вызов без mutation.",
+    "affected_files": [
+      "crates/herder/src/error.rs"
+    ],
+    "depends_on": [
+      "A006"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A008",
+    "label": "Привязать caller и области доступа",
+    "description": "Verified principal/self binding; deny-by-default для private session и ресурсов.",
+    "acceptance": "Подмена sender/session_ref и общий node token не дают self; auth не следует из parent.",
+    "affected_files": [
+      "crates/herder/src/auth/identity.rs"
+    ],
+    "depends_on": [
+      "A005"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "security",
+    "stage": "Основа"
+  },
+  {
+    "id": "A009",
+    "label": "Реестр 14 инструментов и typed variants",
+    "description": "Единая декларация discovery/dispatch с oneOf schemas; actions read/mutate разделены.",
+    "acceptance": "tools/list совпадает с dispatch; дополнительные поля/legacy names отвергаются.",
+    "affected_files": [
+      "crates/herder/src/mcp/catalog.rs"
+    ],
+    "depends_on": [
+      "A007",
+      "A002"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A010",
+    "label": "HTTP и stdio без legacy negotiation",
+    "description": "Транспорт SDK, обязательная request metadata, shutdown; application entrypoint.",
+    "acceptance": "Основной клиент читает catalog обоими поддерживаемыми транспортами; wrong revision до эффекта.",
+    "affected_files": [
+      "crates/herder/src/mcp/transport.rs"
+    ],
+    "depends_on": [
+      "A009",
+      "A003",
+      "A008"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A011",
+    "label": "SQLite схема и транзакционные границы",
+    "description": "Таблицы tasks/intents/messages/holds/lineage/settings; migration version.",
+    "acceptance": "Rollback transaction не оставляет half intent; новый schema version запрещает запись старому binary.",
+    "affected_files": [
+      "crates/herder/src/store/schema.sql"
+    ],
+    "depends_on": [
+      "A006"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "storage",
+    "stage": "Основа"
+  },
+  {
+    "id": "A012",
+    "label": "Атомарное принятие идемпотентного intent",
+    "description": "Unique principal/target/request_key + payload hash и CAS prepared→dispatching.",
+    "acceptance": "Два одновременных обработчика вызывают fake submit один раз; conflict payload отклоняется.",
+    "affected_files": [
+      "crates/herder/src/store/intents.rs"
+    ],
+    "depends_on": [
+      "A011",
+      "A008",
+      "A007"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "storage",
+    "stage": "Основа"
+  },
+  {
+    "id": "A013",
+    "label": "Durable стандартные Tasks get/create",
+    "description": "SDK wire types и SQLite backend без in-memory authority.",
+    "acceptance": "Task сохранён до ответа, polling после рестарта читает тот же ID/result.",
+    "affected_files": [
+      "crates/herder/src/mcp/tasks.rs"
+    ],
+    "depends_on": [
+      "A012",
+      "A010"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "storage",
+    "stage": "Основа"
+  },
+  {
+    "id": "A014",
+    "label": "Tasks update и cooperative cancel",
+    "description": "Persist pending inputs и ответы по ключам; cancel intent отдельно от effect outcome.",
+    "acceptance": "Повтор input не продолжает дважды; cancel после admission не выдаёт отмену эффекта.",
+    "affected_files": [
+      "crates/herder/src/store/task_inputs.rs"
+    ],
+    "depends_on": [
+      "A013"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "storage",
+    "stage": "Основа"
+  },
+  {
+    "id": "A015",
+    "label": "Reconcile неопределённой native отправки",
+    "description": "Restart dispatcher читает native receipt по стабильной корреляции, без send.",
+    "acceptance": "Kill после dispatching/admission даёт confirmed или unknown; unknown не получает safe retry.",
+    "affected_files": [
+      "crates/herder/src/application/reconcile.rs"
+    ],
+    "depends_on": [
+      "A014"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "storage",
+    "stage": "Основа"
+  },
+  {
+    "id": "A016",
+    "label": "Разделить Task TTL и receipt retention",
+    "description": "Tombstone дедупликации/удалённого текста, правила expiry.",
+    "acceptance": "Истёкший Task и удалённый transcript не позволяют повтор request_key выполнить эффект.",
+    "affected_files": [
+      "crates/herder/src/store/retention.rs"
+    ],
+    "depends_on": [
+      "A015"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "storage",
+    "stage": "Основа"
+  },
+  {
+    "id": "A017",
+    "label": "Ресурсы с ACL и приватным cache",
+    "description": "Session/task/transcript resources с remote-readable refs и pagination.",
+    "acceptance": "Другой principal не читает result/Task; cacheScope private и ttlMs корректны.",
+    "affected_files": [
+      "crates/herder/src/mcp/resources.rs"
+    ],
+    "depends_on": [
+      "A010",
+      "A013",
+      "A008"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "protocol",
+    "stage": "Основа"
+  },
+  {
+    "id": "A018",
+    "label": "Подписки с bounded очередью и resync",
+    "description": "subscriptions/listen filters; drop→snapshot, без SSE replay.",
+    "acceptance": "Медленный клиент не блокирует ноду; reconnect видит current revision без дублирования эффектов.",
+    "affected_files": [
+      "crates/herder/src/mcp/subscriptions.rs"
+    ],
+    "depends_on": [
+      "A017"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "protocol",
+    "stage": "Основа"
+  },
+  {
+    "id": "A019",
+    "label": "Статический Skills manifest",
+    "description": "skills/list/get и resources/read с digest; directoryRead не объявлен.",
+    "acceptance": "Проверены manifest boundary, приватность и content hash; read не объявляет activation.",
+    "affected_files": [
+      "crates/herder/src/mcp/skills.rs"
+    ],
+    "depends_on": [
+      "A017"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "protocol",
+    "stage": "Основа"
+  },
+  {
+    "id": "A020",
+    "label": "Маршрутизация к owner Node",
+    "description": "Peer auth, точный instance, deadline и сохранение errors; без local fallback.",
+    "acceptance": "Две конфигурируемые ноды; чужой scope denied, недоступный origin остаётся unavailable.",
+    "affected_files": [
+      "crates/herder/src/peer/route.rs"
+    ],
+    "depends_on": [
+      "A010",
+      "A005"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "protocol",
+    "stage": "Основа"
+  },
+  {
+    "id": "A021",
+    "label": "Удалённые Tasks и resources без второго lifecycle",
+    "description": "Origin Task ref и маршрутизация standard polling/cancel/read по ACL.",
+    "acceptance": "Proxy restart не дублирует native intent; origin task/result остаются теми же.",
+    "affected_files": [
+      "crates/herder/src/peer/tasks.rs"
+    ],
+    "depends_on": [
+      "A020",
+      "A013",
+      "A017"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "protocol",
+    "stage": "Основа"
+  },
+  {
+    "id": "A022",
+    "label": "Долговечный creator и native parent",
+    "description": "Создатель в create intent, native parent и происхождение отдельно.",
+    "acceptance": "Restart между intent и native receipt не меняет creator; неизвестное происхождение не угадано.",
+    "affected_files": [
+      "crates/herder/src/store/lineage.rs"
+    ],
+    "depends_on": [
+      "A012"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A023",
+    "label": "Общий create с точным instance",
+    "description": "Application create проверяет capability/auth и связывает intent с native ID.",
+    "acceptance": "Fake native create вызывается один раз; completion только после session readback.",
+    "affected_files": [
+      "crates/herder/src/application/create.rs"
+    ],
+    "depends_on": [
+      "A022",
+      "A006",
+      "A021"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A024",
+    "label": "Общий deliver с явным режимом",
+    "description": "current/queue/start, expected turn; implicit create и delayed send отсутствуют.",
+    "acceptance": "Busy/unsupported не подменяют режим; persisted intent предшествует submit.",
+    "affected_files": [
+      "crates/herder/src/application/deliver.rs"
+    ],
+    "depends_on": [
+      "A023",
+      "A015"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A025",
+    "label": "HumanStop на admission boundary",
+    "description": "Durable hold перед interrupt; dispatch/stop сериализуют admission.",
+    "acceptance": "Race stop/deliver: post-hold send не стартует; уже принятое действие отражено честно.",
+    "affected_files": [
+      "crates/herder/src/application/stop.rs"
+    ],
+    "depends_on": [
+      "A024"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A026",
+    "label": "Одноразовое resume",
+    "description": "Один request_key → один native turn; HumanStop требует отдельного человеческого права на снятие.",
+    "acceptance": "Дубликат resume не создаёт ход; флаг humanRequested от модели не снимает hold.",
+    "affected_files": [
+      "crates/herder/src/application/resume.rs"
+    ],
+    "depends_on": [
+      "A025"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A027",
+    "label": "Журнал и reply_to",
+    "description": "Transaction связывает sender/recipient/message_ref с intent; reply target берётся сервером.",
+    "acceptance": "C→B и ответ B адресованы C; A creator не подменяется; чужой reply_to denied.",
+    "affected_files": [
+      "crates/herder/src/store/correspondence.rs"
+    ],
+    "depends_on": [
+      "A024",
+      "A022",
+      "A008"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "storage",
+    "stage": "Основа"
+  },
+  {
+    "id": "A028",
+    "label": "Recent обеих ролей",
+    "description": "Общий projection user+assistant с turn/time/partial; read-only session.",
+    "acceptance": "Старый assistant не назван ответом на новый input; отсутствующий источник не пустая история.",
+    "affected_files": [
+      "crates/herder/src/application/recent.rs"
+    ],
+    "depends_on": [
+      "A006",
+      "A017"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A029",
+    "label": "Transcript snapshot и cursor",
+    "description": "Нормализованные blocks, raw ref и подписанный/привязанный snapshot cursor.",
+    "acceptance": "Чужой cursor отвергнут; последняя страница, truncation и snapshot boundary проверены.",
+    "affected_files": [
+      "crates/herder/src/domain/transcript.rs"
+    ],
+    "depends_on": [
+      "A028"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A030",
+    "label": "Инкрементальный поиск",
+    "description": "SQLite FTS и source cursors; обновление только изменённой сессии.",
+    "acceptance": "Одна новая запись не сканирует весь corpus; ACL и coverage сохраняются.",
+    "affected_files": [
+      "crates/herder/src/search/index.rs"
+    ],
+    "depends_on": [
+      "A029",
+      "A011"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "storage",
+    "stage": "Основа"
+  },
+  {
+    "id": "A031",
+    "label": "Sessions/discover и coverage",
+    "description": "Постраничный список по project/instance; native availability отдельно от cached records.",
+    "acceptance": "Offline peer явно отмечен, одинаковые basename не склеены.",
+    "affected_files": [
+      "crates/herder/src/application/list.rs"
+    ],
+    "depends_on": [
+      "A030",
+      "A020"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A032",
+    "label": "Модели и квоты профиля",
+    "description": "discover(kind=models) отдаёт verified catalog и unknown значения.",
+    "acceptance": "Два профиля не разделяют auth/quota cache, unknown не zero/unlimited.",
+    "affected_files": [
+      "crates/herder/src/application/models.rs"
+    ],
+    "depends_on": [
+      "A031"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A033",
+    "label": "Configure desired/applied CAS",
+    "description": "Node/instance/session settings поддерживаются только при capability, typed patches.",
+    "acceptance": "Stale revision отвергнут; remote unavailable не applied; scope проверяется.",
+    "affected_files": [
+      "crates/herder/src/application/settings.rs"
+    ],
+    "depends_on": [
+      "A032",
+      "A008"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A034",
+    "label": "Точный native permission request",
+    "description": "Pending request identity и authorized answer, без wildcard approvals.",
+    "acceptance": "Expired ID не отвечает другому request; duplicate answer идемпотентен.",
+    "affected_files": [
+      "crates/herder/src/application/permission.rs"
+    ],
+    "depends_on": [
+      "A033",
+      "A014"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A035",
+    "label": "Внешний вопрос и MCP input раздельно",
+    "description": "MRTR/Task input и external correlation используют одну delivery boundary.",
+    "acceptance": "Ответ относится одной сессии, повтор callback не даёт два resume; внешняя отправка только в test route.",
+    "affected_files": [
+      "crates/herder/src/application/human.rs"
+    ],
+    "depends_on": [
+      "A034",
+      "A026"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "core",
+    "stage": "Основа"
+  },
+  {
+    "id": "A036",
+    "label": "Manifest канонического storage",
+    "description": "Storage/project/resource markers, точный offline locator и ACL policy.",
+    "acceptance": "Wrong root/storage/mount loss отличаются от owner ENOENT; секретов нет.",
+    "affected_files": [
+      "crates/herder/src/ownership/manifest.rs"
+    ],
+    "depends_on": [
+      "A004",
+      "A008"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "ownership",
+    "stage": "Владение"
+  },
+  {
+    "id": "A037",
+    "label": "Одна owner запись и OS lock",
+    "description": "Claim/renew/release с UUID epoch, atomic rename/unlink+fsync, CAS claim ID.",
+    "acceptance": "Concurrent claims имеют одного победителя; release чужого ID denied; нет state.json transaction.",
+    "affected_files": [
+      "crates/herder/src/ownership/claim.rs"
+    ],
+    "depends_on": [
+      "A036"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "ownership",
+    "stage": "Владение"
+  },
+  {
+    "id": "A038",
+    "label": "Crash proof файловых переходов",
+    "description": "Fault injection до/после rename/unlink/fsync; leftover temp cleanup под lock.",
+    "acceptance": "Полный old/new owner или отсутствие; fsync failure unknown; guard inode не заменён.",
+    "affected_files": [
+      "tests/ownership/crash.rs"
+    ],
+    "depends_on": [
+      "A037"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "ownership",
+    "stage": "Владение"
+  },
+  {
+    "id": "A039",
+    "label": "Offline CLI поверх той же библиотеки",
+    "description": "herder ownership без запуска daemon/SQLite/MCP; JSON и русские ошибки.",
+    "acceptance": "Потерянный claim response читается по nonce без automatic reclaim после release.",
+    "affected_files": [
+      "crates/herder/src/cli/ownership.rs"
+    ],
+    "depends_on": [
+      "A038"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "ownership",
+    "stage": "Владение"
+  },
+  {
+    "id": "A040",
+    "label": "Workspace declarations и общий claim route",
+    "description": "Project/worktree identity/scopes/notes; MCP ownership вызывает ту же библиотеку.",
+    "acceptance": "Декларация не lease; две ноды одного shared workspace используют один resource.",
+    "affected_files": [
+      "crates/herder/src/application/workspace.rs"
+    ],
+    "depends_on": [
+      "A037",
+      "A031"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "ownership",
+    "stage": "Владение"
+  },
+  {
+    "id": "A041",
+    "label": "Единственная точка release admission",
+    "description": "Target-local lock, live claim check после lock, expected deployed revision.",
+    "acceptance": "Задержавшийся старый claim отвергнут; второй runner path запрещён конфигурацией.",
+    "affected_files": [
+      "crates/herder/src/ownership/release_runner.rs"
+    ],
+    "depends_on": [
+      "A039"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "ownership",
+    "stage": "Владение"
+  },
+  {
+    "id": "A042",
+    "label": "Durable release receipt до spawn",
+    "description": "Request key/hash, admitted/confirmed/unknown; child удерживает execution lock.",
+    "acceptance": "Crash родителя не отпускает live child; unknown external effect блокирует новый конфликтующий effect.",
+    "affected_files": [
+      "crates/herder/src/ownership/release_receipt.rs"
+    ],
+    "depends_on": [
+      "A041"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "ownership",
+    "stage": "Владение"
+  },
+  {
+    "id": "A043",
+    "label": "Гонка release и смена owner",
+    "description": "Test runner делает безопасный локальный file revision effect; delay/crash/partition.",
+    "acceptance": "Максимум один эффект; повтор key только readback; lost authority запрещает новый admission.",
+    "affected_files": [
+      "tests/ownership/release_races.rs"
+    ],
+    "depends_on": [
+      "A042",
+      "A040"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "ownership",
+    "stage": "Владение"
+  },
+  {
+    "id": "A044",
+    "label": "Context self/creator/senders/peers",
+    "description": "Один bounded snapshot с адресами, scopes, coverage и курсорами.",
+    "acceptance": "A creator и C sender восстанавливаются без transcript memory; чужие closed sessions скрыты.",
+    "affected_files": [
+      "crates/herder/src/application/context.rs"
+    ],
+    "depends_on": [
+      "A027",
+      "A040",
+      "A028"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "core",
+    "stage": "Координация"
+  },
+  {
+    "id": "A045",
+    "label": "Offline context snapshot",
+    "description": "Atomic JSON projection c generated_at, coverage и безопасными routes.",
+    "acceptance": "Без daemon читается stale snapshot; это не owner или delivery receipt.",
+    "affected_files": [
+      "crates/herder/src/ownership/context_snapshot.rs"
+    ],
+    "depends_on": [
+      "A044",
+      "A039"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "ownership",
+    "stage": "Координация"
+  },
+  {
+    "id": "A046",
+    "label": "Контекстные generation и native hook client",
+    "description": "Projector snapshot/delta, новый context generation не подавляется fingerprint.",
+    "acceptance": "Fake compact event вызывает snapshot без нового model turn и без снятия STOP.",
+    "affected_files": [
+      "integrations/hooks/context_client.rs"
+    ],
+    "depends_on": [
+      "A044",
+      "A018",
+      "A025"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "core",
+    "stage": "Координация"
+  },
+  {
+    "id": "A047",
+    "label": "Typed automation rules",
+    "description": "Schedule/one-shot и autopilot в одном CRUD; timezone, missed/overlap, CAS.",
+    "acceptance": "Неверный cron объясняется; настройка не создаёт parallel job API.",
+    "affected_files": [
+      "crates/herder/src/automation/rules.rs"
+    ],
+    "depends_on": [
+      "A033",
+      "A026"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "core",
+    "stage": "Автоматизация"
+  },
+  {
+    "id": "A048",
+    "label": "Один admission executor триггеров",
+    "description": "Trigger ID + правило + native turn → постоянный delivery request_key.",
+    "acceptance": "Hook/observer/end-turn повтор не создаёт второй continuation; hold всегда проверен.",
+    "affected_files": [
+      "crates/herder/src/automation/executor.rs"
+    ],
+    "depends_on": [
+      "A047"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "core",
+    "stage": "Автоматизация"
+  },
+  {
+    "id": "A049",
+    "label": "DST/restart/pause расписания",
+    "description": "Clock как вход pure reducer; bounded catch-up и no overlap.",
+    "acceptance": "DST fold/gap, restart после admission и pause не дают дубля.",
+    "affected_files": [
+      "tests/automation/schedule.rs"
+    ],
+    "depends_on": [
+      "A048"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "core",
+    "stage": "Автоматизация"
+  },
+  {
+    "id": "A050",
+    "label": "Остановка автопилота по цели/бюджету",
+    "description": "Existing goal judge contract как input; bounded continuation, явный failure.",
+    "acceptance": "Goal done, quota unknown/denied и HumanStop не вызывают retry-loop; одна continuation на turn.",
+    "affected_files": [
+      "crates/herder/src/automation/autopilot.rs"
+    ],
+    "depends_on": [
+      "A048"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "core",
+    "stage": "Автоматизация"
+  },
+  {
+    "id": "A051",
+    "label": "Нативный тестовый контур и endpoint",
+    "description": "Изолированные profiles, deterministic model endpoint для поддерживающих клиентов, receipt schema.",
+    "acceptance": "Native процесс отличим от fake adapter; никакого личного аккаунта/звонка; отдельные browser test identities.",
+    "affected_files": [
+      "tests/native/harness_runner.rs"
+    ],
+    "depends_on": [
+      "A010",
+      "A023",
+      "A025"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "qa",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A052",
+    "label": "Codex: подтвердить точный native контракт",
+    "description": "Один versioned app-server JSON-RPC: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.",
+    "acceptance": "Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.",
+    "affected_files": [
+      "acceptance/contracts/codex.md"
+    ],
+    "depends_on": [
+      "A006",
+      "A051"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:codex",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A053",
+    "label": "Codex: соединение одного instance",
+    "description": "Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.",
+    "acceptance": "Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.",
+    "affected_files": [
+      "crates/herder/src/adapters/codex/connection.rs"
+    ],
+    "depends_on": [
+      "A052"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:codex",
+    "stage": "Адаптеры",
+    "estimate_unknown_reason": "Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный."
+  },
+  {
+    "id": "A054",
+    "label": "Codex: session list и recent",
+    "description": "Одна подтверждённая native read route → адреса/status/последние user+assistant.",
+    "acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен.",
+    "affected_files": [
+      "crates/herder/src/adapters/codex/read.rs"
+    ],
+    "depends_on": [
+      "A053",
+      "A028"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:codex",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A055",
+    "label": "Codex: создать и сверить session ID",
+    "description": "Одна native create route; request correlation и readback.",
+    "acceptance": "Точное native ID, creator сохраняется; disconnect не запускает второй create.",
+    "affected_files": [
+      "crates/herder/src/adapters/codex/create.rs"
+    ],
+    "depends_on": [
+      "A054",
+      "A023"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:codex",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A056",
+    "label": "Codex: доставить и сверить input",
+    "description": "Одна native send route; поддерживаемые modes кодируются явно; native receipt.",
+    "acceptance": "Один input readback; unsupported mode до send; unknown после разрыва не replay.",
+    "affected_files": [
+      "crates/herder/src/adapters/codex/deliver.rs"
+    ],
+    "depends_on": [
+      "A055",
+      "A024"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:codex",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A057",
+    "label": "Codex: transcript страницы",
+    "description": "Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса.",
+    "acceptance": "Первая/последняя страница и role blocks не теряются; чужой cursor rejected.",
+    "affected_files": [
+      "crates/herder/src/adapters/codex/transcript.rs"
+    ],
+    "depends_on": [
+      "A056",
+      "A029",
+      "A030"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:codex",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A058",
+    "label": "Codex: interrupt и параметры",
+    "description": "Только доказанные stop/model/permission methods; unsupported явно, не успех.",
+    "acceptance": "Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control.",
+    "affected_files": [
+      "crates/herder/src/adapters/codex/control.rs"
+    ],
+    "depends_on": [
+      "A057",
+      "A025",
+      "A034",
+      "A032"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:codex",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A059",
+    "label": "Codex: подключить context bridge",
+    "description": "Привязка self и один подтверждённый startup/resume/compact hook; absence явная.",
+    "acceptance": "Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся.",
+    "affected_files": [
+      "crates/herder/src/adapters/codex/context.rs"
+    ],
+    "depends_on": [
+      "A058",
+      "A046"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:codex",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A060",
+    "label": "Codex: установленная тестовая вертикаль",
+    "description": "Один candidate на изолированном стенде: create→deliver→recent→export/search→stop.",
+    "acceptance": "Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane.",
+    "affected_files": [
+      "acceptance/native/codex/"
+    ],
+    "depends_on": [
+      "A059",
+      "A051",
+      "A016"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:codex",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A061",
+    "label": "OpenCode: подтвердить точный native контракт",
+    "description": "Один versioned HTTP/events: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.",
+    "acceptance": "Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.",
+    "affected_files": [
+      "acceptance/contracts/opencode.md"
+    ],
+    "depends_on": [
+      "A006",
+      "A051"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:opencode",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A062",
+    "label": "OpenCode: соединение одного instance",
+    "description": "Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.",
+    "acceptance": "Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.",
+    "affected_files": [
+      "crates/herder/src/adapters/opencode/connection.rs"
+    ],
+    "depends_on": [
+      "A061"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:opencode",
+    "stage": "Адаптеры",
+    "estimate_unknown_reason": "Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный."
+  },
+  {
+    "id": "A063",
+    "label": "OpenCode: session list и recent",
+    "description": "Одна подтверждённая native read route → адреса/status/последние user+assistant.",
+    "acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен.",
+    "affected_files": [
+      "crates/herder/src/adapters/opencode/read.rs"
+    ],
+    "depends_on": [
+      "A062",
+      "A028"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:opencode",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A064",
+    "label": "OpenCode: создать и сверить session ID",
+    "description": "Одна native create route; request correlation и readback.",
+    "acceptance": "Точное native ID, creator сохраняется; disconnect не запускает второй create.",
+    "affected_files": [
+      "crates/herder/src/adapters/opencode/create.rs"
+    ],
+    "depends_on": [
+      "A063",
+      "A023"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:opencode",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A065",
+    "label": "OpenCode: доставить и сверить input",
+    "description": "Одна native send route; поддерживаемые modes кодируются явно; native receipt.",
+    "acceptance": "Один input readback; unsupported mode до send; unknown после разрыва не replay.",
+    "affected_files": [
+      "crates/herder/src/adapters/opencode/deliver.rs"
+    ],
+    "depends_on": [
+      "A064",
+      "A024"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:opencode",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A066",
+    "label": "OpenCode: transcript страницы",
+    "description": "Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса.",
+    "acceptance": "Первая/последняя страница и role blocks не теряются; чужой cursor rejected.",
+    "affected_files": [
+      "crates/herder/src/adapters/opencode/transcript.rs"
+    ],
+    "depends_on": [
+      "A065",
+      "A029",
+      "A030"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:opencode",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A067",
+    "label": "OpenCode: interrupt и параметры",
+    "description": "Только доказанные stop/model/permission methods; unsupported явно, не успех.",
+    "acceptance": "Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control.",
+    "affected_files": [
+      "crates/herder/src/adapters/opencode/control.rs"
+    ],
+    "depends_on": [
+      "A066",
+      "A025",
+      "A034",
+      "A032"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:opencode",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A068",
+    "label": "OpenCode: подключить context bridge",
+    "description": "Привязка self и один подтверждённый startup/resume/compact hook; absence явная.",
+    "acceptance": "Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся.",
+    "affected_files": [
+      "crates/herder/src/adapters/opencode/context.rs"
+    ],
+    "depends_on": [
+      "A067",
+      "A046"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:opencode",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A069",
+    "label": "OpenCode: установленная тестовая вертикаль",
+    "description": "Один candidate на изолированном стенде: create→deliver→recent→export/search→stop.",
+    "acceptance": "Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane.",
+    "affected_files": [
+      "acceptance/native/opencode/"
+    ],
+    "depends_on": [
+      "A068",
+      "A051",
+      "A016"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:opencode",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A070",
+    "label": "Claude: подтвердить точный native контракт",
+    "description": "Один versioned официальный CLI/stream JSON: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.",
+    "acceptance": "Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.",
+    "affected_files": [
+      "acceptance/contracts/claude.md"
+    ],
+    "depends_on": [
+      "A006",
+      "A051"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:claude",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A071",
+    "label": "Claude: соединение одного instance",
+    "description": "Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.",
+    "acceptance": "Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.",
+    "affected_files": [
+      "crates/herder/src/adapters/claude/connection.rs"
+    ],
+    "depends_on": [
+      "A070"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:claude",
+    "stage": "Адаптеры",
+    "estimate_unknown_reason": "Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный."
+  },
+  {
+    "id": "A072",
+    "label": "Claude: session list и recent",
+    "description": "Одна подтверждённая native read route → адреса/status/последние user+assistant.",
+    "acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен.",
+    "affected_files": [
+      "crates/herder/src/adapters/claude/read.rs"
+    ],
+    "depends_on": [
+      "A071",
+      "A028"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:claude",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A073",
+    "label": "Claude: создать и сверить session ID",
+    "description": "Одна native create route; request correlation и readback.",
+    "acceptance": "Точное native ID, creator сохраняется; disconnect не запускает второй create.",
+    "affected_files": [
+      "crates/herder/src/adapters/claude/create.rs"
+    ],
+    "depends_on": [
+      "A072",
+      "A023"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:claude",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A074",
+    "label": "Claude: доставить и сверить input",
+    "description": "Одна native send route; поддерживаемые modes кодируются явно; native receipt.",
+    "acceptance": "Один input readback; unsupported mode до send; unknown после разрыва не replay.",
+    "affected_files": [
+      "crates/herder/src/adapters/claude/deliver.rs"
+    ],
+    "depends_on": [
+      "A073",
+      "A024"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:claude",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A075",
+    "label": "Claude: transcript страницы",
+    "description": "Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса.",
+    "acceptance": "Первая/последняя страница и role blocks не теряются; чужой cursor rejected.",
+    "affected_files": [
+      "crates/herder/src/adapters/claude/transcript.rs"
+    ],
+    "depends_on": [
+      "A074",
+      "A029",
+      "A030"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:claude",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A076",
+    "label": "Claude: interrupt и параметры",
+    "description": "Только доказанные stop/model/permission methods; unsupported явно, не успех.",
+    "acceptance": "Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control.",
+    "affected_files": [
+      "crates/herder/src/adapters/claude/control.rs"
+    ],
+    "depends_on": [
+      "A075",
+      "A025",
+      "A034",
+      "A032"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:claude",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A077",
+    "label": "Claude: подключить context bridge",
+    "description": "Привязка self и один подтверждённый startup/resume/compact hook; absence явная.",
+    "acceptance": "Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся.",
+    "affected_files": [
+      "crates/herder/src/adapters/claude/context.rs"
+    ],
+    "depends_on": [
+      "A076",
+      "A046"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:claude",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A078",
+    "label": "Claude: установленная тестовая вертикаль",
+    "description": "Один candidate на изолированном стенде: create→deliver→recent→export/search→stop.",
+    "acceptance": "Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane.",
+    "affected_files": [
+      "acceptance/native/claude/"
+    ],
+    "depends_on": [
+      "A077",
+      "A051",
+      "A016"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:claude",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A079",
+    "label": "ZCode: подтвердить точный native контракт",
+    "description": "Один versioned подтверждаемый native session transport: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.",
+    "acceptance": "Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.",
+    "affected_files": [
+      "acceptance/contracts/zcode.md"
+    ],
+    "depends_on": [
+      "A006",
+      "A051"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:zcode",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A080",
+    "label": "ZCode: соединение одного instance",
+    "description": "Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.",
+    "acceptance": "Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.",
+    "affected_files": [
+      "crates/herder/src/adapters/zcode/connection.rs"
+    ],
+    "depends_on": [
+      "A079"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:zcode",
+    "stage": "Адаптеры",
+    "estimate_unknown_reason": "Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный."
+  },
+  {
+    "id": "A081",
+    "label": "ZCode: session list и recent",
+    "description": "Одна подтверждённая native read route → адреса/status/последние user+assistant.",
+    "acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен.",
+    "affected_files": [
+      "crates/herder/src/adapters/zcode/read.rs"
+    ],
+    "depends_on": [
+      "A080",
+      "A028"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:zcode",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A082",
+    "label": "ZCode: создать и сверить session ID",
+    "description": "Одна native create route; request correlation и readback.",
+    "acceptance": "Точное native ID, creator сохраняется; disconnect не запускает второй create.",
+    "affected_files": [
+      "crates/herder/src/adapters/zcode/create.rs"
+    ],
+    "depends_on": [
+      "A081",
+      "A023"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:zcode",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A083",
+    "label": "ZCode: доставить и сверить input",
+    "description": "Одна native send route; поддерживаемые modes кодируются явно; native receipt.",
+    "acceptance": "Один input readback; unsupported mode до send; unknown после разрыва не replay.",
+    "affected_files": [
+      "crates/herder/src/adapters/zcode/deliver.rs"
+    ],
+    "depends_on": [
+      "A082",
+      "A024"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:zcode",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A084",
+    "label": "ZCode: transcript страницы",
+    "description": "Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса.",
+    "acceptance": "Первая/последняя страница и role blocks не теряются; чужой cursor rejected.",
+    "affected_files": [
+      "crates/herder/src/adapters/zcode/transcript.rs"
+    ],
+    "depends_on": [
+      "A083",
+      "A029",
+      "A030"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:zcode",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A085",
+    "label": "ZCode: interrupt и параметры",
+    "description": "Только доказанные stop/model/permission methods; unsupported явно, не успех.",
+    "acceptance": "Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control.",
+    "affected_files": [
+      "crates/herder/src/adapters/zcode/control.rs"
+    ],
+    "depends_on": [
+      "A084",
+      "A025",
+      "A034",
+      "A032"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:zcode",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A086",
+    "label": "ZCode: подключить context bridge",
+    "description": "Привязка self и один подтверждённый startup/resume/compact hook; absence явная.",
+    "acceptance": "Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся.",
+    "affected_files": [
+      "crates/herder/src/adapters/zcode/context.rs"
+    ],
+    "depends_on": [
+      "A085",
+      "A046"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:zcode",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A087",
+    "label": "ZCode: установленная тестовая вертикаль",
+    "description": "Один candidate на изолированном стенде: create→deliver→recent→export/search→stop.",
+    "acceptance": "Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane.",
+    "affected_files": [
+      "acceptance/native/zcode/"
+    ],
+    "depends_on": [
+      "A086",
+      "A051",
+      "A016"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:zcode",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A088",
+    "label": "Qoder: подтвердить точный native контракт",
+    "description": "Один versioned подтверждаемый native CLI/session transport: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.",
+    "acceptance": "Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.",
+    "affected_files": [
+      "acceptance/contracts/qoder.md"
+    ],
+    "depends_on": [
+      "A006",
+      "A051"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:qoder",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A089",
+    "label": "Qoder: соединение одного instance",
+    "description": "Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.",
+    "acceptance": "Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.",
+    "affected_files": [
+      "crates/herder/src/adapters/qoder/connection.rs"
+    ],
+    "depends_on": [
+      "A088"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:qoder",
+    "stage": "Адаптеры",
+    "estimate_unknown_reason": "Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный."
+  },
+  {
+    "id": "A090",
+    "label": "Qoder: session list и recent",
+    "description": "Одна подтверждённая native read route → адреса/status/последние user+assistant.",
+    "acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен.",
+    "affected_files": [
+      "crates/herder/src/adapters/qoder/read.rs"
+    ],
+    "depends_on": [
+      "A089",
+      "A028"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:qoder",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A091",
+    "label": "Qoder: создать и сверить session ID",
+    "description": "Одна native create route; request correlation и readback.",
+    "acceptance": "Точное native ID, creator сохраняется; disconnect не запускает второй create.",
+    "affected_files": [
+      "crates/herder/src/adapters/qoder/create.rs"
+    ],
+    "depends_on": [
+      "A090",
+      "A023"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:qoder",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A092",
+    "label": "Qoder: доставить и сверить input",
+    "description": "Одна native send route; поддерживаемые modes кодируются явно; native receipt.",
+    "acceptance": "Один input readback; unsupported mode до send; unknown после разрыва не replay.",
+    "affected_files": [
+      "crates/herder/src/adapters/qoder/deliver.rs"
+    ],
+    "depends_on": [
+      "A091",
+      "A024"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:qoder",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A093",
+    "label": "Qoder: transcript страницы",
+    "description": "Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса.",
+    "acceptance": "Первая/последняя страница и role blocks не теряются; чужой cursor rejected.",
+    "affected_files": [
+      "crates/herder/src/adapters/qoder/transcript.rs"
+    ],
+    "depends_on": [
+      "A092",
+      "A029",
+      "A030"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:qoder",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A094",
+    "label": "Qoder: interrupt и параметры",
+    "description": "Только доказанные stop/model/permission methods; unsupported явно, не успех.",
+    "acceptance": "Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control.",
+    "affected_files": [
+      "crates/herder/src/adapters/qoder/control.rs"
+    ],
+    "depends_on": [
+      "A093",
+      "A025",
+      "A034",
+      "A032"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:qoder",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A095",
+    "label": "Qoder: подключить context bridge",
+    "description": "Привязка self и один подтверждённый startup/resume/compact hook; absence явная.",
+    "acceptance": "Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся.",
+    "affected_files": [
+      "crates/herder/src/adapters/qoder/context.rs"
+    ],
+    "depends_on": [
+      "A094",
+      "A046"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:qoder",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A096",
+    "label": "Qoder: установленная тестовая вертикаль",
+    "description": "Один candidate на изолированном стенде: create→deliver→recent→export/search→stop.",
+    "acceptance": "Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane.",
+    "affected_files": [
+      "acceptance/native/qoder/"
+    ],
+    "depends_on": [
+      "A095",
+      "A051",
+      "A016"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:qoder",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A097",
+    "label": "Hermes: подтвердить точный native контракт",
+    "description": "Один versioned подтверждаемый session transport/history: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.",
+    "acceptance": "Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.",
+    "affected_files": [
+      "acceptance/contracts/hermes.md"
+    ],
+    "depends_on": [
+      "A006",
+      "A051"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:hermes",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A098",
+    "label": "Hermes: соединение одного instance",
+    "description": "Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.",
+    "acceptance": "Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.",
+    "affected_files": [
+      "crates/herder/src/adapters/hermes/connection.rs"
+    ],
+    "depends_on": [
+      "A097"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:hermes",
+    "stage": "Адаптеры",
+    "estimate_unknown_reason": "Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный."
+  },
+  {
+    "id": "A099",
+    "label": "Hermes: session list и recent",
+    "description": "Одна подтверждённая native read route → адреса/status/последние user+assistant.",
+    "acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен.",
+    "affected_files": [
+      "crates/herder/src/adapters/hermes/read.rs"
+    ],
+    "depends_on": [
+      "A098",
+      "A028"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:hermes",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A100",
+    "label": "Hermes: создать и сверить session ID",
+    "description": "Одна native create route; request correlation и readback.",
+    "acceptance": "Точное native ID, creator сохраняется; disconnect не запускает второй create.",
+    "affected_files": [
+      "crates/herder/src/adapters/hermes/create.rs"
+    ],
+    "depends_on": [
+      "A099",
+      "A023"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:hermes",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A101",
+    "label": "Hermes: доставить и сверить input",
+    "description": "Одна native send route; поддерживаемые modes кодируются явно; native receipt.",
+    "acceptance": "Один input readback; unsupported mode до send; unknown после разрыва не replay.",
+    "affected_files": [
+      "crates/herder/src/adapters/hermes/deliver.rs"
+    ],
+    "depends_on": [
+      "A100",
+      "A024"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:hermes",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A102",
+    "label": "Hermes: transcript страницы",
+    "description": "Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса.",
+    "acceptance": "Первая/последняя страница и role blocks не теряются; чужой cursor rejected.",
+    "affected_files": [
+      "crates/herder/src/adapters/hermes/transcript.rs"
+    ],
+    "depends_on": [
+      "A101",
+      "A029",
+      "A030"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:hermes",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A103",
+    "label": "Hermes: interrupt и параметры",
+    "description": "Только доказанные stop/model/permission methods; unsupported явно, не успех.",
+    "acceptance": "Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control.",
+    "affected_files": [
+      "crates/herder/src/adapters/hermes/control.rs"
+    ],
+    "depends_on": [
+      "A102",
+      "A025",
+      "A034",
+      "A032"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:hermes",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A104",
+    "label": "Hermes: подключить context bridge",
+    "description": "Привязка self и один подтверждённый startup/resume/compact hook; absence явная.",
+    "acceptance": "Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся.",
+    "affected_files": [
+      "crates/herder/src/adapters/hermes/context.rs"
+    ],
+    "depends_on": [
+      "A103",
+      "A046"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:hermes",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A105",
+    "label": "Hermes: установленная тестовая вертикаль",
+    "description": "Один candidate на изолированном стенде: create→deliver→recent→export/search→stop.",
+    "acceptance": "Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane.",
+    "affected_files": [
+      "acceptance/native/hermes/"
+    ],
+    "depends_on": [
+      "A104",
+      "A051",
+      "A016"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:hermes",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A106",
+    "label": "Fast Agent: подтвердить точный native контракт",
+    "description": "Один versioned подтверждаемый native transport: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.",
+    "acceptance": "Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.",
+    "affected_files": [
+      "acceptance/contracts/fast-agent.md"
+    ],
+    "depends_on": [
+      "A006",
+      "A051"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:fast-agent",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A107",
+    "label": "Fast Agent: соединение одного instance",
+    "description": "Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.",
+    "acceptance": "Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.",
+    "affected_files": [
+      "crates/herder/src/adapters/fast_agent/connection.rs"
+    ],
+    "depends_on": [
+      "A106"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:fast-agent",
+    "stage": "Адаптеры",
+    "estimate_unknown_reason": "Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный."
+  },
+  {
+    "id": "A108",
+    "label": "Fast Agent: session list и recent",
+    "description": "Одна подтверждённая native read route → адреса/status/последние user+assistant.",
+    "acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен.",
+    "affected_files": [
+      "crates/herder/src/adapters/fast_agent/read.rs"
+    ],
+    "depends_on": [
+      "A107",
+      "A028"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:fast-agent",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A109",
+    "label": "Fast Agent: создать и сверить session ID",
+    "description": "Одна native create route; request correlation и readback.",
+    "acceptance": "Точное native ID, creator сохраняется; disconnect не запускает второй create.",
+    "affected_files": [
+      "crates/herder/src/adapters/fast_agent/create.rs"
+    ],
+    "depends_on": [
+      "A108",
+      "A023"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:fast-agent",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A110",
+    "label": "Fast Agent: доставить и сверить input",
+    "description": "Одна native send route; поддерживаемые modes кодируются явно; native receipt.",
+    "acceptance": "Один input readback; unsupported mode до send; unknown после разрыва не replay.",
+    "affected_files": [
+      "crates/herder/src/adapters/fast_agent/deliver.rs"
+    ],
+    "depends_on": [
+      "A109",
+      "A024"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:fast-agent",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A111",
+    "label": "Fast Agent: transcript страницы",
+    "description": "Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса.",
+    "acceptance": "Первая/последняя страница и role blocks не теряются; чужой cursor rejected.",
+    "affected_files": [
+      "crates/herder/src/adapters/fast_agent/transcript.rs"
+    ],
+    "depends_on": [
+      "A110",
+      "A029",
+      "A030"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:fast-agent",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A112",
+    "label": "Fast Agent: interrupt и параметры",
+    "description": "Только доказанные stop/model/permission methods; unsupported явно, не успех.",
+    "acceptance": "Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control.",
+    "affected_files": [
+      "crates/herder/src/adapters/fast_agent/control.rs"
+    ],
+    "depends_on": [
+      "A111",
+      "A025",
+      "A034",
+      "A032"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:fast-agent",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A113",
+    "label": "Fast Agent: подключить context bridge",
+    "description": "Привязка self и один подтверждённый startup/resume/compact hook; absence явная.",
+    "acceptance": "Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся.",
+    "affected_files": [
+      "crates/herder/src/adapters/fast_agent/context.rs"
+    ],
+    "depends_on": [
+      "A112",
+      "A046"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:fast-agent",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A114",
+    "label": "Fast Agent: установленная тестовая вертикаль",
+    "description": "Один candidate на изолированном стенде: create→deliver→recent→export/search→stop.",
+    "acceptance": "Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane.",
+    "affected_files": [
+      "acceptance/native/fast-agent/"
+    ],
+    "depends_on": [
+      "A113",
+      "A051",
+      "A016"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:fast-agent",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A115",
+    "label": "MiniMax Code: подтвердить точный native контракт",
+    "description": "Один versioned подтверждаемый ACP/CLI: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.",
+    "acceptance": "Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.",
+    "affected_files": [
+      "acceptance/contracts/minimax-code.md"
+    ],
+    "depends_on": [
+      "A006",
+      "A051"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:minimax-code",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A116",
+    "label": "MiniMax Code: соединение одного instance",
+    "description": "Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.",
+    "acceptance": "Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.",
+    "affected_files": [
+      "crates/herder/src/adapters/minimax_code/connection.rs"
+    ],
+    "depends_on": [
+      "A115"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:minimax-code",
+    "stage": "Адаптеры",
+    "estimate_unknown_reason": "Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный."
+  },
+  {
+    "id": "A117",
+    "label": "MiniMax Code: session list и recent",
+    "description": "Одна подтверждённая native read route → адреса/status/последние user+assistant.",
+    "acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен.",
+    "affected_files": [
+      "crates/herder/src/adapters/minimax_code/read.rs"
+    ],
+    "depends_on": [
+      "A116",
+      "A028"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:minimax-code",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A118",
+    "label": "MiniMax Code: создать и сверить session ID",
+    "description": "Одна native create route; request correlation и readback.",
+    "acceptance": "Точное native ID, creator сохраняется; disconnect не запускает второй create.",
+    "affected_files": [
+      "crates/herder/src/adapters/minimax_code/create.rs"
+    ],
+    "depends_on": [
+      "A117",
+      "A023"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:minimax-code",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A119",
+    "label": "MiniMax Code: доставить и сверить input",
+    "description": "Одна native send route; поддерживаемые modes кодируются явно; native receipt.",
+    "acceptance": "Один input readback; unsupported mode до send; unknown после разрыва не replay.",
+    "affected_files": [
+      "crates/herder/src/adapters/minimax_code/deliver.rs"
+    ],
+    "depends_on": [
+      "A118",
+      "A024"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:minimax-code",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A120",
+    "label": "MiniMax Code: transcript страницы",
+    "description": "Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса.",
+    "acceptance": "Первая/последняя страница и role blocks не теряются; чужой cursor rejected.",
+    "affected_files": [
+      "crates/herder/src/adapters/minimax_code/transcript.rs"
+    ],
+    "depends_on": [
+      "A119",
+      "A029",
+      "A030"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:minimax-code",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A121",
+    "label": "MiniMax Code: interrupt и параметры",
+    "description": "Только доказанные stop/model/permission methods; unsupported явно, не успех.",
+    "acceptance": "Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control.",
+    "affected_files": [
+      "crates/herder/src/adapters/minimax_code/control.rs"
+    ],
+    "depends_on": [
+      "A120",
+      "A025",
+      "A034",
+      "A032"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:minimax-code",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A122",
+    "label": "MiniMax Code: подключить context bridge",
+    "description": "Привязка self и один подтверждённый startup/resume/compact hook; absence явная.",
+    "acceptance": "Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся.",
+    "affected_files": [
+      "crates/herder/src/adapters/minimax_code/context.rs"
+    ],
+    "depends_on": [
+      "A121",
+      "A046"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:minimax-code",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A123",
+    "label": "MiniMax Code: установленная тестовая вертикаль",
+    "description": "Один candidate на изолированном стенде: create→deliver→recent→export/search→stop.",
+    "acceptance": "Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane.",
+    "affected_files": [
+      "acceptance/native/minimax-code/"
+    ],
+    "depends_on": [
+      "A122",
+      "A051",
+      "A016"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:minimax-code",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A124",
+    "label": "ChatGPT: подтвердить точный native контракт",
+    "description": "Один versioned авторизованный browser profile через разрешённый маршрут: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.",
+    "acceptance": "Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.",
+    "affected_files": [
+      "acceptance/contracts/chatgpt.md"
+    ],
+    "depends_on": [
+      "A006",
+      "A051"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:chatgpt",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A125",
+    "label": "ChatGPT: соединение одного instance",
+    "description": "Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.",
+    "acceptance": "Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.",
+    "affected_files": [
+      "crates/herder/src/adapters/chatgpt/connection.rs"
+    ],
+    "depends_on": [
+      "A124"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:chatgpt",
+    "stage": "Адаптеры",
+    "estimate_unknown_reason": "Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный."
+  },
+  {
+    "id": "A126",
+    "label": "ChatGPT: session list и recent",
+    "description": "Одна подтверждённая native read route → адреса/status/последние user+assistant.",
+    "acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен.",
+    "affected_files": [
+      "crates/herder/src/adapters/chatgpt/read.rs"
+    ],
+    "depends_on": [
+      "A125",
+      "A028"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:chatgpt",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A127",
+    "label": "ChatGPT: создать и сверить session ID",
+    "description": "Одна native create route; request correlation и readback.",
+    "acceptance": "Точное native ID, creator сохраняется; disconnect не запускает второй create.",
+    "affected_files": [
+      "crates/herder/src/adapters/chatgpt/create.rs"
+    ],
+    "depends_on": [
+      "A126",
+      "A023"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:chatgpt",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A128",
+    "label": "ChatGPT: доставить и сверить input",
+    "description": "Одна native send route; поддерживаемые modes кодируются явно; native receipt.",
+    "acceptance": "Один input readback; unsupported mode до send; unknown после разрыва не replay.",
+    "affected_files": [
+      "crates/herder/src/adapters/chatgpt/deliver.rs"
+    ],
+    "depends_on": [
+      "A127",
+      "A024"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:chatgpt",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A129",
+    "label": "ChatGPT: transcript страницы",
+    "description": "Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса.",
+    "acceptance": "Первая/последняя страница и role blocks не теряются; чужой cursor rejected.",
+    "affected_files": [
+      "crates/herder/src/adapters/chatgpt/transcript.rs"
+    ],
+    "depends_on": [
+      "A128",
+      "A029",
+      "A030"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:chatgpt",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A130",
+    "label": "ChatGPT: interrupt и параметры",
+    "description": "Только доказанные stop/model/permission methods; unsupported явно, не успех.",
+    "acceptance": "Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control.",
+    "affected_files": [
+      "crates/herder/src/adapters/chatgpt/control.rs"
+    ],
+    "depends_on": [
+      "A129",
+      "A025",
+      "A034",
+      "A032"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:chatgpt",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A131",
+    "label": "ChatGPT: подключить context bridge",
+    "description": "Привязка self и один подтверждённый startup/resume/compact hook; absence явная.",
+    "acceptance": "Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся.",
+    "affected_files": [
+      "crates/herder/src/adapters/chatgpt/context.rs"
+    ],
+    "depends_on": [
+      "A130",
+      "A046"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:chatgpt",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A132",
+    "label": "ChatGPT: установленная тестовая вертикаль",
+    "description": "Один candidate на изолированном стенде: create→deliver→recent→export/search→stop.",
+    "acceptance": "Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane.",
+    "affected_files": [
+      "acceptance/native/chatgpt/"
+    ],
+    "depends_on": [
+      "A131",
+      "A051",
+      "A016"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:chatgpt",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A133",
+    "label": "Z AI: подтвердить точный native контракт",
+    "description": "Один versioned авторизованный browser profile через разрешённый маршрут: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.",
+    "acceptance": "Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.",
+    "affected_files": [
+      "acceptance/contracts/z-ai.md"
+    ],
+    "depends_on": [
+      "A006",
+      "A051"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:z-ai",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A134",
+    "label": "Z AI: соединение одного instance",
+    "description": "Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.",
+    "acceptance": "Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.",
+    "affected_files": [
+      "crates/herder/src/adapters/z_ai/connection.rs"
+    ],
+    "depends_on": [
+      "A133"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:z-ai",
+    "stage": "Адаптеры",
+    "estimate_unknown_reason": "Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный."
+  },
+  {
+    "id": "A135",
+    "label": "Z AI: session list и recent",
+    "description": "Одна подтверждённая native read route → адреса/status/последние user+assistant.",
+    "acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен.",
+    "affected_files": [
+      "crates/herder/src/adapters/z_ai/read.rs"
+    ],
+    "depends_on": [
+      "A134",
+      "A028"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:z-ai",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A136",
+    "label": "Z AI: создать и сверить session ID",
+    "description": "Одна native create route; request correlation и readback.",
+    "acceptance": "Точное native ID, creator сохраняется; disconnect не запускает второй create.",
+    "affected_files": [
+      "crates/herder/src/adapters/z_ai/create.rs"
+    ],
+    "depends_on": [
+      "A135",
+      "A023"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:z-ai",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A137",
+    "label": "Z AI: доставить и сверить input",
+    "description": "Одна native send route; поддерживаемые modes кодируются явно; native receipt.",
+    "acceptance": "Один input readback; unsupported mode до send; unknown после разрыва не replay.",
+    "affected_files": [
+      "crates/herder/src/adapters/z_ai/deliver.rs"
+    ],
+    "depends_on": [
+      "A136",
+      "A024"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:z-ai",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A138",
+    "label": "Z AI: transcript страницы",
+    "description": "Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса.",
+    "acceptance": "Первая/последняя страница и role blocks не теряются; чужой cursor rejected.",
+    "affected_files": [
+      "crates/herder/src/adapters/z_ai/transcript.rs"
+    ],
+    "depends_on": [
+      "A137",
+      "A029",
+      "A030"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:z-ai",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A139",
+    "label": "Z AI: interrupt и параметры",
+    "description": "Только доказанные stop/model/permission methods; unsupported явно, не успех.",
+    "acceptance": "Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control.",
+    "affected_files": [
+      "crates/herder/src/adapters/z_ai/control.rs"
+    ],
+    "depends_on": [
+      "A138",
+      "A025",
+      "A034",
+      "A032"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:z-ai",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A140",
+    "label": "Z AI: подключить context bridge",
+    "description": "Привязка self и один подтверждённый startup/resume/compact hook; absence явная.",
+    "acceptance": "Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся.",
+    "affected_files": [
+      "crates/herder/src/adapters/z_ai/context.rs"
+    ],
+    "depends_on": [
+      "A139",
+      "A046"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:z-ai",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A141",
+    "label": "Z AI: установленная тестовая вертикаль",
+    "description": "Один candidate на изолированном стенде: create→deliver→recent→export/search→stop.",
+    "acceptance": "Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane.",
+    "affected_files": [
+      "acceptance/native/z-ai/"
+    ],
+    "depends_on": [
+      "A140",
+      "A051",
+      "A016"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:z-ai",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A142",
+    "label": "Browser Chat: подтвердить точный native контракт",
+    "description": "Один versioned один явно именованный endpoint/provider из установленного контракта: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.",
+    "acceptance": "Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.",
+    "affected_files": [
+      "acceptance/contracts/browser-chat.md"
+    ],
+    "depends_on": [
+      "A006",
+      "A051"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:browser-chat",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A143",
+    "label": "Browser Chat: соединение одного instance",
+    "description": "Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.",
+    "acceptance": "Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.",
+    "affected_files": [
+      "crates/herder/src/adapters/browser_chat/connection.rs"
+    ],
+    "depends_on": [
+      "A142"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:browser-chat",
+    "stage": "Адаптеры",
+    "estimate_unknown_reason": "Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный."
+  },
+  {
+    "id": "A144",
+    "label": "Browser Chat: session list и recent",
+    "description": "Одна подтверждённая native read route → адреса/status/последние user+assistant.",
+    "acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен.",
+    "affected_files": [
+      "crates/herder/src/adapters/browser_chat/read.rs"
+    ],
+    "depends_on": [
+      "A143",
+      "A028"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:browser-chat",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A145",
+    "label": "Browser Chat: создать и сверить session ID",
+    "description": "Одна native create route; request correlation и readback.",
+    "acceptance": "Точное native ID, creator сохраняется; disconnect не запускает второй create.",
+    "affected_files": [
+      "crates/herder/src/adapters/browser_chat/create.rs"
+    ],
+    "depends_on": [
+      "A144",
+      "A023"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:browser-chat",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A146",
+    "label": "Browser Chat: доставить и сверить input",
+    "description": "Одна native send route; поддерживаемые modes кодируются явно; native receipt.",
+    "acceptance": "Один input readback; unsupported mode до send; unknown после разрыва не replay.",
+    "affected_files": [
+      "crates/herder/src/adapters/browser_chat/deliver.rs"
+    ],
+    "depends_on": [
+      "A145",
+      "A024"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:browser-chat",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A147",
+    "label": "Browser Chat: transcript страницы",
+    "description": "Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса.",
+    "acceptance": "Первая/последняя страница и role blocks не теряются; чужой cursor rejected.",
+    "affected_files": [
+      "crates/herder/src/adapters/browser_chat/transcript.rs"
+    ],
+    "depends_on": [
+      "A146",
+      "A029",
+      "A030"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:browser-chat",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A148",
+    "label": "Browser Chat: interrupt и параметры",
+    "description": "Только доказанные stop/model/permission methods; unsupported явно, не успех.",
+    "acceptance": "Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control.",
+    "affected_files": [
+      "crates/herder/src/adapters/browser_chat/control.rs"
+    ],
+    "depends_on": [
+      "A147",
+      "A025",
+      "A034",
+      "A032"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:browser-chat",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A149",
+    "label": "Browser Chat: подключить context bridge",
+    "description": "Привязка self и один подтверждённый startup/resume/compact hook; absence явная.",
+    "acceptance": "Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся.",
+    "affected_files": [
+      "crates/herder/src/adapters/browser_chat/context.rs"
+    ],
+    "depends_on": [
+      "A148",
+      "A046"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 45
+    },
+    "lane": "adapter:browser-chat",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A150",
+    "label": "Browser Chat: установленная тестовая вертикаль",
+    "description": "Один candidate на изолированном стенде: create→deliver→recent→export/search→stop.",
+    "acceptance": "Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane.",
+    "affected_files": [
+      "acceptance/native/browser-chat/"
+    ],
+    "depends_on": [
+      "A149",
+      "A051",
+      "A016"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "adapter:browser-chat",
+    "stage": "Адаптеры"
+  },
+  {
+    "id": "A151",
+    "label": "Выпустить тестовую вертикаль Codex + OpenCode",
+    "description": "Установленный dev artifact и один основной MCP client с durable Task polling.",
+    "acceptance": "Create/deliver/context работают через реальные adapters; missing extension не скрыт.",
+    "affected_files": [
+      "release/dev-vertical/"
+    ],
+    "depends_on": [
+      "A060",
+      "A069",
+      "A003"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "release",
+    "stage": "Ранняя поставка"
+  },
+  {
+    "id": "A152",
+    "label": "Два Codex instance на одной ноде",
+    "description": "Изолированные profiles и двунаправленная отправка/чтение.",
+    "acceptance": "В обоих профилях свои IDs/history; fixture одинакового native ID не смешивает ключи.",
+    "affected_files": [
+      "acceptance/multi/codex/"
+    ],
+    "depends_on": [
+      "A060"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "qa",
+    "stage": "Сквозная приёмка"
+  },
+  {
+    "id": "A153",
+    "label": "Два Claude instance на одной ноде",
+    "description": "Изолированные connections и проверка control/history.",
+    "acceptance": "Отправка и stop одного instance не касаются второго.",
+    "affected_files": [
+      "acceptance/multi/claude/"
+    ],
+    "depends_on": [
+      "A078"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "qa",
+    "stage": "Сквозная приёмка"
+  },
+  {
+    "id": "A154",
+    "label": "Два браузерных профиля",
+    "description": "Два разрешённых тестовых profile refs и отдельные вкладки.",
+    "acceptance": "History/send не пересекают аккаунты; нет использования чужой вкладки или credentials в receipt.",
+    "affected_files": [
+      "acceptance/multi/browser/"
+    ],
+    "depends_on": [
+      "A132"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "qa",
+    "stage": "Сквозная приёмка"
+  },
+  {
+    "id": "A155",
+    "label": "Две ноды и remote Task readback",
+    "description": "Codex→OpenCode через объявленные endpoints; exact origin refs.",
+    "acceptance": "Чтение result с удалённой ноды доступно клиенту; offline coverage partial, no local retry.",
+    "affected_files": [
+      "acceptance/multi/nodes/"
+    ],
+    "depends_on": [
+      "A151",
+      "A021"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "qa",
+    "stage": "Сквозная приёмка"
+  },
+  {
+    "id": "A156",
+    "label": "Creator/sender после компакции",
+    "description": "A создаёт B, C пишет B; очистить context и рестарт Herder; B отвечает C.",
+    "acceptance": "Native readback одного ответа C; A остался creator; доказана инъекция, не только resource read.",
+    "affected_files": [
+      "acceptance/context/compaction/"
+    ],
+    "depends_on": [
+      "A151",
+      "A044",
+      "A046",
+      "A027"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "qa",
+    "stage": "Сквозная приёмка"
+  },
+  {
+    "id": "A157",
+    "label": "Native admission crash matrix",
+    "description": "Три точки сбоя: до вызова, после admission, после completion до ответа.",
+    "acceptance": "Повтор key не создаёт input; unknown без native lookup остаётся unknown.",
+    "affected_files": [
+      "acceptance/native/crash/"
+    ],
+    "depends_on": [
+      "A151",
+      "A015"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "qa",
+    "stage": "Сквозная приёмка"
+  },
+  {
+    "id": "A158",
+    "label": "CLI обычных операций",
+    "description": "Subcommands из тех же DTO/application, polling Tasks и чтение ресурсов.",
+    "acceptance": "create/deliver/read ошибки и completion показаны раздельно; old routes отсутствуют.",
+    "affected_files": [
+      "crates/herder/src/cli/main.rs"
+    ],
+    "depends_on": [
+      "A151",
+      "A009"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "clients",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A159",
+    "label": "Web UI чтение и reload",
+    "description": "Typed client sessions/recent/transcript, partial/turn refs.",
+    "acceptance": "Обычный браузер показывает обе роли после reload и remote resource.",
+    "affected_files": [
+      "web/src/session.ts"
+    ],
+    "depends_on": [
+      "A151",
+      "A017"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "web",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A160",
+    "label": "Web UI действия и Task lifecycle",
+    "description": "Create/deliver/stop/settings; standard polling и cancelled/unknown rendering.",
+    "acceptance": "Повтор кнопки не даёт duplicate; unknown не предлагает повторную отправку.",
+    "affected_files": [
+      "web/src/control.ts"
+    ],
+    "depends_on": [
+      "A159",
+      "A033"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "web",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A161",
+    "label": "Hub: зафиксировать точный контракт потребителя",
+    "description": "Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route.",
+    "acceptance": "target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции.",
+    "affected_files": [
+      "integrations/consumers/hub/target.json"
+    ],
+    "depends_on": [
+      "A151",
+      "A002",
+      "A019",
+      "A018"
+    ],
+    "estimate_minutes": {
+      "minimum": 20,
+      "maximum": 40
+    },
+    "lane": "consumer:hub",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A162",
+    "label": "Hub: перевести один вызывающий маршрут",
+    "description": "Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях.",
+    "acceptance": "Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены.",
+    "affected_files": [
+      "consumer:hub:paths-from-target.json"
+    ],
+    "depends_on": [
+      "A161"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "consumer:hub",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A163",
+    "label": "Hub: проверить реальный consumer readback",
+    "description": "Один изолированный сценарий через обычного потребителя и native result.",
+    "acceptance": "Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль.",
+    "affected_files": [
+      "acceptance/consumers/hub/"
+    ],
+    "depends_on": [
+      "A162"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "consumer:hub",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A164",
+    "label": "LHC: зафиксировать точный контракт потребителя",
+    "description": "Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route.",
+    "acceptance": "target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции.",
+    "affected_files": [
+      "integrations/consumers/lhc/target.json"
+    ],
+    "depends_on": [
+      "A151",
+      "A039",
+      "A043"
+    ],
+    "estimate_minutes": {
+      "minimum": 20,
+      "maximum": 40
+    },
+    "lane": "consumer:lhc",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A165",
+    "label": "LHC: перевести один вызывающий маршрут",
+    "description": "Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях.",
+    "acceptance": "Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены.",
+    "affected_files": [
+      "consumer:lhc:paths-from-target.json"
+    ],
+    "depends_on": [
+      "A164"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "consumer:lhc",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A166",
+    "label": "LHC: проверить реальный consumer readback",
+    "description": "Один изолированный сценарий через обычного потребителя и native result.",
+    "acceptance": "Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль.",
+    "affected_files": [
+      "acceptance/consumers/lhc/"
+    ],
+    "depends_on": [
+      "A165"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "consumer:lhc",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A167",
+    "label": "Notice Place: зафиксировать точный контракт потребителя",
+    "description": "Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route.",
+    "acceptance": "target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции.",
+    "affected_files": [
+      "integrations/consumers/noticeplace/target.json"
+    ],
+    "depends_on": [
+      "A151",
+      "A035"
+    ],
+    "estimate_minutes": {
+      "minimum": 20,
+      "maximum": 40
+    },
+    "lane": "consumer:noticeplace",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A168",
+    "label": "Notice Place: перевести один вызывающий маршрут",
+    "description": "Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях.",
+    "acceptance": "Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены.",
+    "affected_files": [
+      "consumer:noticeplace:paths-from-target.json"
+    ],
+    "depends_on": [
+      "A167"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "consumer:noticeplace",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A169",
+    "label": "Notice Place: проверить реальный consumer readback",
+    "description": "Один изолированный сценарий через обычного потребителя и native result.",
+    "acceptance": "Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль.",
+    "affected_files": [
+      "acceptance/consumers/noticeplace/"
+    ],
+    "depends_on": [
+      "A168"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "consumer:noticeplace",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A170",
+    "label": "UserIO: зафиксировать точный контракт потребителя",
+    "description": "Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route.",
+    "acceptance": "target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции.",
+    "affected_files": [
+      "integrations/consumers/userio/target.json"
+    ],
+    "depends_on": [
+      "A151",
+      "A035",
+      "A017"
+    ],
+    "estimate_minutes": {
+      "minimum": 20,
+      "maximum": 40
+    },
+    "lane": "consumer:userio",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A171",
+    "label": "UserIO: перевести один вызывающий маршрут",
+    "description": "Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях.",
+    "acceptance": "Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены.",
+    "affected_files": [
+      "consumer:userio:paths-from-target.json"
+    ],
+    "depends_on": [
+      "A170"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "consumer:userio",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A172",
+    "label": "UserIO: проверить реальный consumer readback",
+    "description": "Один изолированный сценарий через обычного потребителя и native result.",
+    "acceptance": "Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль.",
+    "affected_files": [
+      "acceptance/consumers/userio/"
+    ],
+    "depends_on": [
+      "A171"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "consumer:userio",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A173",
+    "label": "ExManager Board: зафиксировать точный контракт потребителя",
+    "description": "Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route.",
+    "acceptance": "target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции.",
+    "affected_files": [
+      "integrations/consumers/board/target.json"
+    ],
+    "depends_on": [
+      "A151",
+      "A023",
+      "A024"
+    ],
+    "estimate_minutes": {
+      "minimum": 20,
+      "maximum": 40
+    },
+    "lane": "consumer:board",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A174",
+    "label": "ExManager Board: перевести один вызывающий маршрут",
+    "description": "Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях.",
+    "acceptance": "Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены.",
+    "affected_files": [
+      "consumer:board:paths-from-target.json"
+    ],
+    "depends_on": [
+      "A173"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "consumer:board",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A175",
+    "label": "ExManager Board: проверить реальный consumer readback",
+    "description": "Один изолированный сценарий через обычного потребителя и native result.",
+    "acceptance": "Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль.",
+    "affected_files": [
+      "acceptance/consumers/board/"
+    ],
+    "depends_on": [
+      "A174"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "consumer:board",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A176",
+    "label": "Секретарь: зафиксировать точный контракт потребителя",
+    "description": "Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route.",
+    "acceptance": "target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции.",
+    "affected_files": [
+      "integrations/consumers/secretary/target.json"
+    ],
+    "depends_on": [
+      "A151",
+      "A150",
+      "A049"
+    ],
+    "estimate_minutes": {
+      "minimum": 20,
+      "maximum": 40
+    },
+    "lane": "consumer:secretary",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A177",
+    "label": "Секретарь: перевести один вызывающий маршрут",
+    "description": "Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях.",
+    "acceptance": "Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены.",
+    "affected_files": [
+      "consumer:secretary:paths-from-target.json"
+    ],
+    "depends_on": [
+      "A176"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "consumer:secretary",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A178",
+    "label": "Секретарь: проверить реальный consumer readback",
+    "description": "Один изолированный сценарий через обычного потребителя и native result.",
+    "acceptance": "Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль.",
+    "affected_files": [
+      "acceptance/consumers/secretary/"
+    ],
+    "depends_on": [
+      "A177"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "consumer:secretary",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A179",
+    "label": "Recovery Skill и локальная инструкция",
+    "description": "Один исходник инструкции и manifest template; expose Skills и package local copy.",
+    "acceptance": "Отключённый MCP не мешает найти путь; команды read/claim с подставленным locator и без секретов.",
+    "affected_files": [
+      "skills/herder-recovery/SKILL.md"
+    ],
+    "depends_on": [
+      "A019",
+      "A039",
+      "A045"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "docs",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A180",
+    "label": "Короткий Skill обычной координации",
+    "description": "context→messages→reply_to, roster/worktree и errors; один источник примеров.",
+    "acceptance": "Каталог/schema примеров совпадают; read skill и activation отмечены отдельно.",
+    "affected_files": [
+      "skills/herder/SKILL.md"
+    ],
+    "depends_on": [
+      "A019",
+      "A156"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "docs",
+    "stage": "Потребители"
+  },
+  {
+    "id": "A181",
+    "label": "Свежий пользователь: выбор инструмента и errors",
+    "description": "Свежий контекст без исходников: найти роли, исправить wrong mode/field и ответить отправителю.",
+    "acceptance": "Trace показывает исправление за один повтор без новых effects; UNKNOWN/forbidden не вызывают unsafe retry.",
+    "affected_files": [
+      "acceptance/usability/"
+    ],
+    "depends_on": [
+      "A180",
+      "A160",
+      "A158"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "qa",
+    "stage": "Сквозная приёмка"
+  },
+  {
+    "id": "A182",
+    "label": "Свежий агент при выключенном MCP",
+    "description": "Остановить только test daemon; read markers→claim→безопасный release через runner→receipt.",
+    "acceptance": "Ноль вопросов о назначении свободного owner, одна операция; повтор MCP видит тот же owner.",
+    "affected_files": [
+      "acceptance/recovery/offline/"
+    ],
+    "depends_on": [
+      "A179",
+      "A043",
+      "A166"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "qa",
+    "stage": "Сквозная приёмка"
+  },
+  {
+    "id": "A183",
+    "label": "Контракт одноразового импорта",
+    "description": "Узкие схемы только сохраняемого state: holds/intents/lineage/messages/settings/ownership.",
+    "acceptance": "Unknown provenance остаётся unknown; список active writers и read-only export для этих схем назван.",
+    "affected_files": [
+      "migration/state-map.md"
+    ],
+    "depends_on": [
+      "A011",
+      "A022",
+      "A027",
+      "A037"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "migration",
+    "stage": "Миграция"
+  },
+  {
+    "id": "A184",
+    "label": "Импорт holds и intents",
+    "description": "Offline importer сохраняет request keys, неизвестные исходы и tombstones; не исполняет ничего.",
+    "acceptance": "Fixture повторов и HumanStop после импорта остаётся тем же; input digest/counts записаны.",
+    "affected_files": [
+      "migration/import_effects.rs"
+    ],
+    "depends_on": [
+      "A183",
+      "A016"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "migration",
+    "stage": "Миграция"
+  },
+  {
+    "id": "A185",
+    "label": "Импорт lineage/settings/correspondence",
+    "description": "Explicit schema transform, sender evidence, потерянный текст помечен.",
+    "acceptance": "Creator не заменён sender; foreign refs не склеены; повтор import безопасен.",
+    "affected_files": [
+      "migration/import_context.rs"
+    ],
+    "depends_on": [
+      "A184"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "migration",
+    "stage": "Миграция"
+  },
+  {
+    "id": "A186",
+    "label": "Ownership cutover без второго writer",
+    "description": "Stop writers → проверка receipts → JSON owner import → старые writers остаются выключены.",
+    "acceptance": "Git/DB fallback не активируется при падении MCP; fencing assumptions заменены target runner проверками.",
+    "affected_files": [
+      "migration/ownership.rs"
+    ],
+    "depends_on": [
+      "A185",
+      "A043"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "migration",
+    "stage": "Миграция"
+  },
+  {
+    "id": "A187",
+    "label": "Репетиция migration на снимке",
+    "description": "Checksums/counts, run importer дважды, restart, no-send readback.",
+    "acceptance": "Ноль native send/create; все holds/UNKNOWN сохранены; корректный отказ при corrupt input.",
+    "affected_files": [
+      "acceptance/migration/rehearsal/"
+    ],
+    "depends_on": [
+      "A186",
+      "A157"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "migration",
+    "stage": "Миграция"
+  },
+  {
+    "id": "A188",
+    "label": "Rollback после новых записей",
+    "description": "Maintenance + сохранённый ledger + предыдущий новый binary/schema compatible; старый daemon не включать без reverse proof.",
+    "acceptance": "New hold/receipt переживают откат; old writer не получает ownership; rollback отдельно от release.",
+    "affected_files": [
+      "release/rollback.md"
+    ],
+    "depends_on": [
+      "A187"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "migration",
+    "stage": "Миграция"
+  },
+  {
+    "id": "A189",
+    "label": "Репетиция rollback с новым intent",
+    "description": "Изолированный candidate принимает тестовый intent, rollback читает его без replay.",
+    "acceptance": "Unknown/confirmed и HumanStop не потеряны; incompatible schema останавливает writes.",
+    "affected_files": [
+      "acceptance/migration/rollback/"
+    ],
+    "depends_on": [
+      "A188"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "migration",
+    "stage": "Миграция"
+  },
+  {
+    "id": "A190",
+    "label": "Артефакт linux/amd64",
+    "description": "Reproducible locked build с embedded UI/Skills, digest и platform manifest.",
+    "acceptance": "Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен.",
+    "affected_files": [
+      "release/build/linux-amd64/"
+    ],
+    "depends_on": [
+      "A158",
+      "A160",
+      "A179"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 50
+    },
+    "lane": "build:linux-amd64",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A191",
+    "label": "Артефакт linux/arm64",
+    "description": "Reproducible locked build с embedded UI/Skills, digest и platform manifest.",
+    "acceptance": "Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен.",
+    "affected_files": [
+      "release/build/linux-arm64/"
+    ],
+    "depends_on": [
+      "A158",
+      "A160",
+      "A179"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 50
+    },
+    "lane": "build:linux-arm64",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A192",
+    "label": "Артефакт macos/arm64",
+    "description": "Reproducible locked build с embedded UI/Skills, digest и platform manifest.",
+    "acceptance": "Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен.",
+    "affected_files": [
+      "release/build/macos-arm64/"
+    ],
+    "depends_on": [
+      "A158",
+      "A160",
+      "A179"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 50
+    },
+    "lane": "build:macos-arm64",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A193",
+    "label": "Артефакт macos/amd64",
+    "description": "Reproducible locked build с embedded UI/Skills, digest и platform manifest.",
+    "acceptance": "Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен.",
+    "affected_files": [
+      "release/build/macos-amd64/"
+    ],
+    "depends_on": [
+      "A158",
+      "A160",
+      "A179"
+    ],
+    "estimate_minutes": {
+      "minimum": 25,
+      "maximum": 50
+    },
+    "lane": "build:macos-amd64",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A194",
+    "label": "Параметризованный installer",
+    "description": "Install artifact/config/manifest/local instruction, preserve data; explicit paths и service launcher.",
+    "acceptance": "Нестандартный root работает; offline CLI доступен без daemon; чужой service/config не меняется.",
+    "affected_files": [
+      "release/install/"
+    ],
+    "depends_on": [
+      "A190",
+      "A191",
+      "A192",
+      "A193"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "release",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A195",
+    "label": "Bounded нагрузочный сценарий",
+    "description": "Фиксированный corpus, concurrent read/send/index и slow subscriber; baseline metrics.",
+    "acceptance": "Нет busy loop/unbounded queue; latency/RSS и границы workload записаны, starvation не наблюдается.",
+    "affected_files": [
+      "acceptance/performance/"
+    ],
+    "depends_on": [
+      "A151",
+      "A030",
+      "A018"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "qa",
+    "stage": "Сквозная приёмка"
+  },
+  {
+    "id": "A196",
+    "label": "Интеграционное ревью кандидата",
+    "description": "Один diff review по boundaries/errors/ownership/cutover; конкретный журнал дефектов.",
+    "acceptance": "Все найденные defects имеют owned fix/retest leaf до release; review не выдаёт будущий PASS.",
+    "affected_files": [
+      "acceptance/review/"
+    ],
+    "depends_on": [
+      "A060",
+      "A069",
+      "A078",
+      "A087",
+      "A096",
+      "A105",
+      "A114",
+      "A123",
+      "A132",
+      "A141",
+      "A150",
+      "A163",
+      "A166",
+      "A169",
+      "A172",
+      "A175",
+      "A178",
+      "A156",
+      "A152",
+      "A153",
+      "A154",
+      "A155",
+      "A157",
+      "A181",
+      "A182",
+      "A195",
+      "A189",
+      "A050"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "review",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A197",
+    "label": "Удалить legacy daemon и registrations",
+    "description": "Удалить заменённые TS daemon/job API/_async/aliases из source и package entrypoints.",
+    "acceptance": "Старые имена не вызываются напрямую; frontend TS сохранён как frontend; native histories не удалены.",
+    "affected_files": [
+      "legacy-removal:runtime paths resolved in reviewed diff"
+    ],
+    "depends_on": [
+      "A196",
+      "A194"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "release",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A198",
+    "label": "Удалить legacy active clients/launchers",
+    "description": "Пакеты/hooks/docs consumers используют новый API; прежние fallback writers disabled.",
+    "acceptance": "Legacy references только в историческом archive; runtime graph не запускает старый daemon.",
+    "affected_files": [
+      "legacy-removal:active client paths from consumer targets"
+    ],
+    "depends_on": [
+      "A197"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "release",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A199",
+    "label": "Зафиксировать immutable release candidate",
+    "description": "Build exact reviewed source после удаления legacy, manifests всех платформ.",
+    "acceptance": "Каждая тестовая lane указывает один source revision/artifact family; чужой WIP не включён.",
+    "affected_files": [
+      "release/candidate.json"
+    ],
+    "depends_on": [
+      "A198"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "release",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A200",
+    "label": "Candidate: контроль codex",
+    "description": "Один обязательный adapter lane повторён на финальном artifact без иных изменений.",
+    "acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.",
+    "affected_files": [
+      "acceptance/candidate/codex/"
+    ],
+    "depends_on": [
+      "A199",
+      "A060"
+    ],
+    "estimate_minutes": {
+      "minimum": 20,
+      "maximum": 45
+    },
+    "lane": "adapter:codex",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A201",
+    "label": "Candidate: контроль opencode",
+    "description": "Один обязательный adapter lane повторён на финальном artifact без иных изменений.",
+    "acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.",
+    "affected_files": [
+      "acceptance/candidate/opencode/"
+    ],
+    "depends_on": [
+      "A199",
+      "A069"
+    ],
+    "estimate_minutes": {
+      "minimum": 20,
+      "maximum": 45
+    },
+    "lane": "adapter:opencode",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A202",
+    "label": "Candidate: контроль claude",
+    "description": "Один обязательный adapter lane повторён на финальном artifact без иных изменений.",
+    "acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.",
+    "affected_files": [
+      "acceptance/candidate/claude/"
+    ],
+    "depends_on": [
+      "A199",
+      "A078"
+    ],
+    "estimate_minutes": {
+      "minimum": 20,
+      "maximum": 45
+    },
+    "lane": "adapter:claude",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A203",
+    "label": "Candidate: контроль zcode",
+    "description": "Один обязательный adapter lane повторён на финальном artifact без иных изменений.",
+    "acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.",
+    "affected_files": [
+      "acceptance/candidate/zcode/"
+    ],
+    "depends_on": [
+      "A199",
+      "A087"
+    ],
+    "estimate_minutes": {
+      "minimum": 20,
+      "maximum": 45
+    },
+    "lane": "adapter:zcode",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A204",
+    "label": "Candidate: контроль qoder",
+    "description": "Один обязательный adapter lane повторён на финальном artifact без иных изменений.",
+    "acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.",
+    "affected_files": [
+      "acceptance/candidate/qoder/"
+    ],
+    "depends_on": [
+      "A199",
+      "A096"
+    ],
+    "estimate_minutes": {
+      "minimum": 20,
+      "maximum": 45
+    },
+    "lane": "adapter:qoder",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A205",
+    "label": "Candidate: контроль hermes",
+    "description": "Один обязательный adapter lane повторён на финальном artifact без иных изменений.",
+    "acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.",
+    "affected_files": [
+      "acceptance/candidate/hermes/"
+    ],
+    "depends_on": [
+      "A199",
+      "A105"
+    ],
+    "estimate_minutes": {
+      "minimum": 20,
+      "maximum": 45
+    },
+    "lane": "adapter:hermes",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A206",
+    "label": "Candidate: контроль fast-agent",
+    "description": "Один обязательный adapter lane повторён на финальном artifact без иных изменений.",
+    "acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.",
+    "affected_files": [
+      "acceptance/candidate/fast-agent/"
+    ],
+    "depends_on": [
+      "A199",
+      "A114"
+    ],
+    "estimate_minutes": {
+      "minimum": 20,
+      "maximum": 45
+    },
+    "lane": "adapter:fast-agent",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A207",
+    "label": "Candidate: контроль minimax-code",
+    "description": "Один обязательный adapter lane повторён на финальном artifact без иных изменений.",
+    "acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.",
+    "affected_files": [
+      "acceptance/candidate/minimax-code/"
+    ],
+    "depends_on": [
+      "A199",
+      "A123"
+    ],
+    "estimate_minutes": {
+      "minimum": 20,
+      "maximum": 45
+    },
+    "lane": "adapter:minimax-code",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A208",
+    "label": "Candidate: контроль chatgpt",
+    "description": "Один обязательный adapter lane повторён на финальном artifact без иных изменений.",
+    "acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.",
+    "affected_files": [
+      "acceptance/candidate/chatgpt/"
+    ],
+    "depends_on": [
+      "A199",
+      "A132"
+    ],
+    "estimate_minutes": {
+      "minimum": 20,
+      "maximum": 45
+    },
+    "lane": "adapter:chatgpt",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A209",
+    "label": "Candidate: контроль z-ai",
+    "description": "Один обязательный adapter lane повторён на финальном artifact без иных изменений.",
+    "acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.",
+    "affected_files": [
+      "acceptance/candidate/z-ai/"
+    ],
+    "depends_on": [
+      "A199",
+      "A141"
+    ],
+    "estimate_minutes": {
+      "minimum": 20,
+      "maximum": 45
+    },
+    "lane": "adapter:z-ai",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A210",
+    "label": "Candidate: контроль browser-chat",
+    "description": "Один обязательный adapter lane повторён на финальном artifact без иных изменений.",
+    "acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.",
+    "affected_files": [
+      "acceptance/candidate/browser-chat/"
+    ],
+    "depends_on": [
+      "A199",
+      "A150"
+    ],
+    "estimate_minutes": {
+      "minimum": 20,
+      "maximum": 45
+    },
+    "lane": "adapter:browser-chat",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A211",
+    "label": "Candidate: проверка соединённых consumers",
+    "description": "Сверить ранее полученные consumer proofs с API/schema digest RC; повторить затронутый основной путь.",
+    "acceptance": "Несовпадение digest требует отдельной адресной проверки; нельзя принять устаревший receipt.",
+    "affected_files": [
+      "acceptance/candidate/consumers/"
+    ],
+    "depends_on": [
+      "A199",
+      "A163",
+      "A166",
+      "A169",
+      "A172",
+      "A175",
+      "A178"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "clients",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A212",
+    "label": "Preflight cutover и резервная копия",
+    "description": "Проверить точные target/config/version/права, snapshot и maintenance window выбранного выпуска.",
+    "acceptance": "Нет неизвестных active writers/release effects; backup восстановим; fail-fast до остановки.",
+    "affected_files": [
+      "release/cutover/preflight.json"
+    ],
+    "depends_on": [
+      "A194",
+      "A189",
+      "A200",
+      "A201",
+      "A202",
+      "A203",
+      "A204",
+      "A205",
+      "A206",
+      "A207",
+      "A208",
+      "A209",
+      "A210",
+      "A211"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "release",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A213",
+    "label": "Переключить state и единственного writer",
+    "description": "Остановить старый entrypoint, выполнить проверенный импорт и установить Linux target candidate.",
+    "acceptance": "Новый runtime SHA/digest/schema; один owner writer; не возобновлены UNKNOWN или HumanStop.",
+    "affected_files": [
+      "release/cutover/linux/"
+    ],
+    "depends_on": [
+      "A212"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "release",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A214",
+    "label": "Linux: обычный потребитель после установки",
+    "description": "Primary MCP consumer create/deliver/recent/export/context на тестовых сессиях, reload.",
+    "acceptance": "Runtime→receipt→native readback доказаны; приложение работает после штатного restart.",
+    "affected_files": [
+      "acceptance/installed/linux/"
+    ],
+    "depends_on": [
+      "A213"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "qa",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A215",
+    "label": "macOS: установка точного артефакта",
+    "description": "Target preflight, config/manifest, штатный launcher; без чужих profiles.",
+    "acceptance": "Artifact digest и version совпали, offline path установлен; rollback доступен.",
+    "affected_files": [
+      "release/cutover/macos/"
+    ],
+    "depends_on": [
+      "A214",
+      "A194"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "release",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A216",
+    "label": "macOS: обычный потребитель после установки",
+    "description": "Create/read/deliver/stop и restart конкретного native instance.",
+    "acceptance": "Installed consumer readback, permissions и native filesystem semantics доказаны.",
+    "affected_files": [
+      "acceptance/installed/macos/"
+    ],
+    "depends_on": [
+      "A215"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "qa",
+    "stage": "Поставка"
+  },
+  {
+    "id": "A217",
+    "label": "Независимая приёмка общения",
+    "description": "Свежий tester без кода/авторского отчёта: discover→create→deliver→read→stop и compaction reply.",
+    "acceptance": "Правильный sender/creator и отсутствие duplicate; тестовый circuit, никаких звонков людям.",
+    "affected_files": [
+      "acceptance/independent/communication/"
+    ],
+    "depends_on": [
+      "A214",
+      "A216",
+      "A156"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "qa",
+    "stage": "Передача"
+  },
+  {
+    "id": "A218",
+    "label": "Независимая приёмка recovery",
+    "description": "Свежий tester по локальному Skill при выключенном test MCP; checkout conflict и release receipt.",
+    "acceptance": "Успешный claim без назначения человеком; UNKNOWN не повторён; wrong root не свободен.",
+    "affected_files": [
+      "acceptance/independent/recovery/"
+    ],
+    "depends_on": [
+      "A217",
+      "A182"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 60
+    },
+    "lane": "qa",
+    "stage": "Передача"
+  },
+  {
+    "id": "A219",
+    "label": "Main, runbook и передача результата",
+    "description": "Только owned commits; опубликованный main, artifacts и acceptance manifest; чистка только своих принятых временных сред.",
+    "acceptance": "Remote main включает результат; zero unresolved mandatory defects; scope exclusions названы и явно приняты, не молча вычеркнуты.",
+    "affected_files": [
+      "release/handoff/"
+    ],
+    "depends_on": [
+      "A218"
+    ],
+    "estimate_minutes": {
+      "minimum": 30,
+      "maximum": 45
+    },
+    "lane": "release",
+    "stage": "Передача"
+  }
+]

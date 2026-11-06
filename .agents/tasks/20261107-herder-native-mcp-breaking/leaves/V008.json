@@ -1,0 +1,55 @@
+{
+  "label": "Привязать caller и области доступа",
+  "description": "Verified principal/self binding; deny-by-default для private session и ресурсов.",
+  "acceptance": "Подмена sender/session_ref и общий node token не дают self; auth не следует из parent.",
+  "affected_files": [
+    "crates/herder/src/auth/identity.rs"
+  ],
+  "depends_on": [
+    "V005"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 60
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 1,
+  "note": "v1, нулевая ревизия. Дорожка security; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "id": "V008",
+  "created_at": "2026-11-07T01:52:19+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:52:19+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:52:19+03:00",
+      "note": "",
+      "changes": {
+        "label": "Привязать caller и области доступа",
+        "description": "Verified principal/self binding; deny-by-default для private session и ресурсов.",
+        "acceptance": "Подмена sender/session_ref и общий node token не дают self; auth не следует из parent.",
+        "affected_files": [
+          "crates/herder/src/auth/identity.rs"
+        ],
+        "depends_on": [
+          "V005"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 60
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 1,
+        "note": "v1, нулевая ревизия. Дорожка security; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+        "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

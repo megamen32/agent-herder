@@ -1,0 +1,57 @@
+{
+  "label": "Короткий Skill обычной координации",
+  "description": "context→messages→reply_to, roster/worktree и errors; один источник примеров.",
+  "acceptance": "Каталог/schema примеров совпадают; read skill и activation отмечены отдельно.",
+  "affected_files": [
+    "skills/herder/SKILL.md"
+  ],
+  "depends_on": [
+    "V019",
+    "V102"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 45
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 8,
+  "note": "v1, нулевая ревизия. Дорожка docs; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "id": "V126",
+  "created_at": "2026-11-07T01:52:41+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:52:41+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:52:41+03:00",
+      "note": "",
+      "changes": {
+        "label": "Короткий Skill обычной координации",
+        "description": "context→messages→reply_to, roster/worktree и errors; один источник примеров.",
+        "acceptance": "Каталог/schema примеров совпадают; read skill и activation отмечены отдельно.",
+        "affected_files": [
+          "skills/herder/SKILL.md"
+        ],
+        "depends_on": [
+          "V019",
+          "V102"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 45
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 8,
+        "note": "v1, нулевая ревизия. Дорожка docs; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+        "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

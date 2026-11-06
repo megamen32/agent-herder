@@ -1,4 +1,4 @@
-# Координация и восстановление контекста — ревизия 5
+# Координация и восстановление контекста — v1, нулевая ревизия
 
 Контракт новой реализации; [архитектура](RUST-DESIGN.md), [файловое владение](RECOVERY-STORAGE.md).
 
@@ -34,4 +34,4 @@ Workspace claim не создаёт Git worktree и не делает merge. Э�
 
 A создаёт B в другом harness; native parent B может отличаться от A. C пишет B. После очистки context и рестарта Herder B восстанавливает отдельно A и C и отвечает C по message_ref. Проверены точные native IDs и один admission ответа; следов чтения ресурса недостаточно для доказательства инъекции.
 
-Два Codex, два Claude и два browser profiles изолированы. Совпадающий native ID в fixture не смешивает адреса; реальные профили доказывают независимость соединений. Две ноды сохраняют provenance и ACL, offline peer делает coverage partial. Гонка двух claim даёт одного владельца; rejected caller не читает чужую историю/адреса. UNKNOWN после admission сверяется, а не пересылается.
+Два Codex, два OpenCode и два browser profiles изолированы. Совпадающий native ID в fixture не смешивает адреса; реальные профили доказывают независимость соединений. Две ноды сохраняют provenance и ACL, offline peer делает coverage partial. Гонка двух claim даёт одного владельца; rejected caller не читает чужую историю/адреса. UNKNOWN после admission сверяется, а не пересылается.

@@ -1,0 +1,59 @@
+{
+  "label": "Bounded нагрузочный сценарий",
+  "description": "Фиксированный corpus, concurrent read/send/index и slow subscriber; baseline metrics.",
+  "acceptance": "Нет busy loop/unbounded queue; latency/RSS и границы workload записаны, starvation не наблюдается.",
+  "affected_files": [
+    "acceptance/performance/"
+  ],
+  "depends_on": [
+    "V097",
+    "V030",
+    "V018"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 60
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 7,
+  "note": "v1, нулевая ревизия. Дорожка qa; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "id": "V141",
+  "created_at": "2026-11-07T01:52:44+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:52:44+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:52:44+03:00",
+      "note": "",
+      "changes": {
+        "label": "Bounded нагрузочный сценарий",
+        "description": "Фиксированный corpus, concurrent read/send/index и slow subscriber; baseline metrics.",
+        "acceptance": "Нет busy loop/unbounded queue; latency/RSS и границы workload записаны, starvation не наблюдается.",
+        "affected_files": [
+          "acceptance/performance/"
+        ],
+        "depends_on": [
+          "V097",
+          "V030",
+          "V018"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 60
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 7,
+        "note": "v1, нулевая ревизия. Дорожка qa; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+        "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

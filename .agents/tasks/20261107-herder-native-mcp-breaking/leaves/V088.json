@@ -1,0 +1,57 @@
+{
+  "label": "Z.ai: подтвердить точный native контракт",
+  "description": "Один versioned авторизованный browser profile через разрешённый маршрут: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.",
+  "acceptance": "Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.",
+  "affected_files": [
+    "acceptance/contracts/z-ai.md"
+  ],
+  "depends_on": [
+    "V006",
+    "V051"
+  ],
+  "estimate_minutes": {
+    "minimum": 25,
+    "maximum": 45
+  },
+  "kind": "research",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 5,
+  "note": "v1, нулевая ревизия. Дорожка adapter:z-ai; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "id": "V088",
+  "created_at": "2026-11-07T01:52:33+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:52:33+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:52:33+03:00",
+      "note": "",
+      "changes": {
+        "label": "Z.ai: подтвердить точный native контракт",
+        "description": "Один versioned авторизованный browser profile через разрешённый маршрут: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.",
+        "acceptance": "Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.",
+        "affected_files": [
+          "acceptance/contracts/z-ai.md"
+        ],
+        "depends_on": [
+          "V006",
+          "V051"
+        ],
+        "estimate_minutes": {
+          "minimum": 25,
+          "maximum": 45
+        },
+        "kind": "research",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 5,
+        "note": "v1, нулевая ревизия. Дорожка adapter:z-ai; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+        "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

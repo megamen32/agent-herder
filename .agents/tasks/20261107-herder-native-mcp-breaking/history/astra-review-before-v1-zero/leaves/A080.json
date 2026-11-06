@@ -1,0 +1,67 @@
+{
+  "label": "ZCode: соединение одного instance",
+  "description": "Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.",
+  "acceptance": "Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.",
+  "affected_files": [
+    "crates/herder/src/adapters/zcode/connection.rs"
+  ],
+  "depends_on": [
+    "A079"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 60
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 5,
+  "note": "Планирование, не запуск. Дорожка adapter:zcode. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+  "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+  "id": "A080",
+  "model": "gpt-6",
+  "created_at": "2026-11-07T01:40:59+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:48:57+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:40:59+03:00",
+      "note": "",
+      "changes": {
+        "label": "ZCode: соединение одного instance",
+        "description": "Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.",
+        "acceptance": "Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.",
+        "affected_files": [
+          "crates/herder/src/adapters/zcode/connection.rs"
+        ],
+        "depends_on": [
+          "A079"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 60
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 5,
+        "note": "Планирование, не запуск. Дорожка adapter:zcode. Оценка условна при готовых входах и подтверждённом native контракте; конкретные риски/резерв в ESTIMATES.md. При выходе за 60 минут остановить этот slice, сохранить результат и переразбить до продолжения.",
+        "estimate_over_limit_reason": "Для этого плана действует прямой предел владельца <=60 минут; scoped canonical writer, глобальные правила не изменены.",
+        "model": "gpt-6"
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T01:48:57+03:00",
+      "note": "",
+      "changes": {
+        "estimate_unknown_reason": "Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ],
+  "estimate_unknown_reason": "Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный."
+}

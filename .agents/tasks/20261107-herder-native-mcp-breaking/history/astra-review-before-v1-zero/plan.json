@@ -1,0 +1,45 @@
+{
+  "title": "Agent Herder: ревизия 5 Astra — единый контракт, durable MCP и простой recovery",
+  "goal": "Breaking rewrite без legacy: независимые instances, понятное общение и восстановление владения; полный путь до installed consumer. Сейчас выполнен только независимый пересмотр плана.",
+  "mode": "fullcycle",
+  "default_model": "gpt-6",
+  "recon": [
+    "MCP 2026-07-28 существует, Tasks/Skills являются extensions :: MCP-EVIDENCE.md; official specification",
+    "rmcp-v3.9.0 TaskManager использует HashMap, не restart store :: review-evidence/rmcp-task-manager.rs:222-223",
+    "Исходная ревизия 4 имеет 149 R листьев, сохранена побайтно :: history/revision-4-before-astra/SHA256.json",
+    "Owner JSON и target execution guard решают разные задачи :: RECOVERY-STORAGE.md",
+    "Проверка полноценности Go SDK ограничена; tree API ответил rate limit :: MCP-EVIDENCE.md"
+  ],
+  "acceptance_scenario": "Один immutable release: все 11 native lanes и обязательные consumers, два Codex/Claude/browser profiles, две ноды, A creator/C sender после compaction, no replay UNKNOWN, HumanStop, denied auth, offline owner claim и release receipt при выключенном MCP; negative legacy calls; Linux/macOS installed readback и независимая приёмка. Подробно ACCEPTANCE.md.",
+  "business_result": "14 общих инструментов; standard MCP Tasks/Skills; creator/sender после компакции; один canonical owner и независимый offline route.",
+  "current_progress": "Независимый пересмотр Astra завершён: 219 queued/unassigned slices <=60 минут, критика и подтверждённые официальные источники. Нативные контракты требуют gates; полного подтверждённого ETA нет. Автоагрегаты LHC включают историю и не учитывают lane/calendar: действующий расчёт в ESTIMATES.md. Архив и граф проверены. Реализация, делегирование, deployment не запускались.",
+  "slots": 4,
+  "updated_at": "2026-11-07T01:49:01+03:00",
+  "revisions": [
+    {
+      "at": "2026-11-07T00:45:20+03:00",
+      "reason": "Владелец уточнил обязательное применение MCP 2026-07-28 и стандартных расширений.",
+      "summary": "Удалён предложенный operation; каталог 17 команд. Tasks, subscriptions, Skills и per-request capabilities включены в контракты, миграцию клиентов и приёмку."
+    },
+    {
+      "at": "2026-11-07T01:02:17+03:00",
+      "reason": "Прямая коррекция владельца: без обследования старой архитектуры/флота, все листья <=60 минут; выбрать Go/Rust.",
+      "summary": "Выбран Rust/rmcp 3.9.0. Старые крупные стадии отклонены; все работы от бинарника до независимой установленной приёмки описаны конкретными листьями."
+    },
+    {
+      "at": "2026-11-07T01:14:18+03:00",
+      "reason": "Владелец потребовал peer awareness, creator/sender memory и восстановление общения после compaction; разрешил узкое чтение текущего кода.",
+      "summary": "COORDINATION.md: единый session context, журнал переписки, reply_to, project roster, atomic workspace claim и native acceptance; R133–R141, общий каталог сохраняет 17 команд."
+    },
+    {
+      "at": "2026-11-07T01:22:29+03:00",
+      "reason": "Прямое уточнение владельца: отказ MCP Herder не должен останавливать работу из-за отсутствующего владельца; storage и recovery должны быть заранее известны.",
+      "summary": "Canonical JSON ownership при обоих маршрутах, самостоятельный recovery CLI, независимые инструкции и Skills, JSON context snapshots; 8 bounded задач, 17 MCP инструментов."
+    },
+    {
+      "at": "2026-11-07T01:39:40+03:00",
+      "reason": "Независимый пересмотр Astra по прямому заданию: критика, KISS и полный bounded план без реализации.",
+      "summary": "14 инструментов; durable Tasks вместо предположения о TaskManager; pure functions + stateful ports; single owner JSON + target runner; ранние client/native gates; реалистичные диапазоны/риски и delivery."
+    }
+  ]
+}

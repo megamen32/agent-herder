@@ -1,0 +1,57 @@
+{
+  "label": "Независимая приёмка recovery",
+  "description": "Свежий tester по локальному Skill при выключенном test MCP; checkout conflict и release receipt.",
+  "acceptance": "Успешный claim без назначения человеком; UNKNOWN не повторён; wrong root не свободен.",
+  "affected_files": [
+    "acceptance/independent/recovery/"
+  ],
+  "depends_on": [
+    "V157",
+    "V128"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 60
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 11,
+  "note": "v1, нулевая ревизия. Дорожка qa; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "id": "V158",
+  "created_at": "2026-11-07T01:52:47+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:52:47+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:52:47+03:00",
+      "note": "",
+      "changes": {
+        "label": "Независимая приёмка recovery",
+        "description": "Свежий tester по локальному Skill при выключенном test MCP; checkout conflict и release receipt.",
+        "acceptance": "Успешный claim без назначения человеком; UNKNOWN не повторён; wrong root не свободен.",
+        "affected_files": [
+          "acceptance/independent/recovery/"
+        ],
+        "depends_on": [
+          "V157",
+          "V128"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 60
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 11,
+        "note": "v1, нулевая ревизия. Дорожка qa; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+        "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

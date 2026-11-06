@@ -1,0 +1,59 @@
+{
+  "label": "Recovery Skill и локальная инструкция",
+  "description": "Один исходник инструкции и manifest template; expose Skills и package local copy.",
+  "acceptance": "Отключённый MCP не мешает найти путь; команды read/claim с подставленным locator и без секретов.",
+  "affected_files": [
+    "skills/herder-recovery/SKILL.md"
+  ],
+  "depends_on": [
+    "V019",
+    "V039",
+    "V045"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 45
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 8,
+  "note": "v1, нулевая ревизия. Дорожка docs; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "id": "V125",
+  "created_at": "2026-11-07T01:52:40+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:52:40+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:52:40+03:00",
+      "note": "",
+      "changes": {
+        "label": "Recovery Skill и локальная инструкция",
+        "description": "Один исходник инструкции и manifest template; expose Skills и package local copy.",
+        "acceptance": "Отключённый MCP не мешает найти путь; команды read/claim с подставленным locator и без секретов.",
+        "affected_files": [
+          "skills/herder-recovery/SKILL.md"
+        ],
+        "depends_on": [
+          "V019",
+          "V039",
+          "V045"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 45
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 8,
+        "note": "v1, нулевая ревизия. Дорожка docs; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+        "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

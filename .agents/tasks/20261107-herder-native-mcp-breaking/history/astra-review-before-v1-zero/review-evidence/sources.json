@@ -1,0 +1,22 @@
+{
+  "rmcp-task-manager.rs": {
+    "url": "https://raw.githubusercontent.com/modelcontextprotocol/rust-sdk/rmcp-v3.9.0/crates/rmcp/src/task_manager.rs",
+    "sha256": "72a4734e9feeae29426500cf58d19bad17c37f891d5b0ae818d2ea21da2947ce"
+  },
+  "rmcp-task.rs": {
+    "url": "https://raw.githubusercontent.com/modelcontextprotocol/rust-sdk/rmcp-v3.9.0/crates/rmcp/src/model/task.rs",
+    "sha256": "28f5f256ce73d733d7536d20abe900e3b0f6533425b23e9ee797c10e08f66858"
+  },
+  "rmcp-skill.rs": {
+    "url": "https://raw.githubusercontent.com/modelcontextprotocol/rust-sdk/rmcp-v3.9.0/crates/rmcp/src/model/skill.rs",
+    "sha256": "8d20e879bc646fd62d797ea331a3dbd8ed293f8f08daacf7dee2a2c215d46f29"
+  },
+  "rmcp-workspace.toml": {
+    "url": "https://raw.githubusercontent.com/modelcontextprotocol/rust-sdk/rmcp-v3.9.0/Cargo.toml",
+    "sha256": "85cef04dd7a6e2222193319b2083da88d0d138055f144e9b36b93b0c97fe08bc"
+  },
+  "go-readme.md": {
+    "url": "https://raw.githubusercontent.com/modelcontextprotocol/go-sdk/v1.8.0/README.md",
+    "sha256": "b139b8fe162c6b79a160d4b0c10ab73b56ed9ae437a7ef21c6d184d7e2e38bab"
+  }
+}

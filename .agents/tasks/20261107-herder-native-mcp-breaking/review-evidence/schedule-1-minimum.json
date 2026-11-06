@@ -1,1316 +1,956 @@
 [
   {
-    "id": "A001",
+    "id": "V001",
     "start": 0,
     "end": 30,
     "lane": "core"
   },
   {
-    "id": "A004",
+    "id": "V004",
     "start": 30,
     "end": 60,
     "lane": "core"
   },
   {
-    "id": "A005",
+    "id": "V005",
     "start": 60,
     "end": 90,
     "lane": "core"
   },
   {
-    "id": "A006",
+    "id": "V006",
     "start": 90,
     "end": 120,
     "lane": "core"
   },
   {
-    "id": "A002",
+    "id": "V002",
     "start": 120,
     "end": 150,
     "lane": "core"
   },
   {
-    "id": "A007",
+    "id": "V007",
     "start": 150,
     "end": 180,
     "lane": "core"
   },
   {
-    "id": "A003",
+    "id": "V003",
     "start": 180,
     "end": 210,
     "lane": "clients"
   },
   {
-    "id": "A008",
+    "id": "V008",
     "start": 210,
     "end": 240,
     "lane": "security"
   },
   {
-    "id": "A009",
+    "id": "V009",
     "start": 240,
     "end": 270,
     "lane": "core"
   },
   {
-    "id": "A011",
+    "id": "V011",
     "start": 270,
     "end": 300,
     "lane": "storage"
   },
   {
-    "id": "A010",
+    "id": "V010",
     "start": 300,
     "end": 330,
     "lane": "core"
   },
   {
-    "id": "A012",
+    "id": "V012",
     "start": 330,
     "end": 360,
     "lane": "storage"
   },
   {
-    "id": "A013",
+    "id": "V013",
     "start": 360,
     "end": 390,
     "lane": "storage"
   },
   {
-    "id": "A017",
+    "id": "V017",
     "start": 390,
     "end": 420,
     "lane": "protocol"
   },
   {
-    "id": "A020",
+    "id": "V020",
     "start": 420,
     "end": 450,
     "lane": "protocol"
   },
   {
-    "id": "A014",
+    "id": "V014",
     "start": 450,
     "end": 480,
     "lane": "storage"
   },
   {
-    "id": "A021",
+    "id": "V021",
     "start": 480,
     "end": 510,
     "lane": "protocol"
   },
   {
-    "id": "A022",
+    "id": "V022",
     "start": 510,
     "end": 540,
     "lane": "core"
   },
   {
-    "id": "A015",
+    "id": "V015",
     "start": 540,
     "end": 570,
     "lane": "storage"
   },
   {
-    "id": "A023",
+    "id": "V023",
     "start": 570,
     "end": 600,
     "lane": "core"
   },
   {
-    "id": "A024",
+    "id": "V024",
     "start": 600,
     "end": 630,
     "lane": "core"
   },
   {
-    "id": "A025",
+    "id": "V025",
     "start": 630,
     "end": 660,
     "lane": "core"
   },
   {
-    "id": "A028",
+    "id": "V028",
     "start": 660,
     "end": 690,
     "lane": "core"
   },
   {
-    "id": "A051",
+    "id": "V051",
     "start": 690,
     "end": 720,
     "lane": "qa"
   },
   {
-    "id": "A029",
+    "id": "V029",
     "start": 720,
     "end": 750,
     "lane": "core"
   },
   {
-    "id": "A052",
+    "id": "V052",
     "start": 750,
     "end": 775,
     "lane": "adapter:codex"
   },
   {
-    "id": "A061",
+    "id": "V061",
     "start": 775,
     "end": 800,
     "lane": "adapter:opencode"
   },
   {
-    "id": "A030",
+    "id": "V030",
     "start": 800,
     "end": 830,
     "lane": "storage"
   },
   {
-    "id": "A053",
+    "id": "V053",
     "start": 830,
     "end": 860,
     "lane": "adapter:codex"
   },
   {
-    "id": "A062",
+    "id": "V062",
     "start": 860,
     "end": 890,
     "lane": "adapter:opencode"
   },
   {
-    "id": "A031",
+    "id": "V031",
     "start": 890,
     "end": 920,
     "lane": "core"
   },
   {
-    "id": "A036",
+    "id": "V036",
     "start": 920,
     "end": 950,
     "lane": "ownership"
   },
   {
-    "id": "A054",
+    "id": "V054",
     "start": 950,
     "end": 980,
     "lane": "adapter:codex"
   },
   {
-    "id": "A063",
+    "id": "V063",
     "start": 980,
     "end": 1010,
     "lane": "adapter:opencode"
   },
   {
-    "id": "A142",
+    "id": "V079",
     "start": 1010,
     "end": 1035,
-    "lane": "adapter:browser-chat"
+    "lane": "adapter:chatgpt"
   },
   {
-    "id": "A032",
+    "id": "V032",
     "start": 1035,
     "end": 1065,
     "lane": "core"
   },
   {
-    "id": "A037",
+    "id": "V037",
     "start": 1065,
     "end": 1095,
     "lane": "ownership"
   },
   {
-    "id": "A055",
+    "id": "V055",
     "start": 1095,
     "end": 1125,
     "lane": "adapter:codex"
   },
   {
-    "id": "A064",
+    "id": "V064",
     "start": 1125,
     "end": 1155,
     "lane": "adapter:opencode"
   },
   {
-    "id": "A143",
+    "id": "V080",
     "start": 1155,
     "end": 1185,
-    "lane": "adapter:browser-chat"
+    "lane": "adapter:chatgpt"
   },
   {
-    "id": "A027",
+    "id": "V027",
     "start": 1185,
     "end": 1215,
     "lane": "storage"
   },
   {
-    "id": "A033",
+    "id": "V033",
     "start": 1215,
     "end": 1245,
     "lane": "core"
   },
   {
-    "id": "A040",
+    "id": "V040",
     "start": 1245,
     "end": 1275,
     "lane": "ownership"
   },
   {
-    "id": "A056",
+    "id": "V056",
     "start": 1275,
     "end": 1305,
     "lane": "adapter:codex"
   },
   {
-    "id": "A065",
+    "id": "V065",
     "start": 1305,
     "end": 1335,
     "lane": "adapter:opencode"
   },
   {
-    "id": "A070",
+    "id": "V081",
     "start": 1335,
-    "end": 1360,
-    "lane": "adapter:claude"
-  },
-  {
-    "id": "A124",
-    "start": 1360,
-    "end": 1385,
+    "end": 1365,
     "lane": "adapter:chatgpt"
   },
   {
-    "id": "A144",
-    "start": 1385,
-    "end": 1415,
-    "lane": "adapter:browser-chat"
-  },
-  {
-    "id": "A038",
-    "start": 1415,
-    "end": 1445,
+    "id": "V038",
+    "start": 1365,
+    "end": 1395,
     "lane": "ownership"
   },
   {
-    "id": "A018",
-    "start": 1445,
-    "end": 1475,
+    "id": "V018",
+    "start": 1395,
+    "end": 1425,
     "lane": "protocol"
   },
   {
-    "id": "A034",
-    "start": 1475,
-    "end": 1505,
+    "id": "V034",
+    "start": 1425,
+    "end": 1455,
     "lane": "core"
   },
   {
-    "id": "A044",
-    "start": 1505,
-    "end": 1535,
+    "id": "V044",
+    "start": 1455,
+    "end": 1485,
     "lane": "core"
   },
   {
-    "id": "A057",
-    "start": 1535,
-    "end": 1565,
+    "id": "V057",
+    "start": 1485,
+    "end": 1515,
     "lane": "adapter:codex"
   },
   {
-    "id": "A066",
-    "start": 1565,
-    "end": 1595,
+    "id": "V066",
+    "start": 1515,
+    "end": 1545,
     "lane": "adapter:opencode"
   },
   {
-    "id": "A071",
-    "start": 1595,
-    "end": 1625,
-    "lane": "adapter:claude"
-  },
-  {
-    "id": "A125",
-    "start": 1625,
-    "end": 1655,
-    "lane": "adapter:chatgpt"
-  },
-  {
-    "id": "A079",
-    "start": 1655,
-    "end": 1680,
+    "id": "V070",
+    "start": 1545,
+    "end": 1570,
     "lane": "adapter:zcode"
   },
   {
-    "id": "A088",
-    "start": 1680,
-    "end": 1705,
-    "lane": "adapter:qoder"
+    "id": "V088",
+    "start": 1570,
+    "end": 1595,
+    "lane": "adapter:z-ai"
   },
   {
-    "id": "A097",
-    "start": 1705,
-    "end": 1730,
-    "lane": "adapter:hermes"
+    "id": "V082",
+    "start": 1595,
+    "end": 1625,
+    "lane": "adapter:chatgpt"
   },
   {
-    "id": "A106",
-    "start": 1730,
-    "end": 1755,
-    "lane": "adapter:fast-agent"
+    "id": "V039",
+    "start": 1625,
+    "end": 1655,
+    "lane": "ownership"
   },
   {
-    "id": "A115",
-    "start": 1755,
-    "end": 1780,
-    "lane": "adapter:minimax-code"
+    "id": "V046",
+    "start": 1655,
+    "end": 1685,
+    "lane": "core"
   },
   {
-    "id": "A133",
-    "start": 1780,
+    "id": "V058",
+    "start": 1685,
+    "end": 1715,
+    "lane": "adapter:codex"
+  },
+  {
+    "id": "V067",
+    "start": 1715,
+    "end": 1745,
+    "lane": "adapter:opencode"
+  },
+  {
+    "id": "V071",
+    "start": 1745,
+    "end": 1775,
+    "lane": "adapter:zcode"
+  },
+  {
+    "id": "V089",
+    "start": 1775,
     "end": 1805,
     "lane": "adapter:z-ai"
   },
   {
-    "id": "A145",
+    "id": "V083",
     "start": 1805,
     "end": 1835,
-    "lane": "adapter:browser-chat"
-  },
-  {
-    "id": "A039",
-    "start": 1835,
-    "end": 1865,
-    "lane": "ownership"
-  },
-  {
-    "id": "A046",
-    "start": 1865,
-    "end": 1895,
-    "lane": "core"
-  },
-  {
-    "id": "A058",
-    "start": 1895,
-    "end": 1925,
-    "lane": "adapter:codex"
-  },
-  {
-    "id": "A067",
-    "start": 1925,
-    "end": 1955,
-    "lane": "adapter:opencode"
-  },
-  {
-    "id": "A072",
-    "start": 1955,
-    "end": 1985,
-    "lane": "adapter:claude"
-  },
-  {
-    "id": "A080",
-    "start": 1985,
-    "end": 2015,
-    "lane": "adapter:zcode"
-  },
-  {
-    "id": "A089",
-    "start": 2015,
-    "end": 2045,
-    "lane": "adapter:qoder"
-  },
-  {
-    "id": "A098",
-    "start": 2045,
-    "end": 2075,
-    "lane": "adapter:hermes"
-  },
-  {
-    "id": "A107",
-    "start": 2075,
-    "end": 2105,
-    "lane": "adapter:fast-agent"
-  },
-  {
-    "id": "A116",
-    "start": 2105,
-    "end": 2135,
-    "lane": "adapter:minimax-code"
-  },
-  {
-    "id": "A126",
-    "start": 2135,
-    "end": 2165,
     "lane": "adapter:chatgpt"
   },
   {
-    "id": "A134",
-    "start": 2165,
-    "end": 2195,
-    "lane": "adapter:z-ai"
-  },
-  {
-    "id": "A146",
-    "start": 2195,
-    "end": 2225,
-    "lane": "adapter:browser-chat"
-  },
-  {
-    "id": "A016",
-    "start": 2225,
-    "end": 2255,
+    "id": "V016",
+    "start": 1835,
+    "end": 1865,
     "lane": "storage"
   },
   {
-    "id": "A041",
-    "start": 2255,
-    "end": 2285,
+    "id": "V041",
+    "start": 1865,
+    "end": 1895,
     "lane": "ownership"
   },
   {
-    "id": "A183",
-    "start": 2285,
-    "end": 2315,
+    "id": "V129",
+    "start": 1895,
+    "end": 1925,
     "lane": "migration"
   },
   {
-    "id": "A059",
-    "start": 2315,
-    "end": 2340,
+    "id": "V059",
+    "start": 1925,
+    "end": 1950,
     "lane": "adapter:codex"
   },
   {
-    "id": "A068",
-    "start": 2340,
-    "end": 2365,
+    "id": "V068",
+    "start": 1950,
+    "end": 1975,
     "lane": "adapter:opencode"
   },
   {
-    "id": "A073",
+    "id": "V072",
+    "start": 1975,
+    "end": 2005,
+    "lane": "adapter:zcode"
+  },
+  {
+    "id": "V090",
+    "start": 2005,
+    "end": 2035,
+    "lane": "adapter:z-ai"
+  },
+  {
+    "id": "V026",
+    "start": 2035,
+    "end": 2065,
+    "lane": "core"
+  },
+  {
+    "id": "V084",
+    "start": 2065,
+    "end": 2095,
+    "lane": "adapter:chatgpt"
+  },
+  {
+    "id": "V042",
+    "start": 2095,
+    "end": 2125,
+    "lane": "ownership"
+  },
+  {
+    "id": "V060",
+    "start": 2125,
+    "end": 2155,
+    "lane": "adapter:codex"
+  },
+  {
+    "id": "V069",
+    "start": 2155,
+    "end": 2185,
+    "lane": "adapter:opencode"
+  },
+  {
+    "id": "V130",
+    "start": 2185,
+    "end": 2215,
+    "lane": "migration"
+  },
+  {
+    "id": "V073",
+    "start": 2215,
+    "end": 2245,
+    "lane": "adapter:zcode"
+  },
+  {
+    "id": "V091",
+    "start": 2245,
+    "end": 2275,
+    "lane": "adapter:z-ai"
+  },
+  {
+    "id": "V047",
+    "start": 2275,
+    "end": 2305,
+    "lane": "core"
+  },
+  {
+    "id": "V085",
+    "start": 2305,
+    "end": 2335,
+    "lane": "adapter:chatgpt"
+  },
+  {
+    "id": "V043",
+    "start": 2335,
+    "end": 2365,
+    "lane": "ownership"
+  },
+  {
+    "id": "V097",
     "start": 2365,
     "end": 2395,
-    "lane": "adapter:claude"
-  },
-  {
-    "id": "A081",
-    "start": 2395,
-    "end": 2425,
-    "lane": "adapter:zcode"
-  },
-  {
-    "id": "A090",
-    "start": 2425,
-    "end": 2455,
-    "lane": "adapter:qoder"
-  },
-  {
-    "id": "A099",
-    "start": 2455,
-    "end": 2485,
-    "lane": "adapter:hermes"
-  },
-  {
-    "id": "A108",
-    "start": 2485,
-    "end": 2515,
-    "lane": "adapter:fast-agent"
-  },
-  {
-    "id": "A117",
-    "start": 2515,
-    "end": 2545,
-    "lane": "adapter:minimax-code"
-  },
-  {
-    "id": "A127",
-    "start": 2545,
-    "end": 2575,
-    "lane": "adapter:chatgpt"
-  },
-  {
-    "id": "A135",
-    "start": 2575,
-    "end": 2605,
-    "lane": "adapter:z-ai"
-  },
-  {
-    "id": "A026",
-    "start": 2605,
-    "end": 2635,
-    "lane": "core"
-  },
-  {
-    "id": "A147",
-    "start": 2635,
-    "end": 2665,
-    "lane": "adapter:browser-chat"
-  },
-  {
-    "id": "A042",
-    "start": 2665,
-    "end": 2695,
-    "lane": "ownership"
-  },
-  {
-    "id": "A060",
-    "start": 2695,
-    "end": 2725,
-    "lane": "adapter:codex"
-  },
-  {
-    "id": "A069",
-    "start": 2725,
-    "end": 2755,
-    "lane": "adapter:opencode"
-  },
-  {
-    "id": "A184",
-    "start": 2755,
-    "end": 2785,
-    "lane": "migration"
-  },
-  {
-    "id": "A074",
-    "start": 2785,
-    "end": 2815,
-    "lane": "adapter:claude"
-  },
-  {
-    "id": "A082",
-    "start": 2815,
-    "end": 2845,
-    "lane": "adapter:zcode"
-  },
-  {
-    "id": "A091",
-    "start": 2845,
-    "end": 2875,
-    "lane": "adapter:qoder"
-  },
-  {
-    "id": "A100",
-    "start": 2875,
-    "end": 2905,
-    "lane": "adapter:hermes"
-  },
-  {
-    "id": "A109",
-    "start": 2905,
-    "end": 2935,
-    "lane": "adapter:fast-agent"
-  },
-  {
-    "id": "A118",
-    "start": 2935,
-    "end": 2965,
-    "lane": "adapter:minimax-code"
-  },
-  {
-    "id": "A128",
-    "start": 2965,
-    "end": 2995,
-    "lane": "adapter:chatgpt"
-  },
-  {
-    "id": "A136",
-    "start": 2995,
-    "end": 3025,
-    "lane": "adapter:z-ai"
-  },
-  {
-    "id": "A047",
-    "start": 3025,
-    "end": 3055,
-    "lane": "core"
-  },
-  {
-    "id": "A148",
-    "start": 3055,
-    "end": 3085,
-    "lane": "adapter:browser-chat"
-  },
-  {
-    "id": "A043",
-    "start": 3085,
-    "end": 3115,
-    "lane": "ownership"
-  },
-  {
-    "id": "A151",
-    "start": 3115,
-    "end": 3145,
     "lane": "release"
   },
   {
-    "id": "A185",
-    "start": 3145,
-    "end": 3175,
+    "id": "V131",
+    "start": 2395,
+    "end": 2425,
     "lane": "migration"
   },
   {
-    "id": "A075",
-    "start": 3175,
-    "end": 3205,
-    "lane": "adapter:claude"
-  },
-  {
-    "id": "A083",
-    "start": 3205,
-    "end": 3235,
+    "id": "V074",
+    "start": 2425,
+    "end": 2455,
     "lane": "adapter:zcode"
   },
   {
-    "id": "A092",
-    "start": 3235,
-    "end": 3265,
-    "lane": "adapter:qoder"
-  },
-  {
-    "id": "A101",
-    "start": 3265,
-    "end": 3295,
-    "lane": "adapter:hermes"
-  },
-  {
-    "id": "A110",
-    "start": 3295,
-    "end": 3325,
-    "lane": "adapter:fast-agent"
-  },
-  {
-    "id": "A119",
-    "start": 3325,
-    "end": 3355,
-    "lane": "adapter:minimax-code"
-  },
-  {
-    "id": "A129",
-    "start": 3355,
-    "end": 3385,
-    "lane": "adapter:chatgpt"
-  },
-  {
-    "id": "A137",
-    "start": 3385,
-    "end": 3415,
+    "id": "V092",
+    "start": 2455,
+    "end": 2485,
     "lane": "adapter:z-ai"
   },
   {
-    "id": "A048",
-    "start": 3415,
-    "end": 3445,
+    "id": "V048",
+    "start": 2485,
+    "end": 2515,
     "lane": "core"
   },
   {
-    "id": "A149",
-    "start": 3445,
-    "end": 3470,
-    "lane": "adapter:browser-chat"
+    "id": "V086",
+    "start": 2515,
+    "end": 2540,
+    "lane": "adapter:chatgpt"
   },
   {
-    "id": "A157",
-    "start": 3470,
-    "end": 3500,
+    "id": "V103",
+    "start": 2540,
+    "end": 2570,
     "lane": "qa"
   },
   {
-    "id": "A186",
-    "start": 3500,
-    "end": 3530,
+    "id": "V132",
+    "start": 2570,
+    "end": 2600,
     "lane": "migration"
   },
   {
-    "id": "A076",
-    "start": 3530,
-    "end": 3560,
-    "lane": "adapter:claude"
-  },
-  {
-    "id": "A084",
-    "start": 3560,
-    "end": 3590,
+    "id": "V075",
+    "start": 2600,
+    "end": 2630,
     "lane": "adapter:zcode"
   },
   {
-    "id": "A093",
-    "start": 3590,
-    "end": 3620,
-    "lane": "adapter:qoder"
-  },
-  {
-    "id": "A102",
-    "start": 3620,
-    "end": 3650,
-    "lane": "adapter:hermes"
-  },
-  {
-    "id": "A111",
-    "start": 3650,
-    "end": 3680,
-    "lane": "adapter:fast-agent"
-  },
-  {
-    "id": "A120",
-    "start": 3680,
-    "end": 3710,
-    "lane": "adapter:minimax-code"
-  },
-  {
-    "id": "A130",
-    "start": 3710,
-    "end": 3740,
-    "lane": "adapter:chatgpt"
-  },
-  {
-    "id": "A138",
-    "start": 3740,
-    "end": 3770,
+    "id": "V093",
+    "start": 2630,
+    "end": 2660,
     "lane": "adapter:z-ai"
   },
   {
-    "id": "A019",
-    "start": 3770,
-    "end": 3800,
+    "id": "V019",
+    "start": 2660,
+    "end": 2690,
     "lane": "protocol"
   },
   {
-    "id": "A035",
-    "start": 3800,
-    "end": 3830,
+    "id": "V035",
+    "start": 2690,
+    "end": 2720,
     "lane": "core"
   },
   {
-    "id": "A049",
-    "start": 3830,
-    "end": 3860,
+    "id": "V049",
+    "start": 2720,
+    "end": 2750,
     "lane": "core"
   },
   {
-    "id": "A150",
-    "start": 3860,
-    "end": 3890,
-    "lane": "adapter:browser-chat"
+    "id": "V087",
+    "start": 2750,
+    "end": 2780,
+    "lane": "adapter:chatgpt"
   },
   {
-    "id": "A164",
-    "start": 3890,
-    "end": 3910,
+    "id": "V110",
+    "start": 2780,
+    "end": 2800,
     "lane": "consumer:lhc"
   },
   {
-    "id": "A045",
-    "start": 3910,
-    "end": 3940,
+    "id": "V045",
+    "start": 2800,
+    "end": 2830,
     "lane": "ownership"
   },
   {
-    "id": "A156",
+    "id": "V102",
+    "start": 2830,
+    "end": 2860,
+    "lane": "qa"
+  },
+  {
+    "id": "V105",
+    "start": 2860,
+    "end": 2890,
+    "lane": "web"
+  },
+  {
+    "id": "V111",
+    "start": 2890,
+    "end": 2920,
+    "lane": "consumer:lhc"
+  },
+  {
+    "id": "V133",
+    "start": 2920,
+    "end": 2950,
+    "lane": "migration"
+  },
+  {
+    "id": "V076",
+    "start": 2950,
+    "end": 2980,
+    "lane": "adapter:zcode"
+  },
+  {
+    "id": "V094",
+    "start": 2980,
+    "end": 3010,
+    "lane": "adapter:z-ai"
+  },
+  {
+    "id": "V107",
+    "start": 3010,
+    "end": 3030,
+    "lane": "consumer:hub"
+  },
+  {
+    "id": "V113",
+    "start": 3030,
+    "end": 3050,
+    "lane": "consumer:noticeplace"
+  },
+  {
+    "id": "V116",
+    "start": 3050,
+    "end": 3070,
+    "lane": "consumer:userio"
+  },
+  {
+    "id": "V119",
+    "start": 3070,
+    "end": 3090,
+    "lane": "consumer:board"
+  },
+  {
+    "id": "V122",
+    "start": 3090,
+    "end": 3110,
+    "lane": "consumer:secretary"
+  },
+  {
+    "id": "V104",
+    "start": 3110,
+    "end": 3140,
+    "lane": "clients"
+  },
+  {
+    "id": "V106",
+    "start": 3140,
+    "end": 3170,
+    "lane": "web"
+  },
+  {
+    "id": "V108",
+    "start": 3170,
+    "end": 3200,
+    "lane": "consumer:hub"
+  },
+  {
+    "id": "V112",
+    "start": 3200,
+    "end": 3230,
+    "lane": "consumer:lhc"
+  },
+  {
+    "id": "V114",
+    "start": 3230,
+    "end": 3260,
+    "lane": "consumer:noticeplace"
+  },
+  {
+    "id": "V117",
+    "start": 3260,
+    "end": 3290,
+    "lane": "consumer:userio"
+  },
+  {
+    "id": "V120",
+    "start": 3290,
+    "end": 3320,
+    "lane": "consumer:board"
+  },
+  {
+    "id": "V123",
+    "start": 3320,
+    "end": 3350,
+    "lane": "consumer:secretary"
+  },
+  {
+    "id": "V125",
+    "start": 3350,
+    "end": 3380,
+    "lane": "docs"
+  },
+  {
+    "id": "V126",
+    "start": 3380,
+    "end": 3410,
+    "lane": "docs"
+  },
+  {
+    "id": "V134",
+    "start": 3410,
+    "end": 3440,
+    "lane": "migration"
+  },
+  {
+    "id": "V077",
+    "start": 3440,
+    "end": 3465,
+    "lane": "adapter:zcode"
+  },
+  {
+    "id": "V095",
+    "start": 3465,
+    "end": 3490,
+    "lane": "adapter:z-ai"
+  },
+  {
+    "id": "V050",
+    "start": 3490,
+    "end": 3520,
+    "lane": "core"
+  },
+  {
+    "id": "V078",
+    "start": 3520,
+    "end": 3550,
+    "lane": "adapter:zcode"
+  },
+  {
+    "id": "V096",
+    "start": 3550,
+    "end": 3580,
+    "lane": "adapter:z-ai"
+  },
+  {
+    "id": "V098",
+    "start": 3580,
+    "end": 3610,
+    "lane": "qa"
+  },
+  {
+    "id": "V099",
+    "start": 3610,
+    "end": 3640,
+    "lane": "qa"
+  },
+  {
+    "id": "V100",
+    "start": 3640,
+    "end": 3670,
+    "lane": "qa"
+  },
+  {
+    "id": "V101",
+    "start": 3670,
+    "end": 3700,
+    "lane": "qa"
+  },
+  {
+    "id": "V109",
+    "start": 3700,
+    "end": 3730,
+    "lane": "consumer:hub"
+  },
+  {
+    "id": "V115",
+    "start": 3730,
+    "end": 3760,
+    "lane": "consumer:noticeplace"
+  },
+  {
+    "id": "V118",
+    "start": 3760,
+    "end": 3790,
+    "lane": "consumer:userio"
+  },
+  {
+    "id": "V121",
+    "start": 3790,
+    "end": 3820,
+    "lane": "consumer:board"
+  },
+  {
+    "id": "V124",
+    "start": 3820,
+    "end": 3850,
+    "lane": "consumer:secretary"
+  },
+  {
+    "id": "V127",
+    "start": 3850,
+    "end": 3880,
+    "lane": "qa"
+  },
+  {
+    "id": "V128",
+    "start": 3880,
+    "end": 3910,
+    "lane": "qa"
+  },
+  {
+    "id": "V135",
+    "start": 3910,
+    "end": 3940,
+    "lane": "migration"
+  },
+  {
+    "id": "V141",
     "start": 3940,
     "end": 3970,
     "lane": "qa"
   },
   {
-    "id": "A159",
+    "id": "V136",
     "start": 3970,
-    "end": 4000,
-    "lane": "web"
-  },
-  {
-    "id": "A165",
-    "start": 4000,
-    "end": 4030,
-    "lane": "consumer:lhc"
-  },
-  {
-    "id": "A187",
-    "start": 4030,
-    "end": 4060,
-    "lane": "migration"
-  },
-  {
-    "id": "A077",
-    "start": 4060,
-    "end": 4085,
-    "lane": "adapter:claude"
-  },
-  {
-    "id": "A085",
-    "start": 4085,
-    "end": 4115,
-    "lane": "adapter:zcode"
-  },
-  {
-    "id": "A094",
-    "start": 4115,
-    "end": 4145,
-    "lane": "adapter:qoder"
-  },
-  {
-    "id": "A103",
-    "start": 4145,
-    "end": 4175,
-    "lane": "adapter:hermes"
-  },
-  {
-    "id": "A112",
-    "start": 4175,
-    "end": 4205,
-    "lane": "adapter:fast-agent"
-  },
-  {
-    "id": "A121",
-    "start": 4205,
-    "end": 4235,
-    "lane": "adapter:minimax-code"
-  },
-  {
-    "id": "A131",
-    "start": 4235,
-    "end": 4260,
-    "lane": "adapter:chatgpt"
-  },
-  {
-    "id": "A139",
-    "start": 4260,
-    "end": 4290,
-    "lane": "adapter:z-ai"
-  },
-  {
-    "id": "A161",
-    "start": 4290,
-    "end": 4310,
-    "lane": "consumer:hub"
-  },
-  {
-    "id": "A167",
-    "start": 4310,
-    "end": 4330,
-    "lane": "consumer:noticeplace"
-  },
-  {
-    "id": "A170",
-    "start": 4330,
-    "end": 4350,
-    "lane": "consumer:userio"
-  },
-  {
-    "id": "A173",
-    "start": 4350,
-    "end": 4370,
-    "lane": "consumer:board"
-  },
-  {
-    "id": "A176",
-    "start": 4370,
-    "end": 4390,
-    "lane": "consumer:secretary"
-  },
-  {
-    "id": "A078",
-    "start": 4390,
-    "end": 4420,
-    "lane": "adapter:claude"
-  },
-  {
-    "id": "A132",
-    "start": 4420,
-    "end": 4450,
-    "lane": "adapter:chatgpt"
-  },
-  {
-    "id": "A158",
-    "start": 4450,
-    "end": 4480,
-    "lane": "clients"
-  },
-  {
-    "id": "A160",
-    "start": 4480,
-    "end": 4510,
-    "lane": "web"
-  },
-  {
-    "id": "A162",
-    "start": 4510,
-    "end": 4540,
-    "lane": "consumer:hub"
-  },
-  {
-    "id": "A166",
-    "start": 4540,
-    "end": 4570,
-    "lane": "consumer:lhc"
-  },
-  {
-    "id": "A168",
-    "start": 4570,
-    "end": 4600,
-    "lane": "consumer:noticeplace"
-  },
-  {
-    "id": "A171",
-    "start": 4600,
-    "end": 4630,
-    "lane": "consumer:userio"
-  },
-  {
-    "id": "A174",
-    "start": 4630,
-    "end": 4660,
-    "lane": "consumer:board"
-  },
-  {
-    "id": "A177",
-    "start": 4660,
-    "end": 4690,
-    "lane": "consumer:secretary"
-  },
-  {
-    "id": "A179",
-    "start": 4690,
-    "end": 4720,
-    "lane": "docs"
-  },
-  {
-    "id": "A180",
-    "start": 4720,
-    "end": 4750,
-    "lane": "docs"
-  },
-  {
-    "id": "A188",
-    "start": 4750,
-    "end": 4780,
-    "lane": "migration"
-  },
-  {
-    "id": "A086",
-    "start": 4780,
-    "end": 4805,
-    "lane": "adapter:zcode"
-  },
-  {
-    "id": "A095",
-    "start": 4805,
-    "end": 4830,
-    "lane": "adapter:qoder"
-  },
-  {
-    "id": "A104",
-    "start": 4830,
-    "end": 4855,
-    "lane": "adapter:hermes"
-  },
-  {
-    "id": "A113",
-    "start": 4855,
-    "end": 4880,
-    "lane": "adapter:fast-agent"
-  },
-  {
-    "id": "A122",
-    "start": 4880,
-    "end": 4905,
-    "lane": "adapter:minimax-code"
-  },
-  {
-    "id": "A140",
-    "start": 4905,
-    "end": 4930,
-    "lane": "adapter:z-ai"
-  },
-  {
-    "id": "A050",
-    "start": 4930,
-    "end": 4960,
-    "lane": "core"
-  },
-  {
-    "id": "A087",
-    "start": 4960,
-    "end": 4990,
-    "lane": "adapter:zcode"
-  },
-  {
-    "id": "A096",
-    "start": 4990,
-    "end": 5020,
-    "lane": "adapter:qoder"
-  },
-  {
-    "id": "A105",
-    "start": 5020,
-    "end": 5050,
-    "lane": "adapter:hermes"
-  },
-  {
-    "id": "A114",
-    "start": 5050,
-    "end": 5080,
-    "lane": "adapter:fast-agent"
-  },
-  {
-    "id": "A123",
-    "start": 5080,
-    "end": 5110,
-    "lane": "adapter:minimax-code"
-  },
-  {
-    "id": "A141",
-    "start": 5110,
-    "end": 5140,
-    "lane": "adapter:z-ai"
-  },
-  {
-    "id": "A152",
-    "start": 5140,
-    "end": 5170,
-    "lane": "qa"
-  },
-  {
-    "id": "A153",
-    "start": 5170,
-    "end": 5200,
-    "lane": "qa"
-  },
-  {
-    "id": "A154",
-    "start": 5200,
-    "end": 5230,
-    "lane": "qa"
-  },
-  {
-    "id": "A155",
-    "start": 5230,
-    "end": 5260,
-    "lane": "qa"
-  },
-  {
-    "id": "A163",
-    "start": 5260,
-    "end": 5290,
-    "lane": "consumer:hub"
-  },
-  {
-    "id": "A169",
-    "start": 5290,
-    "end": 5320,
-    "lane": "consumer:noticeplace"
-  },
-  {
-    "id": "A172",
-    "start": 5320,
-    "end": 5350,
-    "lane": "consumer:userio"
-  },
-  {
-    "id": "A175",
-    "start": 5350,
-    "end": 5380,
-    "lane": "consumer:board"
-  },
-  {
-    "id": "A178",
-    "start": 5380,
-    "end": 5410,
-    "lane": "consumer:secretary"
-  },
-  {
-    "id": "A181",
-    "start": 5410,
-    "end": 5440,
-    "lane": "qa"
-  },
-  {
-    "id": "A182",
-    "start": 5440,
-    "end": 5470,
-    "lane": "qa"
-  },
-  {
-    "id": "A189",
-    "start": 5470,
-    "end": 5500,
-    "lane": "migration"
-  },
-  {
-    "id": "A195",
-    "start": 5500,
-    "end": 5530,
-    "lane": "qa"
-  },
-  {
-    "id": "A190",
-    "start": 5530,
-    "end": 5555,
+    "end": 3995,
     "lane": "build:linux-amd64"
   },
   {
-    "id": "A191",
-    "start": 5555,
-    "end": 5580,
+    "id": "V137",
+    "start": 3995,
+    "end": 4020,
     "lane": "build:linux-arm64"
   },
   {
-    "id": "A192",
-    "start": 5580,
-    "end": 5605,
+    "id": "V138",
+    "start": 4020,
+    "end": 4045,
     "lane": "build:macos-arm64"
   },
   {
-    "id": "A193",
-    "start": 5605,
-    "end": 5630,
+    "id": "V139",
+    "start": 4045,
+    "end": 4070,
     "lane": "build:macos-amd64"
   },
   {
-    "id": "A194",
-    "start": 5630,
-    "end": 5660,
+    "id": "V140",
+    "start": 4070,
+    "end": 4100,
     "lane": "release"
   },
   {
-    "id": "A196",
-    "start": 5660,
-    "end": 5690,
+    "id": "V142",
+    "start": 4100,
+    "end": 4130,
     "lane": "review"
   },
   {
-    "id": "A197",
-    "start": 5690,
-    "end": 5720,
+    "id": "V143",
+    "start": 4130,
+    "end": 4160,
     "lane": "release"
   },
   {
-    "id": "A198",
-    "start": 5720,
-    "end": 5750,
+    "id": "V144",
+    "start": 4160,
+    "end": 4190,
     "lane": "release"
   },
   {
-    "id": "A199",
-    "start": 5750,
-    "end": 5780,
+    "id": "V145",
+    "start": 4190,
+    "end": 4220,
     "lane": "release"
   },
   {
-    "id": "A211",
-    "start": 5780,
-    "end": 5810,
+    "id": "V151",
+    "start": 4220,
+    "end": 4250,
     "lane": "clients"
   },
   {
-    "id": "A200",
-    "start": 5810,
-    "end": 5830,
+    "id": "V146",
+    "start": 4250,
+    "end": 4270,
     "lane": "adapter:codex"
   },
   {
-    "id": "A201",
-    "start": 5830,
-    "end": 5850,
+    "id": "V147",
+    "start": 4270,
+    "end": 4290,
     "lane": "adapter:opencode"
   },
   {
-    "id": "A202",
-    "start": 5850,
-    "end": 5870,
-    "lane": "adapter:claude"
-  },
-  {
-    "id": "A203",
-    "start": 5870,
-    "end": 5890,
+    "id": "V148",
+    "start": 4290,
+    "end": 4310,
     "lane": "adapter:zcode"
   },
   {
-    "id": "A204",
-    "start": 5890,
-    "end": 5910,
-    "lane": "adapter:qoder"
-  },
-  {
-    "id": "A205",
-    "start": 5910,
-    "end": 5930,
-    "lane": "adapter:hermes"
-  },
-  {
-    "id": "A206",
-    "start": 5930,
-    "end": 5950,
-    "lane": "adapter:fast-agent"
-  },
-  {
-    "id": "A207",
-    "start": 5950,
-    "end": 5970,
-    "lane": "adapter:minimax-code"
-  },
-  {
-    "id": "A208",
-    "start": 5970,
-    "end": 5990,
+    "id": "V149",
+    "start": 4310,
+    "end": 4330,
     "lane": "adapter:chatgpt"
   },
   {
-    "id": "A209",
-    "start": 5990,
-    "end": 6010,
+    "id": "V150",
+    "start": 4330,
+    "end": 4350,
     "lane": "adapter:z-ai"
   },
   {
-    "id": "A210",
-    "start": 6010,
-    "end": 6030,
-    "lane": "adapter:browser-chat"
-  },
-  {
-    "id": "A212",
-    "start": 6030,
-    "end": 6060,
+    "id": "V152",
+    "start": 4350,
+    "end": 4380,
     "lane": "release"
   },
   {
-    "id": "A213",
-    "start": 6060,
-    "end": 6090,
+    "id": "V153",
+    "start": 4380,
+    "end": 4410,
     "lane": "release"
   },
   {
-    "id": "A214",
-    "start": 6090,
-    "end": 6120,
+    "id": "V154",
+    "start": 4410,
+    "end": 4440,
     "lane": "qa"
   },
   {
-    "id": "A215",
-    "start": 6120,
-    "end": 6150,
+    "id": "V155",
+    "start": 4440,
+    "end": 4470,
     "lane": "release"
   },
   {
-    "id": "A216",
-    "start": 6150,
-    "end": 6180,
+    "id": "V156",
+    "start": 4470,
+    "end": 4500,
     "lane": "qa"
   },
   {
-    "id": "A217",
-    "start": 6180,
-    "end": 6210,
+    "id": "V157",
+    "start": 4500,
+    "end": 4530,
     "lane": "qa"
   },
   {
-    "id": "A218",
-    "start": 6210,
-    "end": 6240,
+    "id": "V158",
+    "start": 4530,
+    "end": 4560,
     "lane": "qa"
   },
   {
-    "id": "A219",
-    "start": 6240,
-    "end": 6270,
+    "id": "V159",
+    "start": 4560,
+    "end": 4590,
     "lane": "release"
   }
 ]

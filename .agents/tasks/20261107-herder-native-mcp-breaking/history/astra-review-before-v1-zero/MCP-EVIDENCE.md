@@ -1,0 +1,18 @@
+# Проверка MCP и SDK по официальным источникам
+
+Независимое чтение 7 ноября 2026. Ни номера из авторского плана, ни название «MCP 2.0» не использованы как доказательство. Сохранённые excerpts/source hashes: [review-evidence/sources.json](review-evidence/sources.json). Продукт не собирался и реальные клиенты здесь не запускались.
+
+| Утверждение | Проверка и вывод |
+|---|---|
+| Wire 2026-07-28 существует | [Спецификация](https://modelcontextprotocol.io/specification/2026-07-28) и [изменения](https://modelcontextprotocol.io/specification/2026-07-28/changelog) подтверждают stateless requests, per-request capabilities и server/discover. Номер SDK не wire revision. |
+| Подписки | [Изменения](https://modelcontextprotocol.io/specification/2026-07-28/changelog): subscriptions/listen заменяет прежние subscribe/unsubscribe; SSE redelivery/Last-Event-ID убраны. Нужен повторный domain snapshot после disconnect, не transport replay. |
+| Tasks стандартные | [Официальное расширение](https://modelcontextprotocol.io/extensions/tasks/overview): io.modelcontextprotocol/tasks, opt-in обеих сторон; tasks/get, update, cancel. tasks/list/result не использовать. Cooperative cancel не обещает физическую остановку. Durable handle не означает восстановление стороннего процесса автоматически. |
+| input_required | [MRTR в изменениях](https://modelcontextprotocol.io/specification/2026-07-28/changelog): синхронный запрос повторяется с inputResponses; внутри Task ответ идёт tasks/update. Эти lifecycle нельзя смешивать. |
+| Skills есть, но это extension | [Skills](https://modelcontextprotocol.io/extensions/skills/overview): SEP-2640 Final; skills/list/get плюс resources/read. Получение текста не является активацией в модели. directoryRead необязателен; для статического recovery skill не нужен. |
+| rmcp 3.9.0 опубликован | [Релиз](https://github.com/modelcontextprotocol/rust-sdk/releases/tag/rmcp-v3.9.0) содержит Skills и исправления negotiation. [Workspace Cargo.toml](https://github.com/modelcontextprotocol/rust-sdk/blob/rmcp-v3.9.0/Cargo.toml): Rust 1.88, edition 2024. Наличие типов не равно потребительской приёмке. |
+| rmcp TaskManager обеспечивает restart durability | **Нет такого доказательства; исходник опровергает использование по умолчанию для этого обещания.** [task_manager.rs](https://github.com/modelcontextprotocol/rust-sdk/blob/rmcp-v3.9.0/crates/rmcp/src/task_manager.rs), TaskManagerInner около строк 222–223: HashMap, Arc/Mutex; pending inputs — oneshot. Нужен один durable backend, не зеркало этого manager. |
+| Go v1.8.0 не годится | Слишком сильный вывод. [Релиз](https://github.com/modelcontextprotocol/go-sdk/releases/tag/v1.8.0) и [tagged README](https://github.com/modelcontextprotocol/go-sdk/blob/v1.8.0/README.md) подтверждают wire 2026-07-28. Не выполнено полное доказательство отсутствия Tasks/Skills во всех пакетах. GitHub tree API во время проверки ответил 403 rate limit; это ограничение проверки, не отсутствие кода. |
+
+Основной вывод: протокольная основа ревизии 4 реальна. Исправлять нужно неподтверждённую готовность SDK durable state и клиентов, не придумывать «несуществующую версию». Baseline Rust сохраняется с ранним compile + wire + concrete-client gate. Отрицательный gate блокирует соответствующую capability до решения; не включает скрытый protocol downgrade или собственные jobs.
+
+Не проверялись все native harness versions и клиентские extensions: это предмет узких bounded gates плана, а не blanket PASS. Контракт каждого клиента фиксирует wire revision, Tasks/Skills/subscriptions, auth, self binding и точный способ native context injection отдельно.

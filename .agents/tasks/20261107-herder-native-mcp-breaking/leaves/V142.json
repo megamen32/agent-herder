@@ -1,0 +1,97 @@
+{
+  "label": "Интеграционное ревью кандидата",
+  "description": "Один diff review по boundaries/errors/ownership/cutover; конкретный журнал дефектов.",
+  "acceptance": "Все найденные defects имеют owned fix/retest leaf до release; review не выдаёт будущий PASS.",
+  "affected_files": [
+    "acceptance/review/"
+  ],
+  "depends_on": [
+    "V060",
+    "V069",
+    "V078",
+    "V087",
+    "V096",
+    "V109",
+    "V112",
+    "V115",
+    "V118",
+    "V121",
+    "V124",
+    "V102",
+    "V098",
+    "V099",
+    "V100",
+    "V101",
+    "V103",
+    "V127",
+    "V128",
+    "V141",
+    "V135",
+    "V050"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 60
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 10,
+  "note": "v1, нулевая ревизия. Дорожка review; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "id": "V142",
+  "created_at": "2026-11-07T01:52:44+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:52:44+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:52:44+03:00",
+      "note": "",
+      "changes": {
+        "label": "Интеграционное ревью кандидата",
+        "description": "Один diff review по boundaries/errors/ownership/cutover; конкретный журнал дефектов.",
+        "acceptance": "Все найденные defects имеют owned fix/retest leaf до release; review не выдаёт будущий PASS.",
+        "affected_files": [
+          "acceptance/review/"
+        ],
+        "depends_on": [
+          "V060",
+          "V069",
+          "V078",
+          "V087",
+          "V096",
+          "V109",
+          "V112",
+          "V115",
+          "V118",
+          "V121",
+          "V124",
+          "V102",
+          "V098",
+          "V099",
+          "V100",
+          "V101",
+          "V103",
+          "V127",
+          "V128",
+          "V141",
+          "V135",
+          "V050"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 60
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 10,
+        "note": "v1, нулевая ревизия. Дорожка review; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+        "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}

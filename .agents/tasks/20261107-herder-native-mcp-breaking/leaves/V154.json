@@ -1,0 +1,55 @@
+{
+  "label": "Linux: обычный потребитель после установки",
+  "description": "Primary MCP consumer create/deliver/recent/export/context на тестовых сессиях, reload.",
+  "acceptance": "Runtime→receipt→native readback доказаны; приложение работает после штатного restart.",
+  "affected_files": [
+    "acceptance/installed/linux/"
+  ],
+  "depends_on": [
+    "V153"
+  ],
+  "estimate_minutes": {
+    "minimum": 30,
+    "maximum": 60
+  },
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "wave": 10,
+  "note": "v1, нулевая ревизия. Дорожка qa; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "id": "V154",
+  "created_at": "2026-11-07T01:52:46+03:00",
+  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "harness": "codex",
+  "updated_at": "2026-11-07T01:52:46+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:52:46+03:00",
+      "note": "",
+      "changes": {
+        "label": "Linux: обычный потребитель после установки",
+        "description": "Primary MCP consumer create/deliver/recent/export/context на тестовых сессиях, reload.",
+        "acceptance": "Runtime→receipt→native readback доказаны; приложение работает после штатного restart.",
+        "affected_files": [
+          "acceptance/installed/linux/"
+        ],
+        "depends_on": [
+          "V153"
+        ],
+        "estimate_minutes": {
+          "minimum": 30,
+          "maximum": 60
+        },
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "wave": 10,
+        "note": "v1, нулевая ревизия. Дорожка qa; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+        "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    }
+  ]
+}
