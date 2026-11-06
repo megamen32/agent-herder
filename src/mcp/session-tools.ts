@@ -464,13 +464,13 @@ export function registerSessionTools(server: McpServer, deps: {
         } else if (adapter?.getSessionMessages) messages = await adapter.getSessionMessages(session.id, 200);
       } catch { messages = null; }
       const reversed = messages ? [...messages].reverse() : [];
-      const humanText = (text: string | undefined) => !!text?.trim() && !/^\s*<codex_internal_context(?:\s|>)/i.test(text);
+      const humanText = (text: string | undefined) => !!text?.trim() && !/^\s*<(?:codex_internal_context|environment_context)(?:\s|>)/i.test(text);
       let latestUser = reversed.find(message => message.role === "user" && humanText(message.text)) ?? null;
       let latestAssistant = reversed.find(message => message.role === "assistant" && !!message.text?.trim()) ?? null;
       // The bounded recent window may consist entirely of tool calls. A
       // complete Codex owner transcript lets us recover actual text messages
       // without mistaking a command or reasoning item for an assistant answer.
-      if ((!latestUser || !latestAssistant) && session.harness === "codex" && selected?.get(session.harness)?.getRawTranscript) {
+      if (session.harness === "codex" && selected?.get(session.harness)?.getRawTranscript) {
         try {
           const raw = await selected.get(session.harness)!.getRawTranscript!(session.id);
           if (raw?.complete && raw.source.format === "jsonl") {
@@ -485,8 +485,8 @@ export function registerSessionTools(server: McpServer, deps: {
                 if (text) { if (role === "user" && humanText(text)) userText = text; else if (role === "assistant") assistantText = text; }
               } catch { /* An incomplete record does not establish a message. */ }
             }
-            if (!latestUser && userText) latestUser = { id: "native-last-user", role: "user", text: userText, parts: [] };
-            if (!latestAssistant && assistantText) latestAssistant = { id: "native-last-assistant", role: "assistant", text: assistantText, parts: [] };
+            if (userText) latestUser = { id: "native-last-user", role: "user", text: userText, parts: [] };
+            if (assistantText) latestAssistant = { id: "native-last-assistant", role: "assistant", text: assistantText, parts: [] };
           }
         } catch { /* Preserve the explicit unavailable/partial result. */ }
       }

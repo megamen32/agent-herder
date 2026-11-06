@@ -40,7 +40,11 @@ it("recovers the latest human-readable messages when the recent window contains 
     { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<codex_internal_context source=\"goal\">not a human request</codex_internal_context>" }] } },
   ];
   const adapter = { type: "codex", name: "fixture", getSession: async (id: string) => id === "s2" ? session : null,
-    getSessionMessages: async () => [{ id: "tool", role: "assistant", parts: [{ type: "tool_call", name: "shell" }] }],
+    getSessionMessages: async () => [
+      { id: "old-user", role: "user", text: "old request", parts: [] },
+      { id: "old-answer", role: "assistant", text: "old answer", parts: [] },
+      { id: "tool", role: "assistant", parts: [{ type: "tool_call", name: "shell" }] },
+    ],
     getRawTranscript: async () => ({ bytes: Buffer.from(lines.map(x => JSON.stringify(x)).join("\n")), complete: true, source: { kind: "native-file", format: "jsonl" }, timestampCoverage: "native" }) };
   const events = new HerderEventBus(); const server = new McpServer({ name: "tail-test", version: "1" });
   registerSessionTools(server, { adapters: new Map([["codex", adapter as any]]), jobs: new HerderJobRegistry(events), events });
