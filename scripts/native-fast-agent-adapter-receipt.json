@@ -1,0 +1,145 @@
+{
+  "ok": true,
+  "scope": "private network namespace, isolated filesystem, local fixture only",
+  "endpoint": "http://127.0.0.1:36395/v1",
+  "project": "/work/project",
+  "version": "fast-agent-mcp v0.10.43",
+  "sessions": [
+    {
+      "id": "fast-agent:2611061302-1vflKl",
+      "nativeId": "2611061302-1vflKl",
+      "message": "HERDER_NATIVE_FAST_AGENT_0",
+      "send": {
+        "ok": true
+      },
+      "transcript": "User: HERDER_NATIVE_FAST_AGENT_0\n\nAssistant: HERDER_TEST_MODEL_OK",
+      "raw": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "HERDER_NATIVE_FAST_AGENT_0"
+              }
+            ],
+            "is_template": false,
+            "timestamp": "2026-11-06T13:02:44.634975Z"
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "HERDER_TEST_MODEL_OK"
+              }
+            ],
+            "channels": {
+              "fast-agent-timing": [
+                {
+                  "type": "text",
+                  "text": "{\"start_time\": 590760.958946431, \"end_time\": 590761.062089704, \"duration_ms\": 103.14, \"ttft_ms\": 88.09, \"time_to_response_ms\": 88.09}"
+                }
+              ]
+            },
+            "stop_reason": "endTurn",
+            "is_template": false,
+            "timestamp": "2026-11-06T13:02:44.738521Z"
+          }
+        ]
+      }
+    },
+    {
+      "id": "fast-agent:2611061302-HAJtpO",
+      "nativeId": "2611061302-HAJtpO",
+      "message": "HERDER_NATIVE_FAST_AGENT_1",
+      "send": {
+        "ok": true
+      },
+      "transcript": "User: HERDER_NATIVE_FAST_AGENT_1\n\nAssistant: HERDER_TEST_MODEL_OK",
+      "raw": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "HERDER_NATIVE_FAST_AGENT_1"
+              }
+            ],
+            "is_template": false,
+            "timestamp": "2026-11-06T13:02:49.444008Z"
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "HERDER_TEST_MODEL_OK"
+              }
+            ],
+            "channels": {
+              "fast-agent-timing": [
+                {
+                  "type": "text",
+                  "text": "{\"start_time\": 590765.767969205, \"end_time\": 590765.832039426, \"duration_ms\": 64.07, \"ttft_ms\": 48.26, \"time_to_response_ms\": 48.26}"
+                }
+              ]
+            },
+            "stop_reason": "endTurn",
+            "is_template": false,
+            "timestamp": "2026-11-06T13:02:49.508658Z"
+          }
+        ]
+      }
+    }
+  ],
+  "listed": [
+    "fast-agent:2611061302-HAJtpO",
+    "fast-agent:2611061302-1vflKl"
+  ],
+  "requests": [
+    {
+      "path": "/v1/chat/completions",
+      "body": {
+        "model": "herder-test",
+        "stream": true,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a helpful AI Agent.\n\n\n\n\nEnvironment:\n- Workspace root: /work/project\n- Execution environment: local (shell: bash, cwd: /work/project)\n- Client: fast-agent\n- Fast-agent runtime: CPython 3.12.13\n- Host platform: Linux-6.8.0-138-generic-x86_64-with-glibc2.35\n\nMermaid diagrams between code fences are supported.\n\n\n\nThe current date is 06 November 2026."
+          },
+          {
+            "role": "user",
+            "content": "HERDER_NATIVE_FAST_AGENT_0"
+          }
+        ],
+        "stream_options": {
+          "include_usage": true
+        },
+        "tools": []
+      }
+    },
+    {
+      "path": "/v1/chat/completions",
+      "body": {
+        "model": "herder-test",
+        "stream": true,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a helpful AI Agent.\n\n\n\n\nEnvironment:\n- Workspace root: /work/project\n- Execution environment: local (shell: bash, cwd: /work/project)\n- Client: fast-agent\n- Fast-agent runtime: CPython 3.12.13\n- Host platform: Linux-6.8.0-138-generic-x86_64-with-glibc2.35\n\nMermaid diagrams between code fences are supported.\n\n\n\nThe current date is 06 November 2026."
+          },
+          {
+            "role": "user",
+            "content": "HERDER_NATIVE_FAST_AGENT_1"
+          }
+        ],
+        "stream_options": {
+          "include_usage": true
+        },
+        "tools": []
+      }
+    }
+  ]
+}
