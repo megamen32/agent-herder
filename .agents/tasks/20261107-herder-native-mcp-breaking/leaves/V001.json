@@ -11,16 +11,16 @@
     "maximum": 45
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "01a1b31d-7d15-7411-87f3-4fd0baf7cc0e",
   "wave": 1,
-  "note": "v1, нулевая ревизия. Дорожка core; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+  "note": "Worker 01a1b31d-7d15-7411-87f3-4fd0baf7cc0e выполняет V001 в /home/roomhacker/.codex/worktrees/herder-v1-implementation/agent-herder. Независимый Overseer 01a1b31d-8b79-7462-8001-a701cf0f7520: после V001 сначала V002, затем V003 (clients) параллельно V004 (core); не два writer core одновременно. Рекомендация принята. Реальный кандидат primary client codex-cli 0.162.1, поддержка расширений ещё не доказана.",
   "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
   "id": "V001",
   "created_at": "2026-11-07T01:52:18+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T01:52:18+03:00",
+  "updated_at": "2026-11-07T02:49:16+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:18+03:00",
@@ -46,6 +46,56 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T02:06:23+03:00",
+      "note": "Прямое сообщение владельца в Astra подтверждено: запустить исполнителей v1. Изолированный worktree от опубликованного 791c8380; V001 запускается первым.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "owner": "lead"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T02:07:15+03:00",
+      "note": "Worker 01a1b31d-7d15-7411-87f3-4fd0baf7cc0e registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b31d-7d15-7411-87f3-4fd0baf7cc0e",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-implementation/agent-herder",
+          "registered_at": "2026-11-07T02:07:15+03:00",
+          "run_dir": "/home/roomhacker/.codex/worktrees/herder-v1-implementation/agent-herder/.tmp/v001",
+          "run_host": "roomhacker-server-100"
+        },
+        "owner": "01a1b31d-7d15-7411-87f3-4fd0baf7cc0e"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T02:08:34+03:00",
+      "note": "",
+      "changes": {
+        "note": "Worker 01a1b31d-7d15-7411-87f3-4fd0baf7cc0e выполняет V001 в /home/roomhacker/.codex/worktrees/herder-v1-implementation/agent-herder. Независимый Overseer 01a1b31d-8b79-7462-8001-a701cf0f7520: после V001 сначала V002, затем V003 (clients) параллельно V004 (core); не два writer core одновременно. Рекомендация принята. Реальный кандидат primary client codex-cli 0.162.1, поддержка расширений ещё не доказана."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T02:49:16+03:00",
+      "note": "Принят результат; remote main подтверждён ls-remote. Worktree сохранён для дальнейшей работы.",
+      "changes": {
+        "status": "done",
+        "worker": null,
+        "result": "rmcp 3.9.0 и Rust 1.96.1 закреплены; отдельный stdio процесс прошёл server/discover и tools/call с resultType=complete. Код опубликован origin/main 213ad40d5e432f1e4a8432ea3d1eb174d4dc08af; запись review-evidence/v001-wire-probe.jsonl. Tasks, Skills, subscriptions, native client и persistence не проверены."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "worker": null,
+  "result": "rmcp 3.9.0 и Rust 1.96.1 закреплены; отдельный stdio процесс прошёл server/discover и tools/call с resultType=complete. Код опубликован origin/main 213ad40d5e432f1e4a8432ea3d1eb174d4dc08af; запись review-evidence/v001-wire-probe.jsonl. Tasks, Skills, subscriptions, native client и persistence не проверены."
 }
