@@ -169,10 +169,28 @@ function asRecord(input: unknown): Record<string, unknown> {
   return input as Record<string, unknown>;
 }
 
-function joinedSchema(branches: z.ZodType[]): z.ZodType {
+function joinedSchema(branches: z.ZodType[], guidance?: (input: unknown) => string): z.ZodType {
   if (branches.length === 0) throw new Error("Empty consolidated tool");
   if (branches.length === 1) return branches[0]!;
-  return z.union([branches[0]!, branches[1]!, ...branches.slice(2)]);
+  return z.union([branches[0]!, branches[1]!, ...branches.slice(2)], guidance ? { error: issue => guidance(issue.input) } : undefined);
+}
+
+function validationGuidance(name: string, selector: Selector, entries: Entry[], input: unknown): string {
+  const args = input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : {};
+  const selected = entries.filter(entry => entry.choice.value === args[selector]);
+  const allowed = [...new Set(entries.map(entry => String(entry.choice.value)))].join(", ");
+  if (!selected.length) return `Invalid ${name}.${selector}. Choose one of: ${allowed}.`;
+  const issues = selected.map(entry => {
+    const params = { ...args }; delete params[selector];
+    if (entry.choice.keepSelector) params[selector] = args[selector];
+    const result = entry.captured.schema.safeParse(params);
+    return result.success ? [] : result.error.issues;
+  }).sort((a, b) => a.length - b.length)[0] ?? [];
+  const details = issues.map(issue => `${issue.path.length ? issue.path.join(".") + ": " : ""}${issue.message}`).join("; ");
+  const hint = name === "workspace" && args.action === "declare" && "paths" in args
+    ? ' Remove paths from declare; reserve paths separately with workspace action="reserve" (owner, cwd, paths).'
+    : " Check the selected operation's argument schema and retry.";
+  return `Invalid ${name} ${selector}=${String(args[selector])}: ${details || "arguments do not match the selected operation."}${hint}`;
 }
 
 function withSelector(schema: z.ZodType, fields: Record<string, z.ZodType>): z.ZodType {
@@ -275,7 +293,7 @@ export function withToolConsolidation(
     const canonical = captured.get(family.name);
 
     const branches: z.ZodType[] = entries.map(({ choice, captured: entry }) => {
-      const fields: Record<string, z.ZodType> = { [family.selector]: z.literal(choice.value) };
+      const fields: Record<string, z.ZodType> = { [family.selector]: family.name === "session_info" && choice.value === "agent" ? z.literal("agent").optional() : z.literal(choice.value) };
       if (choice.async !== undefined) {
         fields.async = choice.async ? z.literal(true) : z.literal(false).optional();
       } else if (family.choices.some(other => other.async !== undefined) && family.selector !== "async") {
@@ -294,10 +312,10 @@ export function withToolConsolidation(
       }
       branches.push(withSelector(canonical.schema, forbidden));
     }
-    const inputSchema = joinedSchema(branches);
+    const inputSchema = joinedSchema(branches, input => validationGuidance(family.name, family.selector, entries, input));
     const callback = async (input: unknown, context: unknown) => {
       const args = asRecord(input);
-      const selectorValue = args[family.selector];
+      const selectorValue = args[family.selector] ?? (family.name === "session_info" ? "agent" : undefined);
       const asyncValue = args.async === true;
       const candidates = entries.filter(({ choice }) => choice.value === selectorValue
         && (choice.async === undefined || choice.async === asyncValue));
@@ -318,7 +336,9 @@ export function withToolConsolidation(
       }
       throw new Error("Unsupported or invalid " + family.name + " " + family.selector);
     };
-    const description = "Use " + family.selector + " to select the operation; native ownership, permission "
+    const prefix = family.name === "session_info" ? "Read a session: default includes latest user and assistant messages; view=compact omits history. For a full transcript use export_transcript. "
+      : family.name === "workspace" ? "Declare a workspace first; reserve file paths separately using action=reserve with owner, cwd and paths. Do not pass paths to action=declare. " : "";
+    const description = prefix + "Use " + family.selector + " to select the operation; native ownership, permission "
       + "and confirmation checks remain enforced. "
       + entries.map(({ choice, captured: entry }) =>
         String(choice.value) + (choice.async === undefined ? "" : " async=" + choice.async)

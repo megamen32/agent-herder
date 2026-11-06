@@ -438,7 +438,31 @@ export function registerSessionTools(server: McpServer, deps: {
     const result = await readModelQuotas();
     return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
   });
-  server.registerTool("agent_info", { description: "Get detailed info about a specific session. Always shows model and last message. Select hostId and harness to read an existing session on another machine.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional() }), outputSchema: z.object({ session: sessionSchema.nullable() }) }, async (args) => {
+  server.registerTool("agent_info", { description: "Read a session with its latest user and assistant messages by default. Use view=messages for more messages or view=compact for metadata only. For the available full transcript call export_transcript; its result is a file, not the transcript text.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional(), view: z.enum(["recent", "compact", "messages"]).optional().default("recent"), limit: z.number().int().min(1).max(200).optional().default(20) }), outputSchema: z.object({ session: sessionSchema.nullable(), conversation: z.unknown().optional() }) }, async (args) => {
+    const respond = async (session: z.infer<typeof sessionSchema> | null, selected: Map<string, HarnessAdapter> | null, remoteMessages?: unknown) => {
+      if (!session) return { content: [{ type: "text" as const, text: `Session '${args.sessionId}' not found.` }], structuredContent: { session } };
+      if (args.view === "compact") return { content: [{ type: "text" as const, text: formatSession(session, true) }], structuredContent: { session, conversation: { status: "omitted", reason: "compact requested" } } };
+      const remoteSchema = z.array(z.object({ id: z.string(), role: z.enum(["user", "assistant", "tool", "system"]), text: z.string().optional(), parts: z.array(z.any()).default([]) }).passthrough());
+      const remote = remoteSchema.safeParse(remoteMessages);
+      let messages: Awaited<ReturnType<NonNullable<HarnessAdapter["getSessionMessages"]>>> = remote.success ? remote.data : null;
+      let complete: boolean | null = null;
+      try {
+        const adapter = selected?.get(session.harness);
+        if (adapter?.getSessionMessagesPage) {
+          const page = await adapter.getSessionMessagesPage(session.id, 200);
+          if (page?.sessionId === session.id) { messages = page.messages; complete = page.complete; }
+        } else if (adapter?.getSessionMessages) messages = await adapter.getSessionMessages(session.id, 200);
+      } catch { messages = null; }
+      const reversed = messages ? [...messages].reverse() : [];
+      const latestUser = reversed.find(message => message.role === "user") ?? null;
+      const latestAssistant = reversed.find(message => message.role === "assistant") ?? null;
+      const visibleMessages = args.view === "messages" ? messages?.slice(-args.limit) ?? [] : undefined;
+      const historyComplete = complete === true && args.view === "messages" && messages && messages.length <= args.limit ? true : complete === null ? null : false;
+      const conversation = { status: messages ? (historyComplete === true ? "available" : "partial") : "unavailable", historyComplete, latestUser, latestAssistant, ...(visibleMessages ? { messages: visibleMessages } : {}) };
+      const notice = messages ? args.view === "messages" ? `Available recent messages: ${JSON.stringify(visibleMessages)}\nHistory may be incomplete.` : `Latest user: ${latestUser?.text ?? "not found in the available history"}\nLatest assistant: ${latestAssistant?.text ?? "not found in the available history"}\nThis is not the full transcript.` : "Conversation text unavailable; do not infer the work or outcome from the title.";
+      const next = selected ? "For available full transcript: export_transcript with this sessionId and harness; read the returned file." : "Remote transcript is unavailable through this route. Read it on the owning host; do not infer its contents.";
+      return { content: [{ type: "text" as const, text: `${notice}\n${next}\n${formatSession(session, true)}` }], structuredContent: { session, conversation } };
+    };
     const requestedHost = normalizeHostId(args.hostId, hostname());
     if (requestedHost.toLowerCase() !== hostname().toLowerCase()) {
       const peer = (deps.routingPeers ?? fleetPeers()).find(candidate => candidate.hostId.toLowerCase() === requestedHost.toLowerCase());
@@ -449,23 +473,23 @@ export function registerSessionTools(server: McpServer, deps: {
       // native peer must never become a second way around that boundary.
       if (scope?.kind === "scoped") {
         const session = await agentInfoResult(new Map([[args.harness, scope.adapter]]), args);
-        return { content: [{ type: "text" as const, text: session ? formatSession(session, true) : `Session '${args.sessionId}' not found.` }], structuredContent: { session } };
+        return respond(session, new Map([[args.harness, scope.adapter]]));
       }
       // A personal Mac is selected explicitly here; this does not enroll it
       // into the default mesh or grant any delivery/activation capability.
       const transport = peerTransport ?? new FleetDirectTransport([peer]);
       if (!transport.readSession) throw new Error("remote_session_read_unavailable");
       const result = unwrapResult(await transport.readSession(`mcp:shell:${peer.hostId}:AgentHerder`, args.harness, args.sessionId));
-      const details = result.details as { session?: unknown } | undefined;
+      const details = result.details as { session?: unknown; messages?: unknown; historyUnavailable?: boolean } | undefined;
       const parsed = sessionSchema.safeParse(details?.session);
       if (result.hostId !== peer.hostId || !parsed.success || parsed.data.hostId !== peer.hostId || parsed.data.id !== args.sessionId || parsed.data.harness !== args.harness) throw new Error("remote_session_identity_mismatch");
-      return { content: [{ type: "text" as const, text: formatSession(parsed.data, true) }], structuredContent: { session: parsed.data } };
+      return respond(parsed.data, null, details?.historyUnavailable ? undefined : details?.messages);
     }
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
     if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);
     const session = await agentInfoResult(route.adapters, route.args);
-    return { content: [{ type: "text" as const, text: session ? formatSession(session, true) : `Session '${args.sessionId}' not found.` }], structuredContent: { session } };
+    return respond(session, route.adapters);
   });
   server.registerTool("session_identity", {
     description:

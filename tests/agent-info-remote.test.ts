@@ -23,3 +23,15 @@ it("reads a selected remote MiniMax session instead of returning a local null",a
  expect(readSession).not.toHaveBeenCalled();
  expect(adapterForSession).toHaveBeenLastCalledWith({hostId,harness:"minimax-code",nativeSessionId:"mvs_existing"});
 });
+
+it("returns the remote owner's latest messages without inventing history completeness", async () => {
+ const hostId="remote",session={id:"r1",harness:"codex",hostId,status:"idle",title:"test",cwd:"/tmp",lastActivity:"2026-01-01",needsPermission:false};
+ const readSession=vi.fn(async()=>({hostId,details:{session,messages:[{id:"u",role:"user",text:"remote request",parts:[]},{id:"a",role:"assistant",text:"remote response",parts:[]}]}}));
+ const registered=new Map<string,any>(),events=new HerderEventBus();
+ registerSessionTools({registerTool:(name:string,schema:any,handler:any)=>registered.set(name,{schema,handler})} as any,{adapters:new Map(),jobs:new HerderJobRegistry(events),events,routingPeers:[{hostId} as any],transport:{readSession} as any});
+ const tool=registered.get("agent_info");
+ const result=await tool.handler(tool.schema.inputSchema.parse({hostId,harness:"codex",sessionId:"r1"}));
+ expect(JSON.stringify(result.structuredContent)).toContain("remote request");
+ expect(JSON.stringify(result.structuredContent)).toContain("remote response");
+ expect(result.structuredContent.conversation.historyComplete).toBeNull();
+});
