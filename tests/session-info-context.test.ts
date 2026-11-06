@@ -37,6 +37,7 @@ it("recovers the latest human-readable messages when the recent window contains 
   const lines = [
     { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "actual request" }] } },
     { type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "actual answer" }] } },
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<codex_internal_context source=\"goal\">not a human request</codex_internal_context>" }] } },
   ];
   const adapter = { type: "codex", name: "fixture", getSession: async (id: string) => id === "s2" ? session : null,
     getSessionMessages: async () => [{ id: "tool", role: "assistant", parts: [{ type: "tool_call", name: "shell" }] }],
@@ -49,6 +50,7 @@ it("recovers the latest human-readable messages when the recent window contains 
     const result = await client.callTool({ name: "agent_info", arguments: { sessionId: "s2", harness: "codex" } });
     expect(JSON.stringify(result.structuredContent)).toContain("actual request");
     expect(JSON.stringify(result.structuredContent)).toContain("actual answer");
+    expect((result.structuredContent as any).conversation.latestUser.text).toBe("actual request");
     expect((result.structuredContent as any).conversation.latestAssistant.text).toBe("actual answer");
   } finally { await client.close(); await server.close(); }
 });

@@ -464,7 +464,8 @@ export function registerSessionTools(server: McpServer, deps: {
         } else if (adapter?.getSessionMessages) messages = await adapter.getSessionMessages(session.id, 200);
       } catch { messages = null; }
       const reversed = messages ? [...messages].reverse() : [];
-      let latestUser = reversed.find(message => message.role === "user" && !!message.text?.trim()) ?? null;
+      const humanText = (text: string | undefined) => !!text?.trim() && !/^\s*<codex_internal_context(?:\s|>)/i.test(text);
+      let latestUser = reversed.find(message => message.role === "user" && humanText(message.text)) ?? null;
       let latestAssistant = reversed.find(message => message.role === "assistant" && !!message.text?.trim()) ?? null;
       // The bounded recent window may consist entirely of tool calls. A
       // complete Codex owner transcript lets us recover actual text messages
@@ -481,7 +482,7 @@ export function registerSessionTools(server: McpServer, deps: {
                 const role = item.payload.role;
                 if (role !== "user" && role !== "assistant") continue;
                 const text = item.payload.content.filter((part: any) => part.type === (role === "user" ? "input_text" : "output_text")).map((part: any) => part.text || "").join("\n").trim();
-                if (text) { if (role === "user") userText = text; else assistantText = text; }
+                if (text) { if (role === "user" && humanText(text)) userText = text; else if (role === "assistant") assistantText = text; }
               } catch { /* An incomplete record does not establish a message. */ }
             }
             if (!latestUser && userText) latestUser = { id: "native-last-user", role: "user", text: userText, parts: [] };
