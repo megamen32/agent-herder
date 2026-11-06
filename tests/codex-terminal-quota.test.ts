@@ -14,3 +14,21 @@ it.each([
 ])("does not turn an ambiguous Codex state into quota recovery", turn => {
   expect(codexTerminalQuotaEvidence(turn,"gpt-6.1-sol")).toBeUndefined();
 });
+
+it("normalizes the exact Codex 429 retry-exhaustion envelope only for a failed native turn", () => {
+  const turn = {
+    id: "turn-429", status: "failed", completedAt: 1792699000,
+    items: [{ id: "input-429", type: "userMessage" }],
+    error: {
+      message: "exceeded retry limit, last status: 429 Too Many Requests, request id: 8e065465-a4f2-4918-b94a-30d138157787",
+      codexErrorInfo: { response_too_many_failed_attempts: { http_status_code: 429 } },
+    },
+  };
+  expect(codexTerminalQuotaEvidence(turn, "gpt-6.1-terra")).toMatchObject({
+    classification: "retry_limited", nativeTurnId: "turn-429", inputId: "input-429",
+  });
+  expect(codexTerminalQuotaEvidence({...turn, items: []}, "gpt-6.1-terra")).toBeUndefined();
+  expect(codexTerminalQuotaEvidence({...turn, status: "inProgress"}, "gpt-6.1-terra")).toBeUndefined();
+  expect(codexTerminalQuotaEvidence({...turn, error: {...turn.error,
+    codexErrorInfo: { response_too_many_failed_attempts: {http_status_code: 502}}}}, "gpt-6.1-terra")).toBeUndefined();
+});

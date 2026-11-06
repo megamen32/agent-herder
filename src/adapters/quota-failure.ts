@@ -6,7 +6,7 @@ export type TerminalQuotaFailure = {
   providerId: string;
   modelId: string;
   resetAt?: string;
-} & ({classification: "quota_exhausted"} | {classification: "provider_unavailable"});
+} & ({classification: "quota_exhausted"} | {classification: "provider_unavailable"} | {classification: "retry_limited"});
 
 export interface TerminalQuotaFailureEvidence {
   terminal: boolean;
@@ -63,6 +63,18 @@ export function terminalQuotaFailure(evidence: TerminalQuotaFailureEvidence): Te
     if (/^(?:HTTP[_ -]?)?(?:401|403|502)$/i.test(nonEmpty(evidence.errorCode) ?? "")
       || unsafeFailure.test(`${evidence.errorCode ?? ""} ${evidence.errorType ?? ""} ${evidence.modelErrorType ?? ""}`)) return undefined;
     return {classification:"provider_unavailable",status:evidence.status,nativeTurnId,inputId,providerId,modelId};
+  }
+  // Codex has exhausted its own retry budget on a confirmed upstream 429.
+  // It will NOT submit another request until an external continuation occurs.
+  // A bare 429 or an incomplete/unknown native turn must never be auto-replayed.
+  if (
+    providerId === "codex" && statusCode === 429 &&
+    evidence.errorCode === "response_too_many_failed_attempts" &&
+    typeof message === "string" &&
+    /^exceeded retry limit, last status: 429 Too Many Requests(?:, request id: [a-z0-9-]+)?$/i.test(message)
+  ) {
+    return { classification: "retry_limited", status: evidence.status,
+      nativeTurnId, inputId, providerId, modelId };
   }
   if (statusCode === 401 || statusCode === 403 || statusCode === 502) return undefined;
   if (/^(?:HTTP[_ -]?)?(?:401|403|502)$/i.test(nonEmpty(evidence.errorCode) ?? "")) return undefined;

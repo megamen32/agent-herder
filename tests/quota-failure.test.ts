@@ -57,6 +57,23 @@ describe("terminal quota evidence", () => {
     });
     expect(terminalQuotaFailure({ ...exact, statusCode: 429, errorCode: undefined, modelErrorType: undefined, errorMessage: "Too many requests" })).toBeUndefined();
   });
+  it("distinguishes an exhausted native Codex retry budget from generic 429 and full quota", () => {
+    const native = {
+      ...exact,
+      providerId: "codex", modelId: "gpt-6.1-terra",
+      statusCode: 429, modelErrorType: undefined,
+      errorCode: "response_too_many_failed_attempts",
+      errorMessage: "exceeded retry limit, last status: 429 Too Many Requests, request id: 8e065465-a4f2-4918-b94a-30d138157787",
+    };
+    expect(terminalQuotaFailure(native)).toMatchObject({ classification: "retry_limited",
+      nativeTurnId: exact.nativeTurnId, inputId: exact.inputId, modelId: "gpt-6.1-terra" });
+    for (const change of [
+      {providerId: "omniroute"}, {statusCode: 502}, {nativeTurnId: undefined},
+      {inputId: undefined}, {errorCode: "UNKNOWN_ERROR"}, {errorMessage: "Too many requests"},
+      {errorMessage: "network failed; exceeded retry limit, last status: 429 Too Many Requests"},
+    ]) expect(terminalQuotaFailure({...native, ...change})).toBeUndefined();
+  });
+
   it("does not mistake an HTTP status encoded in the provider code for quota evidence", () => {
     expect(terminalQuotaFailure({ ...exact, statusCode: undefined, errorCode: "HTTP_429", errorMessage: "Too many requests" })).toBeUndefined();
     expect(terminalQuotaFailure({ ...exact, statusCode: undefined, errorCode: "HTTP_429" })).toMatchObject({ classification: "quota_exhausted" });
