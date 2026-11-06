@@ -15,11 +15,11 @@
     "TaskManager SDK не даёт restart durability :: review-evidence/rmcp-task-manager.rs:222-223",
     "История ревизий вынесена из активных leaves, сохранена с контрольными суммами :: history/astra-review-before-v1-zero/SHA256.json"
   ],
-  "current_progress": "Нулевая ревизия v1 по прямой коррекции владельца. Исторические/отложенные листья вынесены из рабочего графа в архив. Исполнители ещё не запускались; передача исходной сессии для реализации. Оценки условны до native/client gates.",
+  "current_progress": "v1, нулевая ревизия готова к передаче: 159 V-листьев, только Codex/OpenCode/ZCode/ChatGPT/Z.ai, ноль исторических/deferred в графе. Архивы и зависимости проверены. Реализацию запускает исходная сессия по прямому поручению владельца; Astra исполнителей не запускала. Полный ETA условен до native/client gates.",
   "revisions": [],
   "external_waits": "",
   "slots": 4,
-  "updated_at": "2026-11-07T01:52:47+03:00",
+  "updated_at": "2026-11-07T01:59:46+03:00",
   "tasks": [
     {
       "id": "V001",

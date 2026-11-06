@@ -11,3 +11,6 @@
 Сначала SDK/primary-client gates и конфигурация; не считай rmcp TaskManager готовой persistent реализацией. Negative gate не PASS: запиши факт, добавь конкретный <=60-минутный slice, пересчитай зависимости/ETA. Rust + pure core/stateful ports, 14 typed tools, один canonical owner, один target runner; UNKNOWN не повторять. Полный cutover/legacy removal/install/native и independent consumer proof входят в v1. Не запускай отложенные adapters.
 
 Astra не выполняла продуктовую реализацию, native sends, deployments или создание исполнителей. Проверены документы, граф, диапазоны, архивы и расписания. Сумма 76,5–145,8 ч условна; 4 исполнителя: 27,9–52,8 рабочего часа расписания без резерва, 7–13 рабочих дней с указанным резервом/допущениями. Не объявлять эти числа гарантированным сроком при непроверенном native API.
+
+Чистая страница v1: https://lhc.bezrabotnyi.com/agent-herder/plan-20261107-0201-32b478c1739c91878719ddcd/
+Старая публичная страница сохранена как история; новую реализацию вести только по этой странице и V-листьям.
