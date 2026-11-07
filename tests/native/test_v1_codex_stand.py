@@ -69,6 +69,21 @@ class ManifestTest(unittest.TestCase):
                 stand.main()
             spawn.assert_not_called()
 
+    def test_bin_transport_uses_exact_codex_and_no_socket(self):
+        env = stand.adapter_transport('bin', '/fixture/codex', '/fixture/codex.sock', '/fixture/work', '/fixture/home')
+        self.assertEqual(env['AHAP_CODEX_BIN'], '/fixture/codex')
+        self.assertNotIn('AHAP_CODEX_SOCKET', env)
+        self.assertEqual(env['AHAP_CODEX_CWD'], '/fixture/work')
+        self.assertEqual(env['CODEX_HOME'], '/fixture/home')
+
+    def test_create_rejection_is_distinct_from_unknown(self):
+        task = {'status': 'completed', 'result': {'structuredContent': {
+            'code': 'create_not_sent', 'create': {'effect': 'none'}, 'prompt': {'effect': 'none'}}}}
+        self.assertEqual(stand.classify_create(task), 'NOT_SENT')
+        task['result']['structuredContent']['prompt']['effect'] = 'unknown'
+        self.assertEqual(stand.classify_create(task), 'UNKNOWN')
+        self.assertEqual(stand.classify_create({'status': 'failed'}), 'UNKNOWN')
+
     def test_invalid_manifest_identity_or_missing_native_pin_refused(self):
         self.manifest['source_commit'] = 'not-a-commit'; self.save()
         self.args.manifest_sha256 = digest(self.path)
