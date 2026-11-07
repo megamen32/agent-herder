@@ -13,7 +13,7 @@
     "maximum": 60
   },
   "kind": "task",
-  "status": "running",
+  "status": "done",
   "owner": "01a1b344-c7a2-7e93-a69e-9221be461b3b",
   "wave": 1,
   "note": "v1, нулевая ревизия. Дорожка core; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
@@ -22,7 +22,7 @@
   "created_at": "2026-11-07T01:52:18+03:00",
   "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
   "harness": "codex",
-  "updated_at": "2026-11-07T02:50:53+03:00",
+  "updated_at": "2026-11-07T02:54:31+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:18+03:00",
@@ -77,14 +77,19 @@
       },
       "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T02:54:31+03:00",
+      "note": "V002 принят по wire transcript; production не проверен.",
+      "changes": {
+        "status": "done",
+        "worker": null,
+        "result": "rmcp 3.9.0 stdio: Task get/update/cancel, skills/list/get/read и subscription проверены; tasks/list и tasks/result отсутствуют. Проверка client capability до создания задачи обязательна: SDK проверяет слишком поздно. TaskManager in-memory, durability и реальный клиент не доказаны. Transcript и воспроизводимый probe опубликованы e08e2007."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
     }
   ],
-  "worker": {
-    "id": "01a1b344-c7a2-7e93-a69e-9221be461b3b",
-    "branch": "HEAD",
-    "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-implementation/agent-herder",
-    "registered_at": "2026-11-07T02:50:53+03:00",
-    "run_dir": "/home/roomhacker/.codex/worktrees/herder-v1-implementation/agent-herder/.tmp/v002",
-    "run_host": "roomhacker-server-100"
-  }
+  "worker": null,
+  "result": "rmcp 3.9.0 stdio: Task get/update/cancel, skills/list/get/read и subscription проверены; tasks/list и tasks/result отсутствуют. Проверка client capability до создания задачи обязательна: SDK проверяет слишком поздно. TaskManager in-memory, durability и реальный клиент не доказаны. Transcript и воспроизводимый probe опубликованы e08e2007."
 }

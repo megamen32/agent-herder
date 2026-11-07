@@ -13,16 +13,16 @@
     "maximum": 45
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "01a1b347-ebb5-7f60-ac2f-cedabcdbf5d5",
   "wave": 1,
   "note": "v1, нулевая ревизия. Дорожка core; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
   "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
   "id": "V004",
   "created_at": "2026-11-07T01:52:19+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
   "harness": "codex",
-  "updated_at": "2026-11-07T01:52:19+03:00",
+  "updated_at": "2026-11-07T02:57:09+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:19+03:00",
@@ -50,6 +50,46 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T02:53:27+03:00",
+      "note": "Независимый config в отдельном worktree; V002 проверяет SDK без пересечения файлов.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "owner": "01a1b347-ebb5-7f60-ac2f-cedabcdbf5d5"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T02:53:28+03:00",
+      "note": "Worker 01a1b347-ebb5-7f60-ac2f-cedabcdbf5d5 registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b347-ebb5-7f60-ac2f-cedabcdbf5d5",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder",
+          "registered_at": "2026-11-07T02:53:28+03:00",
+          "run_dir": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder/.tmp/v004",
+          "run_host": "roomhacker-server-100"
+        }
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T02:57:09+03:00",
+      "note": "Изолированная работа включена в origin/main; тесты подтверждены после интеграции.",
+      "changes": {
+        "status": "done",
+        "worker": null,
+        "result": "Типизированная конфигурация nodes, instances и profiles с проверкой уникальности и диагностикой полей опубликована c92b1300; 4 теста прошли на объединённом коде. Интеграция в daemon не проверена."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
     }
-  ]
+  ],
+  "worker": null,
+  "result": "Типизированная конфигурация nodes, instances и profiles с проверкой уникальности и диагностикой полей опубликована c92b1300; 4 теста прошли на объединённом коде. Интеграция в daemon не проверена."
 }

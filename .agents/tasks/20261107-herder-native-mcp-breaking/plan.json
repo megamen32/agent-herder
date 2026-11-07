@@ -2,7 +2,7 @@
   "title": "Agent Herder v1 — нулевая ревизия: Codex, OpenCode, ZCode, ChatGPT, Z.ai",
   "goal": "Поставить breaking Agent Herder v1 для пяти сред: Codex, OpenCode, ZCode, ChatGPT, Z.ai; durable MCP, coordination и offline ownership. Остальные адаптеры — следующее обновление.",
   "business_result": "14 общих инструментов, 5 прямых adapters, восстановление creator/sender и свободного владельца без MCP; installed consumer proof и удаление legacy.",
-  "current_progress": "V001 опубликован в origin/main 213ad40d; stdio wire transcript сохранён. V002 выполняет исполнитель 01a1b344-c7a2-7e93-a69e-9221be461b3b. V003 и V004 следуют после проверки SDK; реальный клиент и установленный результат ещё не подтверждены. Terra — Lead, Astra — советчик; cadence активен.",
+  "current_progress": "V001, V002 и V004 опубликованы: main c92b1300. SDK probe подтверждает Tasks/Skills/listen на локальном процессе и выявил отсутствие durability; 4 теста конфигурации прошли. V003 проверяет реальный Codex-клиент, V005 реализует адреса и capabilities в другом worktree. Установленный сервис и потребитель не подтверждены.",
   "mode": "fullcycle",
   "slots": 4,
   "recon": [
@@ -12,7 +12,7 @@
     "История ревизий вынесена из активных leaves, сохранена с контрольными суммами :: history/astra-review-before-v1-zero/SHA256.json"
   ],
   "acceptance_scenario": "Один immutable v1 candidate: Codex/OpenCode/ZCode/ChatGPT/Z.ai native lanes; реальные consumers; два Codex/OpenCode/browser profiles и две ноды; creator/sender после compaction; UNKNOWN no replay и HumanStop; offline claim/release receipt при выключенном MCP; migration/legacy removal; Linux/macOS installed acceptance. Остальные adapters не входят в v1.",
-  "updated_at": "2026-11-07T02:51:46+03:00",
+  "updated_at": "2026-11-07T03:02:23+03:00",
   "journal": [
     {
       "at": "2026-11-06T23:49:13.993699+00:00",
@@ -26,6 +26,11 @@
       "at": "2026-11-07T02:50:39+03:00",
       "reason": "Передача руководства и первая консультация",
       "summary": "07.11.2026 02:48–02:49 МСК: Astra подтвердила сохранять wire receipt, закрыть V001 и продолжать V002; origin/main 213ad40d подтверждён. Следующий совет не позднее 03:48 МСК; cadence активен, ближайший вызов 03:03 МСК."
+    },
+    {
+      "at": "2026-11-07T03:02:23+03:00",
+      "reason": "Консультация Astra 07.11.2026 около 03:00 МСК: отрицательный V003",
+      "summary": "Не делать bridge и не понижать протокол. Установить обязательный consumer и проверить официальный release максимум одним изолированным кандидатом; оценка совместимости только по реальному wire trace. Независимое core продолжается, V010 остаётся заблокирован клиентским gate."
     }
   ]
 }

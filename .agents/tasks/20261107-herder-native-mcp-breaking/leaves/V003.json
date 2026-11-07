@@ -13,16 +13,16 @@
     "maximum": 60
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "blocked",
+  "owner": "01a1b349-340a-7563-92fa-c70c41f0b68e",
   "wave": 1,
   "note": "v1, нулевая ревизия. Дорожка clients; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
   "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
   "id": "V003",
   "created_at": "2026-11-07T01:52:19+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
   "harness": "codex",
-  "updated_at": "2026-11-07T01:52:19+03:00",
+  "updated_at": "2026-11-07T03:00:38+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:19+03:00",
@@ -50,6 +50,48 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T02:54:52+03:00",
+      "note": "Реальный клиент Codex проверяется отдельно от SDK; V004 идёт в другом worktree.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "owner": "01a1b349-340a-7563-92fa-c70c41f0b68e"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T02:54:53+03:00",
+      "note": "Worker 01a1b349-340a-7563-92fa-c70c41f0b68e registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b349-340a-7563-92fa-c70c41f0b68e",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-implementation/agent-herder",
+          "registered_at": "2026-11-07T02:54:53+03:00",
+          "run_dir": "/home/roomhacker/.codex/worktrees/herder-v1-implementation/agent-herder/.tmp/v003",
+          "run_host": "roomhacker-server-100"
+        }
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:00:38+03:00",
+      "note": "Gate не пройден: публикация trace не является приёмкой клиента.",
+      "changes": {
+        "status": "blocked",
+        "worker": null,
+        "blocker": "Codex CLI 0.162.1 начинает initialize 2025-06-18, не server/discover 2026-07-28; Tasks не объявлены. Проверить доступное поддерживаемое обновление клиента и согласовать архитектурное решение при необходимости.",
+        "result": "Wire trace реального codex exec опубликован в 1c1fbb57; новая revision, Tasks, Skills и session identity не подтверждены."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
     }
-  ]
+  ],
+  "worker": null,
+  "blocker": "Codex CLI 0.162.1 начинает initialize 2025-06-18, не server/discover 2026-07-28; Tasks не объявлены. Проверить доступное поддерживаемое обновление клиента и согласовать архитектурное решение при необходимости.",
+  "result": "Wire trace реального codex exec опубликован в 1c1fbb57; новая revision, Tasks, Skills и session identity не подтверждены."
 }

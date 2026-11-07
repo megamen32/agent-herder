@@ -13,16 +13,16 @@
     "maximum": 45
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "01a1b34b-c933-77f1-89f4-cb4313cab9e9",
   "wave": 1,
   "note": "v1, нулевая ревизия. Дорожка core; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
   "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
   "id": "V005",
   "created_at": "2026-11-07T01:52:19+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
   "harness": "codex",
-  "updated_at": "2026-11-07T01:52:19+03:00",
+  "updated_at": "2026-11-07T03:00:40+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:19+03:00",
@@ -50,6 +50,46 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T02:57:42+03:00",
+      "note": "Типы адресов поверх опубликованного V004; клиентский gate параллелен.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "owner": "01a1b34b-c933-77f1-89f4-cb4313cab9e9"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T02:57:45+03:00",
+      "note": "Worker 01a1b34b-c933-77f1-89f4-cb4313cab9e9 registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b34b-c933-77f1-89f4-cb4313cab9e9",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder",
+          "registered_at": "2026-11-07T02:57:45+03:00",
+          "run_dir": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder/.tmp/v005",
+          "run_host": "roomhacker-server-100"
+        }
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:00:40+03:00",
+      "note": "Работа включена в origin/main.",
+      "changes": {
+        "status": "done",
+        "worker": null,
+        "result": "Адреса node/instance/session и раздельные support/availability/authorization опубликованы d5d1e145; 7 тестов прошли, live integration не проверена."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
     }
-  ]
+  ],
+  "worker": null,
+  "result": "Адреса node/instance/session и раздельные support/availability/authorization опубликованы d5d1e145; 7 тестов прошли, live integration не проверена."
 }
