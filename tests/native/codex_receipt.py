@@ -18,6 +18,29 @@ import urllib.parse
 import uuid
 
 
+def validate_receipts(receipts, readbacks):
+    if len(receipts) != 2:
+        return False
+    threads = [row.get('native_thread_id') for row in receipts]
+    turns = [row.get('native_turn_id') for row in receipts]
+    inputs = [row.get('input') for row in receipts]
+    if any(not isinstance(x, str) or not x for x in threads + turns + inputs):
+        return False
+    if len(set(threads)) != 2 or len(set(turns)) != 2 or len(set(inputs)) != 2:
+        return False
+    for row in receipts:
+        thread = readbacks.get(row['native_thread_id'])
+        if not isinstance(thread, dict) or thread.get('id') != row['native_thread_id']:
+            return False
+        turns_in_thread = thread.get('turns')
+        if not isinstance(turns_in_thread, list):
+            return False
+        turn = next((item for item in turns_in_thread if isinstance(item, dict) and item.get('id') == row['native_turn_id']), None)
+        if not turn or row['input'] not in json.dumps(turn) or 'HERDER_TEST_MODEL_OK' not in json.dumps(turn):
+            return False
+    return True
+
+
 def main():
     if len(sys.argv) != 2 or not Path(sys.argv[1]).is_absolute():
         raise ValueError('pass the absolute path to the real codex binary')
@@ -82,14 +105,14 @@ def main():
         call('initialize', {'clientInfo': {'name': 'herder-native-receipt-test', 'version': '1'},
                             'capabilities': {'experimentalApi': True}})
         send({'method': 'initialized', 'params': {}})
-        created = call('thread/start', {'cwd': str(home), 'model': 'herder-test',
-                                        'approvalPolicy': 'never', 'sandbox': 'read-only'})
-        thread_id = created['thread']['id']
-        if not thread_id:
-            raise RuntimeError('missing native thread receipt; no replay')
         before = stats()
         receipts = []
         for _ in range(2):
+            created = call('thread/start', {'cwd': str(home), 'model': 'herder-test',
+                                            'approvalPolicy': 'never', 'sandbox': 'read-only'})
+            thread_id = created['thread']['id']
+            if not thread_id:
+                raise RuntimeError('missing native thread receipt; no replay')
             token = 'HERDER_NATIVE_INPUT_' + uuid.uuid4().hex
             started = call('turn/start', {'threadId': thread_id,
                                           'input': [{'type': 'text', 'text': token}],
@@ -102,21 +125,16 @@ def main():
                                  and e.get('params', {}).get('turn', {}).get('id') == turn_id)
             if completed['params']['turn']['status'] != 'completed':
                 raise RuntimeError('native turn did not complete: ' + str(completed['params']['turn']))
-            receipts.append({'input': token, 'native_turn_id': turn_id})
-        if receipts[0]['input'] == receipts[1]['input'] or receipts[0]['native_turn_id'] == receipts[1]['native_turn_id']:
-            raise RuntimeError('inputs and native turn IDs must be distinct')
-        readback = call('thread/read', {'threadId': thread_id, 'includeTurns': True})['thread']
-        turns = {turn['id']: turn for turn in readback['turns']}
-        for receipt in receipts:
-            turn = turns.get(receipt['native_turn_id'])
-            if not turn or receipt['input'] not in json.dumps(turn) or 'HERDER_TEST_MODEL_OK' not in json.dumps(turn):
-                raise RuntimeError('exact native turn/input/answer missing from thread/read')
+            receipts.append({'input': token, 'native_thread_id': thread_id, 'native_turn_id': turn_id})
+        readbacks = {row['native_thread_id']: call('thread/read', {'threadId': row['native_thread_id'], 'includeTurns': True})['thread'] for row in receipts}
+        if not validate_receipts(receipts, readbacks):
+            raise RuntimeError('two distinct exact native threads, inputs and answers not proven')
         after = stats()
         if after - before < 2:
             raise RuntimeError('fixture did not observe both model requests')
         print(json.dumps({'scope': 'direct codex app-server; not Herder MCP or E001/E002',
                           'native_version': version, 'native_executable_sha256': digest,
-                          'native_thread_id': thread_id, 'receipts': receipts,
+                          'receipts': receipts,
                           'fixture_requests': after - before, 'readback': 'confirmed'}))
     finally:
         proc.terminate()

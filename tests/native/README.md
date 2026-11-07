@@ -36,9 +36,9 @@ python3 tests/native/launch.py -- /usr/bin/python3 "$PWD/tests/native/codex_rece
 ```
 
 The check starts a real Codex app-server in the temporary profile, configured
-only with the loopback test-model provider. It creates one native thread and
-two turns with distinct input markers, then correlates each returned native
-turn ID to its input and fixture answer via `thread/read`. It checks the model
+only with the loopback test-model provider. It creates two distinct native
+threads with one turn each and distinct input markers, then correlates each
+thread ID and turn ID to its input and fixture answer via `thread/read`. It checks the model
 request counter and reports the executable version and digest. A missing or
 uncertain receipt fails without resubmission. Input markers are test data,
 not native idempotency keys. This direct check does not exercise Herder MCP,
