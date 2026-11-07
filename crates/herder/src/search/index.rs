@@ -8,6 +8,8 @@
 
 use crate::domain::address::SessionAddress;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use serde::Serialize;
+use std::num::NonZeroUsize;
 
 /// Result of applying one session's current source snapshot to the index.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,11 +20,37 @@ pub enum IndexOutcome {
     Updated,
 }
 
+/// Completeness of the ACL-visible indexed corpus for a search page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchCoverage {
+    Complete,
+    Partial,
+}
+
+/// One authorized session match for a browser search feed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SearchHit {
+    pub session: SessionAddress,
+    pub excerpt: String,
+}
+
+/// A bounded page whose hit count and pagination are scoped to the ACL allowlist.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SearchPage {
+    pub hits: Vec<SearchHit>,
+    /// Exact for complete coverage; a lower bound when coverage is partial.
+    pub total_hits: usize,
+    pub next_offset: Option<usize>,
+    pub coverage: SearchCoverage,
+}
+
 /// Replace one session's FTS document when its complete snapshot ID changes.
 ///
 /// The store migration must provide an FTS5 table named `session_search_fts`
 /// with `session_ref UNINDEXED, content` columns, and a table named
-/// `session_search_state` with `session_ref PRIMARY KEY, snapshot_id` columns.
+/// `session_search_state` with `session_ref PRIMARY KEY, snapshot_id, and
+/// content_truncated INTEGER CHECK (content_truncated IN (0,1))` columns.
 ///
 /// `address` is serialized as the complete node/instance/native session
 /// identity. `snapshot_id` comes from the transcript snapshot and identifies
@@ -34,6 +62,7 @@ pub fn update_session(
     address: &SessionAddress,
     snapshot_id: &str,
     content: &str,
+    content_truncated: bool,
 ) -> rusqlite::Result<IndexOutcome> {
     if address.instance.node.0.is_empty()
         || address.instance.instance_id.is_empty()
@@ -48,19 +77,20 @@ pub fn update_session(
             "snapshot_id must not be empty".into(),
         ));
     }
-    let session_ref = serde_json::to_string(address)
-        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    let session_ref = canonical_session_ref(address)?;
 
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let saved_snapshot = transaction
+    let saved_state = transaction
         .query_row(
-            "SELECT snapshot_id FROM session_search_state WHERE session_ref = ?1",
+            "SELECT snapshot_id, content_truncated FROM session_search_state WHERE session_ref = ?1",
             [&session_ref],
-            |row| row.get::<_, String>(0),
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)),
         )
         .optional()?;
 
-    if saved_snapshot.as_deref() == Some(snapshot_id) {
+    if saved_state.as_ref().is_some_and(|(saved_id, truncated)| {
+        saved_id == snapshot_id && *truncated == content_truncated
+    }) {
         transaction.commit()?;
         return Ok(IndexOutcome::Unchanged);
     }
@@ -74,13 +104,131 @@ pub fn update_session(
         params![session_ref, content],
     )?;
     transaction.execute(
-        "INSERT INTO session_search_state (session_ref, snapshot_id) VALUES (?1, ?2) \
-         ON CONFLICT(session_ref) DO UPDATE SET snapshot_id = excluded.snapshot_id",
-        params![session_ref, snapshot_id],
+        "INSERT INTO session_search_state (session_ref, snapshot_id, content_truncated) \
+         VALUES (?1, ?2, ?3) ON CONFLICT(session_ref) DO UPDATE SET \
+         snapshot_id = excluded.snapshot_id, content_truncated = excluded.content_truncated",
+        params![session_ref, snapshot_id, content_truncated],
     )?;
     transaction.commit()?;
 
     Ok(IndexOutcome::Updated)
+}
+
+/// Search only sessions already authorized by the caller's ACL decision.
+///
+/// The allowlist is applied in SQLite before both count and pagination. Source
+/// coverage is supplied by the caller; any authorized transcript marked
+/// truncated also makes the returned coverage partial.
+pub fn search_page(
+    connection: &Connection,
+    query: &str,
+    acl_allowed_sessions: &[SessionAddress],
+    source_coverage_complete: bool,
+    offset: usize,
+    limit: NonZeroUsize,
+) -> rusqlite::Result<SearchPage> {
+    let allowed_refs = acl_allowed_sessions
+        .iter()
+        .map(canonical_session_ref)
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let coverage =
+        if !source_coverage_complete || has_truncated_allowed_session(connection, &allowed_refs)? {
+            SearchCoverage::Partial
+        } else {
+            SearchCoverage::Complete
+        };
+
+    if allowed_refs.is_empty() {
+        return Ok(SearchPage {
+            hits: Vec::new(),
+            total_hits: 0,
+            next_offset: None,
+            coverage,
+        });
+    }
+
+    let allowed_json = serde_json::to_string(&allowed_refs)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    let total_hits: i64 = connection.query_row(
+        "SELECT count(*) FROM session_search_fts \
+         WHERE session_search_fts MATCH ?1 \
+           AND session_ref IN (SELECT value FROM json_each(?2))",
+        params![query, allowed_json],
+        |row| row.get(0),
+    )?;
+    let total_hits = usize::try_from(total_hits).map_err(|_| {
+        rusqlite::Error::InvalidParameterName("search hit count is out of range".into())
+    })?;
+    let sql_limit = i64::try_from(limit.get()).map_err(|_| {
+        rusqlite::Error::InvalidParameterName("search limit is out of range".into())
+    })?;
+    let sql_offset = i64::try_from(offset).map_err(|_| {
+        rusqlite::Error::InvalidParameterName("search offset is out of range".into())
+    })?;
+
+    let mut statement = connection.prepare(
+        "SELECT session_ref, snippet(session_search_fts, 1, '‹', '›', '…', 24) \
+         FROM session_search_fts \
+         WHERE session_search_fts MATCH ?1 \
+           AND session_ref IN (SELECT value FROM json_each(?2)) \
+         ORDER BY bm25(session_search_fts), session_ref LIMIT ?3 OFFSET ?4",
+    )?;
+    let rows = statement.query_map(params![query, allowed_json, sql_limit, sql_offset], |row| {
+        let session_ref: String = row.get(0)?;
+        let session: SessionAddress = serde_json::from_str(&session_ref).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                session_ref.len(),
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?;
+        Ok(SearchHit {
+            session,
+            excerpt: row.get(1)?,
+        })
+    })?;
+    let hits = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    let next_offset = offset
+        .checked_add(hits.len())
+        .filter(|next| *next < total_hits);
+
+    Ok(SearchPage {
+        hits,
+        total_hits,
+        next_offset,
+        coverage,
+    })
+}
+
+fn canonical_session_ref(address: &SessionAddress) -> rusqlite::Result<String> {
+    if address.instance.node.0.is_empty()
+        || address.instance.instance_id.is_empty()
+        || address.native_session_id.is_empty()
+    {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "session address must include node, instance, and native session id".into(),
+        ));
+    }
+    serde_json::to_string(address)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
+}
+
+fn has_truncated_allowed_session(
+    connection: &Connection,
+    allowed_refs: &[String],
+) -> rusqlite::Result<bool> {
+    if allowed_refs.is_empty() {
+        return Ok(false);
+    }
+    let allowed_json = serde_json::to_string(allowed_refs)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM session_search_state \
+         WHERE content_truncated = 1 \
+           AND session_ref IN (SELECT value FROM json_each(?1)))",
+        [allowed_json],
+        |row| row.get(0),
+    )
 }
 
 #[cfg(test)]
@@ -88,6 +236,7 @@ mod tests {
     use super::{IndexOutcome, update_session};
     use crate::domain::address::{InstanceRef, NodeRef, SessionAddress};
     use rusqlite::{Connection, OptionalExtension};
+    use std::num::NonZeroUsize;
 
     fn address(node: &str, instance: &str, native: &str) -> SessionAddress {
         SessionAddress {
@@ -107,7 +256,8 @@ mod tests {
                      session_ref UNINDEXED, content, tokenize='unicode61');\
                  CREATE TABLE session_search_state (\
                      session_ref TEXT PRIMARY KEY NOT NULL,\
-                     snapshot_id TEXT NOT NULL) STRICT;",
+                     snapshot_id TEXT NOT NULL,\
+                     content_truncated INTEGER NOT NULL CHECK (content_truncated IN (0,1))) STRICT;",
             )
             .unwrap();
         connection
@@ -145,13 +295,27 @@ mod tests {
         let first = address("node-a", "instance-1", "same-native-id");
         let second = address("node-b", "instance-1", "same-native-id");
         assert_eq!(
-            update_session(&mut connection, &first, "snapshot-1", "alpha old").unwrap(),
+            update_session(&mut connection, &first, "snapshot-1", "alpha old", false).unwrap(),
             IndexOutcome::Updated
         );
-        update_session(&mut connection, &second, "snapshot-a", "bravo retained").unwrap();
+        update_session(
+            &mut connection,
+            &second,
+            "snapshot-a",
+            "bravo retained",
+            false,
+        )
+        .unwrap();
 
         assert_eq!(
-            update_session(&mut connection, &first, "snapshot-2", "alpha refreshed").unwrap(),
+            update_session(
+                &mut connection,
+                &first,
+                "snapshot-2",
+                "alpha refreshed",
+                false
+            )
+            .unwrap(),
             IndexOutcome::Updated
         );
 
@@ -185,10 +349,24 @@ mod tests {
     fn equal_snapshot_id_skips_reindex_even_if_caller_content_differs() {
         let mut connection = connection();
         let session = address("node-a", "profile-1", "native-1");
-        update_session(&mut connection, &session, "snapshot-v1", "initial words").unwrap();
+        update_session(
+            &mut connection,
+            &session,
+            "snapshot-v1",
+            "initial words",
+            false,
+        )
+        .unwrap();
 
         assert_eq!(
-            update_session(&mut connection, &session, "snapshot-v1", "different words").unwrap(),
+            update_session(
+                &mut connection,
+                &session,
+                "snapshot-v1",
+                "different words",
+                false
+            )
+            .unwrap(),
             IndexOutcome::Unchanged
         );
         assert_eq!(
@@ -205,7 +383,14 @@ mod tests {
     fn failed_snapshot_write_rolls_back_the_fts_replacement() {
         let mut connection = connection();
         let session = address("node-a", "profile-1", "native-1");
-        update_session(&mut connection, &session, "snapshot-1", "before update").unwrap();
+        update_session(
+            &mut connection,
+            &session,
+            "snapshot-1",
+            "before update",
+            false,
+        )
+        .unwrap();
         connection
             .execute_batch(
                 "CREATE TRIGGER reject_search_snapshot BEFORE UPDATE ON session_search_state \
@@ -213,7 +398,16 @@ mod tests {
             )
             .unwrap();
 
-        assert!(update_session(&mut connection, &session, "snapshot-2", "after update").is_err());
+        assert!(
+            update_session(
+                &mut connection,
+                &session,
+                "snapshot-2",
+                "after update",
+                false
+            )
+            .is_err()
+        );
         assert_eq!(
             indexed_content(&connection, &session).as_deref(),
             Some("before update")
@@ -229,11 +423,136 @@ mod tests {
         let mut connection = connection();
         let mut incomplete = address("node-a", "profile-1", "native-1");
         incomplete.instance.instance_id.clear();
-        assert!(update_session(&mut connection, &incomplete, "snapshot-v1", "text").is_err());
+        assert!(
+            update_session(&mut connection, &incomplete, "snapshot-v1", "text", false).is_err()
+        );
 
         let session = address("node-a", "profile-2", "native-2");
-        assert!(update_session(&mut connection, &session, "", "text").is_err());
+        assert!(update_session(&mut connection, &session, "", "text", false).is_err());
         assert_eq!(indexed_content(&connection, &session), None);
         assert_eq!(saved_snapshot(&connection, &session), None);
+    }
+
+    #[test]
+    fn search_applies_acl_before_count_limit_and_offset() {
+        let mut connection = connection();
+        let allowed_a = address("node-a", "instance-1", "session-a");
+        let allowed_b = address("node-b", "instance-1", "session-b");
+        let hidden = address("node-0-secret", "instance-secret", "hidden-session");
+        update_session(&mut connection, &allowed_a, "snap-a", "needle alpha", false).unwrap();
+        update_session(&mut connection, &allowed_b, "snap-b", "needle bravo", false).unwrap();
+        update_session(
+            &mut connection,
+            &hidden,
+            "snap-hidden",
+            "needle needle needle needle needle private",
+            false,
+        )
+        .unwrap();
+
+        let first = super::search_page(
+            &connection,
+            "needle",
+            &[allowed_a.clone(), allowed_b.clone()],
+            true,
+            0,
+            NonZeroUsize::new(1).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(first.total_hits, 2);
+        assert_eq!(first.hits.len(), 1);
+        assert_eq!(first.next_offset, Some(1));
+        assert!([&allowed_a, &allowed_b].contains(&&first.hits[0].session));
+        assert_eq!(first.coverage, super::SearchCoverage::Complete);
+
+        let second = super::search_page(
+            &connection,
+            "needle",
+            &[allowed_a.clone(), allowed_b.clone()],
+            true,
+            1,
+            NonZeroUsize::new(1).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(second.total_hits, 2);
+        assert_eq!(second.hits.len(), 1);
+        assert_eq!(second.next_offset, None);
+        assert!([&allowed_a, &allowed_b].contains(&&second.hits[0].session));
+        assert_ne!(first.hits[0].session, second.hits[0].session);
+    }
+
+    #[test]
+    fn coverage_is_partial_for_incomplete_sources_or_truncated_allowed_transcripts() {
+        let mut connection = connection();
+        let truncated = address("node-a", "instance-1", "truncated-session");
+        let complete = address("node-b", "instance-1", "complete-session");
+        update_session(
+            &mut connection,
+            &truncated,
+            "snap-truncated",
+            "unrelated transcript",
+            true,
+        )
+        .unwrap();
+        update_session(
+            &mut connection,
+            &complete,
+            "snap-complete",
+            "needle complete",
+            false,
+        )
+        .unwrap();
+
+        let transcript_partial = super::search_page(
+            &connection,
+            "needle",
+            &[truncated.clone(), complete.clone()],
+            true,
+            0,
+            NonZeroUsize::new(5).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(transcript_partial.total_hits, 1);
+        assert_eq!(transcript_partial.coverage, super::SearchCoverage::Partial);
+
+        let source_partial = super::search_page(
+            &connection,
+            "needle",
+            &[complete],
+            false,
+            0,
+            NonZeroUsize::new(5).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(source_partial.total_hits, 1);
+        assert_eq!(source_partial.coverage, super::SearchCoverage::Partial);
+    }
+
+    #[test]
+    fn empty_acl_allowlist_returns_no_hits_or_count() {
+        let mut connection = connection();
+        let hidden = address("node-secret", "instance-secret", "hidden-session");
+        update_session(
+            &mut connection,
+            &hidden,
+            "snap-hidden",
+            "needle private",
+            false,
+        )
+        .unwrap();
+
+        let page = super::search_page(
+            &connection,
+            "needle",
+            &[],
+            true,
+            0,
+            NonZeroUsize::new(10).unwrap(),
+        )
+        .unwrap();
+        assert!(page.hits.is_empty());
+        assert_eq!(page.total_hits, 0);
+        assert_eq!(page.next_offset, None);
+        assert_eq!(page.coverage, super::SearchCoverage::Complete);
     }
 }
