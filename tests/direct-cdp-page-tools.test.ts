@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DirectCdpPageTools } from "../src/adapters/direct-cdp-page-tools.js";
 import type WebSocket from "ws";
 
@@ -39,6 +39,20 @@ function create(socket: FakeSocket, config: Record<string, unknown> = {}) {
 }
 
 describe("DirectCdpPageTools", () => {
+  it("bounds a websocket connection that never opens", async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new EventEmitter() as EventEmitter & { readyState:number; send:()=>void; close:()=>void };
+      socket.readyState=0; socket.send=()=>{}; socket.close=()=>{socket.readyState=3;};
+      const tools = create(socket as unknown as FakeSocket, { timeoutMs:100 });
+      let settled = false;
+      const call = tools.call("list_pages").catch(() => { settled=true; });
+      await vi.advanceTimersByTimeAsync(101);
+      expect(settled).toBe(true);
+      await call;
+      tools.close();
+    } finally { vi.useRealTimers(); }
+  });
   it("pins browser context and target and formats pages for the existing driver", async () => {
     const socket = new FakeSocket();
     const tools = create(socket);

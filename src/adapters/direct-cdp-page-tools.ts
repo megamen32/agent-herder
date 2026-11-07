@@ -66,14 +66,27 @@ export class DirectCdpPageTools implements ChromePageTools {
     this.connecting = new Promise<void>((resolve, reject) => {
       const socket = this.socketFactory(this.config.endpoint);
       this.socket = socket;
+      let settled = false;
+      const timer = setTimeout(() => {
+        fail(new Error("direct_cdp_connect_timeout"));
+        socket.close();
+      }, this.timeoutMs);
       const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         if (this.socket === socket) this.socket = undefined;
         reject(error);
       };
-      socket.on("open", () => resolve());
+      socket.on("open", () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve();
+      });
       socket.on("error", (error: Error) => fail(new Error(`direct_cdp_connect_failed:${error.message}`)));
       socket.on("message", (data: WebSocket.RawData) => this.onMessage(data.toString()));
-      socket.on("close", () => this.onClose());
+      socket.on("close", () => { fail(new Error("direct_cdp_connect_closed")); this.onClose(); });
     }).finally(() => { this.connecting = undefined; });
     return this.connecting;
   }
