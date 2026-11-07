@@ -479,3 +479,58 @@ describe("native provider rejection after first Send",()=>{
     expect(tools.calls.some(c=>c.name==="fill")).toBe(false);
   });
 });
+
+describe("first message on an explicitly pinned blank page", () => {
+  for (const site of ["chatgpt", "zai"] as const) {
+    it(site + " submits on the verified pin without opening or closing another page", async () => {
+      const tools = new NewChatPageFixture(site);
+      const result = await submitFirstChatMessage(tools, site, "owned fixture input", ACCOUNT, 9);
+      expect(result).toMatchObject({clicked:true, uncertain:false});
+      expect(tools.calls.some(call => call.name === "new_page" || call.name === "close_page")).toBe(false);
+      expect(tools.calls.filter(call => call.args.pageId !== undefined).every(call => call.args.pageId === 9)).toBe(true);
+    });
+    it(site + " preserves a pinned user draft without filling, clicking or closing", async () => {
+      const tools = new NewChatPageFixture(site);
+      tools.inheritedDraft = true;
+      const result = await submitFirstChatMessage(tools, site, "owned fixture input", ACCOUNT, 9);
+      expect(result).toMatchObject({clicked:false, uncertain:false});
+      expect(tools.calls.some(call => ["new_page", "fill", "close_page"].includes(call.name))).toBe(false);
+    });
+    it(site + " rejects an existing conversation on the pin before any mutation", async () => {
+      class ExistingChat extends NewChatPageFixture {
+        override async call(name:string,args:Record<string,unknown>={}) {
+          if(name === "evaluate_script" && String(args.function).includes("ready:!!editor")) {
+            this.calls.push({name,args});
+            return json({origin:this.origin,path:this.remoteRoute,ready:true,empty:true});
+          }
+          return super.call(name,args);
+        }
+      }
+      const tools = new ExistingChat(site);
+      const result = await submitFirstChatMessage(tools, site, "owned fixture input", ACCOUNT, 9);
+      expect(result).toMatchObject({clicked:false, uncertain:false});
+      expect(tools.calls.some(call => ["new_page", "fill", "close_page"].includes(call.name))).toBe(false);
+    });
+  }
+});
+
+for (const site of ["chatgpt", "zai"] as const) {
+  it(site + " legacy driver forwards its exact page pin for the first draft send", async () => {
+    vi.stubEnv("AGENT_HERDER_BROWSER_DRAFT_ROOT", await root());
+    class PinnedFixture extends NewChatPageFixture {
+      override async call(name:string,args:Record<string,unknown>={}) {
+        if(name === "list_pages") {
+          this.calls.push({name,args});
+          return "9: Owned blank page ("+this.origin+"/)";
+        }
+        return super.call(name,args);
+      }
+    }
+    const tools = new PinnedFixture(site);
+    const driver = site === "chatgpt" ? new ChatGptMacCdpDriver(tools,9,0,ACCOUNT) : new ZaiCdpDriver(tools,9,0);
+    const draft = await driver.createChat({title:"Owned test"});
+    await driver.sendMessage({chatId:draft.id,text:"owned fixture input"});
+    expect(tools.calls.some(call => call.name === "new_page")).toBe(false);
+    expect(tools.calls.filter(call => call.name === "fill")).toEqual([{name:"fill",args:expect.objectContaining({pageId:9,value:"owned fixture input"})}]);
+  });
+}

@@ -7,14 +7,14 @@
   "depends_on": [
     "CONFIG"
   ],
-  "status": "queued",
+  "status": "running",
   "estimate_minutes": 15,
-  "owner": "Astra",
+  "owner": "Terra",
   "harness": "codex",
-  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
-  "model": "gpt-6-astra",
+  "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+  "model": "gpt-6.1-terra",
   "created_at": "2026-11-07T21:29:28+03:00",
-  "updated_at": "2026-11-07T21:38:54+03:00",
+  "updated_at": "2026-11-07T22:48:12+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:28+03:00",
@@ -61,8 +61,35 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:48:12+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "owner": "Terra",
+        "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+        "model": "gpt-6.1-terra",
+        "affected_files": [
+          "tests/native/candidate_release_gate.py",
+          "tests/native/test_candidate_release_gate.py"
+        ],
+        "note": "Extend existing gate, no new framework. Strict V1 mandatory matrix + exact run/artifact/stage identities; positive and rejectionTDD; native consumer remains stand owner."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
     }
   ],
   "wave": 2,
-  "note": "Lead лично определяет и принимает обязательные сценарии, identity и отказ неполного gate. Положительные source tests не заменяют installed consumer."
+  "note": "Extend existing gate, no new framework. Strict V1 mandatory matrix + exact run/artifact/stage identities; positive and rejectionTDD; native consumer remains stand owner.",
+  "affected_files": [
+    "tests/native/candidate_release_gate.py",
+    "tests/native/test_candidate_release_gate.py"
+  ]
 }

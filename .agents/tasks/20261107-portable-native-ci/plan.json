@@ -1,6 +1,6 @@
 {
   "title": "Переносимый CI реальных приложений",
-  "goal": "Приоритет ChatGPT и Z.ai, затем OpenCode, Codex и ZCode. Переносимый CI проверяет send/read/full transcript/search/projects через штатный consumer после обновлений.",
+  "goal": "До 08.11.2026 00:38 МСК довести CI и прежние адаптеры Herder V1: ChatGPT/Z.ai первыми, затем OpenCode, Codex, ZCode. Ядро и тонкое подключение у продуктовой стороны; без новых адаптеров/test-only API.",
   "business_result": "Одна команда CI, конфигурация вместо привязки к машине, реальные CLI с лжемоделью и browser lanes; неполное обновление не принимается.",
   "mode": "fullcycle",
   "default_model": "gpt-6-astra",
@@ -13,8 +13,8 @@
     "Public MCP launch/ownership согласованы dccf9cb7; V2 export unsupported, search unproven, projects absent :: ../20261107-herder-native-mcp-breaking/CI-CONSUMER-CONTRACT.md"
   ],
   "acceptance_scenario": "Одна команда на двух настроенных runners без правок scenario source. Реальные приложения и обычный MCP consumer. Положительный путь и внесённый сбой проверяют CI; обязательный missing/unsupported/UNKNOWN не даёт release PASS. Installed использует тот же consumer с точной runtime identity.",
-  "current_progress": "BUILD done (23df966f, TDD). Новый прямой порядок: сначала CHATGPT/ZAI под Astra, без ожидания CONFIG/REPORT. Terra готовит ограниченные runner/wiring задачи; Luna выполняет готовые рутинные проверки. Назначения моделей планируемые, новые workers ещё не запущены; существующие результаты переиспользовать.",
-  "external_waits": "Herder: export/search/projects, owner launch ZCode/browser и installed instance selection. Browser exact account/claim/backoff; page7 у CI. Пробелы продукта — честный nonzero CI, не test-only обход.",
+  "current_progress": "BUILD23df966f published; ChatGPT burst fix e86df81b source43tests. INPUTS complete verified3hashes. CONFIG86106a9c source5tests, Terra closes sandbox mounts. Z.ai dedicated page9/account verified; BROWSER-CONFIG.md. Native OpenCode v2 second same-session send passed2modelrequests; forcedv22 rejected before send. Public5lane/installed not yet proven.",
+  "external_waits": "V1 product candidate supplies core/profile/wrappers and public consumer launch. OpenCode actual fixture verified familyv2; wrapper initial-only restriction product-owned. ChatGPT existing42h burst cooldown preserved until supported installation/reconciliation; no UNKNOWN replays.",
   "started_at": "2026-11-07T18:13:17Z",
   "revisions": [
     {
@@ -38,7 +38,18 @@
         "source": "mcp_metadata"
       },
       "summary": "Перегруппированы четыре этапа, сняты лишние зависимости browser от CONFIG/REPORT. Приоритет не превращён в фиктивные data dependencies. Lead владеет решениями/интеграцией; worker поля обозначают план, не подтверждённый запуск. Разрешена делегация, прежний no-workers для этого объёма заменён."
+    },
+    {
+      "at": "2026-11-07T21:59:48+03:00",
+      "reason": "Решение владельца21:38МСК: reuse прежних адаптеров, CI доводит их, общий срок3ч.",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "summary": "Дедлайн08.11.2026 00:38МСК. Exact entrypoints/capabilities/defects в LEGACY-ADAPTERS.md. Ядро/thin hookup — новый продуктовый план; fixtures и CONFIG/REPORT сохраняются."
     }
   ],
-  "updated_at": "2026-11-07T21:38:58+03:00"
+  "updated_at": "2026-11-07T22:44:32+03:00"
 }

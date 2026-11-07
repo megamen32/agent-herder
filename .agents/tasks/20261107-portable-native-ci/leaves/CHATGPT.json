@@ -5,14 +5,14 @@
   "description": "Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.",
   "acceptance": "Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.",
   "depends_on": [],
-  "status": "queued",
+  "status": "blocked",
   "estimate_minutes": 15,
   "owner": "Astra",
   "harness": "codex",
   "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
   "model": "gpt-6-astra",
   "created_at": "2026-11-07T21:29:31+03:00",
-  "updated_at": "2026-11-07T21:38:52+03:00",
+  "updated_at": "2026-11-07T22:48:50+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:31+03:00",
@@ -76,9 +76,85 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:43:56+03:00",
+      "note": "",
+      "changes": {
+        "note": "Решение21:38МСК: CI теперь владеет минимальными legacy adapter fixes (TDD), не новой реализацией. Exact entrypoint/capabilities/наблюдаемый gap и fixture refs: LEGACY-ADAPTERS.md, строка этой среды. Тонкое подключение/единый public contract — ../20261107-herder-v1-core. Дедлайн08.11 00:38МСК; source capability не live PASS."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:00:29+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "native_environment"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:22:37+03:00",
+      "note": "Read-only exactpage7/claim confirmed. Passive cooldown42h with strikes10; RED2failed→GREEN43passed burst dedup fix e86df81b push accepted, remote readback reconciling. Existing cooldown preserved; no sends/replay. Source fix does not prove installed full consumer; next installed hookup and live read reconciliation.",
+      "changes": {
+        "affected_files": [
+          "src/adapters/chatgpt-passive-history.ts",
+          "src/adapters/chatgpt-background-budget.ts",
+          "tests/chatgpt-passive-backoff-burst.test.ts",
+          "tests/chatgpt-background-budget.test.ts"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:48:50+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "V1 candidate not published; existing page has old hook/cooldown",
+        "result": "Source e86df81b published,43 focused tests pass; page7/account/claim preserved. Live acceptance not yet proven.",
+        "note": "No fake running while candidate is built. Resume on candidate receipt; install updated hook through normal browser lifecycle; do not clear backoff or replay accepted sends."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
     }
   ],
   "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
   "wave": 1,
-  "note": "Прямой приоритет владельца: начать первым, использовать готовый page7/account/claim и существующий consumer. CONFIG/REPORT не блокируют диагностику и приёмку. Сложные решения/браузерный scope только Lead; no replay."
+  "note": "No fake running while candidate is built. Resume on candidate receipt; install updated hook through normal browser lifecycle; do not clear backoff or replay accepted sends.",
+  "affected_files": [
+    "src/adapters/chatgpt-passive-history.ts",
+    "src/adapters/chatgpt-background-budget.ts",
+    "tests/chatgpt-passive-backoff-burst.test.ts",
+    "tests/chatgpt-background-budget.test.ts"
+  ],
+  "blocker": "V1 candidate not published; existing page has old hook/cooldown",
+  "result": "Source e86df81b published,43 focused tests pass; page7/account/claim preserved. Live acceptance not yet proven."
 }

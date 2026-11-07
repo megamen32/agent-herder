@@ -1,0 +1,178 @@
+{
+  "status": "INPUTS_INVENTORY_COMPLETE",
+  "scope": "read-only inventory; no core/server/bootstrap started; no sends, model calls, browser or network probes",
+  "manifest": {
+    "path": "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/manifest.json",
+    "source_commit": "1d89d04dbefec21ed355533da49bd60e11ee7114",
+    "adapter_source_commits": [
+      "c3b5aa58",
+      "8e051d01"
+    ],
+    "artifact_root": "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d"
+  },
+  "declared_artifacts": {
+    "core": {
+      "path": "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/herder_native_stdio",
+      "exists": true,
+      "is_symlink": false,
+      "resolved_path": "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/herder_native_stdio",
+      "type": "regular_file",
+      "mode": "0500",
+      "owner_uid": 1000,
+      "group_gid": 1000,
+      "size_bytes": 107119872,
+      "sha256": "58e7a9726880072efb2a590c4f28c235831afb4b501b5f45035d8ea78496cc4c",
+      "executable_by_current_user": true,
+      "readable_by_current_user": true,
+      "manifest_sha256_match": true
+    },
+    "adapter": {
+      "path": "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/runner.mjs",
+      "exists": true,
+      "is_symlink": false,
+      "resolved_path": "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/runner.mjs",
+      "type": "regular_file",
+      "mode": "0400",
+      "owner_uid": 1000,
+      "group_gid": 1000,
+      "size_bytes": 796952,
+      "sha256": "5b45663eaa81fefe23073860b235b443d2992bc316269ba543d0849e83c9d556",
+      "executable_by_current_user": false,
+      "readable_by_current_user": true,
+      "manifest_sha256_match": true
+    },
+    "opencode": {
+      "path": "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/opencode",
+      "exists": true,
+      "is_symlink": false,
+      "resolved_path": "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/opencode",
+      "type": "regular_file",
+      "mode": "0500",
+      "owner_uid": 1000,
+      "group_gid": 1000,
+      "size_bytes": 252696752,
+      "sha256": "25facd7099c19018e83dce858f3ab922cd2d49ad29b144bc36968418ca6eb5aa",
+      "executable_by_current_user": true,
+      "readable_by_current_user": true,
+      "manifest_sha256_match": true
+    },
+    "bootstrap": {
+      "path": "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/ahap-owner-bootstrap",
+      "exists": true,
+      "is_symlink": false,
+      "resolved_path": "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/ahap-owner-bootstrap",
+      "type": "regular_file",
+      "mode": "0500",
+      "owner_uid": 1000,
+      "group_gid": 1000,
+      "size_bytes": 3330688,
+      "sha256": "a3b66fe5f31b143737ff60f68babe7d27cca4ba9f6b3c088bb274f6be37fae3c",
+      "executable_by_current_user": true,
+      "readable_by_current_user": true
+    }
+  },
+  "runtime_executables": {
+    "python": {
+      "path": "/usr/bin/python3",
+      "exists": true,
+      "is_symlink": true,
+      "resolved_path": "/usr/bin/python3.10",
+      "type": "regular_file",
+      "mode": "0755",
+      "owner_uid": 0,
+      "group_gid": 0,
+      "size_bytes": 5941864,
+      "sha256": "a2f33a6e006989270f4340528eb61f8f97366e00a5d1b602ac8672ea44fc56ae",
+      "executable_by_current_user": true,
+      "readable_by_current_user": true,
+      "version": "Python 3.10.12"
+    },
+    "node": {
+      "path": "/home/roomhacker/herder-artifacts/shared-node-modules/node-81925c09/node",
+      "exists": true,
+      "is_symlink": false,
+      "resolved_path": "/home/roomhacker/herder-artifacts/shared-node-modules/node-81925c09/node",
+      "type": "regular_file",
+      "mode": "0555",
+      "owner_uid": 1000,
+      "group_gid": 1000,
+      "size_bytes": 124679552,
+      "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+      "executable_by_current_user": true,
+      "readable_by_current_user": true,
+      "version": "v22.22.2"
+    }
+  },
+  "launch": {
+    "manifest_argv": [
+      "/usr/bin/python3",
+      "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/ahap_opencode_stand.py",
+      "--core",
+      "{core}",
+      "--runner",
+      "{adapter}",
+      "--opencode",
+      "{opencode}",
+      "--node",
+      "/home/roomhacker/herder-artifacts/shared-node-modules/node-81925c09/node",
+      "--bootstrap",
+      "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/ahap-owner-bootstrap"
+    ],
+    "resolved_argv": [
+      "/usr/bin/python3",
+      "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/ahap_opencode_stand.py",
+      "--core",
+      "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/herder_native_stdio",
+      "--runner",
+      "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/runner.mjs",
+      "--opencode",
+      "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/opencode",
+      "--node",
+      "/home/roomhacker/herder-artifacts/shared-node-modules/node-81925c09/node",
+      "--bootstrap",
+      "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/ahap-owner-bootstrap"
+    ],
+    "bootstrap_role": "stand invokes the manifest bootstrap with a protected temporary directory to create a fresh authority fixture; not run during this inventory"
+  },
+  "existing_zcode_runner_inputs": {
+    "source_document": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261105-deterministic-harness-ci/evidence/CI-SHARED-INPUTS-20261107.md",
+    "evidence_age": "historical; all remote server-44 paths and facts below are unverified in this inventory",
+    "runner_path": "/tmp/herder-l43-full-v16-9e80/scripts/run-isolated-native-ci.py",
+    "runner_sha256": "a7b04ad8ad495e93e6c7f1069b494b1e49bddf7bd2606d204d2dc850894ffab0",
+    "repeatable_runner_path": "/home/roomhacker/.local/share/agent-herder-ci/versions/zcode-l45-a7b04/",
+    "historical_candidate_dist": "/tmp/herder-minci-01a1ac52/zcode-candidate2/dist",
+    "historical_isolated_zcode_root": "/home/roomhacker/.cache/herder-ci-research/run.7jqHXfIA/zcode-server-release",
+    "isolated_zcode_release_copy": "/home/roomhacker/.local/share/agent-herder-ci/versions/zcode-server-3.17.2/",
+    "accepted_cli_shape": [
+      "python3",
+      "run-isolated-native-ci.py",
+      "--herder-dist",
+      "<absolute-candidate-dist>",
+      "--codex",
+      "<absolute-codex.js>",
+      "--opencode",
+      "<absolute-opencode.exe>",
+      "--zcode-official-root",
+      "<isolated-official-server-release>",
+      "--zcode-official-only",
+      "--receipt",
+      "<new-receipt>"
+    ],
+    "recovered_historical_invocation": [
+      "python3",
+      "/tmp/herder-l43-full-v16-9e80/scripts/run-isolated-native-ci.py",
+      "--herder-dist",
+      "/tmp/herder-minci-01a1ac52/zcode-candidate2/dist",
+      "--zcode-official-root",
+      "/home/roomhacker/.cache/herder-ci-research/run.7jqHXfIA/zcode-server-release",
+      "--zcode-official-only",
+      "--receipt",
+      "/tmp/herder-minci-01a1ac52/zcode-candidate2/receipt.json"
+    ],
+    "constraints": [
+      "do not replay historical invocation into existing receipt",
+      "exact prior full argv and runtime-root provenance absent; recover before rerun",
+      "do not substitute production ZCode profile"
+    ]
+  }
+}

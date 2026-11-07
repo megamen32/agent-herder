@@ -179,24 +179,46 @@ export function zaiNewChatMessageProbe(id:string,text:string,scope?:string):stri
  * createChat: creation itself must never send a synthetic prompt or use quota.
  */
 export async function submitFirstChatMessage(
-  tools:ChromePageTools,site:BrowserChatSite,text:string,expectedScope?:string,
+  tools:ChromePageTools,site:BrowserChatSite,text:string,expectedScope?:string,pinnedPageId?:number,
 ):Promise<NewChatSubmitReceipt> {
   let pageId:number;
-  try { pageId=await openOwnedBlankChatPage(tools,site); }
-  catch(error) { return {clicked:false,uncertain:false,reason:String(error)}; }
+  try {
+    if (pinnedPageId === undefined) pageId=await openOwnedBlankChatPage(tools,site);
+    else {
+      if (!Number.isSafeInteger(pinnedPageId) || pinnedPageId < 1
+        || !expectedScope || !/^[a-f0-9]{64}$/.test(expectedScope))
+        throw new Error("Pinned first message requires an exact page and verified account scope");
+      pageId=pinnedPageId;
+      const state=parseChromeEvaluation<{origin:string;path:string;ready:boolean;empty:boolean}>(
+        await tools.call("evaluate_script",{pageId,function:`() => {
+          const editor=document.querySelector(${JSON.stringify(site==="chatgpt"
+            ?'div[contenteditable="true"][role="textbox"][data-composer-markdown]'
+            :'textarea[placeholder="Send a Message"]')});
+          return {origin:location.origin,path:location.pathname,
+            ready:!!editor&&editor.getClientRects().length>0,
+            empty:!(editor?.innerText||editor?.value||editor?.textContent||'').trim()};
+        }`}));
+      if(state.origin!==SITE_ORIGIN[site] || state.path!=="/" || !state.ready || !state.empty)
+        throw new Error("Pinned first-message page must be a ready blank chat without a draft; existing chat preserved");
+    }
+  } catch(error) { return {clicked:false,uncertain:false,reason:String(error)}; }
+  // Only dispose a tab allocated by this call. A supplied pin belongs to the caller.
+  const closeOwnedPage=async()=>{
+    if(pinnedPageId===undefined)await tools.call("close_page",{pageId}).catch(()=>undefined);
+  };
   const existingZaiIds = new Set<string>();
   if (site === "zai") {
     try {
       const before=parseChromeEvaluation<{scope?:string;chats?:Array<{id?:unknown}>}>(
         await tools.call("evaluate_script",{pageId,function:ZAI_LIST_API_SCRIPT}));
       if (expectedScope !== undefined && before.scope !== expectedScope) {
-        await tools.call("close_page",{pageId}).catch(()=>undefined);
+        await closeOwnedPage();
         return {clicked:false,uncertain:false,reason:"New-chat account identity could not be verified"};
       }
       if (!Array.isArray(before.chats)) throw new Error("Z.ai account inventory is unavailable");
       for (const chat of before.chats) if (typeof chat.id === "string") existingZaiIds.add(chat.id);
     } catch {
-      await tools.call("close_page",{pageId}).catch(()=>undefined);
+      await closeOwnedPage();
       return {clicked:false,uncertain:false,reason:"Z.ai account inventory unavailable; no message submitted"};
     }
   }
@@ -210,7 +232,7 @@ export async function submitFirstChatMessage(
       verified=/^[a-f0-9]{64}$/.test(expectedScope) && actual===expectedScope;
     }catch { /* no auth proof means do not send */ }
     if (!verified) {
-      await tools.call("close_page",{pageId}).catch(()=>undefined);
+      await closeOwnedPage();
       return {clicked:false,uncertain:false,reason:"New-chat account identity could not be verified"};
     }
   }
@@ -221,12 +243,12 @@ export async function submitFirstChatMessage(
     const a11y=await tools.call("take_snapshot",{pageId});
     const uid=a11y.match(editorLabel)?.[1];
     if(!uid) {
-      await tools.call("close_page",{pageId}).catch(()=>undefined);
+      await closeOwnedPage();
       return {clicked:false,uncertain:false,reason:"New-chat textbox not found"};
     }
     await tools.call("fill",{pageId,uid,value:text});
   }catch(error){
-    await tools.call("close_page",{pageId}).catch(()=>undefined);
+    await closeOwnedPage();
     return {clicked:false,uncertain:false,reason:"Cannot fill new-chat composer; no click attempted"};
   }
 
@@ -239,7 +261,7 @@ export async function submitFirstChatMessage(
     return {clicked:true,uncertain:true,reason:"First-message click outcome unknown; do not retry"};
   }
   if(!click.submitted){
-    await tools.call("close_page",{pageId}).catch(()=>undefined);
+    await closeOwnedPage();
     return {clicked:false,uncertain:false,reason:click.reason||"New-chat Send not accepted"};
   }
   const origin=SITE_ORIGIN[site];

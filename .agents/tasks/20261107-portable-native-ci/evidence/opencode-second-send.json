@@ -1,0 +1,24 @@
+{
+  "scope": "direct native OpenCode, not Herder candidate/installed PASS",
+  "native_version": "opencode v2.2.4",
+  "family": "v2",
+  "endpoint": "/api/session/{id}/prompt",
+  "delivery": "queue",
+  "session": "ses_e487aecc9ffedEBS70U6zciwLv",
+  "inputs": [
+    "HERDER_OPENCODE_INPUT_b42151cc9de342ee995a80eacca58fed",
+    "HERDER_OPENCODE_INPUT_2629f355d69a4c97b3a4435985a3e0cd"
+  ],
+  "http_statuses": [
+    200,
+    200
+  ],
+  "completed_readback": true,
+  "fixture_requests": 2,
+  "binary_sha256": "25facd7099c19018e83dce858f3ab922cd2d49ad29b144bc36968418ca6eb5aa",
+  "v22_probe": {
+    "result": "fixture provider is not verified; no turn sent",
+    "sends": 0
+  },
+  "cleanup": "launcher disposable profile removed, own server terminated"
+}
