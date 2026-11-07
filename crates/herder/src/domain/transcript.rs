@@ -55,6 +55,7 @@ pub enum CursorBindingError {
     EmptySnapshot,
     PrincipalMismatch,
     SnapshotMismatch,
+    EmptyNativeCursor,
 }
 
 impl BoundTranscriptCursor {
@@ -70,6 +71,9 @@ impl BoundTranscriptCursor {
         }
         if snapshot_id.is_empty() {
             return Err(CursorBindingError::EmptySnapshot);
+        }
+        if native_cursor.as_deref() == Some("") {
+            return Err(CursorBindingError::EmptyNativeCursor);
         }
         Ok(Self {
             principal_id: principal_id.into(),
@@ -91,6 +95,59 @@ impl BoundTranscriptCursor {
             return Err(CursorBindingError::SnapshotMismatch);
         }
         Ok(self.native_cursor.as_deref())
+    }
+}
+
+/// One page within a fixed transcript snapshot. `next_cursor == None` is the
+/// terminal page; truncation is preserved separately from page completion.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TranscriptPage {
+    pub snapshot_id: String,
+    pub blocks: Vec<TranscriptBlock>,
+    pub next_cursor: Option<BoundTranscriptCursor>,
+    pub truncated: bool,
+}
+
+impl TranscriptPage {
+    pub fn new(
+        principal_id: &str,
+        snapshot_id: &str,
+        blocks: Vec<TranscriptBlock>,
+        native_next_cursor: Option<String>,
+        truncated: bool,
+    ) -> Result<Self, CursorBindingError> {
+        if snapshot_id.is_empty() {
+            return Err(CursorBindingError::EmptySnapshot);
+        }
+        let next_cursor = native_next_cursor
+            .map(|cursor| BoundTranscriptCursor::bind(principal_id, snapshot_id, Some(cursor)))
+            .transpose()?;
+        Ok(Self {
+            snapshot_id: snapshot_id.into(),
+            blocks,
+            next_cursor,
+            truncated,
+        })
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.next_cursor.is_none()
+    }
+
+    pub fn native_cursor_for(
+        &self,
+        principal_id: &str,
+        snapshot_id: &str,
+    ) -> Result<Option<&str>, CursorBindingError> {
+        if self.snapshot_id != snapshot_id {
+            return Err(CursorBindingError::SnapshotMismatch);
+        }
+        self.next_cursor
+            .as_ref()
+            .map(|cursor| cursor.validate(principal_id, snapshot_id))
+            .transpose()
+            .map(Option::flatten)
     }
 }
 
@@ -250,6 +307,77 @@ mod tests {
             BoundTranscriptCursor::bind("principal", "", None),
             Err(CursorBindingError::EmptySnapshot)
         );
+        assert_eq!(
+            BoundTranscriptCursor::bind("principal", "snapshot", Some(String::new())),
+            Err(CursorBindingError::EmptyNativeCursor)
+        );
+    }
+
+    #[test]
+    fn codex_native_fixture_ids_and_turn_are_preserved_without_reply_inference() {
+        let mut user_source = source(
+            "01a1b3a1-b343-7640-9ace-e878747ae1da",
+            Some("01a1b3a1-b2aa-7512-a959-b40be3fabdce"),
+        );
+        user_source.session.native_session_id = "01a1b3a1-b283-7b40-bb72-83d7f28155aa".into();
+        let user = normalize_transcript_blocks(
+            &user_source,
+            [RawTranscriptBlock {
+                native_type: "text".into(),
+                text: Some("HERDER_V052B_INPUT_b59ee6a20e8348f4aebcda762a81144b".into()),
+            }],
+        );
+        let mut assistant_source =
+            source("msg_test_1", Some("01a1b3a1-b2aa-7512-a959-b40be3fabdce"));
+        assistant_source.session.native_session_id = user_source.session.native_session_id.clone();
+        let assistant = normalize_transcript_blocks(
+            &assistant_source,
+            [RawTranscriptBlock {
+                native_type: "output_text".into(),
+                text: Some("HERDER_TEST_MODEL_OK".into()),
+            }],
+        );
+        assert_eq!(
+            user[0].source.message_id,
+            "01a1b3a1-b343-7640-9ace-e878747ae1da"
+        );
+        assert_eq!(assistant[0].source.message_id, "msg_test_1");
+        assert_eq!(user[0].source.turn_id, assistant[0].source.turn_id);
+        assert_eq!(
+            user[0].text.as_deref(),
+            Some("HERDER_V052B_INPUT_b59ee6a20e8348f4aebcda762a81144b")
+        );
+        assert_eq!(assistant[0].text.as_deref(), Some("HERDER_TEST_MODEL_OK"));
+    }
+
+    #[test]
+    fn final_page_has_no_cursor_and_preserves_truncation_independently() {
+        let partial = TranscriptPage::new(
+            "alice",
+            "snap-1",
+            vec![],
+            Some("native-page-2".into()),
+            true,
+        )
+        .unwrap();
+        assert!(!partial.is_complete());
+        assert!(partial.truncated);
+        assert_eq!(
+            partial.native_cursor_for("alice", "snap-1"),
+            Ok(Some("native-page-2"))
+        );
+        assert_eq!(
+            partial.native_cursor_for("bob", "snap-1"),
+            Err(CursorBindingError::PrincipalMismatch)
+        );
+        assert_eq!(
+            partial.native_cursor_for("alice", "snap-2"),
+            Err(CursorBindingError::SnapshotMismatch)
+        );
+        let final_page = TranscriptPage::new("alice", "snap-1", vec![], None, true).unwrap();
+        assert!(final_page.is_complete());
+        assert!(final_page.truncated);
+        assert_eq!(final_page.native_cursor_for("alice", "snap-1"), Ok(None));
     }
 
     #[test]
