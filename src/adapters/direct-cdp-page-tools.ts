@@ -2,6 +2,7 @@ import WebSocket from "ws";
 import type { ChromePageTools } from "./mac-mini-chrome-transport.js";
 
 type TargetInfo = { targetId: string; type: string; title?: string; url?: string; browserContextId?: string };
+type AxNode = { role?: { value?: string }; name?: { value?: string }; backendDOMNodeId?: number };
 type Pending = { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 type Socket = Pick<WebSocket, "on" | "send" | "close" | "readyState">;
 type SocketFactory = (url: string) => Socket;
@@ -27,6 +28,9 @@ export class DirectCdpPageTools implements ChromePageTools {
   private closed = false;
   private readonly timeoutMs: number;
   private readonly socketFactory: SocketFactory;
+  private snapshotVersion = 0;
+  private readonly refs = new Map<string, { targetId: string; contextId: string; snapshotVersion: number; backendDOMNodeId: number; sessionId: string }>();
+  private accessibilityEnabled = false;
 
   constructor(private readonly config: DirectCdpConfig, socketFactory: SocketFactory = url => new WebSocket(url)) {
     const endpoint = new URL(config.endpoint);
@@ -48,6 +52,8 @@ export class DirectCdpPageTools implements ChromePageTools {
       case "new_page": return this.newPage(args);
       case "evaluate_script": return this.evaluate(args);
       case "navigate_page": return this.navigate(args);
+      case "take_snapshot": return this.takeSnapshot(args);
+      case "fill": return this.fill(args);
       default: throw new Error(`unsupported_direct_cdp_tool:${name}`);
     }
   }
@@ -151,6 +157,8 @@ export class DirectCdpPageTools implements ChromePageTools {
     if (!created.targetId) throw new Error("direct_cdp_new_page_missing_target");
     const prior = this.sessionId;
     this.sessionId = undefined;
+    this.accessibilityEnabled = false;
+    this.refs.clear();
     this.currentTargetId = created.targetId;
     await this.attachExactTarget();
     if (prior) await this.command("Target.detachFromTarget", { sessionId: prior }).catch(() => undefined);
@@ -175,9 +183,86 @@ export class DirectCdpPageTools implements ChromePageTools {
     const url = new URL(args.url);
     if (url.protocol !== "https:" || url.origin !== "https://chatgpt.com") throw new Error("direct_cdp_navigation_origin_rejected");
     const session = await this.ensureSession();
+    this.refs.clear();
+    this.snapshotVersion += 1;
     const response = await this.command<{ errorText?: string }>("Page.navigate", { url: url.toString() }, session);
     if (response.errorText) throw new Error(`direct_cdp_navigation_failed:${response.errorText}`);
     return "Direct CDP navigation accepted";
+  }
+
+  private async takeSnapshot(args: Record<string, unknown>): Promise<string> {
+    if (args.pageId !== 1) throw new Error("direct_cdp_snapshot_requires_pinned_page");
+    const session = await this.ensureSession();
+    if (!this.accessibilityEnabled) {
+      await this.command("Accessibility.enable", {}, session);
+      this.accessibilityEnabled = true;
+    }
+    const response = await this.command<{ nodes?: AxNode[] }>("Accessibility.getFullAXTree", {}, session);
+    if (!Array.isArray(response.nodes)) throw new Error("direct_cdp_accessibility_tree_missing");
+    this.refs.clear();
+    const version = ++this.snapshotVersion;
+    const lines: string[] = [];
+    for (let index = 0; index < response.nodes.length; index += 1) {
+      const node = response.nodes[index]!;
+      const role = node.role?.value;
+      const name = node.name?.value;
+      const backendDOMNodeId = node.backendDOMNodeId;
+      if (!role || typeof name !== "string" || !Number.isSafeInteger(backendDOMNodeId)) continue;
+      const uid = `cdp-${version}-${index}`;
+      this.refs.set(uid, { targetId: this.currentTargetId, contextId: this.config.contextId,
+        snapshotVersion: version, backendDOMNodeId: backendDOMNodeId!, sessionId: session });
+      const safeName = name.replace(/[\r\n"]+/gu, " ").slice(0, 240);
+      lines.push(`uid=${uid} ${role} "${safeName}"`);
+    }
+    if (!lines.length) throw new Error("direct_cdp_accessibility_tree_has_no_dom_nodes");
+    return lines.join("\n");
+  }
+
+  private async fill(args: Record<string, unknown>): Promise<string> {
+    if (args.pageId !== 1 || typeof args.uid !== "string" || typeof args.value !== "string" || args.value.length > 16_000) {
+      throw new Error("direct_cdp_fill_requires_pinned_page_uid_and_bounded_value");
+    }
+    const ref = this.refs.get(args.uid);
+    if (!ref || ref.targetId !== this.currentTargetId || ref.contextId !== this.config.contextId
+      || ref.snapshotVersion !== this.snapshotVersion || ref.sessionId !== this.sessionId) {
+      throw new Error("direct_cdp_dom_ref_stale_or_foreign");
+    }
+    this.refs.clear();
+    this.snapshotVersion += 1;
+    const resolved = await this.command<{ object?: { objectId?: string } }>("DOM.resolveNode", { backendNodeId: ref.backendDOMNodeId }, ref.sessionId);
+    const objectId = resolved.object?.objectId;
+    if (!objectId) throw new Error("direct_cdp_dom_ref_no_object");
+    try {
+      const result = await this.command<{ result?: { value?: unknown }; exceptionDetails?: { text?: string } }>("Runtime.callFunctionOn", {
+        objectId,
+        functionDeclaration: `function(value) {
+          const el=this;
+          if(!el || !el.isConnected || !(el instanceof HTMLElement)) return {ok:false,reason:'stale_element'};
+          el.focus();
+          if(el.isContentEditable || el.getAttribute('contenteditable')==='true') {
+            const selection=el.ownerDocument.getSelection();
+            const range=el.ownerDocument.createRange(); range.selectNodeContents(el); range.deleteContents();
+            range.insertNode(el.ownerDocument.createTextNode(value));
+            selection?.removeAllRanges(); selection?.addRange(range);
+          } else if('value' in el) {
+            const proto=el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+            const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
+            if(!setter) return {ok:false,reason:'value_setter_missing'};
+            setter.call(el,value);
+          } else return {ok:false,reason:'not_editable'};
+          el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));
+          el.dispatchEvent(new Event('change',{bubbles:true}));
+          return {ok:true};
+        }`,
+        arguments: [{ value: { value: args.value } }], returnByValue: true,
+      }, ref.sessionId);
+      if (result.exceptionDetails) throw new Error(`direct_cdp_fill_exception:${result.exceptionDetails.text || "fill failed"}`);
+      const value = result.result?.value as { ok?: unknown; reason?: unknown } | undefined;
+      if (value?.ok !== true) throw new Error(`direct_cdp_fill_rejected:${String(value?.reason || "unknown")}`);
+    } finally {
+      await this.command("Runtime.releaseObject", { objectId }, ref.sessionId).catch(() => undefined);
+    }
+    return "Direct CDP fill completed";
   }
 
   close(): void {

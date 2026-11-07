@@ -23,6 +23,12 @@ class FakeSocket extends EventEmitter {
     if (frame.method === "Target.attachToTarget") return { sessionId: `session-${this.targetId}` };
     if (frame.method === "Target.createTarget") { this.targetId = "target-created"; return { targetId: this.targetId }; }
     if (frame.method === "Runtime.evaluate") return { result: { value: { ok: true } } };
+    if (frame.method === "Accessibility.getFullAXTree") return { nodes: [
+      { role: { value: "textbox" }, name: { value: "Ask ChatGPT" }, backendDOMNodeId: 19 },
+      { role: { value: "button" }, name: { value: "Send message" }, backendDOMNodeId: 20 },
+    ] };
+    if (frame.method === "DOM.resolveNode") return { object: { objectId: "object-19" } };
+    if (frame.method === "Runtime.callFunctionOn") return { result: { value: { ok: true } } };
     return {};
   }
 }
@@ -77,6 +83,34 @@ describe("DirectCdpPageTools", () => {
     tools.close();
   });
 
+  it("binds editable DOM refs to the current snapshot, target and context", async () => {
+    const socket = new FakeSocket();
+    const tools = create(socket);
+    const snapshot = await tools.call("take_snapshot", { pageId: 1 });
+    const uid = snapshot.match(/uid=([\w-]+) textbox "Ask ChatGPT"/)?.[1];
+    expect(uid).toBeTruthy();
+    await tools.call("fill", { pageId: 1, uid, value: "draft" });
+    expect(socket.sent.find(frame => frame.method === "DOM.resolveNode")?.params.backendNodeId).toBe(19);
+    expect(socket.sent.find(frame => frame.method === "Runtime.callFunctionOn")?.sessionId).toBe("session-target-A");
+    await expect(tools.call("fill", { pageId: 1, uid, value: "replay" })).rejects.toThrow("dom_ref_stale_or_foreign");
+
+    const oldUid = uid!;
+    await tools.call("take_snapshot", { pageId: 1 });
+    await expect(tools.call("fill", { pageId: 1, uid: oldUid, value: "stale" })).rejects.toThrow("dom_ref_stale_or_foreign");
+    await expect(tools.call("fill", { pageId: 1, uid: "foreign-ref", value: "foreign" })).rejects.toThrow("dom_ref_stale_or_foreign");
+    tools.close();
+  });
+
+  it("invalidates DOM refs when the selected page navigates", async () => {
+    const socket = new FakeSocket();
+    const tools = create(socket);
+    const snapshot = await tools.call("take_snapshot", { pageId: 1 });
+    const uid = snapshot.match(/uid=([\w-]+) textbox/)?.[1];
+    await tools.call("navigate_page", { pageId: 1, url: "https://chatgpt.com/c/123" });
+    await expect(tools.call("fill", { pageId: 1, uid, value: "too late" })).rejects.toThrow("dom_ref_stale_or_foreign");
+    tools.close();
+  });
+
   it("does not retry unknown timed-out mutations or unsupported gateway methods", async () => {
     const socket = new FakeSocket();
     socket.respond = frame => frame.method === "Target.getTargets"
@@ -86,7 +120,7 @@ describe("DirectCdpPageTools", () => {
     const failed = tools.call("new_page", { url: "https://chatgpt.com/" });
     await expect(failed).rejects.toThrow("outcome may be unknown; do not retry");
     expect(socket.sent.filter(frame => frame.method === "Target.createTarget")).toHaveLength(1);
-    await expect(tools.call("take_snapshot")).rejects.toThrow("unsupported_direct_cdp_tool:take_snapshot");
+    await expect(tools.call("click")).rejects.toThrow("unsupported_direct_cdp_tool:click");
     tools.close();
   });
 });
