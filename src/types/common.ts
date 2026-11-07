@@ -155,7 +155,7 @@ export interface SendMessageResult {
   turnId?: string;
   /** Caller-supplied stable operation identity; distinct attempts need distinct IDs. */
   inputId?: string;
-  /** Native OpenCode input message ID returned by POST /api/session/:id/prompt. */
+  /** Native OpenCode user-message ID, verified separately from caller inputId. */
   nativeInputMessageId?: string;
   error?: string;
   /** The native harness accepted this exact prompt, so callers must not submit it again. */
@@ -257,7 +257,7 @@ export interface SendMessageOptions {
   automationPurpose?: "autopilot";
   /** Existing regular inbox IDs transferred only at durable hook offer. */
   retainedInboxIds?: string[];
-  /** Internal active-turn-only delivery. Never resume/start or enqueue a future turn. */
+  /** Internal current-turn guard. OpenCode also uses it to suppress the post-admission wake PATCH; it never selects the delivery mode. */
   activeTurnOnly?: boolean;
   /** Exact failed input fence for recovery only; ordinary coordination is unchanged. */
   recoveryBoundary?: {turnId:string;userMessageId:string;completedAt:number};
@@ -274,6 +274,8 @@ export interface SendMessageOptions {
   queue?: boolean;
   /** If true, steer the agent's current direction */
   steer?: boolean;
+  /** Start one initial turn in a fresh OpenCode 2.2.4 session; never queue or steer. */
+  start?: boolean;
   /** Stable native operation identity for crash-safe delivery reconciliation. */
   inputId?: string;
   /**

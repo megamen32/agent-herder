@@ -344,20 +344,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
   readonly type = "opencode" as const;
   readonly name = "OpenCode";
   readonly runtimeCapabilities = RUNTIME_CAPS;
-  readonly controlCapabilities: HarnessCapabilities = {
-    cancelTurn: true,
-    detach: true,
-    resume: false,
-    terminate: false,
-    recover: true,
-    fork: true,
-    modelSwitch: true,
-    subagents: true,
-    events: true,
-    // Native v2 supports steering a running turn (sendActiveMessage); a v1
-    // server degrades to a durable current-turn context reservation.
-    steer: true,
-  };
+  readonly controlCapabilities: HarnessCapabilities;
 
   private readonly client: OpenCodeClient;
   /** URL of the same OpenCode server the core client talks to. */
@@ -366,6 +353,9 @@ export class OpenCodeAdapter implements HarnessAdapter {
   private readonly authorization: string | undefined;
   /** Native v2 emits the inbox delivery before execution.started, whose frame has no input ID. */
   private readonly deliveredInboxBySession = new Map<string, string | null>();
+  /** Sessions created by this adapter are eligible for one v2.2.4 initial Start. */
+  private readonly v22CreatedSessions = new Set<string>();
+  private readonly v22StartAttempts = new Set<string>();
   /** Durable integrator journal of the reserved operation, when this adapter serves one. */
   private readonly integratorSessionBindingStore: IntegratorSessionBindingStore | undefined;
   /** The reservation the integrator runtime handed to this adapter. */
@@ -373,7 +363,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
   /** Explicit credentials for the read-only OmniRoute route proof. */
   private readonly modelProviderResolverConfig: OpenCodeModelProviderResolverConfig;
 
-  constructor(config: { baseUrl?: string; password?: string; protocol?: "auto" | "v1" | "v2";
+  constructor(config: { baseUrl?: string; password?: string; protocol?: "auto" | "v1" | "v2" | "v22";
     /** Explicit, separately scoped credentials for read-only OmniRoute route resolution. */
     modelProviderResolver?: OpenCodeModelProviderResolverConfig;
     /** Durable integrator journal of the reserved operation, when this adapter serves one. */
@@ -385,6 +375,22 @@ export class OpenCodeAdapter implements HarnessAdapter {
       ...(config.password ? { password: config.password } : {}),
       ...(config.protocol ? { protocol: config.protocol } : {}),
     });
+    this.controlCapabilities = config.protocol === "v22"
+      ? { cancelTurn: false, detach: false, resume: false, terminate: false, recover: false, fork: false, modelSwitch: false, subagents: false, events: false, steer: false }
+      : {
+        cancelTurn: true,
+        detach: true,
+        resume: false,
+        terminate: false,
+        recover: true,
+        fork: true,
+        modelSwitch: true,
+        subagents: true,
+        events: true,
+        // Native v2 supports steering a running turn (sendActiveMessage); a v1
+        // server degrades to a durable current-turn context reservation.
+        steer: true,
+      };
     this.baseUrl = resolveOpenCodeBaseUrl(config.baseUrl);
     const password = config.password ?? process.env.OPENCODE_SERVER_PASSWORD;
     const username = process.env.OPENCODE_SERVER_USERNAME || "opencode";
@@ -397,6 +403,10 @@ export class OpenCodeAdapter implements HarnessAdapter {
   /** True once the server answered as an OpenCode 2 (`/api`) instance. */
   get isV2(): boolean {
     return this.client.isV2;
+  }
+
+  get isV22(): boolean {
+    return this.client.isV22;
   }
 
   async init(): Promise<void> {
@@ -650,6 +660,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
       ...(model ? { model } : {}),
       ...(options.fullAccess ? { fullAccess: true } : {}),
     });
+    if (this.client.isV22) this.v22CreatedSessions.add(created.id);
     await this.recordIntegratorCreated(created.id, created.cwd || options.cwd);
     // A session Herder created knows who it is from its first turn: otherwise
     // an OpenCode agent cannot name itself, coordinate, or answer "who am I".
@@ -733,6 +744,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
    * older servers run.
    */
   async sendActiveMessage(id: string, options: SendMessageOptions): Promise<ControlResult> {
+    if (this.client.isV22) return { ok: false, notSubmitted: true, nonRetryable: true, inputId: options.inputId, error: "OpenCode 2.2.4 supports initial Start only" };
     // Legacy servers have no native steer; they keep the durable hook offer.
     if (!this.client.isV2) return reserveCurrentTurnContext(this, id, options);
     const prior = await previousCoordinationReceipt(this, id, options.inputId);
@@ -771,7 +783,22 @@ export class OpenCodeAdapter implements HarnessAdapter {
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
-    const result = normalizeSendAdmission(await this.client.send(id, { message: options.message, delivery: options.queue ? "queue" : "steer", ...(options.inputId ? { inputId: options.inputId } : {}) }));
+    if (this.client.isV22) {
+      if (options.start !== true || options.queue === true || options.steer === true
+        || !this.v22CreatedSessions.has(id) || this.v22StartAttempts.has(id)) {
+        return { ok: false, notSubmitted: true, admission: "not_submitted", inputId: options.inputId, error: "OpenCode 2.2.4 supports one initial Start on a fresh session created by this adapter" };
+      }
+      this.v22StartAttempts.add(id);
+    } else if (options.start === true) {
+      return { ok: false, notSubmitted: true, admission: "not_submitted", inputId: options.inputId, error: "OpenCode Start is only supported by pinned protocol v22" };
+    }
+    const delivery = options.start === true ? "start" : options.queue ? "queue" : "steer";
+    const result = normalizeSendAdmission(await this.client.send(id, {
+      message: options.message,
+      delivery,
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.inputId ? { inputId: options.inputId } : {}),
+    }));
     // A prompt admitted while no turn executes strands in the native inbox
     // after an interrupted/failed turn: steering the admitted item wakes
     // execution, so the message is delivered now instead of waiting forever.

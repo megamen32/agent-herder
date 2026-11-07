@@ -23,6 +23,7 @@ const CONTROL_CAPABILITIES = {
   recover: false, fork: false, modelSwitch: false, subagents: false,
   events: false, steer: false,
 };
+const DELIVERY_MODES = ["start"] as const;
 
 /** Run the narrow AHAP v0.1 surface used by the OpenCode create/deliver/read port. */
 export async function serveOpenCodeAhap(
@@ -33,6 +34,8 @@ export async function serveOpenCodeAhap(
   const lines = createInterface({ input, crlfDelay: Infinity });
   let initialized = false;
   let stopped = false;
+  const createdSessionIds = new Set<string>();
+  const attemptedStartSessionIds = new Set<string>();
 
   const write = (value: unknown) => output.write(`${JSON.stringify(value)}\n`);
   const error = (id: RpcId | null, code: number, message: string, data?: unknown) =>
@@ -69,7 +72,7 @@ export async function serveOpenCodeAhap(
       write({ jsonrpc: "2.0", id, result: {
         harness: "opencode",
         name: "OpenCode bounded adapter",
-        capabilities: { methods: METHODS, controlCapabilities: CONTROL_CAPABILITIES },
+        capabilities: { methods: METHODS, deliveryModes: DELIVERY_MODES, controlCapabilities: CONTROL_CAPABILITIES },
       } });
       continue;
     }
@@ -98,24 +101,34 @@ export async function serveOpenCodeAhap(
             continue;
           }
           result = await adapter.createSession(options);
+          if (result && typeof result === "object" && typeof (result as AgentSession).id === "string") {
+            createdSessionIds.add((result as AgentSession).id);
+          }
           break;
         }
         case "sendMessage": {
           const options = params.options;
-          if (typeof params.id !== "string" || !params.id.trim() || !isQueuedInput(options)) {
-            error(id, -32602, "sendMessage requires session id, queue=true, message, and stable inputId");
+          if (typeof params.id !== "string" || !params.id.trim() || !isStartInput(options)
+            || !createdSessionIds.has(params.id) || attemptedStartSessionIds.has(params.id)) {
+            error(id, -32602, "sendMessage supports one initial Start with queue=false for a session created by this runner");
             continue;
           }
-          // Queue is the only supported mode. activeTurnOnly suppresses the
-          // legacy adapter's optional wakeInboxItem PATCH; this call never
-          // steers, resumes, falls back, or retries.
-          const queued: SendMessageOptions = {
+          // OpenCode 2.2.4 exposes an initial synchronous Start, not a deferred
+          // queue. Reserve the fresh runner-created session before the one
+          // mutating call, so an ambiguous result cannot be replayed in-process.
+          attemptedStartSessionIds.add(params.id);
+          const start: SendMessageOptions & { start: true } = {
             ...options,
-            queue: true,
+            queue: false,
+            start: true,
             activeTurnOnly: true,
           };
-          result = await adapter.sendMessage(params.id, queued);
+          result = await adapter.sendMessage(params.id, start);
           const receipt = result as SendMessageResult;
+          if (receipt.admitted === true
+            && (typeof receipt.nativeInputMessageId !== "string" || !/^msg_[A-Za-z0-9]+$/u.test(receipt.nativeInputMessageId))) {
+            throw new Error("OpenCode Start admission has no exact native user receipt");
+          }
           if (receipt.inputId !== options.inputId) {
             result = { ...receipt, inputId: options.inputId as string };
           }
@@ -157,10 +170,10 @@ function isCreateOptions(value: unknown): value is CreateSessionOptions {
     && typeof options.cwd === "string" && isAbsolute(options.cwd);
 }
 
-function isQueuedInput(value: unknown): value is SendMessageOptions & { inputId: string } {
+function isStartInput(value: unknown): value is SendMessageOptions & { queue: false; inputId: string } {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const options = value as Record<string, unknown>;
-  return options.queue === true
+  return options.queue === false
     && typeof options.message === "string" && options.message.length > 0
     && options.message.length <= 4 * 1024 * 1024
     && typeof options.inputId === "string" && options.inputId.trim().length > 0
@@ -175,12 +188,12 @@ function makeConfiguredAdapter(): OpenCodeAdapter {
     || endpoint.search || endpoint.hash) {
     throw new Error("AHAP_OPENCODE_BASE_URL must be an absolute HTTP(S) endpoint without credentials, query, or fragment");
   }
-  // Explicit v2 prevents the legacy HTML compatibility retry from replaying a
-  // mutation against the same endpoint after an ambiguous native response.
+  // Explicit v22 selects the OpenCode 2.2.4 endpoint and never probes/falls
+  // back across protocol families after a mutating call.
   return new OpenCodeAdapter({
     baseUrl: endpoint.toString().replace(/\/$/u, ""),
     password: process.env.AHAP_OPENCODE_PASSWORD,
-    protocol: "v2",
+    protocol: "v22",
   });
 }
 

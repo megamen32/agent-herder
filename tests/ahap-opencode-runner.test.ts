@@ -38,7 +38,7 @@ it("rejects JSON primitives and arrays as invalid requests, then keeps serving",
   expect(adapterCalls).toBe(1);
 });
 
-it("maps create, Queue delivery and exact read results without rewriting receipts", async () => {
+it("maps create, one initial Start and exact read results without rewriting receipts", async () => {
   const calls: Array<{ method: string; args: unknown[] }> = [];
   const adapter = {
     async init() { calls.push({ method: "init", args: [] }); },
@@ -48,7 +48,7 @@ it("maps create, Queue delivery and exact read results without rewriting receipt
     },
     async sendMessage(id: string, options: unknown) {
       calls.push({ method: "sendMessage", args: [id, options] });
-      return { ok: true, admitted: true, pending: true, inputId: "caller-input-17", nativeInputMessageId: "msg_native_17" };
+      return { ok: true, admitted: true, pending: true, inputId: "caller-input-17", nativeInputMessageId: "msg_native17" };
     },
     async getSession(id: string) {
       calls.push({ method: "getSession", args: [id] });
@@ -56,14 +56,15 @@ it("maps create, Queue delivery and exact read results without rewriting receipt
     },
     async getSessionMessages(id: string, limit?: number) {
       calls.push({ method: "getSessionMessages", args: [id, limit] });
-      return [{ id: "msg_native_17", role: "user", inputId: "caller-input-17", turnId: "turn_17", text: "do work", parts: [{ type: "text", text: "do work" }] }];
+      return [{ id: "msg_native17", role: "user", inputId: "caller-input-17", turnId: "turn_17", text: "do work", parts: [{ type: "text", text: "do work" }] }];
     },
   };
   const replies = await run(adapter, [
     initialize,
     { jsonrpc: "2.0", id: 2, method: "init" },
     { jsonrpc: "2.0", id: 3, method: "createSession", params: { options: { name: "worker", cwd: "/tmp/work" } } },
-    { jsonrpc: "2.0", id: 4, method: "sendMessage", params: { id: "ses_created_exact", options: { message: "do work", queue: true, inputId: "caller-input-17" } } },
+    { jsonrpc: "2.0", id: 4, method: "sendMessage", params: { id: "ses_created_exact", options: { message: "do work", queue: false, inputId: "caller-input-17" } } },
+    { jsonrpc: "2.0", id: 8, method: "sendMessage", params: { id: "ses_created_exact", options: { message: "must not replay", queue: false, inputId: "caller-input-18" } } },
     { jsonrpc: "2.0", id: 5, method: "getSession", params: { id: "ses_created_exact" } },
     { jsonrpc: "2.0", id: 6, method: "getSessionMessages", params: { id: "ses_created_exact", limit: 50 } },
     { jsonrpc: "2.0", id: 7, method: "shutdown" },
@@ -71,14 +72,16 @@ it("maps create, Queue delivery and exact read results without rewriting receipt
 
   expect(replies[0].result.capabilities.methods).toEqual(["init", "createSession", "sendMessage", "getSession", "getSessionMessages"]);
   expect(replies[0].result.capabilities.controlCapabilities).toMatchObject({ events: false, steer: false });
+  expect(replies[0].result.capabilities.deliveryModes).toEqual(["start"]);
   expect(replies[2].result.id).toBe("ses_created_exact");
-  expect(replies[3].result).toMatchObject({ inputId: "caller-input-17", nativeInputMessageId: "msg_native_17", admitted: true });
+  expect(replies[3].result).toMatchObject({ inputId: "caller-input-17", nativeInputMessageId: "msg_native17", admitted: true });
   expect(replies[3].result.inputId).not.toBe(replies[3].result.nativeInputMessageId);
-  expect(replies[4].result.id).toBe("ses_created_exact");
-  expect(replies[5].result[0]).toMatchObject({ id: "msg_native_17", inputId: "caller-input-17", turnId: "turn_17" });
+  expect(replies[4].error.code).toBe(-32602);
+  expect(replies[5].result.id).toBe("ses_created_exact");
+  expect(replies[6].result[0]).toMatchObject({ id: "msg_native17", inputId: "caller-input-17", turnId: "turn_17" });
   const send = calls.find((call) => call.method === "sendMessage")!;
   expect(send.args[0]).toBe("ses_created_exact");
-  expect(send.args[1]).toMatchObject({ queue: true, activeTurnOnly: true, inputId: "caller-input-17" });
+  expect(send.args[1]).toMatchObject({ queue: false, start: true, activeTurnOnly: true, inputId: "caller-input-17" });
   expect(calls.filter((call) => call.method === "sendMessage")).toHaveLength(1);
 });
 
@@ -86,26 +89,29 @@ it("returns an UNKNOWN error after a lost mutating call and never invokes a fall
   let submits = 0;
   const adapter = {
     async init() {},
-    async createSession() { throw new Error("response lost after native create"); },
+    async createSession() { return { id: "ses_exact", harness: "opencode", status: "idle", title: "worker", cwd: "/tmp/work", hostId: "fixture" }; },
     async sendMessage() { submits += 1; throw new Error("response lost after native queue"); },
     async getSession() { return null; },
     async getSessionMessages() { return null; },
   };
   const replies = await run(adapter, [
     initialize,
-    { jsonrpc: "2.0", id: 2, method: "sendMessage", params: { id: "ses_exact", options: { message: "one input", queue: true, inputId: "input-once" } } },
-    { jsonrpc: "2.0", id: 3, method: "shutdown" },
+    { jsonrpc: "2.0", id: 2, method: "createSession", params: { options: { name: "worker", cwd: "/tmp/work" } } },
+    { jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "ses_exact", options: { message: "one input", queue: false, inputId: "input-once" } } },
+    { jsonrpc: "2.0", id: 4, method: "sendMessage", params: { id: "ses_exact", options: { message: "one input", queue: false, inputId: "input-once" } } },
+    { jsonrpc: "2.0", id: 5, method: "shutdown" },
   ]);
 
   expect(submits).toBe(1);
-  expect(replies[1].error).toMatchObject({ code: -32000, data: { outcome: "unknown", retryable: false } });
+  expect(replies[2].error).toMatchObject({ code: -32000, data: { outcome: "unknown", retryable: false } });
+  expect(replies[3].error.code).toBe(-32602);
 });
 
 it("rejects unsupported delivery before calling the adapter and does not invent a native receipt", async () => {
   let submits = 0;
   const adapter = {
     async init() {},
-    async createSession() { return {} as never; },
+    async createSession() { return { id: "ses_receipt_missing", harness: "opencode", status: "idle", title: "worker", cwd: "/tmp/work", hostId: "fixture" }; },
     async sendMessage(_id: string, _options: unknown) {
       submits += 1;
       return { ok: true, admitted: true, pending: true, inputId: "caller-input" };
@@ -115,13 +121,15 @@ it("rejects unsupported delivery before calling the adapter and does not invent 
   };
   const replies = await run(adapter, [
     initialize,
-    { jsonrpc: "2.0", id: 2, method: "sendMessage", params: { id: "ses_exact", options: { message: "no steer", queue: false, inputId: "input" } } },
-    { jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "ses_exact", options: { message: "accepted, receipt absent", queue: true, inputId: "caller-input" } } },
-    { jsonrpc: "2.0", id: 4, method: "shutdown" },
+    { jsonrpc: "2.0", id: 2, method: "createSession", params: { options: { name: "worker", cwd: "/tmp/work" } } },
+    { jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "ses_receipt_missing", options: { message: "queue unsupported", queue: true, inputId: "input" } } },
+    { jsonrpc: "2.0", id: 4, method: "sendMessage", params: { id: "ses_receipt_missing", options: { message: "accepted, receipt absent", queue: false, inputId: "caller-input" } } },
+    { jsonrpc: "2.0", id: 5, method: "sendMessage", params: { id: "ses_receipt_missing", options: { message: "never replay", queue: false, inputId: "caller-input" } } },
+    { jsonrpc: "2.0", id: 6, method: "shutdown" },
   ]);
 
-  expect(replies[1].error.code).toBe(-32602);
-  expect(replies[2].result).toMatchObject({ admitted: true, inputId: "caller-input" });
-  expect(replies[2].result.nativeInputMessageId).toBeUndefined();
+  expect(replies[2].error.code).toBe(-32602);
+  expect(replies[3].error).toMatchObject({ code: -32000, data: { outcome: "unknown", retryable: false } });
+  expect(replies[4].error.code).toBe(-32602);
   expect(submits).toBe(1);
 });

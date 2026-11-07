@@ -50,12 +50,14 @@ export interface HarnessMessage {
   parts: HarnessMessagePart[];
 }
 
-export type HarnessDelivery = "queue" | "steer";
+export type HarnessDelivery = "queue" | "steer" | "start";
 
 export interface HarnessSendRequest {
   message: string;
-  /** `steer` is admitted into a live turn, `queue` after it. */
+  /** `steer` targets a live turn, `queue` waits for a later turn, `start` opens a fresh initial turn. */
   delivery: HarnessDelivery;
+  /** Optional explicit provider/model for native start operations. */
+  model?: string;
   /** Stable identity of this input, used for durable deduplication. */
   inputId?: string;
 }
@@ -63,7 +65,7 @@ export interface HarnessSendRequest {
 export interface HarnessSendResult {
   ok: boolean;
   admitted?: boolean;
-  /** Native OpenCode inbox/user-message ID returned by its prompt endpoint. */
+  /** Native OpenCode user-message ID, returned directly or verified by readback. */
   nativeInputMessageId?: string;
   error?: string;
 }
@@ -86,5 +88,5 @@ export interface HarnessClientOptions {
   baseUrl?: string;
   password?: string;
   /** Pin the native protocol instead of probing it (tests, legacy servers). */
-  protocol?: "auto" | "v1" | "v2";
+  protocol?: "auto" | "v1" | "v2" | "v22";
 }

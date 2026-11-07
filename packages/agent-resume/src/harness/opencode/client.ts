@@ -522,7 +522,7 @@ export class OpenCodeClient implements HarnessClient {
   private headers: Record<string, string> = {};
   private apiPrefix = "";
   private protocolProbed = false;
-  private readonly pinnedProtocol?: "v1" | "v2";
+  private readonly pinnedProtocol?: "v1" | "v2" | "v22";
   private readonly directories = new Map<string, string>();
 
   constructor(options: HarnessClientOptions & { baseUrl?: string } = {}) {
@@ -533,7 +533,7 @@ export class OpenCodeClient implements HarnessClient {
     const password = options.password ?? process.env.OPENCODE_SERVER_PASSWORD;
     const username = process.env.OPENCODE_SERVER_USERNAME || "opencode";
     if (password) this.headers.Authorization = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
-    if (options.protocol === "v1" || options.protocol === "v2") this.pinnedProtocol = options.protocol;
+    if (options.protocol === "v1" || options.protocol === "v2" || options.protocol === "v22") this.pinnedProtocol = options.protocol;
   }
 
   /** True once the server answered as an OpenCode 2 (`/api`) instance. */
@@ -541,9 +541,14 @@ export class OpenCodeClient implements HarnessClient {
     return this.apiPrefix === "/api";
   }
 
+  /** Explicit OpenCode 2.2.4 API: `/api/health` plus the unprefixed session API. */
+  get isV22(): boolean {
+    return this.pinnedProtocol === "v22";
+  }
+
   async init(): Promise<void> {
     await this.probeProtocol();
-    const res = await this.fetch(this.isV2 ? this.api("/config") : "/global/health");
+    const res = await this.fetch(this.isV22 ? "/api/health" : this.isV2 ? this.api("/config") : "/global/health");
     if (!res.ok) throw new Error(`OpenCode ${this.baseUrl} is not reachable: HTTP ${res.status}${await this.errorHint(res)}`);
   }
 
@@ -630,6 +635,13 @@ export class OpenCodeClient implements HarnessClient {
     const model = separator > 0
       ? { providerID: request.model!.slice(0, separator), id: request.model!.slice(separator + 1) }
       : undefined;
+    if (this.isV22) {
+      const session = await this.fetchJson<OpenCodeSessionPayload>("/session", {
+        method: "POST",
+        body: JSON.stringify({ title: request.title }),
+      });
+      return this.toSummary(session);
+    }
     if (this.isV2) {
       const session = await this.fetchJson<OpenCodeSessionPayload>(this.api("/session"), {
         method: "POST",
@@ -673,7 +685,9 @@ export class OpenCodeClient implements HarnessClient {
       // The native endpoint rejects a limit above 200, so the overfetch is
       // clamped to what it accepts.
       const fetchLimit = this.isV2 ? Math.min(bounded * 3, 200) : bounded;
-      const endpoint = this.isV2
+      const endpoint = this.isV22
+        ? this.api(`/session/${encodeURIComponent(id)}/message`)
+        : this.isV2
         ? this.api(`/session/${encodeURIComponent(id)}/message?limit=${fetchLimit}&order=desc`)
         : this.api(`/session/${encodeURIComponent(id)}/message?limit=${bounded}`);
       const messages = await this.fetchJson<OpenCodeMessagePayload[]>(endpoint);
@@ -1164,6 +1178,7 @@ export class OpenCodeClient implements HarnessClient {
 
   async send(id: string, request: HarnessSendRequest): Promise<HarnessSendResult & { admission?: "not_submitted" | "accepted" | "pending" | "unknown"; notSubmitted?: boolean; admissionUnknown?: boolean; quotaFailure?: { classification: "quota_exhausted" } }> {
     await this.probeProtocol();
+    if (this.isV22) return this.sendV22Start(id, request);
     if (!this.isV2) {
       // Legacy servers admit a queued input at `prompt_async` and a direct one
       // through `message`; they have no inbox and no steer.
@@ -1214,6 +1229,66 @@ export class OpenCodeClient implements HarnessClient {
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
+  }
+
+  /** OpenCode 2.2.4 starts only a fresh initial turn through its synchronous message route. */
+  private async sendV22Start(id: string, request: HarnessSendRequest): Promise<HarnessSendResult & {
+    admission?: "not_submitted" | "accepted" | "unknown";
+    notSubmitted?: boolean;
+    admissionUnknown?: boolean;
+  }> {
+    if (request.delivery !== "start") {
+      return { ok: false, notSubmitted: true, admission: "not_submitted", error: "OpenCode 2.2.4 supports initial Start only; queue and steer are unsupported" };
+    }
+    let model: { providerID: string; modelID: string } | undefined;
+    if (request.model) {
+      const separator = request.model.indexOf("/");
+      if (separator <= 0 || separator === request.model.length - 1) {
+        return { ok: false, notSubmitted: true, admission: "not_submitted", error: "Start model must use provider/model format" };
+      }
+      model = { providerID: request.model.slice(0, separator), modelID: request.model.slice(separator + 1) };
+    }
+
+    let before: HarnessMessage[] | null;
+    try {
+      before = await this.getMessages(id, 200);
+    } catch {
+      before = null;
+    }
+    if (!before) return { ok: false, notSubmitted: true, admission: "not_submitted", error: "OpenCode 2.2.4 pre-send read failed" };
+
+    let response: Response;
+    try {
+      response = await this.fetch(`/session/${encodeURIComponent(id)}/message`, {
+        method: "POST",
+        body: JSON.stringify({
+          ...(model ? { model } : {}),
+          parts: [{ type: "text", text: request.message }],
+        }),
+      });
+    } catch {
+      return { ok: false, admissionUnknown: true, admission: "unknown", error: "OpenCode 2.2.4 Start outcome is unknown" };
+    }
+    if (!response.ok) {
+      return { ok: false, admissionUnknown: true, admission: "unknown", error: `OpenCode 2.2.4 Start outcome is unknown after HTTP ${response.status}` };
+    }
+
+    let after: HarnessMessage[] | null;
+    try {
+      after = await this.getMessages(id, 200);
+    } catch {
+      after = null;
+    }
+    if (!after) return { ok: false, admissionUnknown: true, admission: "unknown", error: "OpenCode 2.2.4 Start was accepted but exact user readback failed" };
+    const previousIds = new Set(before.map((message) => message.id));
+    const exactUsers = after.filter((message) => message.role === "user"
+      && message.text === request.message
+      && !previousIds.has(message.id)
+      && /^msg_[A-Za-z0-9]+$/u.test(message.id));
+    if (exactUsers.length !== 1) {
+      return { ok: false, admissionUnknown: true, admission: "unknown", error: "OpenCode 2.2.4 Start has no unique exact native user readback" };
+    }
+    return { ok: true, admitted: true, admission: "accepted", nativeInputMessageId: exactUsers[0]!.id };
   }
 
   /** Wake one stranded queued inbox item: steering it starts session execution.
@@ -1782,7 +1857,7 @@ export class OpenCodeClient implements HarnessClient {
     const url = new URL(`${this.baseUrl}${path}`);
     const match = url.pathname.match(/^\/(?:api\/)?session\/([^/]+)(?:\/|$)/);
     const matchedId = match?.[1];
-    if (matchedId && matchedId !== "status" && !this.isV2 && !url.searchParams.has("directory")) {
+    if (matchedId && matchedId !== "status" && !this.isV2 && !this.isV22 && !url.searchParams.has("directory")) {
       const id = decodeURIComponent(matchedId);
       const directLookup = url.pathname === `/session/${matchedId}` && (!init?.method || init.method === "GET");
       const directory = directLookup ? this.directories.get(id) : await this.resolveDirectory(id);
