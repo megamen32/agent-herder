@@ -2,6 +2,7 @@
 """Run a command with a disposable profile and a loopback test-model endpoint."""
 import os
 import json
+from contextlib import nullcontext
 from pathlib import Path
 import selectors
 import shutil
@@ -54,7 +55,9 @@ def sandbox_command(command, scratch):
         args.extend(['--symlink', target, str(path)])
     for path in sorted(exposed):
         args.extend(['--ro-bind', str(path), str(path)])
-    args.extend(['--bind', scratch, scratch, '--chdir', scratch, '--', *command])
+    args.extend(['--bind', scratch, scratch, '--dir', '/herder-owner-home',
+                 '--bind', str(Path(scratch) / 'home'), '/herder-owner-home',
+                 '--chdir', scratch, '--', *command])
     return args
 
 
@@ -88,6 +91,16 @@ def main():
         print(f'network namespace isolation unavailable: {error}', file=sys.stderr)
         return 2
     command = args[2:]
+    retained_root = None
+    if command[:1] == ['--retain-on-failure']:
+        if len(command) < 3:
+            print('missing retained directory', file=sys.stderr)
+            return 2
+        retained_root = Path(command[1])
+        if not retained_root.is_absolute() or retained_root.exists():
+            print('retained directory must be an unused absolute path', file=sys.stderr)
+            return 2
+        command = command[2:]
     scenario = 'text'
     if command[:1] == ['--scenario']:
         if len(command) < 3 or command[1] not in ('text', 'tool-call'):
@@ -99,7 +112,12 @@ def main():
     if not command:
         print("usage: python3 launch.py -- COMMAND [ARGS...]", file=sys.stderr)
         return 2
-    with tempfile.TemporaryDirectory(prefix="herder-native-") as root:
+    if retained_root is not None:
+        retained_root.mkdir(mode=0o700)
+        print(f'ISOLATED_RETAINED_ROOT {retained_root}', flush=True)
+    context = (nullcontext(str(retained_root)) if retained_root is not None
+               else tempfile.TemporaryDirectory(prefix="herder-native-"))
+    with context as root:
         home = Path(root) / "home"
         home.mkdir(mode=0o700)
         for name in ("config", "cache", "data", "state", "tmp"):
@@ -131,7 +149,13 @@ def main():
             if not port.isdecimal() or not 0 < int(port) < 65536:
                 raise RuntimeError("test model did not report a valid port")
             env["HERDER_TEST_MODEL_BASE_URL"] = f"http://127.0.0.1:{port}/v1"
-            return subprocess.run(client_cmd, env=env, check=False).returncode
+            result = subprocess.run(client_cmd, env=env, check=False).returncode
+            if retained_root is not None:
+                if result == 0:
+                    shutil.rmtree(root)
+                else:
+                    print(f'ISOLATED_FAILURE_RETAINED {retained_root}', flush=True)
+            return result
         finally:
             server.terminate()
             try:

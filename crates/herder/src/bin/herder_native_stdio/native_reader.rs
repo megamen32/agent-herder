@@ -140,24 +140,39 @@ fn observe(thread: &Value, receipt: &NativeReceipt) -> Observation {
         _ => unknown(),
     }
 }
+pub fn snapshot_from_metadata(target: &SessionAddress, thread: &Value) -> SessionSnapshot {
+    let mut snapshot = snapshot_from_thread(target, thread);
+    snapshot.activity = match thread
+        .get("status")
+        .and_then(|v| v.get("type"))
+        .and_then(Value::as_str)
+    {
+        Some("idle") => SessionActivity::Idle,
+        _ => SessionActivity::Unknown,
+    };
+    snapshot
+}
+pub fn snapshot_from_thread(target: &SessionAddress, thread: &Value) -> SessionSnapshot {
+    SessionSnapshot {
+        address: target.clone(),
+        human_stop: false,
+        activity: activity(thread),
+        capabilities: vec![Capability {
+            name: "deliver.start".into(),
+            version: CapabilityVersion {
+                adapter_version: "codex-native".into(),
+                capability_version: "1".into(),
+            },
+            supported: Support::Supported,
+            available: Availability::Available,
+            authorized: Authorization::Authorized,
+        }],
+    }
+}
 impl NativeSessionReader for NativeReader {
     async fn snapshot(&self, target: &SessionAddress) -> Result<SessionSnapshot, ReadError> {
         let thread = self.read(target)?;
-        Ok(SessionSnapshot {
-            address: target.clone(),
-            human_stop: false,
-            activity: activity(&thread),
-            capabilities: vec![Capability {
-                name: "deliver.start".into(),
-                version: CapabilityVersion {
-                    adapter_version: "codex-native".into(),
-                    capability_version: "1".into(),
-                },
-                supported: Support::Supported,
-                available: Availability::Available,
-                authorized: Authorization::Authorized,
-            }],
-        })
+        Ok(snapshot_from_thread(target, &thread))
     }
     async fn reconcile(&self, receipt: &NativeReceipt) -> Result<Observation, ReadError> {
         let thread = self.read(&receipt.target)?;
@@ -218,6 +233,25 @@ mod tests {
             activity(&json!({"turns":[{"status":"new"}]})),
             SessionActivity::Unknown
         );
+    }
+    #[test]
+    fn metadata_requires_explicit_idle() {
+        let r = receipt();
+        assert_eq!(
+            snapshot_from_metadata(&r.target, &json!({"status":{"type":"idle"}})).activity,
+            SessionActivity::Idle
+        );
+        for status in [
+            json!({"type":"active","activeFlags":[]}),
+            json!({"type":"notLoaded"}),
+            json!({"type":"systemError"}),
+            json!(null),
+        ] {
+            assert_eq!(
+                snapshot_from_metadata(&r.target, &json!({"status":status})).activity,
+                SessionActivity::Unknown
+            );
+        }
     }
     #[tokio::test]
     async fn reader_checks_profile_target_and_exact_receipt_over_rpc() {

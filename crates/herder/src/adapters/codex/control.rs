@@ -231,6 +231,37 @@ impl CodexControl {
         })
     }
 
+    /// Read the exact thread on this control connection. Fresh Codex threads
+    /// may not yet be visible to a different app-server process.
+    pub fn read_snapshot_thread(
+        &self,
+        target: &SessionAddress,
+    ) -> Result<Value, crate::domain::adapter::ReadError> {
+        use crate::domain::adapter::ReadError;
+        if target.instance != self.instance || target.native_session_id.is_empty() {
+            return Err(ReadError("wrong Codex instance or empty thread".into()));
+        }
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| ReadError("Codex control lock poisoned".into()))?;
+        let response = state
+            .connection
+            .request(
+                "thread/read",
+                json!({"threadId": target.native_session_id, "includeTurns": false}),
+                self.timeout,
+            )
+            .map_err(|e| ReadError(e.to_string()))?;
+        let thread = response
+            .get("thread")
+            .filter(|t| {
+                t.get("id").and_then(Value::as_str) == Some(target.native_session_id.as_str())
+            })
+            .ok_or_else(|| ReadError("thread identity mismatch".into()))?;
+        Ok(thread.clone())
+    }
+
     /// Search only native `userMessage.clientId` values. A miss or ambiguity
     /// never authorizes another submit. The caller may persist a unique Found receipt.
     pub fn lookup_request(

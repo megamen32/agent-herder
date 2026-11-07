@@ -20,7 +20,11 @@ struct Fixture {
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
+        if std::env::var_os("HERDER_KEEP_OWNER_FIXTURE").is_some() {
+            println!("OWNER_FIXTURE_PRESERVED {}", self.root.display());
+        } else {
+            let _ = fs::remove_dir_all(&self.root);
+        }
     }
 }
 impl Fixture {
@@ -478,6 +482,7 @@ fn trusted_owner_launcher_wires_create_and_scoped_read_over_stdio() {
 import json,os,sys
 home=os.environ['CODEX_HOME']
 experimental=False
+fresh=False
 for line in sys.stdin:
  r=json.loads(line)
  if 'id' not in r: continue
@@ -485,10 +490,16 @@ for line in sys.stdin:
  if m=='initialize':
   experimental=p.get('capabilities',{}).get('experimentalApi') is True
   v={'codexHome':os.path.realpath(home)}
- elif m=='thread/start': v={'thread':{'id':'fake-thread'}}
+ elif m=='thread/start':
+  fresh=True
+  v={'thread':{'id':'fake-thread'}}
  elif m=='thread/read':
+  if not fresh and not os.path.exists(os.path.join(home,'sent')):
+   print(json.dumps({'id':r['id'],'error':{'code':-32000,'message':'thread not yet persisted for another process'}}),flush=True);continue
+  if fresh and not os.path.exists(os.path.join(home,'sent')) and p.get('includeTurns') is True:
+   print(json.dumps({'id':r['id'],'error':{'code':-32000,'message':'includeTurns unavailable before first message'}}),flush=True);continue
   turns=[{'id':'fake-turn','status':'completed','items':[{'type':'userMessage'}]}] if os.path.exists(os.path.join(home,'sent')) else []
-  v={'thread':{'id':'fake-thread','turns':turns}}
+  v={'thread':{'id':'fake-thread','status':{'type':'idle'},'turns':turns}}
  elif m=='turn/start':
   open(os.path.join(home,'sent'),'w').write('1')
   v={'turn':{'id':'fake-turn'}}
@@ -678,10 +689,6 @@ fn real_sdk_owner_stdio_create_task_and_reopened_messages() {
         .unwrap();
     let evidence = fs::read_to_string(&receipt).unwrap_or_else(|_| "NO_RECEIPT_UNKNOWN".into());
     println!("OWNER_PROOF_RECEIPT {evidence}");
-    assert!(
-        status.success(),
-        "one-shot result failed or unknown; never resend"
-    );
     let port = model
         .trim_start_matches("http://127.0.0.1:")
         .trim_end_matches("/v1")
@@ -694,6 +701,11 @@ fn real_sdk_owner_stdio_create_task_and_reopened_messages() {
     let mut result = String::new();
     stream.read_to_string(&mut result).unwrap();
     let body = result.split_once("\r\n\r\n").unwrap().1;
+    println!("OWNER_MODEL_STATS {body}");
+    assert!(
+        status.success(),
+        "one-shot result failed or unknown; never resend"
+    );
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(body).unwrap()["requests"],
         1,

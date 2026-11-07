@@ -18,7 +18,10 @@ use herder::{
         Action, Caller, ConnectionIdentity, Grant, PrincipalId, PrivateResource, VerifiedPrincipal,
     },
     domain::{
-        adapter::{Admission, DispatchPlan, RequestKey, SubmitError},
+        adapter::{
+            Admission, DispatchPlan, NativeReceipt, NativeSessionReader, Observation, ReadError,
+            RequestKey, SessionSnapshot, SubmitError,
+        },
         address::{InstanceRef, NodeRef, SessionAddress, SessionRef},
     },
     mcp::{
@@ -72,6 +75,25 @@ impl BoundedNativeHandoff for Control {
         self.0.native_control().submit_bounded(p, m, k)
     }
 }
+struct OwnerNativeReader {
+    control: Arc<Control>,
+    reopened: Arc<NativeReader>,
+}
+impl NativeSessionReader for OwnerNativeReader {
+    async fn snapshot(&self, target: &SessionAddress) -> Result<SessionSnapshot, ReadError> {
+        let thread = self
+            .control
+            .0
+            .native_control()
+            .read_snapshot_thread(target)?;
+        Ok(super::native_reader::snapshot_from_metadata(
+            target, &thread,
+        ))
+    }
+    async fn reconcile(&self, receipt: &NativeReceipt) -> Result<Observation, ReadError> {
+        self.reopened.reconcile(receipt).await
+    }
+}
 struct SharedRead(Arc<Mutex<CodexReader>>);
 impl ScopedMessageReader for SharedRead {
     fn read_messages(&mut self, a: &SessionAddress) -> Result<serde_json::Value, ()> {
@@ -84,7 +106,7 @@ struct OwnerApp {
     instance: InstanceRef,
     grants: Vec<Grant>,
     policy: Arc<OwnerPolicy>,
-    reader: Arc<NativeReader>,
+    reader: Arc<OwnerNativeReader>,
     messages: Arc<Mutex<CodexReader>>,
     control: Arc<Control>,
     create: Arc<dyn ApplicationPort>,
@@ -190,7 +212,7 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
         cwd: opened.owner.cwd,
     };
     let timeout = Duration::from_secs(20);
-    let reader = Arc::new(NativeReader::open(
+    let reopened = Arc::new(NativeReader::open(
         process.clone(),
         instance.clone(),
         timeout,
@@ -201,6 +223,10 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
         instance.clone(),
         timeout,
     )?)));
+    let reader = Arc::new(OwnerNativeReader {
+        control: control.clone(),
+        reopened,
+    });
     let principal = PrincipalId(opened.owner.principal);
     let identity = ConnectionIdentity::new(
         Caller::Principal(VerifiedPrincipal {

@@ -12,11 +12,13 @@ base = os.environ.get('HERDER_TEST_MODEL_BASE_URL', '')
 if not base.startswith('http://127.0.0.1:') or not base.endswith('/v1'):
     raise SystemExit('isolated loopback model required')
 # Scoped authority rejects writable ancestors such as /tmp.  This private
-# directory lives only in launch.py's disposable bwrap filesystem.
+# directory is a bind of the task-owned protected host directory.
 protected_home = Path('/herder-owner-home')
-protected_home.mkdir(mode=0o700)
+if not protected_home.is_dir() or protected_home.stat().st_mode & 0o077:
+    raise SystemExit('protected home binding unavailable')
 env = dict(os.environ, HOME=str(protected_home), HERDER_TEST_CODEX_BIN=codex,
-           HERDER_OWNER_NATIVE_BINARY=herder, HERDER_OWNER_SDK_PROBE=probe)
+           HERDER_OWNER_NATIVE_BINARY=herder, HERDER_OWNER_SDK_PROBE=probe,
+           HERDER_KEEP_OWNER_FIXTURE="1")
 result = subprocess.run([test, '--ignored', '--exact',
                          'real_sdk_owner_stdio_create_task_and_reopened_messages', '--nocapture'],
                         env=env, check=False)

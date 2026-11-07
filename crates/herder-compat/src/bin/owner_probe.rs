@@ -116,13 +116,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(Value::as_str)
         .ok_or("terminal task omitted session ref")?
         .to_owned();
-    if terminal
-        .pointer("/structuredContent/prompt/outcome")
-        .and_then(Value::as_str)
-        != Some("confirmed")
-    {
-        return Err(format!("terminal prompt not confirmed: {terminal}").into());
-    }
     client.cancel().await?;
     let reopened = connect(&args[1], &args[2]).await?;
     let reread = reopened
@@ -143,6 +136,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let body = messages
         .structured_content
         .ok_or("missing messages content")?;
+    println!(
+        "{}",
+        json!({"phase":"readback", "task":terminal,"messages":body})
+    );
+    if terminal
+        .pointer("/structuredContent/prompt/outcome")
+        .and_then(Value::as_str)
+        != Some("confirmed")
+    {
+        return Err("terminal prompt not confirmed; no replay".into());
+    }
     if !body.to_string().contains(&args[4]) {
         return Err("exact input absent from readback".into());
     }
