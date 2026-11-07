@@ -10,7 +10,7 @@ publish = false
 herder = { path = "../herder" }
 rmcp = { version = "=3.9.0", default-features = false, features = ["server", "transport-streamable-http-server"] }
 axum = "0.8"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "io-util", "sync", "signal"] }
 serde_json = "1"
 
 [dev-dependencies]

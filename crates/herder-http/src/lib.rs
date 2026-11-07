@@ -1,5 +1,7 @@
 //! Experimental request-authenticated HTTP transport. No authority or listener is
 //! configured here; the embedding owner must supply both over trusted channels.
+#[cfg(unix)]
+pub mod authority_channel;
 use axum::{
     Router,
     extract::{Request, State},
