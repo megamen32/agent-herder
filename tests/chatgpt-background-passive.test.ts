@@ -6,6 +6,9 @@ import type { HarnessAdapter } from '../src/types/index.js';
 import { ChatGptMacCdpDriver } from '../src/adapters/chatgpt-mac-cdp-driver.js';
 import { BrowserChatAdapter } from '../src/adapters/browser-chat.js';
 import { runInNewContext } from 'node:vm';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { chatgptPassiveHistoryScript } from '../src/adapters/chatgpt-passive-history.js';
 
 it('never directly refreshes a stalled ChatGPT session even when polling is enabled',async()=>{
@@ -90,6 +93,58 @@ it('retries a completed turn when passive history becomes available',async()=>{
  expect(submit).not.toHaveBeenCalled();
  available=true;await observer.observeOnce();expect(submit).toHaveBeenCalledTimes(1);
  await observer.observeOnce();expect(submit).toHaveBeenCalledTimes(1);
+});
+
+it('reconsiders a deferred ChatGPT stop without replaying a pending or completed job',async()=>{
+ let status:'running'|'idle'='running';let jobState='queued';let decision='';let nextId=0;
+ const adapter={listBackgroundSessions:async()=>[{id:'chatgpt::s1',status,cwd:'/tmp/fixture',lastActivity:'2026-01-01T00:00:00Z'}],
+  getBackgroundMessages:async()=>[{id:'u1',role:'user',text:'question'},{id:'a1',role:'assistant',text:'answer'}]};
+ const submit=vi.fn(()=>({id:`job-${++nextId}`}));
+ const observer=new BrowserTurnAutopilotObserver({harnesses:['chatgpt'],adapters:new Map([['chatgpt',adapter as unknown as HarnessAdapter]]),
+  supervisor:{sendMessage:vi.fn()},submit,readJob:()=>({state:jobState,result:{decision,reason:decision==='deferred'?'passive-snapshot-unavailable-before-evaluation':undefined}}),enabled:async()=>true,held:async()=>false,stallMs:60000,autoContinue:false});
+ await observer.observeOnce();status='idle';await observer.observeOnce();await observer.observeOnce();expect(submit).toHaveBeenCalledTimes(1);
+ jobState='completed';decision='deferred';await observer.observeOnce();expect(submit).toHaveBeenCalledTimes(2);
+ jobState='queued';await observer.observeOnce();expect(submit).toHaveBeenCalledTimes(2);
+ jobState='completed';decision='done';await observer.observeOnce();await observer.observeOnce();expect(submit).toHaveBeenCalledTimes(2);
+});
+
+it('tracks a new running turn while the previous ChatGPT stop is pending',async()=>{
+ let status:'running'|'idle'='running',nextId=0;
+ const adapter={listBackgroundSessions:async()=>[{id:'chatgpt::s1',status,cwd:'/tmp/fixture',lastActivity:'2026-01-01T00:00:00Z'}],
+  getBackgroundMessages:async()=>[{id:'u1',role:'user',text:'question'},{id:'a1',role:'assistant',text:'answer'}]};
+ const submit=vi.fn(()=>({id:`job-${++nextId}`}));
+ const observer=new BrowserTurnAutopilotObserver({harnesses:['chatgpt'],adapters:new Map([['chatgpt',adapter as unknown as HarnessAdapter]]),
+  supervisor:{sendMessage:vi.fn()},submit,readJob:()=>({state:'completed',result:{decision:'done'}}),enabled:async()=>true,held:async()=>false,stallMs:60000,autoContinue:false});
+ await observer.observeOnce();status='idle';await observer.observeOnce();
+ status='running';await observer.observeOnce();status='idle';await observer.observeOnce();
+ expect(submit).toHaveBeenCalledTimes(2);
+});
+
+it('never replays an interrupted ChatGPT stop with an unknown outcome',async()=>{
+ let status:'running'|'idle'='running';
+ const adapter={listBackgroundSessions:async()=>[{id:'chatgpt::s1',status,cwd:'/tmp/fixture',lastActivity:'2026-01-01T00:00:00Z'}],
+  getBackgroundMessages:async()=>[{id:'a1',role:'assistant',text:'answer'}]};
+ const submit=vi.fn(()=>({id:'job-1'}));
+ const observer=new BrowserTurnAutopilotObserver({harnesses:['chatgpt'],adapters:new Map([['chatgpt',adapter as unknown as HarnessAdapter]]),
+  supervisor:{sendMessage:vi.fn()},submit,readJob:()=>({state:'interrupted'}),enabled:async()=>true,held:async()=>false,stallMs:60000,autoContinue:false});
+ await observer.observeOnce();status='idle';await observer.observeOnce();await observer.observeOnce();await observer.observeOnce();
+ expect(submit).toHaveBeenCalledTimes(1);
+});
+
+it('retains the pending ChatGPT job identity across observer restart',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'herder-chatgpt-turn-'));
+ try {
+  let status:'running'|'idle'='running';
+  const adapter={listBackgroundSessions:async()=>[{id:'chatgpt::s1',status,cwd:'/tmp/fixture',lastActivity:'2026-01-01T00:00:00Z'}],
+   getBackgroundMessages:async()=>[{id:'a1',role:'assistant',text:'answer'}]};
+  const submit=vi.fn(()=>({id:'job-1'}));
+  const options={harnesses:['chatgpt'],adapters:new Map([['chatgpt',adapter as unknown as HarnessAdapter]]),
+   supervisor:{sendMessage:vi.fn()},submit,readJob:()=>({state:'completed',result:{decision:'deferred',reason:'passive-snapshot-unavailable-before-evaluation'}}),
+   enabled:async()=>true,held:async()=>false,stallMs:60000,autoContinue:false,turnsFile:join(dir,'turns.json')};
+  const first=new BrowserTurnAutopilotObserver(options);await first.observeOnce();status='idle';await first.observeOnce();
+  const second=new BrowserTurnAutopilotObserver(options);await second.observeOnce();
+  expect(submit).toHaveBeenCalledTimes(2);
+ } finally {rmSync(dir,{recursive:true,force:true});}
 });
 
 it('requests a bounded browser visit when completed ChatGPT history is not yet visible',async()=>{

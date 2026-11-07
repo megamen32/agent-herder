@@ -27,7 +27,16 @@ export class BackgroundAutopilotStop {
     // The same immutable event identity is independent from repeated hook metadata.
     const key = `autopilot-stop:${input.harness}:${resolve(input.cwd)}:${input.sessionId}:${input.turnId}`;
     const fingerprint = createHash("sha256").update(key).digest("hex");
-    const existing = this.options.jobs.get(`job_${fingerprint}`);
+    let attemptKey = key;
+    let existing = this.options.jobs.get(`job_${fingerprint}`);
+    // Only a completed pre-evaluation deferral is safe to re-admit. Any
+    // failed, interrupted, accepted or uncertain job remains non-replayable.
+    for (let attempt = 1; input.harness === "chatgpt" && attempt <= 128 && existing?.state === "completed"
+      && (existing.result as { decision?: unknown; reason?: unknown } | undefined)?.decision === "deferred"
+      && (existing.result as { reason?: unknown } | undefined)?.reason === "passive-snapshot-unavailable-before-evaluation"; attempt++) {
+      attemptKey = `${key}:deferred:${attempt}`;
+      existing = this.options.jobs.get(`job_${createHash("sha256").update(attemptKey).digest("hex")}`);
+    }
     if (existing) return existing;
     if (this.queued >= 32) throw new Error("Background Autopilot queue is full");
     const target = `${input.harness}:${input.sessionId}`;
@@ -37,7 +46,7 @@ export class BackgroundAutopilotStop {
     this.tail = new Promise<void>(r => { release = r; });
     try {
       return this.options.jobs.start({ kind: "Разбор завершённого хода Автопилотом", ownerSessionId: input.sessionId,
-        idempotencyKey: key, requestFingerprint: fingerprint,
+        idempotencyKey: attemptKey, requestFingerprint: fingerprint,
         run: async ({ signal, progress }) => {
           try {
             await previous;
@@ -45,7 +54,9 @@ export class BackgroundAutopilotStop {
             const adapter = this.options.adapters.get(input.harness);
             if (!adapter) return { decision: "unavailable" };
             const before = await this.snapshot(adapter, input);
-            if (!before || before.session.status === "needs_input") return { decision: "deferred" };
+            if (!before || before.session.status === "needs_input") return input.harness === "chatgpt"
+              ? { decision: "deferred", reason: "passive-snapshot-unavailable-before-evaluation" }
+              : { decision: "deferred" };
             const controller = await autopilotGoalControllerAllowed(input, before.session);
             if (!controller.allowed) return { decision: "unavailable", reason: controller.reason ?? "native-goal-controller-unavailable" };
             if (!await autopilotGoalNativeInputsKnown(input, before.messages)) return { decision: "unavailable", reason: "unregistered-native-human-input" };
@@ -67,7 +78,13 @@ export class BackgroundAutopilotStop {
                 return { allowed, nativeReportObservation: current.nativeReportObservation } satisfies NativeFenceRead;
               } });
             const doneCandidate = result.decision === "done-candidate";
-            if (!doneCandidate && (result.decision !== "continue" || typeof result.next_goal !== "string")) return result;
+            if (!doneCandidate && (result.decision !== "continue" || typeof result.next_goal !== "string")) {
+              // Evaluator output is not evidence that no evaluation ran.
+              if (result.decision === "deferred" && result.reason === "passive-snapshot-unavailable-before-evaluation") {
+                return { ...result, reason: "evaluation-deferred" };
+              }
+              return result;
+            }
             const after = await this.snapshot(adapter, input);
             if (signal.aborted || !after || after.fingerprint !== before.fingerprint
               || after.session.status === "running" || after.session.status === "needs_input"

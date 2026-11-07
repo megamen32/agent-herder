@@ -43,6 +43,8 @@ export interface BrowserTurnObserverOptions {
   supervisor: BrowserTurnObserverSupervisor;
   /** The durable Stop consumer; it deduplicates by the immutable turn identity. */
   submit: (input: AutopilotRunnerInput) => unknown;
+  /** Read the exact submitted job; unavailable or uncertain jobs are never replayed. */
+  readJob?: (id: string) => { state: string; result?: unknown } | null | undefined;
   /** Cheap enablement probe: a disabled session must never create a job. */
   enabled: (input: AutopilotRunnerInput) => Promise<boolean>;
   held: (harness: string, sessionId: string) => Promise<boolean>;
@@ -70,6 +72,7 @@ interface TrackedTurn {
   stallBaseline?: number;
   nudgedActivity?: string;
   lastStaleRefreshAt?: number;
+  pendingJobId?: string;
 }
 
 export class BrowserTurnAutopilotObserver {
@@ -128,7 +131,7 @@ export class BrowserTurnAutopilotObserver {
     try {
       const parsed = JSON.parse(readFileSync(file, "utf8")) as {
         version?: number;
-        turns?: Record<string, { running?: boolean; activity?: string; runningSince?: number; lastStaleRefreshAt?: number }>;
+        turns?: Record<string, { running?: boolean; activity?: string; runningSince?: number; lastStaleRefreshAt?: number; pendingJobId?: string }>;
       };
       if (parsed?.version !== 1 || !parsed.turns || typeof parsed.turns !== "object") return;
       for (const [key, entry] of Object.entries(parsed.turns)) {
@@ -142,6 +145,7 @@ export class BrowserTurnAutopilotObserver {
           running: entry.running,
           activity: typeof entry.activity === "string" ? entry.activity : "",
           runningSince,
+          ...(typeof entry.pendingJobId === "string" && entry.pendingJobId ? { pendingJobId: entry.pendingJobId } : {}),
           ...(typeof entry.lastStaleRefreshAt === "number" && Number.isFinite(entry.lastStaleRefreshAt) ? { lastStaleRefreshAt: entry.lastStaleRefreshAt } : {}),
         });
       }
@@ -153,12 +157,13 @@ export class BrowserTurnAutopilotObserver {
     const file = this.options.turnsFile;
     if (!file) return;
     try {
-      const turns: Record<string, { running: boolean; activity: string; runningSince: number; lastStaleRefreshAt?: number }> = {};
+      const turns: Record<string, { running: boolean; activity: string; runningSince: number; lastStaleRefreshAt?: number; pendingJobId?: string }> = {};
       for (const [key, state] of this.tracked) {
         turns[key] = {
           running: state.running,
           activity: state.activity,
           runningSince: state.runningSince,
+          ...(state.pendingJobId ? { pendingJobId: state.pendingJobId } : {}),
           ...(state.lastStaleRefreshAt ? { lastStaleRefreshAt: state.lastStaleRefreshAt } : {}),
         };
       }
@@ -226,12 +231,37 @@ export class BrowserTurnAutopilotObserver {
     const previous = this.tracked.get(key);
     const running = session.status === "running";
 
+    if (harness === "chatgpt" && previous?.pendingJobId && running) {
+      previous.pendingJobId = undefined;
+      this.saveTurns();
+    }
+    if (harness === "chatgpt" && previous?.pendingJobId && !running) {
+      const job = this.options.readJob?.(previous.pendingJobId);
+      if (!job || ["queued", "running", "waiting", "cancelling"].includes(job.state)) return;
+      const result = job.result as { decision?: unknown; reason?: unknown } | undefined;
+      if (job.state !== "completed" || result?.decision !== "deferred"
+        || result.reason !== "passive-snapshot-unavailable-before-evaluation") {
+        this.tracked.set(key, { running: false, activity: session.lastActivity, runningSince: 0 });
+        this.saveTurns();
+        return;
+      }
+      // A completed deferral occurs before evaluation or delivery; only that
+      // exact outcome may be reconsidered. The Stop consumer enforces it too.
+      previous.pendingJobId = undefined;
+    }
+
     // One remote turn finished: the observed running→idle transition.
     if (previous?.running && !running) {
       if (harness === "chatgpt") {
         // Keep the durable running marker until passive history is available.
         // Otherwise a cooldown or a closed tab permanently loses this turn.
-        if (!await this.submitStop(harness, adapter, session)) return;
+        const result = await this.submitStop(harness, adapter, session);
+        if (!result) return;
+        if (typeof result === "object") {
+          this.tracked.set(key, { ...previous, pendingJobId: result.jobId });
+          this.saveTurns();
+          return;
+        }
         this.tracked.set(key, { running, activity: session.lastActivity, runningSince: 0 });
         this.saveTurns();
         return;
@@ -291,7 +321,7 @@ export class BrowserTurnAutopilotObserver {
     if (wasRunning !== running) this.saveTurns();
   }
 
-  private async submitStop(harness: string, adapter: HarnessAdapter, session: AgentSession): Promise<boolean> {
+  private async submitStop(harness: string, adapter: HarnessAdapter, session: AgentSession): Promise<boolean | { jobId: string }> {
     if (typeof session.cwd !== "string" || !session.cwd.startsWith("/")) return true;
     // A finished remote turn changed the conversation history. Drop the
     // adapter's cached copy for this chat BEFORE fingerprinting, so the
@@ -348,7 +378,10 @@ export class BrowserTurnAutopilotObserver {
     try {
       if (await this.options.held(harness, session.id)) return true;
       if (!await this.isEnabled(input)) return true;
-      this.options.submit(input);
+      const submitted = this.options.submit(input);
+      if (harness === "chatgpt" && this.options.readJob && submitted && typeof submitted === "object"
+        && typeof (submitted as { id?: unknown }).id === "string") return { jobId: (submitted as { id: string }).id };
+      if (harness === "chatgpt" && this.options.readJob) return false;
       return true;
     } catch (error) {
       this.options.onError?.(`Autopilot browser Stop submission failed for ${harness}/${session.id}: ${error instanceof Error ? error.message : String(error)}`);

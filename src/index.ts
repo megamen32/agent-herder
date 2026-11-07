@@ -1376,6 +1376,7 @@ async function main() {
         supervisor: processSupervisor,
         handleTurnCommands: (harness, sessionId, cwd, messages) => chatCommandPipeline.handleTurnMessages(harness, sessionId, cwd, messages),
         submit: (input) => backgroundAutopilotStop!.submit(input),
+        readJob: (id) => herderJobs.get(id),
         enabled: async (input) => (await runAutopilotCommand({ ...input, command: "status" })).enabled === true,
         held: (harness, id) => humanStopStore.isHeld(harness, id),
         stallMs: Number(process.env.AGENT_HERDER_BROWSER_AUTOCONTINUE_STALL_MS || 1_200_000),

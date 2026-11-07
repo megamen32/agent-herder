@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BackgroundAutopilotStop } from "../src/autopilot/background-stop.js";
+import { BrowserTurnAutopilotObserver } from "../src/autopilot/browser-turn-observer.js";
 import { HerderJobRegistry } from "../src/herder-jobs.js";
 import { HerderEventBus } from "../src/herder-events.js";
 import { createWebServer } from "../src/web/server.js";
@@ -23,6 +24,42 @@ async function fixture() {
 }
 async function waitUntil(fn:()=>boolean) { const end=Date.now()+3000; while(!fn()){if(Date.now()>end)throw Error("unfinished job");await new Promise(r=>setTimeout(r,5));} }
 describe("background Stop delivery",()=>{
+ it("never retries a deferred evaluation that is not the pre-evaluation history deferral",async()=>{
+  const f=await fixture();const messages=[{id:'u1',role:'user',text:'question',parts:[]},{id:'a1',role:'assistant',text:'answer',parts:[]}];
+  const adapter={...f.adapter,getBackgroundMessages:async()=>messages};
+  const evaluate=vi.fn(async()=>({decision:'deferred',reason:'passive-snapshot-unavailable-before-evaluation'}));
+  const consumer=new BackgroundAutopilotStop({jobs:f.jobs,adapters:new Map([['chatgpt',adapter as any]]),evaluate,deliver:f.deliver,held:async()=>false,allowed:async()=>true});
+  const input={...event,harness:'chatgpt' as const,lastAssistantMessage:'answer'};
+  const first=consumer.submit(input);await waitUntil(()=>f.jobs.get(first.id)?.state==='completed');
+  expect(consumer.submit(input).id).toBe(first.id);expect(evaluate).toHaveBeenCalledTimes(1);
+ });
+ it("automatically reconsiders a safely deferred ChatGPT stop after history returns",async()=>{
+  const f=await fixture();let status:'running'|'idle'='running',reads=0,available=false;
+  const messages=[{id:'u1',role:'user',text:'question',parts:[]},{id:'a1',role:'assistant',text:'answer',parts:[]}];
+  const adapter={...f.adapter,listBackgroundSessions:async()=>[{id:event.sessionId,harness:'chatgpt',cwd:event.cwd,status,lastActivity:new Date().toISOString()}],
+   getBackgroundMessages:async()=>++reads===1||available?messages:null};
+  const evaluate=vi.fn(async()=>({decision:'done'}));
+  const consumer=new BackgroundAutopilotStop({jobs:f.jobs,adapters:new Map([['chatgpt',adapter as any]]),evaluate,deliver:f.deliver,held:async()=>false,allowed:async()=>true});
+  const observer=new BrowserTurnAutopilotObserver({harnesses:['chatgpt'],adapters:new Map([['chatgpt',adapter as any]]),
+   supervisor:{sendMessage:vi.fn()},submit:input=>consumer.submit(input),readJob:id=>f.jobs.get(id),enabled:async()=>true,held:async()=>false,stallMs:60000,autoContinue:false});
+  await observer.observeOnce();status='idle';await observer.observeOnce();
+  await waitUntil(()=>!consumer.isPending('chatgpt',event.sessionId));
+  expect(evaluate).not.toHaveBeenCalled();available=true;await observer.observeOnce();
+  await waitUntil(()=>evaluate.mock.calls.length===1);await waitUntil(()=>!consumer.isPending('chatgpt',event.sessionId));
+  await observer.observeOnce();await observer.observeOnce();expect(evaluate).toHaveBeenCalledTimes(1);expect(f.deliver).not.toHaveBeenCalled();
+ });
+ it("does not permanently consume a ChatGPT turn if passive history disappears before the job starts",async()=>{
+  const f=await fixture();let available=false;
+  const messages=[{id:'u1',role:'user',text:'question',parts:[]},{id:'a1',role:'assistant',text:'answer',parts:[]}];
+  const adapter={...f.adapter,getBackgroundMessages:vi.fn(async()=>available?messages:null)};
+  const evaluate=vi.fn(async()=>({decision:'done'}));
+  const consumer=new BackgroundAutopilotStop({jobs:f.jobs,adapters:new Map([['chatgpt',adapter as any]]),evaluate,deliver:f.deliver,held:async()=>false,allowed:async()=>true});
+  const input={...event,harness:'chatgpt' as const,lastAssistantMessage:'answer'};
+  const first=consumer.submit(input);await waitUntil(()=>f.jobs.get(first.id)?.state==='completed');
+  expect(f.jobs.get(first.id)?.result).toMatchObject({decision:'deferred'});
+  available=true;const retry=consumer.submit(input);await waitUntil(()=>f.jobs.get(retry.id)?.state==='completed');
+  expect(evaluate).toHaveBeenCalledTimes(1);expect(f.deliver).not.toHaveBeenCalled();
+ });
  it("rechecks ChatGPT using passive history without a direct background fetch",async()=>{
   const f=await fixture();
   const messages=[{id:"u1",role:"user",text:"Почини",parts:[{type:"text",text:"Почини"}]},{id:"a1",role:"assistant",text:event.lastAssistantMessage,parts:[{type:"text",text:event.lastAssistantMessage}]}];
