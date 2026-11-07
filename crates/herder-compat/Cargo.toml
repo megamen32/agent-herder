@@ -1,0 +1,20 @@
+[package]
+name = "herder-compat"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96.1"
+publish = false
+
+[[bin]]
+name = "herder-compat"
+path = "src/main.rs"
+
+[[bin]]
+name = "compat-native-fixture"
+path = "src/bin/native_fixture.rs"
+
+[dependencies]
+rmcp = { version = "=3.9.0", default-features = false, features = ["client", "server", "transport-io", "transport-child-process"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process"] }
