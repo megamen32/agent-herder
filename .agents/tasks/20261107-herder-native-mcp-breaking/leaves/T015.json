@@ -1,0 +1,57 @@
+{
+  "label": "Упаковать translator и инструкции подключения и удаления",
+  "description": "Реализовать только этот проверяемый шаг по COMPATIBILITY.md. Входы: T014, V140. При неизвестном SDK/consumer маршруте сначала назвать минимальный пробел; не форкать Codex.",
+  "acceptance": "Отдельный binary/config; старый клиент подключается штатно; удаление пакета не требует менять core или данные.",
+  "depends_on": [
+    "T014",
+    "V140"
+  ],
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "parent": "S01",
+  "owner": "unassigned",
+  "model": "gpt-6-astra",
+  "status": "queued",
+  "affected_files": [
+    "crates/herder-compat/",
+    "acceptance/compat/"
+  ],
+  "note": "Самостоятельная compatibility сессия. Центральные Cargo/lib/schema изменения согласовать с владельцем core; своих исполнителей без назначения Astra не создавать.",
+  "id": "T015",
+  "created_at": "2026-11-07T04:20:41+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T04:20:41+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T04:20:41+03:00",
+      "note": "",
+      "changes": {
+        "label": "Упаковать translator и инструкции подключения и удаления",
+        "description": "Реализовать только этот проверяемый шаг по COMPATIBILITY.md. Входы: T014, V140. При неизвестном SDK/consumer маршруте сначала назвать минимальный пробел; не форкать Codex.",
+        "acceptance": "Отдельный binary/config; старый клиент подключается штатно; удаление пакета не требует менять core или данные.",
+        "depends_on": [
+          "T014",
+          "V140"
+        ],
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "parent": "S01",
+        "owner": "unassigned",
+        "model": "gpt-6-astra",
+        "status": "queued",
+        "affected_files": [
+          "crates/herder-compat/",
+          "acceptance/compat/"
+        ],
+        "note": "Самостоятельная compatibility сессия. Центральные Cargo/lib/schema изменения согласовать с владельцем core; своих исполнителей без назначения Astra не создавать."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

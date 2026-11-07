@@ -1,0 +1,62 @@
+{
+  "label": "Закрепить schemas и границу удаляемого translator",
+  "description": "Реализовать только этот проверяемый шаг по COMPATIBILITY.md. Входы: . При неизвестном SDK/consumer маршруте сначала назвать минимальный пробел; не форкать Codex.",
+  "acceptance": "Native каталог14 и отдельные compat_task/skill/changes; схемы/ошибки и exact caller contract согласованы с COMPATIBILITY.md.",
+  "depends_on": [],
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "parent": "S01",
+  "owner": "roomhacker",
+  "model": "gpt-6-astra",
+  "status": "running",
+  "affected_files": [
+    "crates/herder-compat/",
+    "acceptance/compat/"
+  ],
+  "note": "Самостоятельная compatibility сессия. Центральные Cargo/lib/schema изменения согласовать с владельцем core; своих исполнителей без назначения Astra не создавать.",
+  "id": "T001",
+  "created_at": "2026-11-07T04:20:34+03:00",
+  "session": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+  "harness": "codex",
+  "updated_at": "2026-11-07T04:24:52+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T04:20:34+03:00",
+      "note": "",
+      "changes": {
+        "label": "Закрепить schemas и границу удаляемого translator",
+        "description": "Реализовать только этот проверяемый шаг по COMPATIBILITY.md. Входы: . При неизвестном SDK/consumer маршруте сначала назвать минимальный пробел; не форкать Codex.",
+        "acceptance": "Native каталог14 и отдельные compat_task/skill/changes; схемы/ошибки и exact caller contract согласованы с COMPATIBILITY.md.",
+        "depends_on": [],
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "parent": "S01",
+        "owner": "unassigned",
+        "model": "gpt-6-astra",
+        "status": "queued",
+        "affected_files": [
+          "crates/herder-compat/",
+          "acceptance/compat/"
+        ],
+        "note": "Самостоятельная compatibility сессия. Центральные Cargo/lib/schema изменения согласовать с владельцем core; своих исполнителей без назначения Astra не создавать."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:24:52+03:00",
+      "note": "Прочитан COMPATIBILITY.md из каталога плана. Изолированный worktree от origin/main готов. Составляю отдельный compatibility crate и acceptance probe; core Cargo/lib.rs не трогаю.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+      "harness": "codex"
+    }
+  ]
+}

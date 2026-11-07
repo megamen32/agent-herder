@@ -1,0 +1,57 @@
+{
+  "label": "Удалить compatibility из тестовой сборки и проверить native путь",
+  "description": "Реализовать только этот проверяемый шаг по COMPATIBILITY.md. Входы: T013, V010. При неизвестном SDK/consumer маршруте сначала назвать минимальный пробел; не форкать Codex.",
+  "acceptance": "Без legacy crate/config native build и direct read/create/deliver остаются работоспособны; native core не зависит от translator.",
+  "depends_on": [
+    "T013",
+    "V010"
+  ],
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "parent": "S01",
+  "owner": "unassigned",
+  "model": "gpt-6-astra",
+  "status": "queued",
+  "affected_files": [
+    "crates/herder-compat/",
+    "acceptance/compat/"
+  ],
+  "note": "Самостоятельная compatibility сессия. Центральные Cargo/lib/schema изменения согласовать с владельцем core; своих исполнителей без назначения Astra не создавать.",
+  "id": "T014",
+  "created_at": "2026-11-07T04:20:41+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T04:20:41+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T04:20:41+03:00",
+      "note": "",
+      "changes": {
+        "label": "Удалить compatibility из тестовой сборки и проверить native путь",
+        "description": "Реализовать только этот проверяемый шаг по COMPATIBILITY.md. Входы: T013, V010. При неизвестном SDK/consumer маршруте сначала назвать минимальный пробел; не форкать Codex.",
+        "acceptance": "Без legacy crate/config native build и direct read/create/deliver остаются работоспособны; native core не зависит от translator.",
+        "depends_on": [
+          "T013",
+          "V010"
+        ],
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "parent": "S01",
+        "owner": "unassigned",
+        "model": "gpt-6-astra",
+        "status": "queued",
+        "affected_files": [
+          "crates/herder-compat/",
+          "acceptance/compat/"
+        ],
+        "note": "Самостоятельная compatibility сессия. Центральные Cargo/lib/schema изменения согласовать с владельцем core; своих исполнителей без назначения Astra не создавать."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

@@ -2,9 +2,9 @@
   "title": "Agent Herder v1 — шаги до 15 минут и общие ресурсы",
   "goal": "Поставить breaking Agent Herder v1 для пяти сред: Codex, OpenCode, ZCode, ChatGPT, Z.ai; durable MCP, coordination и offline ownership. Остальные адаптеры — следующее обновление.",
   "business_result": "14 общих инструментов включая resource, 5 прямых адаптеров, durable MCP Tasks/Skills/subscriptions, creator/sender после компакции, global/project/node ресурсы с offline владением; миграция, удаление legacy и установленная приёмка.",
-  "current_progress": "V001, V002, V004, V005, V006, V008 включены в main 8b7f8111, 11 тестов проходят; installed service ещё отсутствует. V003: CLI 0.162.1 несовместим с выбранным wire, реальный Codex App/app-server и официальный изолированный кандидат проверяются. V007 и V011 выполняются в разных worktree. Консультация Astra 03:03 МСК.",
+  "current_progress": "Ядро, каталог и store ведёт Тера (максимум4 агента). Astra запустила шесть самостоятельных сессий: translator/resources/Codex/OpenCode/ZCode/browser. Direct Codex Tasks несовместим; владелец разрешил отдельный translator T001–T015, native core остаётся строгим. Совместимость через translator ещё не принята. Оперативные реализации и proof — в result текущих leaves.",
   "mode": "fullcycle",
-  "slots": 4,
+  "slots": 10,
   "recon": [
     "Владелец ограничил v1 пятью средами и разрешил очистку только этого плана :: прямое сообщение в сессии Astra 2026-11-07",
     "MCP 2026-07-28 и rmcp 3.9.0 подтверждены официальными источниками :: MCP-EVIDENCE.md",
@@ -12,13 +12,19 @@
     "История ревизий вынесена из активных leaves, сохранена с контрольными суммами :: history/astra-review-before-v1-zero/SHA256.json"
   ],
   "acceptance_scenario": "Один immutable v1 candidate: Codex/OpenCode/ZCode/ChatGPT/Z.ai native lanes; реальные consumers; два Codex/OpenCode/browser profiles и две ноды; creator/sender после compaction; UNKNOWN no replay и HumanStop; offline claim/release receipt при выключенном MCP; migration/legacy removal; Linux/macOS installed acceptance. Остальные adapters не входят в v1.",
-  "updated_at": "2026-11-07T03:58:28+03:00",
+  "updated_at": "2026-11-07T04:25:30+03:00",
   "journal": [
     {
       "at": "2026-11-06T23:49:13.993699+00:00",
       "action": "lead_handoff",
       "result": "Прямое поручение владельца: Lead Terra gpt-6.1-terra session 01a1b341-e06b-7583-8fd4-352423ca22cb; Adviser/Overseer Astra gpt-6-astra session 01a1b2b2-5685-7b52-a2bb-05eb931cafa4. Совет при вопросах и не реже 60 минут. Schedule cadence_1d4c49887b8656a281743a81af0d2562 подтверждён scheduled; nextAt 2026-11-07T00:03:04.668Z. Первая консультация получена и дан ответ. Shared worktree/implementation переданы Тере.",
       "confirmation": "create_thread + wait_threads active; cadence schedule receipt; первая консультация native message от Terra; git fetch origin/main=213ad40d."
+    },
+    {
+      "at": "2026-11-07T04:25:29.998253+03:00",
+      "action": "owner_translator_and_parallel_leads",
+      "result": "Прямые решения владельца: отдельный удаляемый native-to-legacy translator; Codex не форкать; Terra максимум4 прямых агента, Astra оркестрирует самостоятельные сессии. ORCHESTRATION.md и WAVES.md — назначения и условия волн.",
+      "confirmation": "Прямые сообщения владельца в чате01a1b2b2; шесть create_thread receipts и wait_threads active."
     }
   ],
   "revisions": [
@@ -51,6 +57,11 @@
       "at": "2026-11-07T03:58:28+03:00",
       "reason": "Прямое поручение владельца: детализация до 15 минут, общие ресурсы и упрощение по Парето",
       "summary": "150 будущих V-задач разбиты на проверяемые шаги с сохранением исходного V как точки приёмки. Убраны ложные зависимости локального create, roster, recent и native probes. E001/E002 дают ранний create/deliver/read; resource заменяет workspace, отдельного owner store нет. Текущие V003/V007/V011 и выполненные результаты сохранены. Исходник в history/15m-revision. Локальное исключение 60 минут снято. Полный срок зависит от открытого клиентского gate; отсутствие extensions не скрывается."
+    },
+    {
+      "at": "2026-11-07T04:25:30+03:00",
+      "reason": "Прямое решение владельца: удаляемый legacy translator и самостоятельные сессии вместо десяти подчинённых Теры",
+      "summary": "T001–T015, 14 native tools и отдельные compat helpers; новый путь E001/E002/T013. Общий пул10: до4 core workers Теры +6 самостоятельных направлений под Astra. Введены волны переменной готовности без барьеров."
     }
   ]
 }

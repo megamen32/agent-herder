@@ -6,8 +6,9 @@ v1, ревизия шагов до 15 минут. Это будущие крит
 
 | Результат | Наблюдаемое доказательство |
 |---|---|
-| Breaking API | На финальном артефакте tools/list имеет только 14 заявленных инструментов. Прямые legacy calls/_async/jobs/old launcher не выполняются; отсутствие только в списке недостаточно. |
-| Стандартный MCP | Реальный primary client через реальный gateway выполняет discovery, Task get/update/cancel, reconnect/read и Skill load. Missing capability отказывает до эффекта. Версии клиента/сервера/SDK закреплены. |
+| Breaking API | На native endpoint финального артефакта tools/list имеет только 14 заявленных инструментов. Compatibility endpoint отдельно имеет временные compat helpers, перечисленные в COMPATIBILITY.md. Прямые legacy calls/_async/jobs/old launcher не выполняются; отсутствие только в списке недостаточно. |
+| Стандартный MCP | Новый клиент работает напрямую; неизменённый legacy Codex через translator выполняет обычные calls, которые upstream отображаются в стандартные Task get/update/cancel, Skills read и subscriptions/resync. Unsupported direct capability отказывает до эффекта. Версии обоих плеч закреплены; read Skill не означает activation. |
+| Удаляемый translator | Core не зависит от compatibility crate. После удаления translator native сборка и direct read/create/deliver работают; один durable Task store, identity/ACL/UNKNOWN сохранены. |
 | Нет двойного эффекта | Повтор same key, crash вокруг admission и потеря ответа дают один native input либо UNKNOWN без replay. Changed payload conflict. Task expiry не удаляет защиту повторов. |
 | Правильный результат | Deliver подтверждён native input/turn/queue readback; accepted, Task terminal, tool isError и ответ модели показаны раздельно. Export readable клиентом и сообщает полноту. |
 | Изоляция | Два Codex, два OpenCode и два browser profiles; одинаковые native IDs в fixture; две ноды. Нет пересечения histories, tokens, models, settings или stop. |

@@ -1,0 +1,18 @@
+{
+  "threads": {
+    "translator": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+    "resources": "01a1b399-4210-7471-8286-93750dff10b7",
+    "codex": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+    "opencode": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+    "zcode": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+    "browser": "01a1b39a-d499-7320-809e-e3dbbfae0c33"
+  },
+  "hostId": "remote-ssh-discovered:104.bezrabotnyi.com",
+  "evidence": "create_thread receipts followed by wait_threads active/inProgress for all6; not implementation acceptance",
+  "model": "User configured default; no model override requested; actual model not attested",
+  "limits": {
+    "terra_direct_workers": 4,
+    "standalone_workers": 6,
+    "initial_total_execution_slots": 10
+  }
+}
