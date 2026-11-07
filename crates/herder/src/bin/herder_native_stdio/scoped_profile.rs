@@ -35,6 +35,14 @@ pub fn open(path: &Path) -> Result<ScopedAuthority, Box<dyn std::error::Error>> 
     }
     let uid = unsafe { geteuid() };
     let parent = path.parent().ok_or_else(invalid)?;
+    // Root-owned or current-user-owned ancestors must not be replaceable by
+    // another user. Same-UID adversaries and concurrent chmod are out of scope.
+    for ancestor in parent.ancestors() {
+        let m = std::fs::symlink_metadata(ancestor)?;
+        if !m.is_dir() || (m.uid() != uid && m.uid() != 0) || m.mode() & 0o022 != 0 {
+            return Err(invalid().into());
+        }
+    }
     let dir = parent.metadata()?;
     if !path.is_absolute()
         || parent.canonicalize()? != parent
@@ -46,7 +54,7 @@ pub fn open(path: &Path) -> Result<ScopedAuthority, Box<dyn std::error::Error>> 
     }
     let mut file = OpenOptions::new()
         .read(true)
-        .custom_flags(0x20000)
+        .custom_flags(0x20000 | 0x800)
         .open(path)?;
     let meta = file.metadata()?;
     if !meta.is_file()
@@ -73,7 +81,12 @@ pub fn open(path: &Path) -> Result<ScopedAuthority, Box<dyn std::error::Error>> 
     }
     let gm = std::fs::symlink_metadata(&p.gate)?;
     let _guard = acquire_pinned(&p.gate, gm.dev(), gm.ino())?;
-    let dm = std::fs::symlink_metadata(&p.database)?;
+    // O_NOFOLLOW | O_NONBLOCK prevents symlink and special-file blocking.
+    let database = OpenOptions::new()
+        .read(true)
+        .custom_flags(0x20000 | 0x800)
+        .open(&p.database)?;
+    let dm = database.metadata()?;
     if !dm.is_file()
         || dm.uid() != uid
         || dm.nlink() != 1
@@ -82,13 +95,40 @@ pub fn open(path: &Path) -> Result<ScopedAuthority, Box<dyn std::error::Error>> 
     {
         return Err(invalid().into());
     }
-    let _writer = Writer::open_file(&p.database)?;
-    // Read the immutable authority binding from the same SQLite store while
-    // holding its pinned gate. No registry or alternate state is created.
+    // Protected ancestors prevent other UIDs from swapping the pathname while
+    // SQLite opens it. Pin the file descriptor and compare device/inode again
+    // before and after the single read transaction; no same-UID claim is made.
     let db = rusqlite::Connection::open_with_flags(
         &p.database,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )?;
+    let same = || -> io::Result<bool> {
+        let pinned = database.metadata()?;
+        let named = std::fs::symlink_metadata(&p.database)?;
+        Ok(pinned.is_file()
+            && named.is_file()
+            && pinned.dev() == dm.dev()
+            && pinned.ino() == dm.ino()
+            && named.dev() == dm.dev()
+            && named.ino() == dm.ino()
+            && named.nlink() == 1
+            && named.uid() == uid
+            && named.mode() & 0o077 == 0)
+    };
+    if !same()? {
+        return Err(invalid().into());
+    }
+    db.execute_batch("BEGIN")?;
+    let opened_path: String = db.query_row(
+        "SELECT file FROM pragma_database_list WHERE name='main'",
+        [],
+        |r| r.get(0),
+    )?;
+    let opened_metadata = std::fs::symlink_metadata(&opened_path)?;
+    if opened_metadata.dev() != dm.dev() || opened_metadata.ino() != dm.ino() {
+        return Err(invalid().into());
+    }
+    Writer::validate_exact_v3(&db)?;
     let row: (String, i64, i64, i64, i64) = db.query_row("SELECT generation,gate_device,gate_inode,database_device,database_inode FROM humanstop_authority WHERE singleton=1", [], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)))?;
     if row
         != (
@@ -98,8 +138,10 @@ pub fn open(path: &Path) -> Result<ScopedAuthority, Box<dyn std::error::Error>> 
             dm.dev().try_into()?,
             dm.ino().try_into()?,
         )
+        || !same()?
     {
         return Err(invalid().into());
     }
+    db.execute_batch("COMMIT")?;
     ScopedAuthority::new(p.database, p.gate, p.generation).map_err(|_| invalid().into())
 }

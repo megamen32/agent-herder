@@ -25,7 +25,10 @@ impl Drop for Fixture {
 }
 impl Fixture {
     fn new() -> Self {
-        let root = std::env::temp_dir().join(format!(
+        Self::new_in(&PathBuf::from(std::env::var_os("HOME").unwrap()))
+    }
+    fn new_in(parent: &std::path::Path) -> Self {
+        let root = parent.join(format!(
             "herder-launch-{}-{}",
             std::process::id(),
             SystemTime::now()
@@ -290,5 +293,97 @@ fn launched_authority_retains_fresh_create_receipt_in_the_same_store() {
         )
         .unwrap(),
         1
+    );
+}
+
+#[test]
+fn launch_rejects_downgraded_version_and_missing_v3_fence() {
+    let f = Fixture::new();
+    let c = Connection::open(&f.db).unwrap();
+    c.execute_batch("DROP TRIGGER v3_authority_update_immutable; PRAGMA user_version=1;")
+        .unwrap();
+    assert!(
+        scoped_profile::open(&f.profile).is_err(),
+        "v3 authority in a downgraded and damaged store must be rejected"
+    );
+}
+#[test]
+fn launch_rejects_v3_store_missing_schema_fence() {
+    let f = Fixture::new();
+    let c = Connection::open(&f.db).unwrap();
+    c.execute_batch("DROP TRIGGER v3_authority_update_immutable;")
+        .unwrap();
+    assert!(scoped_profile::open(&f.profile).is_err());
+}
+
+#[test]
+fn launch_rejects_writable_ancestor() {
+    let base = Fixture::new();
+    let unsafe_parent = base.root.join("unsafe-parent");
+    fs::create_dir(&unsafe_parent).unwrap();
+    fs::set_permissions(&unsafe_parent, fs::Permissions::from_mode(0o777)).unwrap();
+    let f = Fixture::new_in(&unsafe_parent);
+    assert!(
+        scoped_profile::open(&f.profile).is_err(),
+        "a valid authority under a writable ancestor must be refused"
+    );
+}
+
+#[test]
+fn fifo_profile_is_rejected_without_waiting_for_a_writer() {
+    let f = Fixture::new();
+    fs::remove_file(&f.profile).unwrap();
+    assert!(
+        Command::new("mkfifo")
+            .arg(&f.profile)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let result = Command::new("timeout")
+        .args(["3", env!("CARGO_BIN_EXE_herder_native_stdio"), "--config"])
+        .arg(&f.config)
+        .arg("--scoped-profile")
+        .arg(&f.profile)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_ne!(
+        result.status.code(),
+        Some(124),
+        "launcher hung opening a FIFO"
+    );
+    assert!(!result.status.success());
+}
+
+#[test]
+fn scoped_stdio_rejects_spoofed_identity_and_mutation() {
+    use std::io::Write;
+    let f = Fixture::new();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
+        .arg("--config")
+        .arg(&f.config)
+        .arg("--scoped-profile")
+        .arg(&f.profile)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let request = serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"spoof","version":"1"},"principal":"alice"},"name":"deliver","arguments":{"action":"session","session_ref":"imported","message":"test","mode":"current","request_key":"never-send"}}});
+    writeln!(process.stdin.take().unwrap(), "{request}").unwrap();
+    let output = process.wait_with_output().unwrap();
+    let response: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["result"]["isError"], true);
+    assert_eq!(response["result"]["structuredContent"]["effect"], "none");
+    assert!(matches!(
+        response["result"]["structuredContent"]["code"].as_str(),
+        Some("unauthorized" | "unsupported")
+    ));
+    let db = Connection::open(&f.db).unwrap();
+    assert_eq!(
+        db.query_row("SELECT count(*) FROM intents", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        0
     );
 }

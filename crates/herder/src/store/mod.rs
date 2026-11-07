@@ -59,6 +59,18 @@ impl Writer {
         }
         Ok(())
     }
+    /// Check the exact v3 schema on the caller's existing connection. The
+    /// caller owns the read transaction and any filesystem identity checks.
+    pub fn validate_exact_v3(connection: &Connection) -> Result<()> {
+        let version: i32 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if version != 3 {
+            return Err(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_SCHEMA),
+                Some("scoped authority requires exact schema version 3".into()),
+            ));
+        }
+        Self::validate_schema(connection, 3)
+    }
     fn configure(connection: Connection, version: i32) -> Result<Connection> {
         connection.pragma_update(None, "foreign_keys", true)?;
         connection.busy_timeout(std::time::Duration::from_secs(5))?;
