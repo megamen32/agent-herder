@@ -62,6 +62,23 @@ impl Writer {
         Ok(())
     }
 
+    pub(crate) fn mark_create_rejected(
+        &mut self,
+        intent: &NewCreateLineageIntent<'_>,
+        reason: &str,
+    ) -> Result<()> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = tx.execute("UPDATE intents SET state='rejected',updated_at=?6 WHERE intent_id=?1 AND principal=?2 AND target=?3 AND request_key=?4 AND payload_hash=?5 AND state='dispatching' AND native_receipt IS NULL", params![intent.intent_id,intent.creator_ref,intent.target,intent.request_ref,intent.payload_hash,intent.now])?;
+        let diagnostic = serde_json::json!({"outcome":"rejected", "native_submit":"definitely_not_sent", "reason":reason}).to_string();
+        let task = tx.execute("UPDATE tasks SET result_json=?2,updated_at=?3 WHERE task_id=(SELECT task_id FROM intents WHERE intent_id=?1)", params![intent.intent_id,diagnostic,intent.now])?;
+        if changed != 1 || task != 1 {
+            return Err(rusqlite::Error::InvalidQuery);
+        }
+        tx.commit()
+    }
+
     /// Called only by the trusted create composition after the matching native
     /// receipt. All three durable records commit or roll back together.
     pub(crate) fn commit_created_session(

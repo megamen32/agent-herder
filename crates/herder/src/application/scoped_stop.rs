@@ -86,7 +86,7 @@ pub trait BoundedFreshRootCreate {
         &self,
         request_key: &str,
         specification: &str,
-    ) -> Result<crate::domain::address::SessionAddress, ()>;
+    ) -> Result<crate::domain::address::SessionAddress, SubmitError>;
 }
 /// Generation is issued by trusted server composition, not an MCP argument.
 pub trait ScopeGenerationIssuer {
@@ -272,6 +272,12 @@ impl ScopedAuthority {
         }
         let address = match control.create_root_bounded(request.request_key, request.specification)
         {
+            Err(SubmitError::DefinitelyNotSent { reason }) => {
+                writer
+                    .mark_create_rejected(&intent, &reason)
+                    .map_err(|_| GateError::Store)?;
+                return Ok(CreateResult::DefinitelyNotSent);
+            }
             Ok(a)
                 if a.instance == *instance
                     && !a.native_session_id.is_empty()

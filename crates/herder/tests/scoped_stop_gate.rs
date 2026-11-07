@@ -162,11 +162,108 @@ impl ScopeGenerationIssuer for Generation {
     }
 }
 struct Creator(InstanceRef);
+
+struct RefusesBeforeWrite(InstanceRef, AtomicUsize);
+impl BoundedFreshRootCreate for RefusesBeforeWrite {
+    fn instance(&self) -> &InstanceRef {
+        &self.0
+    }
+    fn create_root_bounded(&self, _: &str, _: &str) -> Result<SessionAddress, SubmitError> {
+        self.1.fetch_add(1, Ordering::SeqCst);
+        Err(SubmitError::DefinitelyNotSent {
+            reason: "fixture before write".into(),
+        })
+    }
+}
+
+#[test]
+fn create_refused_before_write_is_durable_rejected() {
+    let f = Fixture::new();
+    let target = address();
+    let control = RefusesBeforeWrite(target.instance, AtomicUsize::new(0));
+    let outcome = f
+        .authority()
+        .create_fresh_root(
+            &identity(),
+            &grants(),
+            &control,
+            &Issuer,
+            &Generation,
+            CreateRequest {
+                intent_id: "rejected-create",
+                task_id: "rejected-task",
+                request_key: "rejected-key",
+                specification: "isolated",
+                now: "now",
+                retain_until: "later",
+            },
+        )
+        .unwrap();
+    let db = Connection::open(&f.db).unwrap();
+    let state: String = db
+        .query_row(
+            "SELECT state FROM intents WHERE intent_id='rejected-create'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(state, "rejected", "create result: {outcome:?}");
+    assert_eq!(outcome, CreateResult::DefinitelyNotSent);
+    let diagnostic: String = db
+        .query_row(
+            "SELECT result_json FROM tasks WHERE task_id='rejected-task'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(diagnostic.contains("fixture before write"));
+    drop(db);
+    let same = f
+        .authority()
+        .create_fresh_root(
+            &identity(),
+            &grants(),
+            &control,
+            &Issuer,
+            &Generation,
+            CreateRequest {
+                intent_id: "rejected-create",
+                task_id: "rejected-task",
+                request_key: "rejected-key",
+                specification: "isolated",
+                now: "now",
+                retain_until: "later",
+            },
+        )
+        .unwrap();
+    assert_eq!(same, CreateResult::Existing);
+    assert_eq!(control.1.load(Ordering::SeqCst), 1);
+    let next = f
+        .authority()
+        .create_fresh_root(
+            &identity(),
+            &grants(),
+            &control,
+            &Issuer,
+            &Generation,
+            CreateRequest {
+                intent_id: "new-create",
+                task_id: "new-task",
+                request_key: "new-key",
+                specification: "isolated",
+                now: "now",
+                retain_until: "later",
+            },
+        )
+        .unwrap();
+    assert_eq!(next, CreateResult::DefinitelyNotSent);
+    assert_eq!(control.1.load(Ordering::SeqCst), 2);
+}
 impl BoundedFreshRootCreate for Creator {
     fn instance(&self) -> &InstanceRef {
         &self.0
     }
-    fn create_root_bounded(&self, _: &str, _: &str) -> Result<SessionAddress, ()> {
+    fn create_root_bounded(&self, _: &str, _: &str) -> Result<SessionAddress, SubmitError> {
         Ok(address())
     }
 }
@@ -718,7 +815,11 @@ fn real_codex_fresh_create_deliver_native_read_stop_next_denied() {
         fn instance(&self) -> &InstanceRef {
             &self.instance
         }
-        fn create_root_bounded(&self, key: &str, spec: &str) -> Result<SessionAddress, ()> {
+        fn create_root_bounded(
+            &self,
+            key: &str,
+            spec: &str,
+        ) -> Result<SessionAddress, SubmitError> {
             let mut f = std::pin::pin!(self.control.create_once(key, spec));
             match f.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
                 Poll::Ready(NativeCreateOutcome::Confirmed {
@@ -730,7 +831,10 @@ fn real_codex_fresh_create_deliver_native_read_stop_next_denied() {
                     instance,
                     native_session_id,
                 }),
-                Poll::Ready(_) => Err(()),
+                Poll::Ready(_) => Err(SubmitError::OutcomeUnknown {
+                    receipt: None,
+                    reason: "fixture unknown".into(),
+                }),
                 Poll::Pending => {
                     panic!("Codex create no longer guarantees synchronous bounded handoff")
                 }
@@ -1713,7 +1817,7 @@ impl BoundedFreshRootCreate for BlockedCreator {
     fn instance(&self) -> &InstanceRef {
         &self.instance
     }
-    fn create_root_bounded(&self, _: &str, _: &str) -> Result<SessionAddress, ()> {
+    fn create_root_bounded(&self, _: &str, _: &str) -> Result<SessionAddress, SubmitError> {
         self.ready.send(()).unwrap();
         self.proceed.lock().unwrap().recv().unwrap();
         Ok(address())
@@ -1855,7 +1959,7 @@ fn global_hold_before_create_blocks_native_creation_and_intent() {
         fn instance(&self) -> &InstanceRef {
             &self.instance
         }
-        fn create_root_bounded(&self, _: &str, _: &str) -> Result<SessionAddress, ()> {
+        fn create_root_bounded(&self, _: &str, _: &str) -> Result<SessionAddress, SubmitError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             Ok(address())
         }

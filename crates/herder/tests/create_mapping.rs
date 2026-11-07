@@ -97,6 +97,53 @@ fn request() -> CreateRequest<'static> {
 }
 
 #[tokio::test]
+async fn fake_create_definitely_not_sent_is_rejected_without_replay() {
+    let f = Fixture::new();
+    let mut w = f.writer();
+    let i = instance();
+    let (identity, grants) = auth(&i);
+    let native = Fake {
+        instance: i,
+        calls: Cell::new(0),
+        outcome: NativeCreateOutcome::DefinitelyNotSent {
+            reason: "busy before write".into(),
+        },
+    };
+    assert_eq!(
+        target::create_once(
+            &identity,
+            &grants,
+            &mut w,
+            &native,
+            &Issuer("issued"),
+            request()
+        )
+        .await
+        .unwrap(),
+        CreateResult::DefinitelyNotSent
+    );
+    assert_eq!(
+        target::create_once(
+            &identity,
+            &grants,
+            &mut w,
+            &native,
+            &Issuer("issued"),
+            request()
+        )
+        .await
+        .unwrap(),
+        CreateResult::Existing
+    );
+    assert_eq!(native.calls.get(), 1);
+    drop(w);
+    let c = Connection::open(&f.0).unwrap();
+    let (state, diagnostic): (String, String) = c.query_row("SELECT i.state,t.result_json FROM intents i JOIN tasks t ON i.task_id=t.task_id WHERE i.intent_id='intent'", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    assert_eq!(state, "rejected");
+    assert!(diagnostic.contains("busy before write"));
+}
+
+#[tokio::test]
 async fn fake_create_confirmed_persists_mapping_lineage_and_exact_receipt_atomically() {
     let f = Fixture::new();
     let mut w = f.writer();

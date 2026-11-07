@@ -30,6 +30,9 @@ pub enum NativeCreateOutcome {
         native_session_id: String,
         parent_ref: Option<String>,
     },
+    DefinitelyNotSent {
+        reason: String,
+    },
     Unknown,
 }
 
@@ -50,6 +53,7 @@ pub struct CreateRequest<'a> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum CreateResult {
     Created(SessionRef),
+    DefinitelyNotSent,
     Unknown,
     Existing,
 }
@@ -136,6 +140,12 @@ pub async fn create_once<C: NativeCreateControl, I: SessionRefIssuer>(
     let outcome = control
         .create_once(request.request_key, request.specification)
         .await;
+    if let NativeCreateOutcome::DefinitelyNotSent { reason } = &outcome {
+        writer
+            .mark_create_rejected(&intent, reason)
+            .map_err(|_| TargetError::Store)?;
+        return Ok(CreateResult::DefinitelyNotSent);
+    }
     let NativeCreateOutcome::Confirmed {
         request_key,
         instance: observed,

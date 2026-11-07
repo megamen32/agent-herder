@@ -8,7 +8,10 @@ use std::{path::PathBuf, time::Duration};
 
 use crate::{
     application::target::{NativeCreateControl, NativeCreateOutcome},
-    domain::address::{InstanceRef, SessionAddress},
+    domain::{
+        adapter::SubmitError,
+        address::{InstanceRef, SessionAddress},
+    },
 };
 
 use super::{connection::CodexInstance, control::CodexControl};
@@ -40,32 +43,30 @@ impl CodexCreateControl {
     /// Codex thread/start creates a blank session and has no specification
     /// field. The specification remains bound in the core intent; this port
     /// never guesses that it should become an initial user message.
-    fn create_sync(&self, request_key: &str) -> NativeCreateOutcome {
+    fn create_address(&self, request_key: &str) -> Result<SessionAddress, SubmitError> {
         if request_key.is_empty() || request_key.len() > 4096 {
-            return NativeCreateOutcome::Unknown;
+            return Err(SubmitError::DefinitelyNotSent {
+                reason: "invalid create request key".into(),
+            });
         }
         let Some(cwd) = self.cwd.to_str() else {
-            return NativeCreateOutcome::Unknown;
+            return Err(SubmitError::DefinitelyNotSent {
+                reason: "invalid create working directory".into(),
+            });
         };
 
-        let address: SessionAddress = match self.control.start_thread(cwd) {
-            Ok(address) => address,
-            Err(_) => return NativeCreateOutcome::Unknown,
-        };
+        let address = self.control.start_thread(cwd)?;
         if address.instance != *self.control.instance()
             || address.native_session_id.is_empty()
             || address.native_session_id.len() > 4096
             || address.native_session_id.chars().any(char::is_control)
         {
-            return NativeCreateOutcome::Unknown;
+            return Err(SubmitError::OutcomeUnknown {
+                receipt: None,
+                reason: "invalid native create receipt".into(),
+            });
         }
-
-        NativeCreateOutcome::Confirmed {
-            request_key: request_key.to_owned(),
-            instance: address.instance,
-            native_session_id: address.native_session_id,
-            parent_ref: None,
-        }
+        Ok(address)
     }
 }
 
@@ -74,7 +75,18 @@ impl NativeCreateControl for CodexCreateControl {
         self.control.instance()
     }
     async fn create_once(&self, request_key: &str, _specification: &str) -> NativeCreateOutcome {
-        self.create_sync(request_key)
+        match self.create_address(request_key) {
+            Ok(address) => NativeCreateOutcome::Confirmed {
+                request_key: request_key.to_owned(),
+                instance: address.instance,
+                native_session_id: address.native_session_id,
+                parent_ref: None,
+            },
+            Err(SubmitError::DefinitelyNotSent { reason }) => {
+                NativeCreateOutcome::DefinitelyNotSent { reason }
+            }
+            Err(SubmitError::OutcomeUnknown { .. }) => NativeCreateOutcome::Unknown,
+        }
     }
 }
 
@@ -87,18 +99,8 @@ impl crate::application::scoped_stop::BoundedFreshRootCreate for CodexCreateCont
         &self,
         request_key: &str,
         _specification: &str,
-    ) -> Result<SessionAddress, ()> {
-        match self.create_sync(request_key) {
-            NativeCreateOutcome::Confirmed {
-                instance,
-                native_session_id,
-                ..
-            } => Ok(SessionAddress {
-                instance,
-                native_session_id,
-            }),
-            NativeCreateOutcome::Unknown => Err(()),
-        }
+    ) -> Result<SessionAddress, SubmitError> {
+        self.create_address(request_key)
     }
 }
 
@@ -154,6 +156,28 @@ mod tests {
         )
         .unwrap();
         (control, root)
+    }
+
+    #[tokio::test]
+    async fn invalid_key_is_definitely_not_sent_by_both_ports() {
+        let (control, root) = fake_create_control(false, Duration::from_secs(2));
+        assert!(matches!(
+            control.create_once("", "specification").await,
+            NativeCreateOutcome::DefinitelyNotSent { .. }
+        ));
+        #[cfg(target_os = "linux")]
+        assert!(matches!(
+            crate::application::scoped_stop::BoundedFreshRootCreate::create_root_bounded(
+                &control,
+                "",
+                "specification"
+            ),
+            Err(SubmitError::DefinitelyNotSent { .. })
+        ));
+        let methods = fs::read_to_string(root.join("home/methods")).unwrap();
+        assert_eq!(methods.lines().collect::<Vec<_>>(), ["initialize"]);
+        drop(control);
+        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
