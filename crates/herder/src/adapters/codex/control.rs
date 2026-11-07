@@ -75,6 +75,19 @@ pub enum RequestReceiptLookup {
     Ambiguous,
 }
 
+/// Result of one exact native Codex turn interrupt attempt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InterruptOutcome {
+    /// Codex acknowledged the interrupt, or an uncertain attempt was confirmed
+    /// as interrupted by a subsequent read-only lookup of the same turn.
+    Interrupted,
+    /// The exact turn was not active before any interrupt request was sent.
+    DefinitelyNotSent { reason: String },
+    /// The interrupt may have been applied, but exact-turn readback did not
+    /// prove that it completed. Never retry this operation automatically.
+    OutcomeUnknown { reason: String },
+}
+
 #[derive(Debug)]
 pub enum RequestLookupError {
     Rpc(RpcError),
@@ -318,6 +331,161 @@ impl CodexControl {
         }
         Err(RequestLookupError::PaginationLimit)
     }
+
+    /// Interrupt exactly the caller-supplied native turn. This never chooses
+    /// a different active turn and never retries a possibly-sent interrupt.
+    pub fn interrupt_exact(
+        &self,
+        target: &SessionAddress,
+        native_turn_id: &str,
+    ) -> InterruptOutcome {
+        if target.instance != self.instance {
+            return InterruptOutcome::DefinitelyNotSent {
+                reason: "Codex interrupt target does not belong to this configured instance".into(),
+            };
+        }
+        if target.native_session_id.trim().is_empty()
+            || target.native_session_id.len() > 4096
+            || native_turn_id.trim().is_empty()
+            || native_turn_id.len() > 4096
+        {
+            return InterruptOutcome::DefinitelyNotSent {
+                reason: "Codex interrupt thread ID and turn ID must be non-empty and bounded"
+                    .into(),
+            };
+        }
+
+        let Ok(mut state) = self.state.lock() else {
+            return InterruptOutcome::DefinitelyNotSent {
+                reason: "Codex control connection lock is poisoned".into(),
+            };
+        };
+        let before = match read_turn_status(
+            &mut state.connection,
+            &target.native_session_id,
+            native_turn_id,
+            self.timeout,
+        ) {
+            Ok(Some(status)) if status == "inProgress" => status,
+            Ok(Some(status)) => {
+                return InterruptOutcome::DefinitelyNotSent {
+                    reason: format!("Codex turn {native_turn_id} is not active (status {status})"),
+                };
+            }
+            Ok(None) => {
+                return InterruptOutcome::DefinitelyNotSent {
+                    reason: format!("Codex turn {native_turn_id} was not found in thread history"),
+                };
+            }
+            Err(error) => {
+                return InterruptOutcome::DefinitelyNotSent {
+                    reason: format!("could not verify exact Codex turn before interrupt: {error}"),
+                };
+            }
+        };
+        debug_assert_eq!(before, "inProgress");
+
+        match state.connection.request(
+            "turn/interrupt",
+            json!({"threadId": target.native_session_id, "turnId": native_turn_id}),
+            self.timeout,
+        ) {
+            Ok(_) => InterruptOutcome::Interrupted,
+            Err(error) if definitely_not_sent(&error) => InterruptOutcome::DefinitelyNotSent {
+                reason: error.to_string(),
+            },
+            Err(error) => {
+                // The request may have reached Codex. Perform only read-only
+                // lookup of the same turn; never repeat turn/interrupt.
+                match read_turn_status(
+                    &mut state.connection,
+                    &target.native_session_id,
+                    native_turn_id,
+                    self.timeout,
+                ) {
+                    Ok(Some(status)) if status == "interrupted" => InterruptOutcome::Interrupted,
+                    Ok(status) => InterruptOutcome::OutcomeUnknown {
+                        reason: format!(
+                            "interrupt result is unknown after {error}; exact turn readback status: {}",
+                            status.as_deref().unwrap_or("not found")
+                        ),
+                    },
+                    Err(read_error) => InterruptOutcome::OutcomeUnknown {
+                        reason: format!(
+                            "interrupt result is unknown after {error}; readback failed: {read_error}"
+                        ),
+                    },
+                }
+            }
+        }
+    }
+}
+
+fn definitely_not_sent(error: &RpcError) -> bool {
+    matches!(
+        error,
+        RpcError::NotRunning
+            | RpcError::RequestIdExhausted
+            | RpcError::Process(_)
+            | RpcError::Encode(_)
+            | RpcError::Remote {
+                code: Some(-32600 | -32601),
+                ..
+            }
+    )
+}
+
+fn read_turn_status(
+    connection: &mut CodexConnection,
+    thread_id: &str,
+    turn_id: &str,
+    timeout: Duration,
+) -> Result<Option<String>, RpcError> {
+    let mut cursor: Option<String> = None;
+    let mut seen = HashSet::new();
+    for _ in 0..LOOKUP_MAX_PAGES {
+        let response = connection.request(
+            "thread/turns/list",
+            json!({
+                "threadId": thread_id,
+                "cursor": cursor,
+                "limit": LOOKUP_PAGE_LIMIT,
+                "sortDirection": "desc",
+                "itemsView": "notLoaded",
+            }),
+            timeout,
+        )?;
+        let turns = response
+            .get("data")
+            .and_then(Value::as_array)
+            .ok_or_else(|| RpcError::MalformedResponse {
+                request_id: 0,
+                reason: "thread/turns/list response omitted data array".into(),
+            })?;
+        for turn in turns {
+            if turn.get("id").and_then(Value::as_str) == Some(turn_id) {
+                return Ok(turn
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned));
+            }
+        }
+        let next = response.get("nextCursor").and_then(Value::as_str);
+        match next {
+            None => return Ok(None),
+            Some(next) if !seen.insert(next.to_owned()) => {
+                return Err(RpcError::MalformedResponse {
+                    request_id: 0,
+                    reason: "thread/turns/list repeated pagination cursor".into(),
+                });
+            }
+            Some(next) => cursor = Some(next.to_owned()),
+        }
+    }
+    Err(RpcError::MalformedResponse {
+        request_id: 0,
+        reason: "thread/turns/list pagination limit reached".into(),
+    })
 }
 
 impl NativeSessionControl for CodexControl {
@@ -450,22 +618,34 @@ mod tests {
     use super::*;
     use crate::domain::address::{NodeRef, SessionAddress};
 
+    static FIXTURE_LOCK: Mutex<()> = Mutex::new(());
+
+    fn fixture_lock() -> std::sync::MutexGuard<'static, ()> {
+        FIXTURE_LOCK.lock().unwrap()
+    }
+
     fn fake_control(server_body: &str, timeout: Duration) -> (CodexControl, PathBuf) {
-        use std::{fs, os::unix::fs::PermissionsExt};
+        use std::{fs, os::unix::fs::PermissionsExt, time::SystemTime};
 
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../.tmp")
             .join(format!(
-                "herder-codex-control-{}-{}",
+                "herder-codex-control-{}-{}-{}",
                 std::process::id(),
-                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
             ));
         let home = root.join("home");
         fs::create_dir_all(&home).unwrap();
         let executable = root.join("fake-codex");
+        let staged_executable = root.join("fake-codex.tmp");
         let script = format!("#!/usr/bin/python3\n{server_body}");
-        fs::write(&executable, script).unwrap();
+        fs::write(&staged_executable, script).unwrap();
+        fs::rename(&staged_executable, &executable).unwrap();
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
         let instance = InstanceRef {
             node: NodeRef("test-node".into()),
@@ -491,8 +671,16 @@ mod tests {
         )
     }
 
+    fn interrupt_server(readback: &str) -> String {
+        format!(
+            "import json, os, sys\nstatus='inProgress'\ninterrupts=0\nfor line in sys.stdin:\n r=json.loads(line)\n if 'id' not in r: continue\n m=r['method']; p=r['params']\n if m == 'initialize': result={{'codexHome':os.path.realpath(os.environ['CODEX_HOME'])}}\n elif m == 'thread/turns/list': result={{'data':[{{'id':'turn-exact','status':status}}], 'nextCursor':None}}\n elif m == 'turn/interrupt':\n  interrupts += 1\n  assert interrupts == 1\n  assert p == {{'threadId':'thread-exact','turnId':'turn-exact'}}\n  status='{}'\n  continue\n else: result={{}}\n print(json.dumps({{'id':r['id'],'result':result}}), flush=True)\n",
+            readback
+        )
+    }
+
     #[tokio::test]
     async fn starts_only_a_controller_created_thread_and_correlates_read_only_receipt() {
+        let _fixture = fixture_lock();
         let transient_error = "if m == 'thread/items/list' and not globals().get('_transient_error_sent'): _transient_error_sent=True; print(json.dumps({'id':r['id'],'error':{'code':-32601,'message':'thread/items/list is not supported yet'}}), flush=True); continue";
         let (control, _root) =
             fake_control(&fixture_server(transient_error), Duration::from_secs(2));
@@ -525,6 +713,7 @@ mod tests {
 
     #[tokio::test]
     async fn queue_is_rejected_before_native_submission() {
+        let _fixture = fixture_lock();
         let (control, _root) = fake_control(&fixture_server(""), Duration::from_secs(2));
         let error = control
             .submit(
@@ -546,6 +735,7 @@ mod tests {
 
     #[tokio::test]
     async fn timed_out_submission_is_unknown_and_is_not_retried() {
+        let _fixture = fixture_lock();
         let body = "import json, os, sys, time\nfor line in sys.stdin:\n r=json.loads(line)\n if 'id' not in r: continue\n m=r['method']\n if m == 'initialize': print(json.dumps({'id':r['id'],'result':{'codexHome':os.path.realpath(os.environ['CODEX_HOME'])}}), flush=True)\n elif m == 'thread/start': print(json.dumps({'id':r['id'],'result':{'thread':{'id':'thread-1'}}}), flush=True)\n elif m == 'turn/start': time.sleep(1)\n";
         let (control, _root) = fake_control(body, Duration::from_millis(100));
         let target = control.start_thread("/tmp").unwrap();
@@ -561,5 +751,61 @@ mod tests {
             )
             .await;
         assert!(matches!(result, Err(SubmitError::OutcomeUnknown { .. })));
+    }
+
+    fn interrupt_target(control: &CodexControl, thread: &str) -> SessionAddress {
+        SessionAddress {
+            instance: control.instance().clone(),
+            native_session_id: thread.into(),
+        }
+    }
+
+    #[test]
+    fn interrupts_only_the_exact_active_turn() {
+        let _fixture = fixture_lock();
+        let (control, _root) =
+            fake_control(&interrupt_server("interrupted"), Duration::from_secs(2));
+        assert_eq!(
+            control.interrupt_exact(&interrupt_target(&control, "thread-exact"), "turn-exact"),
+            InterruptOutcome::Interrupted
+        );
+    }
+
+    #[test]
+    fn wrong_instance_and_stale_turn_are_refused_before_interrupt() {
+        let _fixture = fixture_lock();
+        let (control, _root) = fake_control(&interrupt_server("completed"), Duration::from_secs(2));
+        let mut wrong_instance = interrupt_target(&control, "thread-exact");
+        wrong_instance.instance.instance_id = "other-profile".into();
+        assert!(matches!(
+            control.interrupt_exact(&wrong_instance, "turn-exact"),
+            InterruptOutcome::DefinitelyNotSent { .. }
+        ));
+        assert!(matches!(
+            control.interrupt_exact(&interrupt_target(&control, "thread-exact"), "stale-turn"),
+            InterruptOutcome::DefinitelyNotSent { .. }
+        ));
+    }
+
+    #[test]
+    fn timeout_reads_back_exact_turn_without_repeating_interrupt() {
+        let _fixture = fixture_lock();
+        let (control, _root) =
+            fake_control(&interrupt_server("interrupted"), Duration::from_millis(100));
+        assert_eq!(
+            control.interrupt_exact(&interrupt_target(&control, "thread-exact"), "turn-exact"),
+            InterruptOutcome::Interrupted
+        );
+    }
+
+    #[test]
+    fn timeout_with_still_running_exact_turn_remains_unknown() {
+        let _fixture = fixture_lock();
+        let (control, _root) =
+            fake_control(&interrupt_server("inProgress"), Duration::from_millis(100));
+        assert!(matches!(
+            control.interrupt_exact(&interrupt_target(&control, "thread-exact"), "turn-exact"),
+            InterruptOutcome::OutcomeUnknown { .. }
+        ));
     }
 }
