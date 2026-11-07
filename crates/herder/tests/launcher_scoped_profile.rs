@@ -714,6 +714,18 @@ fn real_sdk_owner_stdio_create_task_and_reopened_messages() {
 }
 
 #[test]
+fn trusted_opencode_profile_rejects_foreign_writable_runner() {
+    let f = Fixture::new();
+    let script = f.root.join("runner.js");
+    fs::write(&script, "// fixture").unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o666)).unwrap();
+    let node = fs::canonicalize("/usr/bin/python3").unwrap();
+    let profile = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{"kind":"opencode","principal":"owner","node":"node","instance":"test","executable":node,"ahap_script":script,"ahap_base_url":"http://127.0.0.1:3456","code_home":f.root,"cwd":f.root}});
+    fs::write(&f.profile, profile.to_string()).unwrap();
+    assert!(scoped_profile::open_owner(&f.profile).is_err());
+}
+
+#[test]
 fn trusted_owner_opencode_ahap_create_queue_task_and_read() {
     use std::io::{BufRead, BufReader, Write};
     let f = Fixture::new();
@@ -733,7 +745,7 @@ for line in sys.stdin:
  else:raise Exception(m)
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
 "##).unwrap();
-    let profile = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{"kind":"opencode","principal":"owner","node":"node","instance":"opencode-fixture","executable":"/usr/bin/python3","ahap_script":script,"ahap_base_url":"http://127.0.0.1:3456","code_home":f.root,"cwd":f.root}});
+    let profile = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{"kind":"opencode","principal":"owner","node":"node","instance":"opencode-fixture","executable":fs::canonicalize("/usr/bin/python3").unwrap(),"ahap_script":script,"ahap_base_url":"http://127.0.0.1:3456","code_home":f.root,"cwd":f.root}});
     fs::write(&f.profile, profile.to_string()).unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
         .arg("--trusted-owner-profile")

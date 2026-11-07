@@ -125,7 +125,7 @@ impl ScopedAuthority {
                 "confirmed" => {
                     match load_native_receipt(&tx, &binding).map_err(|_| GateError::Store)? {
                         StoredReceipt::Found(receipt) => Some(CallToolResult::structured(
-                            json!({"outcome":"confirmed","native_turn_id":receipt.native_id}),
+                            json!({"outcome":"confirmed","native_receipt_id":receipt.native_id}),
                         )),
                         StoredReceipt::Unknown => Some(CallToolResult::structured_error(
                             serde_json::to_value(Diagnostic::outcome_unknown(None))

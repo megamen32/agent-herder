@@ -50,6 +50,27 @@ pub struct OpenedOwner {
     pub generation: String,
 }
 
+/// Reject symlinks and any executable path component writable by another UID.
+fn trusted_executable(path: &Path) -> io::Result<()> {
+    unsafe extern "C" {
+        fn geteuid() -> u32;
+    }
+    let uid = unsafe { geteuid() };
+    if !path.is_absolute() || path.canonicalize()? != path {
+        return Err(invalid());
+    }
+    for (index, component) in path.ancestors().enumerate() {
+        let m = std::fs::symlink_metadata(component)?;
+        if (m.uid() != uid && m.uid() != 0)
+            || m.mode() & 0o022 != 0
+            || (index == 0 && !m.is_file())
+            || (index > 0 && !m.is_dir())
+        {
+            return Err(invalid());
+        }
+    }
+    Ok(())
+}
 fn invalid() -> io::Error {
     io::Error::new(
         io::ErrorKind::PermissionDenied,
@@ -79,9 +100,11 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
     match owner.kind.as_str() {
         "codex" if owner.ahap_script.is_none() && owner.ahap_base_url.is_none() => (),
         "opencode" => {
+            trusted_executable(&owner.executable)?;
             if !owner.ahap_script.as_ref().is_some_and(|p| p.is_absolute()) {
                 return Err(invalid().into());
             }
+            trusted_executable(owner.ahap_script.as_ref().ok_or_else(invalid)?)?;
             let url = reqwest::Url::parse(owner.ahap_base_url.as_deref().ok_or_else(invalid)?)?;
             if !matches!(url.scheme(), "http" | "https")
                 || url.host_str().is_none()

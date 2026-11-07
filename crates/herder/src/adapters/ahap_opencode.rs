@@ -232,24 +232,24 @@ impl NativeSessionReader for AhapOpenCode {
             return Err(ReadError("invalid receipt".into()));
         }
         let messages = self.messages(&receipt.target, 200)?;
-        let count = messages
+        let matches: Vec<_> = messages
             .as_array()
             .unwrap()
             .iter()
-            .filter(|m| {
-                m.get("id").and_then(Value::as_str) == Some(receipt.native_id.as_str())
-                    && m.get("role").and_then(Value::as_str) == Some("user")
-            })
-            .count();
-        Ok(if count == 1 {
-            Observation::Confirmed {
-                receipt: receipt.clone(),
-            }
-        } else {
-            Observation::Unknown {
-                receipt: receipt.clone(),
-            }
-        })
+            .filter(|m| m.get("id").and_then(Value::as_str) == Some(receipt.native_id.as_str()))
+            .collect();
+        Ok(
+            if matches.len() == 1 && matches[0].get("role").and_then(Value::as_str) == Some("user")
+            {
+                Observation::Confirmed {
+                    receipt: receipt.clone(),
+                }
+            } else {
+                Observation::Unknown {
+                    receipt: receipt.clone(),
+                }
+            },
+        )
     }
 }
 
@@ -291,7 +291,9 @@ for line in sys.stdin:
  elif m=='sendMessage':
   assert p['id']=='sesABC' and p['options']['queue'] and p['options']['activeTurnOnly'] and p['options']['inputId']=='key'
   v={'ok':True,'admitted':True} if os.environ['MODE']=='missing' else {'ok':True,'admitted':True,'nativeInputMessageId':'msg_ABC'}
- elif m=='getSessionMessages':v=[{'id':'msg_ABC','role':'user','text':'hi','inputId':'key'}]
+ elif m=='getSessionMessages':
+  v=[{'id':'msg_ABC','role':'user','text':'hi','inputId':'key'}]
+  if os.environ['MODE']=='duplicate':v.append({'id':'msg_ABC','role':'assistant','text':'ambiguous'})
  else:raise Exception(m)
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
 "##).unwrap();
@@ -303,8 +305,8 @@ for line in sys.stdin:
         let client = AhapClient::open(AhapConfig {
             instance_id: "profile".into(),
             harness: "opencode".into(),
-            executable: script,
-            args: vec![],
+            executable: fs::canonicalize("/usr/bin/python3").unwrap(),
+            args: vec![script.to_string_lossy().into_owned()],
             cwd: dir.clone(),
             env: vec![
                 (
@@ -390,5 +392,18 @@ for line in sys.stdin:
                 .count(),
             1
         );
+    }
+    #[tokio::test]
+    async fn duplicate_native_id_across_roles_is_unknown() {
+        let (_f, b) = setup("duplicate");
+        let a = b.create_root_bounded("create", "prompt").unwrap();
+        let receipt = NativeReceipt {
+            target: a,
+            native_id: "msg_ABC".into(),
+        };
+        assert!(matches!(
+            b.reconcile(&receipt).await.unwrap(),
+            Observation::Unknown { .. }
+        ));
     }
 }

@@ -164,13 +164,31 @@ fn rpc(s: &mut State, method: &str, params: Value, timeout: Duration) -> Result<
             s.poison();
             return Err(AhapError::OutcomeUnknown);
         }
-        if frame.get("error").is_some() {
+        let Some(object) = frame.as_object() else {
+            s.poison();
+            return Err(AhapError::OutcomeUnknown);
+        };
+        let has_result = object.contains_key("result");
+        let has_error = object.contains_key("error");
+        if has_result == has_error {
+            s.poison();
+            return Err(AhapError::OutcomeUnknown);
+        }
+        if has_error {
+            let valid = object
+                .get("error")
+                .and_then(Value::as_object)
+                .is_some_and(|e| {
+                    e.get("code").and_then(Value::as_i64).is_some()
+                        && e.get("message").and_then(Value::as_str).is_some()
+                });
+            if !valid {
+                s.poison();
+                return Err(AhapError::OutcomeUnknown);
+            }
             return Err(AhapError::Remote);
         }
-        return frame.get("result").cloned().ok_or_else(|| {
-            s.poison();
-            AhapError::OutcomeUnknown
-        });
+        return Ok(object["result"].clone());
     }
 }
 impl AhapClient {
@@ -194,7 +212,10 @@ impl AhapClient {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
-        let mut child = cmd.spawn().map_err(|_| AhapError::BeforeSend)?;
+        let mut child = cmd.spawn().map_err(|e| {
+            eprintln!("AHAP spawn fixture error: {e}");
+            AhapError::BeforeSend
+        })?;
         let input = child.stdin.take().ok_or(AhapError::BeforeSend)?;
         let out = child.stdout.take().ok_or(AhapError::BeforeSend)?;
         let (tx, rx) = mpsc::sync_channel(32);
@@ -286,8 +307,8 @@ mod tests {
         let c = AhapClient::open(AhapConfig {
             instance_id: "node-a/profile-a".into(),
             harness: "opencode".into(),
-            executable,
-            args: vec![],
+            executable: fs::canonicalize("/usr/bin/python3").unwrap(),
+            args: vec![executable.to_string_lossy().into_owned()],
             cwd: dir.clone(),
             env: vec![(
                 "TRACE".into(),
@@ -365,6 +386,26 @@ time.sleep(5)
             Err(AhapError::OutcomeUnknown)
         ));
         assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(matches!(
+            c.call("sendMessage", json!({})),
+            Err(AhapError::Unavailable)
+        ));
+    }
+    #[test]
+    fn ambiguous_result_and_null_error_poisons_connection() {
+        let script = r##"#!/usr/bin/python3
+import json,sys
+for line in sys.stdin:
+ r=json.loads(line)
+ if r['method']=='initialize':v={'harness':'opencode','capabilities':{'methods':['sendMessage']}};frame={'jsonrpc':'2.0','id':r['id'],'result':v}
+ else:frame={'jsonrpc':'2.0','id':r['id'],'result':{'ok':True},'error':None}
+ print(json.dumps(frame),flush=True)
+"##;
+        let (_f, c) = fixture(script, Duration::from_secs(2));
+        assert!(matches!(
+            c.call("sendMessage", json!({})),
+            Err(AhapError::OutcomeUnknown)
+        ));
         assert!(matches!(
             c.call("sendMessage", json!({})),
             Err(AhapError::Unavailable)
