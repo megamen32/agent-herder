@@ -33,6 +33,7 @@ pub mod store;
 pub mod ownership {
     pub mod claim;
     pub mod manifest;
+    pub mod resource;
 }
 
 pub mod mcp {

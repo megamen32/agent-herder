@@ -3,7 +3,7 @@
 //! explicit authorization result from the trusted caller boundary.
 
 use crate::domain::address::{Authorization, NodeRef};
-use crate::domain::resource::{ResourceRef, ResourceScope, access_allowed};
+use crate::domain::resource::{ResourceDescriptor, ResourceRef, ResourceScope, access_allowed};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
@@ -67,6 +67,15 @@ impl StorageAuthority {
         validate_marker_identity(&marker.schema, &marker.storage_id, self)?;
         if marker.resource_ref != *resource_ref {
             return Err(invalid_data("resource marker identity does not match path"));
+        }
+        if marker.descriptor.as_ref().is_some_and(|descriptor| {
+            descriptor.resource_ref() != &marker.resource_ref
+                || descriptor.scope() != &marker.scope
+                || descriptor.authority_ref != self.storage_id.0
+        }) {
+            return Err(invalid_data(
+                "descriptor identity does not match resource marker",
+            ));
         }
         if !access_allowed(&marker.scope, authorization) {
             return Err(io::Error::new(
@@ -177,6 +186,8 @@ pub struct ResourceMarker {
     pub storage_id: StorageId,
     pub resource_ref: ResourceRef,
     pub scope: ResourceScope,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub descriptor: Option<ResourceDescriptor>,
 }
 
 #[cfg(test)]
@@ -219,6 +230,7 @@ mod tests {
                 storage_id: authority.storage_id.clone(),
                 resource_ref: ResourceRef(format!("resource-{i}")),
                 scope,
+                descriptor: None,
             };
             let path = dir.join(format!("marker-{i}.json"));
             fs::write(&path, serde_json::to_vec(&marker).unwrap()).unwrap();
@@ -332,6 +344,7 @@ mod tests {
                 storage_id: authority.storage_id.clone(),
                 resource_ref: ResourceRef(id.into()),
                 scope,
+                descriptor: None,
             };
             fs::write(
                 dir.join(format!("resources/{id}/resource.json")),

@@ -36,6 +36,7 @@ pub fn claim(
     validate_request(resource_ref, &requested)?;
     let (resource_dir, marker) =
         authority.read_local_resource_marker(resource_ref, authorization)?;
+    require_registered(&marker)?;
     let guard = open_guard(&resource_dir)?;
     guard.lock()?;
 
@@ -49,7 +50,7 @@ pub fn claim(
         Some(bytes) => {
             let current: OwnerRecord = serde_json::from_slice(&bytes)
                 .map_err(|_| invalid_data("owner record JSON is invalid"))?;
-            validate_owner(authority, &marker, resource_ref, &current)?;
+            validate_owner(authority, resource_ref, &current)?;
             if current.claim == requested {
                 return Ok(ClaimOutcome::AlreadyOwned);
             }
@@ -97,6 +98,7 @@ pub fn renew(
     }
     let (resource_dir, marker) =
         authority.read_local_resource_marker(resource_ref, authorization)?;
+    require_registered(&marker)?;
     let guard = open_guard(&resource_dir)?;
     guard.lock()?;
 
@@ -108,9 +110,9 @@ pub fn renew(
     let bytes = authority
         .read_owner_bytes(resource_ref, authorization)?
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "resource has no owner"))?;
-    let mut owner: OwnerRecord = serde_json::from_slice(&bytes)
-        .map_err(|_| invalid_data("owner record JSON is invalid"))?;
-    validate_owner(authority, &marker, resource_ref, &owner)?;
+    let mut owner: OwnerRecord =
+        serde_json::from_slice(&bytes).map_err(|_| invalid_data("owner record JSON is invalid"))?;
+    validate_owner(authority, resource_ref, &owner)?;
     if owner.claim.claim_id != claim_id {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
@@ -137,6 +139,7 @@ pub fn release(
     }
     let (resource_dir, marker) =
         authority.read_local_resource_marker(resource_ref, authorization)?;
+    require_registered(&marker)?;
     let guard = open_guard(&resource_dir)?;
     guard.lock()?;
 
@@ -148,9 +151,9 @@ pub fn release(
     let bytes = authority
         .read_owner_bytes(resource_ref, authorization)?
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "resource has no owner"))?;
-    let owner: OwnerRecord = serde_json::from_slice(&bytes)
-        .map_err(|_| invalid_data("owner record JSON is invalid"))?;
-    validate_owner(authority, &marker, resource_ref, &owner)?;
+    let owner: OwnerRecord =
+        serde_json::from_slice(&bytes).map_err(|_| invalid_data("owner record JSON is invalid"))?;
+    validate_owner(authority, resource_ref, &owner)?;
     if owner.claim.claim_id != claim_id {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
@@ -176,15 +179,23 @@ fn validate_request(resource_ref: &ResourceRef, claim: &ResourceClaim) -> io::Re
     Ok(())
 }
 
+fn require_registered(marker: &crate::ownership::manifest::ResourceMarker) -> io::Result<()> {
+    if marker.descriptor.is_none() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "resource descriptor is not registered",
+        ));
+    }
+    Ok(())
+}
+
 fn validate_owner(
     authority: &StorageAuthority,
-    marker: &crate::ownership::manifest::ResourceMarker,
     resource_ref: &ResourceRef,
     owner: &OwnerRecord,
 ) -> io::Result<()> {
     if owner.schema != authority.schema
         || owner.storage_id != authority.storage_id
-        || owner.scope != marker.scope
         || owner.claim.resource_ref != *resource_ref
     {
         return Err(invalid_data(
@@ -253,7 +264,8 @@ fn invalid_data(message: &'static str) -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::address::{NodeRef, SessionRef};
+    use crate::domain::address::{Availability, NodeRef, SessionRef};
+    use crate::domain::resource::{Attachment, ResourceDescriptor, ResourceKind};
     use crate::ownership::manifest::{AuthorityRoute, ResourceMarker, StorageMarker};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -291,6 +303,20 @@ mod tests {
                 storage_id: authority.storage_id.clone(),
                 resource_ref: ResourceRef("r".into()),
                 scope: ResourceScope::Global,
+                descriptor: Some(ResourceDescriptor::new(
+                    ResourceRef("r".into()),
+                    ResourceScope::Global,
+                    ResourceKind::Device,
+                    "physical-device-r".into(),
+                    authority.storage_id.0.clone(),
+                    Some(Attachment {
+                        node_ref: NodeRef("node-a".into()),
+                        route_ref: Some("device-route".into()),
+                        availability: Availability::Available,
+                        observed_at: "2026-11-07T00:00:00Z".into(),
+                    }),
+                    1,
+                )),
             })
             .unwrap(),
         )
@@ -393,6 +419,29 @@ mod tests {
     }
 
     #[test]
+    fn claim_does_not_treat_an_unregistered_marker_as_a_free_resource() {
+        let (root, authority) = fixture();
+        let marker_path = root.join("resources/r/resource.json");
+        let mut marker: ResourceMarker =
+            serde_json::from_slice(&fs::read(&marker_path).unwrap()).unwrap();
+        marker.descriptor = None;
+        fs::write(&marker_path, serde_json::to_vec(&marker).unwrap()).unwrap();
+        assert_eq!(
+            claim(
+                &authority,
+                &ResourceRef("r".into()),
+                Authorization::Authorized,
+                requested("01234567-89ab-4cde-8fab-0123456789ab"),
+            )
+            .unwrap_err()
+            .kind(),
+            io::ErrorKind::NotFound
+        );
+        assert!(!root.join("resources/r/owner.json").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn renew_and_release_compare_claim_id_and_preserve_guard() {
         let (root, authority) = fixture();
         let resource_ref = ResourceRef("r".into());
@@ -437,13 +486,24 @@ mod tests {
         assert_eq!(updated.expires_at.as_deref(), Some("2026-11-08T00:00:00Z"));
 
         assert_eq!(
-            release(&authority, &resource_ref, Authorization::Authorized, wrong_id)
-                .unwrap_err()
-                .kind(),
+            release(
+                &authority,
+                &resource_ref,
+                Authorization::Authorized,
+                wrong_id
+            )
+            .unwrap_err()
+            .kind(),
             io::ErrorKind::PermissionDenied
         );
         assert!(dir.join("owner.json").exists());
-        release(&authority, &resource_ref, Authorization::Authorized, claim_id).unwrap();
+        release(
+            &authority,
+            &resource_ref,
+            Authorization::Authorized,
+            claim_id,
+        )
+        .unwrap();
         assert!(!dir.join("owner.json").exists());
         #[cfg(unix)]
         {
@@ -502,11 +562,14 @@ mod tests {
             1,
             "the losing caller must observe the existing owner"
         );
-        let owner: OwnerRecord = serde_json::from_slice(
-            &fs::read(root.join("resources/r/owner.json")).unwrap(),
-        )
-        .unwrap();
-        assert!(claims.iter().any(|claim| claim.claim_id == owner.claim.claim_id));
+        let owner: OwnerRecord =
+            serde_json::from_slice(&fs::read(root.join("resources/r/owner.json")).unwrap())
+                .unwrap();
+        assert!(
+            claims
+                .iter()
+                .any(|claim| claim.claim_id == owner.claim.claim_id)
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

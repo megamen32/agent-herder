@@ -96,6 +96,15 @@ impl ResourceDescriptor {
     pub fn resource_ref(&self) -> &ResourceRef {
         &self.resource_ref
     }
+
+    pub fn scope(&self) -> &ResourceScope {
+        &self.scope
+    }
+
+    pub fn with_revision(mut self, revision: u64) -> Self {
+        self.revision = revision;
+        self
+    }
 }
 
 /// A read of the sole authoritative owner record, separate from the descriptor.
