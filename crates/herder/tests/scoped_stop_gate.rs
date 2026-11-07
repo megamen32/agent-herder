@@ -2958,3 +2958,150 @@ async fn create_prompt_requires_trusted_grant_for_new_exact_session() {
     assert_eq!(creator.calls.load(Ordering::SeqCst), 1);
     assert_eq!(submit.0.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn mcp_delivery_task_persists_terminal_result_and_requires_exact_read_grant() {
+    for outcome in ["not_sent", "unknown", "confirmed"] {
+        let f = Fixture::new();
+        create(&f);
+        let p = plan();
+        f.prepare("i", "k", &p);
+        let target = address();
+        let b = binding(&target, "i", "k");
+        assert!(
+            f.authority()
+                .claim(
+                    &identity(),
+                    &grants(),
+                    &b,
+                    "scope-1",
+                    &p,
+                    "message",
+                    "2026-11-07T10:00:00Z"
+                )
+                .unwrap()
+        );
+        let calls = Arc::new(AtomicUsize::new(0));
+        match outcome {
+            "not_sent" => {
+                let control = NotSent {
+                    calls: calls.clone(),
+                };
+                assert_eq!(
+                    f.authority()
+                        .handoff(
+                            &identity(),
+                            &grants(),
+                            &b,
+                            "scope-1",
+                            p.clone(),
+                            "message",
+                            "2026-11-07T10:00:00Z",
+                            &control
+                        )
+                        .unwrap(),
+                    DurableDispatch::DefinitelyNotSent
+                );
+            }
+            "unknown" => {
+                let control = Lost {
+                    calls: calls.clone(),
+                };
+                assert_eq!(
+                    f.authority()
+                        .handoff(
+                            &identity(),
+                            &grants(),
+                            &b,
+                            "scope-1",
+                            p.clone(),
+                            "message",
+                            "2026-11-07T10:00:00Z",
+                            &control
+                        )
+                        .unwrap(),
+                    DurableDispatch::Unknown
+                );
+            }
+            _ => {
+                let control = Control {
+                    calls: calls.clone(),
+                    db: f.db.clone(),
+                    ready: None,
+                    proceed: None,
+                };
+                assert!(matches!(
+                    f.authority()
+                        .handoff(
+                            &identity(),
+                            &grants(),
+                            &b,
+                            "scope-1",
+                            p.clone(),
+                            "message",
+                            "2026-11-07T10:00:00Z",
+                            &control
+                        )
+                        .unwrap(),
+                    DurableDispatch::Admitted(_)
+                ));
+                let db = Connection::open(&f.db).unwrap();
+                db.create_scalar_function(
+                    "herder_writer_version",
+                    0,
+                    FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                    |_| Ok(3),
+                )
+                .unwrap();
+                db.execute(
+                    "UPDATE intents SET state='confirmed' WHERE intent_id='i'",
+                    [],
+                )
+                .unwrap();
+            }
+        }
+        assert!(
+            f.authority()
+                .get_delivery_task(&identity(), &grants(), "task-i")
+                .is_err()
+        );
+        let mut read_grants = grants();
+        read_grants.push(Grant {
+            principal: PrincipalId("alice".into()),
+            resource: PrivateResource::Session(SessionRef("issued".into())),
+            action: Action::Read,
+        });
+        let task = f
+            .authority()
+            .get_delivery_task(&identity(), &read_grants, "task-i")
+            .unwrap()
+            .unwrap();
+        let wire = serde_json::to_value(&task).unwrap();
+        assert_eq!(wire["status"], "completed");
+        let result = &wire["result"]["structuredContent"];
+        match outcome {
+            "not_sent" => assert_eq!(result["effect"], "none"),
+            "unknown" => assert_eq!(result["effect"], "unknown"),
+            _ => assert_eq!(result["outcome"], "confirmed"),
+        }
+        let db = Connection::open(&f.db).unwrap();
+        let (status, result): (String, String) = db
+            .query_row(
+                "SELECT status,result_json FROM tasks WHERE task_id='task-i'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(status, "completed");
+        assert!(result.contains("structuredContent"));
+        drop(db);
+        assert_eq!(
+            f.authority()
+                .get_delivery_task(&identity(), &read_grants, "task-i")
+                .unwrap()
+                .unwrap(),
+            task
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+}
