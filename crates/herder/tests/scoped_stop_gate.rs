@@ -3975,141 +3975,144 @@ async fn create_prompt_recovers_stopped_before_handoff_before_and_after_projecti
             Ok(address())
         }
     }
-    let f = Fixture::new();
-    let target = address();
-    let creator = Create {
-        instance: target.instance.clone(),
-        calls: AtomicUsize::new(0),
-    };
-    let req = || CreateRequest {
-        intent_id: "create",
-        task_id: "create-task",
-        request_key: "create-key",
-        specification: "isolated",
-        now: "now",
-        retain_until: "later",
-    };
-    assert_eq!(
-        f.authority()
-            .create_fresh_root(
-                &identity(),
-                &grants(),
-                &creator,
-                &Issuer,
-                &Generation,
-                req()
-            )
-            .unwrap(),
-        CreateResult::Created(SessionRef("issued".into()))
-    );
-    let hash = Sha256::digest(
-        serde_json::to_vec(&("create-prompt-v1", "alice", &target.instance, "create-key")).unwrap(),
-    )
-    .iter()
-    .map(|b| format!("{b:02x}"))
-    .collect::<String>();
-    let key = format!("create-prompt:{hash}");
-    let b = binding(&target, "delivery-stopped", &key);
-    let p = plan();
-    let mut writer = Writer::open_file(&f.db).unwrap();
-    writer
-        .prepare_intent(&NewIntent {
-            intent_id: b.intent_id,
-            task_id: "delivery-task",
-            principal: "alice",
-            target: "issued",
-            request_key: &key,
-            payload_hash: &dispatch_payload_binding(&p, "isolated"),
+    for scope in ["session:issued", "global"] {
+        let f = Fixture::new();
+        let target = address();
+        let creator = Create {
+            instance: target.instance.clone(),
+            calls: AtomicUsize::new(0),
+        };
+        let req = || CreateRequest {
+            intent_id: "create",
+            task_id: "create-task",
+            request_key: "create-key",
+            specification: "isolated",
             now: "now",
             retain_until: "later",
-        })
-        .unwrap();
-    drop(writer);
-    assert!(
+        };
+        assert_eq!(
+            f.authority()
+                .create_fresh_root(
+                    &identity(),
+                    &grants(),
+                    &creator,
+                    &Issuer,
+                    &Generation,
+                    req()
+                )
+                .unwrap(),
+            CreateResult::Created(SessionRef("issued".into()))
+        );
+        let hash = Sha256::digest(
+            serde_json::to_vec(&("create-prompt-v1", "alice", &target.instance, "create-key"))
+                .unwrap(),
+        )
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+        let key = format!("create-prompt:{hash}");
+        let b = binding(&target, "delivery-stopped", &key);
+        let p = plan();
+        let mut writer = Writer::open_file(&f.db).unwrap();
+        writer
+            .prepare_intent(&NewIntent {
+                intent_id: b.intent_id,
+                task_id: "delivery-task",
+                principal: "alice",
+                target: "issued",
+                request_key: &key,
+                payload_hash: &dispatch_payload_binding(&p, "isolated"),
+                now: "now",
+                retain_until: "later",
+            })
+            .unwrap();
+        drop(writer);
+        assert!(
+            f.authority()
+                .claim(&identity(), &grants(), &b, "scope-1", &p, "isolated", "now")
+                .unwrap()
+        );
         f.authority()
-            .claim(&identity(), &grants(), &b, "scope-1", &p, "isolated", "now")
-            .unwrap()
-    );
-    f.authority()
-        .stop(&identity(), &grants(), "session:issued", "human", "now")
+            .stop(&identity(), &grants(), scope, "human", "now")
+            .unwrap();
+        let sends = Arc::new(AtomicUsize::new(0));
+        let control = NotSent {
+            calls: sends.clone(),
+        };
+        assert_eq!(
+            f.authority()
+                .handoff(
+                    &identity(),
+                    &grants(),
+                    &b,
+                    "scope-1",
+                    p,
+                    "isolated",
+                    "now",
+                    &control
+                )
+                .unwrap(),
+            DurableDispatch::StoppedBeforeHandoff
+        );
+        let reader = FixtureReader {
+            target,
+            reads: AtomicUsize::new(0),
+            db: f.db.clone(),
+        };
+        let authority = f.authority();
+        let first = create_with_prompt(
+            &authority,
+            &identity(),
+            &grants(),
+            &creator,
+            &Issuer,
+            &Generation,
+            &reader,
+            &control,
+            &NoAdditionalGrant,
+            req(),
+        )
+        .await
         .unwrap();
-    let sends = Arc::new(AtomicUsize::new(0));
-    let control = NotSent {
-        calls: sends.clone(),
-    };
-    assert_eq!(
-        f.authority()
-            .handoff(
-                &identity(),
-                &grants(),
-                &b,
-                "scope-1",
-                p,
-                "isolated",
-                "now",
-                &control
-            )
-            .unwrap(),
-        DurableDispatch::StoppedBeforeHandoff
-    );
-    let reader = FixtureReader {
-        target,
-        reads: AtomicUsize::new(0),
-        db: f.db.clone(),
-    };
-    let authority = f.authority();
-    let first = create_with_prompt(
-        &authority,
-        &identity(),
-        &grants(),
-        &creator,
-        &Issuer,
-        &Generation,
-        &reader,
-        &control,
-        &NoAdditionalGrant,
-        req(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        first,
-        CreatePromptOutcome::StoppedBeforeHandoff {
-            session: SessionRef("issued".into())
-        }
-    );
-    let mut read_grants = grants();
-    read_grants.push(Grant {
-        principal: PrincipalId("alice".into()),
-        resource: PrivateResource::Session(SessionRef("issued".into())),
-        action: Action::Read,
-    });
-    assert!(
-        authority
-            .get_delivery_task(&identity(), &read_grants, "delivery-task")
-            .unwrap()
-            .is_some()
-    );
-    let after = create_with_prompt(
-        &authority,
-        &identity(),
-        &grants(),
-        &creator,
-        &Issuer,
-        &Generation,
-        &reader,
-        &control,
-        &NoAdditionalGrant,
-        req(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        after,
-        CreatePromptOutcome::StoppedBeforeHandoff {
-            session: SessionRef("issued".into())
-        }
-    );
-    assert_eq!(creator.calls.load(Ordering::SeqCst), 1);
-    assert_eq!(sends.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            first,
+            CreatePromptOutcome::StoppedBeforeHandoff {
+                session: SessionRef("issued".into())
+            }
+        );
+        let mut read_grants = grants();
+        read_grants.push(Grant {
+            principal: PrincipalId("alice".into()),
+            resource: PrivateResource::Session(SessionRef("issued".into())),
+            action: Action::Read,
+        });
+        assert!(
+            authority
+                .get_delivery_task(&identity(), &read_grants, "delivery-task")
+                .unwrap()
+                .is_some()
+        );
+        let after = create_with_prompt(
+            &authority,
+            &identity(),
+            &grants(),
+            &creator,
+            &Issuer,
+            &Generation,
+            &reader,
+            &control,
+            &NoAdditionalGrant,
+            req(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            after,
+            CreatePromptOutcome::StoppedBeforeHandoff {
+                session: SessionRef("issued".into())
+            }
+        );
+        assert_eq!(creator.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(sends.load(Ordering::SeqCst), 0);
+    }
 }

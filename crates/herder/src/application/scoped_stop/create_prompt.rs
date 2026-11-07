@@ -137,56 +137,64 @@ where
     let instance = creator.instance();
     let (delivery_key, intent_id, task_id) =
         delivery_identifiers(&principal.id, instance, request.request_key)?;
-    // Check key/payload reuse before a new create attempt; conflicts are
-    // deterministic and must never be presented as a fresh UNKNOWN.
-    if matches!(
-        authority.recover_fresh_create(
-            identity,
-            grants,
-            instance,
-            request.request_key,
-            request.specification
-        )?,
-        RecoveredCreate::Conflict
-    ) {
-        return Ok(CreatePromptOutcome::Conflict);
-    }
-    let create = authority.create_fresh_root(
+    // Recovery is read-only and is allowed even when a global hold prevents
+    // new create. Only an absent record may enter the native create path.
+    let recovered = authority.recover_fresh_create(
         identity,
         grants,
-        creator,
-        issuer,
-        generations,
-        CreateRequest {
-            intent_id: request.intent_id,
-            task_id: request.task_id,
-            request_key: request.request_key,
-            specification: request.specification,
-            now: request.now,
-            retain_until: request.retain_until,
-        },
+        instance,
+        request.request_key,
+        request.specification,
     )?;
-    let session = match create {
-        CreateResult::Created(session) => session,
-        CreateResult::DefinitelyNotSent => return Ok(CreatePromptOutcome::CreateDefinitelyNotSent),
-        CreateResult::Unknown => return Ok(CreatePromptOutcome::CreateUnknown),
-        CreateResult::Existing => match authority.recover_fresh_create(
-            identity,
-            grants,
-            instance,
-            request.request_key,
-            request.specification,
-        )? {
-            RecoveredCreate::Created { session, .. } => session,
-            RecoveredCreate::DefinitelyNotSent { .. } => {
-                return Ok(CreatePromptOutcome::CreateDefinitelyNotSent);
+    let session = match recovered {
+        RecoveredCreate::Created { session, .. } => session,
+        RecoveredCreate::DefinitelyNotSent { .. } => {
+            return Ok(CreatePromptOutcome::CreateDefinitelyNotSent);
+        }
+        RecoveredCreate::Pending => return Ok(CreatePromptOutcome::CreatePending),
+        RecoveredCreate::Unknown => return Ok(CreatePromptOutcome::CreateUnknown),
+        RecoveredCreate::Conflict => return Ok(CreatePromptOutcome::Conflict),
+        RecoveredCreate::Missing => {
+            let create = authority.create_fresh_root(
+                identity,
+                grants,
+                creator,
+                issuer,
+                generations,
+                CreateRequest {
+                    intent_id: request.intent_id,
+                    task_id: request.task_id,
+                    request_key: request.request_key,
+                    specification: request.specification,
+                    now: request.now,
+                    retain_until: request.retain_until,
+                },
+            )?;
+            match create {
+                CreateResult::Created(session) => session,
+                CreateResult::DefinitelyNotSent => {
+                    return Ok(CreatePromptOutcome::CreateDefinitelyNotSent);
+                }
+                CreateResult::Unknown => return Ok(CreatePromptOutcome::CreateUnknown),
+                CreateResult::Existing => match authority.recover_fresh_create(
+                    identity,
+                    grants,
+                    instance,
+                    request.request_key,
+                    request.specification,
+                )? {
+                    RecoveredCreate::Created { session, .. } => session,
+                    RecoveredCreate::DefinitelyNotSent { .. } => {
+                        return Ok(CreatePromptOutcome::CreateDefinitelyNotSent);
+                    }
+                    RecoveredCreate::Pending => return Ok(CreatePromptOutcome::CreatePending),
+                    RecoveredCreate::Conflict => return Ok(CreatePromptOutcome::Conflict),
+                    RecoveredCreate::Unknown | RecoveredCreate::Missing => {
+                        return Ok(CreatePromptOutcome::CreateUnknown);
+                    }
+                },
             }
-            RecoveredCreate::Pending => return Ok(CreatePromptOutcome::CreatePending),
-            RecoveredCreate::Conflict => return Ok(CreatePromptOutcome::Conflict),
-            RecoveredCreate::Unknown | RecoveredCreate::Missing => {
-                return Ok(CreatePromptOutcome::CreateUnknown);
-            }
-        },
+        }
     };
     let new_grant = policy.session_write_grant(&principal.id, instance, &session);
     let mut effective_grants = grants.to_vec();
