@@ -250,7 +250,7 @@ fn write_receipt_atomic(path: &Path, receipt: &ReleaseReceipt) -> io::Result<()>
 /// process descriptor table. The reserved descriptor is exposed to the child
 /// as `HERDER_EXECUTION_LOCK_FD`; the lock is released by the OS at child exit.
 #[cfg(unix)]
-pub fn spawn_with_execution_lock(
+pub(crate) fn spawn_with_execution_lock(
     command: &mut Command,
     lock: &TargetExecutionLock,
 ) -> io::Result<Child> {
@@ -279,7 +279,7 @@ pub fn spawn_with_execution_lock(
 }
 
 #[cfg(not(unix))]
-pub fn spawn_with_execution_lock(
+pub(crate) fn spawn_with_execution_lock(
     _command: &mut Command,
     _lock: TargetExecutionLock,
 ) -> io::Result<Child> {
@@ -287,6 +287,34 @@ pub fn spawn_with_execution_lock(
         io::ErrorKind::Unsupported,
         "execution lock transfer requires Unix descriptor inheritance",
     ))
+}
+
+/// Spawn only when this call created the admission and the same owner and
+/// deployed revision are still current under the held target lock.
+pub fn spawn_admitted(
+    authority: &StorageAuthority,
+    lock: &TargetExecutionLock,
+    authorization: Authorization,
+    expected_revision: u64,
+    admission: &Admission,
+    command: &mut Command,
+) -> io::Result<Child> {
+    if !admission.newly_admitted
+        || admission.receipt.status != ReceiptStatus::Admitted
+        || admission.receipt.resource_ref != *lock.resource_ref()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "release request is not a new admitted effect for this target",
+        ));
+    }
+    lock.verify_current_claim(
+        authority,
+        authorization,
+        &admission.receipt.claim_id,
+        expected_revision,
+    )?;
+    spawn_with_execution_lock(command, lock)
 }
 
 fn receipt_path(dir: &Path, request_key: &str) -> PathBuf {

@@ -194,6 +194,14 @@ pub fn release(
             "claim ID must be a UUID",
         ));
     }
+    // Serialize ownership release with a target's in-flight external effect.
+    // New claims may proceed only after the old effect has released this lock.
+    let _execution_lock =
+        crate::ownership::release_runner::TargetExecutionLock::acquire(
+            authority,
+            resource_ref,
+            authorization,
+        )?;
     let (resource_dir, marker) =
         authority.read_local_resource_marker(resource_ref, authorization)?;
     require_registered(&marker)?;

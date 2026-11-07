@@ -2,7 +2,7 @@ use crate::domain::address::{Authorization, NodeRef};
 use crate::domain::resource::{ResourceClaim, ResourceDescriptor, ResourceKind, ResourceRef, ResourceScope};
 use crate::ownership::claim;
 use crate::ownership::manifest::{AuthorityRoute, ResourceMarker, StorageAuthority, StorageId, StorageMarker};
-use crate::ownership::release_receipt::{self, spawn_with_execution_lock};
+use crate::ownership::release_receipt::{self, spawn_admitted};
 use crate::ownership::release_runner::TargetExecutionLock;
 use std::fs;
 use std::process::Command;
@@ -73,7 +73,7 @@ fn request(resource_ref: &ResourceRef, principal: &str, claim_id: &str) -> Resou
 }
 
 #[test]
-fn reproduces_effect_from_admitted_request_after_owner_changes() {
+fn rejects_admitted_effect_after_owner_changes_before_spawn() {
     let (root, authority, resource_ref) = fixture();
     let old_claim_id = "12345678-1234-4234-8234-123456789abc";
     let new_claim_id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
@@ -102,21 +102,6 @@ fn reproduces_effect_from_admitted_request_after_owner_changes() {
     .unwrap();
     assert!(admission.newly_admitted);
 
-    claim::release(
-        &authority,
-        &resource_ref,
-        Authorization::Authorized,
-        old_claim_id,
-    )
-    .unwrap();
-    claim::claim(
-        &authority,
-        &resource_ref,
-        Authorization::Authorized,
-        request(&resource_ref, "principal-new", new_claim_id),
-    )
-    .unwrap();
-
     let effect_path = root.join("effect.txt");
     let mut command = Command::new("/bin/sh");
     command
@@ -124,10 +109,54 @@ fn reproduces_effect_from_admitted_request_after_owner_changes() {
         .arg("printf x >> \"$1\"")
         .arg("release-effect")
         .arg(&effect_path);
-    let mut child = spawn_with_execution_lock(&mut command, &lock).unwrap();
-    assert!(child.wait().unwrap().success());
+    let worker_authority = authority.clone();
+    let worker_resource = resource_ref.clone();
+    let (released_tx, released_rx) = std::sync::mpsc::channel();
+    let release_worker = std::thread::spawn(move || {
+        claim::release(
+            &worker_authority,
+            &worker_resource,
+            Authorization::Authorized,
+            old_claim_id,
+        )
+        .unwrap();
+        claim::claim(
+            &worker_authority,
+            &worker_resource,
+            Authorization::Authorized,
+            request(&worker_resource, "principal-new", new_claim_id),
+        )
+        .unwrap();
+        released_tx.send(()).unwrap();
+    });
+    assert!(released_rx
+        .recv_timeout(std::time::Duration::from_millis(50))
+        .is_err());
+    drop(lock);
+    released_rx.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
+    release_worker.join().unwrap();
 
-    assert_eq!(fs::read_to_string(effect_path).unwrap(), "x");
+    let replacement_lock = TargetExecutionLock::acquire(
+        &authority,
+        &resource_ref,
+        Authorization::Authorized,
+    )
+    .unwrap();
+    assert_eq!(
+        spawn_admitted(
+            &authority,
+            &replacement_lock,
+            Authorization::Authorized,
+            1,
+            &admission,
+            &mut command,
+        )
+        .unwrap_err()
+        .kind(),
+        std::io::ErrorKind::PermissionDenied
+    );
+
+    assert!(!effect_path.exists());
     assert_eq!(
         claim::read_by_claim_id(
             &authority,
