@@ -1,7 +1,8 @@
 //! Target-local serialization for resource release effects.
 
 use crate::domain::address::Authorization;
-use crate::domain::resource::ResourceRef;
+use crate::domain::resource::{ResourceClaim, ResourceRef};
+use crate::ownership::claim;
 use crate::ownership::manifest::StorageAuthority;
 use crate::ownership::resource;
 use std::fs::{File, OpenOptions};
@@ -60,6 +61,31 @@ impl TargetExecutionLock {
 
     pub fn lock_path(&self) -> &std::path::Path {
         &self.path
+    }
+
+    /// Revalidate the deployed descriptor revision and current owner while
+    /// this target's execution lock is still held.
+    pub fn verify_current_claim(
+        &self,
+        authority: &StorageAuthority,
+        authorization: Authorization,
+        claim_id: &str,
+        expected_revision: u64,
+    ) -> io::Result<ResourceClaim> {
+        let descriptor = resource::get(authority, &self.resource_ref, authorization)?;
+        if descriptor.revision != expected_revision {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "deployed resource revision changed; reload before effect",
+            ));
+        }
+        claim::read_by_claim_id(authority, &self.resource_ref, authorization, claim_id)?
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "claim is no longer the current resource owner",
+                )
+            })
     }
 }
 
@@ -124,6 +150,22 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
+        let current_claim = ResourceClaim {
+            resource_ref: resource_ref.clone(),
+            principal_ref: "principal-a".into(),
+            session_ref: None,
+            claim_id: "12345678-1234-4234-8234-123456789abc".into(),
+            purpose: "release test".into(),
+            acquired_at: "test-time".into(),
+            expires_at: None,
+        };
+        claim::claim(
+            &authority,
+            &resource_ref,
+            Authorization::Authorized,
+            current_claim.clone(),
+        )
+        .unwrap();
 
         let lock = TargetExecutionLock::acquire(
             &authority,
@@ -132,6 +174,38 @@ mod tests {
         )
         .unwrap();
         assert_eq!(lock.resource_ref(), &resource_ref);
+        assert_eq!(
+            lock.verify_current_claim(
+                &authority,
+                Authorization::Authorized,
+                &current_claim.claim_id,
+                1,
+            )
+            .unwrap(),
+            current_claim
+        );
+        assert_eq!(
+            lock.verify_current_claim(
+                &authority,
+                Authorization::Authorized,
+                "87654321-4321-4321-8321-cba987654321",
+                1,
+            )
+            .unwrap_err()
+            .kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        assert_eq!(
+            lock.verify_current_claim(
+                &authority,
+                Authorization::Authorized,
+                &current_claim.claim_id,
+                2,
+            )
+            .unwrap_err()
+            .kind(),
+            io::ErrorKind::WouldBlock
+        );
         let contender = OpenOptions::new()
             .read(true)
             .write(true)
