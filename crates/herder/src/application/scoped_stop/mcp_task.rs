@@ -5,7 +5,7 @@ use crate::{
     application::reconcile::{ReceiptBinding, StoredReceipt, load_native_receipt},
     auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource},
     domain::address::{InstanceRef, NodeRef, SessionAddress, SessionRef},
-    error::Diagnostic,
+    error::{Diagnostic, Effect, Retry},
 };
 use rmcp::model::{CallToolResult, DetailedTask, GetTaskResult, Task, TaskPayload, TaskStatus};
 use rusqlite::{OptionalExtension, params};
@@ -42,7 +42,7 @@ impl ScopedAuthority {
             state,
             status,
             created,
-            updated,
+            mut updated,
             stored,
             node,
             instance,
@@ -88,7 +88,35 @@ impl ScopedAuthority {
                         .unwrap_or(Value::Null);
                     let no_send = diagnostic["native_submit"] == "definitely_not_sent";
                     Some(CallToolResult::structured_error(if no_send {
-                        json!({"code":"definitely_not_sent","effect":"none","retry":"forbidden"})
+                        let (code, field, expected) = if diagnostic["outcome"]
+                            == "stopped_before_handoff"
+                        {
+                            (
+                                "human_stop_active",
+                                Some("session_ref"),
+                                "resolve the authorized HumanStop hold before using a new request key",
+                            )
+                        } else if diagnostic["outcome"] == "rejected" {
+                            (
+                                "adapter_refused",
+                                None,
+                                "check the configured adapter and request before using a new request key",
+                            )
+                        } else {
+                            return Err(GateError::Store);
+                        };
+                        serde_json::to_value(Diagnostic {
+                            code,
+                            field,
+                            received: None,
+                            expected: Some(vec![expected]),
+                            fix: None,
+                            effect: Effect::None,
+                            retry: Retry::Forbidden,
+                            receipt_ref: None,
+                            diagnostic_ref: None,
+                        })
+                        .map_err(|_| GateError::Store)?
                     } else {
                         serde_json::to_value(Diagnostic::outcome_unknown(None))
                             .map_err(|_| GateError::Store)?
@@ -112,10 +140,13 @@ impl ScopedAuthority {
                 let value = serde_json::to_value(result).map_err(|_| GateError::Store)?;
                 let object = value.as_object().cloned().ok_or(GateError::Store)?;
                 let serialized = serde_json::to_string(&value).map_err(|_| GateError::Store)?;
-                let count=tx.execute("UPDATE tasks SET status='completed',result_json=?2 WHERE task_id=?1 AND status<>'completed'",params![task_id,serialized]).map_err(|_|GateError::Store)?;
+                let terminal_time =
+                    super::mcp_deliver::utc_now().map_err(|_| GateError::Unavailable)?;
+                let count=tx.execute("UPDATE tasks SET status='completed',result_json=?2,updated_at=?3 WHERE task_id=?1 AND status<>'completed'",params![task_id,serialized,terminal_time]).map_err(|_|GateError::Store)?;
                 if count != 1 {
                     return Err(GateError::Store);
                 }
+                updated = terminal_time;
                 TaskPayload::Completed { result: object }
             } else {
                 TaskPayload::Working

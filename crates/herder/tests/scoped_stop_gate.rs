@@ -3105,3 +3105,462 @@ fn mcp_delivery_task_persists_terminal_result_and_requires_exact_read_grant() {
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }
+
+#[tokio::test]
+async fn scoped_task_wire_returns_durable_terminal_states_and_messages() {
+    use herder::{
+        application::scoped_stop::{
+            mcp_read::{ScopedMessageReader, ScopedReadApplication},
+            mcp_task_server::ScopedTaskServer,
+        },
+        mcp::{
+            catalog,
+            transport::{ApplicationFuture, ApplicationPort},
+        },
+    };
+    use rmcp::{ServiceExt, model::CallToolResult};
+    use serde_json::{Value, json};
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    struct Reader;
+    impl ScopedMessageReader for Reader {
+        fn read_messages(&mut self, a: &SessionAddress) -> Result<Value, ()> {
+            assert_eq!(*a, address());
+            Ok(json!({"messages":[{"text":"fixture native read"}],"coverage":"complete"}))
+        }
+    }
+    struct App {
+        authority: ScopedAuthority,
+        reader: ScopedReadApplication<Reader>,
+        db: PathBuf,
+        outcome: &'static str,
+        calls: Arc<AtomicUsize>,
+    }
+    impl ApplicationPort for App {
+        fn call<'a>(
+            &'a self,
+            id: &'a ConnectionIdentity,
+            request: catalog::Request,
+        ) -> ApplicationFuture<'a> {
+            Box::pin(async move {
+                if matches!(request, catalog::Request::Deliver(_)) {
+                    let a = address();
+                    let b = binding(&a, "i", "k");
+                    let p = plan();
+                    assert!(
+                        self.authority
+                            .claim(
+                                id,
+                                &grants(),
+                                &b,
+                                "scope-1",
+                                &p,
+                                "message",
+                                "2026-11-07T10:00:01Z"
+                            )
+                            .unwrap()
+                    );
+                    match self.outcome {
+                        "stopped" => {
+                            self.authority
+                                .stop(
+                                    id,
+                                    &grants(),
+                                    "session:issued",
+                                    "human",
+                                    "2026-11-07T10:00:01Z",
+                                )
+                                .unwrap();
+                            let control = NotSent {
+                                calls: self.calls.clone(),
+                            };
+                            assert_eq!(
+                                self.authority
+                                    .handoff(
+                                        id,
+                                        &grants(),
+                                        &b,
+                                        "scope-1",
+                                        p,
+                                        "message",
+                                        "2026-11-07T10:00:01Z",
+                                        &control
+                                    )
+                                    .unwrap(),
+                                DurableDispatch::StoppedBeforeHandoff
+                            );
+                        }
+                        "not_sent" => {
+                            let control = NotSent {
+                                calls: self.calls.clone(),
+                            };
+                            self.authority
+                                .handoff(
+                                    id,
+                                    &grants(),
+                                    &b,
+                                    "scope-1",
+                                    p,
+                                    "message",
+                                    "2026-11-07T10:00:01Z",
+                                    &control,
+                                )
+                                .unwrap();
+                        }
+                        "unknown" => {
+                            let control = Lost {
+                                calls: self.calls.clone(),
+                            };
+                            self.authority
+                                .handoff(
+                                    id,
+                                    &grants(),
+                                    &b,
+                                    "scope-1",
+                                    p,
+                                    "message",
+                                    "2026-11-07T10:00:01Z",
+                                    &control,
+                                )
+                                .unwrap();
+                        }
+                        _ => {
+                            let control = Control {
+                                calls: self.calls.clone(),
+                                db: self.db.clone(),
+                                ready: None,
+                                proceed: None,
+                            };
+                            self.authority
+                                .handoff(
+                                    id,
+                                    &grants(),
+                                    &b,
+                                    "scope-1",
+                                    p,
+                                    "message",
+                                    "2026-11-07T10:00:01Z",
+                                    &control,
+                                )
+                                .unwrap();
+                            let db = Connection::open(&self.db).unwrap();
+                            db.create_scalar_function(
+                                "herder_writer_version",
+                                0,
+                                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                                |_| Ok(3),
+                            )
+                            .unwrap();
+                            db.execute(
+                                "UPDATE intents SET state='confirmed' WHERE intent_id='i'",
+                                [],
+                            )
+                            .unwrap();
+                        }
+                    }
+                    Some(CallToolResult::structured(
+                        json!({"_herder_delivery_task":"task-i"}),
+                    ))
+                } else {
+                    self.reader.call(id, request).await
+                }
+            })
+        }
+    }
+    for outcome in ["stopped", "not_sent", "unknown", "confirmed"] {
+        let f = Fixture::new();
+        create(&f);
+        f.prepare("i", "k", &plan());
+        let db = Connection::open(&f.db).unwrap();
+        db.create_scalar_function(
+            "herder_writer_version",
+            0,
+            FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+            |_| Ok(3),
+        )
+        .unwrap();
+        db.execute("UPDATE tasks SET created_at='2026-11-07T10:00:00Z',updated_at='2026-11-07T10:00:00Z' WHERE task_id='task-i'",[]).unwrap();
+        drop(db);
+        let mut policy = grants();
+        policy.push(Grant {
+            principal: PrincipalId("alice".into()),
+            resource: PrivateResource::Session(SessionRef("issued".into())),
+            action: Action::Read,
+        });
+        let calls = Arc::new(AtomicUsize::new(0));
+        let app = Arc::new(App {
+            authority: f.authority(),
+            reader: ScopedReadApplication::new(
+                f.authority(),
+                address().instance,
+                policy.clone(),
+                Reader,
+            ),
+            db: f.db.clone(),
+            outcome,
+            calls: calls.clone(),
+        });
+        let server =
+            ScopedTaskServer::new(identity(), policy.clone(), Arc::new(f.authority()), app);
+        let (client, io) = tokio::io::duplex(65536);
+        let job =
+            tokio::spawn(async move { server.serve(io).await.unwrap().waiting().await.unwrap() });
+        let (r, mut w) = tokio::io::split(client);
+        let mut lines = BufReader::new(r).lines();
+        let meta = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"extensions":{"io.modelcontextprotocol/tasks":{}}},"io.modelcontextprotocol/clientInfo":{"name":"fixture","version":"1"}});
+        let requests = [
+            json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":meta,"name":"deliver","arguments":{"action":"session","session_ref":"issued","message":"message","mode":"start","request_key":"k"}}}),
+            json!({"jsonrpc":"2.0","id":2,"method":"tasks/get","params":{"_meta":meta,"taskId":"task-i"}}),
+            json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"_meta":meta,"name":"session","arguments":{"action":"messages","session_ref":"issued"}}}),
+        ];
+        for (index, req) in requests.iter().enumerate() {
+            w.write_all(format!("{req}\n").as_bytes()).await.unwrap();
+            let result: Value =
+                serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+            match index {
+                0 => {
+                    assert_eq!(result["result"]["resultType"], "task", "{result}");
+                    assert_eq!(result["result"]["taskId"], "task-i");
+                }
+                1 => {
+                    assert_eq!(result["result"]["status"], "completed", "{result}");
+                    let v = &result["result"]["result"]["structuredContent"];
+                    match outcome {
+                        "not_sent" => {
+                            assert_eq!(v["effect"], "none");
+                            assert_eq!(v["code"], "adapter_refused");
+                        }
+                        "stopped" => {
+                            assert_eq!(v["effect"], "none");
+                            assert_eq!(v["code"], "human_stop_active");
+                            assert!(v["expected"][0].as_str().unwrap().contains("HumanStop"));
+                        }
+                        "unknown" => assert_eq!(v["effect"], "unknown"),
+                        _ => assert_eq!(v["outcome"], "confirmed"),
+                    }
+                }
+                _ => assert_eq!(
+                    result["result"]["structuredContent"]["page"]["messages"][0]["text"],
+                    "fixture native read"
+                ),
+            }
+        }
+        drop(w);
+        drop(lines);
+        job.await.unwrap();
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            if outcome == "stopped" { 0 } else { 1 }
+        );
+        let reopened = f
+            .authority()
+            .get_delivery_task(&identity(), &policy, "task-i")
+            .unwrap()
+            .unwrap();
+        let resumed = serde_json::to_value(reopened).unwrap();
+        if outcome == "stopped" {
+            assert_eq!(
+                resumed["result"]["structuredContent"]["code"],
+                "human_stop_active"
+            );
+        }
+        if outcome == "not_sent" {
+            assert_eq!(
+                resumed["result"]["structuredContent"]["code"],
+                "adapter_refused"
+            );
+            assert!(!resumed.to_string().contains("fixture refused before write"));
+        }
+        let db = Connection::open(&f.db).unwrap();
+        assert_eq!(
+            db.query_row("SELECT status FROM tasks WHERE task_id='task-i'", [], |r| r
+                .get::<_, String>(0))
+                .unwrap(),
+            "completed"
+        );
+    }
+}
+
+#[tokio::test]
+async fn scoped_delivery_application_wire_dedup_tasks_and_readback() {
+    use herder::{
+        application::scoped_stop::{
+            mcp_deliver::ScopedDeliverApplication,
+            mcp_read::{ScopedMessageReader, ScopedReadApplication},
+            mcp_task_server::ScopedTaskServer,
+        },
+        mcp::{
+            catalog,
+            transport::{ApplicationFuture, ApplicationPort},
+        },
+    };
+    use rmcp::ServiceExt;
+    use serde_json::{Value, json};
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    struct Reader;
+    impl ScopedMessageReader for Reader {
+        fn read_messages(&mut self, a: &SessionAddress) -> Result<Value, ()> {
+            assert_eq!(*a, address());
+            Ok(json!({"messages":[{"text":"fixture-read"}],"coverage":"complete"}))
+        }
+    }
+    struct Submit {
+        outcome: &'static str,
+        calls: Arc<AtomicUsize>,
+    }
+    impl BoundedNativeHandoff for Submit {
+        fn submit_bounded(
+            &self,
+            p: DispatchPlan,
+            m: &str,
+            _: &RequestKey,
+        ) -> Result<Admission, SubmitError> {
+            assert_eq!(m, "message");
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            match self.outcome {
+                "not_sent" => Err(SubmitError::DefinitelyNotSent {
+                    reason: "fixture hidden".into(),
+                }),
+                "unknown" => Err(SubmitError::OutcomeUnknown {
+                    receipt: None,
+                    reason: "fixture lost".into(),
+                }),
+                _ => Ok(Admission {
+                    receipt: NativeReceipt {
+                        target: p.target,
+                        native_id: "turn".into(),
+                    },
+                }),
+            }
+        }
+    }
+    struct App {
+        deliver: ScopedDeliverApplication<FixtureReader, Submit>,
+        read: ScopedReadApplication<Reader>,
+    }
+    impl ApplicationPort for App {
+        fn call<'a>(
+            &'a self,
+            id: &'a ConnectionIdentity,
+            request: catalog::Request,
+        ) -> ApplicationFuture<'a> {
+            Box::pin(async move {
+                if matches!(request, catalog::Request::Deliver(_)) {
+                    self.deliver.call(id, request).await
+                } else {
+                    self.read.call(id, request).await
+                }
+            })
+        }
+    }
+    async fn request(
+        w: &mut tokio::io::WriteHalf<tokio::io::DuplexStream>,
+        lines: &mut tokio::io::Lines<BufReader<tokio::io::ReadHalf<tokio::io::DuplexStream>>>,
+        v: Value,
+    ) -> Value {
+        w.write_all(format!("{v}\n").as_bytes()).await.unwrap();
+        serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap()
+    }
+    for outcome in ["not_sent", "unknown", "confirmed"] {
+        let f = Fixture::new();
+        create(&f);
+        let mut policy = grants();
+        policy.push(Grant {
+            principal: PrincipalId("alice".into()),
+            resource: PrivateResource::Session(SessionRef("issued".into())),
+            action: Action::Read,
+        });
+        let calls = Arc::new(AtomicUsize::new(0));
+        let authority = Arc::new(f.authority());
+        let app = Arc::new(App {
+            deliver: ScopedDeliverApplication::new(
+                authority.clone(),
+                address().instance,
+                policy.clone(),
+                Arc::new(FixtureReader {
+                    target: address(),
+                    reads: AtomicUsize::new(0),
+                    db: f.db.clone(),
+                }),
+                Arc::new(Submit {
+                    outcome,
+                    calls: calls.clone(),
+                }),
+                "9999-12-31T23:59:59Z".into(),
+            )
+            .unwrap(),
+            read: ScopedReadApplication::new(
+                f.authority(),
+                address().instance,
+                policy.clone(),
+                Reader,
+            ),
+        });
+        let server = ScopedTaskServer::new(identity(), policy, authority, app);
+        let (client, io) = tokio::io::duplex(65536);
+        let job =
+            tokio::spawn(async move { server.serve(io).await.unwrap().waiting().await.unwrap() });
+        let (r, mut w) = tokio::io::split(client);
+        let mut lines = BufReader::new(r).lines();
+        let meta = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"extensions":{"io.modelcontextprotocol/tasks":{}}},"io.modelcontextprotocol/clientInfo":{"name":"fixture","version":"1"},"principal":"spoofed"});
+        let call = |id, msg: &str| json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"_meta":meta,"name":"deliver","arguments":{"action":"session","session_ref":"issued","message":msg,"mode":"start","request_key":"key"}}});
+        let no_tasks_meta = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"unsupported","version":"1"}});
+        let unsupported=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":91,"method":"tools/call","params":{"_meta":no_tasks_meta,"name":"deliver","arguments":{"action":"session","session_ref":"issued","message":"message","mode":"start","request_key":"key"}}})).await;
+        assert!(unsupported.get("error").is_some(), "{unsupported}");
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        let first = request(&mut w, &mut lines, call(1, "message")).await;
+        assert_eq!(first["result"]["resultType"], "task", "{first}");
+        let task_id = first["result"]["taskId"].as_str().unwrap().to_owned();
+        if outcome == "confirmed" {
+            assert_eq!(first["result"]["status"], "working");
+            let c = Connection::open(&f.db).unwrap();
+            c.create_scalar_function(
+                "herder_writer_version",
+                0,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |_| Ok(3),
+            )
+            .unwrap();
+            c.execute(
+                "UPDATE intents SET state='confirmed' WHERE task_id=?1",
+                [&task_id],
+            )
+            .unwrap();
+        }
+        let poll=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":2,"method":"tasks/get","params":{"_meta":meta,"taskId":task_id}})).await;
+        assert_eq!(poll["result"]["status"], "completed", "{poll}");
+        let data = &poll["result"]["result"]["structuredContent"];
+        match outcome {
+            "not_sent" => assert_eq!(data["code"], "adapter_refused"),
+            "unknown" => assert_eq!(data["effect"], "unknown"),
+            _ => assert_eq!(data["outcome"], "confirmed"),
+        };
+        let conflict = request(&mut w, &mut lines, call(3, "different message")).await;
+        assert_eq!(
+            conflict["result"]["structuredContent"]["code"], "idempotency_conflict",
+            "{conflict}"
+        );
+        let replay = request(&mut w, &mut lines, call(4, "message")).await;
+        assert_eq!(replay["result"]["taskId"], task_id, "{replay}");
+        let read=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"_meta":meta,"name":"session","arguments":{"action":"messages","session_ref":"issued"}}})).await;
+        assert_eq!(
+            read["result"]["structuredContent"]["page"]["messages"][0]["text"],
+            "fixture-read"
+        );
+        let foreign = ConnectionIdentity::new(
+            Caller::Principal(VerifiedPrincipal {
+                id: PrincipalId("bob".into()),
+            }),
+            None,
+        );
+        assert!(
+            f.authority()
+                .get_delivery_task(&foreign, &grants(), &task_id)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        drop(w);
+        drop(lines);
+        job.await.unwrap();
+    }
+}
