@@ -8,14 +8,14 @@
     "CONFIG",
     "REPORT"
   ],
-  "status": "queued",
+  "status": "blocked",
   "estimate_minutes": 15,
-  "owner": "Astra",
+  "owner": "Terra",
   "harness": "codex",
-  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
-  "model": "gpt-6-astra",
+  "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+  "model": "gpt-6.1-terra",
   "created_at": "2026-11-07T21:29:29+03:00",
-  "updated_at": "2026-11-07T21:38:55+03:00",
+  "updated_at": "2026-11-08T00:12:53+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:29+03:00",
@@ -78,9 +78,62 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:43:58+03:00",
+      "note": "",
+      "changes": {
+        "note": "Решение21:38МСК: CI теперь владеет минимальными legacy adapter fixes (TDD), не новой реализацией. Exact entrypoint/capabilities/наблюдаемый gap и fixture refs: LEGACY-ADAPTERS.md, строка этой среды. Тонкое подключение/единый public contract — ../20261107-herder-v1-core. Дедлайн08.11 00:38МСК; source capability не live PASS."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:24:34+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+        "model": "gpt-6.1-terra",
+        "owner": "Terra",
+        "note": "Native exactcandidate d66c9c0729fe / manifest2db3cc41; explicit solelaneoperator, deterministic model isolated, publicMCP; nolegacycurrent/install, UNKNOWNnoreplay."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:12:53+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Original create UNKNOWN; missing historical error stage, retry forbidden",
+        "result": "Terra readonly complete: logs0/threads0/no sessions; stderr discarded. quota guard hypothesis (herder-test not exempt, unknown quota denies) not proven historicalcause. Schema20checks valid from coreowner. Original task68ebef496b1d5ca9265c1a8c605ac631 preserved; no resend. Probe19dcfc9c; evidence codex-v1-result.md."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
     }
   ],
   "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
   "wave": 3,
-  "note": "Сложный native instance/provider и installed route разрабатывает/принимает Lead; UNKNOWN не повторять."
+  "note": "Native exactcandidate d66c9c0729fe / manifest2db3cc41; explicit solelaneoperator, deterministic model isolated, publicMCP; nolegacycurrent/install, UNKNOWNnoreplay.",
+  "blocker": "Original create UNKNOWN; missing historical error stage, retry forbidden",
+  "result": "Terra readonly complete: logs0/threads0/no sessions; stderr discarded. quota guard hypothesis (herder-test not exempt, unknown quota denies) not proven historicalcause. Schema20checks valid from coreowner. Original task68ebef496b1d5ca9265c1a8c605ac631 preserved; no resend. Probe19dcfc9c; evidence codex-v1-result.md."
 }

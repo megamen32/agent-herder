@@ -1,0 +1,100 @@
+{
+  "run_id": "ci-v1-a836-aggregate-20261108",
+  "source_sha": "a836a7dcdfc1becf274c0a7d04ded77f14690a39",
+  "artifact_sha256": "f1e99e12393eb3de9d92fa05f00df63d0270d74643b18e2d774a0aa8941022c7",
+  "stage": "candidate",
+  "status": "INCOMPLETE",
+  "lanes": {
+    "chatgpt": {
+      "checks": {
+        "create": "BLOCKED",
+        "second_deliver_same_session": "BLOCKED",
+        "read_both": "BLOCKED",
+        "export_native_complete": "BLOCKED",
+        "search_with_coverage": "BLOCKED",
+        "projects_with_provenance": "BLOCKED",
+        "reopen_without_resend": "BLOCKED"
+      },
+      "reason": "Public core init fails at 20s; single direct bundled init returns adapter error after22.093s, not healthy proof; zero sends"
+    },
+    "zai": {
+      "checks": {
+        "create": "UNKNOWN",
+        "second_deliver_same_session": "BLOCKED",
+        "read_both": "BLOCKED",
+        "export_native_complete": "BLOCKED",
+        "search_with_coverage": "BLOCKED",
+        "projects_with_provenance": "BLOCKED",
+        "reopen_without_resend": "BLOCKED"
+      },
+      "reason": "Create confirmed, initial prompt UNKNOWN; native GLM-5.3 capacity refusal"
+    },
+    "opencode": {
+      "checks": {
+        "create": "UNKNOWN",
+        "second_deliver_same_session": "BLOCKED",
+        "read_both": "BLOCKED",
+        "export_native_complete": "BLOCKED",
+        "search_with_coverage": "BLOCKED",
+        "projects_with_provenance": "BLOCKED",
+        "reopen_without_resend": "BLOCKED"
+      },
+      "reason": "Historical d66 post-effect UNKNOWN, disposable authority deleted; no replay"
+    },
+    "codex": {
+      "checks": {
+        "create": "UNKNOWN",
+        "second_deliver_same_session": "BLOCKED",
+        "read_both": "BLOCKED",
+        "export_native_complete": "BLOCKED",
+        "search_with_coverage": "BLOCKED",
+        "projects_with_provenance": "BLOCKED",
+        "reopen_without_resend": "BLOCKED"
+      },
+      "reason": "Historical d66 create UNKNOWN, original cause not preserved; no replay"
+    },
+    "zcode": {
+      "checks": {
+        "create": "UNKNOWN",
+        "second_deliver_same_session": "BLOCKED",
+        "read_both": "BLOCKED",
+        "export_native_complete": "BLOCKED",
+        "search_with_coverage": "BLOCKED",
+        "projects_with_provenance": "BLOCKED",
+        "reopen_without_resend": "BLOCKED"
+      },
+      "reason": "a836 create UNKNOWN, fixture project registration missing; no replay"
+    }
+  },
+  "negative_checks": {
+    "wrong_instance_or_principal": "PASS",
+    "same_key_no_replay": "PASS",
+    "same_key_payload_conflict": "PASS",
+    "unknown_after_restart_no_replay": "PASS",
+    "human_stop_before_send": "PASS"
+  },
+  "evidence_provenance": {
+    "negative": {
+      "path": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/candidate-negative-a836a7dc.json",
+      "sha256": "fa5659c32a388d178e1a212511abd7fba084a4b9ca66042b30781f1db95f1bc3",
+      "run_id": "astra-v1-negative-a836a7dc-20261107T2100",
+      "scope": "public MCP core negative gate against isolated fakeAHAP, not native harness lanes"
+    },
+    "historical_adapter_comparison": {
+      "opencode": true,
+      "codex": true
+    },
+    "native_receipts": [
+      "chatgpt-a836-receipt.json",
+      "zai-a836-receipt.json",
+      "zai-a836-reconcile-read.json",
+      "zai-a836-native-blocker.json",
+      "opencode-v1-d66c9c0729fe.json",
+      "codex-v1-result.md",
+      "zcode-v1-a836-case-01.json",
+      "chatgpt-a836-ahap-timing.json"
+    ]
+  },
+  "installed": "NOT_RUN",
+  "legacy_current_changed": false
+}

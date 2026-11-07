@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T21:04:24+00:00",
+  "details": "Existing V1 manifest omits native OpenCode: runner must accept explicitly hashed official binary; manifest must be mounted read-only and supplied Node/bootstrap hashes verified. Focused tests RED, now 8 GREEN.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "CI Astra",
+      "at": "2026-11-07T21:04:24+00:00",
+      "changes": {
+        "details": "Existing V1 manifest omits native OpenCode: runner must accept explicitly hashed official binary; manifest must be mounted read-only and supplied Node/bootstrap hashes verified. Focused tests RED, now 8 GREEN.",
+        "source": "python3 -m unittest discover -s tests/native -p test_runner_config.py",
+        "status": "open",
+        "title": "V1 CONFIG rejects separately pinned OpenCode and omits manifest sandbox mount"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "CI Astra",
+      "at": "2026-11-07T21:08:06+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/config-v1-green.txt",
+            "red_proof_path": "evidence/config-manifest-red.txt",
+            "red_result": "FAILED (failures=1)",
+            "red_sha256": "ba0e3775746cc76a24ec1f4447879c74508ee2ec56d25700f49d2a8704f82d6c",
+            "result": "PASS: 8 runner config tests, process exit 0.",
+            "sha256": "2e964c7588b6ed6c39969ee7e518ebbe5a835dca63bc7ce0aae4afc3326446f5",
+            "test_command": "python3 -m unittest discover -s tests/native -p test_runner_config.py"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B4982e2843bef46019488",
+  "owner": "CI Astra",
+  "reporter": "CI Astra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/config-v1-green.txt",
+      "red_proof_path": "evidence/config-manifest-red.txt",
+      "red_result": "FAILED (failures=1)",
+      "red_sha256": "ba0e3775746cc76a24ec1f4447879c74508ee2ec56d25700f49d2a8704f82d6c",
+      "result": "PASS: 8 runner config tests, process exit 0.",
+      "sha256": "2e964c7588b6ed6c39969ee7e518ebbe5a835dca63bc7ce0aae4afc3326446f5",
+      "test_command": "python3 -m unittest discover -s tests/native -p test_runner_config.py"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "python3 -m unittest discover -s tests/native -p test_runner_config.py",
+  "status": "fixed",
+  "title": "V1 CONFIG rejects separately pinned OpenCode and omits manifest sandbox mount",
+  "updated_at": "2026-11-07T21:08:06+00:00"
+}

@@ -12,7 +12,7 @@
   "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
   "model": "gpt-6.1-terra",
   "created_at": "2026-11-07T21:29:27+03:00",
-  "updated_at": "2026-11-07T22:45:44+03:00",
+  "updated_at": "2026-11-08T00:06:28+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:27+03:00",
@@ -112,6 +112,21 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:06:28+03:00",
+      "note": "",
+      "changes": {
+        "result": "Published313d8c64 + V1 compatibility8708597c74deb1778e0d4d61908d249a7905a9e0. 8 focused tests GREEN: explicit hashed native OpenCode outside candidate; node/bootstrap hashes; exact manifest readonly mount. Evidence config-v1-red.txt/config-manifest-red.txt/config-v1-green.txt. Native acceptance separate."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
     }
   ],
   "wave": 1,
@@ -121,5 +136,5 @@
     "tests/native/test_runner_config.py",
     "tests/native/runner-config.example.json"
   ],
-  "result": "Published313d8c64cd73fc9881bb126af41eacfa6ab43144, remote main verified. 12 tests pass; actual unshare+bwrap read-only visibility/import proof for10inputs. Exact config/argv in CONFIG.md. This proves runnable inputs, not provider journey."
+  "result": "Published313d8c64 + V1 compatibility8708597c74deb1778e0d4d61908d249a7905a9e0. 8 focused tests GREEN: explicit hashed native OpenCode outside candidate; node/bootstrap hashes; exact manifest readonly mount. Evidence config-v1-red.txt/config-manifest-red.txt/config-v1-green.txt. Native acceptance separate."
 }

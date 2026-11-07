@@ -8,14 +8,14 @@
     "CONFIG",
     "REPORT"
   ],
-  "status": "queued",
+  "status": "blocked",
   "estimate_minutes": 15,
-  "owner": "Terra (планируемое назначение)",
+  "owner": "roomhacker",
   "harness": "codex",
-  "session": "",
-  "model": "gpt-6-terra",
+  "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+  "model": "gpt-6-luna",
   "created_at": "2026-11-07T21:29:29+03:00",
-  "updated_at": "2026-11-07T21:38:54+03:00",
+  "updated_at": "2026-11-08T00:23:45+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:29+03:00",
@@ -64,8 +64,121 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:43:57+03:00",
+      "note": "",
+      "changes": {
+        "note": "Решение21:38МСК: CI теперь владеет минимальными legacy adapter fixes (TDD), не новой реализацией. Exact entrypoint/capabilities/наблюдаемый gap и fixture refs: LEGACY-ADAPTERS.md, строка этой среды. Тонкое подключение/единый public contract — ../20261107-herder-v1-core. Дедлайн08.11 00:38МСК; source capability не live PASS."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:24:31+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "model": "gpt-6-luna",
+        "owner": "Existing stand Luna",
+        "note": "Native exactcandidate d66c9c0729fe / manifest2db3cc41; explicit solelaneoperator, deterministic model isolated, publicMCP; nolegacycurrent/install, UNKNOWNnoreplay."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:31:15+03:00",
+      "note": "",
+      "changes": {
+        "owner": "roomhacker",
+        "note": "Прямое поручение владельца: OpenCode stand author/operator единственный. Один новый disposable native V1 consumer на manifest herder-v1-d66c9c0729fe (SHA256 2db3cc41b3411e1028ba641e1d3812369d054f01ab43cda135dd9c6ad5f454e4, source d66c9c0729fea2a18038fe6569625a14177a7adc), published 313d8c64 launch.py, exact --ro-bind inputs включая manifest и pinned OpenCode 1d89d04d. Не использовать --candidate и не replay прежние input/UNKNOWN. Report fields: stage/status/source_commit/manifest_sha256; core/bootstrap/node/adapter/OpenCode SHA+versions; run_id, instance/session, оба Task/request/user+assistant IDs; projects, export native bytes_base64 digest+length/complete/source, common unsupported receipt, search coverage, reopened task/session/transcript и model request delta; exact command, evidence, cleanup."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:06:08+03:00",
+      "note": "Сверен attempt2.log и выполнен read-only поиск original Task/request receipt. Native completion подтверждён в сохранённом логе, outer outcome reconciled в UNKNOWN_POST_EFFECT; scratch уже удалён. Offline completion-reader regression: 26 tests PASS; native create/send не запускались. Fresh mutation запрещена owner.",
+      "changes": {
+        "status": "blocked",
+        "note": "Completion-reader TDD исправлен: завершённый assistant после exact marker user, exact Task receipt ID; trailing idle игнорируется. 26 offline tests PASS. Native attempt2 — UNKNOWN_POST_EFFECT: лог подтверждает user msg_1b7c25a85001XUIBWu63iP3rG8 и completed assistant msg_1b7c25abb001b7qtOtsBN6TFDD (finish=stop), затем idle. Read-only reconciliation не нашёл исходный Task/request/input marker или disposable DB/profile: launcher удалил scratch без --retain-on-failure. Initial send не повторять; second send не разрешён без recovered first receipt. Дальнейшая native приёмка заблокирована удалённым scratch и запретом owner на fresh mutation."
+      },
+      "actor": {
+        "harness": "codex",
+        "session_id": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:10:05+03:00",
+      "note": "",
+      "changes": {
+        "blocker": "Original native effect confirmed, retained authority unavailable; no replay",
+        "result": "d66 attempt2 UNKNOWN_POST_EFFECT: user msg_1b7c25a85001XUIBWu63iP3rG8 + completed assistant msg_1b7c25abb001b7qtOtsBN6TFDD; trailing idle caused false completion failure. Luna fixes matcher 02ff1510. Original scratch deleted without retain-on-failure; no exact session/requestkey for reconciliation. No new create or second send. Evidence opencode-v1-d66c9c0729fe.json."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:21:58+03:00",
+      "note": "Scoped publish exact two OpenCode fixture files completed on origin/main; receipt summary and offline proof refs recorded. Native launch/replay untouched; leaf remains blocked on retained scratch for native reconciliation.",
+      "changes": {
+        "status": "blocked",
+        "note": "Scoped publish завершён в origin/main: commit 7cc88e486ce4689117306a50293af7e2ebb5e341, ровно tests/native/ahap_opencode_stand.py SHA256 ac2b4906d9c0fbaeb540484619555562ce0704c7771dc5e7fdc3a9b77fa705a4 и tests/native/test_ahap_opencode_stand.py SHA256 f2362a9b4a5bc5fb519f1c8ef8722af834755fc7177aa138750039f547957328. Receipt .agents/tasks/20261107-portable-native-ci/evidence/opencode-v1-d66c9c0729fe.json SHA256 44405ca4487bb0a85206ec2a634b683c89bf7998ba46027ae97a783595ec52bc; top-level phase=post_effect,status=UNKNOWN_POST_EFFECT, attempt1 сохранён. Offline proof: evidence/opencode-v1-d66c9c0729fe-offline-90d9b886.json SHA256 02f6e238a1b66c9a97ae79ddbb597f7f8345338c8cdfa368c72f1036507d0e3f (26 tests PASS); raw output evidence/opencode-v1-d66c9c0729fe-offline-90d9b886.txt SHA256 9dc1a44d847b8a1a1aeda8ef009a509a72c7086471b5e612c8b7507e217e4ac7. Native launch/send/replay не выполнялись; native acceptance остаётся заблокирована удалённым scratch."
+      },
+      "actor": {
+        "harness": "codex",
+        "session_id": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:23:45+03:00",
+      "note": "Remote checkpoint: origin/main=5ea28f51838fcfc3230006a8709090f08009a47f; опубликованный OpenCode commit 7cc88e486ce4689117306a50293af7e2ebb5e341 — его ancestor, оба owned fixture-файла побайтно совпадают с origin/main.",
+      "changes": {
+        "note": "Remote checkpoint: origin/main=5ea28f51838fcfc3230006a8709090f08009a47f; опубликованный OpenCode commit 7cc88e486ce4689117306a50293af7e2ebb5e341 — его ancestor, оба owned fixture-файла побайтно совпадают с origin/main.",
+        "status": "blocked"
+      },
+      "actor": {
+        "harness": "codex",
+        "session_id": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
     }
   ],
   "wave": 2,
-  "note": "После browser приоритета: подключение готового Luna stand по утверждённому контракту, без конкурентной записи stand. Неясный product gap решает Astra. Перед dispatch проверить опубликованные результаты существующей Luna-сессии."
+  "note": "Completion-reader TDD исправлен: завершённый assistant после exact marker user, exact Task receipt ID; trailing idle игнорируется. 26 offline tests PASS. Native attempt2 — UNKNOWN_POST_EFFECT: лог подтверждает user msg_1b7c25a85001XUIBWu63iP3rG8 и completed assistant msg_1b7c25abb001b7qtOtsBN6TFDD (finish=stop), затем idle. Read-only reconciliation не нашёл исходный Task/request/input marker или disposable DB/profile: launcher удалил scratch без --retain-on-failure. Initial send не повторять; second send не разрешён без recovered first receipt. Дальнейшая native приёмка заблокирована удалённым scratch и запретом owner на fresh mutation.\n\nScoped publish завершён в origin/main: commit 7cc88e486ce4689117306a50293af7e2ebb5e341, ровно tests/native/ahap_opencode_stand.py SHA256 ac2b4906d9c0fbaeb540484619555562ce0704c7771dc5e7fdc3a9b77fa705a4 и tests/native/test_ahap_opencode_stand.py SHA256 f2362a9b4a5bc5fb519f1c8ef8722af834755fc7177aa138750039f547957328. Receipt .agents/tasks/20261107-portable-native-ci/evidence/opencode-v1-d66c9c0729fe.json SHA256 44405ca4487bb0a85206ec2a634b683c89bf7998ba46027ae97a783595ec52bc; top-level phase=post_effect,status=UNKNOWN_POST_EFFECT, attempt1 сохранён. Offline proof: evidence/opencode-v1-d66c9c0729fe-offline-90d9b886.json SHA256 02f6e238a1b66c9a97ae79ddbb597f7f8345338c8cdfa368c72f1036507d0e3f (26 tests PASS); raw output evidence/opencode-v1-d66c9c0729fe-offline-90d9b886.txt SHA256 9dc1a44d847b8a1a1aeda8ef009a509a72c7086471b5e612c8b7507e217e4ac7. Native launch/send/replay не выполнялись; native acceptance остаётся заблокирована удалённым scratch.\nRemote checkpoint: origin/main=5ea28f51838fcfc3230006a8709090f08009a47f; опубликованный OpenCode commit 7cc88e486ce4689117306a50293af7e2ebb5e341 — его ancestor, оба owned fixture-файла побайтно совпадают с origin/main.",
+  "blocker": "Original native effect confirmed, retained authority unavailable; no replay",
+  "result": "d66 attempt2 UNKNOWN_POST_EFFECT: user msg_1b7c25a85001XUIBWu63iP3rG8 + completed assistant msg_1b7c25abb001b7qtOtsBN6TFDD; trailing idle caused false completion failure. Luna fixes matcher 02ff1510. Original scratch deleted without retain-on-failure; no exact session/requestkey for reconciliation. No new create or second send. Evidence opencode-v1-d66c9c0729fe.json."
 }

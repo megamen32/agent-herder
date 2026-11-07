@@ -1,0 +1,13 @@
+{
+  "status": "UNKNOWN_POST_EFFECT",
+  "run_id": "ci-zai-native-a836-0010",
+  "page_id": 7,
+  "native_route": "/c/c2c581df-d3a7-4a3b-8f57-4b8edff81fd3",
+  "observed_ui": "Model is currently at capacity. Please try again later or switch to another model.",
+  "model": "GLM-5.3",
+  "original_marker": "HERDER_V1_ZAI_3a3d17077d834a39b9410f147a9911fb",
+  "draft_retained": true,
+  "replayed": false,
+  "second_send_attempted": false,
+  "source": "MacMini gateway evaluate_script readonly after original create"
+}

@@ -27,3 +27,7 @@ CLI `[bootstrap, /herder-owner-home]`; fresh authority seed has exactly database
 ## V1 public contract update
 
 owner.kind=opencode|codex|zcode|chatgpt|zai; executable=Node, ahap_script=corresponding dist/ahap-*-runner.js; code_home/cwd/principal/node/instance plus allowlisted ahap_env. Codex AHAP_CODEX_SOCKET xor AHAP_CODEX_BIN, AHAP_CODEX_CWD, optional CODEX_HOME. Required export uses format=native with lossless bytes_base64 and completeness/source. common is explicitly unsupported. Projects: discover(action=projects,instance_ref),14tools. Search requires the explicit fixture bootstrap v4 migration; startup and read do not migrate.
+
+## Delta V1 a836 verified input command
+
+CONFIG source8708597c, focused8GREEN. `evidence/runner-config-a836.json` selects immutable a836 manifest, separately pinned native OpenCode25facd7099 and hashed bundlednode/bootstrap. `evidence/runner-config-a836-argv.json` records verified readonlymounts/argv; dry-run exit0, native sends0. Do NOT execute generated OpenCode argv: original d66 run has post-effectUNKNOWN and no retained authority. This is configuration proof, not a fresh native acceptance.

@@ -1,0 +1,12 @@
+{
+  "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-a836a7dcdfc1/manifest.json",
+  "manifest_sha256": "f1e99e12393eb3de9d92fa05f00df63d0270d74643b18e2d774a0aa8941022c7",
+  "consumer_helpers": "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/ahap_opencode_stand.py",
+  "harness": "chatgpt",
+  "page_id": 3,
+  "account_scope": "b3f35cdebc0da7360763bc2c80426ee6e86e15d3239d581616ba35c634d055f1",
+  "run_id": "ci-chatgpt-preflight-a836-0016",
+  "stage": "candidate",
+  "instance": "ci-chatgpt",
+  "run_root": "/home/roomhacker/herder-artifacts/ci-runs/ci-chatgpt-preflight-a836-0016"
+}

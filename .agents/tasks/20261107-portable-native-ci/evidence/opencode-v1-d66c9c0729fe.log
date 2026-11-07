@@ -1,0 +1,1 @@
+AHAP OpenCode stand failed: V1 public MCP contract missing before mutation: discover.action=['projects'] (advertised []); deliver.action=['session'] (advertised []); search.action=['search'] (advertised []); export.action=['export'] (advertised []); export.format=['common', 'native'] (advertised [])

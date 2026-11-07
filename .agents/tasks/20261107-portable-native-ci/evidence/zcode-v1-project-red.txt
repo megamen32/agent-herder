@@ -1,0 +1,20 @@
+test_official_provider_layout_and_exact_runtime_copy (test_v1_zcode_stand.FixturePreparation) ... ok
+test_refuses_non_loopback_model (test_v1_zcode_stand.FixturePreparation) ... ok
+test_rejects_changed_candidate_artifact (test_v1_zcode_stand.ManifestValidation) ... ok
+test_rejects_unexpected_manifest_before_reading_paths (test_v1_zcode_stand.ManifestValidation) ... ok
+test_exactly_one_native_root_required (test_v1_zcode_stand.ProjectGate) ... ok
+test_missing_native_registration_blocks_create (test_v1_zcode_stand.ProjectGate) ... ok
+test_official_runtime_initializes_public_core (test_v1_zcode_stand.PublicRuntimeRegression) ... ERROR
+
+======================================================================
+ERROR: test_official_runtime_initializes_public_core (test_v1_zcode_stand.PublicRuntimeRegression)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-zcode-v1-ci/agent-herder/tests/native/test_v1_zcode_stand.py", line 65, in test_official_runtime_initializes_public_core
+    self.assertTrue(report['project_id'])
+KeyError: 'project_id'
+
+----------------------------------------------------------------------
+Ran 7 tests in 11.242s
+
+FAILED (errors=1)
