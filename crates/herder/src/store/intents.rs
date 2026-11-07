@@ -22,6 +22,15 @@ pub enum PrepareResult {
 }
 
 impl Writer {
+    /// Claim the sole right to dispatch a prepared intent. False includes missing
+    /// or already claimed intents; in particular, unknown outcomes are never retried.
+    pub fn claim_dispatch(&self, intent_id: &str, now: &str) -> Result<bool> {
+        Ok(self.connection.execute(
+            "UPDATE intents SET state = 'dispatching', updated_at = ?2 WHERE intent_id = ?1 AND state = 'prepared'",
+            params![intent_id, now],
+        )? == 1)
+    }
+
     /// Atomically record the task and prepared intent, or resolve an existing key.
     pub fn prepare_intent(&mut self, intent: &NewIntent<'_>) -> Result<PrepareResult> {
         let tx = self
@@ -58,6 +67,87 @@ impl Writer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dispatch_claim_has_one_winner_and_unknown_is_never_claimed() -> Result<()> {
+        use rusqlite::{Connection, functions::FunctionFlags};
+        use std::sync::{Arc, Barrier};
+        use std::time::Duration;
+
+        let path = std::env::temp_dir().join(format!(
+            "herder-cas-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let open = || -> Result<Writer> {
+            let connection = Connection::open(&path)?;
+            connection.busy_timeout(Duration::from_secs(10))?;
+            connection.create_scalar_function(
+                "herder_writer_version",
+                0,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |_| Ok(1),
+            )?;
+            Ok(Writer { connection })
+        };
+        let mut writer = open()?;
+        writer.connection.execute_batch(super::super::SCHEMA)?;
+        writer.prepare_intent(&NewIntent {
+            intent_id: "i",
+            task_id: "t",
+            principal: "p",
+            target: "target",
+            request_key: "key",
+            payload_hash: "hash",
+            now: "created",
+            retain_until: "later",
+        })?;
+        let barrier = Arc::new(Barrier::new(8));
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                let writer = open().unwrap();
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    writer.claim_dispatch("i", "claimed").unwrap()
+                })
+            })
+            .collect();
+        let winners = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .filter(|won| *won)
+            .count();
+        assert_eq!(winners, 1);
+        assert!(!writer.claim_dispatch("i", "again")?);
+        assert!(!writer.claim_dispatch("missing", "again")?);
+        let (state, updated): (String, String) = writer.connection.query_row(
+            "SELECT state, updated_at FROM intents WHERE intent_id = 'i'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        assert_eq!(
+            (state.as_str(), updated.as_str()),
+            ("dispatching", "claimed")
+        );
+        writer.connection.execute(
+            "UPDATE intents SET state = 'unknown' WHERE intent_id = 'i'",
+            [],
+        )?;
+        assert!(!writer.claim_dispatch("i", "retry")?);
+        let state: String = writer.connection.query_row(
+            "SELECT state FROM intents WHERE intent_id = 'i'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(state, "unknown");
+        drop(writer);
+        std::fs::remove_file(path).unwrap();
+        Ok(())
+    }
 
     #[test]
     fn key_matches_payload_and_conflicts_without_creating_extra_tasks() -> Result<()> {
