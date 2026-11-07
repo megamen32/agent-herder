@@ -4,6 +4,145 @@ use crate::domain::address::SessionAddress;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 
+/// SHA-256 of canonical, versioned JSON for the exact native submission.
+/// The intent must be prepared with this value before invoking the dispatcher.
+pub fn dispatch_payload_binding(
+    plan: &crate::domain::adapter::DispatchPlan,
+    message: &str,
+) -> String {
+    use crate::domain::adapter::SendMode;
+    let mode = match plan.mode {
+        SendMode::Current => "current",
+        SendMode::Queue => "queue",
+        SendMode::Start => "start",
+    };
+    let bytes = serde_json::to_vec(&(1u8, &plan.target, mode, &plan.expected_turn, message))
+        .expect("serializing a dispatch plan cannot fail");
+    let mut out = String::from("sha256-dispatch-v1:");
+    for byte in sha256(&bytes) {
+        use std::fmt::Write;
+        write!(&mut out, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    out
+}
+
+// Kept local because this bounded slice cannot change Cargo dependencies.
+fn sha256(data: &[u8]) -> [u8; 32] {
+    const K: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
+    ];
+    let mut h: [u32; 8] = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19,
+    ];
+    let mut padded = data.to_vec();
+    padded.push(0x80);
+    while padded.len() % 64 != 56 {
+        padded.push(0);
+    }
+    padded.extend_from_slice(&(data.len() as u64).wrapping_mul(8).to_be_bytes());
+    for chunk in padded.chunks_exact(64) {
+        let mut w = [0u32; 64];
+        for (i, bytes) in chunk.chunks_exact(4).enumerate() {
+            w[i] = u32::from_be_bytes(bytes.try_into().unwrap());
+        }
+        for i in 16..64 {
+            let a = w[i - 15];
+            let b = w[i - 2];
+            w[i] = w[i - 16]
+                .wrapping_add(a.rotate_right(7) ^ a.rotate_right(18) ^ (a >> 3))
+                .wrapping_add(w[i - 7])
+                .wrapping_add(b.rotate_right(17) ^ b.rotate_right(19) ^ (b >> 10));
+        }
+        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut x] = h;
+        for i in 0..64 {
+            let t1 = x
+                .wrapping_add(e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25))
+                .wrapping_add((e & f) ^ (!e & g))
+                .wrapping_add(K[i])
+                .wrapping_add(w[i]);
+            let t2 = (a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22))
+                .wrapping_add((a & b) ^ (a & c) ^ (b & c));
+            x = g;
+            g = f;
+            f = e;
+            e = d.wrapping_add(t1);
+            d = c;
+            c = b;
+            b = a;
+            a = t1.wrapping_add(t2);
+        }
+        for (v, n) in h.iter_mut().zip([a, b, c, d, e, f, g, x]) {
+            *v = v.wrapping_add(n);
+        }
+    }
+    let mut out = [0; 32];
+    for (dest, word) in out.chunks_exact_mut(4).zip(h) {
+        dest.copy_from_slice(&word.to_be_bytes());
+    }
+    out
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum DurableDispatch {
+    Admitted(NativeReceipt),
+    Unknown,
+    NotClaimed,
+}
+
+/// Claim the exact stored intent before a single call to the supplied control.
+/// Requires the authoritative target resolution and a control implementation
+/// whose returned admission belongs to this invocation. On any uncertainty no
+/// second send is attempted. Callers must never run crash recovery while a
+/// previous dispatcher is still active for this intent.
+pub async fn dispatch_once<C: crate::domain::adapter::NativeSessionControl>(
+    connection: &mut Connection,
+    binding: &ReceiptBinding<'_>,
+    plan: crate::domain::adapter::DispatchPlan,
+    message: &str,
+    now: &str,
+    control: &C,
+) -> rusqlite::Result<DurableDispatch> {
+    use crate::domain::adapter::RequestKey;
+    if !valid_binding(binding) || plan.target != *binding.address {
+        return Ok(DurableDispatch::NotClaimed);
+    }
+    let payload = dispatch_payload_binding(&plan, message);
+    let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let claimed = tx.execute("UPDATE intents SET state='dispatching',updated_at=?6 WHERE intent_id=?1 AND principal=?2 AND target=?3 AND request_key=?4 AND payload_hash=?5 AND state='prepared' AND native_receipt IS NULL", params![binding.intent_id,binding.principal,binding.target_ref,binding.request_key,payload,now])?;
+    tx.commit()?;
+    if claimed != 1 {
+        return Ok(DurableDispatch::NotClaimed);
+    }
+    let result = control
+        .submit(plan, message, &RequestKey(binding.request_key.into()))
+        .await;
+    let receipt = match result {
+        Ok(admission) if envelope(binding, &admission.receipt).is_some() => Some(admission.receipt),
+        _ => None,
+    };
+    let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let outcome = if let Some(receipt) = receipt {
+        let raw = serde_json::to_string(&envelope(binding, &receipt).expect("validated receipt"))
+            .expect("receipt serializes");
+        if raw.len() <= 65536 && tx.execute("UPDATE intents SET state='admitted',native_receipt=?2,updated_at=?3 WHERE intent_id=?1 AND state='dispatching' AND native_receipt IS NULL", params![binding.intent_id,raw,now])? == 1 { DurableDispatch::Admitted(receipt) } else { DurableDispatch::Unknown }
+    } else {
+        tx.execute("UPDATE intents SET state='unknown',updated_at=?2 WHERE intent_id=?1 AND state='dispatching' AND native_receipt IS NULL", params![binding.intent_id,now])?;
+        DurableDispatch::Unknown
+    };
+    tx.commit()?;
+    Ok(outcome)
+}
+
 /// The caller must resolve target_ref to address from an authoritative mapping;
 /// neither this type nor the opaque target column establishes that mapping.
 #[derive(Clone, Copy)]
@@ -265,6 +404,172 @@ mod tests {
     use crate::domain::adapter::{ReadError, SessionSnapshot};
     use crate::domain::address::{InstanceRef, NodeRef, SessionAddress};
     use std::cell::Cell;
+
+    #[test]
+    fn sha256_matches_standard_vectors() {
+        fn hex(data: &[u8]) -> String {
+            sha256(data).iter().map(|b| format!("{b:02x}")).collect()
+        }
+        assert_eq!(
+            hex(b""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(
+            hex(&vec![b'a'; 1_000_000]),
+            "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"
+        );
+    }
+
+    #[tokio::test]
+    async fn durable_dispatch_fake_control_binds_request_and_never_resends_after_restart() {
+        use crate::domain::adapter::{
+            Admission, DispatchPlan, NativeSessionControl, RequestKey, SendMode, SubmitError,
+        };
+        use rusqlite::functions::FunctionFlags;
+        struct Control {
+            calls: Cell<usize>,
+            target: SessionAddress,
+            fail: bool,
+        }
+        impl NativeSessionControl for Control {
+            async fn submit(
+                &self,
+                plan: DispatchPlan,
+                message: &str,
+                key: &RequestKey,
+            ) -> Result<Admission, SubmitError> {
+                self.calls.set(self.calls.get() + 1);
+                assert_eq!(plan.target, self.target);
+                assert_eq!(message, "test payload");
+                assert_eq!(key.0, "stable-input");
+                if self.fail {
+                    Err(SubmitError::OutcomeUnknown {
+                        receipt: None,
+                        reason: "fixture disconnect".into(),
+                    })
+                } else {
+                    Ok(Admission {
+                        receipt: NativeReceipt {
+                            target: plan.target,
+                            native_id: "fixture-turn".into(),
+                        },
+                    })
+                }
+            }
+        }
+        let path = std::env::temp_dir().join(format!(
+            "herder-dispatch-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(path.clone());
+        let open = || {
+            let c = Connection::open(&path).unwrap();
+            c.create_scalar_function(
+                "herder_writer_version",
+                0,
+                FunctionFlags::SQLITE_UTF8,
+                |_| Ok(1),
+            )
+            .unwrap();
+            c
+        };
+        let mut c = open();
+        c.execute_batch(include_str!("../store/schema.sql"))
+            .unwrap();
+        let r = receipt();
+        let plan = DispatchPlan {
+            target: r.target.clone(),
+            mode: SendMode::Start,
+            expected_turn: None,
+        };
+        let b = ReceiptBinding {
+            intent_id: "i",
+            principal: "p",
+            target_ref: "target",
+            request_key: "stable-input",
+            address: &r.target,
+        };
+        c.execute("INSERT INTO tasks(task_id,principal,status,created_at,updated_at) VALUES ('t','p','prepared','a','a')",[]).unwrap();
+        c.execute("INSERT INTO intents(intent_id,task_id,principal,target,request_key,payload_hash,state,created_at,updated_at,retain_until) VALUES ('i','t','p','target','stable-input',?1,'prepared','a','a','later')",[dispatch_payload_binding(&plan,"test payload")]).unwrap();
+        let control = Control {
+            calls: Cell::new(0),
+            target: r.target.clone(),
+            fail: false,
+        };
+        assert_eq!(
+            dispatch_once(&mut c, &b, plan.clone(), "different", "n", &control)
+                .await
+                .unwrap(),
+            DurableDispatch::NotClaimed
+        );
+        assert_eq!(control.calls.get(), 0);
+        assert_eq!(
+            dispatch_once(&mut c, &b, plan.clone(), "test payload", "n", &control)
+                .await
+                .unwrap(),
+            DurableDispatch::Admitted(NativeReceipt {
+                target: r.target.clone(),
+                native_id: "fixture-turn".into()
+            })
+        );
+        drop(c);
+        c = open();
+        assert_eq!(
+            load_native_receipt(&c, &b).unwrap(),
+            StoredReceipt::Found(NativeReceipt {
+                target: r.target.clone(),
+                native_id: "fixture-turn".into()
+            })
+        );
+        assert_eq!(
+            dispatch_once(&mut c, &b, plan.clone(), "test payload", "n", &control)
+                .await
+                .unwrap(),
+            DurableDispatch::NotClaimed
+        );
+        assert_eq!(control.calls.get(), 1);
+        c.execute("INSERT INTO tasks(task_id,principal,status,created_at,updated_at) VALUES ('t2','p','prepared','a','a')",[]).unwrap();
+        c.execute("INSERT INTO intents(intent_id,task_id,principal,target,request_key,payload_hash,state,created_at,updated_at,retain_until) VALUES ('i2','t2','p','other','stable-input',?1,'prepared','a','a','later')",[dispatch_payload_binding(&plan,"test payload")]).unwrap();
+        let b2 = ReceiptBinding {
+            intent_id: "i2",
+            target_ref: "other",
+            ..b
+        };
+        let lost = Control {
+            calls: Cell::new(0),
+            target: r.target.clone(),
+            fail: true,
+        };
+        assert_eq!(
+            dispatch_once(&mut c, &b2, plan.clone(), "test payload", "n", &lost)
+                .await
+                .unwrap(),
+            DurableDispatch::Unknown
+        );
+        drop(c);
+        c = open();
+        assert_eq!(
+            dispatch_once(&mut c, &b2, plan, "test payload", "n", &lost)
+                .await
+                .unwrap(),
+            DurableDispatch::NotClaimed
+        );
+        assert_eq!(lost.calls.get(), 1);
+    }
 
     #[tokio::test]
     async fn stored_receipt_is_bound_to_intent_address_and_corruption_is_unknown() {
