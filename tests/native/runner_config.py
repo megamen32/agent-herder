@@ -90,15 +90,21 @@ def build(config):
     if not isinstance(hashes, dict):
         raise ConfigError("manifest.sha256: expected an object")
     identities = {}
-    for name in ("core", "adapter", "opencode"):
-        value = required_string(manifest, name, "manifest")
+    names = ["core", "adapter", "opencode"] + [name for name in ("node", "bootstrap") if name in hashes]
+    for name in names:
+        external_native = name == "opencode" and name not in manifest
+        selected_runtime = name in ("node", "bootstrap")
+        value = (paths[name] if selected_runtime else
+                 required_string(config if external_native else manifest, name,
+                                 "config" if external_native else "manifest"))
         candidate = Path(value)
         if not candidate.is_absolute():
             candidate = root / candidate
         resolved = Path(file_path(str(candidate), name, executable=name != "adapter"))
-        if not resolved.is_relative_to(root):
+        if not (external_native or selected_runtime) and not resolved.is_relative_to(root):
             raise ConfigError(f"manifest.{name}: artifact is outside artifact_root")
-        digest = required_string(hashes, name, "manifest.sha256")
+        digest = (required_string(config, "opencode_sha256", "config") if external_native
+                  else required_string(hashes, name, "manifest.sha256"))
         if not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
             raise ConfigError(f"manifest.sha256.{name}: expected SHA-256")
         try:
@@ -116,7 +122,7 @@ def build(config):
     stand_dir = Path(paths["stand"]).parent
     if stand_dir in (Path("/"), Path("/tmp"), Path.home()):
         raise ConfigError("stand: containing directory is too broad to mount")
-    mounts = [str(stand_dir), *(paths[name] for name in ("python", "node", "bootstrap", "core", "adapter", "opencode"))]
+    mounts = [str(stand_dir), manifest_path, *(paths[name] for name in ("python", "node", "bootstrap", "core", "adapter", "opencode"))]
     argv = [paths["python"], paths["launcher"]]
     for mount in dict.fromkeys(mounts):
         argv.extend(["--ro-bind", mount])
