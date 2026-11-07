@@ -57,3 +57,22 @@ Owner-only policy без новой grants таблицы — SUPPORTED как �
 Два independent immutable tests PASS: task_reconciliation_checks_exact_receipt_without_holding_gate_or_transaction; direct_delivery_task_uses_current_exact_policy_after_reopen. Они подтверждают mismatch→working/match→terminal+reopen, submit1, dynamic policy и revoke denial. Aggregate wire test прошёл, но reviewer не засчитал его как immutable proof из-за concurrent WIP; committed вариант просмотрен source. Автор combined48PASS+1ignored.
 
 Terra получила verdict и продолжает previously authorized isolated real-Codex SDK consumer с явно подключённым reconciler (owner wiring45b99e04). На момент записи live result ещё не получен. Исполнитель Tesla продолжает bounded V025CREATEINPUT; он не блокирует уже принятый runtime integration.
+
+
+## Реальный consumer UNKNOWN и исправление стенда — 11:35 UTC
+
+На immutable496483e5 реальный изолированный Codex SDK consumer создал session:abb1994536b31f3025658d23b7032c79; prompt остался UNKNOWN, task create-operation:efe91c25ee89063a168ece5517cce3e4. Исходная операция не повторялась и не переименована в no-send. Доказательства в canonical review-evidence/V025PUBLIC/owner-sdk-496483e5-run.log и owner-sdk-496483e5-attempt.txt. Fixture Drop и disposable bwrap home удалили runtime DB/profile; исходное чтение восстановить нельзя.
+
+Nietzsche сверил official Codex0.167: foreign app-server fresh unpersisted thread/read возвращает not loaded независимо includeTurns. У owning Legacy thread includeTurns:true до первого сообщения отдельно запрещён; Paginated использует другой путь с persist. Create и send уже используют один Arc Control; отдельным был pre-send NativeReader. Конкретные RPCerror/historyMode прежнего запуска не сохранены, поэтому точная причина UNKNOWN не доказана.
+
+Terra candidate5bd4e8ac: metadata snapshot через owning control с includeTurns:false, exact ID и только explicit idle; reconciliation отдельно. Retained host-root bind для сохранения actual DB/gate inode после failure/UNKNOWN. Author fake RED/GREEN, launcher12PASS/1ignored и Python26PASS; independent Nietzsche review запрошен, результат ещё не принят. Следующий новый isolated regression case допустим после source verdict; он не разрешает replay прежнего UNKNOWN.
+
+## Диагностика create — принято source 11:35 UTC
+
+3fe988fa+18270c63: Astra source SUPPORTED. Авторизация проверяется до диагностики. Instance mismatch, unsupported project, empty prompt, bad request key содержат field/expected/correction/effect=none без echo значений. На чистом worker HEAD18270c63 independently run create_wire_reports_actionable_input_errors_without_effect_or_echo:1PASS, zero create/submit/intents, unauthorized generic. V025CREATEINPUT done source; native V025PUBLIC отдельно.
+
+## Исполнители и единственное пробуждение — 11:35 UTC
+
+Все восемь сессий повторно проверены индивидуальными wait_threads timeoutMs:0. Terra, resources и legacy CI работают. Browser после завершения0bbfbb28 получил independent source review ZCodef51058ef; ZCode получил готовый V076B. Оба active подтверждены следующими полезными действиями. Tesla после принятого create diagnostic получил independent source review browser0bbfbb28. Это распределение проверок не добавляет Тере прямых исполнителей. Translator/Codex/OpenCode с зафиксированными intake/approval refusals не возобновлялись. ChatGPT live hold и ZCodeV072D сохранены.
+
+Старое wait_cfbc121fff04d9a86f4e1c89369fcabc terminal delivery_blocked: quota below_reserve19%, notSubmitted/admitted=false; не повторялось. Единственный следующий wait_737cb5865a2a8bd12fb3b9bd31173c22, request astra-herder-hourly-20261107T1124Z, 2026-11-07T12:24:29.091Z (15:24 МСК), readback waiting. Это новый будущий слот с неизменным guard, не обход отказа; дубли не созданы. Реестр sessions human-stops на11:34 не содержит Astra/Terra/resources/ZCode/browser; упоминание Astra в generatedInputs не является active stop. Общий disarm без token ранее не удалось прочитать; состояние не менялось.
