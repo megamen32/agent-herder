@@ -19,3 +19,18 @@ run test commands configured to avoid real services and messages.
 
 Run the fixture smoke with `python3 tests/native/smoke.py`. E001/E002 are not
 executed by this fixture.
+
+For a direct native Codex receipt check, run:
+
+```sh
+python3 tests/native/launch.py -- /usr/bin/python3 "$PWD/tests/native/codex_receipt.py" /absolute/path/to/codex
+```
+
+The check starts a real Codex app-server in the temporary profile, configured
+only with the loopback test-model provider. It creates one native thread and
+two turns with distinct input markers, then correlates each returned native
+turn ID to its input and fixture answer via `thread/read`. It checks the model
+request counter and reports the executable version and digest. A missing or
+uncertain receipt fails without resubmission. Input markers are test data,
+not native idempotency keys. This direct check does not exercise Herder MCP,
+its adapter, or E001/E002. The launcher is not a network sandbox.
