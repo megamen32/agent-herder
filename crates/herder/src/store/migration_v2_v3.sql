@@ -31,7 +31,7 @@ CREATE TABLE humanstop_interrupts (
     intent_id TEXT PRIMARY KEY REFERENCES intents(intent_id),
     session_ref TEXT NOT NULL REFERENCES humanstop_sessions(session_ref),
     native_turn_id TEXT NOT NULL CHECK(length(native_turn_id)>0),
-    state TEXT NOT NULL CHECK(state IN ('dispatching','acknowledged','unknown')),
+    state TEXT NOT NULL CHECK(state IN ('dispatching','acknowledged','not_sent','unknown')),
     updated_at TEXT NOT NULL,
     UNIQUE(session_ref, native_turn_id)
 ) STRICT;
@@ -62,7 +62,7 @@ CREATE TRIGGER v3_interrupt_insert_fence BEFORE INSERT ON humanstop_interrupts W
 CREATE TRIGGER v3_interrupt_update_fence BEFORE UPDATE ON humanstop_interrupts WHEN herder_writer_version() IS NOT (SELECT user_version FROM pragma_user_version) BEGIN SELECT RAISE(ABORT, 'unsupported schema version for writer'); END;
 CREATE TRIGGER v3_interrupt_delete_forbidden BEFORE DELETE ON humanstop_interrupts BEGIN SELECT RAISE(ABORT, 'interrupt evidence is retained'); END;
 CREATE TRIGGER v3_interrupt_no_replace BEFORE INSERT ON humanstop_interrupts WHEN EXISTS(SELECT 1 FROM humanstop_interrupts WHERE intent_id=NEW.intent_id OR (session_ref=NEW.session_ref AND native_turn_id=NEW.native_turn_id)) BEGIN SELECT RAISE(ABORT, 'interrupt already recorded'); END;
-CREATE TRIGGER v3_interrupt_monotonic BEFORE UPDATE ON humanstop_interrupts WHEN OLD.intent_id != NEW.intent_id OR OLD.session_ref != NEW.session_ref OR OLD.native_turn_id != NEW.native_turn_id OR OLD.state != 'dispatching' OR NEW.state NOT IN ('acknowledged','unknown') BEGIN SELECT RAISE(ABORT, 'invalid interrupt transition'); END;
+CREATE TRIGGER v3_interrupt_monotonic BEFORE UPDATE ON humanstop_interrupts WHEN OLD.intent_id != NEW.intent_id OR OLD.session_ref != NEW.session_ref OR OLD.native_turn_id != NEW.native_turn_id OR OLD.state != 'dispatching' OR NEW.state NOT IN ('acknowledged','not_sent','unknown') BEGIN SELECT RAISE(ABORT, 'invalid interrupt transition'); END;
 CREATE TRIGGER v3_dispatch_insert_fence BEFORE INSERT ON humanstop_dispatches WHEN herder_writer_version() IS NOT (SELECT user_version FROM pragma_user_version) BEGIN SELECT RAISE(ABORT, 'unsupported schema version for writer'); END;
 CREATE TRIGGER v3_dispatch_update_fence BEFORE UPDATE ON humanstop_dispatches WHEN herder_writer_version() IS NOT (SELECT user_version FROM pragma_user_version) BEGIN SELECT RAISE(ABORT, 'unsupported schema version for writer'); END;
 CREATE TRIGGER v3_dispatch_delete_forbidden BEFORE DELETE ON humanstop_dispatches BEGIN SELECT RAISE(ABORT, 'dispatch evidence is retained'); END;

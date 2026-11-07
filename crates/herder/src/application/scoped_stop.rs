@@ -41,13 +41,40 @@ pub trait BoundedNativeInterrupt {
         &self,
         target: &crate::domain::address::SessionAddress,
         native_turn_id: &str,
-    ) -> Result<(), ()>;
+    ) -> InterruptAttempt;
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum InterruptAttempt {
+    Interrupted,
+    DefinitelyNotSent,
+    OutcomeUnknown,
+}
+
+impl BoundedNativeInterrupt for crate::adapters::codex::control::CodexControl {
+    fn interrupt_exact(
+        &self,
+        target: &crate::domain::address::SessionAddress,
+        native_turn_id: &str,
+    ) -> InterruptAttempt {
+        use crate::adapters::codex::control::InterruptOutcome;
+        match crate::adapters::codex::control::CodexControl::interrupt_exact(
+            self,
+            target,
+            native_turn_id,
+        ) {
+            InterruptOutcome::Interrupted => InterruptAttempt::Interrupted,
+            InterruptOutcome::DefinitelyNotSent { .. } => InterruptAttempt::DefinitelyNotSent,
+            InterruptOutcome::OutcomeUnknown { .. } => InterruptAttempt::OutcomeUnknown,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum InterruptDisposition {
     HeldBeforeHandoff,
     InterruptAcknowledged,
+    InterruptNotSent,
     InterruptUnknown,
 }
 
@@ -407,6 +434,11 @@ impl ScopedAuthority {
                 tx.commit().map_err(|_| GateError::Store)?;
                 return Ok(DurableDispatch::StoppedBeforeHandoff);
             }
+            if scope_unsettled(&tx, b)? {
+                tx.execute("UPDATE intents SET state='unknown',updated_at=?2 WHERE intent_id=?1 AND state='dispatching'", params![b.intent_id,now]).map_err(|_|GateError::Store)?;
+                tx.commit().map_err(|_| GateError::Store)?;
+                return Ok(DurableDispatch::Unknown);
+            }
             let begun = tx.execute("UPDATE humanstop_dispatches SET phase='handing_off',updated_at=?2 WHERE intent_id=?1 AND phase='claimed'",params![b.intent_id,now]).map_err(|_|GateError::Store)?;
             if begun != 1 {
                 return Ok(DurableDispatch::NotClaimed);
@@ -527,25 +559,29 @@ impl ScopedAuthority {
             .optional()
             .map_err(|_| GateError::Store)?;
         if let Some((turn, state)) = existing {
-            return Ok(if turn == receipt.native_id && state == "acknowledged" {
-                InterruptDisposition::InterruptAcknowledged
-            } else {
-                InterruptDisposition::InterruptUnknown
+            return Ok(match (turn == receipt.native_id, state.as_str()) {
+                (true, "acknowledged") => InterruptDisposition::InterruptAcknowledged,
+                (true, "not_sent") => InterruptDisposition::InterruptNotSent,
+                _ => InterruptDisposition::InterruptUnknown,
             });
         }
         tx.execute("INSERT INTO humanstop_interrupts(intent_id,session_ref,native_turn_id,state,updated_at) VALUES (?1,?2,?3,'dispatching',?4)",params![b.intent_id,b.target_ref,receipt.native_id,now]).map_err(|_|GateError::Store)?;
         tx.commit().map_err(|_| GateError::Store)?;
         // The hold and the unique interrupt intent are durable before native IO.
         // There is no transaction during the bounded wait; the gate stays held.
-        let acknowledged = control
+        let (state, disposition) = match control
             .interrupt_exact(&receipt.target, &receipt.native_id)
-            .is_ok();
-        writer.connection().execute("UPDATE humanstop_interrupts SET state=?2,updated_at=?3 WHERE intent_id=?1 AND state='dispatching'",params![b.intent_id,if acknowledged {"acknowledged"} else {"unknown"},now]).map_err(|_|GateError::Store)?;
-        Ok(if acknowledged {
-            InterruptDisposition::InterruptAcknowledged
-        } else {
-            InterruptDisposition::InterruptUnknown
-        })
+        {
+            InterruptAttempt::Interrupted => {
+                ("acknowledged", InterruptDisposition::InterruptAcknowledged)
+            }
+            InterruptAttempt::DefinitelyNotSent => {
+                ("not_sent", InterruptDisposition::InterruptNotSent)
+            }
+            InterruptAttempt::OutcomeUnknown => ("unknown", InterruptDisposition::InterruptUnknown),
+        };
+        writer.connection().execute("UPDATE humanstop_interrupts SET state=?2,updated_at=?3 WHERE intent_id=?1 AND state='dispatching'",params![b.intent_id,state,now]).map_err(|_|GateError::Store)?;
+        Ok(disposition)
     }
 }
 
@@ -572,7 +608,15 @@ fn scope_allowed(
     scope_generation: &str,
     authority_generation: &str,
 ) -> Result<bool, GateError> {
-    Ok(scope_identity_valid(c, b, scope_generation, authority_generation)? && !scope_held(c, b)?)
+    Ok(
+        scope_identity_valid(c, b, scope_generation, authority_generation)?
+            && !scope_held(c, b)?
+            && !scope_unsettled(c, b)?,
+    )
+}
+
+fn scope_unsettled(c: &rusqlite::Connection, b: &ReceiptBinding<'_>) -> Result<bool, GateError> {
+    c.query_row("SELECT EXISTS(SELECT 1 FROM intents i LEFT JOIN humanstop_dispatches d ON d.intent_id=i.intent_id WHERE i.target=?1 AND (i.state='unknown' OR d.phase='handing_off'))",[b.target_ref],|r|r.get(0)).map_err(|_|GateError::Store)
 }
 fn scope_identity_valid(
     c: &rusqlite::Connection,

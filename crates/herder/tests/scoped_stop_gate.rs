@@ -529,11 +529,19 @@ struct Interrupt {
     lost: bool,
 }
 impl herder::application::scoped_stop::BoundedNativeInterrupt for Interrupt {
-    fn interrupt_exact(&self, target: &SessionAddress, native_turn_id: &str) -> Result<(), ()> {
+    fn interrupt_exact(
+        &self,
+        target: &SessionAddress,
+        native_turn_id: &str,
+    ) -> herder::application::scoped_stop::InterruptAttempt {
         assert_eq!(*target, address());
         assert_eq!(native_turn_id, "turn-1");
         self.calls.fetch_add(1, Ordering::SeqCst);
-        if self.lost { Err(()) } else { Ok(()) }
+        if self.lost {
+            herder::application::scoped_stop::InterruptAttempt::OutcomeUnknown
+        } else {
+            herder::application::scoped_stop::InterruptAttempt::Interrupted
+        }
     }
 }
 #[test]
@@ -580,13 +588,20 @@ fn lost_handoff_is_unknown_and_never_replayed() {
                 &grants(),
                 &b,
                 "scope-1",
-                p,
+                p.clone(),
                 "message",
                 "t",
                 &control
             )
             .unwrap(),
         DurableDispatch::NotClaimed
+    );
+    f.prepare("different-intent", "new-key", &p);
+    let next = binding(&a, "different-intent", "new-key");
+    assert!(
+        !f.authority()
+            .claim(&identity(), &grants(), &next, "scope-1", &p, "message", "t")
+            .unwrap()
     );
     let interrupt = Interrupt {
         calls: AtomicUsize::new(0),
