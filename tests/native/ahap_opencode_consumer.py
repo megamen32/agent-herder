@@ -5,6 +5,8 @@ The immutable artifact handoff is a JSON manifest with these fields:
   core: absolute path to the Rust AHAP client executable
   adapter: absolute path to the built TypeScript AHAP runner entrypoint
   opencode: absolute path to the real OpenCode executable
+  sha256: exact handoff digest for each artifact above
+  adapter_source_commits: source commits embedded in the adapter build
   launch: argv template for the existing native launcher/stand; tokens
           {core}, {adapter}, {opencode} are replaced with immutable paths.
 
@@ -27,6 +29,7 @@ import sys
 
 
 TOKENS = ("{core}", "{adapter}", "{opencode}")
+REQUIRED_ADAPTER_COMMIT = "c3b5aa58"
 MAX_MANIFEST = 64 * 1024
 
 
@@ -64,6 +67,21 @@ def load_manifest(path):
         if not artifact.resolve().is_relative_to(root.resolve()):
             raise ValueError(f"{name} must be inside artifact_root for read-only fixture mounting")
         artifacts[name] = artifact
+    digests = manifest.get("sha256")
+    if not isinstance(digests, dict):
+        raise ValueError("missing artifact SHA-256 handoff digests")
+    for name, artifact in artifacts.items():
+        expected = digests.get(name)
+        if not isinstance(expected, str) or len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected):
+            raise ValueError(f"invalid {name} SHA-256 handoff digest")
+        if sha256(artifact) != expected:
+            raise ValueError(f"{name} artifact SHA-256 does not match handoff")
+    commits = manifest.get("adapter_source_commits")
+    if not isinstance(commits, list) or not all(isinstance(c, str) for c in commits):
+        raise ValueError("adapter_source_commits must list the runner build provenance")
+    if not any(c == REQUIRED_ADAPTER_COMMIT or c.startswith(REQUIRED_ADAPTER_COMMIT)
+               for c in commits):
+        raise ValueError(f"adapter build must include runner fix {REQUIRED_ADAPTER_COMMIT}")
     command = manifest.get("launch")
     if not isinstance(command, list) or not command or not all(isinstance(x, str) and x for x in command):
         raise ValueError("launch must be a non-empty argv array")

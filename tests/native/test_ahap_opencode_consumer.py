@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from ahap_opencode_consumer import load_manifest, render_command
+from ahap_opencode_consumer import load_manifest, render_command, sha256
 
 
 class AhapOpenCodeConsumerTest(unittest.TestCase):
@@ -21,6 +21,8 @@ class AhapOpenCodeConsumerTest(unittest.TestCase):
         self.manifest = {
             "artifact_root": str(self.root),
             **self.paths,
+            "sha256": {name: sha256(path) for name, path in self.paths.items()},
+            "adapter_source_commits": ["a3a514fa3821b121377516ce522831cab9bedf93", "c3b5aa58"],
             "launch": ["/usr/bin/python3", "{core}", "--adapter", "{adapter}",
                        "--opencode", "{opencode}", "--prompt", "AHAP fixture marker"],
         }
@@ -59,6 +61,18 @@ class AhapOpenCodeConsumerTest(unittest.TestCase):
         self.manifest["launch"] = ["/bin/true", "{core}"]
         self.write_manifest()
         with self.assertRaisesRegex(ValueError, "bind core, adapter, and OpenCode"):
+            load_manifest(self.manifest_path)
+
+    def test_rejects_artifact_digest_mismatch(self):
+        self.manifest["sha256"]["adapter"] = "0" * 64
+        self.write_manifest()
+        with self.assertRaisesRegex(ValueError, "SHA-256 does not match"):
+            load_manifest(self.manifest_path)
+
+    def test_requires_malformed_json_runner_fix_in_provenance(self):
+        self.manifest["adapter_source_commits"] = ["a3a514fa3821b121377516ce522831cab9bedf93"]
+        self.write_manifest()
+        with self.assertRaisesRegex(ValueError, "must include runner fix c3b5aa58"):
             load_manifest(self.manifest_path)
 
     def test_model_endpoint_cannot_be_selected_by_manifest(self):

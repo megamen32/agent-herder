@@ -3,15 +3,16 @@
   "owner_session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
   "baseline_commit": "c3a9481de76805be4a8c2027378246113965c52e",
   "owned_files": {
-    "tests/native/ahap_opencode_consumer.py": "f580f371f9ef95175976a82a271c60590416042aa9f2eef32d10ad2e978fd60f",
-    "tests/native/test_ahap_opencode_consumer.py": "7d50436eeb40c2e199b148429a44063af0fdbb7b1bbb40a2fd47363a83e18a87"
+    "tests/native/ahap_opencode_consumer.py": "7c64a3a69b4e57c4cb5810e1689e34574d596115a1d51ba7bc077800a9b6a5a2",
+    "tests/native/test_ahap_opencode_consumer.py": "d989b23eec0807f0dda66631af994ab16651a64da39b21ab080dad0732405d23"
   },
   "fixture_source": "origin/main at c3a9481de76805be4a8c2027378246113965c52e",
   "offline_command": "python3 -m unittest discover -s tests/native -p test_ahap_opencode_consumer.py -v",
-  "offline_result": "PASS: 5 tests",
+  "offline_result": "PASS: 7 tests",
   "syntax_result": "PASS: py_compile for both owned Python files",
   "diff_check": "PASS: git diff --check",
-  "contract": "Immutable artifact manifest pins artifact_root plus Rust core, TypeScript runner, and real OpenCode executable. All must be regular files inside the candidate release root. launch argv binds all three paths; model endpoint remains controlled by existing launch.py.",
+  "runner_contract": "TS runner source commit a3a514fa3821b121377516ce522831cab9bedf93; required malformed JSON fix c3b5aa58. Runner uses newline JSON-RPC stdio and AHAP 0.1 opencode initialize, init, createSession, sendMessage, getSession and getSessionMessages. This source receipt is not an assembled artifact handoff.",
+  "contract": "Immutable artifact manifest pins artifact_root, Rust core, TypeScript runner, and OpenCode executable paths, requires SHA-256 handoff digests for each, and rejects an adapter provenance list without c3b5aa58. All artifacts must be regular files inside the candidate release root. launch argv binds all three paths; the model endpoint remains controlled exclusively by existing launch.py.",
   "not_proven": [
     "Terra artifact handoff and actual artifact digests",
     "real OpenCode AHAP create/send/read/reopen",
