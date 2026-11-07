@@ -8,13 +8,52 @@ use crate::{
         },
         target::{CreateRequest, CreateResult, DeliverRequest, SessionRefIssuer, deliver_scoped},
     },
-    auth::identity::{Caller, ConnectionIdentity, Grant},
+    auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrincipalId, PrivateResource},
     domain::{
         adapter::{NativeReceipt, NativeSessionReader, SendCommand, SendMode},
-        address::SessionRef,
+        address::{InstanceRef, SessionRef},
     },
+    error::{Diagnostic, Effect, Retry},
 };
 use sha2::{Digest, Sha256};
+/// A separately trusted policy may issue only an exact session write grant.
+/// Create lineage alone is never an authorization grant.
+pub trait FreshSessionGrantPolicy {
+    fn session_write_grant(
+        &self,
+        principal: &PrincipalId,
+        instance: &InstanceRef,
+        session: &SessionRef,
+    ) -> Result<Option<Grant>, ()>;
+}
+/// Use existing server policy grants without deriving new authorization.
+pub struct NoAdditionalGrant;
+impl FreshSessionGrantPolicy for NoAdditionalGrant {
+    fn session_write_grant(
+        &self,
+        _: &PrincipalId,
+        _: &InstanceRef,
+        _: &SessionRef,
+    ) -> Result<Option<Grant>, ()> {
+        Ok(None)
+    }
+}
+fn grant_diagnostic(code: &'static str) -> Diagnostic {
+    Diagnostic {
+        code,
+        field: Some("session_ref"),
+        received: None,
+        expected: Some(vec![
+            "obtain an exact session write grant from trusted policy",
+        ]),
+        fix: None,
+        effect: Effect::None,
+        retry: Retry::SafeSameKey,
+        receipt_ref: None,
+        diagnostic_ref: None,
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum CreatePromptOutcome {
     CreateUnknown,
@@ -28,6 +67,10 @@ pub enum CreatePromptOutcome {
     DeliveryDefinitelyNotSent {
         session: SessionRef,
     },
+    DeliveryNotSent {
+        session: SessionRef,
+        diagnostic: Diagnostic,
+    },
     StoppedBeforeHandoff {
         session: SessionRef,
     },
@@ -39,7 +82,7 @@ pub enum CreatePromptOutcome {
 /// The request and exact grants are supplied by trusted application policy.
 /// Native create never sends the prompt. A separate durable delivery key is
 /// derived from the principal, exact instance, and original create key.
-pub async fn create_with_prompt<C, I, G, N, D>(
+pub async fn create_with_prompt<C, I, G, N, D, P>(
     authority: &ScopedAuthority,
     identity: &ConnectionIdentity,
     grants: &[Grant],
@@ -48,6 +91,7 @@ pub async fn create_with_prompt<C, I, G, N, D>(
     generations: &G,
     reader: &N,
     delivery: &D,
+    policy: &P,
     request: CreateRequest<'_>,
 ) -> Result<CreatePromptOutcome, GateError>
 where
@@ -56,6 +100,7 @@ where
     G: ScopeGenerationIssuer,
     N: NativeSessionReader,
     D: BoundedNativeHandoff,
+    P: FreshSessionGrantPolicy,
 {
     let Caller::Principal(principal) = identity.caller() else {
         return Err(GateError::Invalid);
@@ -114,11 +159,49 @@ where
             }
         },
     };
+    let new_grant = policy.session_write_grant(&principal.id, instance, &session);
+    let mut effective_grants = grants.to_vec();
+    if let Ok(Some(grant)) = &new_grant {
+        if grant.principal == principal.id
+            && grant.action == Action::Write
+            && grant.resource == PrivateResource::Session(session.clone())
+        {
+            effective_grants.push(grant.clone());
+        }
+    }
+    if new_grant.is_err()
+        || identity
+            .authorize(
+                &effective_grants,
+                &PrivateResource::Session(session.clone()),
+                Action::Write,
+            )
+            .is_err()
+    {
+        // A prior attempt under the same key may already have reached native;
+        // never turn that uncertainty into a fresh no-effect claim.
+        let exists = (|| -> Result<bool, GateError> {
+            let (_gate, writer) = authority.lock()?;
+            writer.connection().query_row("SELECT EXISTS(SELECT 1 FROM intents WHERE principal=?1 AND target=?2 AND request_key=?3)",rusqlite::params![principal.id.0,session.0,delivery_key],|r|r.get(0)).map_err(|_|GateError::Store)
+        })();
+        return Ok(if matches!(exists, Ok(false)) {
+            CreatePromptOutcome::DeliveryNotSent {
+                session,
+                diagnostic: grant_diagnostic(if new_grant.is_err() {
+                    "session_policy_unavailable"
+                } else {
+                    "session_write_grant_required"
+                }),
+            }
+        } else {
+            CreatePromptOutcome::DeliveryUnknownOrBlocked { session }
+        });
+    }
     let result = deliver_scoped(
         authority,
         instance,
         identity,
-        grants,
+        &effective_grants,
         reader,
         delivery,
         DeliverRequest {

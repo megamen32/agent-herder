@@ -2622,6 +2622,7 @@ async fn create_prompt_composition_keeps_create_after_uncertain_delivery() {
         &Generation,
         &reader,
         &submit,
+        &herder::application::scoped_stop::create_prompt::NoAdditionalGrant,
         request(),
     )
     .await
@@ -2641,6 +2642,7 @@ async fn create_prompt_composition_keeps_create_after_uncertain_delivery() {
         &Generation,
         &reader,
         &submit,
+        &herder::application::scoped_stop::create_prompt::NoAdditionalGrant,
         request(),
     )
     .await
@@ -2650,6 +2652,33 @@ async fn create_prompt_composition_keeps_create_after_uncertain_delivery() {
         CreatePromptOutcome::DeliveryUnknownOrBlocked {
             session: SessionRef("issued".into())
         }
+    );
+    let instance_only: Vec<_> = grants()
+        .into_iter()
+        .filter(
+            |g| matches!(&g.resource,PrivateResource::Resource(r) if r.starts_with("instance:")),
+        )
+        .collect();
+    let revoked = create_with_prompt(
+        &authority,
+        &identity(),
+        &instance_only,
+        &create,
+        &Issuer,
+        &Generation,
+        &reader,
+        &submit,
+        &herder::application::scoped_stop::create_prompt::NoAdditionalGrant,
+        request(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        matches!(
+            revoked,
+            CreatePromptOutcome::DeliveryUnknownOrBlocked { .. }
+        ),
+        "a prior UNKNOWN must not become no-effect after grant revocation"
     );
     assert_eq!(create.calls.load(Ordering::SeqCst), 1);
     assert_eq!(submit.0.load(Ordering::SeqCst), 1);
@@ -2734,6 +2763,7 @@ async fn create_prompt_success_and_unknown_create_are_never_replayed() {
             &Generation,
             &reader,
             &sender,
+            &herder::application::scoped_stop::create_prompt::NoAdditionalGrant,
             request(),
         )
         .await
@@ -2752,6 +2782,7 @@ async fn create_prompt_success_and_unknown_create_are_never_replayed() {
             &Generation,
             &reader,
             &sender,
+            &herder::application::scoped_stop::create_prompt::NoAdditionalGrant,
             request(),
         )
         .await
@@ -2769,4 +2800,161 @@ async fn create_prompt_success_and_unknown_create_are_never_replayed() {
         assert_eq!(creator.calls.load(Ordering::SeqCst), 1);
         assert_eq!(sender.0.load(Ordering::SeqCst), if unknown { 0 } else { 1 });
     }
+}
+
+#[tokio::test]
+async fn create_prompt_requires_trusted_grant_for_new_exact_session() {
+    use herder::application::scoped_stop::create_prompt::{
+        CreatePromptOutcome, create_with_prompt,
+    };
+    struct IssuerFresh;
+    impl SessionRefIssuer for IssuerFresh {
+        fn issue(&self) -> Result<SessionRef, RegistryUnavailable> {
+            Ok(SessionRef("fresh-dynamic-ref".into()))
+        }
+    }
+    struct Create {
+        instance: InstanceRef,
+        calls: AtomicUsize,
+    }
+    impl BoundedFreshRootCreate for Create {
+        fn instance(&self) -> &InstanceRef {
+            &self.instance
+        }
+        fn create_root_bounded(&self, _: &str, _: &str) -> Result<SessionAddress, SubmitError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(address())
+        }
+    }
+    struct Submit(AtomicUsize);
+    impl BoundedNativeHandoff for Submit {
+        fn submit_bounded(
+            &self,
+            plan: DispatchPlan,
+            _: &str,
+            _: &RequestKey,
+        ) -> Result<Admission, SubmitError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(Admission {
+                receipt: NativeReceipt {
+                    target: plan.target,
+                    native_id: "turn".into(),
+                },
+            })
+        }
+    }
+    let f = Fixture::new();
+    let target = address();
+    let creator = Create {
+        instance: target.instance.clone(),
+        calls: AtomicUsize::new(0),
+    };
+    let reader = FixtureReader {
+        target,
+        reads: AtomicUsize::new(0),
+        db: f.db.clone(),
+    };
+    let submit = Submit(AtomicUsize::new(0));
+    let only_instance: Vec<_> = grants()
+        .into_iter()
+        .filter(
+            |g| matches!(&g.resource,PrivateResource::Resource(r) if r.starts_with("instance:")),
+        )
+        .collect();
+    let request = || CreateRequest {
+        intent_id: "new-create",
+        task_id: "new-task",
+        request_key: "new-key",
+        specification: "prompt",
+        now: "now",
+        retain_until: "later",
+    };
+    struct Policy(std::sync::atomic::AtomicBool);
+    impl herder::application::scoped_stop::create_prompt::FreshSessionGrantPolicy for Policy {
+        fn session_write_grant(
+            &self,
+            principal: &PrincipalId,
+            instance: &InstanceRef,
+            session: &SessionRef,
+        ) -> Result<Option<Grant>, ()> {
+            assert_eq!(*instance, address().instance);
+            assert_eq!(session.0, "fresh-dynamic-ref");
+            Ok(Some(Grant {
+                principal: principal.clone(),
+                resource: PrivateResource::Session(if self.0.load(Ordering::SeqCst) {
+                    session.clone()
+                } else {
+                    SessionRef("unrelated-session".into())
+                }),
+                action: Action::Write,
+            }))
+        }
+    }
+    let policy = Policy(std::sync::atomic::AtomicBool::new(false));
+    let outcome = create_with_prompt(
+        &f.authority(),
+        &identity(),
+        &only_instance,
+        &creator,
+        &IssuerFresh,
+        &Generation,
+        &reader,
+        &submit,
+        &policy,
+        request(),
+    )
+    .await
+    .unwrap();
+    match outcome {
+        CreatePromptOutcome::DeliveryNotSent {
+            session,
+            diagnostic,
+        } => {
+            assert_eq!(session, SessionRef("fresh-dynamic-ref".into()));
+            assert_eq!(diagnostic.code, "session_write_grant_required");
+            assert_eq!(diagnostic.effect, herder::error::Effect::None);
+            assert_eq!(diagnostic.retry, herder::error::Retry::SafeSameKey);
+            assert!(diagnostic.expected.unwrap()[0].contains("trusted policy"));
+        }
+        other => panic!("expected safe policy diagnostic, got {other:?}"),
+    }
+    assert_eq!(creator.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(submit.0.load(Ordering::SeqCst), 0);
+    policy.0.store(true, Ordering::SeqCst);
+    let authority = f.authority();
+    let after = create_with_prompt(
+        &authority,
+        &identity(),
+        &only_instance,
+        &creator,
+        &IssuerFresh,
+        &Generation,
+        &reader,
+        &submit,
+        &policy,
+        request(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(after, CreatePromptOutcome::Admitted { .. }));
+    let repeat = create_with_prompt(
+        &authority,
+        &identity(),
+        &only_instance,
+        &creator,
+        &IssuerFresh,
+        &Generation,
+        &reader,
+        &submit,
+        &policy,
+        request(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        repeat,
+        CreatePromptOutcome::DeliveryUnknownOrBlocked { .. }
+    ));
+    assert_eq!(creator.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(submit.0.load(Ordering::SeqCst), 1);
 }
