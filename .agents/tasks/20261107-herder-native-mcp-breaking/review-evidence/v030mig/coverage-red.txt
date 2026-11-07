@@ -1,0 +1,6 @@
+Command: cargo test --offline --manifest-path crates/herder/Cargo.toml missing_authorized_session_cannot_claim_complete_coverage --lib -- --nocapture
+Before fix, exit 101:
+assertion `left == right` failed
+  left: Complete
+ right: Partial
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 141 filtered out; finished in 0.00s
