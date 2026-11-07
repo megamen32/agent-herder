@@ -430,11 +430,13 @@ mod tests {
         use std::{fs, os::unix::fs::PermissionsExt};
 
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-        let root = std::env::temp_dir().join(format!(
-            "herder-codex-control-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ));
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../.tmp")
+            .join(format!(
+                "herder-codex-control-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
         let home = root.join("home");
         fs::create_dir_all(&home).unwrap();
         let executable = root.join("fake-codex");
@@ -461,7 +463,7 @@ mod tests {
 
     fn fixture_server(extra: &str) -> String {
         format!(
-            "import json, os, sys\nfor line in sys.stdin:\n r=json.loads(line)\n if 'id' not in r: continue\n m=r['method']; p=r['params']\n if m == 'turn/start': result={{'turn':{{'id':'turn-1'}}}}\n elif m == 'turn/steer': result={{'turnId':p['expectedTurnId']}}\n elif m == 'thread/start': result={{'thread':{{'id':'thread-1'}}}}\n elif m == 'thread/items/list': result={{'data':[{{'turnId':'turn-1','item':{{'type':'userMessage','clientId':'request-1'}}}}], 'nextCursor':None}}\n elif m == 'initialize': result={{'codexHome':os.environ['CODEX_HOME']}}\n else: result={{}}\n {extra}\n print(json.dumps({{'id':r['id'],'result':result}}), flush=True)\n"
+            "import json, os, sys\nfor line in sys.stdin:\n r=json.loads(line)\n if 'id' not in r: continue\n m=r['method']; p=r['params']\n if m == 'turn/start': result={{'turn':{{'id':'turn-1'}}}}\n elif m == 'turn/steer': result={{'turnId':p['expectedTurnId']}}\n elif m == 'thread/start': result={{'thread':{{'id':'thread-1'}}}}\n elif m == 'thread/items/list': result={{'data':[{{'turnId':'turn-1','item':{{'type':'userMessage','clientId':'request-1'}}}}], 'nextCursor':None}}\n elif m == 'initialize': result={{'codexHome':os.path.realpath(os.environ['CODEX_HOME'])}}\n else: result={{}}\n {extra}\n print(json.dumps({{'id':r['id'],'result':result}}), flush=True)\n"
         )
     }
 
@@ -518,7 +520,7 @@ mod tests {
 
     #[tokio::test]
     async fn timed_out_submission_is_unknown_and_is_not_retried() {
-        let body = "import json, os, sys, time\nfor line in sys.stdin:\n r=json.loads(line)\n if 'id' not in r: continue\n m=r['method']\n if m == 'initialize': print(json.dumps({'id':r['id'],'result':{'codexHome':os.environ['CODEX_HOME']}}), flush=True)\n elif m == 'thread/start': print(json.dumps({'id':r['id'],'result':{'thread':{'id':'thread-1'}}}), flush=True)\n elif m == 'turn/start': time.sleep(1)\n";
+        let body = "import json, os, sys, time\nfor line in sys.stdin:\n r=json.loads(line)\n if 'id' not in r: continue\n m=r['method']\n if m == 'initialize': print(json.dumps({'id':r['id'],'result':{'codexHome':os.path.realpath(os.environ['CODEX_HOME'])}}), flush=True)\n elif m == 'thread/start': print(json.dumps({'id':r['id'],'result':{'thread':{'id':'thread-1'}}}), flush=True)\n elif m == 'turn/start': time.sleep(1)\n";
         let (control, _root) = fake_control(body, Duration::from_millis(100));
         let target = control.start_thread("/tmp").unwrap();
         let result = control
