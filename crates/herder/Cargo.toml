@@ -10,6 +10,8 @@ name = "herder-wire-probe"
 path = "src/main.rs"
 
 [dependencies]
+futures-util = { version = "0.3", features = ["sink"] }
+tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "handshake"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rusqlite = { version = "0.37", features = ["bundled", "functions"] }
 rmcp = { version = "=3.9.0", default-features = false, features = ["server", "transport-io"] }
