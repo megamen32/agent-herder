@@ -6,9 +6,16 @@
 
 use serde::Deserialize;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::{collections::HashMap, time::Duration};
 
 use crate::application::recent::{RecentMessages, SourceMessage, normalize_recent};
+use crate::domain::{
+    address::{InstanceRef, NodeRef, SessionAddress},
+    transcript::{
+        RawTranscriptBlock, TranscriptPage, TranscriptSourceRef, normalize_transcript_blocks,
+    },
+};
 
 use super::cdp::{
     CdpConnection, CdpCreateError, CdpError, CdpTargetIdentity, create_page_target_with_origin_port,
@@ -233,6 +240,7 @@ impl ZaiReader {
     /// this reader. The observed API is page based; this method does not claim
     /// that later pages are absent.
     pub async fn list_chats(&mut self) -> Result<Vec<ZaiChatRef>, ZaiReadError> {
+        self.verify_account().await?;
         let result = self
             .cdp
             .evaluate(ZAI_CHAT_LIST_EXPRESSION)
@@ -326,6 +334,22 @@ impl ZaiReader {
     pub async fn recent_messages(&mut self, chat_id: &str) -> Result<RecentMessages, ZaiReadError> {
         let messages = self.read_chat(chat_id).await?;
         Ok(project_recent_messages(&messages))
+    }
+
+    /// Read the currently observed Z.ai batch window into the shared transcript
+    /// shape. Z.ai's captured route exposes neither a native continuation cursor
+    /// nor a completeness signal, so the returned page is explicitly truncated.
+    pub async fn transcript_page(
+        &mut self,
+        principal_id: &str,
+        chat_id: &str,
+    ) -> Result<TranscriptPage, ZaiReadError> {
+        if principal_id.trim().is_empty() {
+            return Err(ZaiReadError::InvalidResponse);
+        }
+        let identity = self.cdp.identity().clone();
+        let messages = self.read_chat(chat_id).await?;
+        project_transcript_page(principal_id, &identity, chat_id, &messages)
     }
 
     /// Send exactly one first prompt in a fresh target and prove its reply by
@@ -579,6 +603,63 @@ fn project_recent_messages(messages: &[NormalizedMessage]) -> RecentMessages {
     )
 }
 
+fn project_transcript_page(
+    principal_id: &str,
+    identity: &CdpTargetIdentity,
+    chat_id: &str,
+    messages: &[NormalizedMessage],
+) -> Result<TranscriptPage, ZaiReadError> {
+    let address = SessionAddress {
+        instance: InstanceRef {
+            node: NodeRef(identity.node_id.clone()),
+            instance_id: identity.instance_id.clone(),
+        },
+        native_session_id: chat_id.to_owned(),
+    };
+    let mut snapshot = Sha256::new();
+    snapshot.update(chat_id.as_bytes());
+    for message in messages {
+        snapshot.update([0]);
+        snapshot.update(message.id.as_bytes());
+        snapshot.update([0]);
+        snapshot.update(match &message.role {
+            Role::User => b"user".as_slice(),
+            Role::Assistant => b"assistant".as_slice(),
+        });
+        snapshot.update([0]);
+        snapshot.update(message.text.as_bytes());
+    }
+    let snapshot_hex = snapshot
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let snapshot_id = format!("zai:{snapshot_hex}");
+    let blocks = messages
+        .iter()
+        .flat_map(|message| {
+            let source = TranscriptSourceRef {
+                session: address.clone(),
+                message_id: message.id.clone(),
+                turn_id: None,
+            };
+            let native_type = match &message.role {
+                Role::User => "input_text",
+                Role::Assistant => "output_text",
+            };
+            normalize_transcript_blocks(
+                &source,
+                [RawTranscriptBlock {
+                    native_type: native_type.into(),
+                    text: Some(message.text.clone()),
+                }],
+            )
+        })
+        .collect();
+    TranscriptPage::new(principal_id, &snapshot_id, blocks, None, true)
+        .map_err(|_| ZaiReadError::InvalidResponse)
+}
+
 fn project_message(requested_id: &str, message: &RawMessage) -> Option<NormalizedMessage> {
     let id = message.id.as_deref().unwrap_or(requested_id).trim();
     if id.is_empty() || id != requested_id {
@@ -627,6 +708,9 @@ fn project_message(requested_id: &str, message: &RawMessage) -> Option<Normalize
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures_util::{SinkExt, StreamExt};
+    use tokio::net::TcpListener;
+    use tokio_tungstenite::{accept_async, tungstenite::Message};
 
     const OBSERVED_SHAPE: &str =
         include_str!("../../../../../acceptance/native/z-ai/messages-batch.json");
@@ -634,6 +718,72 @@ mod tests {
         include_str!("../../../../../acceptance/native/z-ai/chat-list.json");
     const RECENT_TWO_CHATS: &str =
         include_str!("../../../../../acceptance/native/z-ai/recent-two-chats.json");
+
+    async fn fake_cdp(recheck_scope: Option<String>) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let endpoint = format!("ws://{address}/devtools/page/target-1");
+        let task = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = accept_async(stream).await.unwrap();
+            let attached_scope = "a".repeat(64);
+            let mut account_checks = 0;
+            while let Some(Ok(Message::Text(text))) = socket.next().await {
+                let request: Value = serde_json::from_str(&text).unwrap();
+                let id = request.get("id").and_then(Value::as_u64).unwrap();
+                let method = request.get("method").and_then(Value::as_str).unwrap();
+                let result = match method {
+                    "Target.getTargetInfo" => serde_json::json!({"targetInfo":{
+                        "targetId":"target-1","browserContextId":"context-1"
+                    }}),
+                    "Runtime.evaluate" => {
+                        let expression = request
+                            .pointer("/params/expression")
+                            .and_then(Value::as_str)
+                            .unwrap();
+                        let value = if expression.contains("const info=await fetch") {
+                            account_checks += 1;
+                            let scope = if account_checks == 1 {
+                                Some(attached_scope.as_str())
+                            } else {
+                                recheck_scope.as_deref()
+                            };
+                            match scope {
+                                Some(scope) => serde_json::json!({
+                                    "origin":"https://chat.z.ai","scope":scope
+                                }),
+                                None => serde_json::json!({"origin":"https://chat.z.ai"}),
+                            }
+                        } else {
+                            let scope = recheck_scope.as_deref().unwrap_or(&attached_scope);
+                            let prefix = if scope == attached_scope { "a" } else { "b" };
+                            serde_json::json!({
+                                "origin":"https://chat.z.ai",
+                                "chats":[{"id":format!("{prefix}001000000000001")}]
+                            })
+                        };
+                        serde_json::json!({"result":{"value":value}})
+                    }
+                    _ => panic!("unexpected fake CDP method: {method}"),
+                };
+                let response = serde_json::json!({"id":id,"result":result});
+                socket
+                    .send(Message::Text(response.to_string().into()))
+                    .await
+                    .unwrap();
+            }
+        });
+        (endpoint, task)
+    }
+
+    fn fake_identity() -> CdpTargetIdentity {
+        CdpTargetIdentity {
+            node_id: "node-1".into(),
+            instance_id: "instance-1".into(),
+            browser_context_id: "context-1".into(),
+            target_id: "target-1".into(),
+        }
+    }
 
     #[test]
     fn validates_chat_and_preserves_requested_order_and_text_blocks() {
@@ -747,5 +897,75 @@ mod tests {
             assert_eq!(assistant.truncated, None);
             assert_eq!(recent.assistant_replies_to_user, None);
         }
+    }
+
+    #[tokio::test]
+    async fn list_chats_rejects_account_changed_after_attach() {
+        let (endpoint, server) = fake_cdp(Some("b".repeat(64))).await;
+        let mut reader = ZaiReader::attach(&endpoint, fake_identity(), &"a".repeat(64))
+            .await
+            .unwrap();
+        let result = reader.list_chats().await;
+        reader.close().await;
+        server.await.unwrap();
+        assert_eq!(result, Err(ZaiReadError::AccountMismatch));
+    }
+
+    #[tokio::test]
+    async fn list_chats_allows_the_same_verified_account() {
+        let (endpoint, server) = fake_cdp(Some("a".repeat(64))).await;
+        let mut reader = ZaiReader::attach(&endpoint, fake_identity(), &"a".repeat(64))
+            .await
+            .unwrap();
+        let result = reader.list_chats().await;
+        reader.close().await;
+        server.await.unwrap();
+        assert_eq!(result.unwrap()[0].id, "a001000000000001");
+    }
+
+    #[tokio::test]
+    async fn list_chats_fails_closed_when_account_identity_is_unavailable() {
+        let (endpoint, server) = fake_cdp(None).await;
+        let mut reader = ZaiReader::attach(&endpoint, fake_identity(), &"a".repeat(64))
+            .await
+            .unwrap();
+        let result = reader.list_chats().await;
+        reader.close().await;
+        server.await.unwrap();
+        assert_eq!(result, Err(ZaiReadError::AccountMismatch));
+    }
+
+    #[test]
+    fn transcript_projection_preserves_chat_message_identity_and_known_limits() {
+        let identity = fake_identity();
+        let messages = normalize_batch(
+            "chat-fixture-z-001",
+            &["user-001", "assistant-001"],
+            OBSERVED_SHAPE,
+        )
+        .unwrap();
+        let page =
+            project_transcript_page("principal-test", &identity, "chat-fixture-z-001", &messages)
+                .unwrap();
+
+        assert_eq!(page.blocks.len(), 2);
+        assert_eq!(
+            page.blocks[0].source.session.native_session_id,
+            "chat-fixture-z-001"
+        );
+        assert_eq!(page.blocks[0].source.session.instance.node.0, "node-1");
+        assert_eq!(
+            page.blocks[0].source.session.instance.instance_id,
+            "instance-1"
+        );
+        assert_eq!(page.blocks[0].source.message_id, "user-001");
+        assert_eq!(page.blocks[0].native_type, "input_text");
+        assert_eq!(page.blocks[0].text.as_deref(), Some("question text"));
+        assert_eq!(page.blocks[1].source.message_id, "assistant-001");
+        assert_eq!(page.blocks[1].native_type, "output_text");
+        assert_eq!(page.blocks[1].text.as_deref(), Some("answer\ncontinued"));
+        assert_eq!(page.next_cursor, None);
+        assert!(page.truncated);
+        assert!(page.is_complete());
     }
 }
