@@ -445,10 +445,34 @@ mod tests {
             assert_eq!(advertised, expected, "{}", tool.name);
         }
         for (name, value, access) in cases {
+            let schema = &tools
+                .iter()
+                .find(|tool| tool.name == name)
+                .unwrap()
+                .input_schema;
+            let validator = jsonschema::validator_for(schema).unwrap();
+            assert!(
+                validator.is_valid(&value),
+                "schema rejected {name}: {value}"
+            );
             let result = dispatch(name, value.clone()).unwrap();
             assert_eq!(result.access, access, "{name}: {value}");
+            let mut legacy = value.clone();
+            legacy["workspace"] = json!("old");
+            assert!(
+                !validator.is_valid(&legacy),
+                "schema accepted legacy field {name}: {legacy}"
+            );
+            assert!(
+                matches!(dispatch(name, legacy), Err(DispatchError::InvalidInput(_))),
+                "dispatch accepted legacy field {name}"
+            );
             let mut invalid = value;
             invalid["unexpected"] = json!(true);
+            assert!(
+                !validator.is_valid(&invalid),
+                "schema accepted {name}: {invalid}"
+            );
             assert!(
                 matches!(dispatch(name, invalid), Err(DispatchError::InvalidInput(_))),
                 "{name}"
@@ -458,6 +482,114 @@ mod tests {
             dispatch("missing", json!({})),
             Err(DispatchError::UnknownTool)
         ));
+        assert!(matches!(
+            dispatch("workspace", json!({"action":"list"})),
+            Err(DispatchError::UnknownTool)
+        ));
+    }
+    #[test]
+    fn independent_schema_validator_agrees_with_dispatch_on_nested_extra_fields() {
+        let cases = [
+            (
+                "resource",
+                json!({"action":"list","scope":{"type":"global"}}),
+                "/scope",
+            ),
+            (
+                "resource",
+                json!({"action":"list","scope":{"type":"project","project_ref":"p"}}),
+                "/scope",
+            ),
+            (
+                "resource",
+                json!({"action":"list","scope":{"type":"node","node_ref":"n"}}),
+                "/scope",
+            ),
+            (
+                "resource",
+                json!({"action":"list","kind":{"type":"device"}}),
+                "/kind",
+            ),
+            (
+                "resource",
+                json!({"action":"list","kind":{"type":"other","name":"x"}}),
+                "/kind",
+            ),
+            (
+                "resource",
+                json!({"action":"register","resource_ref":"r","scope":{"type":"global"},"kind":{"type":"device"},"external_ref":"e","authority_ref":"a","attachment":{"node_ref":"n","availability":"available","observed_at":"t"}}),
+                "/attachment",
+            ),
+            (
+                "resource",
+                json!({"action":"declare","resource_ref":"r","declaration":{"operation":"remove","declaration_ref":"d"}}),
+                "/declaration",
+            ),
+            (
+                "resource",
+                json!({"action":"declare","resource_ref":"r","declaration":{"operation":"set","worktree":"w","scope":"s","purpose":"p","expires_at":"t"}}),
+                "/declaration",
+            ),
+            (
+                "automation",
+                json!({"action":"create","session_ref":"s","rule":{"kind":"schedule","expression":"*","timezone":"UTC"},"request_key":"k"}),
+                "/rule",
+            ),
+            (
+                "automation",
+                json!({"action":"create","session_ref":"s","rule":{"kind":"autopilot","instructions":"i"},"request_key":"k"}),
+                "/rule",
+            ),
+            (
+                "configure",
+                json!({"action":"get","target":{"type":"node","node_ref":"n"},"key":"k"}),
+                "/target",
+            ),
+            (
+                "configure",
+                json!({"action":"get","target":{"type":"instance","instance_ref":"i"},"key":"k"}),
+                "/target",
+            ),
+            (
+                "configure",
+                json!({"action":"get","target":{"type":"session","session_ref":"s"},"key":"k"}),
+                "/target",
+            ),
+        ];
+        let tools = discovery();
+        for (name, mut value, pointer) in cases {
+            let schema = &tools
+                .iter()
+                .find(|tool| tool.name == name)
+                .unwrap()
+                .input_schema;
+            let validator = jsonschema::validator_for(schema).unwrap();
+            assert!(
+                validator.is_valid(&value),
+                "schema rejected {name}: {value}"
+            );
+            assert!(
+                dispatch(name, value.clone()).is_ok(),
+                "dispatch rejected {name}: {value}"
+            );
+            value
+                .pointer_mut(pointer)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .insert("unexpected".into(), json!(true));
+            assert!(
+                !validator.is_valid(&value),
+                "schema accepted {name}: {value}"
+            );
+            assert!(
+                matches!(
+                    dispatch(name, value.clone()),
+                    Err(DispatchError::InvalidInput(_))
+                ),
+                "dispatch accepted {name}: {value}"
+            );
+        }
     }
     #[test]
     fn discriminator_required_and_unknown_fields_rejected() {
