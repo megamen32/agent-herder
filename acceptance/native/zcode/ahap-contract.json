@@ -1,0 +1,26 @@
+{
+  "contract": "AHAP/0.1",
+  "harness": "zcode",
+  "composition": "src/ahap-zcode-runner.ts -> existing src/adapters/zcode.ts ZcodeAdapter -> existing native ZCode app-server driver",
+  "provenance": {
+    "ci_task": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261105-deterministic-harness-ci/leaves/L45.json",
+    "ci_result": "dcb01f5e",
+    "native_version": "ZCode 3.17.2",
+    "sessions": 2,
+    "model_requests": 5,
+    "elapsed_seconds": 26.6
+  },
+  "argv": ["$AHAP_ZCODE_SERVER_NODE", "$AHAP_ZCODE_SERVER_ENTRY"],
+  "cwd": "$AHAP_ZCODE_CWD",
+  "required_environment": {
+    "AHAP_VERSION": "0.1",
+    "AHAP_HARNESS": "zcode",
+    "AHAP_ZCODE_SERVER_NODE": "absolute executable path",
+    "AHAP_ZCODE_SERVER_ENTRY": "absolute legacy CI ZCode server entry path",
+    "AHAP_ZCODE_CWD": "absolute working directory for the native driver"
+  },
+  "exposed_methods": ["initialize", "init", "createSession", "sendMessage", "getSession", "getSessionMessages", "shutdown"],
+  "send_policy": "Queue only; preserves caller inputId separately from native receipt; ambiguous create/send is UNKNOWN and never retried",
+  "source_contract_command": "npx vitest run --root . --config vitest.config.ts tests/ahap-zcode-runner.test.ts",
+  "native_acceptance": "NOT RUN; separate leaf V078; do not replay V072D/V072E UNKNOWN"
+}
