@@ -609,6 +609,7 @@ mod tests {
         listed_context: &str,
         verified_context: &str,
         inject_unmatched_replies: bool,
+        disconnect_on_conversation: bool,
     ) -> (String, tokio::task::JoinHandle<Vec<Value>>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -664,6 +665,10 @@ mod tests {
                             assert!(
                                 expression.contains("credentials:'same-origin',cache:'no-store'")
                             );
+                            if disconnect_on_conversation {
+                                socket.close(None).await.unwrap();
+                                break;
+                            }
                             serde_json::json!({"result":{"value":{
                                 "origin":"https://chatgpt.com","status":200,"payload":fixture
                             }}})
@@ -707,6 +712,41 @@ mod tests {
         (endpoint, task)
     }
 
+    async fn fake_page_that_stalls() -> (String, tokio::task::JoinHandle<Vec<Value>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let endpoint = format!("ws://{address}/devtools/page/chatgpt-target");
+        let task =
+            tokio::spawn(async move {
+                let (stream, _) = listener.accept().await.unwrap();
+                let mut socket = accept_async(stream).await.unwrap();
+                let mut requests = Vec::new();
+                while let Some(Ok(Message::Text(text))) = socket.next().await {
+                    let request: Value = serde_json::from_str(&text).unwrap();
+                    let id = request.get("id").and_then(Value::as_u64).unwrap();
+                    let method = request
+                        .get("method")
+                        .and_then(Value::as_str)
+                        .unwrap()
+                        .to_owned();
+                    requests.push(request);
+                    if method == "Target.getTargetInfo" {
+                        socket.send(Message::Text(serde_json::json!({
+                        "id":id,"result":{"targetInfo":{
+                            "targetId":"chatgpt-target","browserContextId":"chatgpt-context"
+                        }}
+                    }).to_string().into())).await.unwrap();
+                    } else if method != "Runtime.evaluate" {
+                        panic!("unexpected page CDP method: {method}");
+                    }
+                    // Deliberately leave Runtime.evaluate unanswered; the client
+                    // must time out once and must not retry the read.
+                }
+                requests
+            });
+        (endpoint, task)
+    }
+
     fn fake_identity() -> CdpTargetIdentity {
         CdpTargetIdentity {
             node_id: "node-fixture".into(),
@@ -737,7 +777,8 @@ mod tests {
 
     #[tokio::test]
     async fn attaches_to_exact_context_and_reads_without_create_or_send() {
-        let (endpoint, server) = fake_browser("chatgpt-context", "chatgpt-context", true).await;
+        let (endpoint, server) =
+            fake_browser("chatgpt-context", "chatgpt-context", true, false).await;
         let mut reader =
             ChatGptReader::attach_via_browser(&endpoint, fake_identity(), &"a".repeat(64), None)
                 .await
@@ -783,7 +824,8 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_chatgpt_target_from_another_browser_context_before_page_read() {
-        let (endpoint, server) = fake_browser("neighbor-context", "neighbor-context", false).await;
+        let (endpoint, server) =
+            fake_browser("neighbor-context", "neighbor-context", false, false).await;
         let result =
             ChatGptReader::attach_via_browser(&endpoint, fake_identity(), &"a".repeat(64), None)
                 .await;
@@ -799,5 +841,65 @@ mod tests {
         assert!(!methods.contains(&"Target.attachToTarget"));
         assert!(!methods.contains(&"Runtime.evaluate"));
         assert!(!methods.contains(&"Target.createTarget"));
+    }
+
+    #[tokio::test]
+    async fn read_disconnect_returns_unknown_without_replaying_conversation_fetch() {
+        let (endpoint, server) =
+            fake_browser("chatgpt-context", "chatgpt-context", false, true).await;
+        let mut reader =
+            ChatGptReader::attach_via_browser(&endpoint, fake_identity(), &"a".repeat(64), None)
+                .await
+                .unwrap();
+        let result = reader.read_conversation("chat-fixture-001").await;
+        reader.close().await;
+
+        assert!(matches!(
+            result,
+            Err(ChatGptReadError::Cdp(CdpError::OutcomeUnknown { .. }))
+        ));
+        let requests = server.await.unwrap();
+        let reads = requests
+            .iter()
+            .filter(|request| {
+                request.get("method").and_then(Value::as_str) == Some("Runtime.evaluate")
+                    && request
+                        .pointer("/params/expression")
+                        .and_then(Value::as_str)
+                        .is_some_and(|expression| expression.contains("/backend-api/conversation/"))
+            })
+            .count();
+        assert_eq!(reads, 1);
+        assert!(!requests.iter().any(|request| {
+            request.get("method").and_then(Value::as_str) == Some("Target.createTarget")
+        }));
+    }
+
+    #[tokio::test]
+    async fn cdp_timeout_is_bound_to_one_request_id_and_is_not_retried() {
+        let (endpoint, server) = fake_page_that_stalls().await;
+        let mut connection = CdpConnection::connect_page_with_timeout(
+            &endpoint,
+            fake_identity(),
+            Duration::from_millis(30),
+        )
+        .await
+        .unwrap();
+        let result = connection.evaluate("fake read that never returns").await;
+        connection.close().await;
+
+        let request_id = match result {
+            Err(CdpError::OutcomeUnknown { request_id }) => request_id,
+            other => panic!("expected request timeout, got {other:?}"),
+        };
+        let requests = server.await.unwrap();
+        let reads = requests
+            .iter()
+            .filter(|request| {
+                request.get("method").and_then(Value::as_str) == Some("Runtime.evaluate")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(reads.len(), 1);
+        assert_eq!(reads[0].get("id").and_then(Value::as_u64), Some(request_id));
     }
 }
