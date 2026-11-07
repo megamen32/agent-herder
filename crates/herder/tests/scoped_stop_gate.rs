@@ -693,9 +693,11 @@ fn fresh_create_deliver_receipt_stop_interrupt_unknown_and_next_denied() {
 fn real_codex_fresh_create_deliver_native_read_stop_next_denied() {
     use herder::{
         adapters::codex::{
-            connection::CodexInstance,
-            control::{CodexControl, RequestReceiptLookup},
+            connection::{CodexConnection, CodexInstance},
+            control::RequestReceiptLookup,
+            create::CodexCreateControl,
         },
+        application::target::{NativeCreateControl, NativeCreateOutcome},
         domain::adapter::NativeSessionControl,
     };
     use std::{
@@ -713,16 +715,30 @@ fn real_codex_fresh_create_deliver_native_read_stop_next_denied() {
         }
     }
     struct Live {
-        control: CodexControl,
+        control: CodexCreateControl,
         instance: InstanceRef,
-        cwd: String,
     }
     impl BoundedFreshRootCreate for Live {
         fn instance(&self) -> &InstanceRef {
             &self.instance
         }
-        fn create_root_bounded(&self, _: &str, _: &str) -> Result<SessionAddress, ()> {
-            self.control.start_thread(&self.cwd).map_err(|_| ())
+        fn create_root_bounded(&self, key: &str, spec: &str) -> Result<SessionAddress, ()> {
+            let mut f = std::pin::pin!(self.control.create_once(key, spec));
+            match f.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
+                Poll::Ready(NativeCreateOutcome::Confirmed {
+                    request_key,
+                    instance,
+                    native_session_id,
+                    parent_ref: None,
+                }) if request_key == key && instance == self.instance => Ok(SessionAddress {
+                    instance,
+                    native_session_id,
+                }),
+                Poll::Ready(_) => Err(()),
+                Poll::Pending => {
+                    panic!("Codex create no longer guarantees synchronous bounded handoff")
+                }
+            }
         }
     }
     impl BoundedNativeHandoff for Live {
@@ -734,7 +750,7 @@ fn real_codex_fresh_create_deliver_native_read_stop_next_denied() {
         ) -> Result<Admission, SubmitError> {
             // This test wrapper is valid only for the current CodexControl:
             // its submit body performs the bounded synchronous RPC in one poll.
-            let mut f = std::pin::pin!(self.control.submit(p, m, k));
+            let mut f = std::pin::pin!(self.control.native_control().submit(p, m, k));
             match f.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
                 Poll::Ready(value) => value,
                 Poll::Pending => {
@@ -759,26 +775,77 @@ fn real_codex_fresh_create_deliver_native_read_stop_next_denied() {
     stdout.read_line(&mut port).unwrap();
     let port: u16 = port.trim().parse().unwrap();
     let _model = Cleanup(model);
+    // The proxy forwards the request to the shared model, then holds its
+    // response behind a channel so the real native turn stays in progress.
+    // No sleeps or real provider credentials are involved.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let proxy_port = listener.local_addr().unwrap().port();
+    let (proxy_ready_tx, proxy_ready_rx) = mpsc::sync_channel(0);
+    let (proxy_release_tx, proxy_release_rx) = mpsc::sync_channel(0);
+    let proxy = std::thread::spawn(move || {
+        use std::io::{BufRead, Read, Write};
+        let (mut client, _) = listener.accept().unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(15)))
+            .unwrap();
+        let mut reader = BufReader::new(client.try_clone().unwrap());
+        let mut head = String::new();
+        loop {
+            let mut line = String::new();
+            assert_ne!(reader.read_line(&mut line).unwrap(), 0);
+            head.push_str(&line);
+            if line == "\r\n" {
+                break;
+            }
+        }
+        let length: usize = head
+            .lines()
+            .find_map(|line| {
+                line.split_once(':')
+                    .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                    .and_then(|(_, value)| value.trim().parse().ok())
+            })
+            .expect("content-length");
+        let mut body = vec![0; length];
+        reader.read_exact(&mut body).unwrap();
+        let mut upstream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        upstream
+            .set_read_timeout(Some(Duration::from_secs(15)))
+            .unwrap();
+        let mut lines = head.lines();
+        let request = lines.next().unwrap();
+        write!(upstream, "{request}\r\n").unwrap();
+        for line in lines {
+            if line.is_empty() || line.to_ascii_lowercase().starts_with("connection:") {
+                continue;
+            }
+            write!(upstream, "{line}\r\n").unwrap();
+        }
+        upstream.write_all(b"Connection: close\r\n\r\n").unwrap();
+        upstream.write_all(&body).unwrap();
+        let mut response = Vec::new();
+        upstream.read_to_end(&mut response).unwrap();
+        proxy_ready_tx.send(()).unwrap();
+        let _ = proxy_release_rx.recv();
+        let _ = client.write_all(&response);
+    });
     let home = f.root.join("codex-home");
     fs::create_dir(&home).unwrap();
-    fs::write(home.join("config.toml"),format!("model = \"herder-test\"\nmodel_provider = \"fixture\"\n[model_providers.fixture]\nname = \"fixture\"\nbase_url = \"http://127.0.0.1:{port}/v1\"\nwire_api = \"responses\"\nexperimental_bearer_token = \"fixture-only\"\n")).unwrap();
+    fs::write(home.join("config.toml"),format!("model = \"herder-test\"\nmodel_provider = \"fixture\"\n[model_providers.fixture]\nname = \"fixture\"\nbase_url = \"http://127.0.0.1:{proxy_port}/v1\"\nwire_api = \"responses\"\nexperimental_bearer_token = \"fixture-only\"\n")).unwrap();
     let instance = address().instance;
-    let control = CodexControl::open(
-        CodexInstance {
-            instance_id: instance.instance_id.clone(),
-            executable: PathBuf::from(std::env::var("HERDER_TEST_CODEX_BIN").unwrap()),
-            code_home: home,
-            cwd: f.root.clone(),
-        },
+    let native_instance = CodexInstance {
+        instance_id: instance.instance_id.clone(),
+        executable: PathBuf::from(std::env::var("HERDER_TEST_CODEX_BIN").unwrap()),
+        code_home: home,
+        cwd: f.root.clone(),
+    };
+    let control = CodexCreateControl::open(
+        native_instance.clone(),
         instance.clone(),
         Duration::from_secs(15),
     )
     .unwrap();
-    let live = Live {
-        control,
-        instance,
-        cwd: f.root.to_string_lossy().into_owned(),
-    };
+    let live = Live { control, instance };
     assert_eq!(
         f.authority()
             .create_fresh_root(
@@ -834,6 +901,9 @@ fn real_codex_fresh_create_deliver_native_read_stop_next_denied() {
     let DurableDispatch::Admitted(receipt) = received else {
         panic!("native admission not confirmed: {received:?}")
     };
+    proxy_ready_rx
+        .recv_timeout(Duration::from_secs(15))
+        .expect("model request did not reach fixture");
     let w = Writer::open_file(&f.db).unwrap();
     assert_eq!(
         w.load_native_receipt(&b).unwrap(),
@@ -844,6 +914,7 @@ fn real_codex_fresh_create_deliver_native_read_stop_next_denied() {
     for _ in 0..50 {
         if let Ok(RequestReceiptLookup::Found(r)) = live
             .control
+            .native_control()
             .lookup_request(&native, &RequestKey("unique-live-key".into()))
         {
             assert_eq!(r, receipt);
@@ -878,9 +949,42 @@ fn real_codex_fresh_create_deliver_native_read_stop_next_denied() {
     assert!(contacted, "test model was not contacted");
     assert_eq!(
         f.authority()
-            .stop(&identity(), &grants(), "session:issued", "manual", "now")
+            .stop_session_and_interrupt(
+                &identity(),
+                &grants(),
+                &b,
+                "manual",
+                "now",
+                live.control.native_control()
+            )
             .unwrap(),
-        StopDisposition::InterruptOrReconcileRequired
+        herder::application::scoped_stop::InterruptDisposition::InterruptAcknowledged
+    );
+    let _ = proxy_release_tx.send(());
+    proxy.join().unwrap();
+    drop(live);
+    // Read the same turn from a reopened native profile; acknowledgement alone
+    // is not evidence that the native turn actually stopped.
+    let mut independent = CodexConnection::open(native_instance).unwrap();
+    independent.request("initialize", serde_json::json!({"clientInfo":{"name":"herder-stop-readback","version":"1"},"capabilities":{"experimentalApi":true}}), Duration::from_secs(15)).unwrap();
+    independent
+        .notify("initialized", serde_json::json!({}))
+        .unwrap();
+    let readback = independent
+        .request(
+            "thread/read",
+            serde_json::json!({"threadId":native.native_session_id,"includeTurns":true}),
+            Duration::from_secs(15),
+        )
+        .unwrap();
+    let turns = readback["thread"]["turns"]
+        .as_array()
+        .expect("native turns");
+    assert!(
+        turns
+            .iter()
+            .any(|turn| turn["id"] == receipt.native_id && turn["status"] == "interrupted"),
+        "native interrupt not confirmed: {readback}"
     );
     f.prepare("after", "after-key", &p);
     let next = binding(&native, "after", "after-key");
@@ -896,6 +1000,10 @@ fn real_codex_fresh_create_deliver_native_read_stop_next_denied() {
                 "now"
             )
             .unwrap()
+    );
+    println!(
+        "scoped-native-proof session_ref=issued scope_generation=scope-1 native_thread={} native_turn={} model=loopback-fixture readback=interrupted next_claim=denied",
+        native.native_session_id, receipt.native_id
     );
 }
 
@@ -1297,6 +1405,16 @@ fn global_hold_stale_generation_and_imported_target_fail_closed() {
         resource: PrivateResource::Session(SessionRef("imported".into())),
         action: Action::Write,
     });
+    assert!(
+        f.authority()
+            .resolve_session(
+                &identity(),
+                &allowed,
+                &SessionRef("imported".into()),
+                &imported.instance
+            )
+            .is_err()
+    );
     let imported_plan = DispatchPlan {
         target: imported.clone(),
         ..p.clone()
@@ -1653,4 +1771,126 @@ fn fresh_root_is_gated_from_before_native_create_through_atomic_scope_commit() {
             .unwrap(),
         StopDisposition::HeldBeforeHandoff
     );
+}
+
+#[test]
+fn only_one_unsettled_handoff_per_session_is_claimed() {
+    let f = Fixture::new();
+    create(&f);
+    let p = plan();
+    f.prepare("first", "k", &p);
+    f.prepare("next", "next-key", &p);
+    let a = address();
+    let first = binding(&a, "first", "k");
+    let next = binding(&a, "next", "next-key");
+    assert!(
+        f.authority()
+            .claim(
+                &identity(),
+                &grants(),
+                &first,
+                "scope-1",
+                &p,
+                "message",
+                "now"
+            )
+            .unwrap()
+    );
+    assert!(
+        !f.authority()
+            .claim(
+                &identity(),
+                &grants(),
+                &next,
+                "scope-1",
+                &p,
+                "message",
+                "now"
+            )
+            .unwrap()
+    );
+    let control = Control {
+        calls: Arc::new(AtomicUsize::new(0)),
+        db: f.db.clone(),
+        ready: None,
+        proceed: None,
+    };
+    assert!(matches!(
+        f.authority()
+            .handoff(
+                &identity(),
+                &grants(),
+                &first,
+                "scope-1",
+                p.clone(),
+                "message",
+                "now",
+                &control
+            )
+            .unwrap(),
+        DurableDispatch::Admitted(_)
+    ));
+    assert!(
+        f.authority()
+            .claim(
+                &identity(),
+                &grants(),
+                &next,
+                "scope-1",
+                &p,
+                "message",
+                "now"
+            )
+            .unwrap()
+    );
+}
+
+#[test]
+fn global_hold_before_create_blocks_native_creation_and_intent() {
+    struct CountingCreator {
+        instance: InstanceRef,
+        calls: AtomicUsize,
+    }
+    impl BoundedFreshRootCreate for CountingCreator {
+        fn instance(&self) -> &InstanceRef {
+            &self.instance
+        }
+        fn create_root_bounded(&self, _: &str, _: &str) -> Result<SessionAddress, ()> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(address())
+        }
+    }
+    let f = Fixture::new();
+    assert_eq!(
+        f.authority()
+            .stop(&identity(), &grants(), "global", "manual", "now")
+            .unwrap(),
+        StopDisposition::HeldBeforeHandoff
+    );
+    let creator = CountingCreator {
+        instance: address().instance,
+        calls: AtomicUsize::new(0),
+    };
+    let result = f.authority().create_fresh_root(
+        &identity(),
+        &grants(),
+        &creator,
+        &Issuer,
+        &Generation,
+        CreateRequest {
+            intent_id: "create",
+            task_id: "create-task",
+            request_key: "create-key",
+            specification: "isolated",
+            now: "now",
+            retain_until: "later",
+        },
+    );
+    assert_eq!(result, Err(GateError::Invalid));
+    assert_eq!(creator.calls.load(Ordering::SeqCst), 0);
+    let db = Connection::open(&f.db).unwrap();
+    let count: i64 = db
+        .query_row("SELECT count(*) FROM intents", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 0);
 }

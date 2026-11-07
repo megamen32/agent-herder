@@ -616,7 +616,7 @@ fn scope_allowed(
 }
 
 fn scope_unsettled(c: &rusqlite::Connection, b: &ReceiptBinding<'_>) -> Result<bool, GateError> {
-    c.query_row("SELECT EXISTS(SELECT 1 FROM intents i LEFT JOIN humanstop_dispatches d ON d.intent_id=i.intent_id WHERE i.target=?1 AND (i.state='unknown' OR d.phase='handing_off'))",[b.target_ref],|r|r.get(0)).map_err(|_|GateError::Store)
+    c.query_row("SELECT EXISTS(SELECT 1 FROM intents i LEFT JOIN humanstop_dispatches d ON d.intent_id=i.intent_id WHERE i.target=?1 AND (i.state='unknown' OR d.phase='handing_off' OR (d.phase='claimed' AND i.intent_id<>?2)))",params![b.target_ref,b.intent_id],|r|r.get(0)).map_err(|_|GateError::Store)
 }
 fn scope_identity_valid(
     c: &rusqlite::Connection,
