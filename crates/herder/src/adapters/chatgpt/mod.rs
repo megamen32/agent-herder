@@ -598,9 +598,123 @@ fn project_message(message: &Message) -> Option<NormalizedMessage> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures_util::{SinkExt, StreamExt};
+    use tokio::net::TcpListener;
+    use tokio_tungstenite::{accept_async, tungstenite::Message};
 
     const OBSERVED_SHAPE: &str =
         include_str!("../../../../../acceptance/native/chatgpt/conversation.json");
+
+    async fn fake_browser(
+        listed_context: &str,
+        verified_context: &str,
+        inject_unmatched_replies: bool,
+    ) -> (String, tokio::task::JoinHandle<Vec<Value>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let endpoint = format!("ws://{address}/devtools/browser/chatgpt-fixture");
+        let listed_context = listed_context.to_owned();
+        let verified_context = verified_context.to_owned();
+        let fixture: Value = serde_json::from_str(OBSERVED_SHAPE).unwrap();
+        let task = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = accept_async(stream).await.unwrap();
+            let mut requests = Vec::new();
+            while let Some(Ok(Message::Text(text))) = socket.next().await {
+                let request: Value = serde_json::from_str(&text).unwrap();
+                let id = request.get("id").and_then(Value::as_u64).unwrap();
+                let method = request.get("method").and_then(Value::as_str).unwrap();
+                requests.push(request.clone());
+                let result = match method {
+                    "Browser.getVersion" => serde_json::json!({"product":"Chrome/fixture"}),
+                    "Target.getTargets" => serde_json::json!({"targetInfos":[
+                        {"targetId":"neighbor-target","browserContextId":"neighbor-context","type":"page","url":"https://chatgpt.com/c/neighbor"},
+                        {"targetId":"chatgpt-target","browserContextId":listed_context,"type":"page","url":"https://chatgpt.com/c/chat-fixture-001"}
+                    ]}),
+                    "Target.attachToTarget" => {
+                        assert_eq!(
+                            request.pointer("/params/targetId").and_then(Value::as_str),
+                            Some("chatgpt-target")
+                        );
+                        assert_eq!(
+                            request.pointer("/params/flatten").and_then(Value::as_bool),
+                            Some(true)
+                        );
+                        serde_json::json!({"sessionId":"chatgpt-session"})
+                    }
+                    "Target.getTargetInfo" => serde_json::json!({"targetInfo":{
+                        "targetId":"chatgpt-target","browserContextId":verified_context
+                    }}),
+                    "Runtime.evaluate" => {
+                        let expression = request
+                            .pointer("/params/expression")
+                            .and_then(Value::as_str)
+                            .unwrap();
+                        if expression.contains("/api/auth/session") {
+                            serde_json::json!({"result":{"value":{
+                                "origin":"https://chatgpt.com","scope":"a".repeat(64)
+                            }}})
+                        } else {
+                            assert!(
+                                expression.contains("location.origin!==\"https://chatgpt.com\"")
+                            );
+                            assert!(expression.contains(
+                                "fetch('/backend-api/conversation/'+encodeURIComponent(id)"
+                            ));
+                            assert!(
+                                expression.contains("credentials:'same-origin',cache:'no-store'")
+                            );
+                            serde_json::json!({"result":{"value":{
+                                "origin":"https://chatgpt.com","status":200,"payload":fixture
+                            }}})
+                        }
+                    }
+                    other => panic!("unexpected CDP method in read-only fixture: {other}"),
+                };
+                if inject_unmatched_replies {
+                    socket
+                        .send(Message::Text(
+                            serde_json::json!({
+                                "method":"Target.targetCreated","params":{}
+                            })
+                            .to_string()
+                            .into(),
+                        ))
+                        .await
+                        .unwrap();
+                    socket
+                        .send(Message::Text(
+                            serde_json::json!({
+                                "id":id + 1000,"result":{}
+                            })
+                            .to_string()
+                            .into(),
+                        ))
+                        .await
+                        .unwrap();
+                }
+                socket
+                    .send(Message::Text(
+                        serde_json::json!({"id":id,"result":result})
+                            .to_string()
+                            .into(),
+                    ))
+                    .await
+                    .unwrap();
+            }
+            requests
+        });
+        (endpoint, task)
+    }
+
+    fn fake_identity() -> CdpTargetIdentity {
+        CdpTargetIdentity {
+            node_id: "node-fixture".into(),
+            instance_id: "instance-fixture".into(),
+            browser_context_id: "chatgpt-context".into(),
+            target_id: "chatgpt-target".into(),
+        }
+    }
 
     #[test]
     fn follows_current_branch_and_filters_internal_assistant_messages() {
@@ -619,5 +733,71 @@ mod tests {
             normalize_conversation("different-chat", OBSERVED_SHAPE),
             Err(NormalizeError::ConversationMismatch)
         );
+    }
+
+    #[tokio::test]
+    async fn attaches_to_exact_context_and_reads_without_create_or_send() {
+        let (endpoint, server) = fake_browser("chatgpt-context", "chatgpt-context", true).await;
+        let mut reader =
+            ChatGptReader::attach_via_browser(&endpoint, fake_identity(), &"a".repeat(64), None)
+                .await
+                .unwrap();
+        assert_eq!(reader.identity(), &fake_identity());
+        assert_eq!(reader.account_scope(), "a".repeat(64));
+
+        let messages = reader.read_conversation("chat-fixture-001").await.unwrap();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, Role::User);
+        assert_eq!(messages[0].text, "hello\nfrom object part");
+        assert_eq!(messages[1].role, Role::Assistant);
+        assert_eq!(messages[1].text, "fixture answer");
+        reader.close().await;
+
+        let requests = server.await.unwrap();
+        let methods = requests
+            .iter()
+            .filter_map(|request| request.get("method").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+        assert!(methods.contains(&"Target.attachToTarget"));
+        assert_eq!(
+            methods
+                .iter()
+                .filter(|method| **method == "Runtime.evaluate")
+                .count(),
+            2
+        );
+        assert!(!methods.iter().any(|method| {
+            method.starts_with("DOM.")
+                || method.starts_with("Input.")
+                || matches!(*method, "Target.createTarget" | "Target.closeTarget")
+        }));
+        assert!(
+            requests
+                .iter()
+                .filter(|request| request.get("method").and_then(Value::as_str)
+                    == Some("Runtime.evaluate"))
+                .all(|request| request.get("sessionId").and_then(Value::as_str)
+                    == Some("chatgpt-session"))
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_chatgpt_target_from_another_browser_context_before_page_read() {
+        let (endpoint, server) = fake_browser("neighbor-context", "neighbor-context", false).await;
+        let result =
+            ChatGptReader::attach_via_browser(&endpoint, fake_identity(), &"a".repeat(64), None)
+                .await;
+        assert!(matches!(
+            result,
+            Err(ChatGptReadError::Cdp(CdpError::InvalidIdentity))
+        ));
+        let requests = server.await.unwrap();
+        let methods = requests
+            .iter()
+            .filter_map(|request| request.get("method").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+        assert!(!methods.contains(&"Target.attachToTarget"));
+        assert!(!methods.contains(&"Runtime.evaluate"));
+        assert!(!methods.contains(&"Target.createTarget"));
     }
 }
