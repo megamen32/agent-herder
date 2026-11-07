@@ -9,12 +9,12 @@
   ],
   "status": "queued",
   "estimate_minutes": 15,
-  "owner": "CI Astra",
+  "owner": "Terra (планируемое назначение)",
   "harness": "codex",
-  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
-  "model": "gpt-6-astra",
+  "session": "",
+  "model": "gpt-6-terra",
   "created_at": "2026-11-07T21:29:32+03:00",
-  "updated_at": "2026-11-07T21:29:32+03:00",
+  "updated_at": "2026-11-07T21:38:56+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:32+03:00",
@@ -43,6 +43,27 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:38:56+03:00",
+      "note": "",
+      "changes": {
+        "wave": 2,
+        "owner": "Terra (планируемое назначение)",
+        "model": "gpt-6-terra",
+        "session": "",
+        "note": "Средняя задача: wiring существующего workflow/release entrypoint после отчёта. Никакого нового scheduler; Astra принимает последствия update/rollback."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
     }
-  ]
+  ],
+  "wave": 2,
+  "note": "Средняя задача: wiring существующего workflow/release entrypoint после отчёта. Никакого нового scheduler; Astra принимает последствия update/rollback."
 }

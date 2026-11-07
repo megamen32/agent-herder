@@ -16,12 +16,12 @@
   ],
   "status": "queued",
   "estimate_minutes": 15,
-  "owner": "CI Astra",
+  "owner": "Astra",
   "harness": "codex",
   "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
   "model": "gpt-6-astra",
   "created_at": "2026-11-07T21:29:33+03:00",
-  "updated_at": "2026-11-07T21:30:08+03:00",
+  "updated_at": "2026-11-07T21:38:58+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:33+03:00",
@@ -72,7 +72,26 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:38:58+03:00",
+      "note": "",
+      "changes": {
+        "wave": 4,
+        "owner": "Astra",
+        "note": "Финальная сложная интеграция и release acceptance лично Lead. Worker результаты принимаются по реальному consumer; новые UNKNOWN sends не повторять."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
     }
   ],
-  "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен."
+  "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
+  "wave": 4,
+  "note": "Финальная сложная интеграция и release acceptance лично Lead. Worker результаты принимаются по реальному consumer; новые UNKNOWN sends не повторять."
 }

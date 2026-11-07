@@ -1,21 +1,18 @@
 {
   "id": "CHATGPT",
-  "parent": "S3",
+  "parent": "S1",
   "label": "Подключить ChatGPT на разрешённом browser runner",
   "description": "Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.",
   "acceptance": "Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.",
-  "depends_on": [
-    "CONFIG",
-    "REPORT"
-  ],
+  "depends_on": [],
   "status": "queued",
   "estimate_minutes": 15,
-  "owner": "CI Astra",
+  "owner": "Astra",
   "harness": "codex",
   "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
   "model": "gpt-6-astra",
   "created_at": "2026-11-07T21:29:31+03:00",
-  "updated_at": "2026-11-07T21:30:07+03:00",
+  "updated_at": "2026-11-07T21:38:52+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:31+03:00",
@@ -60,7 +57,28 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:38:52+03:00",
+      "note": "",
+      "changes": {
+        "parent": "S1",
+        "depends_on": [],
+        "wave": 1,
+        "owner": "Astra",
+        "note": "Прямой приоритет владельца: начать первым, использовать готовый page7/account/claim и существующий consumer. CONFIG/REPORT не блокируют диагностику и приёмку. Сложные решения/браузерный scope только Lead; no replay."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
     }
   ],
-  "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен."
+  "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
+  "wave": 1,
+  "note": "Прямой приоритет владельца: начать первым, использовать готовый page7/account/claim и существующий consumer. CONFIG/REPORT не блокируют диагностику и приёмку. Сложные решения/браузерный scope только Lead; no replay."
 }

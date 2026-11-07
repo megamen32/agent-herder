@@ -1,6 +1,6 @@
 {
   "id": "ZCODE",
-  "parent": "S2",
+  "parent": "S3",
   "label": "Выпустить ZCode lane без зависимости от server44",
   "description": "Точный реальный server package/runner берётся из manifest; нет hardcoded SSH/IP/live dependency store. Публикация CLI этапа, limits явны.",
   "acceptance": "Точный реальный server package/runner берётся из manifest; нет hardcoded SSH/IP/live dependency store. Публикация CLI этапа, limits явны.",
@@ -10,12 +10,12 @@
   ],
   "status": "queued",
   "estimate_minutes": 15,
-  "owner": "CI Astra",
+  "owner": "Terra (планируемое назначение)",
   "harness": "codex",
-  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
-  "model": "gpt-6-astra",
+  "session": "",
+  "model": "gpt-6-terra",
   "created_at": "2026-11-07T21:29:30+03:00",
-  "updated_at": "2026-11-07T21:30:07+03:00",
+  "updated_at": "2026-11-07T21:38:56+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:30+03:00",
@@ -60,7 +60,29 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:38:56+03:00",
+      "note": "",
+      "changes": {
+        "parent": "S3",
+        "wave": 3,
+        "owner": "Terra (планируемое назначение)",
+        "model": "gpt-6-terra",
+        "session": "",
+        "note": "Средняя задача: подключить существующий runner через утверждённый manifest/config, без hardcoded host и новой adapter архитектуры. Архитектурные пробелы принимает Astra."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
     }
   ],
-  "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен."
+  "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
+  "wave": 3,
+  "note": "Средняя задача: подключить существующий runner через утверждённый manifest/config, без hardcoded host и новой adapter архитектуры. Архитектурные пробелы принимает Astra."
 }

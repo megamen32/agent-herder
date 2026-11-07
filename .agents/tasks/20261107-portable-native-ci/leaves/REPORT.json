@@ -1,6 +1,6 @@
 {
   "id": "REPORT",
-  "parent": "S1",
+  "parent": "S2",
   "label": "Выпустить единый отчёт и отказ неполного gate",
   "description": "PASS/FAIL/BLOCKED/UNSUPPORTED/UNKNOWN по каждой обязательной функции, source/runtime identity; stale receipt и candidate-as-installed отвергаются. Публикация S1.",
   "acceptance": "PASS/FAIL/BLOCKED/UNSUPPORTED/UNKNOWN по каждой обязательной функции, source/runtime identity; stale receipt и candidate-as-installed отвергаются. Публикация S1.",
@@ -9,12 +9,12 @@
   ],
   "status": "queued",
   "estimate_minutes": 15,
-  "owner": "CI Astra",
+  "owner": "Astra",
   "harness": "codex",
   "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
   "model": "gpt-6-astra",
   "created_at": "2026-11-07T21:29:28+03:00",
-  "updated_at": "2026-11-07T21:29:28+03:00",
+  "updated_at": "2026-11-07T21:38:54+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:28+03:00",
@@ -43,6 +43,26 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:38:54+03:00",
+      "note": "",
+      "changes": {
+        "parent": "S2",
+        "wave": 2,
+        "owner": "Astra",
+        "note": "Lead лично определяет и принимает обязательные сценарии, identity и отказ неполного gate. Положительные source tests не заменяют installed consumer."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
     }
-  ]
+  ],
+  "wave": 2,
+  "note": "Lead лично определяет и принимает обязательные сценарии, identity и отказ неполного gate. Положительные source tests не заменяют installed consumer."
 }
