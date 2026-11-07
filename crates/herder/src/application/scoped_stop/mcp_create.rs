@@ -19,6 +19,30 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
+fn input_error(
+    code: &'static str,
+    field: &'static str,
+    issue: &'static str,
+    expected: &'static str,
+    correction: &'static str,
+) -> CallToolResult {
+    let diagnostic = crate::error::Diagnostic {
+        code,
+        field: Some(field),
+        received: Some(issue),
+        expected: Some(vec![expected]),
+        fix: None,
+        effect: crate::error::Effect::None,
+        retry: crate::error::Retry::SafeSameKey,
+        receipt_ref: None,
+        diagnostic_ref: None,
+    };
+    let mut value = serde_json::to_value(diagnostic).expect("static diagnostic");
+    value["message"] = json!(issue);
+    value["correction"] = json!(correction);
+    CallToolResult::structured_error(value)
+}
+
 pub struct ScopedCreateApplication<C, I, G, R, D, P> {
     authority: Arc<ScopedAuthority>,
     instance_ref: String,
@@ -111,15 +135,43 @@ where
                     json!({"code":"unauthorized","effect":"none"}),
                 ));
             }
-            if instance_ref != self.instance_ref
-                || project_ref.is_some()
-                || request_key.is_empty()
+            if instance_ref != self.instance_ref {
+                return Some(input_error(
+                    "instance_mismatch",
+                    "instance_ref",
+                    "instance reference is not the configured target",
+                    "the configured instance reference",
+                    "Select the authorized instance reference from discovery and retry.",
+                ));
+            }
+            if project_ref.is_some() {
+                return Some(input_error(
+                    "project_unsupported",
+                    "project_ref",
+                    "project-scoped create is unsupported",
+                    "omit project_ref for an isolated root",
+                    "Omit project_ref and retry, or select an application that supports project-scoped creation.",
+                ));
+            }
+            if prompt.is_empty() {
+                return Some(input_error(
+                    "prompt_required",
+                    "prompt",
+                    "prompt is empty",
+                    "non-empty prompt text",
+                    "Provide the intended prompt and retry.",
+                ));
+            }
+            if request_key.is_empty()
                 || request_key.len() > 4096
                 || request_key.chars().any(char::is_control)
-                || prompt.is_empty()
             {
-                return Some(CallToolResult::structured_error(
-                    json!({"code":"invalid_request","effect":"none"}),
+                return Some(input_error(
+                    "request_key_invalid",
+                    "request_key",
+                    "request key is empty, too long, or contains control characters",
+                    "a non-empty key of at most 4096 bytes without control characters",
+                    "Provide a valid request key and retry.",
                 ));
             }
             let bytes = match serde_json::to_vec(&(

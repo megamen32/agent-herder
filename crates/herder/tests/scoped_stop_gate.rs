@@ -4418,3 +4418,131 @@ async fn direct_delivery_task_uses_current_exact_policy_after_reopen() {
         "completed"
     );
 }
+
+#[tokio::test]
+async fn create_wire_reports_actionable_input_errors_without_effect_or_echo() {
+    use herder::{
+        application::scoped_stop::{
+            create_prompt::NoAdditionalGrant, mcp_create::ScopedCreateApplication,
+            mcp_task_server::ScopedTaskServer,
+        },
+        domain::adapter::{NativeSessionReader, Observation, ReadError, SessionSnapshot},
+    };
+    use rmcp::ServiceExt;
+    use serde_json::{Value, json};
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    struct Create(InstanceRef, AtomicUsize);
+    impl BoundedFreshRootCreate for Create {
+        fn instance(&self) -> &InstanceRef {
+            &self.0
+        }
+        fn create_root_bounded(&self, _: &str, _: &str) -> Result<SessionAddress, SubmitError> {
+            self.1.fetch_add(1, Ordering::SeqCst);
+            Ok(address())
+        }
+    }
+    struct Reader;
+    impl NativeSessionReader for Reader {
+        async fn snapshot(&self, _: &SessionAddress) -> Result<SessionSnapshot, ReadError> {
+            panic!("no snapshot for invalid create")
+        }
+        async fn reconcile(&self, _: &NativeReceipt) -> Result<Observation, ReadError> {
+            panic!("no reconciliation for invalid create")
+        }
+    }
+    struct Submit(AtomicUsize);
+    impl BoundedNativeHandoff for Submit {
+        fn submit_bounded(
+            &self,
+            _: DispatchPlan,
+            _: &str,
+            _: &RequestKey,
+        ) -> Result<Admission, SubmitError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            panic!("no submit for invalid create")
+        }
+    }
+    let f = Fixture::new();
+    let authority = Arc::new(f.authority());
+    let creator = Arc::new(Create(address().instance, AtomicUsize::new(0)));
+    let sender = Arc::new(Submit(AtomicUsize::new(0)));
+    let app = Arc::new(
+        ScopedCreateApplication::new(
+            authority.clone(),
+            "profile-ref".into(),
+            grants(),
+            creator.clone(),
+            Arc::new(Issuer),
+            Arc::new(Generation),
+            Arc::new(Reader),
+            sender.clone(),
+            Arc::new(NoAdditionalGrant),
+            "9999-12-31T23:59:59Z".into(),
+        )
+        .unwrap(),
+    );
+    let server = ScopedTaskServer::new(identity(), grants(), authority, app);
+    let (client, io) = tokio::io::duplex(65536);
+    let job = tokio::spawn(async move { server.serve(io).await.unwrap().waiting().await.unwrap() });
+    let (r, mut w) = tokio::io::split(client);
+    let mut lines = BufReader::new(r).lines();
+    let meta = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"extensions":{"io.modelcontextprotocol/tasks":{}}},"io.modelcontextprotocol/clientInfo":{"name":"fixture","version":"1"}});
+    for (id, args, field, code) in [
+        (
+            1,
+            json!({"action":"create","instance_ref":"wrong","prompt":"secret-marker","request_key":"key"}),
+            "instance_ref",
+            "instance_mismatch",
+        ),
+        (
+            2,
+            json!({"action":"create","instance_ref":"profile-ref","project_ref":"private-project","prompt":"secret-marker","request_key":"key"}),
+            "project_ref",
+            "project_unsupported",
+        ),
+        (
+            3,
+            json!({"action":"create","instance_ref":"profile-ref","prompt":"","request_key":"key"}),
+            "prompt",
+            "prompt_required",
+        ),
+        (
+            4,
+            json!({"action":"create","instance_ref":"profile-ref","prompt":"secret-marker","request_key":""}),
+            "request_key",
+            "request_key_invalid",
+        ),
+        (
+            5,
+            json!({"action":"create","instance_ref":"profile-ref","prompt":"secret-marker","request_key":"bad\nkey"}),
+            "request_key",
+            "request_key_invalid",
+        ),
+    ] {
+        let request = json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"_meta":meta,"name":"create","arguments":args}});
+        w.write_all(format!("{request}\n").as_bytes())
+            .await
+            .unwrap();
+        let response: Value =
+            serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+        let d = &response["result"]["structuredContent"];
+        assert_eq!(d["code"], code, "{response}");
+        assert_eq!(d["field"], field);
+        assert_eq!(d["effect"], "none");
+        assert!(d["expected"].as_array().is_some_and(|x| !x.is_empty()));
+        assert!(d["correction"].as_str().is_some_and(|x| !x.is_empty()));
+        assert!(!response.to_string().contains("secret-marker"));
+        assert!(!response.to_string().contains("private-project"));
+    }
+    assert_eq!(creator.1.load(Ordering::SeqCst), 0);
+    assert_eq!(sender.0.load(Ordering::SeqCst), 0);
+    let db = Connection::open(&f.db).unwrap();
+    assert_eq!(
+        db.query_row("SELECT count(*) FROM intents", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+    drop(w);
+    drop(lines);
+    job.await.unwrap();
+}
