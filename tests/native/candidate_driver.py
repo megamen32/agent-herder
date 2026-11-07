@@ -17,6 +17,47 @@ from herder_transcript_http import NoRedirect, read_transcript
 from search_proof import attach_search_proof
 
 
+def candidate_bundle_identity(release):
+    """Verify the same file/link inventory used by the release bundle manifest.
+
+    Dependency symlinks are identified by target, not by hashing the shared
+    store bytes; the release builder separately verifies that store.
+    """
+    release = Path(release)
+    manifest_path = release / 'build-manifest.json'
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise ValueError('bundle manifest unavailable')
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except (OSError, ValueError) as error:
+        raise ValueError('bundle manifest invalid') from error
+    source = manifest.get('sourceSha')
+    expected = manifest.get('bundleFingerprint')
+    count = manifest.get('bundleFiles')
+    if not isinstance(source, str) or len(source) != 40 or any(c not in '0123456789abcdef' for c in source):
+        raise ValueError('bundle source identity invalid')
+    if not isinstance(expected, str) or len(expected) != 64 or type(count) is not int:
+        raise ValueError('bundle fingerprint invalid')
+    entries = {}
+    for path in sorted(release.rglob('*')):
+        name = path.relative_to(release).as_posix()
+        if name == 'build-manifest.json':
+            continue
+        if path.is_symlink():
+            entries[name] = 'symlink:' + os.readlink(path)
+        elif path.is_file():
+            digest = hashlib.sha256()
+            with path.open('rb') as stream:
+                for block in iter(lambda: stream.read(1024 * 1024), b''):
+                    digest.update(block)
+            entries[name] = digest.hexdigest()
+    payload = ''.join(f'{name}\0{entries[name]}\n' for name in sorted(entries)).encode()
+    actual = hashlib.sha256(payload).hexdigest()
+    if actual != expected or len(entries) != count:
+        raise ValueError('bundle fingerprint or file count mismatch')
+    return {'source_sha': source, 'bundle_fingerprint': actual, 'bundle_files': len(entries)}
+
+
 def http_error_summary(status, body):
     try:
         value = json.loads(body)
@@ -60,6 +101,9 @@ def main():
         raise ValueError('fixture MCP token missing')
     candidate = Path(dist) / 'index.js'
     before = hashlib.sha256(candidate.read_bytes()).hexdigest()
+    bundle_before = candidate_bundle_identity(Path(dist).parent)
+    if Path(dist).parent.name != bundle_before['source_sha']:
+        raise ValueError('bundle source does not match release directory')
     versions = {name: subprocess.check_output([binary, '--version'], text=True, timeout=10).strip()
                 for name, binary in (('codex', codex), ('opencode', opencode))}
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
@@ -93,9 +137,10 @@ def main():
     replies = json.loads(result.stdout)
     verified = [attach_search_proof(j, [r for r in replies if r.get('harness') == j['harness']], socket.gethostname()) for j in journeys]
     after = hashlib.sha256(candidate.read_bytes()).hexdigest()
-    if before != after:
-        raise RuntimeError('candidate entrypoint changed during test')
-    print(json.dumps({'scope': 'isolated-candidate', 'status': 'INCOMPLETE', 'candidate_entry_sha256': before,
+    bundle_after = candidate_bundle_identity(Path(dist).parent)
+    if before != after or bundle_before != bundle_after:
+        raise RuntimeError('candidate bundle changed during test')
+    print(json.dumps({'scope': 'isolated-candidate', 'status': 'INCOMPLETE', 'candidate_entry_sha256': before, 'candidate_bundle': bundle_before,
                       'cli_versions': versions, 'seconds': round(time.monotonic()-started, 3),
                       'journeys': verified, 'missing': ['installed-process', 'other-required-environments']}), flush=True)
     return exit_code_for_status('INCOMPLETE')

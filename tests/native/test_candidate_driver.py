@@ -1,8 +1,29 @@
 import unittest
-from candidate_driver import exit_code_for_status, http_error_summary, timeout_summary, validate_isolation
+import hashlib
+import json
+import tempfile
+from pathlib import Path
+from candidate_driver import candidate_bundle_identity, exit_code_for_status, http_error_summary, timeout_summary, validate_isolation
 
 
 class CandidateDriverTest(unittest.TestCase):
+    def test_release_identity_checks_entire_bundle_not_just_entrypoint(self):
+        with tempfile.TemporaryDirectory() as root:
+            release = Path(root)
+            (release / 'dist').mkdir()
+            (release / 'dist' / 'index.js').write_text('same entry')
+            (release / 'dist' / 'adapter.js').write_text('original adapter')
+            entries = {p.relative_to(release).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                       for p in (release / 'dist').iterdir()}
+            digest = hashlib.sha256(''.join(f'{key}\0{entries[key]}\n' for key in sorted(entries)).encode()).hexdigest()
+            (release / 'build-manifest.json').write_text(json.dumps({'sourceSha': 'a' * 40, 'bundleFingerprint': digest, 'bundleFiles': 2}))
+            proof = candidate_bundle_identity(release)
+            self.assertEqual(proof['source_sha'], 'a' * 40)
+            self.assertEqual(proof['bundle_fingerprint'], digest)
+            (release / 'dist' / 'adapter.js').write_text('tampered adapter')
+            with self.assertRaisesRegex(ValueError, 'bundle'):
+                candidate_bundle_identity(release)
+
     def test_incomplete_is_not_a_successful_exit(self):
         self.assertNotEqual(exit_code_for_status('INCOMPLETE'), 0)
         self.assertNotEqual(exit_code_for_status('FAIL'), 0)
