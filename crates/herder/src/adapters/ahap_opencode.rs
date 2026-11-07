@@ -106,7 +106,7 @@ impl BoundedFreshRootCreate for AhapOpenCode {
         &self.instance
     }
     fn initial_delivery_mode(&self) -> SendMode {
-        SendMode::Queue
+        SendMode::Start
     }
     fn create_root_bounded(&self, key: &str, _prompt: &str) -> Result<SessionAddress, SubmitError> {
         if key.is_empty() || key.len() > 4096 {
@@ -145,16 +145,16 @@ impl BoundedNativeHandoff for AhapOpenCode {
         key: &RequestKey,
     ) -> Result<Admission, SubmitError> {
         if !self.matches(&plan.target)
-            || plan.mode != SendMode::Queue
+            || plan.mode != SendMode::Start
             || plan.expected_turn.is_some()
             || message.is_empty()
             || key.0.is_empty()
         {
             return Err(SubmitError::DefinitelyNotSent {
-                reason: "invalid OpenCode queue request".into(),
+                reason: "invalid OpenCode initial start request".into(),
             });
         }
-        let result=self.client.call("sendMessage",json!({"id":plan.target.native_session_id,"options":{"message":message,"queue":true,"activeTurnOnly":true,"inputId":key.0}})).map_err(transport_failure)?;
+        let result=self.client.call("sendMessage",json!({"id":plan.target.native_session_id,"options":{"message":message,"start":true,"inputId":key.0}})).map_err(transport_failure)?;
         let admitted = result.get("admitted").and_then(Value::as_bool) == Some(true)
             || matches!(
                 result.get("admission").and_then(Value::as_str),
@@ -216,7 +216,7 @@ impl NativeSessionReader for AhapOpenCode {
             human_stop: false,
             activity,
             capabilities: vec![Capability {
-                name: "deliver.queue".into(),
+                name: "deliver.start".into(),
                 version: CapabilityVersion {
                     adapter_version: "legacy-ahap-0.1".into(),
                     capability_version: "1".into(),
@@ -289,7 +289,7 @@ for line in sys.stdin:
  elif m=='createSession':v={'id':'sesABC','harness':'opencode'}
  elif m=='getSession':v={'id':'sesABC','harness':'opencode','status':'idle'}
  elif m=='sendMessage':
-  assert p['id']=='sesABC' and p['options']['queue'] and p['options']['activeTurnOnly'] and p['options']['inputId']=='key'
+  assert p['id']=='sesABC' and p['options']['start'] and not p['options'].get('queue',False) and p['options']['inputId']=='key'
   v={'ok':True,'admitted':True} if os.environ['MODE']=='missing' else {'ok':True,'admitted':True,'nativeInputMessageId':'msg_ABC'}
  elif m=='getSessionMessages':
   v=[{'id':'msg_ABC','role':'user','text':'hi','inputId':'key'}]
@@ -323,16 +323,16 @@ for line in sys.stdin:
         (Temp(dir), b)
     }
     #[tokio::test]
-    async fn exact_queue_receipt_and_native_readback() {
+    async fn exact_start_receipt_and_native_readback() {
         let (f, b) = setup("success");
         let a = b.create_root_bounded("create", "prompt").unwrap();
-        assert_eq!(b.initial_delivery_mode(), SendMode::Queue);
+        assert_eq!(b.initial_delivery_mode(), SendMode::Start);
         let snapshot = b.snapshot(&a).await.unwrap();
         assert_eq!(snapshot.activity, SessionActivity::Idle);
         let plan = crate::domain::adapter::decide_send(
             &snapshot,
             &crate::domain::adapter::SendCommand {
-                mode: SendMode::Queue,
+                mode: SendMode::Start,
             },
         )
         .unwrap();
@@ -366,7 +366,7 @@ for line in sys.stdin:
         a.instance.node.0 = "other".into();
         let wrong = DispatchPlan {
             target: a.clone(),
-            mode: SendMode::Queue,
+            mode: SendMode::Start,
             expected_turn: None,
         };
         assert!(matches!(
@@ -376,7 +376,7 @@ for line in sys.stdin:
         a.instance = b.instance.clone();
         let p = DispatchPlan {
             target: a,
-            mode: SendMode::Queue,
+            mode: SendMode::Start,
             expected_turn: None,
         };
         assert!(matches!(

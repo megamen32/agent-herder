@@ -726,7 +726,7 @@ fn trusted_opencode_profile_rejects_foreign_writable_runner() {
 }
 
 #[test]
-fn trusted_owner_opencode_ahap_create_queue_task_and_read() {
+fn trusted_owner_opencode_ahap_create_start_task_and_read() {
     use std::io::{BufRead, BufReader, Write};
     let f = Fixture::new();
     let script = f.root.join("adapter.py");
@@ -738,7 +738,7 @@ for line in sys.stdin:
  elif m=='createSession':v={'id':'sesABC','harness':'opencode'}
  elif m=='getSession':v={'id':'sesABC','harness':'opencode','status':'idle'}
  elif m=='sendMessage':
-  assert p['id']=='sesABC' and p['options']['queue'] and p['options']['activeTurnOnly'] and p['options']['inputId']
+  assert p['id']=='sesABC' and p['options']['start'] and not p['options'].get('queue',False) and p['options']['inputId']
   with open(os.path.join(os.environ['HOME'],'sent'),'a') as out:out.write('1')
   v={'ok':True,'admitted':True,'nativeInputMessageId':'msg_ABC'}
  elif m=='getSessionMessages':v=[{'id':'msg_ABC','role':'user','text':'ahap prompt'}]
@@ -800,6 +800,12 @@ for line in sys.stdin:
         read["result"]["structuredContent"]["page"]["complete"],
         false
     );
+    let direct = call(
+        &mut input,
+        &mut output,
+        serde_json::json!({"jsonrpc":"2.0","id":30,"method":"tools/call","params":{"_meta":meta,"name":"deliver","arguments":{"action":"session","session_ref":session,"message":"must not send","mode":"start","request_key":"direct-denied"}}}),
+    );
+    assert!(direct.to_string().contains("unsupported"), "{direct}");
     assert_eq!(fs::read_to_string(f.root.join("sent")).unwrap(), "1");
     let task_owned = task.to_owned();
     let session_owned = session.to_owned();

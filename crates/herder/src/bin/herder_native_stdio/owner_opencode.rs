@@ -9,7 +9,6 @@ use herder::{
         ScopedAuthority,
         create_prompt::FreshSessionGrantPolicy,
         mcp_create::ScopedCreateApplication,
-        mcp_deliver::ScopedDeliverApplication,
         mcp_read::{ScopedMessageReader, ScopedReadApplication},
         mcp_stop::ScopedStopApplication,
         mcp_task_server::ScopedTaskServer,
@@ -19,7 +18,6 @@ use herder::{
         Action, Caller, ConnectionIdentity, Grant, PrincipalId, PrivateResource, VerifiedPrincipal,
     },
     domain::{
-        adapter::SendMode,
         address::{InstanceRef, NodeRef, SessionAddress, SessionRef},
     },
     mcp::{
@@ -38,7 +36,6 @@ impl ScopedMessageReader for Messages {
     }
 }
 struct App {
-    authority: Arc<ScopedAuthority>,
     instance: InstanceRef,
     grants: Vec<Grant>,
     policy: Arc<OwnerPolicy>,
@@ -118,19 +115,11 @@ impl ApplicationPort for App {
                     }
                     Err(_) => None,
                 },
-                catalog::Request::Deliver(_) => match ScopedDeliverApplication::new(
-                    self.authority.clone(),
-                    self.instance.clone(),
-                    grants,
-                    self.adapter.clone(),
-                    self.adapter.clone(),
-                    "9999-12-31T23:59:59Z".into(),
-                )
-                .and_then(|a| a.with_delivery_mode(SendMode::Queue))
-                {
-                    Ok(a) => a.call(identity, request).await,
-                    Err(_) => None,
-                },
+                // This composition supports initial input on freshly created
+                // sessions only. Existing-session Start has no native idle CAS.
+                catalog::Request::Deliver(_) => Some(rmcp::model::CallToolResult::structured_error(
+                    serde_json::json!({"code":"unsupported","effect":"none"}),
+                )),
                 _ => None,
             }
         })
@@ -223,7 +212,6 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
         .map_err(|_| "invalid create policy")?,
     );
     let app = Arc::new(App {
-        authority: authority.clone(),
         instance,
         grants: grants.clone(),
         policy: policy.clone(),
