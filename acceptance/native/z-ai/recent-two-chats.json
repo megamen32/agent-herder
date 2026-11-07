@@ -1,0 +1,16 @@
+[
+  {
+    "chat_id": "aaaaaaaaaaaa",
+    "data": {
+      "aaaaaaaaaaaa-u1": {"id":"aaaaaaaaaaaa-u1","role":"user","content":"question A","created_at":1794052800},
+      "aaaaaaaaaaaa-a1": {"id":"aaaaaaaaaaaa-a1","role":"assistant","content":"answer A","timestamp":1794052801}
+    }
+  },
+  {
+    "chat_id": "bbbbbbbbbbbb",
+    "data": {
+      "bbbbbbbbbbbb-u1": {"id":"bbbbbbbbbbbb-u1","role":"user","content":"question B","created_at":1794052900},
+      "bbbbbbbbbbbb-a1": {"id":"bbbbbbbbbbbb-a1","role":"assistant","content":"answer B","timestamp":1794052901}
+    }
+  }
+]

@@ -325,10 +325,7 @@ impl ZaiReader {
     /// those remain unknown in the shared projection.
     pub async fn recent_messages(&mut self, chat_id: &str) -> Result<RecentMessages, ZaiReadError> {
         let messages = self.read_chat(chat_id).await?;
-        Ok(normalize_recent(
-            latest_source_message(&messages, Role::User),
-            latest_source_message(&messages, Role::Assistant),
-        ))
+        Ok(project_recent_messages(&messages))
     }
 
     /// Send exactly one first prompt in a fresh target and prove its reply by
@@ -575,6 +572,13 @@ fn latest_source_message(messages: &[NormalizedMessage], role: Role) -> Option<S
     })
 }
 
+fn project_recent_messages(messages: &[NormalizedMessage]) -> RecentMessages {
+    normalize_recent(
+        latest_source_message(messages, Role::User),
+        latest_source_message(messages, Role::Assistant),
+    )
+}
+
 fn project_message(requested_id: &str, message: &RawMessage) -> Option<NormalizedMessage> {
     let id = message.id.as_deref().unwrap_or(requested_id).trim();
     if id.is_empty() || id != requested_id {
@@ -628,6 +632,8 @@ mod tests {
         include_str!("../../../../../acceptance/native/z-ai/messages-batch.json");
     const CHAT_LIST_SHAPE: &str =
         include_str!("../../../../../acceptance/native/z-ai/chat-list.json");
+    const RECENT_TWO_CHATS: &str =
+        include_str!("../../../../../acceptance/native/z-ai/recent-two-chats.json");
 
     #[test]
     fn validates_chat_and_preserves_requested_order_and_text_blocks() {
@@ -690,10 +696,7 @@ mod tests {
             OBSERVED_SHAPE,
         )
         .unwrap();
-        let recent = normalize_recent(
-            latest_source_message(&messages, Role::User),
-            latest_source_message(&messages, Role::Assistant),
-        );
+        let recent = project_recent_messages(&messages);
         let user = recent.user.unwrap();
         let assistant = recent.assistant.unwrap();
         assert_eq!(user.message_id.as_deref(), Some("user-001"));
@@ -703,5 +706,46 @@ mod tests {
         assert_eq!(assistant.reply_to_input_id, None);
         assert_eq!(recent.assistant_replies_to_user, None);
         assert_eq!(assistant.partial, None);
+    }
+
+    #[test]
+    fn two_native_chats_keep_role_slots_and_message_ids_isolated() {
+        let chats: Value = serde_json::from_str(RECENT_TWO_CHATS).unwrap();
+        let chats = chats.as_array().unwrap();
+        assert_eq!(chats.len(), 2);
+        for chat in chats {
+            let chat_id = chat.get("chat_id").and_then(Value::as_str).unwrap();
+            let data = chat.get("data").unwrap();
+            let requested: Vec<&str> = data
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect();
+            let batch = serde_json::to_string(&serde_json::json!({
+                "chat_id": chat_id,
+                "data": data
+            }))
+            .unwrap();
+            let messages = normalize_batch(chat_id, &requested, &batch).unwrap();
+            let recent = project_recent_messages(&messages);
+            let user = recent.user.unwrap();
+            let assistant = recent.assistant.unwrap();
+            assert!(user.message_id.as_deref().unwrap().starts_with(chat_id));
+            assert!(
+                assistant
+                    .message_id
+                    .as_deref()
+                    .unwrap()
+                    .starts_with(chat_id)
+            );
+            assert_eq!(user.turn_id, None);
+            assert_eq!(assistant.turn_id, None);
+            assert_eq!(assistant.reply_to_input_id, None);
+            assert_eq!(user.partial, None);
+            assert_eq!(assistant.partial, None);
+            assert_eq!(assistant.truncated, None);
+            assert_eq!(recent.assistant_replies_to_user, None);
+        }
     }
 }
