@@ -7,9 +7,15 @@ use std::{
     env,
     ffi::OsString,
     fs, io,
+    io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    process::{Child, ChildStdin, Command, Stdio},
+    sync::mpsc::{self, Receiver, RecvTimeoutError},
+    thread,
+    time::{Duration, Instant},
 };
+
+use serde_json::{Value, json};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodexInstance {
@@ -58,13 +64,95 @@ impl std::fmt::Display for OpenError {
 
 impl std::error::Error for OpenError {}
 
-/// The child and both protocol pipes have one owner and one instance identity.
+#[derive(Debug)]
+pub enum RpcError {
+    NotRunning,
+    RequestIdExhausted,
+    Process(io::Error),
+    Disconnected {
+        request_id: u64,
+    },
+    Read {
+        request_id: u64,
+        source: io::Error,
+    },
+    Encode(serde_json::Error),
+    /// A write can fail after some bytes reached the child. Never replay it.
+    Write {
+        request_id: u64,
+        source: io::Error,
+    },
+    MalformedResponse {
+        request_id: u64,
+        reason: String,
+    },
+    /// The request was sent, but no matching response arrived before the deadline.
+    Timeout {
+        request_id: u64,
+    },
+    Remote {
+        request_id: u64,
+        code: Option<i64>,
+        message: String,
+    },
+}
+
+impl std::fmt::Display for RpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotRunning => write!(f, "Codex app-server is not running; request was not sent"),
+            Self::RequestIdExhausted => write!(f, "Codex app-server request ID sequence exhausted"),
+            Self::Process(error) => write!(f, "Codex app-server process check failed: {error}"),
+            Self::Disconnected { request_id } => write!(
+                f,
+                "Codex app-server disconnected after request {request_id}; outcome may be unknown"
+            ),
+            Self::Read { request_id, source } => write!(
+                f,
+                "could not read response for Codex request {request_id}; outcome may be unknown: {source}"
+            ),
+            Self::Encode(error) => write!(f, "could not encode Codex app-server request: {error}"),
+            Self::Write { request_id, source } => write!(
+                f,
+                "could not finish writing Codex request {request_id}; outcome may be unknown: {source}"
+            ),
+            Self::MalformedResponse { request_id, reason } => write!(
+                f,
+                "malformed response for Codex request {request_id}; outcome may be unknown: {reason}"
+            ),
+            Self::Timeout { request_id } => write!(
+                f,
+                "Codex app-server request {request_id} timed out; outcome may be unknown"
+            ),
+            Self::Remote {
+                request_id,
+                code,
+                message,
+            } => write!(
+                f,
+                "Codex app-server RPC error for request {request_id}, code {code:?}: {message}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for RpcError {}
+
+/// One process, its request-ID sequence, reader, and unsolicited events.
 pub struct CodexConnection {
     instance_id: String,
     code_home: PathBuf,
     child: Child,
     stdin: Option<ChildStdin>,
-    stdout: Option<ChildStdout>,
+    incoming: Receiver<Result<Value, IncomingError>>,
+    next_request_id: u64,
+    notifications: Vec<Value>,
+}
+
+enum IncomingError {
+    Disconnected,
+    Read(io::Error),
+    Malformed(String),
 }
 
 impl CodexConnection {
@@ -110,12 +198,24 @@ impl CodexConnection {
                 return Err(OpenError::PipeUnavailable("stdout"));
             }
         };
+        let (incoming_tx, incoming) = mpsc::channel();
+        if let Err(error) = thread::Builder::new()
+            .name("codex-app-server-rpc-reader".to_owned())
+            .spawn(move || read_responses(stdout, incoming_tx))
+        {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(OpenError::Spawn(error));
+        }
+
         Ok(Self {
             instance_id: instance.instance_id,
             code_home: instance.code_home,
             child,
             stdin: Some(stdin),
-            stdout: Some(stdout),
+            incoming,
+            next_request_id: 1,
+            notifications: Vec::new(),
         })
     }
 
@@ -131,12 +231,88 @@ impl CodexConnection {
         self.child.id()
     }
 
-    pub fn stdin(&mut self) -> &mut ChildStdin {
-        self.stdin.as_mut().expect("connection input is open")
+    /// Send one request and return only the response with this request's ID.
+    /// A timeout or write failure is never retried; callers reconcile the
+    /// native effect before deciding what to do next.
+    pub fn request(
+        &mut self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+    ) -> Result<Value, RpcError> {
+        if self.child.try_wait().map_err(RpcError::Process)?.is_some() {
+            return Err(RpcError::NotRunning);
+        }
+        let request_id = self.next_request_id;
+        self.next_request_id = self
+            .next_request_id
+            .checked_add(1)
+            .ok_or(RpcError::RequestIdExhausted)?;
+        let mut request = serde_json::to_vec(&json!({
+            "id": request_id,
+            "method": method,
+            "params": params,
+        }))
+        .map_err(RpcError::Encode)?;
+        request.push(b'\n');
+        let stdin = self.stdin.as_mut().ok_or(RpcError::NotRunning)?;
+        stdin
+            .write_all(&request)
+            .and_then(|()| stdin.flush())
+            .map_err(|source| RpcError::Write { request_id, source })?;
+
+        let deadline = Instant::now()
+            .checked_add(timeout)
+            .unwrap_or_else(Instant::now);
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(RpcError::Timeout { request_id });
+            }
+            let response = match self.incoming.recv_timeout(remaining) {
+                Ok(Ok(response)) => response,
+                Ok(Err(IncomingError::Disconnected)) | Err(RecvTimeoutError::Disconnected) => {
+                    return Err(RpcError::Disconnected { request_id });
+                }
+                Ok(Err(IncomingError::Read(source))) => {
+                    return Err(RpcError::Read { request_id, source });
+                }
+                Ok(Err(IncomingError::Malformed(reason))) => {
+                    return Err(RpcError::MalformedResponse { request_id, reason });
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    return Err(RpcError::Timeout { request_id });
+                }
+            };
+            if response.get("id") == Some(&json!(request_id)) {
+                if let Some(error) = response.get("error") {
+                    return Err(RpcError::Remote {
+                        request_id,
+                        code: error.get("code").and_then(Value::as_i64),
+                        message: error
+                            .get("message")
+                            .and_then(Value::as_str)
+                            .unwrap_or("unspecified RPC error")
+                            .to_owned(),
+                    });
+                }
+                return response.get("result").cloned().ok_or_else(|| {
+                    RpcError::MalformedResponse {
+                        request_id,
+                        reason: "missing result".into(),
+                    }
+                });
+            }
+            if response.get("method").and_then(Value::as_str).is_some() {
+                self.notifications.push(response);
+            }
+            // A late response for a timed-out request, or an unrelated ID,
+            // is discarded. It can never satisfy this request.
+        }
     }
 
-    pub fn stdout(&mut self) -> &mut ChildStdout {
-        self.stdout.as_mut().expect("connection output is open")
+    pub fn take_notifications(&mut self) -> Vec<Value> {
+        std::mem::take(&mut self.notifications)
     }
 
     pub fn try_wait(&mut self) -> io::Result<Option<std::process::ExitStatus>> {
@@ -149,6 +325,35 @@ impl Drop for CodexConnection {
         if self.child.try_wait().ok().flatten().is_none() {
             let _ = self.child.kill();
             let _ = self.child.wait();
+        }
+        self.stdin.take();
+    }
+}
+
+fn read_responses(stdout: impl io::Read, sender: mpsc::Sender<Result<Value, IncomingError>>) {
+    let mut reader = BufReader::new(stdout);
+    loop {
+        let mut line = String::new();
+        match reader.read_line(&mut line) {
+            Ok(0) => {
+                let _ = sender.send(Err(IncomingError::Disconnected));
+                return;
+            }
+            Ok(_) => match serde_json::from_str(&line) {
+                Ok(response) => {
+                    if sender.send(Ok(response)).is_err() {
+                        return;
+                    }
+                }
+                Err(error) => {
+                    let _ = sender.send(Err(IncomingError::Malformed(error.to_string())));
+                    return;
+                }
+            },
+            Err(error) => {
+                let _ = sender.send(Err(IncomingError::Read(error)));
+                return;
+            }
         }
     }
 }
