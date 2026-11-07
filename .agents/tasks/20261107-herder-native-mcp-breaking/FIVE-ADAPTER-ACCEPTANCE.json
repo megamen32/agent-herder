@@ -1,0 +1,145 @@
+{
+  "schema": "design-template-v1",
+  "status": "INCOMPLETE",
+  "scope": "five-adapter-new-core-release",
+  "canonical_product_plan": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking",
+  "canonical_ci_plan": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261105-deterministic-harness-ci",
+  "note": "Pending manifest template, not an implemented validator or evidence of acceptance. Historical receipts are reusable inputs only. Every proof must bind exact target/core/adapter/native runtime identity and authorized scope.",
+  "required_scenarios": [
+    "create",
+    "deliver",
+    "read",
+    "transcript_complete",
+    "other_instance_or_account",
+    "restart",
+    "no_replay_unknown",
+    "human_stop"
+  ],
+  "lanes": [
+    {
+      "harness": "opencode",
+      "owner_leaf": "V065AHAPCIRUN",
+      "reusable_evidence": "CI:L100; Herder:FASTINIT",
+      "candidate": {
+        "status": "pending",
+        "runtime_identity": null,
+        "receipt": null
+      },
+      "installed": {
+        "status": "pending",
+        "runtime_identity": null,
+        "receipt": null
+      },
+      "scenario_evidence": {
+        "create": null,
+        "deliver": null,
+        "read": null,
+        "transcript_complete": null,
+        "other_instance_or_account": null,
+        "restart": null,
+        "no_replay_unknown": null,
+        "human_stop": null
+      }
+    },
+    {
+      "harness": "chatgpt",
+      "owner_leaf": "QCHATCASE",
+      "reusable_evidence": "CI:L92",
+      "candidate": {
+        "status": "pending",
+        "runtime_identity": null,
+        "receipt": null
+      },
+      "installed": {
+        "status": "pending",
+        "runtime_identity": null,
+        "receipt": null
+      },
+      "scenario_evidence": {
+        "create": null,
+        "deliver": null,
+        "read": null,
+        "transcript_complete": null,
+        "other_instance_or_account": null,
+        "restart": null,
+        "no_replay_unknown": null,
+        "human_stop": null
+      }
+    },
+    {
+      "harness": "zai",
+      "owner_leaf": "QZAICASE",
+      "reusable_evidence": "CI:L98",
+      "candidate": {
+        "status": "pending",
+        "runtime_identity": null,
+        "receipt": null
+      },
+      "installed": {
+        "status": "pending",
+        "runtime_identity": null,
+        "receipt": null
+      },
+      "scenario_evidence": {
+        "create": null,
+        "deliver": null,
+        "read": null,
+        "transcript_complete": null,
+        "other_instance_or_account": null,
+        "restart": null,
+        "no_replay_unknown": null,
+        "human_stop": null
+      }
+    },
+    {
+      "harness": "zcode",
+      "owner_leaf": "V078",
+      "reusable_evidence": "CI:L45",
+      "candidate": {
+        "status": "pending",
+        "runtime_identity": null,
+        "receipt": null
+      },
+      "installed": {
+        "status": "pending",
+        "runtime_identity": null,
+        "receipt": null
+      },
+      "scenario_evidence": {
+        "create": null,
+        "deliver": null,
+        "read": null,
+        "transcript_complete": null,
+        "other_instance_or_account": null,
+        "restart": null,
+        "no_replay_unknown": null,
+        "human_stop": null
+      }
+    },
+    {
+      "harness": "codex",
+      "owner_leaf": "V060",
+      "reusable_evidence": "CI:L74/L100",
+      "candidate": {
+        "status": "pending",
+        "runtime_identity": null,
+        "receipt": null
+      },
+      "installed": {
+        "status": "pending",
+        "runtime_identity": null,
+        "receipt": null
+      },
+      "scenario_evidence": {
+        "create": null,
+        "deliver": null,
+        "read": null,
+        "transcript_complete": null,
+        "other_instance_or_account": null,
+        "restart": null,
+        "no_replay_unknown": null,
+        "human_stop": null
+      }
+    }
+  ]
+}
