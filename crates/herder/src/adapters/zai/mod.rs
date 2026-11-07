@@ -8,6 +8,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::{collections::HashMap, time::Duration};
 
+use crate::application::recent::{RecentMessages, SourceMessage, normalize_recent};
+
 use super::cdp::{
     CdpConnection, CdpCreateError, CdpError, CdpTargetIdentity, create_page_target_with_origin_port,
 };
@@ -243,9 +245,7 @@ impl ZaiReader {
         if status != 200 {
             return Err(ZaiReadError::ProviderStatus(status));
         }
-        let chats = result
-            .get("chats")
-            .ok_or(ZaiReadError::InvalidResponse)?;
+        let chats = result.get("chats").ok_or(ZaiReadError::InvalidResponse)?;
         normalize_chat_list(chats).map_err(ZaiReadError::Normalize)
     }
 
@@ -317,6 +317,18 @@ impl ZaiReader {
             .map_err(|_| ZaiReadError::InvalidResponse)?;
         let requested: Vec<&str> = ids.iter().map(String::as_str).collect();
         normalize_batch(chat_id, &requested, &batch).map_err(ZaiReadError::Normalize)
+    }
+
+    /// Project the newest user and assistant records from one explicitly
+    /// addressed native chat. Z.ai's captured response has stable message IDs
+    /// and timestamps, but no observed turn or reply reference fields, so
+    /// those remain unknown in the shared projection.
+    pub async fn recent_messages(&mut self, chat_id: &str) -> Result<RecentMessages, ZaiReadError> {
+        let messages = self.read_chat(chat_id).await?;
+        Ok(normalize_recent(
+            latest_source_message(&messages, Role::User),
+            latest_source_message(&messages, Role::Assistant),
+        ))
     }
 
     /// Send exactly one first prompt in a fresh target and prove its reply by
@@ -549,6 +561,20 @@ fn valid_chat_id(chat_id: &str) -> bool {
             .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
 }
 
+fn latest_source_message(messages: &[NormalizedMessage], role: Role) -> Option<SourceMessage> {
+    messages.iter().rev().find_map(|message| {
+        (message.role == role).then(|| SourceMessage {
+            text: message.text.clone(),
+            turn_id: None,
+            time: message.timestamp.map(|timestamp| timestamp.to_string()),
+            partial: None,
+            truncated: None,
+            message_id: Some(message.id.clone()),
+            reply_to_input_id: None,
+        })
+    })
+}
+
 fn project_message(requested_id: &str, message: &RawMessage) -> Option<NormalizedMessage> {
     let id = message.id.as_deref().unwrap_or(requested_id).trim();
     if id.is_empty() || id != requested_id {
@@ -633,7 +659,10 @@ mod tests {
         let list: Value = serde_json::from_str(CHAT_LIST_SHAPE).unwrap();
         let chats = normalize_chat_list(&list).unwrap();
         assert_eq!(
-            chats.iter().map(|chat| chat.id.as_str()).collect::<Vec<_>>(),
+            chats
+                .iter()
+                .map(|chat| chat.id.as_str())
+                .collect::<Vec<_>>(),
             ["c001000000000001", "c002000000000002"]
         );
     }
@@ -651,5 +680,28 @@ mod tests {
             normalize_chat_list(&serde_json::json!([{"id":"not/a/native-id"}])),
             Err(NormalizeError::InvalidPayload)
         );
+    }
+
+    #[test]
+    fn recent_projection_keeps_message_ids_and_leaves_unobserved_refs_unknown() {
+        let messages = normalize_batch(
+            "chat-fixture-z-001",
+            &["user-001", "assistant-001"],
+            OBSERVED_SHAPE,
+        )
+        .unwrap();
+        let recent = normalize_recent(
+            latest_source_message(&messages, Role::User),
+            latest_source_message(&messages, Role::Assistant),
+        );
+        let user = recent.user.unwrap();
+        let assistant = recent.assistant.unwrap();
+        assert_eq!(user.message_id.as_deref(), Some("user-001"));
+        assert_eq!(assistant.message_id.as_deref(), Some("assistant-001"));
+        assert_eq!(user.turn_id, None);
+        assert_eq!(assistant.turn_id, None);
+        assert_eq!(assistant.reply_to_input_id, None);
+        assert_eq!(recent.assistant_replies_to_user, None);
+        assert_eq!(assistant.partial, None);
     }
 }
