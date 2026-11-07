@@ -216,6 +216,9 @@ fn resource_dir_owner_exists(root: &Path) -> bool {
     root.join("resources/r/owner.json").exists()
 }
 
+#[path = "release_races.rs"]
+mod release_races;
+
 #[test]
 fn owner_guard_inode_survives_claim_renew_and_release() {
     use std::os::unix::fs::MetadataExt;
