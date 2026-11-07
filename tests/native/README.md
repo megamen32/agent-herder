@@ -24,6 +24,14 @@ For a tool-calling fixture, pass `--scenario tool-call` before `-- COMMAND`.
 The first model request returns `herder_test_tool` with call ID `call_test_1`
 and arguments `{"value":"fixture"}`; later requests return the normal text.
 The client must register that tool. This fixture does not execute the tool.
+To exercise that exchange with a real Codex app-server:
+
+```sh
+python3 tests/native/launch.py --scenario tool-call -- /usr/bin/python3 "$PWD/tests/native/codex_tool_receipt.py" /absolute/path/to/codex
+```
+
+This verifies the tool name, arguments, thread and turn IDs, the final native
+readback and exactly two fixture requests. It does not exercise Herder.
 Use an absolute executable path if it is outside the minimal PATH; explicitly
 configure each test client to use the provided endpoint. No credentials or
 existing profiles are inherited through the environment. Arbitrary project
