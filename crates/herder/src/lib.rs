@@ -9,6 +9,8 @@ pub mod adapters {
     }
     pub mod opencode {
         pub mod connection;
+        pub mod control;
+        pub mod create;
         pub mod read;
     }
     pub mod chatgpt;
