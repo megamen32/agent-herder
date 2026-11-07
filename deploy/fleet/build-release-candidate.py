@@ -92,6 +92,15 @@ def node_config_matches_snapshot(path: Path, before: bytes | None) -> tuple[bool
     return False, f"live node config changed: {before_digest} -> {after_digest}"
 
 
+def snapshot_current(catalog: Path) -> str | None:
+    current = catalog / "current"
+    if current.is_symlink():
+        return os.readlink(current)
+    if current.exists():
+        raise RuntimeError("live current is not a symlink")
+    return None
+
+
 def sha256_tree(root: Path) -> dict:
     result = {}
     for path in sorted(root.rglob("*")):
@@ -234,6 +243,9 @@ def fresh_release_dir(catalog: Path, sha: str) -> Path:
     trash/ next to the catalog.
     """
     release = catalog / "releases" / sha
+    current = catalog / "current"
+    if current.is_symlink() and current.resolve() == release.resolve():
+        raise RuntimeError("cannot rebuild the active release; use a separate candidate catalog")
     if release.exists() or release.is_symlink():
         trash = catalog / "trash" / f"{sha[:8]}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
         trash.mkdir(parents=True, exist_ok=True)
@@ -317,10 +329,8 @@ def assemble(sha: str, worktree: Path, catalog: Path) -> Path:
     after = node_config_path.read_bytes() if node_config_path.is_file() else None
     if before != after:
         raise SystemExit("the build changed the config of the node")
-    current = catalog / "current"
-    if current.is_symlink() or current.exists():
-        current.unlink()
-    current.symlink_to(Path("releases") / sha)
+    # Only the leased rollout may change current. A build publishes bytes,
+    # including into an empty catalog, without installing them.
     return release
 
 
@@ -448,7 +458,8 @@ def write_bundle_manifest(sha: str, release: Path, catalog: Path, worktree: Path
     return document
 
 
-def checks(sha: str, release: Path, catalog: Path, node_config_before: bytes | None) -> list:
+def checks(sha: str, release: Path, catalog: Path, node_config_before: bytes | None,
+           current_before: str | None) -> list:
     manifest = json.loads((release / "dist" / "fleet-deployment-manifest.json").read_text())
     payload = manifest["payload"]
     actual = sha256_tree(release / "dist")
@@ -486,7 +497,8 @@ def checks(sha: str, release: Path, catalog: Path, node_config_before: bytes | N
         ("the candidate template carries the source sha of the manifest", node_config["sourceSha"] == manifest["source_sha"], node_config["sourceSha"]),
         ("the live node config matches its exact before-build snapshot",
          *node_config_matches_snapshot(catalog / "node-config.json", node_config_before)),
-        ("current points at the candidate release", os.readlink(catalog / "current") == f"releases/{sha}", os.readlink(catalog / "current")),
+        ("the live current pointer matches its before-build snapshot",
+         snapshot_current(catalog) == current_before, str(snapshot_current(catalog))),
         ("packages dir is a real directory named node_modules", packages.name == "node_modules" and packages.is_dir() and not packages.is_symlink(), str(packages)),
         ("the release carries the full set of the store, nothing trimmed",
          not package_diff["missing"] and not package_diff["extra"],
@@ -528,6 +540,7 @@ def main() -> int:
     store = REPO / "node_modules"
     store_before = release_rules.mutable_state(store)
     node_config_before = snapshot_node_config(Path(arguments.catalog) / "node-config.json")
+    current_before = snapshot_current(Path(arguments.catalog))
     worktree = prepare_worktree(sha, Path(arguments.worktrees))
     if not arguments.skip_build:
         build(worktree)
@@ -539,7 +552,7 @@ def main() -> int:
     bundle = write_bundle_manifest(sha, release, Path(arguments.catalog), worktree)
     store_after = release_rules.mutable_state(store)
     results, manifest, unique_mib, bundle_manifest = checks(
-        sha, release, Path(arguments.catalog), node_config_before)
+        sha, release, Path(arguments.catalog), node_config_before, current_before)
     results = list(results) + [
         ("the build did not write into the store", store_before == store_after,
          f"{len(store_before)} cache files of the store, unchanged = {store_before == store_after}"),
