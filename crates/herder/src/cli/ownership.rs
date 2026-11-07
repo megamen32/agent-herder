@@ -16,7 +16,7 @@ pub fn execute(args: &[String]) -> Result<Value, String> {
     let Some(action) = args.first().map(String::as_str) else {
         return Err(usage());
     };
-    if !matches!(action, "status" | "claim" | "renew" | "release") {
+    if !matches!(action, "status" | "claim" | "renew" | "release" | "resolve") {
         return Err(usage());
     }
     let options = parse_options(&args[1..], action)?;
@@ -46,6 +46,20 @@ pub fn execute(args: &[String]) -> Result<Value, String> {
     }
 
     let claim_id = options.claim_id.ok_or_else(usage)?;
+    if action == "resolve" {
+        let claim = claim::read_by_claim_id(
+            &authority,
+            &resource_ref,
+            Authorization::Authorized,
+            &claim_id,
+        )
+        .map_err(user_error)?;
+        return Ok(json!({
+            "status": if claim.is_some() { "current" } else { "not_current" },
+            "resource": descriptor.resource_ref(),
+            "claim": claim,
+        }));
+    }
     if action == "release" {
         claim::release(&authority, &resource_ref, Authorization::Authorized, &claim_id)
             .map_err(user_error)?;
@@ -101,7 +115,7 @@ struct Options {
 }
 
 fn parse_options(args: &[String], action: &str) -> Result<Options, String> {
-    let has_claim_id = matches!(action, "claim" | "renew" | "release");
+    let has_claim_id = matches!(action, "claim" | "renew" | "release" | "resolve");
     let mut authority = None;
     let mut resource = None;
     let mut claim_id = None;
@@ -229,5 +243,5 @@ fn ownership_unavailable() -> String {
 }
 
 fn usage() -> String {
-    "Использование: herder ownership status --authority <absolute-path> --resource <ref> | claim --authority <path> --resource <ref> --claim-id <uuid> --purpose <text> | renew --authority <path> --resource <ref> --claim-id <uuid> --expires-at <value> | release --authority <path> --resource <ref> --claim-id <uuid>".into()
+    "Использование: herder ownership status --authority <absolute-path> --resource <ref> | claim --authority <path> --resource <ref> --claim-id <uuid> --purpose <text> | renew --authority <path> --resource <ref> --claim-id <uuid> --expires-at <value> | release --authority <path> --resource <ref> --claim-id <uuid> | resolve --authority <path> --resource <ref> --claim-id <uuid>".into()
 }

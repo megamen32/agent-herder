@@ -115,6 +115,29 @@ fn same_intent_except_acquired_at(current: &ResourceClaim, requested: &ResourceC
         && current.expires_at == requested.expires_at
 }
 
+/// Read the current claim only if its nonce matches. A missing or superseded
+/// nonce returns None and never creates or reacquires ownership.
+pub fn read_by_claim_id(
+    authority: &StorageAuthority,
+    resource_ref: &ResourceRef,
+    authorization: Authorization,
+    claim_id: &str,
+) -> io::Result<Option<ResourceClaim>> {
+    if !is_uuid(claim_id) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "claim ID must be a UUID",
+        ));
+    }
+    let Some(bytes) = authority.read_owner_bytes(resource_ref, authorization)? else {
+        return Ok(None);
+    };
+    let owner: OwnerRecord = serde_json::from_slice(&bytes)
+        .map_err(|_| invalid_data("owner record JSON is invalid"))?;
+    validate_owner(authority, resource_ref, &owner)?;
+    Ok((owner.claim.claim_id == claim_id).then_some(owner.claim))
+}
+
 /// Extend the expiry of the current claim only when its claim ID still matches.
 pub fn renew(
     authority: &StorageAuthority,
