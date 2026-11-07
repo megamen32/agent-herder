@@ -509,6 +509,8 @@ def main() -> int:
     parser.add_argument("--catalog", default=str(DEFAULT_CATALOG))
     parser.add_argument("--worktrees", default=str(DEFAULT_WORKTREES))
     parser.add_argument("--skip-build", action="store_true", help="reuse an existing build of the same head")
+    parser.add_argument("--codex-bin", default=shutil.which("codex") or "")
+    parser.add_argument("--opencode-bin", default=str(Path.home() / ".npm-global/lib/node_modules/@opencode/cli/bin/opencode.exe"))
     arguments = parser.parse_args()
 
     sha = run(["git", "-C", str(REPO), "rev-parse", arguments.sha])
@@ -563,6 +565,20 @@ def main() -> int:
         print(f"[{'OK ' if ok else 'FAIL'}] {name}: {detail}")
         failed += 0 if ok else 1
     print(f"== {len(results) - failed}/{len(results)} checks passed ==")
+    if not failed:
+        # The native CLI candidate stage is mandatory. Its scoped PASS does
+        # not prove the installed process or accept the complete release.
+        runner = worktree / "tests/native/candidate_release_gate.py"
+        binaries = [Path(arguments.codex_bin).resolve(), Path(arguments.opencode_bin).resolve()]
+        if not runner.is_file() or any(not p.is_file() or not os.access(p, os.X_OK) for p in binaries):
+            print("[FAIL] native CLI candidate gate or required binaries unavailable; release INCOMPLETE")
+            failed += 1
+        else:
+            ci = subprocess.run([sys.executable, str(runner), str(release.resolve()), sha,
+                                 *(str(p) for p in binaries), str(Path(arguments.catalog).resolve() / "ci-receipts" / f"{sha}.json")], check=False)
+            if ci.returncode:
+                print("[FAIL] native CLI candidate gate; release INCOMPLETE")
+                failed += 1
     if not failed and not arguments.skip_build:
         cleanup_worktree(sha, worktree)
     return 1 if failed else 0
