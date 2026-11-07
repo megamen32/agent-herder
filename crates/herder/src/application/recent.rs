@@ -3,6 +3,102 @@
 //! The reader owns recency: this module does not infer ordering from timestamps,
 //! turn identifiers, or the position of messages in a transcript.
 
+use crate::{
+    adapters::opencode::read::OpenCodeSessionReader,
+    auth::identity::{Action, ConnectionIdentity, Grant, PrivateResource},
+    domain::address::{SessionAddress, SessionRef},
+    mcp::{
+        catalog,
+        transport::{ApplicationFuture, ApplicationPort},
+    },
+};
+use rmcp::model::CallToolResult;
+use serde_json::json;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// One pre-resolved route supplied by the authoritative composition layer.
+/// This is not a session registry: the issuer must bind the opaque reference to
+/// the exact native address independently of the incoming request.
+pub struct OpenCodeRecentApplication {
+    reader: OpenCodeSessionReader,
+    target_ref: SessionRef,
+    target: SessionAddress,
+    grants: Vec<Grant>,
+    requests: AtomicU64,
+}
+
+impl OpenCodeRecentApplication {
+    pub fn new(
+        reader: OpenCodeSessionReader,
+        target_ref: SessionRef,
+        target: SessionAddress,
+        grants: Vec<Grant>,
+    ) -> Result<Self, &'static str> {
+        if target_ref.0.trim().is_empty() || target.instance != *reader.instance() {
+            return Err("target instance does not match reader");
+        }
+        Ok(Self {
+            reader,
+            target_ref,
+            target,
+            grants,
+            requests: AtomicU64::new(0),
+        })
+    }
+}
+
+impl ApplicationPort for OpenCodeRecentApplication {
+    fn call<'a>(
+        &'a self,
+        identity: &'a ConnectionIdentity,
+        request: catalog::Request,
+    ) -> ApplicationFuture<'a> {
+        Box::pin(async move {
+            let catalog::Request::Session(catalog::Session::Recent {
+                session_ref,
+                cursor,
+            }) = request
+            else {
+                return None;
+            };
+            if session_ref != self.target_ref.0
+                || identity
+                    .authorize(
+                        &self.grants,
+                        &PrivateResource::Session(self.target_ref.clone()),
+                        Action::Read,
+                    )
+                    .is_err()
+            {
+                return Some(CallToolResult::structured_error(
+                    json!({"code":"unauthorized", "effect":"none", "message":"target read is not authorized"}),
+                ));
+            }
+            if cursor.is_some() {
+                return Some(CallToolResult::structured_error(
+                    json!({"code":"unsupported", "effect":"none", "message":"recent does not support cursors"}),
+                ));
+            }
+            let request_id = format!(
+                "herder-recent-{}",
+                self.requests.fetch_add(1, Ordering::Relaxed)
+            );
+            match self.reader.recent_messages(&self.target, request_id).await {
+                Ok(recent) => Some(CallToolResult::structured(
+                    json!({"session_ref":session_ref, "user":recent.user.map(message_json), "assistant":recent.assistant.map(message_json), "assistant_replies_to_user":recent.assistant_replies_to_user}),
+                )),
+                Err(_) => Some(CallToolResult::structured_error(
+                    json!({"code":"source_unavailable", "effect":"none", "message":"native recent read failed"}),
+                )),
+            }
+        })
+    }
+}
+
+fn message_json(message: RecentMessage) -> serde_json::Value {
+    json!({"text":message.text, "turn_id":message.turn_id, "time":message.time, "partial":message.partial, "truncated":message.truncated, "message_id":message.message_id, "reply_to_input_id":message.reply_to_input_id})
+}
+
 /// Metadata supplied by the source for one message. Missing metadata stays unknown.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceMessage {
