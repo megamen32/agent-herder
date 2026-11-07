@@ -784,20 +784,14 @@ fn fresh_create_deliver_receipt_stop_interrupt_unknown_and_next_denied() {
 #[test]
 #[ignore = "starts real isolated Codex and the loopback test-model fixture"]
 fn real_codex_fresh_create_deliver_native_read_stop_next_denied() {
-    use herder::{
-        adapters::codex::{
-            connection::{CodexConnection, CodexInstance},
-            control::RequestReceiptLookup,
-            create::CodexCreateControl,
-        },
-        application::target::{NativeCreateControl, NativeCreateOutcome},
-        domain::adapter::NativeSessionControl,
+    use herder::adapters::codex::{
+        connection::{CodexConnection, CodexInstance},
+        control::RequestReceiptLookup,
+        create::CodexCreateControl,
     };
     use std::{
-        future::Future,
         io::{BufRead, BufReader},
         process::{Child, Command, Stdio},
-        task::{Context, Poll, Waker},
         time::Duration,
     };
     struct Cleanup(Child);
@@ -805,58 +799,6 @@ fn real_codex_fresh_create_deliver_native_read_stop_next_denied() {
         fn drop(&mut self) {
             let _ = self.0.kill();
             let _ = self.0.wait();
-        }
-    }
-    struct Live {
-        control: CodexCreateControl,
-        instance: InstanceRef,
-    }
-    impl BoundedFreshRootCreate for Live {
-        fn instance(&self) -> &InstanceRef {
-            &self.instance
-        }
-        fn create_root_bounded(
-            &self,
-            key: &str,
-            spec: &str,
-        ) -> Result<SessionAddress, SubmitError> {
-            let mut f = std::pin::pin!(self.control.create_once(key, spec));
-            match f.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
-                Poll::Ready(NativeCreateOutcome::Confirmed {
-                    request_key,
-                    instance,
-                    native_session_id,
-                    parent_ref: None,
-                }) if request_key == key && instance == self.instance => Ok(SessionAddress {
-                    instance,
-                    native_session_id,
-                }),
-                Poll::Ready(_) => Err(SubmitError::OutcomeUnknown {
-                    receipt: None,
-                    reason: "fixture unknown".into(),
-                }),
-                Poll::Pending => {
-                    panic!("Codex create no longer guarantees synchronous bounded handoff")
-                }
-            }
-        }
-    }
-    impl BoundedNativeHandoff for Live {
-        fn submit_bounded(
-            &self,
-            p: DispatchPlan,
-            m: &str,
-            k: &RequestKey,
-        ) -> Result<Admission, SubmitError> {
-            // This test wrapper is valid only for the current CodexControl:
-            // its submit body performs the bounded synchronous RPC in one poll.
-            let mut f = std::pin::pin!(self.control.native_control().submit(p, m, k));
-            match f.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
-                Poll::Ready(value) => value,
-                Poll::Pending => {
-                    panic!("Codex submit no longer guarantees synchronous bounded handoff")
-                }
-            }
         }
     }
     let f = Fixture::new();
@@ -945,13 +887,12 @@ fn real_codex_fresh_create_deliver_native_read_stop_next_denied() {
         Duration::from_secs(15),
     )
     .unwrap();
-    let live = Live { control, instance };
     assert_eq!(
         f.authority()
             .create_fresh_root(
                 &identity(),
                 &grants(),
-                &live,
+                &control,
                 &Issuer,
                 &Generation,
                 CreateRequest {
@@ -995,7 +936,7 @@ fn real_codex_fresh_create_deliver_native_read_stop_next_denied() {
             p.clone(),
             "message",
             "now",
-            &live,
+            control.native_control(),
         )
         .unwrap();
     let DurableDispatch::Admitted(receipt) = received else {
@@ -1012,8 +953,7 @@ fn real_codex_fresh_create_deliver_native_read_stop_next_denied() {
     drop(w);
     let mut matched = false;
     for _ in 0..50 {
-        if let Ok(RequestReceiptLookup::Found(r)) = live
-            .control
+        if let Ok(RequestReceiptLookup::Found(r)) = control
             .native_control()
             .lookup_request(&native, &RequestKey("unique-live-key".into()))
         {
@@ -1055,14 +995,14 @@ fn real_codex_fresh_create_deliver_native_read_stop_next_denied() {
                 &b,
                 "manual",
                 "now",
-                live.control.native_control()
+                control.native_control()
             )
             .unwrap(),
         herder::application::scoped_stop::InterruptDisposition::InterruptAcknowledged
     );
     let _ = proxy_release_tx.send(());
     proxy.join().unwrap();
-    drop(live);
+    drop(control);
     // Read the same turn from a reopened native profile; acknowledgement alone
     // is not evidence that the native turn actually stopped.
     let mut independent = CodexConnection::open(native_instance).unwrap();
