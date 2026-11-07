@@ -6,6 +6,7 @@ export type SessionSearchScanner=(options:{signal?:AbortSignal;onStatus?:(status
 export async function startSessionSearchIndexer(scanner:SessionSearchScanner,options:{path?:string;intervalMs?:number;ownerToken?:string;enabled?:boolean;isEnabled?:()=>boolean}={}){
  let index:SessionSearchIndex|undefined;const token=options.ownerToken??randomUUID();
  let enabled=options.enabled!==false,abort:AbortController|undefined,timer:ReturnType<typeof setTimeout>|undefined,closed=false;
+ let transientRetryUsed=false;
  let pending:Promise<void>=Promise.resolve();
  const allowed=()=>enabled&&options.isEnabled?.()!==false;
  const claim=()=>{if(index)return true;const opened=new SessionSearchIndex(options.path);if(!opened.claimOwner(token)){opened.close();return false;}opened.pruneInterruptedGenerations();index=opened;return true;};
@@ -24,7 +25,14 @@ export async function startSessionSearchIndexer(scanner:SessionSearchScanner,opt
   };
   pending=index!.scan(guarded(),receipts)
    .catch(()=>{/* An interrupted scan keeps previously published rows. */})
-   .finally(()=>{if(!closed&&allowed()){timer=setTimeout(run,options.intervalMs??60000);timer.unref();}});
+   .finally(()=>{
+    if(!closed&&allowed()){
+     const changed=receipts.some(receipt=>receipt.state==='partial'&&receipt.reason==='native_source_changed_during_scan');
+     const quick=changed&&!transientRetryUsed;
+     if(quick)transientRetryUsed=true;else if(!changed)transientRetryUsed=false;
+     timer=setTimeout(run,quick?1000:options.intervalMs??60000);timer.unref();
+    }
+   });
  };
  run();
  return {get index(){return index;},async setEnabled(next:boolean){if(next===enabled){await pending;return;}enabled=next;if(!next){abort?.abort();if(timer)clearTimeout(timer);await pending;}else{await pending;if(!closed)run();}},async close(){closed=true;abort?.abort();if(timer)clearTimeout(timer);await pending;if(index){index.releaseOwner(token);index.close();}}};
