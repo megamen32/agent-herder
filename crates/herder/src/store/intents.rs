@@ -69,6 +69,159 @@ mod tests {
     use super::*;
 
     #[test]
+    fn concurrent_duplicate_prepare_dispatches_once_and_unknown_is_not_replayed() -> Result<()> {
+        use rusqlite::{Connection, functions::FunctionFlags};
+        use std::sync::{
+            Arc, Barrier,
+            atomic::{AtomicUsize, Ordering},
+        };
+        use std::time::Duration;
+
+        let path = std::env::temp_dir().join(format!(
+            "herder-prepare-race-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(path.clone());
+        let open = || -> Result<Writer> {
+            let connection = Connection::open(&path)?;
+            connection.busy_timeout(Duration::from_secs(10))?;
+            connection.pragma_update(None, "foreign_keys", true)?;
+            connection.create_scalar_function(
+                "herder_writer_version",
+                0,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |_| Ok(super::super::WRITER_VERSION),
+            )?;
+            Ok(Writer { connection })
+        };
+        let mut observer = open()?;
+        observer.connection.execute_batch(super::super::SCHEMA)?;
+        const N: usize = 8;
+        let start = Arc::new(Barrier::new(N));
+        let prepared = Arc::new(Barrier::new(N));
+        let submits = Arc::new(AtomicUsize::new(0));
+        let workers: Vec<_> = (0..N)
+            .map(|n| {
+                let mut writer = open().unwrap();
+                let start = Arc::clone(&start);
+                let prepared = Arc::clone(&prepared);
+                let submits = Arc::clone(&submits);
+                std::thread::spawn(move || {
+                    let intent_id = format!("intent-{n}");
+                    let task_id = format!("task-{n}");
+                    start.wait();
+                    let result = writer.prepare_intent(&NewIntent {
+                        intent_id: &intent_id,
+                        task_id: &task_id,
+                        principal: "p",
+                        target: "target",
+                        request_key: "key",
+                        payload_hash: "hash",
+                        now: "now",
+                        retain_until: "later",
+                    });
+                    // All threads reach the barrier even on error, so failures do not hang the test.
+                    prepared.wait();
+                    let result = result.unwrap();
+                    let canonical_id = match &result {
+                        PrepareResult::Created { intent_id, .. }
+                        | PrepareResult::Existing { intent_id, .. } => intent_id,
+                        PrepareResult::Conflict { .. } => panic!("identical payload conflicted"),
+                    };
+                    let claimed = writer.claim_dispatch(canonical_id, "dispatch").unwrap();
+                    if claimed {
+                        submits.fetch_add(1, Ordering::SeqCst);
+                    }
+                    (result, claimed)
+                })
+            })
+            .collect();
+        let results: Vec<_> = workers.into_iter().map(|w| w.join().unwrap()).collect();
+        assert_eq!(
+            results
+                .iter()
+                .filter(|(r, _)| matches!(r, PrepareResult::Created { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(results.iter().filter(|(_, claimed)| *claimed).count(), 1);
+        assert_eq!(submits.load(Ordering::SeqCst), 1);
+        let (canonical_intent, canonical_task) = match &results[0].0 {
+            PrepareResult::Created { intent_id, task_id }
+            | PrepareResult::Existing { intent_id, task_id } => (intent_id, task_id),
+            _ => unreachable!(),
+        };
+        for (result, _) in &results {
+            match result {
+                PrepareResult::Created { intent_id, task_id }
+                | PrepareResult::Existing { intent_id, task_id } => {
+                    assert_eq!((intent_id, task_id), (canonical_intent, canonical_task));
+                }
+                _ => panic!("unexpected conflict"),
+            }
+        }
+        let conflict = observer.prepare_intent(&NewIntent {
+            intent_id: "other",
+            task_id: "other",
+            principal: "p",
+            target: "target",
+            request_key: "key",
+            payload_hash: "different",
+            now: "now",
+            retain_until: "later",
+        })?;
+        assert_eq!(
+            conflict,
+            PrepareResult::Conflict {
+                intent_id: canonical_intent.clone(),
+                task_id: canonical_task.clone()
+            }
+        );
+        let counts: (i64, i64) = observer.connection.query_row(
+            "SELECT (SELECT count(*) FROM intents), (SELECT count(*) FROM tasks)",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        assert_eq!(counts, (1, 1));
+        observer.connection.execute(
+            "UPDATE intents SET state = 'unknown' WHERE intent_id = ?1",
+            [canonical_intent],
+        )?;
+        let retry = observer.prepare_intent(&NewIntent {
+            intent_id: "retry",
+            task_id: "retry",
+            principal: "p",
+            target: "target",
+            request_key: "key",
+            payload_hash: "hash",
+            now: "later",
+            retain_until: "later",
+        })?;
+        assert_eq!(
+            retry,
+            PrepareResult::Existing {
+                intent_id: canonical_intent.clone(),
+                task_id: canonical_task.clone()
+            }
+        );
+        if observer.claim_dispatch(canonical_intent, "retry")? {
+            submits.fetch_add(1, Ordering::SeqCst);
+        }
+        assert_eq!(submits.load(Ordering::SeqCst), 1);
+        Ok(())
+    }
+
+    #[test]
     fn dispatch_claim_has_one_winner_and_unknown_is_never_claimed() -> Result<()> {
         use rusqlite::{Connection, functions::FunctionFlags};
         use std::sync::{Arc, Barrier};
