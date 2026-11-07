@@ -57,6 +57,14 @@ impl From<SourceMessage> for RecentMessage {
     }
 }
 
+/// Project a source read without turning an unavailable source into an empty history.
+/// The reader selects the latest messages and supplies its own error unchanged.
+pub fn project_recent<E>(
+    source: Result<(Option<SourceMessage>, Option<SourceMessage>), E>,
+) -> Result<RecentMessages, E> {
+    source.map(|(user, assistant)| normalize_recent(user, assistant))
+}
+
 /// Normalize source-selected latest messages without I/O or invented ordering.
 pub fn normalize_recent(
     latest_user: Option<SourceMessage>,
@@ -85,6 +93,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn unavailable_source_is_not_an_empty_history() {
+        let unavailable = project_recent::<&str>(Err("source unavailable"));
+        assert_eq!(unavailable, Err("source unavailable"));
+        let empty = project_recent::<&str>(Ok((None, None))).unwrap();
+        assert_eq!(empty.user, None);
+        assert_eq!(empty.assistant, None);
+        assert_eq!(empty.assistant_replies_to_user, None);
+    }
+
+    #[test]
     fn explicit_source_link_and_truncation_are_preserved() {
         let user = SourceMessage {
             text: "input".into(),
@@ -104,7 +122,7 @@ mod tests {
             message_id: Some("a1".into()),
             reply_to_input_id: Some("u1".into()),
         };
-        let result = normalize_recent(Some(user), Some(assistant));
+        let result = project_recent::<&str>(Ok((Some(user), Some(assistant)))).unwrap();
         assert_eq!(result.assistant.as_ref().unwrap().truncated, Some(true));
         assert_eq!(result.assistant.as_ref().unwrap().partial, Some(true));
         assert_eq!(result.assistant_replies_to_user, Some(true));
@@ -166,9 +184,11 @@ mod tests {
             message_id: None,
             reply_to_input_id: None,
         };
-        let result = normalize_recent(Some(user.clone()), Some(assistant.clone()));
+        let result =
+            project_recent::<&str>(Ok((Some(user.clone()), Some(assistant.clone())))).unwrap();
         assert_eq!(result.user, Some(user.into()));
         assert_eq!(result.assistant, Some(assistant.into()));
+        assert_eq!(result.assistant_replies_to_user, None);
     }
 
     #[test]
