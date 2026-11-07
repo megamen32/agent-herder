@@ -13,6 +13,11 @@ pub mod adapters {
     }
     pub mod chatgpt;
     pub mod zai;
+    pub mod zcode {
+        pub mod connection;
+        pub mod create;
+        pub mod read;
+    }
 }
 pub mod application {
     pub mod list;
