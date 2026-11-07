@@ -1060,7 +1060,17 @@ export class CodexAdapter implements HarnessAdapter {
     operation: (state: CodexSessionState) => Promise<T>,
   ): Promise<T | undefined> {
     const states = await this.getSessionStates();
-    const state = states.get(id);
+    let state = states.get(id);
+    // A newly created native thread may appear after the shared inventory was
+    // cached. Refresh this exact ID, without waiting for the inventory TTL.
+    if (!state) {
+      if (existsSync(join(this.codexDir, "state_5.sqlite"))) {
+        state = (await this.readSessionStateFromDatabase(id)) ?? undefined;
+      } else {
+        state = (await this.readSessionStates()).get(id);
+      }
+      if (state) states.set(id, state);
+    }
     if (!state) return undefined;
     try {
       return await operation(state);

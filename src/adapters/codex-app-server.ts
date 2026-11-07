@@ -475,7 +475,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     ) : (config.args || ["app-server"]);
     this.cwd = config.cwd || process.cwd();
     this.appServerDataHome = resolve(process.env.CODEX_HOME || join(homedir(), ".codex"));
-    this.transcriptReaderDataHome = resolve(config.codexDir || process.env.CODEX_DATA_DIR || join(homedir(), ".codex"));
+    this.transcriptReaderDataHome = resolve(config.codexDir || process.env.CODEX_DATA_DIR || this.appServerDataHome);
     this.socketPath = config.socketPath ?? process.env.CODEX_APP_SERVER_SOCKET;
     if (this.socketPath && (!isAbsolute(this.socketPath) || this.socketPath.includes(":") || this.socketPath.includes("?"))) {
       throw new Error("CODEX_APP_SERVER_SOCKET must be an absolute Unix socket path without ':' or '?' characters");
@@ -485,7 +485,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     this.deliveryReceipts = new CodexDeliveryReceipts(config.codexDir);
     this.rawTranscriptAdapter = new CodexAdapter({
       codexBin: this.codexBin,
-      codexDir: this.projectRuntimePolicy ? this.transcriptReaderDataHome : config.codexDir,
+      codexDir: this.transcriptReaderDataHome,
     });
     if (this.lifecycleSignal?.aborted) this.disposed = true;
     else this.lifecycleSignal?.addEventListener("abort", this.abortListener, { once: true });
