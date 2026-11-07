@@ -1,6 +1,7 @@
 //! Shared building blocks for the Herder daemon.
 pub mod adapters {
     pub mod ahap;
+    pub mod ahap_opencode;
     pub mod cdp;
     pub mod codex {
         pub mod connection;
