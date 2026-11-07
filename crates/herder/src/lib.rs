@@ -6,6 +6,7 @@ pub mod config;
 pub mod domain {
     pub mod adapter;
     pub mod address;
+    pub mod resource;
 }
 
 pub mod error;
