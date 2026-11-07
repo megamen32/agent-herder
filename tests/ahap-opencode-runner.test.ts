@@ -9,7 +9,7 @@ async function run(adapter: Partial<OpenCodeAdapter>, requests: unknown[]) {
   const chunks: string[] = [];
   output.setEncoding("utf8");
   output.on("data", (chunk: string) => chunks.push(chunk));
-  const completed = serveOpenCodeAhap(adapter as OpenCodeAdapter, input, output);
+  const completed = serveOpenCodeAhap(adapter as OpenCodeAdapter, input, output, "v22");
   input.end(requests.map((request) => JSON.stringify(request)).join("\n") + "\n");
   await completed;
   return chunks.join("").trim().split("\n").map((line) => JSON.parse(line));

@@ -30,8 +30,9 @@ export async function serveOpenCodeAhap(
   adapter: OpenCodePort,
   input: Readable = process.stdin,
   output: Writable = process.stdout,
-  family: "v2" | "v22" = "v22",
+  family?: "v2" | "v22",
 ): Promise<void> {
+  if (family !== "v2" && family !== "v22") throw new Error("OpenCode native protocol must be selected before AHAP startup");
   const lines = createInterface({ input, crlfDelay: Infinity });
   let initialized = false;
   let stopped = false;
@@ -73,7 +74,7 @@ export async function serveOpenCodeAhap(
       write({ jsonrpc: "2.0", id, result: {
         harness: "opencode",
         name: "OpenCode bounded adapter",
-        capabilities: { methods: METHODS, deliveryModes: DELIVERY_MODES, controlCapabilities: CONTROL_CAPABILITIES },
+        capabilities: { methods: METHODS, deliveryModes: DELIVERY_MODES, nativeProtocol: family, controlCapabilities: CONTROL_CAPABILITIES },
       } });
       continue;
     }
@@ -194,11 +195,19 @@ export async function makeConfiguredAdapter(baseUrl = process.env.AHAP_OPENCODE_
   if (password) headers.Authorization = `Basic ${Buffer.from(`${process.env.OPENCODE_SERVER_USERNAME || "opencode"}:${password}`).toString("base64")}`;
   const probe = await fetch(`${endpoint.toString().replace(/\/$/u, "")}/api/config`, { headers, signal: AbortSignal.timeout(5_000), redirect: "error" });
   let family: "v2" | "v22";
-  if (probe.status === 404) family = "v22";
+  if (probe.status === 404) {
+    const health = await fetch(`${endpoint.toString().replace(/\/$/u, "")}/api/health`, { headers, signal: AbortSignal.timeout(5_000), redirect: "error" });
+    let value: unknown;
+    try { value = await health.json(); } catch { throw new Error("invalid OpenCode health JSON; no mutation sent"); }
+    if (health.status !== 200 || !value || typeof value !== "object" || Array.isArray(value)) throw new Error("unverified OpenCode v22 health; no mutation sent");
+    family = "v22";
+  }
   else if (probe.status === 200) {
-    const body: unknown = await probe.json().catch(() => null);
+    let body: unknown;
+    try { body = await probe.json(); }
+    catch { throw new Error("invalid OpenCode API config JSON; no mutation sent"); }
     if (body === null) family = "v22";
-    else if (Array.isArray(body) && body.length > 0 && body.every(item => item && typeof item === "object" && typeof item.path === "string" && typeof item.type === "string")) family = "v2";
+    else if (typeof body === "object") family = "v2";
     else throw new Error("unrecognized OpenCode API config; no mutation sent");
   } else throw new Error(`OpenCode API probe HTTP ${probe.status}; no mutation sent`);
   const adapter = new OpenCodeAdapter({

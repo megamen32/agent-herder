@@ -142,7 +142,7 @@ it("routes actual AHAP runner Start through v22 adapter to native payload", asyn
   output.on("data", (chunk: string) => chunks.push(chunk));
   const adapter = new OpenCodeAdapter({ baseUrl, protocol: "v22" });
   try {
-    const done = serveOpenCodeAhap(adapter, input, output);
+    const done = serveOpenCodeAhap(adapter, input, output, "v22");
     const requests = [
       {jsonrpc:"2.0",id:1,method:"initialize",params:{harness:"opencode",ahapVersion:"0.1"}},
       {jsonrpc:"2.0",id:2,method:"createSession",params:{options:{name:"worker",cwd:"/tmp/work"}}},
