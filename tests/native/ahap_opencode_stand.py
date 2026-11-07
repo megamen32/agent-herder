@@ -196,6 +196,25 @@ def native_api_read(root, path, password="fixture-only"):
         return error.code, detail
 
 
+def native_api_read_detail(root, path, password="fixture-only"):
+    """Read one native JSON response without conflating JSON null and malformed data."""
+    authorization = base64.b64encode(f"opencode:{password}".encode()).decode()
+    request = urllib.request.Request(root + path, headers={"Authorization": "Basic " + authorization})
+    try:
+        with urllib.request.urlopen(request, timeout=4) as response:
+            raw = response.read(2_000_000)
+            try:
+                return response.status, json.loads(raw), True
+            except (ValueError, UnicodeError):
+                return response.status, None, False
+    except urllib.error.HTTPError as error:
+        raw = error.read(4096)
+        try:
+            return error.code, json.loads(raw), True
+        except (ValueError, UnicodeError):
+            return error.code, None, False
+
+
 def completed_message_pair(value, marker):
     if not complete_native_readback(value, marker):
         return None
@@ -226,8 +245,8 @@ def completed_message_pair(value, marker):
 
 
 def wait_for_native_completion(root, native_session_id, marker, expected_receipt_id, env, timeout=40):
-    status, config = native_api_read(root, "/api/config")
-    v22 = status == 404 or (status == 200 and config is None)
+    api_family = detect_opencode_api_family(root, env.get("OPENCODE_SERVER_PASSWORD", "fixture-only"))
+    v22 = api_family == "v22"
     prefix = "/session/" if v22 else "/api/session/"
     path = prefix + urllib.parse.quote(native_session_id, safe="") + "/message"
     if not v22:
@@ -238,7 +257,7 @@ def wait_for_native_completion(root, native_session_id, marker, expected_receipt
         status, last = native_api_read(root, path, env.get("OPENCODE_SERVER_PASSWORD", "fixture-only"))
         pair = completed_message_pair(last, marker) if status == 200 else None
         if pair and pair["user_message_id"] == expected_receipt_id:
-            return {"api_family": "provider-session" if v22 else "api-session",
+            return {"api_family": api_family,
                     "session_id": native_session_id,
                     "messages": summarize_native_messages(last), **pair}
         if status not in (200, 404, 503):
@@ -404,12 +423,12 @@ def verify_trusted_path(value, *, directory=False):
 
 def verify_opencode_fixture(root, model_url, password="fixture-only"):
     api_family = detect_opencode_api_family(root, password)
-    v22 = api_family == "provider-session"
+    v22 = api_family == "v22"
     if v22:
         status, provider = native_api_read(root, "/provider", password)
         if status != 200 or not v22_fixture_verified(provider, model_url):
             raise RuntimeError("OpenCode 2 fixture provider verification failed; no Task created")
-        return "provider-session"
+        return "v22"
     status, models = native_api_read(root, "/api/model", password)
     if status != 200 or "herder-test" not in json.dumps(models):
         raise RuntimeError("OpenCode fixture model verification failed; no Task created")
@@ -435,30 +454,81 @@ def verify_opencode_fixture(root, model_url, password="fixture-only"):
             f"(credential_http={credential_status}, provider_http={status}, "
             f"activation={info.get('activation')!r}, model_base_url_matches={observed_base_url == model_url})"
         )
-    return "api-session"
+    return "v2"
 
 
 def detect_opencode_api_family(root, password="fixture-only"):
     deadline = time.monotonic() + 20
-    status, body = native_api_read(root, "/api/config", password)
+    status, body, valid_json = native_api_read_detail(root, "/api/config", password)
     while status == 503 and time.monotonic() < deadline:
         time.sleep(0.2)
-        status, body = native_api_read(root, "/api/config", password)
+        status, body, valid_json = native_api_read_detail(root, "/api/config", password)
     if status == 404:
-        return "provider-session"
+        health_status, health_body, health_json = native_api_read_detail(root, "/api/health", password)
+        if health_status == 200 and health_json and isinstance(health_body, dict):
+            return "v22"
+        raise RuntimeError("OpenCode API protocol probe returned 404 without verified v22 health; refusing create/send")
     if status == 200:
-        return "api-session"
+        if not valid_json:
+            raise RuntimeError("OpenCode API protocol probe returned malformed JSON; refusing create/send")
+        if body is None:
+            return "v22"
+        if isinstance(body, (dict, list)):
+            return "v2"
+        raise RuntimeError("OpenCode API protocol probe returned an unknown config shape; refusing create/send")
     raise RuntimeError(f"OpenCode read-only protocol probe failed: HTTP {status}")
 
 
-def require_runner_route_compat(api_family, pinned_protocol="v2"):
-    expected = {"v1": "api-session", "v2": "api-session"}.get(pinned_protocol)
-    if expected is None:
-        raise ValueError("AHAP runner must pin a known OpenCode API protocol")
-    if api_family != expected:
+def probe_runner_protocol(node, runner, env):
+    """Read nativeProtocol from the exact runner's read-only AHAP initialize response."""
+    runner = str(Path(runner).resolve(strict=True))
+    process = subprocess.Popen([node, runner], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True, bufsize=1, env=env)
+    try:
+        request = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                   "params": {"harness": "opencode", "ahapVersion": "0.1"}}
+        process.stdin.write(json.dumps(request) + "\n")
+        process.stdin.flush()
+        if not select.select([process.stdout], [], [], 10)[0]:
+            raise RuntimeError("exact AHAP runner initialize timed out before create/send")
+        line = process.stdout.readline()
+        try:
+            response = json.loads(line)
+        except (ValueError, TypeError):
+            raise RuntimeError("exact AHAP runner initialize returned invalid JSON; refusing create/send") from None
+        if not isinstance(response, dict) or response.get("id") != 1 or "error" in response:
+            raise RuntimeError("exact AHAP runner initialize failed; refusing create/send")
+        result = response.get("result")
+        capabilities = result.get("capabilities") if isinstance(result, dict) else None
+        family = capabilities.get("nativeProtocol") if isinstance(capabilities, dict) else None
+    finally:
+        if process.poll() is None:
+            process.terminate()
+        try:
+            process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        if process.stdin:
+            process.stdin.close()
+        if process.stdout:
+            process.stdout.close()
+        if process.stderr:
+            process.stderr.close()
+    if family not in {"v2", "v22"}:
+        raise RuntimeError("exact AHAP runner selected an unknown startup protocol; refusing create/send")
+    return family
+
+
+def require_runner_route_compat(api_family, runner_protocol):
+    if runner_protocol not in {"v2", "v22"}:
+        raise RuntimeError("exact AHAP runner startup protocol is unknown; refusing create/send")
+    if api_family not in {"v2", "v22"}:
+        raise RuntimeError("OpenCode server protocol is unknown; refusing create/send")
+    if api_family != runner_protocol:
         raise RuntimeError(
-            f"AHAP runner pinned {pinned_protocol} expects /api routes, but read-only OpenCode probes found "
-            f"{api_family}; refusing create/send before any session mutation"
+            f"AHAP runner selected {runner_protocol}, but read-only OpenCode probe found server {api_family}; "
+            "refusing create/send before any session mutation"
         )
 
 
@@ -511,7 +581,8 @@ def run_case(args):
     try:
         wait_opencode(opencode_url, server)
         api_family = detect_opencode_api_family(opencode_url)
-        require_runner_route_compat(api_family)
+        runner_protocol = probe_runner_protocol(args.node, args.runner, env)
+        require_runner_route_compat(api_family, runner_protocol)
         probe_shapes = {}
         for probe_path in ("/api/config", "/api/health", "/global/health"):
             probe_status, probe_body = native_api_read(opencode_url, probe_path)
@@ -521,6 +592,7 @@ def run_case(args):
         with urllib.request.urlopen(model_origin + "/_stats", timeout=3) as response:
             model_requests_before = json.loads(response.read(4096))["requests"]
         evidence.update({"phase": "ready", "api_family": api_family,
+                         "runner_protocol": runner_protocol,
                          "model_requests_before": model_requests_before,
                          "opencode_sha256": sha256_file(args.opencode),
                          "read_only_http_probes": probe_shapes,
@@ -547,7 +619,8 @@ def run_case(args):
                              "model_requests_preflight": requests_during_init})
             persist_evidence(evidence_path, evidence)
             print(json.dumps({"status": "PREFLIGHT_READY", "harness": "opencode",
-                              "api_family": api_family, "mcp_inline_ready": True,
+                              "api_family": api_family, "runner_protocol": runner_protocol,
+                              "mcp_inline_ready": True,
                               "native_tools": available_tools,
                               "native_mutations": 0, "model_requests_preflight": requests_during_init,
                               "opencode_sha256": evidence["opencode_sha256"],
@@ -630,6 +703,7 @@ def run_case(args):
         persist_evidence(evidence_path, evidence)
         print(json.dumps({"status": "PASS", "harness": "opencode", "native_tools": available_tools,
             "api_family": api_family,
+            "runner_protocol": runner_protocol,
             "task_id": task_id, "task_status": task.get("status"), "session_ref": session,
             "input": marker, "delivery_receipt": receipt, "native_receipt_id": receipt_id,
             "assistant": ANSWER, "native_completion": native_completion,

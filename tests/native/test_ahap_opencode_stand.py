@@ -1,10 +1,12 @@
 import json
 from pathlib import Path
 import sqlite3
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
+import ahap_opencode_stand as stand
 from ahap_opencode_stand import (
     completed_message_pair,
     detect_opencode_api_family,
@@ -75,21 +77,62 @@ class AhapOpenCodeStandTest(unittest.TestCase):
         task_get(client, "task-fixture")
         self.assertEqual(client.calls, ["tasks/get"])
 
-    def test_runner_v2_route_must_match_api_prefixed_server(self):
-        require_runner_route_compat("api-session", "v2")
-        with self.assertRaisesRegex(RuntimeError, "refusing create/send"):
-            require_runner_route_compat("provider-session", "v2")
+    def test_runner_protocol_choice_is_required_and_must_match_server(self):
+        with self.assertRaises(TypeError):
+            require_runner_route_compat("v2")
+        require_runner_route_compat("v2", "v2")
+        with self.assertRaisesRegex(RuntimeError, "runner.*v22.*server.*v2|runner.*v2.*server.*v22"):
+            require_runner_route_compat("v2", "v22")
+        with self.assertRaisesRegex(RuntimeError, "unknown.*runner|runner.*unknown"):
+            require_runner_route_compat("v2", "unknown")
 
     def test_read_only_protocol_detection_matches_receipt_route_families(self):
-        with patch("ahap_opencode_stand.native_api_read", return_value=(200, {"model": "fixture"})):
-            self.assertEqual(detect_opencode_api_family("http://127.0.0.1:4100"), "api-session")
-        with patch("ahap_opencode_stand.native_api_read", return_value=(404, None)):
-            self.assertEqual(detect_opencode_api_family("http://127.0.0.1:4100"), "provider-session")
+        config = [{"path": "model", "type": "string"}, {"path": "agent", "type": "object"}]
+        with patch("ahap_opencode_stand.native_api_read_detail", return_value=(200, config, True)):
+            self.assertEqual(detect_opencode_api_family("http://127.0.0.1:4100"), "v2")
+            with self.assertRaisesRegex(RuntimeError, "runner selected v22.*server v2"):
+                require_runner_route_compat("v2", "v22")
+        with patch("ahap_opencode_stand.native_api_read_detail", return_value=(200, None, True)):
+            self.assertEqual(detect_opencode_api_family("http://127.0.0.1:4100"), "v22")
+        with patch("ahap_opencode_stand.native_api_read_detail", side_effect=[
+                (404, None, False), (200, {"healthy": True}, True)]):
+            self.assertEqual(detect_opencode_api_family("http://127.0.0.1:4100"), "v22")
+        with patch("ahap_opencode_stand.native_api_read_detail", side_effect=[
+                (404, None, False), (200, None, True)]):
+            with self.assertRaisesRegex(RuntimeError, "404 without verified v22 health"):
+                detect_opencode_api_family("http://127.0.0.1:4100")
 
     def test_read_only_protocol_probe_retries_startup_503(self):
-        with patch("ahap_opencode_stand.native_api_read", side_effect=[
-                (503, None), (200, {"model": "fixture"})]), patch("ahap_opencode_stand.time.sleep"):
-            self.assertEqual(detect_opencode_api_family("http://127.0.0.1:4100"), "api-session")
+        with patch("ahap_opencode_stand.native_api_read_detail", side_effect=[
+                (503, None, False), (200, [{"path": "model", "type": "string"}], True)]), patch("ahap_opencode_stand.time.sleep"):
+            self.assertEqual(detect_opencode_api_family("http://127.0.0.1:4100"), "v2")
+
+    def test_malformed_200_config_is_unknown_not_v22(self):
+        class Response:
+            status = 200
+
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def read(self, _limit): return b"{malformed"
+
+        with patch("ahap_opencode_stand.urllib.request.urlopen", return_value=Response()):
+            with self.assertRaisesRegex(RuntimeError, "unrecognized|malformed|unknown"):
+                detect_opencode_api_family("http://127.0.0.1:4100")
+
+    def test_runner_choice_comes_from_exact_artifact_initialize_without_mutation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = Path(tmp) / "runner.py"
+            calls = Path(tmp) / "calls.json"
+            runner.write_text(
+                "import json, pathlib, sys\n"
+                "request=json.loads(sys.stdin.readline())\n"
+                f"pathlib.Path({str(calls)!r}).write_text(json.dumps(request))\n"
+                "print(json.dumps({'jsonrpc':'2.0','id':request['id'],'result':"
+                "{'capabilities':{'nativeProtocol':'v22'}}}), flush=True)\n"
+            )
+            choice = stand.probe_runner_protocol(sys.executable, str(runner), {})
+            self.assertEqual(choice, "v22")
+            self.assertEqual(json.loads(calls.read_text())["method"], "initialize")
 
     def test_native_read_accepts_empty_or_non_json_success_body(self):
         class Response:
@@ -108,11 +151,12 @@ class AhapOpenCodeStandTest(unittest.TestCase):
             self.assertEqual(native_api_read("http://127.0.0.1:4100", "/api/health"), (200, None))
 
     def test_owner_profile_never_falls_back_to_unprotected_provider_route(self):
-        with patch("ahap_opencode_stand.native_api_read", return_value=(200, {"model": "fixture"})):
-            require_runner_route_compat(detect_opencode_api_family("http://127.0.0.1:4100"))
-        with patch("ahap_opencode_stand.native_api_read", return_value=(404, None)):
+        config = [{"path": "model", "type": "string"}]
+        with patch("ahap_opencode_stand.native_api_read_detail", return_value=(200, config, True)):
+            require_runner_route_compat(detect_opencode_api_family("http://127.0.0.1:4100"), "v2")
+        with patch("ahap_opencode_stand.native_api_read_detail", return_value=(200, None, True)):
             with self.assertRaises(RuntimeError):
-                require_runner_route_compat(detect_opencode_api_family("http://127.0.0.1:4100"))
+                require_runner_route_compat(detect_opencode_api_family("http://127.0.0.1:4100"), "v2")
 
     def test_fixture_project_config_points_only_to_loopback_model(self):
         with tempfile.TemporaryDirectory() as tmp:
