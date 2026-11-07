@@ -1,0 +1,36 @@
+Traceback (most recent call last):
+  File "/tmp/herder-ci-fault-4_d4ezxe/native/candidate_release_gate.py", line 50, in main
+    report = json.loads(result.stdout)
+  File "/usr/lib/python3.10/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+  File "/usr/lib/python3.10/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+  File "/usr/lib/python3.10/json/decoder.py", line 355, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/tmp/herder-ci-fault-4_d4ezxe/native/candidate_release_gate.py", line 66, in <module>
+    sys.exit(main())
+  File "/tmp/herder-ci-fault-4_d4ezxe/native/candidate_release_gate.py", line 53, in main
+    raise ValueError(f'CLI candidate gate failed: {error}; {result.stderr[-1200:]}') from error
+ValueError: CLI candidate gate failed: Expecting value: line 1 column 1 (char 0); /candidate_driver.py", line 210, in <module>
+    if __name__ == '__main__': sys.exit(main())
+  File "/tmp/herder-ci-fault-4_d4ezxe/native/candidate_driver.py", line 188, in main
+    journeys.append(run_journey(api, transcript, harness, selected, project))
+  File "/tmp/herder-ci-fault-4_d4ezxe/native/herder_journey.py", line 44, in run_journey
+    pages = read_transcript(harness, sid, marker)
+  File "/tmp/herder-ci-fault-4_d4ezxe/native/candidate_driver.py", line 187, in transcript
+    return read_transcript(herder, socket.gethostname(), h, sid, marker, 'HERDER_TEST_MODEL_OK')
+  File "/tmp/herder-ci-fault-4_d4ezxe/native/herder_transcript_http.py", line 37, in read_transcript
+    return fetch_transcript(read_page, host, harness, session_id, user_input, assistant_output)
+  File "/tmp/herder-ci-fault-4_d4ezxe/native/transcript_proof.py", line 17, in fetch_transcript
+    return validate_transcript(reads, host, harness, session_id, user_input, assistant_output)
+  File "/tmp/herder-ci-fault-4_d4ezxe/native/transcript_proof.py", line 82, in validate_transcript
+    raise ValueError('exact input followed by fixture answer missing')
+ValueError: exact input followed by fixture answer missing
+
+
+exit=1
