@@ -8,12 +8,30 @@ use serde::{Deserialize, Serialize};
 #[serde(transparent)]
 pub struct ResourceRef(pub String);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum ResourceScope {
     Global,
     Project { project_ref: String },
     Node { node_ref: NodeRef },
+}
+
+impl<'de> Deserialize<'de> for ResourceScope {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+        enum StrictScope {
+            Global {},
+            Project { project_ref: String },
+            Node { node_ref: NodeRef },
+        }
+
+        Ok(match StrictScope::deserialize(deserializer)? {
+            StrictScope::Global {} => Self::Global,
+            StrictScope::Project { project_ref } => Self::Project { project_ref },
+            StrictScope::Node { node_ref } => Self::Node { node_ref },
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,6 +120,49 @@ pub fn access_allowed(_scope: &ResourceScope, authorization: Authorization) -> b
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resource_scope_rejects_extra_fields_and_accepts_valid_json() {
+        for json in [
+            r#"{"type":"global","project_ref":"p"}"#,
+            r#"{"type":"global","extra":true}"#,
+            r#"{"type":"project","project_ref":"p","extra":true}"#,
+            r#"{"type":"node","node_ref":"n","extra":true}"#,
+            r#"{"type":"global","node_ref":"n"}"#,
+            r#"{"type":"project","project_ref":"p","node_ref":"n"}"#,
+            r#"{"type":"node","node_ref":"n","project_ref":"p"}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<ResourceScope>(json).is_err(),
+                "accepted {json}"
+            );
+        }
+        for (json, expected) in [
+            (r#"{"type":"global"}"#, ResourceScope::Global),
+            (
+                r#"{"type":"project","project_ref":"p"}"#,
+                ResourceScope::Project {
+                    project_ref: "p".into(),
+                },
+            ),
+            (
+                r#"{"type":"node","node_ref":"n"}"#,
+                ResourceScope::Node {
+                    node_ref: NodeRef("n".into()),
+                },
+            ),
+        ] {
+            assert_eq!(
+                serde_json::from_str::<ResourceScope>(json).unwrap(),
+                expected
+            );
+            assert_eq!(
+                serde_json::from_str::<ResourceScope>(&serde_json::to_string(&expected).unwrap())
+                    .unwrap(),
+                expected
+            );
+        }
+    }
 
     fn attachment(node: &str, availability: Availability) -> Attachment {
         Attachment {
