@@ -1,28 +1,138 @@
-//! Strict request types for the v1 tool catalog. These types describe inputs only;
-//! they do not register tools or imply that any operation is implemented.
+//! Strict v1 tool catalog and typed input dispatch. No operation is executed here.
 use crate::domain::resource::{Attachment, ResourceKind, ResourceRef, ResourceScope};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-pub const TOOL_NAMES: [&str; 14] = [
-    "discover",
-    "sessions",
-    "session",
-    "create",
-    "deliver",
-    "resume",
-    "stop",
-    "search",
-    "export",
-    "automation",
-    "resource",
-    "configure",
-    "permission",
-    "human_request",
-];
+// Discovery and input dispatch both come from this declaration. Dispatch only
+// parses and classifies requests; it never executes an operation.
+macro_rules! catalog {
+    ($( $name:literal => $variant:ident($ty:ty) { read: [$($read:literal),* $(,)?], mutate: [$($write:literal),* $(,)?] } ),* $(,)?) => {
+        pub const TOOL_NAMES: [&str; 14] = [$($name),*];
+        #[derive(Debug, Clone, PartialEq)]
+        pub enum Request { $($variant($ty)),* }
+        pub fn discovery() -> Vec<ToolDefinition> {
+            vec![$(ToolDefinition { name: $name, input_schema: serde_json::to_value(schemars::schema_for!($ty)).expect("schema serializes") }),*]
+        }
+        pub fn dispatch(name: &str, input: serde_json::Value) -> Result<Dispatched, DispatchError> {
+            let action = input.get("action").and_then(|v| v.as_str()).map(str::to_owned);
+            match name {
+                $($name => {
+                    let request = serde_json::from_value::<$ty>(input)
+                        .map(Request::$variant).map_err(DispatchError::InvalidInput)?;
+                    let access = match action.as_deref() {
+                        $(Some($read) => Access::Read,)*
+                        $(Some($write) => Access::Mutate,)*
+                        _ => return Err(DispatchError::UnclassifiedAction),
+                    };
+                    Ok(Dispatched { request, access })
+                }),*,
+                _ => Err(DispatchError::UnknownTool),
+            }
+        }
+    };
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolDefinition {
+    pub name: &'static str,
+    pub input_schema: serde_json::Value,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Access {
+    Read,
+    Mutate,
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct Dispatched {
+    pub request: Request,
+    pub access: Access,
+}
+#[derive(Debug)]
+pub enum DispatchError {
+    UnknownTool,
+    InvalidInput(serde_json::Error),
+    UnclassifiedAction,
+}
+
+catalog! {
+    "discover" => Discover(Discover) { read: ["nodes", "instances", "models"], mutate: [] },
+    "sessions" => Sessions(Sessions) { read: ["list"], mutate: [] },
+    "session" => Session(Session) { read: ["recent", "context", "messages"], mutate: [] },
+    "create" => Create(Create) { read: [], mutate: ["create"] },
+    "deliver" => Deliver(Deliver) { read: [], mutate: ["session", "reply_to"] },
+    "resume" => Resume(Resume) { read: [], mutate: ["resume"] },
+    "stop" => Stop(Stop) { read: [], mutate: ["stop"] },
+    "search" => Search(Search) { read: ["search"], mutate: [] },
+    "export" => Export(Export) { read: ["export"], mutate: [] },
+    "automation" => Automation(Automation) { read: ["list", "get"], mutate: ["create", "update", "pause", "delete"] },
+    "resource" => Resource(Resource) { read: ["list", "get"], mutate: ["register", "update", "claim", "renew", "release", "declare"] },
+    "configure" => Configure(Configure) { read: ["get"], mutate: ["set"] },
+    "permission" => Permission(Permission) { read: ["get"], mutate: ["respond"] },
+    "human_request" => HumanRequest(HumanRequest) { read: [], mutate: ["create"] },
+}
+
+// Schema mirrors for domain types owned outside the MCP module. Serde remains
+// the dispatch authority; conformance tests cover the mirrored representations.
+#[allow(dead_code)]
+mod domain_schema {
+    use schemars::JsonSchema;
+    #[derive(JsonSchema)]
+    #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+    pub enum Scope {
+        Global,
+        Project { project_ref: String },
+        Node { node_ref: String },
+    }
+    #[derive(JsonSchema)]
+    #[serde(
+        tag = "type",
+        content = "name",
+        rename_all = "snake_case",
+        deny_unknown_fields
+    )]
+    pub enum Kind {
+        Workspace,
+        Deployment,
+        Device,
+        Plan,
+        Other(String),
+    }
+    #[derive(JsonSchema)]
+    #[serde(rename_all = "snake_case")]
+    pub enum Availability {
+        Available,
+        Unavailable,
+        Unknown,
+    }
+    #[derive(JsonSchema)]
+    #[serde(deny_unknown_fields)]
+    pub struct Attachment {
+        node_ref: String,
+        route_ref: Option<String>,
+        availability: Availability,
+        observed_at: String,
+    }
+}
+macro_rules! schema_as {
+    ($actual:ty => $mirror:ty) => {
+        impl schemars::JsonSchema for $actual {
+            fn schema_name() -> std::borrow::Cow<'static, str> {
+                <$mirror as schemars::JsonSchema>::schema_name()
+            }
+            fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+                <$mirror as schemars::JsonSchema>::json_schema(generator)
+            }
+        }
+    };
+}
+schema_as!(ResourceRef => String);
+schema_as!(ResourceScope => domain_schema::Scope);
+schema_as!(ResourceKind => domain_schema::Kind);
+schema_as!(Attachment => domain_schema::Attachment);
 
 macro_rules! actions {
     ($name:ident { $($variant:ident $( { $($field:ident : $ty:ty),* $(,)? } )?),* $(,)? }) => {
-        #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+        #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
         #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
         pub enum $name { $($variant $( { $($field: $ty),* } )?),* }
     };
@@ -44,7 +154,7 @@ actions!(Session {
 actions!(Create {
     Create { instance_ref: String, project_ref: Option<String>, prompt: String, request_key: String },
 });
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DeliveryMode {
     Current,
@@ -58,7 +168,7 @@ actions!(Deliver {
 actions!(Resume { Resume { session_ref: String, request_key: String } });
 actions!(Stop { Stop { session_ref: String, request_key: String } });
 actions!(Search { Search { query: String, project_ref: Option<String>, cursor: Option<String> } });
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExportFormat {
     Common,
@@ -66,7 +176,7 @@ pub enum ExportFormat {
 }
 actions!(Export { Export { session_ref: String, format: ExportFormat } });
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AutomationRule {
     Schedule {
@@ -86,7 +196,7 @@ actions!(Automation {
     Delete { rule_ref: String, revision: u64 },
 });
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Declaration {
     Set {
@@ -110,7 +220,7 @@ actions!(Resource {
     Declare { resource_ref: ResourceRef, declaration: Declaration },
 });
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SettingTarget {
     Node { node_ref: String },
@@ -121,7 +231,7 @@ actions!(Configure {
     Get { target: SettingTarget, key: String },
     Set { target: SettingTarget, key: String, value: serde_json::Value, revision: u64 },
 });
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PermissionDecision {
     Allow,
@@ -151,6 +261,203 @@ mod tests {
         assert_eq!(names.len(), 14);
         assert!(names.contains(&"resource"));
         assert!(!names.contains(&"workspace"));
+    }
+    #[test]
+    fn discovery_and_dispatch_agree_on_all_action_branches() {
+        // Each declared action gets an input that must deserialize and carry the
+        // intended access class; the schema must expose exactly those actions.
+        let cases = [
+            ("discover", json!({"action":"nodes"}), Access::Read),
+            ("discover", json!({"action":"instances"}), Access::Read),
+            (
+                "discover",
+                json!({"action":"models","instance_ref":"i"}),
+                Access::Read,
+            ),
+            ("sessions", json!({"action":"list"}), Access::Read),
+            (
+                "session",
+                json!({"action":"recent","session_ref":"s"}),
+                Access::Read,
+            ),
+            ("session", json!({"action":"context"}), Access::Read),
+            (
+                "session",
+                json!({"action":"messages","session_ref":"s"}),
+                Access::Read,
+            ),
+            (
+                "create",
+                json!({"action":"create","instance_ref":"i","prompt":"p","request_key":"k"}),
+                Access::Mutate,
+            ),
+            (
+                "deliver",
+                json!({"action":"session","session_ref":"s","message":"m","mode":"current","request_key":"k"}),
+                Access::Mutate,
+            ),
+            (
+                "deliver",
+                json!({"action":"reply_to","reply_to":"r","message":"m","mode":"queue","request_key":"k"}),
+                Access::Mutate,
+            ),
+            (
+                "resume",
+                json!({"action":"resume","session_ref":"s","request_key":"k"}),
+                Access::Mutate,
+            ),
+            (
+                "stop",
+                json!({"action":"stop","session_ref":"s","request_key":"k"}),
+                Access::Mutate,
+            ),
+            (
+                "search",
+                json!({"action":"search","query":"q"}),
+                Access::Read,
+            ),
+            (
+                "export",
+                json!({"action":"export","session_ref":"s","format":"common"}),
+                Access::Read,
+            ),
+            (
+                "automation",
+                json!({"action":"list","session_ref":"s"}),
+                Access::Read,
+            ),
+            (
+                "automation",
+                json!({"action":"get","rule_ref":"r"}),
+                Access::Read,
+            ),
+            (
+                "automation",
+                json!({"action":"create","session_ref":"s","rule":{"kind":"autopilot","instructions":"i"},"request_key":"k"}),
+                Access::Mutate,
+            ),
+            (
+                "automation",
+                json!({"action":"update","rule_ref":"r","revision":1,"rule":{"kind":"autopilot","instructions":"i"}}),
+                Access::Mutate,
+            ),
+            (
+                "automation",
+                json!({"action":"pause","rule_ref":"r","revision":1}),
+                Access::Mutate,
+            ),
+            (
+                "automation",
+                json!({"action":"delete","rule_ref":"r","revision":1}),
+                Access::Mutate,
+            ),
+            ("resource", json!({"action":"list"}), Access::Read),
+            (
+                "resource",
+                json!({"action":"get","resource_ref":"r"}),
+                Access::Read,
+            ),
+            (
+                "resource",
+                json!({"action":"register","resource_ref":"r","scope":{"type":"global"},"kind":{"type":"device"},"external_ref":"e","authority_ref":"a"}),
+                Access::Mutate,
+            ),
+            (
+                "resource",
+                json!({"action":"update","resource_ref":"r","revision":1,"scope":{"type":"global"},"kind":{"type":"device"},"external_ref":"e"}),
+                Access::Mutate,
+            ),
+            (
+                "resource",
+                json!({"action":"claim","resource_ref":"r","purpose":"p","request_key":"k"}),
+                Access::Mutate,
+            ),
+            (
+                "resource",
+                json!({"action":"renew","resource_ref":"r","claim_id":"c","expires_at":"t"}),
+                Access::Mutate,
+            ),
+            (
+                "resource",
+                json!({"action":"release","resource_ref":"r","claim_id":"c"}),
+                Access::Mutate,
+            ),
+            (
+                "resource",
+                json!({"action":"declare","resource_ref":"r","declaration":{"operation":"remove","declaration_ref":"d"}}),
+                Access::Mutate,
+            ),
+            (
+                "configure",
+                json!({"action":"get","target":{"type":"node","node_ref":"n"},"key":"k"}),
+                Access::Read,
+            ),
+            (
+                "configure",
+                json!({"action":"set","target":{"type":"node","node_ref":"n"},"key":"k","value":true,"revision":1}),
+                Access::Mutate,
+            ),
+            (
+                "permission",
+                json!({"action":"get","permission_ref":"p"}),
+                Access::Read,
+            ),
+            (
+                "permission",
+                json!({"action":"respond","permission_ref":"p","decision":"allow","request_key":"k"}),
+                Access::Mutate,
+            ),
+            (
+                "human_request",
+                json!({"action":"create","session_ref":"s","question":"q","request_key":"k"}),
+                Access::Mutate,
+            ),
+        ];
+        let tools = discovery();
+        assert_eq!(tools.len(), 14);
+        for tool in &tools {
+            let branches = tool.input_schema["oneOf"].as_array().expect(tool.name);
+            let mut advertised = std::collections::BTreeSet::new();
+            for branch in branches {
+                assert_eq!(
+                    branch["additionalProperties"], false,
+                    "{}: {branch}",
+                    tool.name
+                );
+                assert!(
+                    branch["required"]
+                        .as_array()
+                        .unwrap()
+                        .contains(&json!("action"))
+                );
+                advertised.insert(
+                    branch["properties"]["action"]["const"]
+                        .as_str()
+                        .unwrap()
+                        .to_owned(),
+                );
+            }
+            let expected: std::collections::BTreeSet<_> = cases
+                .iter()
+                .filter(|(name, _, _)| *name == tool.name)
+                .map(|(_, value, _)| value["action"].as_str().unwrap().to_owned())
+                .collect();
+            assert_eq!(advertised, expected, "{}", tool.name);
+        }
+        for (name, value, access) in cases {
+            let result = dispatch(name, value.clone()).unwrap();
+            assert_eq!(result.access, access, "{name}: {value}");
+            let mut invalid = value;
+            invalid["unexpected"] = json!(true);
+            assert!(
+                matches!(dispatch(name, invalid), Err(DispatchError::InvalidInput(_))),
+                "{name}"
+            );
+        }
+        assert!(matches!(
+            dispatch("missing", json!({})),
+            Err(DispatchError::UnknownTool)
+        ));
     }
     #[test]
     fn discriminator_required_and_unknown_fields_rejected() {
