@@ -21,6 +21,7 @@ pub struct ScopedTaskServer {
     grants: Vec<Grant>,
     authority: Arc<ScopedAuthority>,
     create_policy: Option<Arc<dyn super::create_prompt::FreshSessionGrantPolicy + Send + Sync>>,
+    reconciler: Option<Arc<dyn super::task_reconcile::TaskReconciler>>,
 }
 impl ScopedTaskServer {
     /// Identity and grants are issued by the same trusted ingress as the inner
@@ -37,7 +38,15 @@ impl ScopedTaskServer {
             grants,
             authority,
             create_policy: None,
+            reconciler: None,
         }
+    }
+    pub fn with_reconciler(
+        mut self,
+        reconciler: Arc<dyn super::task_reconcile::TaskReconciler>,
+    ) -> Self {
+        self.reconciler = Some(reconciler);
+        self
     }
     pub fn with_create_policy(
         mut self,
@@ -113,8 +122,18 @@ impl ServerHandler for ScopedTaskServer {
                 self.create_policy.as_deref(),
             )
         } else {
-            self.authority
-                .get_delivery_task(&self.identity, &self.grants, id)
+            match self.authority.current_task_read_grants(
+                &self.identity,
+                &self.grants,
+                id,
+                self.create_policy.as_deref(),
+            ) {
+                Ok(Some(grants)) => self
+                    .authority
+                    .get_delivery_task(&self.identity, &grants, id),
+                Ok(None) => Ok(None),
+                Err(e) => Err(e),
+            }
         };
         let task = match lookup {
             Ok(Some(task)) => task,
@@ -133,11 +152,28 @@ impl ServerHandler for ScopedTaskServer {
         request: GetTaskParams,
         _ctx: RequestContext<RoleServer>,
     ) -> Result<GetTaskResult, ErrorData> {
-        match self
-            .authority
-            .get_delivery_task(&self.identity, &self.grants, &request.task_id)
-        {
-            Ok(Some(task)) => Ok(task),
+        if let Some(reconciler) = &self.reconciler {
+            let reconciler = reconciler.clone();
+            let identity = self.identity.clone();
+            let grants = self.grants.clone();
+            let task_id = request.task_id.clone();
+            let policy = self.create_policy.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                reconciler.reconcile(identity, grants, task_id, policy)
+            })
+            .await;
+        }
+        match self.authority.current_task_read_grants(
+            &self.identity,
+            &self.grants,
+            &request.task_id,
+            self.create_policy.as_deref(),
+        ) {
+            Ok(Some(grants)) => self
+                .authority
+                .get_delivery_task(&self.identity, &grants, &request.task_id)
+                .map_err(|_| ErrorData::invalid_params("task unavailable", None))?
+                .ok_or_else(|| ErrorData::invalid_params("task unavailable", None)),
             Ok(None) => self
                 .authority
                 .get_create_task_with_policy(

@@ -278,3 +278,43 @@ impl ScopedAuthority {
         ))))
     }
 }
+
+impl ScopedAuthority {
+    /// Resolve a working aggregate to its linked delivery without granting any
+    /// broader session permission. The task grant resolver validates the child.
+    pub(super) fn create_child_for_reconciliation(
+        &self,
+        identity: &ConnectionIdentity,
+        grants: &[Grant],
+        id: &str,
+    ) -> Result<Option<String>, GateError> {
+        let Caller::Principal(principal) = identity.caller() else {
+            return Err(GateError::Invalid);
+        };
+        let record = {
+            let (_guard, writer) = self.lock()?;
+            let raw:Option<String>=writer.connection().query_row("SELECT result_json FROM tasks WHERE task_id=?1 AND principal=?2 AND status='working'",params![id,principal.id.0],|r|r.get(0)).optional().map_err(|_|GateError::Store)?;
+            let Some(raw) = raw else { return Ok(None) };
+            let record: Record = match serde_json::from_str(&raw) {
+                Ok(v) => v,
+                Err(_) => return Ok(None),
+            };
+            if record.kind != "fresh_create_prompt_v1" {
+                return Ok(None);
+            }
+            let target = serde_json::to_string(&record.instance).map_err(|_| GateError::Store)?;
+            identity
+                .authorize(
+                    grants,
+                    &PrivateResource::Resource(format!("instance:{target}")),
+                    Action::Write,
+                )
+                .map_err(|_| GateError::Invalid)?;
+            record
+        };
+        let (Some(child), Some(_session)) = (record.delivery_task, record.session_ref) else {
+            return Ok(None);
+        };
+        Ok(Some(child))
+    }
+}

@@ -1529,9 +1529,11 @@ impl herder::domain::adapter::NativeSessionReader for FixtureReader {
     }
     async fn reconcile(
         &self,
-        _: &NativeReceipt,
+        receipt: &NativeReceipt,
     ) -> Result<herder::domain::adapter::Observation, herder::domain::adapter::ReadError> {
-        unreachable!()
+        Ok(herder::domain::adapter::Observation::Confirmed {
+            receipt: receipt.clone(),
+        })
     }
 }
 #[tokio::test]
@@ -2962,8 +2964,8 @@ async fn create_prompt_requires_trusted_grant_for_new_exact_session() {
     assert_eq!(submit.0.load(Ordering::SeqCst), 1);
 }
 
-#[test]
-fn mcp_delivery_task_persists_terminal_result_and_requires_exact_read_grant() {
+#[tokio::test]
+async fn mcp_delivery_task_persists_terminal_result_and_requires_exact_read_grant() {
     for outcome in ["not_sent", "unknown", "confirmed"] {
         let f = Fixture::new();
         create(&f);
@@ -3048,19 +3050,6 @@ fn mcp_delivery_task_persists_terminal_result_and_requires_exact_read_grant() {
                         .unwrap(),
                     DurableDispatch::Admitted(_)
                 ));
-                let db = Connection::open(&f.db).unwrap();
-                db.create_scalar_function(
-                    "herder_writer_version",
-                    0,
-                    FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
-                    |_| Ok(3),
-                )
-                .unwrap();
-                db.execute(
-                    "UPDATE intents SET state='confirmed' WHERE intent_id='i'",
-                    [],
-                )
-                .unwrap();
             }
         }
         assert!(
@@ -3074,6 +3063,20 @@ fn mcp_delivery_task_persists_terminal_result_and_requires_exact_read_grant() {
             resource: PrivateResource::Session(SessionRef("issued".into())),
             action: Action::Read,
         });
+        if outcome == "confirmed" {
+            let reader = FixtureReader {
+                target: address(),
+                reads: AtomicUsize::new(0),
+                db: f.db.clone(),
+            };
+            assert!(matches!(
+                f.authority()
+                    .reconcile_delivery_task(&identity(), &read_grants, "task-i", &reader)
+                    .await
+                    .unwrap(),
+                herder::application::reconcile::Reconciliation::Confirmed(_)
+            ));
+        }
         let task = f
             .authority()
             .get_delivery_task(&identity(), &read_grants, "task-i")
@@ -3245,19 +3248,6 @@ async fn scoped_task_wire_returns_durable_terminal_states_and_messages() {
                                     &control,
                                 )
                                 .unwrap();
-                            let db = Connection::open(&self.db).unwrap();
-                            db.create_scalar_function(
-                                "herder_writer_version",
-                                0,
-                                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
-                                |_| Ok(3),
-                            )
-                            .unwrap();
-                            db.execute(
-                                "UPDATE intents SET state='confirmed' WHERE intent_id='i'",
-                                [],
-                            )
-                            .unwrap();
                         }
                     }
                     Some(CallToolResult::structured(
@@ -3302,8 +3292,20 @@ async fn scoped_task_wire_returns_durable_terminal_states_and_messages() {
             outcome,
             calls: calls.clone(),
         });
-        let server =
-            ScopedTaskServer::new(identity(), policy.clone(), Arc::new(f.authority()), app);
+        let authority = Arc::new(f.authority());
+        let reconcile_reader = Arc::new(FixtureReader {
+            target: address(),
+            reads: AtomicUsize::new(0),
+            db: f.db.clone(),
+        });
+        let reconciler = Arc::new(
+            herder::application::scoped_stop::task_reconcile::ScopedReceiptReconciler::new(
+                authority.clone(),
+                reconcile_reader,
+            ),
+        );
+        let server = ScopedTaskServer::new(identity(), policy.clone(), authority, app)
+            .with_reconciler(reconciler);
         let (client, io) = tokio::io::duplex(65536);
         let job =
             tokio::spawn(async move { server.serve(io).await.unwrap().waiting().await.unwrap() });
@@ -3498,7 +3500,19 @@ async fn scoped_delivery_application_wire_dedup_tasks_and_readback() {
                 Reader,
             ),
         });
-        let server = ScopedTaskServer::new(identity(), policy, authority, app);
+        let reconcile_reader = Arc::new(FixtureReader {
+            target: address(),
+            reads: AtomicUsize::new(0),
+            db: f.db.clone(),
+        });
+        let reconciler = Arc::new(
+            herder::application::scoped_stop::task_reconcile::ScopedReceiptReconciler::new(
+                authority.clone(),
+                reconcile_reader,
+            ),
+        );
+        let server =
+            ScopedTaskServer::new(identity(), policy, authority, app).with_reconciler(reconciler);
         let (client, io) = tokio::io::duplex(65536);
         let job =
             tokio::spawn(async move { server.serve(io).await.unwrap().waiting().await.unwrap() });
@@ -3515,19 +3529,6 @@ async fn scoped_delivery_application_wire_dedup_tasks_and_readback() {
         let task_id = first["result"]["taskId"].as_str().unwrap().to_owned();
         if outcome == "confirmed" {
             assert_eq!(first["result"]["status"], "working");
-            let c = Connection::open(&f.db).unwrap();
-            c.create_scalar_function(
-                "herder_writer_version",
-                0,
-                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
-                |_| Ok(3),
-            )
-            .unwrap();
-            c.execute(
-                "UPDATE intents SET state='confirmed' WHERE task_id=?1",
-                [&task_id],
-            )
-            .unwrap();
         }
         let poll=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":2,"method":"tasks/get","params":{"_meta":meta,"taskId":task_id}})).await;
         assert_eq!(poll["result"]["status"], "completed", "{poll}");
@@ -3788,8 +3789,20 @@ async fn scoped_create_application_wire_preserves_session_and_deduplicates_promp
                 base: base.clone(),
                 policy: policy.clone(),
             });
+            let reconcile_reader = Arc::new(FixtureReader {
+                target: address(),
+                reads: AtomicUsize::new(0),
+                db: f.db.clone(),
+            });
+            let reconciler = Arc::new(
+                herder::application::scoped_stop::task_reconcile::ScopedReceiptReconciler::new(
+                    authority.clone(),
+                    reconcile_reader,
+                ),
+            );
             let server = ScopedTaskServer::new(identity(), base.clone(), authority, app)
-                .with_create_policy(policy.clone());
+                .with_create_policy(policy.clone())
+                .with_reconciler(reconciler);
             let (client, io) = tokio::io::duplex(65536);
             let job =
                 tokio::spawn(
@@ -3808,15 +3821,6 @@ async fn scoped_create_application_wire_preserves_session_and_deduplicates_promp
             let task = first["result"]["taskId"].as_str().unwrap().to_owned();
             if scenario == "confirmed" {
                 assert_eq!(first["result"]["status"], "working");
-                let c = Connection::open(&f.db).unwrap();
-                c.create_scalar_function(
-                    "herder_writer_version",
-                    0,
-                    FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
-                    move |_| Ok(version),
-                )
-                .unwrap();
-                c.execute("UPDATE intents SET state='confirmed' WHERE payload_hash LIKE 'sha256-dispatch-v1:%'",[]).unwrap();
             }
             let poll=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":2,"method":"tasks/get","params":{"_meta":meta,"taskId":task}})).await;
             assert_eq!(poll["result"]["status"], "completed", "{poll}");
@@ -4115,4 +4119,302 @@ async fn create_prompt_recovers_stopped_before_handoff_before_and_after_projecti
         assert_eq!(creator.calls.load(Ordering::SeqCst), 1);
         assert_eq!(sends.load(Ordering::SeqCst), 0);
     }
+}
+
+#[tokio::test]
+async fn task_reconciliation_checks_exact_receipt_without_holding_gate_or_transaction() {
+    use herder::application::reconcile::Reconciliation;
+    use herder::domain::adapter::{NativeSessionReader, Observation, ReadError, SessionSnapshot};
+    struct Reader {
+        db: PathBuf,
+        gate: PathBuf,
+        mismatch: bool,
+        reads: AtomicUsize,
+    }
+    impl NativeSessionReader for Reader {
+        async fn snapshot(&self, _: &SessionAddress) -> Result<SessionSnapshot, ReadError> {
+            unreachable!()
+        }
+        async fn reconcile(&self, receipt: &NativeReceipt) -> Result<Observation, ReadError> {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            let meta = std::fs::metadata(&self.gate).unwrap();
+            let guard = acquire_pinned(&self.gate, meta.dev(), meta.ino()).unwrap();
+            let db = Connection::open(&self.db).unwrap();
+            db.execute_batch("BEGIN IMMEDIATE; ROLLBACK;").unwrap();
+            drop(guard);
+            let mut observed = receipt.clone();
+            if self.mismatch {
+                observed.native_id = "different-turn".into();
+            }
+            Ok(Observation::Confirmed { receipt: observed })
+        }
+    }
+    let f = Fixture::new();
+    create(&f);
+    let p = plan();
+    f.prepare("i", "k", &p);
+    let target = address();
+    let b = binding(&target, "i", "k");
+    assert!(
+        f.authority()
+            .claim(&identity(), &grants(), &b, "scope-1", &p, "message", "now")
+            .unwrap()
+    );
+    let sends = Arc::new(AtomicUsize::new(0));
+    let control = Control {
+        calls: sends.clone(),
+        db: f.db.clone(),
+        ready: None,
+        proceed: None,
+    };
+    assert!(matches!(
+        f.authority()
+            .handoff(
+                &identity(),
+                &grants(),
+                &b,
+                "scope-1",
+                p.clone(),
+                "message",
+                "now",
+                &control
+            )
+            .unwrap(),
+        DurableDispatch::Admitted(_)
+    ));
+    let mut read_grants = grants();
+    read_grants.push(Grant {
+        principal: PrincipalId("alice".into()),
+        resource: PrivateResource::Session(SessionRef("issued".into())),
+        action: Action::Read,
+    });
+    let mismatch = Reader {
+        db: f.db.clone(),
+        gate: f.gate.clone(),
+        mismatch: true,
+        reads: AtomicUsize::new(0),
+    };
+    assert_eq!(
+        f.authority()
+            .reconcile_delivery_task(&identity(), &read_grants, "task-i", &mismatch)
+            .await
+            .unwrap(),
+        Reconciliation::Unknown
+    );
+    assert_eq!(
+        serde_json::to_value(
+            f.authority()
+                .get_delivery_task(&identity(), &read_grants, "task-i")
+                .unwrap()
+                .unwrap()
+        )
+        .unwrap()["status"],
+        "working"
+    );
+    let matched = Reader {
+        db: f.db.clone(),
+        gate: f.gate.clone(),
+        mismatch: false,
+        reads: AtomicUsize::new(0),
+    };
+    assert!(matches!(
+        f.authority()
+            .reconcile_delivery_task(&identity(), &read_grants, "task-i", &matched)
+            .await
+            .unwrap(),
+        Reconciliation::Confirmed(_)
+    ));
+    let task = f
+        .authority()
+        .get_delivery_task(&identity(), &read_grants, "task-i")
+        .unwrap()
+        .unwrap();
+    let wire = serde_json::to_value(&task).unwrap();
+    assert_eq!(wire["status"], "completed");
+    assert_eq!(wire["result"]["structuredContent"]["outcome"], "confirmed");
+    assert_eq!(
+        f.authority()
+            .get_delivery_task(&identity(), &read_grants, "task-i")
+            .unwrap()
+            .unwrap(),
+        task
+    );
+    assert!(
+        !f.authority()
+            .claim(&identity(), &grants(), &b, "scope-1", &p, "message", "now")
+            .unwrap()
+    );
+    assert_eq!(sends.load(Ordering::SeqCst), 1);
+    assert_eq!(mismatch.reads.load(Ordering::SeqCst), 1);
+    assert_eq!(matched.reads.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn direct_delivery_task_uses_current_exact_policy_after_reopen() {
+    use herder::{
+        application::scoped_stop::{
+            create_prompt::FreshSessionGrantPolicy, mcp_deliver::ScopedDeliverApplication,
+            mcp_task_server::ScopedTaskServer, task_reconcile::ScopedReceiptReconciler,
+        },
+        domain::adapter::{NativeSessionReader, Observation, ReadError, SessionSnapshot},
+    };
+    use rmcp::ServiceExt;
+    use serde_json::{Value, json};
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    struct Policy {
+        allow: std::sync::atomic::AtomicBool,
+        gate: PathBuf,
+    }
+    impl FreshSessionGrantPolicy for Policy {
+        fn session_write_grant(
+            &self,
+            p: &PrincipalId,
+            _: &InstanceRef,
+            s: &SessionRef,
+        ) -> Result<Option<Grant>, ()> {
+            Ok(self.allow.load(Ordering::SeqCst).then(|| Grant {
+                principal: p.clone(),
+                resource: PrivateResource::Session(s.clone()),
+                action: Action::Write,
+            }))
+        }
+        fn session_read_grant(
+            &self,
+            p: &PrincipalId,
+            _: &InstanceRef,
+            s: &SessionRef,
+        ) -> Result<Option<Grant>, ()> {
+            let m = std::fs::metadata(&self.gate).unwrap();
+            let guard = acquire_pinned(&self.gate, m.dev(), m.ino())
+                .expect("policy must be called outside gate");
+            drop(guard);
+            Ok(self.allow.load(Ordering::SeqCst).then(|| Grant {
+                principal: p.clone(),
+                resource: PrivateResource::Session(s.clone()),
+                action: Action::Read,
+            }))
+        }
+    }
+    struct Reader {
+        db: PathBuf,
+        reads: AtomicUsize,
+    }
+    impl NativeSessionReader for Reader {
+        async fn snapshot(&self, target: &SessionAddress) -> Result<SessionSnapshot, ReadError> {
+            FixtureReader {
+                target: target.clone(),
+                reads: AtomicUsize::new(0),
+                db: self.db.clone(),
+            }
+            .snapshot(target)
+            .await
+        }
+        async fn reconcile(&self, r: &NativeReceipt) -> Result<Observation, ReadError> {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            Ok(Observation::Confirmed { receipt: r.clone() })
+        }
+    }
+    struct Submit(AtomicUsize);
+    impl BoundedNativeHandoff for Submit {
+        fn submit_bounded(
+            &self,
+            p: DispatchPlan,
+            _: &str,
+            _: &RequestKey,
+        ) -> Result<Admission, SubmitError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(Admission {
+                receipt: NativeReceipt {
+                    target: p.target,
+                    native_id: "turn-policy".into(),
+                },
+            })
+        }
+    }
+    async fn exchange(server: ScopedTaskServer, requests: Vec<Value>) -> Vec<Value> {
+        let (client, io) = tokio::io::duplex(65536);
+        let job =
+            tokio::spawn(async move { server.serve(io).await.unwrap().waiting().await.unwrap() });
+        let (r, mut w) = tokio::io::split(client);
+        let mut lines = BufReader::new(r).lines();
+        let mut out = Vec::new();
+        for req in requests {
+            w.write_all(format!("{req}\n").as_bytes()).await.unwrap();
+            out.push(serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap())
+        }
+        drop(w);
+        drop(lines);
+        job.await.unwrap();
+        out
+    }
+    let f = Fixture::new();
+    create(&f);
+    let authority = Arc::new(f.authority());
+    let base: Vec<_> = grants()
+        .into_iter()
+        .filter(
+            |g| matches!(&g.resource,PrivateResource::Resource(r) if r.starts_with("instance:")),
+        )
+        .collect();
+    let policy = Arc::new(Policy {
+        allow: std::sync::atomic::AtomicBool::new(true),
+        gate: f.gate.clone(),
+    });
+    let reader = Arc::new(Reader {
+        db: f.db.clone(),
+        reads: AtomicUsize::new(0),
+    });
+    let sender = Arc::new(Submit(AtomicUsize::new(0)));
+    let app = Arc::new(
+        ScopedDeliverApplication::new(
+            authority.clone(),
+            address().instance,
+            base.clone(),
+            reader.clone(),
+            sender.clone(),
+            "9999-12-31T23:59:59Z".into(),
+        )
+        .unwrap()
+        .with_policy(policy.clone()),
+    );
+    let server = || {
+        ScopedTaskServer::new(identity(), base.clone(), authority.clone(), app.clone())
+            .with_create_policy(policy.clone())
+            .with_reconciler(Arc::new(ScopedReceiptReconciler::new(
+                authority.clone(),
+                reader.clone(),
+            )))
+    };
+    let meta = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"extensions":{"io.modelcontextprotocol/tasks":{}}},"io.modelcontextprotocol/clientInfo":{"name":"fixture","version":"1"},"principal":"spoofed"});
+    let first=exchange(server(),vec![json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":meta,"name":"deliver","arguments":{"action":"session","session_ref":"issued","message":"message","mode":"start","request_key":"direct-key"}}})]).await;
+    assert_eq!(first[0]["result"]["resultType"], "task", "{:?}", first);
+    let task = first[0]["result"]["taskId"].as_str().unwrap().to_owned();
+    let get = || json!({"jsonrpc":"2.0","id":2,"method":"tasks/get","params":{"_meta":meta,"taskId":task}});
+    let completed = exchange(server(), vec![get()]).await;
+    assert_eq!(
+        completed[0]["result"]["status"], "completed",
+        "{:?}",
+        completed
+    );
+    assert_eq!(
+        completed[0]["result"]["result"]["structuredContent"]["outcome"],
+        "confirmed"
+    );
+    let reopen = exchange(server(), vec![get()]).await;
+    assert_eq!(reopen[0]["result"]["status"], "completed");
+    policy.allow.store(false, Ordering::SeqCst);
+    let denied = exchange(server(), vec![get()]).await;
+    assert!(denied[0].get("error").is_some(), "{:?}", denied);
+    let denied_after_reopen = exchange(server(), vec![get()]).await;
+    assert!(denied_after_reopen[0].get("error").is_some());
+    assert_eq!(sender.0.load(Ordering::SeqCst), 1);
+    assert_eq!(reader.reads.load(Ordering::SeqCst), 1);
+    let db = Connection::open(&f.db).unwrap();
+    assert_eq!(
+        db.query_row("SELECT status FROM tasks WHERE task_id=?1", [&task], |r| {
+            r.get::<_, String>(0)
+        })
+        .unwrap(),
+        "completed"
+    );
 }

@@ -31,6 +31,7 @@ pub struct ScopedDeliverApplication<R, C> {
     reader: Arc<R>,
     control: Arc<C>,
     retain_until: String,
+    policy: Option<Arc<dyn super::create_prompt::FreshSessionGrantPolicy + Send + Sync>>,
 }
 impl<R, C> ScopedDeliverApplication<R, C> {
     pub fn new(
@@ -51,7 +52,16 @@ impl<R, C> ScopedDeliverApplication<R, C> {
             reader,
             control,
             retain_until,
+            policy: None,
         })
+    }
+    /// Policy is trusted server composition; it supplies exact grants only.
+    pub fn with_policy(
+        mut self,
+        policy: Arc<dyn super::create_prompt::FreshSessionGrantPolicy + Send + Sync>,
+    ) -> Self {
+        self.policy = Some(policy);
+        self
     }
 }
 pub(super) fn utc_now() -> Result<String, ()> {
@@ -101,10 +111,32 @@ where
                 ));
             };
             let session = SessionRef(session_ref);
+            let mut effective_grants = self.grants.clone();
+            if let Some(policy) = &self.policy {
+                for (action, grant) in [
+                    (
+                        Action::Write,
+                        policy.session_write_grant(&principal.id, &self.instance, &session),
+                    ),
+                    (
+                        Action::Read,
+                        policy.session_read_grant(&principal.id, &self.instance, &session),
+                    ),
+                ] {
+                    if let Ok(Some(grant)) = grant {
+                        if grant.principal == principal.id
+                            && grant.action == action
+                            && grant.resource == PrivateResource::Session(session.clone())
+                        {
+                            effective_grants.push(grant);
+                        }
+                    }
+                }
+            }
             if [Action::Write, Action::Read].into_iter().any(|action| {
                 identity
                     .authorize(
-                        &self.grants,
+                        &effective_grants,
                         &PrivateResource::Session(session.clone()),
                         action,
                     )
@@ -163,7 +195,7 @@ where
             let principal_id = principal.id.0.clone();
             let authority = self.authority.clone();
             let instance = self.instance.clone();
-            let grants = self.grants.clone();
+            let grants = effective_grants;
             let reader = self.reader.clone();
             let control = self.control.clone();
             let retain = self.retain_until.clone();
