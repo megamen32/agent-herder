@@ -30,6 +30,7 @@ export async function serveOpenCodeAhap(
   adapter: OpenCodePort,
   input: Readable = process.stdin,
   output: Writable = process.stdout,
+  family: "v2" | "v22" = "v22",
 ): Promise<void> {
   const lines = createInterface({ input, crlfDelay: Infinity });
   let initialized = false;
@@ -117,10 +118,10 @@ export async function serveOpenCodeAhap(
           // queue. Reserve the fresh runner-created session before the one
           // mutating call, so an ambiguous result cannot be replayed in-process.
           attemptedStartSessionIds.add(params.id);
-          const start: SendMessageOptions & { start: true } = {
+          const start: SendMessageOptions = {
             ...options,
-            queue: false,
-            start: true,
+            queue: family === "v2",
+            start: family === "v22",
             activeTurnOnly: true,
           };
           result = await adapter.sendMessage(params.id, start);
@@ -180,28 +181,40 @@ function isStartInput(value: unknown): value is SendMessageOptions & { queue: fa
     && options.inputId.length <= 4096;
 }
 
-function makeConfiguredAdapter(): OpenCodeAdapter {
-  const baseUrl = process.env.AHAP_OPENCODE_BASE_URL?.trim();
+export async function makeConfiguredAdapter(baseUrl = process.env.AHAP_OPENCODE_BASE_URL?.trim(), password = process.env.AHAP_OPENCODE_PASSWORD): Promise<{adapter: OpenCodeAdapter; family: "v2" | "v22"}> {
   if (!baseUrl) throw new Error("AHAP_OPENCODE_BASE_URL must bind this runner to one OpenCode instance");
   const endpoint = new URL(baseUrl);
   if (!(["http:", "https:"].includes(endpoint.protocol)) || endpoint.username || endpoint.password
     || endpoint.search || endpoint.hash) {
     throw new Error("AHAP_OPENCODE_BASE_URL must be an absolute HTTP(S) endpoint without credentials, query, or fragment");
   }
-  // Explicit v22 selects the OpenCode 2.2.4 endpoint and never probes/falls
-  // back across protocol families after a mutating call.
-  return new OpenCodeAdapter({
+  // Match the existing native receipt fixture: decide once, via a bounded
+  // read-only probe, before any session create or delivery is possible.
+  const headers: Record<string, string> = {};
+  if (password) headers.Authorization = `Basic ${Buffer.from(`${process.env.OPENCODE_SERVER_USERNAME || "opencode"}:${password}`).toString("base64")}`;
+  const probe = await fetch(`${endpoint.toString().replace(/\/$/u, "")}/api/config`, { headers, signal: AbortSignal.timeout(5_000), redirect: "error" });
+  let family: "v2" | "v22";
+  if (probe.status === 404) family = "v22";
+  else if (probe.status === 200) {
+    const body: unknown = await probe.json().catch(() => null);
+    if (body === null) family = "v22";
+    else if (Array.isArray(body) && body.length > 0 && body.every(item => item && typeof item === "object" && typeof item.path === "string" && typeof item.type === "string")) family = "v2";
+    else throw new Error("unrecognized OpenCode API config; no mutation sent");
+  } else throw new Error(`OpenCode API probe HTTP ${probe.status}; no mutation sent`);
+  const adapter = new OpenCodeAdapter({
     baseUrl: endpoint.toString().replace(/\/$/u, ""),
-    password: process.env.AHAP_OPENCODE_PASSWORD,
-    protocol: "v22",
+    password,
+    protocol: family,
   });
+  return {adapter, family};
 }
 
 async function main(): Promise<void> {
   if (process.env.AHAP_VERSION !== "0.1" || process.env.AHAP_HARNESS !== "opencode") {
     throw new Error("AHAP_VERSION=0.1 and AHAP_HARNESS=opencode are required");
   }
-  await serveOpenCodeAhap(makeConfiguredAdapter());
+  const {adapter, family} = await makeConfiguredAdapter();
+  await serveOpenCodeAhap(adapter, process.stdin, process.stdout, family);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
