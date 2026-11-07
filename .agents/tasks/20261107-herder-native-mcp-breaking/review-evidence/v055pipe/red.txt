@@ -1,0 +1,5 @@
+Command: cargo test --offline --manifest-path crates/herder/Cargo.toml stalled_pipe_obeys_request_deadline_and_is_not_reused --lib -- --nocapture
+Before fix, exit 101:
+thread 'adapters::codex::connection::deadline_tests::stalled_pipe_obeys_request_deadline_and_is_not_reused' panicked:
+pipe write exceeded deadline: Timeout
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 101 filtered out; finished in 0.70s

@@ -1,0 +1,5 @@
+Command: cargo test --offline --manifest-path crates/herder/Cargo.toml busy_control_does_not_wait_unbounded_for_interrupt --lib -- --nocapture
+Before fix, exit 101:
+thread 'adapters::codex::control::tests::busy_control_does_not_wait_unbounded_for_interrupt' panicked:
+busy interrupt must not wait or send: Err(Timeout)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 103 filtered out; finished in 0.91s

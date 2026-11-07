@@ -1,0 +1,6 @@
+Command: cargo test --offline --manifest-path crates/herder/Cargo.toml --test scoped_stop_gate create_refused_before_write_is_durable_rejected -- --nocapture
+Before fix, exit 101:
+assertion `left == right` failed: create result: Unknown
+  left: "unknown"
+ right: "rejected"
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 19 filtered out; finished in 0.22s

@@ -1,0 +1,5 @@
+Command: cargo test --offline --manifest-path crates/herder/Cargo.toml busy_control_does_not_wait_unbounded_for_create --lib -- --nocapture
+Before fix, exit 101:
+thread 'adapters::codex::control::tests::busy_control_does_not_wait_unbounded_for_create' panicked:
+busy connection must reject without waiting or sending: Err(Timeout)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 102 filtered out; finished in 0.53s

@@ -1,0 +1,39 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-v1-implementation/agent-herder
+
+ ❯ tests/resume-after.test.ts (16 tests | 2 failed | 13 skipped) 113ms
+     × does not queue native probes for unrelated progress events before registration 74ms
+     × coalesces overlapping timer sweeps and permits a fresh sweep afterwards 26ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/resume-after.test.ts > resume after exact sessions > does not queue native probes for unrelated progress events before registration
+AssertionError: expected "vi.fn()" to be called 3 times, but got 43 times
+ ❯ tests/resume-after.test.ts:35:20
+     33|     expect((await next).state).toBe("waiting");
+     34|     // One admission check plus the two waits in the registration swee…
+     35|     expect(isHeld).toHaveBeenCalledTimes(3);
+       |                    ^
+     36|     expect(deliver).not.toHaveBeenCalled();
+     37|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/resume-after.test.ts > resume after exact sessions > coalesces overlapping timer sweeps and permits a fresh sweep afterwards
+AssertionError: expected "vi.fn()" to be called 1 times, but got 33 times
+ ❯ tests/resume-after.test.ts:54:20
+     52|     release();
+     53|     await Promise.all([first, ...ticks]);
+     54|     expect(isHeld).toHaveBeenCalledTimes(1);
+       |                    ^
+     55|     await service.sweep();
+     56|     expect(isHeld).toHaveBeenCalledTimes(2);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed | 13 skipped (16)
+   Start at  12:00:07
+   Duration  905ms (transform 421ms, setup 140ms, import 335ms, tests 113ms, environment 0ms)
+
