@@ -82,8 +82,9 @@ async fn native_and_legacy_handshakes_keep_their_explicit_protocol_versions() {
 }
 
 #[tokio::test]
+#[ignore = "requires an explicitly built native stdio binary in HERDER_NATIVE_BINARY"]
 async fn real_native_stdio_endpoint_is_forwarded_without_legacy_downgrade() {
-    let Ok(binary) = std::env::var("HERDER_NATIVE_BINARY") else { return; };
+    let binary = std::env::var("HERDER_NATIVE_BINARY").expect("HERDER_NATIVE_BINARY must point to the built native stdio binary");
     let upstream = TokioChildProcess::new(Command::new(binary)).unwrap();
     let config = ClientConfig::new(
         ClientCapabilities::builder().enable_tasks().build(),
