@@ -201,7 +201,10 @@ impl ApplicationPort for OwnerApp {
     }
 }
 pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>> {
-    if opened.owner.kind == "opencode" {
+    // V1 manifests select the existing TypeScript adapter through AHAP for
+    // every harness. The earlier Rust Codex implementation remains preserved
+    // for its existing explicit, script-less profiles.
+    if opened.owner.ahap_script.is_some() {
         return super::owner_opencode::serve(opened).await;
     }
     let instance = InstanceRef {

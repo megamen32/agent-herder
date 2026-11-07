@@ -1,3 +1,4 @@
+import { writeAhapFrame, AHAP_MAX_FRAME_BYTES, legacyReadMethods, legacyRead, AhapReadError, adapterFailureContext, type LegacyReadPort } from "./ahap-legacy-read.js";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
@@ -12,7 +13,7 @@ type RpcId = string | number;
 type RpcRequest = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
 type BrowserAdapterPort = Pick<BrowserChatAdapter,
   "init" | "listSessions" | "getSession" | "getSessionMessages" | "sendMessage" | "createSession">
-  & { readonly type: string; readonly name: string; readonly browserFeatures: unknown; getAccountScope(): string | undefined; verifyPinnedAccountScope?(): Promise<void>; close?(): void };
+  & LegacyReadPort & { readonly type: string; readonly name: string; readonly browserFeatures: unknown; getAccountScope(): string | undefined; verifyPinnedAccountScope?(): Promise<void>; close?(): void };
 
 const METHODS = ["init", "listSessions", "getSession", "getSessionMessages", "sendMessage", "createSession"];
 const CONTROL_CAPABILITIES = {
@@ -37,7 +38,7 @@ export async function serveBrowserChatAhap(
   let initialized = false;
   let accountVerified = false;
   let stopped = false;
-  const write = (value: unknown) => output.write(`${JSON.stringify(value)}\n`);
+  const write = (value: unknown) => writeAhapFrame(output, value);
   const error = (id: RpcId | null, code: number, message: string, data?: unknown) =>
     write({ jsonrpc: "2.0", id, error: { code, message, ...(data === undefined ? {} : { data }) } });
   const assertAccount = () => {
@@ -53,6 +54,7 @@ export async function serveBrowserChatAhap(
 
   for await (const line of lines) {
     if (!line.trim() || stopped) continue;
+    if (Buffer.byteLength(line, "utf8") + 1 > AHAP_MAX_FRAME_BYTES) { error(null, -32600, "Request exceeds 4 MiB AHAP frame limit; reduce input size"); continue; }
     let request: RpcRequest;
     try { request = JSON.parse(line) as RpcRequest; }
     catch { error(null, -32700, "parse error"); continue; }
@@ -75,7 +77,7 @@ export async function serveBrowserChatAhap(
       initialized = true;
       write({ jsonrpc: "2.0", id, result: {
         harness: adapter.type, name: adapter.name,
-        capabilities: { methods: METHODS, controlCapabilities: CONTROL_CAPABILITIES, browserFeatures: adapter.browserFeatures },
+        capabilities: { deliveryModes: ["queue"], methods: [...new Set([...METHODS, ...legacyReadMethods(adapter)])], controlCapabilities: CONTROL_CAPABILITIES, browserFeatures: adapter.browserFeatures },
       } });
       continue;
     }
@@ -99,8 +101,10 @@ export async function serveBrowserChatAhap(
           result = null;
           break;
         case "listSessions":
+        case "getRawTranscript":
+        case "listProjects":
           await assertCurrentAccount();
-          result = await adapter.listSessions(params.options as never);
+          result = await legacyRead(adapter, request.method, params);
           await assertCurrentAccount();
           break;
         case "getSession":
@@ -128,7 +132,7 @@ export async function serveBrowserChatAhap(
           result = await adapter.sendMessage(params.id, params.options);
           const receipt = result as { admissionUnknown?: boolean; nonRetryable?: boolean };
           if (receipt.admissionUnknown || (result as { ok?: boolean }).ok === false) {
-            error(id, -32000, "ChatGPT send outcome unknown", { outcome: "unknown", retryable: false });
+            error(id, -32000, "Browser send outcome unconfirmed", adapterFailureContext("sendMessage", true));
             continue;
           }
           break;
@@ -141,11 +145,14 @@ export async function serveBrowserChatAhap(
         default: error(id, -32601, "method not implemented"); continue;
       }
       write({ jsonrpc: "2.0", id, result: result ?? null });
-    } catch {
+    } catch (cause) {
+      if (cause instanceof AhapReadError) {
+        error(id, cause.code, cause.message, cause.code === -32001 ? adapterFailureContext(request.method, request.method === "sendMessage" || request.method === "createSession") : undefined);
+        continue;
+      }
       const mutation = request.method === "sendMessage" || request.method === "createSession"
         || request.method === "stopTurn" || request.method === "changeModel";
-      error(id, -32000, "Browser adapter call failed", mutation
-        ? { outcome: "unknown", retryable: false } : { outcome: "read_failed" });
+      error(id, -32000, "Browser adapter call failed", adapterFailureContext(request.method, mutation));
     }
   }
 }

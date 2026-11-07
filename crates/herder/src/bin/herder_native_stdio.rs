@@ -6,6 +6,10 @@ use std::{env, io, sync::Arc};
 mod owner_opencode;
 
 #[cfg(target_os = "linux")]
+#[path = "herder_native_stdio/owner_reads.rs"]
+mod owner_reads;
+
+#[cfg(target_os = "linux")]
 #[path = "herder_native_stdio/owner_launch.rs"]
 mod owner_launch;
 

@@ -47,6 +47,7 @@ pub struct AhapClient {
     instance_id: String,
     harness: String,
     methods: HashSet<String>,
+    capabilities: Value,
     state: Mutex<State>,
     timeout: Duration,
 }
@@ -260,6 +261,7 @@ impl AhapClient {
             instance_id: config.instance_id,
             harness: config.harness,
             methods,
+            capabilities: init["capabilities"].clone(),
             state: Mutex::new(state),
             timeout: config.timeout,
         })
@@ -270,6 +272,10 @@ impl AhapClient {
     /// Harness verified against the adapter's AHAP initialize response.
     pub fn harness(&self) -> &str {
         &self.harness
+    }
+    /// Adapter-advertised initialize capabilities, preserved without inference.
+    pub fn capabilities(&self) -> &Value {
+        &self.capabilities
     }
     pub fn supports(&self, method: &str) -> bool {
         self.methods.contains(method)

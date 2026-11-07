@@ -1,4 +1,4 @@
-//! Existing OpenCode AHAP adapter mapped into the core's bounded ports.
+//! Generic client of existing TypeScript AHAP adapters (historical OpenCode name).
 //! This module owns no ledger; the scoped authority persists intents/receipts.
 use crate::{
     adapters::ahap::{AhapClient, AhapError},
@@ -69,14 +69,6 @@ impl AhapOpenCode {
             )
             || !cwd.is_absolute()
             || name.trim().is_empty()
-            || [
-                "createSession",
-                "sendMessage",
-                "getSession",
-                "getSessionMessages",
-            ]
-            .iter()
-            .any(|m| !client.supports(m))
         {
             return Err(RegistryUnavailable);
         }
@@ -88,6 +80,143 @@ impl AhapOpenCode {
             policy,
         })
     }
+    /// Unmodified initialize capabilities from this exact configured instance.
+    pub fn capabilities(&self) -> &Value {
+        self.client.capabilities()
+    }
+
+    /// Invoke only a method advertised by the existing TypeScript port.
+    /// No retries, inferred completeness, or native protocol implementation.
+    pub fn raw_call(&self, method: &str, params: Value) -> Result<Value, ReadError> {
+        if !self.client.supports(method) {
+            return Err(ReadError(format!("AHAP method not advertised: {method}")));
+        }
+        self.client
+            .call(method, params)
+            .map_err(|_| ReadError(format!("AHAP {method} unavailable")))
+    }
+
+    pub fn list_sessions(&self, options: Value) -> Result<Value, ReadError> {
+        self.raw_call("listSessions", json!({"options": options}))
+    }
+
+    pub fn list_projects(&self) -> Result<Value, ReadError> {
+        self.raw_call("listProjects", json!({}))
+    }
+
+    /// Preserve bytes_base64, complete, source, timestampCoverage and limitations.
+    /// In particular, a message tail is never substituted for a raw transcript.
+    pub fn raw_transcript(&self, address: &SessionAddress) -> Result<Value, ReadError> {
+        if !self.matches(address) {
+            return Err(ReadError("invalid AHAP session".into()));
+        }
+        self.raw_call("getRawTranscript", json!({"id": address.native_session_id}))
+    }
+
+    fn advertises_mode(&self, mode: &str) -> bool {
+        self.capabilities()
+            .get("deliveryModes")
+            .and_then(Value::as_array)
+            .is_some_and(|modes| modes.iter().any(|value| value.as_str() == Some(mode)))
+    }
+
+    fn mutation_ready(&self) -> bool {
+        [
+            "init",
+            "createSession",
+            "sendMessage",
+            "getSession",
+            "getSessionMessages",
+        ]
+        .iter()
+        .all(|method| self.client.supports(method))
+    }
+
+    fn read_snapshot(&self, target: &SessionAddress) -> Result<SessionSnapshot, ReadError> {
+        if !self.matches(target) {
+            return Err(ReadError("wrong instance".into()));
+        }
+        let result = self.raw_call("getSession", json!({"id":target.native_session_id}))?;
+        if result.get("id").and_then(Value::as_str) != Some(target.native_session_id.as_str())
+            || result.get("harness").and_then(Value::as_str) != Some(self.policy.harness.as_str())
+        {
+            return Err(ReadError("AHAP session identity mismatch".into()));
+        }
+        let status = result.get("status").and_then(Value::as_str);
+        let human_stop = status == Some("stopped")
+            || ["/humanStop", "/meta/humanStop", "/meta/automationStop"]
+                .iter()
+                .any(|path| result.pointer(path).and_then(Value::as_bool) == Some(true))
+            || result
+                .pointer("/meta/automationStop")
+                .is_some_and(Value::is_object);
+        let observed_status = if result
+            .pointer("/meta/nativeStateObserved")
+            .and_then(Value::as_bool)
+            == Some(false)
+        {
+            None
+        } else {
+            status
+        };
+        let activity = match observed_status {
+            Some("idle") => SessionActivity::Idle,
+            Some("running" | "busy") if self.client.supports("getCoordinationActiveTurnId") => {
+                match self
+                    .raw_call(
+                        "getCoordinationActiveTurnId",
+                        json!({"id":target.native_session_id}),
+                    )?
+                    .as_str()
+                    .filter(|id| valid_native_id(id))
+                {
+                    Some(id) => SessionActivity::Busy {
+                        turn_id: id.to_owned(),
+                    },
+                    None => SessionActivity::Unknown,
+                }
+            }
+            _ => SessionActivity::Unknown,
+        };
+        let modes = self
+            .capabilities()
+            .get("deliveryModes")
+            .and_then(Value::as_array);
+        let capabilities = [
+            ("start", "sync", "deliver.start"),
+            ("queue", "queue", "deliver.queue"),
+            ("current", "steer", "deliver.current"),
+        ]
+        .into_iter()
+        .map(|(mode, legacy_mode, name)| Capability {
+            name: name.into(),
+            version: CapabilityVersion {
+                adapter_version: "legacy-ahap-0.1".into(),
+                capability_version: "1".into(),
+            },
+            supported: match modes {
+                Some(_) if self.advertises_mode(mode) || self.advertises_mode(legacy_mode) => {
+                    Support::Supported
+                }
+                Some(_) => Support::Unsupported,
+                None => Support::Unknown,
+            },
+            available: if self.mutation_ready() {
+                Availability::Available
+            } else {
+                Availability::Unavailable
+            },
+            authorized: Authorization::Authorized,
+        })
+        .collect();
+        Ok(SessionSnapshot {
+            address: target.clone(),
+            human_stop,
+            activity,
+            capabilities,
+        })
+    }
+
     fn matches(&self, a: &SessionAddress) -> bool {
         a.instance == self.instance && valid_native_id(&a.native_session_id)
     }
@@ -95,13 +224,10 @@ impl AhapOpenCode {
         if !self.matches(a) || !(1..=200).contains(&limit) {
             return Err(ReadError("invalid AHAP session".into()));
         }
-        let result = self
-            .client
-            .call(
-                "getSessionMessages",
-                json!({"id":a.native_session_id,"limit":limit}),
-            )
-            .map_err(|_| ReadError("AHAP messages unavailable".into()))?;
+        let result = self.raw_call(
+            "getSessionMessages",
+            json!({"id":a.native_session_id,"limit":limit}),
+        )?;
         if !result.is_array() {
             return Err(ReadError("AHAP messages incomplete or unavailable".into()));
         }
@@ -110,6 +236,45 @@ impl AhapOpenCode {
 }
 fn valid_native_id(v: &str) -> bool {
     !v.is_empty() && v.len() <= 4096 && !v.chars().any(char::is_control)
+}
+// This is an internal opaque reference, never a native user-message ID.
+// Encode both kinds so a native ID resembling this prefix is still unambiguous.
+const RECEIPT_PREFIX: &str = "ahap-receipt:v1:";
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "native_id",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+enum ReceiptReference {
+    Message(String),
+    Turn(String),
+}
+impl ReceiptReference {
+    fn encode(&self) -> String {
+        format!(
+            "{RECEIPT_PREFIX}{}",
+            serde_json::to_string(self).expect("string receipt")
+        )
+    }
+    fn decode(value: &str) -> Result<Self, ReadError> {
+        let reference = if let Some(json) = value.strip_prefix(RECEIPT_PREFIX) {
+            if json.len() > 32768 {
+                return Err(ReadError("invalid receipt".into()));
+            }
+            serde_json::from_str(json)
+                .map_err(|_| ReadError("invalid typed AHAP receipt".into()))?
+        } else {
+            // Receipts persisted by the earlier message-only port remain readable.
+            Self::Message(value.into())
+        };
+        let (Self::Message(id) | Self::Turn(id)) = &reference;
+        if !valid_native_id(id) {
+            return Err(ReadError("invalid native receipt ID".into()));
+        }
+        Ok(reference)
+    }
 }
 fn transport_failure(e: AhapError) -> SubmitError {
     match e {
@@ -133,7 +298,7 @@ impl BoundedFreshRootCreate for AhapOpenCode {
         self.policy.initial_delivery_mode
     }
     fn create_root_bounded(&self, key: &str, _prompt: &str) -> Result<SessionAddress, SubmitError> {
-        if key.is_empty() || key.len() > 4096 {
+        if !self.mutation_ready() || !valid_native_id(key) {
             return Err(SubmitError::DefinitelyNotSent {
                 reason: "invalid request key".into(),
             });
@@ -170,25 +335,53 @@ impl BoundedNativeHandoff for AhapOpenCode {
         message: &str,
         key: &RequestKey,
     ) -> Result<Admission, SubmitError> {
-        if !self.matches(&plan.target)
-            || plan.mode != self.policy.initial_delivery_mode
-            || plan.expected_turn.is_some()
+        if !self.mutation_ready()
+            || !self.matches(&plan.target)
             || message.is_empty()
-            || key.0.is_empty()
+            || !valid_native_id(&key.0)
         {
             return Err(SubmitError::DefinitelyNotSent {
-                reason: "invalid AHAP initial delivery request".into(),
+                reason: "invalid AHAP delivery request".into(),
             });
         }
-        let options = match self.policy.initial_delivery_mode {
+        // Recheck native status and declared modes; the scoped core owns the
+        // durable HumanStop/intent ledger, and the TS port owns native admission.
+        let snapshot =
+            self.read_snapshot(&plan.target)
+                .map_err(|_| SubmitError::DefinitelyNotSent {
+                    reason: "AHAP pre-admission snapshot unavailable".into(),
+                })?;
+        let checked = crate::domain::adapter::decide_send(
+            &snapshot,
+            &crate::domain::adapter::SendCommand { mode: plan.mode },
+        )
+        .map_err(|_| SubmitError::DefinitelyNotSent {
+            reason: "AHAP mode, activity or stop guard rejected delivery".into(),
+        })?;
+        if checked.expected_turn != plan.expected_turn {
+            return Err(SubmitError::DefinitelyNotSent {
+                reason: "AHAP native turn changed".into(),
+            });
+        }
+        let mut options = match plan.mode {
+            // The TS "sync" mode starts an idle session without the special
+            // fresh-only OpenCode start flag. It is an explicit wire mapping.
+            SendMode::Start if self.advertises_mode("sync") => {
+                json!({"message":message,"queue":false,"activeTurnOnly":false,"inputId":key.0})
+            }
             SendMode::Start => {
-                json!({"message":message,"queue":false,"start":true,"activeTurnOnly":true,"inputId":key.0})
+                json!({"message":message,"queue":false,"start":true,"activeTurnOnly":false,"inputId":key.0})
             }
             SendMode::Queue => {
-                json!({"message":message,"queue":true,"activeTurnOnly":true,"inputId":key.0})
+                json!({"message":message,"queue":true,"activeTurnOnly":false,"inputId":key.0})
             }
-            SendMode::Current => unreachable!("constructor rejects Current as initial delivery"),
+            SendMode::Current => {
+                json!({"message":message,"queue":false,"steer":true,"activeTurnOnly":true,"inputId":key.0})
+            }
         };
+        if let Some(turn) = &plan.expected_turn {
+            options["expectedTurnId"] = json!(turn);
+        }
         let result = self
             .client
             .call(
@@ -207,7 +400,17 @@ impl BoundedNativeHandoff for AhapOpenCode {
                 .is_some();
         let unknown = result.get("admissionUnknown").and_then(Value::as_bool) == Some(true)
             || result.get("admission").and_then(Value::as_str) == Some("unknown");
-        if !admitted
+        let correlated = result
+            .get("inputId")
+            .is_none_or(|v| v.as_str() == Some(key.0.as_str()))
+            && result
+                .get("sessionId")
+                .is_none_or(|v| v.as_str() == Some(plan.target.native_session_id.as_str()))
+            && result
+                .get("harness")
+                .is_none_or(|v| v.as_str() == Some(self.policy.harness.as_str()));
+        if correlated
+            && !admitted
             && !unknown
             && (result.get("notSubmitted").and_then(Value::as_bool) == Some(true)
                 || result.get("admission").and_then(Value::as_str) == Some("not_submitted"))
@@ -219,10 +422,33 @@ impl BoundedNativeHandoff for AhapOpenCode {
         let id = result
             .get("nativeInputMessageId")
             .and_then(Value::as_str)
-            .filter(|s| valid_native_id(s));
-        if !admitted || id.is_none() {
+            .filter(|s| valid_native_id(s))
+            .map(|id| ReceiptReference::Message(id.into()).encode())
+            .or_else(|| {
+                // A turn ID without explicit admission is not evidence of a send.
+                (result.get("admitted").and_then(Value::as_bool) == Some(true)
+                    && result.get("admissionKind").and_then(Value::as_str)
+                        != Some("current_turn_context"))
+                .then(|| {
+                    result
+                        .get("turnId")
+                        .and_then(Value::as_str)
+                        .filter(|id| valid_native_id(id))
+                        .map(|id| ReceiptReference::Turn(id.into()).encode())
+                })
+                .flatten()
+            });
+        let conflicting = result.get("notSubmitted").and_then(Value::as_bool) == Some(true)
+            || result.get("admission").and_then(Value::as_str) == Some("not_submitted")
+            || result.get("ok").and_then(Value::as_bool) == Some(false)
+            || result.get("admitted").and_then(Value::as_bool) == Some(false)
+            || !correlated;
+        if !admitted || unknown || conflicting || id.is_none() {
             return Err(SubmitError::OutcomeUnknown {
-                receipt: None,
+                receipt: id.filter(|_| correlated).map(|native_id| NativeReceipt {
+                    target: plan.target.clone(),
+                    native_id: native_id.into(),
+                }),
                 reason: "native input receipt unavailable or invalid".into(),
             });
         }
@@ -236,55 +462,51 @@ impl BoundedNativeHandoff for AhapOpenCode {
 }
 impl NativeSessionReader for AhapOpenCode {
     async fn snapshot(&self, target: &SessionAddress) -> Result<SessionSnapshot, ReadError> {
-        if !self.matches(target) {
-            return Err(ReadError("wrong instance".into()));
-        }
-        let result = self
-            .client
-            .call("getSession", json!({"id":target.native_session_id}))
-            .map_err(|_| ReadError("AHAP session unavailable".into()))?;
-        if result.get("id").and_then(Value::as_str) != Some(target.native_session_id.as_str())
-            || result.get("harness").and_then(Value::as_str) != Some(self.policy.harness.as_str())
-        {
-            return Err(ReadError("AHAP session identity mismatch".into()));
-        }
-        let activity = match result.get("status").and_then(Value::as_str) {
-            Some("idle") => SessionActivity::Idle,
-            _ => SessionActivity::Unknown,
-        };
-        Ok(SessionSnapshot {
-            address: target.clone(),
-            human_stop: false,
-            activity,
-            capabilities: vec![Capability {
-                name: match self.policy.initial_delivery_mode {
-                    SendMode::Start => "deliver.start",
-                    SendMode::Queue => "deliver.queue",
-                    SendMode::Current => {
-                        unreachable!("constructor rejects Current as initial delivery")
-                    }
-                }
-                .into(),
-                version: CapabilityVersion {
-                    adapter_version: "legacy-ahap-0.1".into(),
-                    capability_version: "1".into(),
-                },
-                supported: Support::Supported,
-                available: Availability::Available,
-                authorized: Authorization::Authorized,
-            }],
-        })
+        self.read_snapshot(target)
     }
     async fn reconcile(&self, receipt: &NativeReceipt) -> Result<Observation, ReadError> {
-        if !self.matches(&receipt.target) || !valid_native_id(&receipt.native_id) {
+        if !self.matches(&receipt.target) {
             return Err(ReadError("invalid receipt".into()));
         }
+        let message_id = match ReceiptReference::decode(&receipt.native_id)? {
+            ReceiptReference::Message(id) => id,
+            ReceiptReference::Turn(id) => {
+                let session =
+                    self.raw_call("getSession", json!({"id":receipt.target.native_session_id}))?;
+                if session.get("id").and_then(Value::as_str)
+                    != Some(receipt.target.native_session_id.as_str())
+                    || session.get("harness").and_then(Value::as_str)
+                        != Some(self.policy.harness.as_str())
+                {
+                    return Err(ReadError("AHAP session identity mismatch".into()));
+                }
+                let turn = session
+                    .pointer("/meta/nativeLastTurn")
+                    .or_else(|| session.get("nativeLastTurn"));
+                let exact = session
+                    .pointer("/meta/nativeStateObserved")
+                    .and_then(Value::as_bool)
+                    != Some(false)
+                    && turn.and_then(|t| t.get("turnId")).and_then(Value::as_str)
+                        == Some(id.as_str());
+                // This confirms native admission only, not turn/task completion.
+                return Ok(if exact {
+                    Observation::Confirmed {
+                        receipt: receipt.clone(),
+                    }
+                } else {
+                    Observation::Unknown {
+                        receipt: receipt.clone(),
+                    }
+                });
+            }
+        };
         let messages = self.messages(&receipt.target, 200)?;
         let matches: Vec<_> = messages
             .as_array()
             .unwrap()
             .iter()
-            .filter(|m| m.get("id").and_then(Value::as_str) == Some(receipt.native_id.as_str()))
+            .filter(|m| m.get("id").and_then(Value::as_str) == Some(message_id.as_str()))
             .collect();
         Ok(
             if matches.len() == 1 && matches[0].get("role").and_then(Value::as_str) == Some("user")
@@ -342,11 +564,12 @@ harness=os.environ['AHAP_HARNESS'];session=os.environ['SESSION_ID'];native_id=os
 for line in sys.stdin:
  r=json.loads(line);m=r['method'];p=r.get('params',{})
  with open(os.environ['TRACE'],'a') as f:f.write(m+'\n')
- if m=='initialize':v={'harness':harness,'capabilities':{'methods':['createSession','sendMessage','getSession','getSessionMessages']}}
+ if m=='initialize':v={'harness':harness,'capabilities':{'methods':['init','createSession','sendMessage','getSession','getSessionMessages'],'deliveryModes':['start'] if harness=='opencode' else ['queue']}}
+ elif m=='init':v=None
  elif m=='createSession':v={'id':session,'harness':harness}
  elif m=='getSession':v={'id':session,'harness':harness,'status':'idle'}
  elif m=='sendMessage':
-  assert p['id']==session and p['options']['activeTurnOnly'] and p['options']['inputId']=='key'
+  assert p['id']==session and p['options']['activeTurnOnly'] is False and p['options']['inputId']=='key'
   if harness=='opencode':assert p['options']['start'] and p['options']['queue'] is False
   else:assert p['options']['queue'] is True and 'start' not in p['options']
   if os.environ['MODE']=='runner_receipt':v={'ok':True,'admitted':True,'pending':True,'inputId':'agent-herder:auto:key'}
@@ -501,7 +724,8 @@ for line in sys.stdin:
         let address = b.create_root_bounded("create", "prompt").unwrap();
         assert_eq!(address.native_session_id, "session:opaque/β");
         let snapshot = b.snapshot(&address).await.unwrap();
-        assert_eq!(snapshot.capabilities[0].name, "deliver.queue");
+        assert_eq!(snapshot.capabilities[1].name, "deliver.queue");
+        assert_eq!(snapshot.capabilities[1].supported, Support::Supported);
         let mut wrong_mode = crate::domain::adapter::decide_send(
             &snapshot,
             &crate::domain::adapter::SendCommand {
@@ -576,7 +800,7 @@ for line in sys.stdin:
                 .unwrap()
                 .lines()
                 .count(),
-            1
+            2
         );
     }
 
@@ -589,3 +813,7 @@ for line in sys.stdin:
         assert!(!valid_native_id("session\nforged"));
     }
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/ahap_v1_reuse.rs"]
+mod ahap_v1_reuse;

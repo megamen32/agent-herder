@@ -10,6 +10,7 @@ name = "herder-wire-probe"
 path = "src/main.rs"
 
 [dependencies]
+base64 = "0.22"
 libc = "0.2"
 futures-util = { version = "0.3", features = ["sink"] }
 tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "handshake"] }

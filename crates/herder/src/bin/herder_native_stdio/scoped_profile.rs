@@ -6,6 +6,7 @@ use herder::{
 };
 use serde::Deserialize;
 use std::{
+    collections::BTreeMap,
     fs::OpenOptions,
     io::{self, Read},
     os::unix::fs::{MetadataExt, OpenOptionsExt},
@@ -37,6 +38,22 @@ pub struct OwnerProfile {
     pub ahap_script: Option<PathBuf>,
     #[serde(default)]
     pub ahap_base_url: Option<String>,
+    #[serde(default)]
+    pub ahap_env: BTreeMap<String, String>,
+}
+
+/// Only adapter configuration crosses the process boundary. Process loader,
+/// identity and HOME variables are set by the composition, never this map.
+fn allowed_adapter_env(kind: &str, name: &str) -> bool {
+    match kind {
+        "opencode" => matches!(name, "AHAP_OPENCODE_PASSWORD" | "OPENCODE_SERVER_USERNAME"),
+        "codex" => matches!(name, "AHAP_CODEX_SOCKET" | "AHAP_CODEX_BIN" | "AHAP_CODEX_CWD" | "CODEX_HOME"),
+        "zcode" => matches!(name, "AHAP_ZCODE_SERVER_NODE" | "AHAP_ZCODE_SERVER_ENTRY" | "AHAP_ZCODE_CWD"),
+        "chatgpt" | "zai" => matches!(name,
+            "AHAP_BROWSER_TRANSPORT" | "AHAP_BROWSER_PAGE_ID" | "AHAP_BROWSER_ACCOUNT_SCOPE"
+            | "AHAP_BROWSER_CDP_WS_URL" | "AHAP_BROWSER_CDP_CONTEXT_ID" | "AHAP_BROWSER_CDP_TARGET_ID"),
+        _ => false,
+    }
 }
 fn codex_kind() -> String {
     "codex".into()
@@ -98,22 +115,33 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
         return Err(invalid().into());
     }
     match owner.kind.as_str() {
-        "codex" if owner.ahap_script.is_none() && owner.ahap_base_url.is_none() => (),
-        "opencode" => {
+        "codex" if owner.ahap_script.is_none() && owner.ahap_base_url.is_none() && owner.ahap_env.is_empty() => (),
+        "opencode" | "codex" | "zcode" | "chatgpt" | "zai" => {
             trusted_executable(&owner.executable)?;
             if !owner.ahap_script.as_ref().is_some_and(|p| p.is_absolute()) {
                 return Err(invalid().into());
             }
             trusted_executable(owner.ahap_script.as_ref().ok_or_else(invalid)?)?;
-            let url = reqwest::Url::parse(owner.ahap_base_url.as_deref().ok_or_else(invalid)?)?;
-            if !matches!(url.scheme(), "http" | "https")
+            if owner.kind == "opencode" {
+                let url = reqwest::Url::parse(owner.ahap_base_url.as_deref().ok_or_else(invalid)?)?;
+                if !matches!(url.scheme(), "http" | "https")
                 || url.host_str().is_none()
                 || !url.username().is_empty()
                 || url.password().is_some()
                 || url.query().is_some()
                 || url.fragment().is_some()
-            {
-                return Err(invalid().into());
+                {
+                    return Err(invalid().into());
+                }
+            } else if owner.ahap_base_url.is_some() {
+                return Err(io::Error::new(io::ErrorKind::InvalidInput,
+                    "ahap_base_url belongs to opencode; configure the selected adapter through ahap_env").into());
+            }
+            for (key, value) in &owner.ahap_env {
+                if !allowed_adapter_env(&owner.kind, key) || value.contains('\0') || value.len() > 8192 {
+                    return Err(io::Error::new(io::ErrorKind::InvalidInput,
+                        format!("unsupported adapter environment key {key}; use the documented keys for owner.kind, without process loader or identity overrides")).into());
+                }
             }
         }
         _ => return Err(invalid().into()),
