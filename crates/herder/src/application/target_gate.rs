@@ -61,6 +61,26 @@ pub fn acquire_pinned(
     device: u64,
     inode: u64,
 ) -> io::Result<PinnedTargetGateGuard> {
+    acquire_pinned_inner(path, device, inode, false)
+}
+
+/// Wait for the same pinned gate, without polling, before recording a stop.
+#[cfg(target_os = "linux")]
+pub fn acquire_pinned_wait(
+    path: &std::path::Path,
+    device: u64,
+    inode: u64,
+) -> io::Result<PinnedTargetGateGuard> {
+    acquire_pinned_inner(path, device, inode, true)
+}
+
+#[cfg(target_os = "linux")]
+fn acquire_pinned_inner(
+    path: &std::path::Path,
+    device: u64,
+    inode: u64,
+    wait: bool,
+) -> io::Result<PinnedTargetGateGuard> {
     use std::{
         fs::OpenOptions,
         os::unix::{
@@ -103,7 +123,12 @@ pub fn acquire_pinned(
     if !check(file.metadata()?) || !check(std::fs::symlink_metadata(path)?) {
         return Err(invalid());
     }
-    let guard = try_acquire(file)?;
+    let guard = if wait {
+        file.lock()?;
+        TargetGateGuard { _file: file }
+    } else {
+        try_acquire(file)?
+    };
     if !check(guard._file.metadata()?) || !check(std::fs::symlink_metadata(path)?) {
         return Err(invalid());
     }

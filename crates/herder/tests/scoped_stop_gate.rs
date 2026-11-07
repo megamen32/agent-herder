@@ -353,20 +353,17 @@ fn handoff_gate_blocks_stop_then_receipt_requires_interrupt_and_no_replay() {
             .unwrap()
     });
     ready_rx.recv().unwrap();
-    assert_eq!(
-        f.authority()
-            .stop(&identity(), &grants(), "session:issued", "manual", "t"),
-        Err(GateError::Busy)
-    );
+    let stop_authority = f.authority();
+    let stopper = std::thread::spawn(move || {
+        stop_authority.stop(&identity(), &grants(), "session:issued", "manual", "t")
+    });
     go_tx.send(()).unwrap();
     assert!(matches!(
         child.join().unwrap(),
         DurableDispatch::Admitted(_)
     ));
     assert_eq!(
-        f.authority()
-            .stop(&identity(), &grants(), "session:issued", "manual", "t")
-            .unwrap(),
+        stopper.join().unwrap().unwrap(),
         StopDisposition::InterruptOrReconcileRequired
     );
     let control = Control {
@@ -395,21 +392,23 @@ fn handoff_gate_blocks_stop_then_receipt_requires_interrupt_and_no_replay() {
 
 #[test]
 fn scoped_stop_child() {
-    use std::io::{BufRead, Write};
+    use std::io::Write;
     let Some(db) = std::env::var_os("HERDER_SCOPED_TEST_DB") else {
         return;
     };
-    let gate = std::env::var_os("HERDER_SCOPED_TEST_GATE").unwrap();
-    let authority = ScopedAuthority::new(db.into(), gate.into(), "authority-1".into()).unwrap();
+    let gate = std::path::PathBuf::from(std::env::var_os("HERDER_SCOPED_TEST_GATE").unwrap());
+    use std::os::unix::fs::MetadataExt;
+    let meta = std::fs::metadata(&gate).unwrap();
     assert_eq!(
-        authority.stop(&identity(), &grants(), "session:issued", "manual", "t"),
-        Err(GateError::Busy)
+        acquire_pinned(&gate, meta.dev(), meta.ino())
+            .err()
+            .unwrap()
+            .kind(),
+        std::io::ErrorKind::WouldBlock
     );
+    let authority = ScopedAuthority::new(db.into(), gate, "authority-1".into()).unwrap();
     println!("CHILD_BUSY");
     std::io::stdout().flush().unwrap();
-    let mut signal = String::new();
-    std::io::stdin().lock().read_line(&mut signal).unwrap();
-    assert_eq!(signal.trim(), "continue");
     assert_eq!(
         authority
             .stop(&identity(), &grants(), "session:issued", "manual", "t")
@@ -423,7 +422,7 @@ fn scoped_stop_child() {
 #[test]
 fn separate_process_stop_serializes_with_actual_handoff_path() {
     use std::{
-        io::{BufRead, BufReader, Write},
+        io::{BufRead, BufReader},
         process::{Command, Stdio},
     };
     let f = Fixture::new();
@@ -493,9 +492,6 @@ fn separate_process_stop_serializes_with_actual_handoff_path() {
         handoff.join().unwrap(),
         DurableDispatch::Admitted(_)
     ));
-    let mut stdin = child.stdin.take().unwrap();
-    writeln!(stdin, "continue").unwrap();
-    stdin.flush().unwrap();
     signal(&mut stdout, "CHILD_STOPPED");
     assert!(child.wait().unwrap().success());
     let c = Connection::open(&f.db).unwrap();
@@ -1754,11 +1750,10 @@ fn fresh_root_is_gated_from_before_native_create_through_atomic_scope_commit() {
             .unwrap()
     });
     ready_rx.recv().unwrap();
-    assert_eq!(
-        f.authority()
-            .stop(&identity(), &grants(), "global", "stop", "now"),
-        Err(GateError::Busy)
-    );
+    let stop_authority = f.authority();
+    let stopper = std::thread::spawn(move || {
+        stop_authority.stop(&identity(), &grants(), "global", "stop", "now")
+    });
     let db = Connection::open(&f.db).unwrap();
     let count:i64=db.query_row("SELECT (SELECT count(*) FROM session_bindings)+(SELECT count(*) FROM humanstop_sessions)+(SELECT count(*) FROM humanstop_scopes)",[],|r|r.get(0)).unwrap();
     assert_eq!(count, 0);
@@ -1772,9 +1767,7 @@ fn fresh_root_is_gated_from_before_native_create_through_atomic_scope_commit() {
     let result:(i64,i64,i64)=db.query_row("SELECT (SELECT count(*) FROM session_bindings WHERE session_ref='issued'),(SELECT count(*) FROM humanstop_sessions WHERE session_ref='issued' AND scope_generation='scope-1'),(SELECT count(*) FROM humanstop_scopes WHERE session_ref='issued')",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).unwrap();
     assert_eq!(result, (1, 1, 2));
     assert_eq!(
-        f.authority()
-            .stop(&identity(), &grants(), "global", "stop", "now")
-            .unwrap(),
+        stopper.join().unwrap().unwrap(),
         StopDisposition::HeldBeforeHandoff
     );
 }

@@ -11,7 +11,7 @@ use crate::{
             DurableDispatch, ReceiptBinding, StoreReceipt, dispatch_payload_binding,
             store_native_receipt,
         },
-        target_gate::{PinnedTargetGateGuard, acquire_pinned},
+        target_gate::{PinnedTargetGateGuard, acquire_pinned, acquire_pinned_wait},
     },
     domain::adapter::{Admission, DispatchPlan, RequestKey, SubmitError},
     store::Writer,
@@ -128,8 +128,19 @@ impl ScopedAuthority {
         })
     }
     fn lock(&self) -> Result<(PinnedTargetGateGuard, Writer), GateError> {
+        self.lock_inner(false)
+    }
+    fn lock_wait(&self) -> Result<(PinnedTargetGateGuard, Writer), GateError> {
+        self.lock_inner(true)
+    }
+    fn lock_inner(&self, wait: bool) -> Result<(PinnedTargetGateGuard, Writer), GateError> {
         let gm = std::fs::symlink_metadata(&self.gate).map_err(|_| GateError::Unavailable)?;
-        let guard = acquire_pinned(&self.gate, gm.dev(), gm.ino()).map_err(|e| {
+        let acquire = if wait {
+            acquire_pinned_wait
+        } else {
+            acquire_pinned
+        };
+        let guard = acquire(&self.gate, gm.dev(), gm.ino()).map_err(|e| {
             if e.kind() == std::io::ErrorKind::WouldBlock {
                 GateError::Busy
             } else {
@@ -493,7 +504,7 @@ impl ScopedAuthority {
         identity
             .authorize(grants, &resource, Action::Write)
             .map_err(|_| GateError::Invalid)?;
-        let (_gate, mut writer) = self.lock()?;
+        let (_gate, mut writer) = self.lock_wait()?;
         let tx = writer
             .connection_mut()
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -536,7 +547,7 @@ impl ScopedAuthority {
         if status == StopDisposition::HeldBeforeHandoff {
             return Ok(InterruptDisposition::HeldBeforeHandoff);
         }
-        let (_guard, mut writer) = self.lock()?;
+        let (_guard, mut writer) = self.lock_wait()?;
         let receipt = match writer
             .load_native_receipt(b)
             .map_err(|_| GateError::Store)?

@@ -107,3 +107,25 @@ The exact `interrupt_exact` call was acknowledged, a separately reopened
 app-server read that turn as `interrupted`, and the subsequent claim was
 denied. The profile, authority database, gate and model process were disposable;
 this is an isolated test, not installation or evidence of legacy cutover.
+
+### Integration and blocking stop, 2026-11-07
+
+On `origin/main` 740ac97f plus the scoped commits, `cargo test --test
+ target_port` passed. To reproduce the external-harness collision, copy the
+`origin/main` version of `tests/target_port.rs` to a temporary integration test
+in the same `tests` directory and run `cargo test --test
+ target_port_external_repro --no-run`: compilation reports E0624 on
+`has_session_binding_schema`, `claim_create_exact`, `mark_create_unknown` and
+`commit_created_session`, plus E0599 for the distinct externally included
+`SessionRegistry` trait. The candidate imports the registered library module;
+no store privacy was widened. The temporary repro file was removed.
+
+Stop now waits on the same pinned OS lock, rechecks its identity after acquiring
+it, and records its hold without requiring the caller to retry Busy. The
+cross-process handoff barrier verifies a competing gate is busy before stop;
+stop completes after the handoff without sleeps or a database transaction
+while waiting. The isolated native proof was repeated on this base: thread
+`01a1b4be-bfac-73e3-a564-f36ab5f7fa11`, turn
+`01a1b4be-c0ef-7852-8aa9-4c79490e46f5`, exact interrupt acknowledged,
+reopened native read `interrupted`, next claim denied. This does not change the
+production-composition limitation above.
