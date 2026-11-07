@@ -1,0 +1,3575 @@
+[
+  {
+    "old_id": "E001",
+    "label": "Показать первый native ответ Codex через новый MCP",
+    "mandatory_stage": "S01",
+    "previous_status": "waiting",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Установить dev сборку. Реальный клиент создаёт сессию, доставляет уникальный input и читает ответ лжемодели с native refs. Эта ранняя проверка не заменяет полный V060.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "E003",
+    "label": "Выпустить ресурсы и offline CLI на изолированном стенде",
+    "mandatory_stage": "S02",
+    "previous_status": "queued",
+    "disposition": "retained-mandatory-stage-acceptance-gate",
+    "preserved_result": "",
+    "original_acceptance": "Установить dev артефакт и local manifest; при выключенном тестовом MCP прочитать и занять зарегистрированный глобальный ресурс, затем сверить owner через MCP.",
+    "superseded_by_stage": "S02",
+    "current_status": "waiting"
+  },
+  {
+    "old_id": "E004",
+    "label": "Выпустить расписание и автопилот на тестовой сессии",
+    "mandatory_stage": "S03",
+    "previous_status": "queued",
+    "disposition": "retained-mandatory-stage-acceptance-gate",
+    "preserved_result": "",
+    "original_acceptance": "Установить dev артефакт; один schedule и один autopilot проходят общий admission, HumanStop прекращает новые ходы.",
+    "superseded_by_stage": "S03",
+    "current_status": "waiting"
+  },
+  {
+    "old_id": "E005",
+    "label": "Выпустить CLI и Web UI с проверенными несколькими instance",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "retained-mandatory-stage-acceptance-gate",
+    "preserved_result": "",
+    "original_acceptance": "Установить dev artifact. Через обычный UI после reload видны user/assistant и разные instance; сохранены уже полученные проверки изоляции.",
+    "superseded_by_stage": "S08",
+    "current_status": "waiting"
+  },
+  {
+    "old_id": "E006",
+    "label": "Выпустить обновлённые consumer маршруты и Skills",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "retained-mandatory-stage-acceptance-gate",
+    "preserved_result": "",
+    "original_acceptance": "Активировать проверенные consumer версии в их разрешённом тестовом маршруте; сверить API digest и одну доступную навигацию. Без повторения внешних отправок.",
+    "superseded_by_stage": "S09",
+    "current_status": "waiting"
+  },
+  {
+    "old_id": "E007",
+    "label": "Выпустить importer и rollback на восстановленном снимке",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "retained-mandatory-stage-acceptance-gate",
+    "preserved_result": "",
+    "original_acceptance": "Установить candidate на изолированный импортированный state, прочитать holds, lineage и UNKNOWN без native send.",
+    "superseded_by_stage": "S10",
+    "current_status": "waiting"
+  },
+  {
+    "old_id": "E008",
+    "label": "Опубликовать проверенные платформенные dev артефакты",
+    "mandatory_stage": "S11",
+    "previous_status": "queued",
+    "disposition": "retained-mandatory-stage-acceptance-gate",
+    "preserved_result": "",
+    "original_acceptance": "Сохранить четыре manifest и места загрузки проверенных артефактов; не считать cross compile доказательством native запуска.",
+    "superseded_by_stage": "S11",
+    "current_status": "waiting"
+  },
+  {
+    "old_id": "E009",
+    "label": "Опубликовать финальный RC с единым manifest",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "retained-mandatory-stage-acceptance-gate",
+    "preserved_result": "",
+    "original_acceptance": "Опубликовать именно проверенный неизменный RC и сопоставить digest с native и consumer доказательствами; production cutover отдельно.",
+    "superseded_by_stage": "S12",
+    "current_status": "waiting"
+  },
+  {
+    "old_id": "R003",
+    "label": "Публиковать resource list/get и наблюдаемый маршрут подключения",
+    "mandatory_stage": "S02",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Отключённый телефон остаётся в списке; reconnect не освобождает владельца; ACL применяется к маршруту.",
+    "superseded_by_stage": "S02"
+  },
+  {
+    "old_id": "R004",
+    "label": "Проверить перенос телефона и гонку владельцев общего ресурса",
+    "mandatory_stage": "S02",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "У каждого телефона свой ID; перенос не меняет claim; один победитель на ресурс; старый claim отвергнут.",
+    "superseded_by_stage": "S02"
+  },
+  {
+    "old_id": "R005",
+    "label": "Подключить существующую точку управления S21 к resource claim",
+    "mandatory_stage": "S02",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Обычная точка управления проверяет актуальный claim и отвергает старого владельца; доказано чтением разрешённого тестового состояния, без звонков или уведомлений человеку.",
+    "superseded_by_stage": "S02"
+  },
+  {
+    "old_id": "R005A",
+    "label": "Подключить существующую точку управления S21 к resource claim: точный вход",
+    "mandatory_stage": "S02",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Записаны callable entrypoint, writer, разрешённые paths и сценарий проверки. Недоступность — точный blocker.",
+    "superseded_by_stage": "S02"
+  },
+  {
+    "old_id": "R005B",
+    "label": "Подключить существующую точку управления S21 к resource claim: единая проверка владения",
+    "mandatory_stage": "S02",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Названный entrypoint использует общий claim; второй mutable owner store не остаётся.",
+    "superseded_by_stage": "S02"
+  },
+  {
+    "old_id": "R006",
+    "label": "Подключить владение планом LHC к общему resource",
+    "mandatory_stage": "S02",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Два редактора одного plan ref получают конфликт; читать разрешено по ACL; содержимое плана не копируется в Herder.",
+    "superseded_by_stage": "S02"
+  },
+  {
+    "old_id": "R006A",
+    "label": "Подключить владение планом LHC к общему resource: точный вход",
+    "mandatory_stage": "S02",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Записаны callable entrypoint, writer, разрешённые paths и сценарий проверки. Недоступность — точный blocker.",
+    "superseded_by_stage": "S02"
+  },
+  {
+    "old_id": "R006B",
+    "label": "Подключить владение планом LHC к общему resource: единая проверка владения",
+    "mandatory_stage": "S02",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Названный entrypoint использует общий claim; второй mutable owner store не остаётся.",
+    "superseded_by_stage": "S02"
+  },
+  {
+    "old_id": "T006",
+    "label": "Передать ответ Task input через compat_task answer",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Ответ точному pending input вызывает standard update один раз; повтор key не продолжает дважды.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "T007",
+    "label": "Передать Task cancel с честным исходом эффекта",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Standard cancel вызывается для нужного Task; cancel не выдаётся за остановленный effect.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "T008",
+    "label": "Отдать Skills и содержимое старому клиенту",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "compat_skill list/get и доступный resource read работают; чтение не выдано за activation.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "T009",
+    "label": "Отобразить подписку в notifications или bounded changes read",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Настоящий listen, ограниченный буфер, cursor и snapshot/resync после потери; push в модель не обещан.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "T011",
+    "label": "Проверить неизменённый Codex через compatibility endpoint",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Официальный Codex обычными tools вызывает get/answer/cancel и читает Skill/changes; upstream native trace. Probe proof отдельно от real Herder.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "T012",
+    "label": "Проверить межсессионную изоляцию translator на real Herder",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Два разрешённых test caller не видят чужие Task/resources, нет повышения privilege и секретов в errors.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "T013",
+    "label": "Пройти стандартные Tasks/Skills/listen через real Herder и Codex",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Реальный native Herder хранит один Task через restart translator; read/input/cancel/Skill/resync подтверждены trace.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "T014",
+    "label": "Удалить compatibility из тестовой сборки и проверить native путь",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Без legacy crate/config native build и direct read/create/deliver остаются работоспособны; native core не зависит от translator.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "T015",
+    "label": "Упаковать translator и инструкции подключения и удаления",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Отдельный binary/config; старый клиент подключается штатно; удаление пакета не требует менять core или данные.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V010",
+    "label": "Подтвердить новый wire на реальном клиенте обоими транспортами",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Основной клиент читает catalog обоими поддерживаемыми транспортами; wrong revision до эффекта. Это точка объединения всей цепочки V010A, V010B, V010.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V010A",
+    "label": "Подключить stdio к application и проверке metadata",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "Native stdio endpoint опубликован 514b46e6: discover/list/typed validation, 14 tools и safe unsupported подтверждены wire. Metadata клиента не даёт identity; все application операции пока отключены — подключение реального application handler и binding ещё не выполнено.",
+    "original_acceptance": "Получен проверяемый результат: Подключить stdio к application и проверке metadata. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V010A2",
+    "label": "Подключить конфигурацию и первый реальный read handler",
+    "mandatory_stage": "S01",
+    "previous_status": "waiting",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "Опубликован 7362a275: конфигурация stdio и fail-closed node discovery; 2 ACL теста и отдельный stdio прошли; injected principal не доказывает trusted launcher.",
+    "original_acceptance": "Отдельный stdio процесс читает тестовую конфигурацию и через discover nodes возвращает её ноды; неподключённые мутации дают effect=none и не вызывают native actions.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V010B",
+    "label": "Подключить HTTP к той же application и identity",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Подключить HTTP к той же application и identity. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V013",
+    "label": "Прочитать тот же Task и результат после перезапуска",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Task сохранён до ответа, polling после рестарта читает тот же ID/result. Клиент без Tasks capability отклоняется до создания исполнимой Task, постановки dispatch и native side effect; ошибка содержит effect=none и понятное исправление. Тест проверяет отсутствие submit и выполнения Task, не только код ответа. Это точка объединения всей цепочки V013A, V013B, V013.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V013A",
+    "label": "Отказывать клиенту без Tasks до intent и native эффекта",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Отказывать клиенту без Tasks до intent и native эффекта. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V013B",
+    "label": "Сохранять стандартный Task до ответа через SQLite backend",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Сохранять стандартный Task до ответа через SQLite backend. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V014",
+    "label": "Проверить повтор input и отмену уже принятой операции",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Повтор input не продолжает дважды; cancel после admission не выдаёт отмену эффекта. Это точка объединения всей цепочки V014A, V014B, V014.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V014A",
+    "label": "Сохранять pending input и однократное принятие ответа",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Сохранять pending input и однократное принятие ответа. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V014B",
+    "label": "Провести cancel через intent с отдельным исходом эффекта",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Провести cancel через intent с отдельным исходом эффекта. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V015",
+    "label": "Подтвердить восстановление после сбоя в admission",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Kill после dispatching/admission даёт confirmed или unknown; unknown не получает safe retry. Это точка объединения всей цепочки V015A, V015B, V015.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V015B",
+    "label": "Восстанавливать confirmed или unknown без новой отправки",
+    "mandatory_stage": "S01",
+    "previous_status": "waiting",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "554b7182: версионированная receipt привязана к intent/principal/target/request_key/address; неверная или повреждённая даёт UNKNOWN, 3 targeted теста. Реальное происхождение и полный restart dispatcher ещё не доказаны.",
+    "original_acceptance": "Получен проверяемый результат: Восстанавливать confirmed или unknown без новой отправки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V016",
+    "label": "Проверить старый request_key после истечения Task",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Истёкший Task и удалённый transcript не позволяют повтор request_key выполнить эффект. Это точка объединения всей цепочки V016A, V016B, V016.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V016A",
+    "label": "Разделить сроки Task, текста и дедупликационной квитанции",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Разделить сроки Task, текста и дедупликационной квитанции. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V016B",
+    "label": "Сохранять tombstone после удаления текста и Task",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Сохранять tombstone после удаления текста и Task. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V018",
+    "label": "Проверить медленного подписчика без блокировки других клиентов",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Медленный клиент не блокирует ноду; reconnect видит current revision без дублирования эффектов. Это точка объединения всей цепочки V018A, V018B, V018.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V018A",
+    "label": "Отдавать изменения по фильтру с ограниченной очередью",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Отдавать изменения по фильтру с ограниченной очередью. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V018B",
+    "label": "Восстанавливать snapshot после обрыва или переполнения",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Восстанавливать snapshot после обрыва или переполнения. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V019",
+    "label": "Проверить границы manifest и отсутствие ложной activation",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Проверены manifest boundary, приватность и content hash; read не объявляет activation. Это точка объединения всей цепочки V019A, V019B, V019.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V019A",
+    "label": "Отдавать единый Skills manifest и content hash",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Отдавать единый Skills manifest и content hash. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V019B",
+    "label": "Читать Skill через resource с теми же правами",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Читать Skill через resource с теми же правами. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V020",
+    "label": "Проверить недоступный origin без локального fallback",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Две конфигурируемые ноды; чужой scope denied, недоступный origin остаётся unavailable. Это точка объединения всей цепочки V020A, V020B, V020.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V020A",
+    "label": "Выбирать origin node из точного адреса instance",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Выбирать origin node из точного адреса instance. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V020B",
+    "label": "Передавать identity, deadline и исходную ошибку peer",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Передавать identity, deadline и исходную ошибку peer. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V021",
+    "label": "Проверить proxy restart и запрет чужого результата",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Proxy restart не дублирует native intent; origin task/result остаются теми же. Это точка объединения всей цепочки V021A, V021B, V021.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V021A",
+    "label": "Сохранять origin Task ref без второго lifecycle",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Сохранять origin Task ref без второго lifecycle. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V021B",
+    "label": "Маршрутизировать get, cancel и resource read к origin",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Маршрутизировать get, cancel и resource read к origin. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V023",
+    "label": "Подтвердить одну созданную сессию точным readback",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Fake native create вызывается один раз; completion только после session readback. Это точка объединения всей цепочки V023A, V023B, V023.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V023A",
+    "label": "Проверять instance, права и capability перед локальным create",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Проверять instance, права и capability перед локальным create. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V023B",
+    "label": "Связать сохранённый intent с native session ID",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Связать сохранённый intent с native session ID. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V024",
+    "label": "Подтвердить busy и unsupported без неявного create",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Busy/unsupported не подменяют режим; persisted intent предшествует submit. Это точка объединения всей цепочки V024A, V024B, V024.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V024A",
+    "label": "Разобрать current, queue и start без подмены режима",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Разобрать current, queue и start без подмены режима. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V024B",
+    "label": "Отправлять сохранённый intent с expected turn",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Отправлять сохранённый intent с expected turn. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V025",
+    "label": "Проверить гонку stop с отправкой и фактический interrupt",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Race stop/deliver: post-hold send не стартует; уже принятое действие отражено честно. Это точка объединения всей цепочки V025A, V025B, V025.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V025A",
+    "label": "Записать HumanStop перед попыткой interrupt",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Записать HumanStop перед попыткой interrupt. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V025B",
+    "label": "Сериализовать hold и dispatch на admission boundary",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Сериализовать hold и dispatch на admission boundary. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V025COMPOSE",
+    "label": "Подключить проверенную authority к MCP application",
+    "mandatory_stage": "S01",
+    "previous_status": "waiting",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Изолированное authenticated приложение выполняет целевые операции, spoofed identity и imported scope запрещены; статус задачи и причины отказа читаются.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V025PROD",
+    "label": "Подключить HumanStop gate к реальному native handoff",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Реальный consumer fresh create→deliver→native readback→stop→next denied; barrier races, UNKNOWN без replay и production authority отдельно подтверждены.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V025PUBLIC",
+    "label": "Проверить публичный MCP путь с HumanStop",
+    "mandatory_stage": "S01",
+    "previous_status": "waiting",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Fresh create→deliver→native readback→stop→next denied; receipt и UNKNOWN no replay, отдельный результат от fixture.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V025TASKDELIVERY",
+    "label": "Fenced delivery и durable MCP Task",
+    "mandatory_stage": "S01",
+    "previous_status": "waiting",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Fake wire проверяет один send, no-send/UNKNOWN/подтверждение, durable terminal status, дедупликацию и независимый read; production consumer проверяется отдельно.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V026",
+    "label": "Проверить повтор resume без второго хода",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Дубликат resume не создаёт ход; флаг humanRequested от модели не снимает hold. Это точка объединения всей цепочки V026A, V026B, V026.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V026A",
+    "label": "Проводить одноразовый resume через общий intent",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Проводить одноразовый resume через общий intent. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V026B",
+    "label": "Отделить право снять HumanStop от флага модели",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Отделить право снять HumanStop от флага модели. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V032",
+    "label": "Проверить неизвестную квоту без нуля или unlimited",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Два профиля не разделяют auth/quota cache, unknown не zero/unlimited. Это точка объединения всей цепочки V032A, V032B, V032.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V032B",
+    "label": "Отделить cache квоты разных профилей и unknown",
+    "mandatory_stage": "S01",
+    "previous_status": "waiting",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "Опубликован 7628576d: QuotaCache изолирует InstanceRef, unknown/0/unlimited, исключает stale/foreign; 5 tests. Legacy quota read глобальный, provider bridge не подключён.",
+    "original_acceptance": "Получен проверяемый результат: Отделить cache квоты разных профилей и unknown. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V034",
+    "label": "Проверить истёкший запрос и повтор ответа",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Expired ID не отвечает другому request; duplicate answer идемпотентен. Это точка объединения всей цепочки V034A, V034B, V034.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V034A",
+    "label": "Прочитать конкретный pending native permission request",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Прочитать конкретный pending native permission request. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V034B",
+    "label": "Передать авторизованный ответ по точному request ID",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Передать авторизованный ответ по точному request ID. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V035",
+    "label": "Проверить повтор callback без второго resume на тестовом контакте",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Ответ относится одной сессии, повтор callback не даёт два resume; внешняя отправка только в test route. Это точка объединения всей цепочки V035A, V035B, V035.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V035A",
+    "label": "Сопоставить MCP input с исходным Task и сессией",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Сопоставить MCP input с исходным Task и сессией. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V035B",
+    "label": "Связать внешний вопрос и callback через тот же admission",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Связать внешний вопрос и callback через тот же admission. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V040",
+    "label": "Проверить общий workspace двух нод и различие заметки и владения",
+    "mandatory_stage": "S02",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Декларация не lease; две ноды одного shared workspace используют один resource. Это точка объединения всей цепочки V040A, V040B, V040.",
+    "superseded_by_stage": "S02"
+  },
+  {
+    "old_id": "V040A",
+    "label": "Сохранить объявления worktree, scopes и заметки в resource",
+    "mandatory_stage": "S02",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Сохранить объявления worktree, scopes и заметки в resource. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S02"
+  },
+  {
+    "old_id": "V044",
+    "label": "Проверить ограниченный context с курсорами без скрытых участников",
+    "mandatory_stage": "S02",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "A creator и C sender восстанавливаются без transcript memory; чужие closed sessions скрыты. Это точка объединения всей цепочки V044A, V044B, V044.",
+    "superseded_by_stage": "S02"
+  },
+  {
+    "old_id": "V045",
+    "label": "Подтвердить отсутствие закрытых текстов и owner authority в snapshot",
+    "mandatory_stage": "S02",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Без daemon читается stale snapshot; это не owner или delivery receipt. Это точка объединения всей цепочки V045A, V045B, V045.",
+    "superseded_by_stage": "S02"
+  },
+  {
+    "old_id": "V045B",
+    "label": "Показывать generated_at и partial при offline чтении",
+    "mandatory_stage": "S02",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Показывать generated_at и partial при offline чтении. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S02"
+  },
+  {
+    "old_id": "V046",
+    "label": "Подтвердить восстановление при неизменном fingerprint",
+    "mandatory_stage": "S02",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Fake compact event вызывает snapshot без нового model turn и без снятия STOP. Это точка объединения всей цепочки V046A, V046B, V046.",
+    "superseded_by_stage": "S02"
+  },
+  {
+    "old_id": "V046A",
+    "label": "Отмечать generation после resume и compaction",
+    "mandatory_stage": "S02",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Отмечать generation после resume и compaction. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S02"
+  },
+  {
+    "old_id": "V046B",
+    "label": "Вставлять карточку через поддерживаемую native точку",
+    "mandatory_stage": "S02",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Вставлять карточку через поддерживаемую native точку. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S02"
+  },
+  {
+    "old_id": "V047",
+    "label": "Проверить неверную цель, режим и права",
+    "mandatory_stage": "S03",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Неверный cron объясняется; настройка не создаёт parallel job API. Это точка объединения всей цепочки V047A, V047B, V047.",
+    "superseded_by_stage": "S03"
+  },
+  {
+    "old_id": "V047A",
+    "label": "Описать typed schedule и autopilot без общего workflow языка",
+    "mandatory_stage": "S03",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Описать typed schedule и autopilot без общего workflow языка. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S03"
+  },
+  {
+    "old_id": "V047B",
+    "label": "Сохранять правила по CAS для точной сессии",
+    "mandatory_stage": "S03",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Сохранять правила по CAS для точной сессии. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S03"
+  },
+  {
+    "old_id": "V048",
+    "label": "Проверить повтор события без второго resume",
+    "mandatory_stage": "S03",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Hook/observer/end-turn повтор не создаёт второй continuation; hold всегда проверен. Это точка объединения всей цепочки V048A, V048B, V048.",
+    "superseded_by_stage": "S03"
+  },
+  {
+    "old_id": "V048A",
+    "label": "Принять триггер в общий intent executor с request_key",
+    "mandatory_stage": "S03",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Принять триггер в общий intent executor с request_key. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S03"
+  },
+  {
+    "old_id": "V048B",
+    "label": "Проверить HumanStop непосредственно перед admission",
+    "mandatory_stage": "S03",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Проверить HumanStop непосредственно перед admission. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S03"
+  },
+  {
+    "old_id": "V049",
+    "label": "Проверить пропущенный срок без повторения UNKNOWN",
+    "mandatory_stage": "S03",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "DST fold/gap, restart после admission и pause не дают дубля. Это точка объединения всей цепочки V049A, V049B, V049.",
+    "superseded_by_stage": "S03"
+  },
+  {
+    "old_id": "V049A",
+    "label": "Вычислять следующий срок с timezone и DST",
+    "mandatory_stage": "S03",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Вычислять следующий срок с timezone и DST. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S03"
+  },
+  {
+    "old_id": "V049B",
+    "label": "Сохранять pause и исход выполнявшегося события при рестарте",
+    "mandatory_stage": "S03",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Сохранять pause и исход выполнявшегося события при рестарте. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S03"
+  },
+  {
+    "old_id": "V050",
+    "label": "Подтвердить отсутствие нового хода после остановки",
+    "mandatory_stage": "S03",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Goal done, quota unknown/denied и HumanStop не вызывают retry-loop; одна continuation на turn. Это точка объединения всей цепочки V050A, V050B, V050.",
+    "superseded_by_stage": "S03"
+  },
+  {
+    "old_id": "V050A",
+    "label": "Остановить autopilot по достигнутой цели или бюджету",
+    "mandatory_stage": "S03",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Остановить autopilot по достигнутой цели или бюджету. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S03"
+  },
+  {
+    "old_id": "V050B",
+    "label": "Сохранять причину остановки и HumanStop",
+    "mandatory_stage": "S03",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Сохранять причину остановки и HumanStop. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S03"
+  },
+  {
+    "old_id": "V051",
+    "label": "Подтвердить уникальные input и native receipt без вызова реальной модели",
+    "mandatory_stage": "S01",
+    "previous_status": "waiting",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "27a22ff0: изолированный Codex 0.167.0 выполнил 2 input/turn с отдельными native IDs и fixture answer, подтверждено thread/read; через Herder MCP ещё не проходит.",
+    "original_acceptance": "Native процесс отличим от fake adapter; никакого личного аккаунта/звонка; отдельные browser test identities. Это точка объединения всей цепочки V051A, V051B, V051.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V055",
+    "label": "Codex: Сверить единственную созданную сессию через public MCP",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Точное native ID, creator сохраняется; disconnect не запускает второй create. Это точка объединения всей цепочки V055A, V055B, V055.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V055A",
+    "label": "Codex: Вызвать native create из общего application",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Codex: Вызвать native create из общего application. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V055B",
+    "label": "Codex: Связать receipt с точным session ID",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Codex: Связать receipt с точным session ID. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V056",
+    "label": "Codex: Подтвердить доставку и отказ от повторения UNKNOWN",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Один input readback; unsupported mode до send; unknown после разрыва не replay. Это точка объединения всей цепочки V056A, V056B, V056.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V056A",
+    "label": "Codex: Передать message с request key в поддерживаемом режиме",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Codex: Передать message с request key в поддерживаемом режиме. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V056B",
+    "label": "Codex: Найти input в точном native turn или queue",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Codex: Найти input в точном native turn или queue. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V057",
+    "label": "Codex: Сверить export и search с исходной историей",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Первая/последняя страница и role blocks не теряются; чужой cursor rejected. Это точка объединения всей цепочки V057A, V057B, V057.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V057A",
+    "label": "Codex: Прочитать native transcript страницами",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Codex: Прочитать native transcript страницами. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V057B",
+    "label": "Codex: Нормализовать snapshot и обновить общий индекс",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Codex: Нормализовать snapshot и обновить общий индекс. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V058",
+    "label": "Codex: Проверить stop, stale request и границы capability",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control. Это точка объединения всей цепочки V058A, V058B, V058.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V058A",
+    "label": "Codex: Привязать interrupt к точному native turn",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Codex: Привязать interrupt к точному native turn. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V058B",
+    "label": "Codex: Применить поддерживаемые параметры и permission reply",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Codex: Применить поддерживаемые параметры и permission reply. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V059",
+    "label": "Codex: Подтвердить видимость карточки агенту и честный unsupported",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся. Это точка объединения всей цепочки V059A, V059B, V059.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V059A",
+    "label": "Codex: Подключить native точку вставки context",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Codex: Подключить native точку вставки context. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V059B",
+    "label": "Codex: Восстановить generation при поддерживаемом resume или compaction",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Codex: Восстановить generation при поддерживаемом resume или compaction. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V060",
+    "label": "Codex: Подтвердить stop, контекст и digest всей вертикали",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "retained-mandatory-stage-acceptance-gate",
+    "preserved_result": "",
+    "original_acceptance": "Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane. Это точка объединения всей цепочки V060A, V060B, V060.",
+    "superseded_by_stage": "S01",
+    "current_status": "waiting"
+  },
+  {
+    "old_id": "V060A",
+    "label": "Codex: Установить текущий dev artifact в изолированный native контур",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Codex: Установить текущий dev artifact в изолированный native контур. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V060B",
+    "label": "Codex: Пройти create, deliver, read и export через публичный MCP",
+    "mandatory_stage": "S01",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Codex: Пройти create, deliver, read и export через публичный MCP. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S01"
+  },
+  {
+    "old_id": "V064",
+    "label": "OpenCode: Сверить единственную созданную сессию через public MCP",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Точное native ID, creator сохраняется; disconnect не запускает второй create. Это точка объединения всей цепочки V064A, V064B, V064.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V064A",
+    "label": "OpenCode: подключить готовый create через минимальный AHAP bridge",
+    "mandatory_stage": "S04",
+    "previous_status": "waiting",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "Минимальный TS AHAP runner переиспользует OpenCodeAdapter; protocol v2 pinned, Queue suppresses implicit wake, native message ID retained, mutation exceptions unknown, null/scalar/array frames handled. Source commits a3a514fa+c3b5aa58, source-only. Public/native consumer ещё не доказан.",
+    "original_acceptance": "Fake AHAP→existing adapter invocation с exact instance/request/session binding; one create, unsupported до эффекта, uncertain result не повторяется. Реальный public readback остаётся V064. Источники/commit/проверка записаны; общий core glue отдельно у Terra.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V064B",
+    "label": "OpenCode: Связать receipt с точным session ID",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: OpenCode: Связать receipt с точным session ID. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V065",
+    "label": "OpenCode: Подтвердить доставку и отказ от повторения UNKNOWN",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Один input readback; unsupported mode до send; unknown после разрыва не replay. Это точка объединения всей цепочки V065A, V065B, V065.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V065A",
+    "label": "OpenCode: доставить через готовый adapter и общий admission",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: OpenCode: Передать message с request key в поддерживаемом режиме. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V065B",
+    "label": "OpenCode: Найти input в точном native turn или queue",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: OpenCode: Найти input в точном native turn или queue. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V066",
+    "label": "OpenCode: Сверить export и search с исходной историей",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Первая/последняя страница и role blocks не теряются; чужой cursor rejected. Это точка объединения всей цепочки V066A, V066B, V066.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V066A",
+    "label": "OpenCode: Прочитать native transcript страницами",
+    "mandatory_stage": "S04",
+    "previous_status": "waiting",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: OpenCode: Прочитать native transcript страницами. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V066B",
+    "label": "OpenCode: Нормализовать snapshot и обновить общий индекс",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: OpenCode: Нормализовать snapshot и обновить общий индекс. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V067",
+    "label": "OpenCode: Проверить stop, stale request и границы capability",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control. Это точка объединения всей цепочки V067A, V067B, V067.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V067A",
+    "label": "OpenCode: Привязать interrupt к точному native turn",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: OpenCode: Привязать interrupt к точному native turn. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V067B",
+    "label": "OpenCode: Применить поддерживаемые параметры и permission reply",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: OpenCode: Применить поддерживаемые параметры и permission reply. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V068",
+    "label": "OpenCode: Подтвердить видимость карточки агенту и честный unsupported",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся. Это точка объединения всей цепочки V068A, V068B, V068.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V068A",
+    "label": "OpenCode: Подключить native точку вставки context",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: OpenCode: Подключить native точку вставки context. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V068B",
+    "label": "OpenCode: Восстановить generation при поддерживаемом resume или compaction",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: OpenCode: Восстановить generation при поддерживаемом resume или compaction. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V069",
+    "label": "OpenCode: Подтвердить stop, контекст и digest всей вертикали",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "retained-mandatory-stage-acceptance-gate",
+    "preserved_result": "",
+    "original_acceptance": "Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane. Это точка объединения всей цепочки V069A, V069B, V069.",
+    "superseded_by_stage": "S04",
+    "current_status": "waiting"
+  },
+  {
+    "old_id": "V069A",
+    "label": "OpenCode: Установить текущий dev artifact в изолированный native контур",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: OpenCode: Установить текущий dev artifact в изолированный native контур. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V069B",
+    "label": "OpenCode: Пройти create, deliver, read и export через публичный MCP",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: OpenCode: Пройти create, deliver, read и export через публичный MCP. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V073",
+    "label": "ZCode: Сверить единственную созданную сессию через public MCP",
+    "mandatory_stage": "S05",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Точное native ID, creator сохраняется; disconnect не запускает второй create. Это точка объединения всей цепочки V073A, V073B, V073.",
+    "superseded_by_stage": "S05"
+  },
+  {
+    "old_id": "V073A",
+    "label": "ZCode: Вызвать native create из общего application",
+    "mandatory_stage": "S05",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ZCode: Вызвать native create из общего application. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S05"
+  },
+  {
+    "old_id": "V073B",
+    "label": "ZCode: Связать receipt с точным session ID",
+    "mandatory_stage": "S05",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ZCode: Связать receipt с точным session ID. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S05"
+  },
+  {
+    "old_id": "V074",
+    "label": "ZCode: Подтвердить доставку и отказ от повторения UNKNOWN",
+    "mandatory_stage": "S05",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Один input readback; unsupported mode до send; unknown после разрыва не replay. Это точка объединения всей цепочки V074A, V074B, V074.",
+    "superseded_by_stage": "S05"
+  },
+  {
+    "old_id": "V074A",
+    "label": "ZCode: Передать message с request key в поддерживаемом режиме",
+    "mandatory_stage": "S05",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ZCode: Передать message с request key в поддерживаемом режиме. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S05"
+  },
+  {
+    "old_id": "V074B",
+    "label": "ZCode: Найти input в точном native turn или queue",
+    "mandatory_stage": "S05",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ZCode: Найти input в точном native turn или queue. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S05"
+  },
+  {
+    "old_id": "V075",
+    "label": "ZCode: Сверить export и search с исходной историей",
+    "mandatory_stage": "S05",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Первая/последняя страница и role blocks не теряются; чужой cursor rejected. Это точка объединения всей цепочки V075A, V075B, V075.",
+    "superseded_by_stage": "S05"
+  },
+  {
+    "old_id": "V075B",
+    "label": "ZCode: Нормализовать snapshot и обновить общий индекс",
+    "mandatory_stage": "S05",
+    "previous_status": "waiting",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ZCode: Нормализовать snapshot и обновить общий индекс. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S05"
+  },
+  {
+    "old_id": "V076",
+    "label": "ZCode: Проверить stop, stale request и границы capability",
+    "mandatory_stage": "S05",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control. Это точка объединения всей цепочки V076A, V076B, V076.",
+    "superseded_by_stage": "S05"
+  },
+  {
+    "old_id": "V077",
+    "label": "ZCode: Подтвердить видимость карточки агенту и честный unsupported",
+    "mandatory_stage": "S05",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся. Это точка объединения всей цепочки V077A, V077B, V077.",
+    "superseded_by_stage": "S05"
+  },
+  {
+    "old_id": "V077A",
+    "label": "ZCode: Подключить native точку вставки context",
+    "mandatory_stage": "S05",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ZCode: Подключить native точку вставки context. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S05"
+  },
+  {
+    "old_id": "V077B",
+    "label": "ZCode: Восстановить generation при поддерживаемом resume или compaction",
+    "mandatory_stage": "S05",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ZCode: Восстановить generation при поддерживаемом resume или compaction. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S05"
+  },
+  {
+    "old_id": "V078",
+    "label": "ZCode: Подтвердить stop, контекст и digest всей вертикали",
+    "mandatory_stage": "S05",
+    "previous_status": "queued",
+    "disposition": "retained-mandatory-stage-acceptance-gate",
+    "preserved_result": "",
+    "original_acceptance": "Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane. Это точка объединения всей цепочки V078A, V078B, V078.",
+    "superseded_by_stage": "S05",
+    "current_status": "waiting"
+  },
+  {
+    "old_id": "V078A",
+    "label": "ZCode: Установить текущий dev artifact в изолированный native контур",
+    "mandatory_stage": "S05",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ZCode: Установить текущий dev artifact в изолированный native контур. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S05"
+  },
+  {
+    "old_id": "V078B",
+    "label": "ZCode: Пройти create, deliver, read и export через публичный MCP",
+    "mandatory_stage": "S05",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ZCode: Пройти create, deliver, read и export через публичный MCP. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S05"
+  },
+  {
+    "old_id": "V079",
+    "label": "ChatGPT: Записать capability matrix с точным неподдерживаемым вызовом",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "V079A fixture готов; устаревший Vibe blocker снят прямым CDP evidence. Product transport, operations и безопасная input correlation не доказаны.",
+    "original_acceptance": "Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success. Это точка объединения всей цепочки V079A, V079B, V079.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V079B",
+    "label": "ChatGPT: Проверить доступность test profile и корреляцию input",
+    "mandatory_stage": "S06",
+    "previous_status": "waiting",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "Direct CDP confirmed Chrome 156.0.8078.80/protocol 1.3 and exact instance/context identities. Provider-specific composer accepts visible draft but submit remains disabled and input event is absent under safe preflight. No message was sent; this is not a confirmed provider outage and does not prove Rust adapter.",
+    "original_acceptance": "Получен проверяемый результат: ChatGPT: Проверить доступность test profile и корреляцию input. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V080",
+    "label": "ChatGPT: Проверить изоляцию подключения и ошибку доступа",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю. Это точка объединения всей цепочки V080A, V080B, V080.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V081",
+    "label": "ChatGPT: Сверить recent с независимым native чтением",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен. Это точка объединения всей цепочки V081A, V081B, V081.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V081A",
+    "label": "ChatGPT: Прочитать native список и устойчивые session IDs",
+    "mandatory_stage": "S06",
+    "previous_status": "waiting",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "Existing ChatGPT source route/fixture confirmed in src/adapters/browser-chat-api-scripts.ts and tests/chatgpt-request-trace.test.ts. Added ChatGptReader::list_conversations in crates/herder/src/adapters/chatgpt/read.rs (module wiring in mod.rs), using observed same-origin /backend-api/conversations?offset={offset}&limit=100&order=updated. Fake direct-CDP covers exact pinned target/context/account, two pages with stable native IDs, provider-backed cursor/partial, account-scope change rejection and descriptive HTTP 503. Commit 0bbfbb2812586de9531eca8222582599d8e5302b; focused command cargo test --manifest-path crates/herder/Cargo.toml adapters::chatgpt -- --nocapture; 14 passed / 0 failed. No live profile/create/send.",
+    "original_acceptance": "Fake endpoint подтверждает source путь и exact context/account, устойчивые IDs, continuation/partial и descriptive unavailable. Нет create/send и обращения к live профилю; source commit/evidence отдельно от native proof.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V081B",
+    "label": "ChatGPT: Нормализовать user и assistant с turn refs",
+    "mandatory_stage": "S06",
+    "previous_status": "waiting",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "Added ChatGptReader::recent_messages in crates/herder/src/adapters/chatgpt/read.rs. It projects latest user and assistant from current_node ancestry, retains message IDs/time, verifies account scope in the same page operation, follows explicit parent ancestry for reply_to_input_id, and leaves turn_id/partial unknown where the captured schema supplies no fields. Fake CDP fixture proves user-001 and assistant-final-001 relation through the intermediate analysis node; account switch is rejected. Same focused command: 14 passed / 0 failed. Source commit 0bbfbb2812586de9531eca8222582599d8e5302b. Live profile/send remains unverified and held for V081/V080.",
+    "original_acceptance": "Получен проверяемый результат: ChatGPT: Нормализовать user и assistant с turn refs. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V082",
+    "label": "ChatGPT: Сверить единственную созданную сессию через public MCP",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Точное native ID, creator сохраняется; disconnect не запускает второй create. Это точка объединения всей цепочки V082A, V082B, V082.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V082A",
+    "label": "ChatGPT: Вызвать native create из общего application",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ChatGPT: Вызвать native create из общего application. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V082B",
+    "label": "ChatGPT: Связать receipt с точным session ID",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ChatGPT: Связать receipt с точным session ID. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V083",
+    "label": "ChatGPT: Подтвердить доставку и отказ от повторения UNKNOWN",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Один input readback; unsupported mode до send; unknown после разрыва не replay. Это точка объединения всей цепочки V083A, V083B, V083.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V083A",
+    "label": "ChatGPT: Передать message с request key в поддерживаемом режиме",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ChatGPT: Передать message с request key в поддерживаемом режиме. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V083B",
+    "label": "ChatGPT: Найти input в точном native turn или queue",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ChatGPT: Найти input в точном native turn или queue. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V084",
+    "label": "ChatGPT: Сверить export и search с исходной историей",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Первая/последняя страница и role blocks не теряются; чужой cursor rejected. Это точка объединения всей цепочки V084A, V084B, V084.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V084A",
+    "label": "ChatGPT: Прочитать native transcript страницами",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ChatGPT: Прочитать native transcript страницами. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V084B",
+    "label": "ChatGPT: Нормализовать snapshot и обновить общий индекс",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ChatGPT: Нормализовать snapshot и обновить общий индекс. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V085",
+    "label": "ChatGPT: Проверить stop, stale request и границы capability",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control. Это точка объединения всей цепочки V085A, V085B, V085.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V085A",
+    "label": "ChatGPT: Привязать interrupt к точному native turn",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ChatGPT: Привязать interrupt к точному native turn. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V085B",
+    "label": "ChatGPT: Применить поддерживаемые параметры и permission reply",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ChatGPT: Применить поддерживаемые параметры и permission reply. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V086",
+    "label": "ChatGPT: Подтвердить видимость карточки агенту и честный unsupported",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся. Это точка объединения всей цепочки V086A, V086B, V086.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V086A",
+    "label": "ChatGPT: Подключить native точку вставки context",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ChatGPT: Подключить native точку вставки context. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V086B",
+    "label": "ChatGPT: Восстановить generation при поддерживаемом resume или compaction",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ChatGPT: Восстановить generation при поддерживаемом resume или compaction. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V087",
+    "label": "ChatGPT: Подтвердить stop, контекст и digest всей вертикали",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "retained-mandatory-stage-acceptance-gate",
+    "preserved_result": "",
+    "original_acceptance": "Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane. Это точка объединения всей цепочки V087A, V087B, V087.",
+    "superseded_by_stage": "S06",
+    "current_status": "waiting"
+  },
+  {
+    "old_id": "V087A",
+    "label": "ChatGPT: Установить текущий dev artifact в изолированный native контур",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ChatGPT: Установить текущий dev artifact в изолированный native контур. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V087B",
+    "label": "ChatGPT: Пройти create, deliver, read и export через публичный MCP",
+    "mandatory_stage": "S06",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ChatGPT: Пройти create, deliver, read и export через публичный MCP. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S06"
+  },
+  {
+    "old_id": "V091",
+    "label": "Z.ai: Сверить единственную созданную сессию через public MCP",
+    "mandatory_stage": "S07",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Точное native ID, creator сохраняется; disconnect не запускает второй create. Это точка объединения всей цепочки V091A, V091B, V091.",
+    "superseded_by_stage": "S07"
+  },
+  {
+    "old_id": "V091A",
+    "label": "Z.ai: Вызвать native create из общего application",
+    "mandatory_stage": "S07",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Z.ai: Вызвать native create из общего application. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S07"
+  },
+  {
+    "old_id": "V091B",
+    "label": "Z.ai: Связать receipt с точным session ID",
+    "mandatory_stage": "S07",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Z.ai: Связать receipt с точным session ID. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S07"
+  },
+  {
+    "old_id": "V092",
+    "label": "Z.ai: Подтвердить доставку и отказ от повторения UNKNOWN",
+    "mandatory_stage": "S07",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Один input readback; unsupported mode до send; unknown после разрыва не replay. Это точка объединения всей цепочки V092A, V092B, V092.",
+    "superseded_by_stage": "S07"
+  },
+  {
+    "old_id": "V092A",
+    "label": "Z.ai: Передать message с request key в поддерживаемом режиме",
+    "mandatory_stage": "S07",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Z.ai: Передать message с request key в поддерживаемом режиме. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S07"
+  },
+  {
+    "old_id": "V092B",
+    "label": "Z.ai: Найти input в точном native turn или queue",
+    "mandatory_stage": "S07",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Z.ai: Найти input в точном native turn или queue. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S07"
+  },
+  {
+    "old_id": "V093",
+    "label": "Z.ai: Сверить export и search с исходной историей",
+    "mandatory_stage": "S07",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Первая/последняя страница и role blocks не теряются; чужой cursor rejected. Это точка объединения всей цепочки V093A, V093B, V093.",
+    "superseded_by_stage": "S07"
+  },
+  {
+    "old_id": "V094",
+    "label": "Z.ai: Проверить stop, stale request и границы capability",
+    "mandatory_stage": "S07",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control. Это точка объединения всей цепочки V094A, V094B, V094.",
+    "superseded_by_stage": "S07"
+  },
+  {
+    "old_id": "V094A",
+    "label": "Z.ai: Привязать interrupt к точному native turn",
+    "mandatory_stage": "S07",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Z.ai: Привязать interrupt к точному native turn. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S07"
+  },
+  {
+    "old_id": "V094B",
+    "label": "Z.ai: Применить поддерживаемые параметры и permission reply",
+    "mandatory_stage": "S07",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Z.ai: Применить поддерживаемые параметры и permission reply. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S07"
+  },
+  {
+    "old_id": "V095",
+    "label": "Z.ai: Подтвердить видимость карточки агенту и честный unsupported",
+    "mandatory_stage": "S07",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся. Это точка объединения всей цепочки V095A, V095B, V095.",
+    "superseded_by_stage": "S07"
+  },
+  {
+    "old_id": "V095A",
+    "label": "Z.ai: Подключить native точку вставки context",
+    "mandatory_stage": "S07",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Z.ai: Подключить native точку вставки context. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S07"
+  },
+  {
+    "old_id": "V095B",
+    "label": "Z.ai: Восстановить generation при поддерживаемом resume или compaction",
+    "mandatory_stage": "S07",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Z.ai: Восстановить generation при поддерживаемом resume или compaction. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S07"
+  },
+  {
+    "old_id": "V096",
+    "label": "Z.ai: Подтвердить stop, контекст и digest всей вертикали",
+    "mandatory_stage": "S07",
+    "previous_status": "queued",
+    "disposition": "retained-mandatory-stage-acceptance-gate",
+    "preserved_result": "",
+    "original_acceptance": "Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane. Это точка объединения всей цепочки V096A, V096B, V096.",
+    "superseded_by_stage": "S07",
+    "current_status": "waiting"
+  },
+  {
+    "old_id": "V096A",
+    "label": "Z.ai: Установить текущий dev artifact в изолированный native контур",
+    "mandatory_stage": "S07",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Z.ai: Установить текущий dev artifact в изолированный native контур. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S07"
+  },
+  {
+    "old_id": "V096B",
+    "label": "Z.ai: Пройти create, deliver, read и export через публичный MCP",
+    "mandatory_stage": "S07",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Z.ai: Пройти create, deliver, read и export через публичный MCP. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S07"
+  },
+  {
+    "old_id": "V097",
+    "label": "Сохранить native readback и durable Task после рестарта",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Create/deliver/context работают через реальные adapters; missing extension не скрыт. Это точка объединения всей цепочки V097A, V097B, V097.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V097A",
+    "label": "Установить dev артефакт с Codex и OpenCode",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Установить dev артефакт с Codex и OpenCode. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V097B",
+    "label": "Пройти create, deliver и context через основной MCP client",
+    "mandatory_stage": "S04",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Пройти create, deliver и context через основной MCP client. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S04"
+  },
+  {
+    "old_id": "V098",
+    "label": "Проверить изоляцию истории и управления двух Codex",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "В обоих профилях свои IDs/history; fixture одинакового native ID не смешивает ключи. Это точка объединения всей цепочки V098A, V098B, V098.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V098A",
+    "label": "Настроить два изолированных Codex instance",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Настроить два изолированных Codex instance. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V098B",
+    "label": "Отправить разные маркеры и сопоставить native IDs",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Отправить разные маркеры и сопоставить native IDs. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V099",
+    "label": "Проверить сохранение работы и истории второго instance",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Отправка и stop одного instance не касаются второго. Это точка объединения всей цепочки V099A, V099B, V099.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V099A",
+    "label": "Настроить два изолированных OpenCode instance",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Настроить два изолированных OpenCode instance. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V099B",
+    "label": "Отправить разные маркеры и остановить один instance",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Отправить разные маркеры и остановить один instance. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V100",
+    "label": "Подтвердить отсутствие пересечения истории и отправки",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "History/send не пересекают аккаунты; нет использования чужой вкладки или credentials в receipt. Это точка объединения всей цепочки V100A, V100B, V100.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V100A",
+    "label": "Выбрать два разрешённых браузерных профиля",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Выбрать два разрешённых браузерных профиля. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V100B",
+    "label": "Создать разные тестовые сообщения в отдельных профилях",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Создать разные тестовые сообщения в отдельных профилях. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V101",
+    "label": "Отключить origin и подтвердить partial без локального повтора",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Чтение result с удалённой ноды доступно клиенту; offline coverage partial, no local retry. Это точка объединения всей цепочки V101A, V101B, V101.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V101A",
+    "label": "Настроить два endpoint и проверить origin identity",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Настроить два endpoint и проверить origin identity. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V101B",
+    "label": "Создать удалённый Task и прочитать его результат",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Создать удалённый Task и прочитать его результат. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V102",
+    "label": "Подтвердить восстановление creator A и единственный ответ C",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Native readback одного ответа C; A остался creator; доказана инъекция, не только resource read. Это точка объединения всей цепочки V102A, V102B, V102.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V102A",
+    "label": "Создать B от A и доставить B сообщение от C",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Создать B от A и доставить B сообщение от C. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V102B",
+    "label": "Очистить context и перезапустить тестовый Herder",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Очистить context и перезапустить тестовый Herder. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V103",
+    "label": "Проверить сбой после completion без повторной отправки",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Повтор key не создаёт input; unknown без native lookup остаётся unknown. Это точка объединения всей цепочки V103A, V103B, V103.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V103A",
+    "label": "Проверить сбой до native вызова",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Проверить сбой до native вызова. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V103B",
+    "label": "Проверить сбой после admission до фиксации результата",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Проверить сбой после admission до фиксации результата. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V104",
+    "label": "Проверить admission, completion и исправляемую ошибку",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "create/deliver/read ошибки и completion показаны раздельно; old routes отсутствуют. Это точка объединения всей цепочки V104A, V104B, V104.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V104A",
+    "label": "Подключить CLI create и deliver к общим DTO",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Подключить CLI create и deliver к общим DTO. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V104B",
+    "label": "Показать Task polling и resource read в CLI",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Показать Task polling и resource read в CLI. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V105",
+    "label": "Подтвердить обе роли и remote resource после reload",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Обычный браузер показывает обе роли после reload и remote resource. Это точка объединения всей цепочки V105A, V105B, V105.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V105A",
+    "label": "Подключить список и recent к typed web client",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Подключить список и recent к typed web client. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V105B",
+    "label": "Отобразить transcript и partial с turn refs",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Отобразить transcript и partial с turn refs. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V106",
+    "label": "Проверить двойной клик и UNKNOWN без предложения resend",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Повтор кнопки не даёт duplicate; unknown не предлагает повторную отправку. Это точка объединения всей цепочки V106A, V106B, V106.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V106A",
+    "label": "Подключить create, deliver и stop к общему client",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Подключить create, deliver и stop к общему client. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V106B",
+    "label": "Показать settings и стандартные состояния Task",
+    "mandatory_stage": "S08",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Показать settings и стандартные состояния Task. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S08"
+  },
+  {
+    "old_id": "V107A",
+    "label": "Hub: найти один вызывающий Herder маршрут и владельца путей",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Hub: найти один вызывающий Herder маршрут и владельца путей. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V108",
+    "label": "Hub: проверить отсутствие legacy alias и второго job lifecycle",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены. Это точка объединения всей цепочки V108A, V108B, V108.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V108A",
+    "label": "Hub: заменить вызов на общий typed API",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Hub: заменить вызов на общий typed API. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V108B",
+    "label": "Hub: сохранить request key, Task и диагностические ошибки",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Hub: сохранить request key, Task и диагностические ошибки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V109",
+    "label": "Hub: сверить native результат и версии без повторной отправки",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль. Это точка объединения всей цепочки V109A, V109.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V109A",
+    "label": "Hub: выполнить основной сценарий через обычного потребителя",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Hub: выполнить основной сценарий через обычного потребителя. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V111",
+    "label": "LHC: проверить отсутствие legacy alias и второго job lifecycle",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены. Это точка объединения всей цепочки V111A, V111B, V111.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V111B",
+    "label": "LHC: сохранить request key, Task и диагностические ошибки",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: LHC: сохранить request key, Task и диагностические ошибки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V112",
+    "label": "LHC: сверить native результат и версии без повторной отправки",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль. Это точка объединения всей цепочки V112A, V112.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V112A",
+    "label": "LHC: выполнить основной сценарий через обычного потребителя",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: LHC: выполнить основной сценарий через обычного потребителя. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V113",
+    "label": "Notice Place: записать target.json с точным контрактом и тестовым маршрутом",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции. Это точка объединения всей цепочки V113A, V113.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V113A",
+    "label": "Notice Place: найти один вызывающий Herder маршрут и владельца путей",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Notice Place: найти один вызывающий Herder маршрут и владельца путей. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V114",
+    "label": "Notice Place: проверить отсутствие legacy alias и второго job lifecycle",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены. Это точка объединения всей цепочки V114A, V114B, V114.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V114A",
+    "label": "Notice Place: заменить вызов на общий typed API",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Notice Place: заменить вызов на общий typed API. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V114B",
+    "label": "Notice Place: сохранить request key, Task и диагностические ошибки",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Notice Place: сохранить request key, Task и диагностические ошибки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V115",
+    "label": "Notice Place: сверить native результат и версии без повторной отправки",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль. Это точка объединения всей цепочки V115A, V115.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V115A",
+    "label": "Notice Place: выполнить основной сценарий через обычного потребителя",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Notice Place: выполнить основной сценарий через обычного потребителя. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V116",
+    "label": "UserIO: записать target.json с точным контрактом и тестовым маршрутом",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции. Это точка объединения всей цепочки V116A, V116.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V116A",
+    "label": "UserIO: найти один вызывающий Herder маршрут и владельца путей",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: UserIO: найти один вызывающий Herder маршрут и владельца путей. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V117",
+    "label": "UserIO: проверить отсутствие legacy alias и второго job lifecycle",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены. Это точка объединения всей цепочки V117A, V117B, V117.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V117A",
+    "label": "UserIO: заменить вызов на общий typed API",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: UserIO: заменить вызов на общий typed API. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V117B",
+    "label": "UserIO: сохранить request key, Task и диагностические ошибки",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: UserIO: сохранить request key, Task и диагностические ошибки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V118",
+    "label": "UserIO: сверить native результат и версии без повторной отправки",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль. Это точка объединения всей цепочки V118A, V118.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V118A",
+    "label": "UserIO: выполнить основной сценарий через обычного потребителя",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: UserIO: выполнить основной сценарий через обычного потребителя. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V119",
+    "label": "ExManager Board: записать target.json с точным контрактом и тестовым маршрутом",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции. Это точка объединения всей цепочки V119A, V119.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V119A",
+    "label": "ExManager Board: найти один вызывающий Herder маршрут и владельца путей",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ExManager Board: найти один вызывающий Herder маршрут и владельца путей. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V120",
+    "label": "ExManager Board: проверить отсутствие legacy alias и второго job lifecycle",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены. Это точка объединения всей цепочки V120A, V120B, V120.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V120A",
+    "label": "ExManager Board: заменить вызов на общий typed API",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ExManager Board: заменить вызов на общий typed API. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V120B",
+    "label": "ExManager Board: сохранить request key, Task и диагностические ошибки",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ExManager Board: сохранить request key, Task и диагностические ошибки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V121",
+    "label": "ExManager Board: сверить native результат и версии без повторной отправки",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль. Это точка объединения всей цепочки V121A, V121.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V121A",
+    "label": "ExManager Board: выполнить основной сценарий через обычного потребителя",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ExManager Board: выполнить основной сценарий через обычного потребителя. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V122",
+    "label": "Секретарь: записать target.json с точным контрактом и тестовым маршрутом",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции. Это точка объединения всей цепочки V122A, V122.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V122A",
+    "label": "Секретарь: найти один вызывающий Herder маршрут и владельца путей",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Секретарь: найти один вызывающий Herder маршрут и владельца путей. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V123",
+    "label": "Секретарь: проверить отсутствие legacy alias и второго job lifecycle",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены. Это точка объединения всей цепочки V123A, V123B, V123.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V123A",
+    "label": "Секретарь: заменить вызов на общий typed API",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Секретарь: заменить вызов на общий typed API. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V123B",
+    "label": "Секретарь: сохранить request key, Task и диагностические ошибки",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Секретарь: сохранить request key, Task и диагностические ошибки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V124",
+    "label": "Секретарь: сверить native результат и версии без повторной отправки",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль. Это точка объединения всей цепочки V124A, V124.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V124A",
+    "label": "Секретарь: выполнить основной сценарий через обычного потребителя",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Секретарь: выполнить основной сценарий через обычного потребителя. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V125",
+    "label": "Проверить команды при выключенном MCP и нестандартном root",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Отключённый MCP не мешает найти путь; команды read/claim с подставленным locator и без секретов. Это точка объединения всей цепочки V125A, V125B, V125.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V125A",
+    "label": "Написать одну локальную инструкцию поиска authority и claim",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Написать одну локальную инструкцию поиска authority и claim. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V125B",
+    "label": "Упаковать тот же исходник как MCP Skill",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Упаковать тот же исходник как MCP Skill. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V126",
+    "label": "Проверить краткий путь координации без специальных команд harness",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Каталог/schema примеров совпадают; read skill и activation отмечены отдельно. Это точка объединения всей цепочки V126A, V126B, V126.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V126A",
+    "label": "Описать context, сообщения, reply_to и ресурс в одном Skill",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Описать context, сообщения, reply_to и ресурс в одном Skill. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V126B",
+    "label": "Сверить примеры с реальными схемами каталога",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Сверить примеры с реальными схемами каталога. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V127",
+    "label": "Подтвердить один правильный повтор и отсутствие resend UNKNOWN",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Trace показывает исправление за один повтор без новых effects; UNKNOWN/forbidden не вызывают unsafe retry. Это точка объединения всей цепочки V127A, V127B, V127.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V127A",
+    "label": "Дать свежему агенту задачу найти коллег и отправителя",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Дать свежему агенту задачу найти коллег и отправителя. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V127B",
+    "label": "Попросить исправить неверный аргумент по сообщению ошибки",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Попросить исправить неверный аргумент по сообщению ошибки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V128",
+    "label": "Включить MCP и подтвердить прежнего owner и одну квитанцию",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Ноль вопросов о назначении свободного owner, одна операция; повтор MCP видит тот же owner. Это точка объединения всей цепочки V128A, V128B, V128.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V128A",
+    "label": "Выключить тестовый daemon и найти authority по manifest",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Выключить тестовый daemon и найти authority по manifest. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V128B",
+    "label": "Занять свободный ресурс и выполнить тестовый release через runner",
+    "mandatory_stage": "S09",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Занять свободный ресурс и выполнить тестовый release через runner. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S09"
+  },
+  {
+    "old_id": "V129",
+    "label": "Зафиксировать writers и отказ от угадывания происхождения",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Unknown provenance остаётся unknown; список active writers и read-only export для этих схем назван. Это точка объединения всей цепочки V129A, V129B, V129.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V129A",
+    "label": "Сопоставить сохраняемые поля holds, intents и receipts",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Сопоставить сохраняемые поля holds, intents и receipts. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V129B",
+    "label": "Сопоставить lineage, settings, сообщения и resource refs",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Сопоставить lineage, settings, сообщения и resource refs. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V130",
+    "label": "Проверить повторы по digest и числу записей",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Fixture повторов и HumanStop после импорта остаётся тем же; input digest/counts записаны. Это точка объединения всей цепочки V130A, V130B, V130.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V130A",
+    "label": "Импортировать HumanStop и неизменные request keys",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Импортировать HumanStop и неизменные request keys. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V130B",
+    "label": "Импортировать UNKNOWN и tombstones без запуска эффектов",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Импортировать UNKNOWN и tombstones без запуска эффектов. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V131",
+    "label": "Проверить повтор импорта без склейки чужих refs",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Creator не заменён sender; foreign refs не склеены; повтор import безопасен. Это точка объединения всей цепочки V131A, V131B, V131.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V131A",
+    "label": "Преобразовать creator, native parent и sender отдельно",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Преобразовать creator, native parent и sender отдельно. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V131B",
+    "label": "Преобразовать settings и неполную correspondence",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Преобразовать settings и неполную correspondence. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V132",
+    "label": "Подтвердить отсутствие прежнего fallback после остановки MCP",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Git/DB fallback не активируется при падении MCP; fencing assumptions заменены target runner проверками. Это точка объединения всей цепочки V132A, V132B, V132.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V132A",
+    "label": "Остановить старых writers и сверить активные эффекты",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Остановить старых writers и сверить активные эффекты. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V132B",
+    "label": "Импортировать владельцев в единственный resource store",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Импортировать владельцев в единственный resource store. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V133",
+    "label": "Подтвердить ноль send и отказ на повреждённом входе",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Ноль native send/create; все holds/UNKNOWN сохранены; корректный отказ при corrupt input. Это точка объединения всей цепочки V133A, V133B, V133.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V133A",
+    "label": "Сделать снимок fixture и запустить импорт дважды",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Сделать снимок fixture и запустить импорт дважды. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V133B",
+    "label": "Перезапустить новый daemon и сверить holds и UNKNOWN",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Перезапустить новый daemon и сверить holds и UNKNOWN. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V134",
+    "label": "Зафиксировать отказ от запуска старого writer без reverse proof",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "New hold/receipt переживают откат; old writer не получает ownership; rollback отдельно от release. Это точка объединения всей цепочки V134A, V134B, V134.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V134A",
+    "label": "Описать maintenance и сохранение нового ledger при откате",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Описать maintenance и сохранение нового ledger при откате. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V134B",
+    "label": "Проверить совместимость предыдущего нового binary со schema",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Проверить совместимость предыдущего нового binary со schema. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V135",
+    "label": "Подтвердить HumanStop и UNKNOWN без replay",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Unknown/confirmed и HumanStop не потеряны; incompatible schema останавливает writes. Это точка объединения всей цепочки V135A, V135B, V135.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V135A",
+    "label": "Принять новый тестовый intent до отката",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Принять новый тестовый intent до отката. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V135B",
+    "label": "Выполнить откат совместимого нового binary на том же ledger",
+    "mandatory_stage": "S10",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Выполнить откат совместимого нового binary на том же ledger. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S10"
+  },
+  {
+    "old_id": "V136",
+    "label": "linux/amd64: запустить артефакт на соответствующем native runner",
+    "mandatory_stage": "S11",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен. Это точка объединения всей цепочки V136A, V136B, V136.",
+    "superseded_by_stage": "S11"
+  },
+  {
+    "old_id": "V136A",
+    "label": "linux/amd64: собрать locked binary с UI и Skills",
+    "mandatory_stage": "S11",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: linux/amd64: собрать locked binary с UI и Skills. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S11"
+  },
+  {
+    "old_id": "V136B",
+    "label": "linux/amd64: записать digest и platform manifest",
+    "mandatory_stage": "S11",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: linux/amd64: записать digest и platform manifest. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S11"
+  },
+  {
+    "old_id": "V137",
+    "label": "linux/arm64: запустить артефакт на соответствующем native runner",
+    "mandatory_stage": "S11",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен. Это точка объединения всей цепочки V137A, V137B, V137.",
+    "superseded_by_stage": "S11"
+  },
+  {
+    "old_id": "V137A",
+    "label": "linux/arm64: собрать locked binary с UI и Skills",
+    "mandatory_stage": "S11",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: linux/arm64: собрать locked binary с UI и Skills. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S11"
+  },
+  {
+    "old_id": "V137B",
+    "label": "linux/arm64: записать digest и platform manifest",
+    "mandatory_stage": "S11",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: linux/arm64: записать digest и platform manifest. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S11"
+  },
+  {
+    "old_id": "V138",
+    "label": "macOS/arm64: запустить артефакт на соответствующем native runner",
+    "mandatory_stage": "S11",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен. Это точка объединения всей цепочки V138A, V138B, V138.",
+    "superseded_by_stage": "S11"
+  },
+  {
+    "old_id": "V138A",
+    "label": "macOS/arm64: собрать locked binary с UI и Skills",
+    "mandatory_stage": "S11",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: macOS/arm64: собрать locked binary с UI и Skills. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S11"
+  },
+  {
+    "old_id": "V138B",
+    "label": "macOS/arm64: записать digest и platform manifest",
+    "mandatory_stage": "S11",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: macOS/arm64: записать digest и platform manifest. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S11"
+  },
+  {
+    "old_id": "V139",
+    "label": "macOS/amd64: запустить артефакт на соответствующем native runner",
+    "mandatory_stage": "S11",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен. Это точка объединения всей цепочки V139A, V139B, V139.",
+    "superseded_by_stage": "S11"
+  },
+  {
+    "old_id": "V139A",
+    "label": "macOS/amd64: собрать locked binary с UI и Skills",
+    "mandatory_stage": "S11",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: macOS/amd64: собрать locked binary с UI и Skills. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S11"
+  },
+  {
+    "old_id": "V139B",
+    "label": "macOS/amd64: записать digest и platform manifest",
+    "mandatory_stage": "S11",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: macOS/amd64: записать digest и platform manifest. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S11"
+  },
+  {
+    "old_id": "V140",
+    "label": "Проверить offline CLI и повтор установки без чужих изменений",
+    "mandatory_stage": "S11",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Нестандартный root работает; offline CLI доступен без daemon; чужой service/config не меняется. Это точка объединения всей цепочки V140A, V140B, V140.",
+    "superseded_by_stage": "S11"
+  },
+  {
+    "old_id": "V140A",
+    "label": "Установить binary и assets в параметризованный root",
+    "mandatory_stage": "S11",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Установить binary и assets в параметризованный root. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S11"
+  },
+  {
+    "old_id": "V140B",
+    "label": "Установить manifest и launcher с сохранением данных",
+    "mandatory_stage": "S11",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Установить manifest и launcher с сохранением данных. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S11"
+  },
+  {
+    "old_id": "V141",
+    "label": "Записать latency и RSS и проверить ограниченность очередей",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Нет busy loop/unbounded queue; latency/RSS и границы workload записаны, starvation не наблюдается. Это точка объединения всей цепочки V141A, V141B, V141.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V141A",
+    "label": "Подготовить фиксированный корпус и границы нагрузки",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Подготовить фиксированный корпус и границы нагрузки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V141B",
+    "label": "Запустить чтение, индексирование и медленного подписчика",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Запустить чтение, индексирование и медленного подписчика. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V142",
+    "label": "Назначить конкретные исправления с доказательствами до RC",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Все найденные defects имеют owned fix/retest leaf до release; review не выдаёт будущий PASS. Это точка объединения всей цепочки V142A, V142B, V142.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V142A",
+    "label": "Проверить diff общих boundaries и ошибок",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Проверить diff общих boundaries и ошибок. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V142B",
+    "label": "Проверить ownership, UNKNOWN и cutover в том же diff",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Проверить ownership, UNKNOWN и cutover в том же diff. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V143",
+    "label": "Проверить отсутствие старых вызовов с сохранением frontend и истории",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Старые имена не вызываются напрямую; frontend TS сохранён как frontend; native histories не удалены. Это точка объединения всей цепочки V143A, V143B, V143.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V143A",
+    "label": "Выявить заменённые runtime entrypoints по reviewed diff",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Выявить заменённые runtime entrypoints по reviewed diff. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V143B",
+    "label": "Удалить старый daemon, jobs и aliases из source и packaging",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Удалить старый daemon, jobs и aliases из source и packaging. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V144",
+    "label": "Подтвердить новый runtime graph без старого daemon",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Legacy references только в историческом archive; runtime graph не запускает старый daemon. Это точка объединения всей цепочки V144A, V144B, V144.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V144A",
+    "label": "Заменить старые launcher и hook ссылки подтверждённых consumers",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Заменить старые launcher и hook ссылки подтверждённых consumers. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V144B",
+    "label": "Удалить активные fallback writers и устаревшие инструкции",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Удалить активные fallback writers и устаревшие инструкции. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V145",
+    "label": "Проверить отсутствие чужого WIP в release candidate",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Каждая тестовая lane указывает один source revision/artifact family; чужой WIP не включён. Это точка объединения всей цепочки V145A, V145B, V145.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V145A",
+    "label": "Закрепить reviewed source и состав platform artifacts",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Закрепить reviewed source и состав platform artifacts. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V145B",
+    "label": "Собрать manifests с digest единого кандидата",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Собрать manifests с digest единого кандидата. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V146",
+    "label": "Codex: сверить native refs и digest именно финального RC",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS. Это точка объединения всей цепочки V146A, V146.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V146A",
+    "label": "Codex: запустить готовый native сценарий на финальном RC",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Codex: запустить готовый native сценарий на финальном RC. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V147",
+    "label": "OpenCode: сверить native refs и digest именно финального RC",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS. Это точка объединения всей цепочки V147A, V147.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V147A",
+    "label": "OpenCode: запустить готовый native сценарий на финальном RC",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: OpenCode: запустить готовый native сценарий на финальном RC. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V148",
+    "label": "ZCode: сверить native refs и digest именно финального RC",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS. Это точка объединения всей цепочки V148A, V148.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V148A",
+    "label": "ZCode: запустить готовый native сценарий на финальном RC",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ZCode: запустить готовый native сценарий на финальном RC. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V149",
+    "label": "ChatGPT: сверить native refs и digest именно финального RC",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS. Это точка объединения всей цепочки V149A, V149.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V149A",
+    "label": "ChatGPT: запустить готовый native сценарий на финальном RC",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: ChatGPT: запустить готовый native сценарий на финальном RC. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V150",
+    "label": "Z.ai: сверить native refs и digest именно финального RC",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Точные native refs и digest; missing lane остаётся blocked, не fixture PASS. Это точка объединения всей цепочки V150A, V150.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V150A",
+    "label": "Z.ai: запустить готовый native сценарий на финальном RC",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Z.ai: запустить готовый native сценарий на финальном RC. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V151",
+    "label": "Сверить адресные readback с тем же RC без устаревших доказательств",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Несовпадение digest требует отдельной адресной проверки; нельзя принять устаревший receipt. Это точка объединения всей цепочки V151A, V151B, V151.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V151A",
+    "label": "Сопоставить consumer receipts с API и schema digest кандидата",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Сопоставить consumer receipts с API и schema digest кандидата. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V151B",
+    "label": "Отобрать только затронутые основные consumer сценарии",
+    "mandatory_stage": "S12",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Отобрать только затронутые основные consumer сценарии. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S12"
+  },
+  {
+    "old_id": "V152",
+    "label": "Подтвердить отсутствие неизвестного writer или незавершённого эффекта",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Нет неизвестных active writers/release effects; backup восстановим; fail-fast до остановки. Это точка объединения всей цепочки V152A, V152B, V152.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V152A",
+    "label": "Проверить конкретный target, конфигурацию и полномочия cutover",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Проверить конкретный target, конфигурацию и полномочия cutover. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V152B",
+    "label": "Создать и прочитать резервную копию сохраняемых данных",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Создать и прочитать резервную копию сохраняемых данных. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V153",
+    "label": "Подтвердить новый runtime и сохранение holds и receipts",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Новый runtime SHA/digest/schema; один owner writer; не возобновлены UNKNOWN или HumanStop. Это точка объединения всей цепочки V153A, V153B, V153.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V153A",
+    "label": "Включить maintenance и остановить прежних writers",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Включить maintenance и остановить прежних writers. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V153B",
+    "label": "Импортировать state и запустить единственного нового writer",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Импортировать state и запустить единственного нового writer. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V154",
+    "label": "Подтвердить digest, версию и отсутствие старого runtime",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Runtime→receipt→native readback доказаны; приложение работает после штатного restart. Это точка объединения всей цепочки V154A, V154B, V154.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V154A",
+    "label": "Подключить обычного Linux клиента к установленному артефакту",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Подключить обычного Linux клиента к установленному артефакту. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V154B",
+    "label": "Пройти сообщение и чтение результата через native adapter",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Пройти сообщение и чтение результата через native adapter. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V155",
+    "label": "Подтвердить фактически работающий новый процесс",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Artifact digest и version совпали, offline path установлен; rollback доступен. Это точка объединения всей цепочки V155A, V155B, V155.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V155A",
+    "label": "Выбрать точный macOS артефакт и root установки",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Выбрать точный macOS артефакт и root установки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V155B",
+    "label": "Установить manifest и launcher с сохранением данных",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Установить manifest и launcher с сохранением данных. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V156",
+    "label": "Подтвердить сохранение результата после перезапуска клиента",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Installed consumer readback, permissions и native filesystem semantics доказаны. Это точка объединения всей цепочки V156A, V156B, V156.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V156A",
+    "label": "Подключить обычного macOS клиента к установленному серверу",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Подключить обычного macOS клиента к установленному серверу. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V156B",
+    "label": "Пройти сообщение и чтение результата через native adapter",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Пройти сообщение и чтение результата через native adapter. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V157",
+    "label": "Принять один адресованный ответ по native доказательству",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Правильный sender/creator и отсутствие duplicate; тестовый circuit, никаких звонков людям. Это точка объединения всей цепочки V157A, V157B, V157.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V157A",
+    "label": "Дать независимому агенту сценарий общения двух harness",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Дать независимому агенту сценарий общения двух harness. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V157B",
+    "label": "Восстановить creator и sender после очистки context",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Восстановить creator и sender после очистки context. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V158",
+    "label": "Принять восстановление owner после возврата MCP без вопроса человеку",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Успешный claim без назначения человеком; UNKNOWN не повторён; wrong root не свободен. Это точка объединения всей цепочки V158A, V158B, V158.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V158A",
+    "label": "Дать независимому агенту offline инструкцию без исходников",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Дать независимому агенту offline инструкцию без исходников. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V158B",
+    "label": "Занять свободный ресурс при выключенном тестовом MCP",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Занять свободный ресурс при выключенном тестовом MCP. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V159",
+    "label": "Закрыть план только по исполненным обязательным сценариям",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "retained-mandatory-stage-acceptance-gate",
+    "preserved_result": "",
+    "original_acceptance": "Remote main включает результат; zero unresolved mandatory defects; scope exclusions названы и явно приняты, не молча вычеркнуты. Это точка объединения всей цепочки V159A, V159B, V159.",
+    "superseded_by_stage": "S13",
+    "current_status": "waiting"
+  },
+  {
+    "old_id": "V159A",
+    "label": "Сверить включение своих изменений в опубликованный main",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Сверить включение своих изменений в опубликованный main. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S13"
+  },
+  {
+    "old_id": "V159B",
+    "label": "Передать runbook с версиями и точными установленными результатами",
+    "mandatory_stage": "S13",
+    "previous_status": "queued",
+    "disposition": "replaced-decomposition-not-completed",
+    "preserved_result": "",
+    "original_acceptance": "Получен проверяемый результат: Передать runbook с версиями и точными установленными результатами. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+    "superseded_by_stage": "S13"
+  }
+]

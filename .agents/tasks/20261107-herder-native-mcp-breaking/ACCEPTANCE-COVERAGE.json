@@ -1,0 +1,167 @@
+{
+  "rule": "Full project Done requires all18criteria accepted with exact receipts; deferred decomposition does not waive scope. Update evidence, never infer PASS from leafcounts.",
+  "criteria": [
+    {
+      "id": "AC01",
+      "requirement": "Breaking API",
+      "exact_acceptance": "На native endpoint финального артефакта tools/list имеет только 14 заявленных инструментов. Compatibility endpoint отдельно имеет временные compat helpers, перечисленные в COMPATIBILITY.md. Прямые legacy calls/_async/jobs/old launcher не выполняются; отсутствие только в списке недостаточно.",
+      "mandatory_stage": "S12",
+      "existing_evidence": "catalog 14 tools source",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    },
+    {
+      "id": "AC02",
+      "requirement": "Стандартный MCP",
+      "exact_acceptance": "Новый клиент работает напрямую; неизменённый legacy Codex через translator выполняет обычные calls, которые upstream отображаются в стандартные Task get/update/cancel, Skills read и subscriptions/resync. Unsupported direct capability отказывает до эффекта. Версии обоих плеч закреплены; read Skill не означает activation.",
+      "mandatory_stage": "S01",
+      "existing_evidence": "T001/T002 SDK transport only",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    },
+    {
+      "id": "AC03",
+      "requirement": "Удаляемый translator",
+      "exact_acceptance": "Core не зависит от compatibility crate. После удаления translator native сборка и direct read/create/deliver работают; один durable Task store, identity/ACL/UNKNOWN сохранены.",
+      "mandatory_stage": "S01",
+      "existing_evidence": "compat crate source",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    },
+    {
+      "id": "AC04",
+      "requirement": "Нет двойного эффекта",
+      "exact_acceptance": "Повтор same key, crash вокруг admission и потеря ответа дают один native input либо UNKNOWN без replay. Changed payload conflict. Task expiry не удаляет защиту повторов.",
+      "mandatory_stage": "S08",
+      "existing_evidence": "AHAP94e7d98c source/fake",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    },
+    {
+      "id": "AC05",
+      "requirement": "Правильный результат",
+      "exact_acceptance": "Deliver подтверждён native input/turn/queue readback; accepted, Task terminal, tool isError и ответ модели показаны раздельно. Export readable клиентом и сообщает полноту.",
+      "mandatory_stage": "S04",
+      "existing_evidence": "Codex9dfe147d SDK proof; OpenCode pending",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    },
+    {
+      "id": "AC06",
+      "requirement": "Изоляция",
+      "exact_acceptance": "Два Codex, два OpenCode и два browser profiles; одинаковые native IDs в fixture; две ноды. Нет пересечения histories, tokens, models, settings или stop.",
+      "mandatory_stage": "S08",
+      "existing_evidence": "V031 domain fixture; installed matrix pending",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    },
+    {
+      "id": "AC07",
+      "requirement": "Автоматический context",
+      "exact_acceptance": "A creator B, C sender B, очистка контекста/рестарт, B отвечает C. Model-visible инъекция подтверждена отдельно от server resource read.",
+      "mandatory_stage": "S02",
+      "existing_evidence": "V027A/B durable correspondence source",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    },
+    {
+      "id": "AC08",
+      "requirement": "Roster/worktrees",
+      "exact_acceptance": "Проект показывает задачи, scopes, native worktrees и freshness; offline peer не превращается в «работаю один». Claim race один победитель.",
+      "mandatory_stage": "S02",
+      "existing_evidence": "V031A/B cached roster source",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    },
+    {
+      "id": "AC09",
+      "requirement": "Общие ресурсы",
+      "exact_acceptance": "Global/project/node scope независимы от attachment и authority; перенос телефона сохраняет ID/owner. Resource claim одинаков в MCP и CLI; два телефона независимы. Device entrypoint и LHC writer проверяют владение; содержимое плана остаётся у LHC.",
+      "mandatory_stage": "S02",
+      "existing_evidence": "R001/R002 registry source",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    },
+    {
+      "id": "AC10",
+      "requirement": "Без MCP",
+      "exact_acceptance": "Заранее установленный manifest/Skill достаточен свежему агенту: проверить authority→owner отсутствует→атомарный claim→test release→receipt. Ни вопросов о свободном владельце, ни доступа к Herder session DB.",
+      "mandatory_stage": "S02",
+      "existing_evidence": "V036–V043 local file/CLI tests",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    },
+    {
+      "id": "AC11",
+      "requirement": "Реальный release guard",
+      "exact_acceptance": "Child переживает parent; delayed old claim rejected; две попытки не исполняются параллельно; UNKNOWN external receipt блокирует следующий конфликтующий effect.",
+      "mandatory_stage": "S02",
+      "existing_evidence": "V041–V043 file-effect proof",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    },
+    {
+      "id": "AC12",
+      "requirement": "Безопасные права",
+      "exact_acceptance": "Impersonation/чужой reply_to/Task/resource/subscription/cache denied; секреты не попадают в errors, manifests или evidence.",
+      "mandatory_stage": "S08",
+      "existing_evidence": "V017B ACL+Task identity source",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    },
+    {
+      "id": "AC13",
+      "requirement": "HumanStop",
+      "exact_acceptance": "Hold переживает restart/import/rollback и все schedule/autopilot события; interrupt outcome отдельно, модель не выдаёт себе право снять hold.",
+      "mandatory_stage": "S03",
+      "existing_evidence": "V025 scoped gate source and fake race proof",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    },
+    {
+      "id": "AC14",
+      "requirement": "Пять adapters v1",
+      "exact_acceptance": "Codex, OpenCode, ZCode, ChatGPT и Z.ai имеют capability evidence + installed native lane. Unsupported не маскирует обязательный пробел.",
+      "mandatory_stage": "S04/S06/S07/S05/S01",
+      "existing_evidence": "old adapters + individual source receipts",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    },
+    {
+      "id": "AC15",
+      "requirement": "Все consumers",
+      "exact_acceptance": "Web UI, CLI, hooks/Skills, Hub, LHC, Notice Place, UserIO, Board и секретарь используют новый контракт; real consumer receipt связан с artifact/API revision.",
+      "mandatory_stage": "S09",
+      "existing_evidence": "existing consumer code; new API adoption pending",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    },
+    {
+      "id": "AC16",
+      "requirement": "Миграция и откат",
+      "exact_acceptance": "Backup/schema/counts/UNKNOWN/holds сохранены; active old writers выключены; no-send import rehearsal; rollback после новых записей не восстанавливает устаревший ledger.",
+      "mandatory_stage": "S10",
+      "existing_evidence": "existing stores; importer/cutover pending",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    },
+    {
+      "id": "AC17",
+      "requirement": "Установка",
+      "exact_acceptance": "Четыре платформенных артефакта имеют digest; Linux/macOS обычные consumers работают после штатного restart/reload. Cross-compile не называется native acceptance.",
+      "mandatory_stage": "S11/S13",
+      "existing_evidence": "OpenCode Linux artifact94e7d98c; full matrix pending",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    },
+    {
+      "id": "AC18",
+      "requirement": "Передача",
+      "exact_acceptance": "Remote main содержит owned change, release/artifact/runtime/proof связаны; все обязательные дефекты закрыты либо явно отложены человеком; документы install/recovery/rollback доступны локально.",
+      "mandatory_stage": "S13",
+      "existing_evidence": "main94e7d98c; final installed handoff pending",
+      "status": "not_accepted",
+      "remaining": "Подключить/проверить точный критерий на нужной реальной поверхности; имеющийся source/fake proof не расширять до installed proof."
+    }
+  ]
+}
