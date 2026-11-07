@@ -373,6 +373,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     if (!page) throw new Error("Pinned ChatGPT page unavailable; no read data returned");
     const scope = await verifyNewChatAccountScope(this.tools, "chatgpt", page.id);
     this.requirePinnedAccountScope(scope);
+    this.accountScope = scope;
   }
 
   async verifyPinnedAccountScope(): Promise<void> {
