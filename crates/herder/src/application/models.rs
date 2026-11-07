@@ -3,7 +3,7 @@
 //! A missing provider limit stays unknown. This projection neither fills
 //! defaults nor shares cache identity between profiles.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::domain::address::InstanceRef;
 
@@ -49,6 +49,104 @@ impl std::fmt::Display for ModelCatalogError {
 }
 
 impl std::error::Error for ModelCatalogError {}
+
+/// The legacy quota reader reports these states; absence of telemetry is not
+/// a zero allowance and does not establish an unlimited allowance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QuotaState {
+    Reported,
+    Exhausted,
+    Unknown,
+}
+
+/// A numeric allowance or unlimited status must be explicitly reported by the
+/// source. The legacy state alone does not establish either value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QuotaAllowance {
+    Unknown,
+    Limited(u64),
+    Unlimited,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderQuota {
+    pub provider: String,
+    pub state: QuotaState,
+    pub allowance: QuotaAllowance,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuotaSnapshot {
+    pub instance: InstanceRef,
+    pub providers: Vec<ProviderQuota>,
+    /// Milliseconds since the Unix epoch, supplied by the source.
+    pub checked_at_ms: u64,
+    /// Provider deadline, distinct from the local cache freshness window.
+    pub valid_until_ms: Option<u64>,
+}
+
+#[allow(async_fn_in_trait)]
+pub trait QuotaReader {
+    fn instance(&self) -> &InstanceRef;
+    async fn read_quota(&self) -> Result<QuotaSnapshot, ModelCatalogError>;
+}
+
+/// Caller-owned cache. A failed refresh evicts the old value: an unavailable
+/// source must not silently turn a previous observation into current quota.
+#[derive(Debug, Default)]
+pub struct QuotaCache {
+    entries: HashMap<InstanceRef, QuotaSnapshot>,
+}
+
+impl QuotaCache {
+    pub fn get(
+        &self,
+        instance: &InstanceRef,
+        now_ms: u64,
+        max_age_ms: u64,
+    ) -> Option<&QuotaSnapshot> {
+        self.entries.get(instance).filter(|snapshot| {
+            now_ms >= snapshot.checked_at_ms
+                && now_ms - snapshot.checked_at_ms <= max_age_ms
+                && snapshot
+                    .valid_until_ms
+                    .is_none_or(|deadline| now_ms < deadline)
+        })
+    }
+
+    pub async fn refresh<R: QuotaReader>(
+        &mut self,
+        expected: &InstanceRef,
+        reader: &R,
+    ) -> Result<&QuotaSnapshot, ModelCatalogError> {
+        if reader.instance() != expected {
+            self.entries.remove(expected);
+            return Err(ModelCatalogError::InstanceMismatch {
+                expected: expected.clone(),
+                observed: reader.instance().clone(),
+            });
+        }
+        let snapshot = match reader.read_quota().await {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                self.entries.remove(expected);
+                return Err(error);
+            }
+        };
+        if snapshot.instance != *expected {
+            self.entries.remove(expected);
+            return Err(ModelCatalogError::InstanceMismatch {
+                expected: expected.clone(),
+                observed: snapshot.instance,
+            });
+        }
+        Ok(self
+            .entries
+            .entry(expected.clone())
+            .insert_entry(snapshot)
+            .into_mut())
+    }
+}
 
 /// Native readers are bound to one configured instance and return its raw
 /// catalog. The application checks that binding before exposing the result.
@@ -114,6 +212,132 @@ mod tests {
             node: NodeRef(node.into()),
             instance_id: profile.into(),
         }
+    }
+
+    struct FixtureQuotaReader {
+        instance: InstanceRef,
+        result: Result<QuotaSnapshot, ModelCatalogError>,
+        calls: Cell<usize>,
+    }
+
+    impl QuotaReader for FixtureQuotaReader {
+        fn instance(&self) -> &InstanceRef {
+            &self.instance
+        }
+        async fn read_quota(&self) -> Result<QuotaSnapshot, ModelCatalogError> {
+            self.calls.set(self.calls.get() + 1);
+            self.result.clone()
+        }
+    }
+
+    fn quota_reader(
+        bound: InstanceRef,
+        actual: InstanceRef,
+        state: QuotaState,
+    ) -> FixtureQuotaReader {
+        FixtureQuotaReader {
+            instance: bound,
+            calls: Cell::new(0),
+            result: Ok(QuotaSnapshot {
+                instance: actual,
+                providers: vec![ProviderQuota {
+                    provider: "codex".into(),
+                    state,
+                    allowance: QuotaAllowance::Unknown,
+                }],
+                checked_at_ms: 100,
+                valid_until_ms: Some(200),
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn quota_cache_is_scoped_to_full_instance_and_unknown_stays_unknown() {
+        let a = instance("node-a", "profile-a");
+        let b = instance("node-a", "profile-b");
+        let c = instance("node-b", "profile-a");
+        let mut cache = QuotaCache::default();
+        for (target, state, allowance) in [
+            (&a, QuotaState::Unknown, QuotaAllowance::Unknown),
+            (&b, QuotaState::Exhausted, QuotaAllowance::Limited(0)),
+            (&c, QuotaState::Reported, QuotaAllowance::Unlimited),
+        ] {
+            let mut reader = quota_reader(target.clone(), target.clone(), state);
+            reader.result.as_mut().unwrap().providers[0].allowance = allowance;
+            cache.refresh(target, &reader).await.unwrap();
+        }
+        assert_eq!(
+            cache.get(&a, 150, 100).unwrap().providers[0].state,
+            QuotaState::Unknown
+        );
+        assert_eq!(
+            cache.get(&a, 150, 100).unwrap().providers[0].allowance,
+            QuotaAllowance::Unknown
+        );
+        assert_ne!(QuotaAllowance::Unknown, QuotaAllowance::Limited(0));
+        assert_ne!(QuotaAllowance::Unknown, QuotaAllowance::Unlimited);
+        assert_eq!(
+            cache.get(&b, 150, 100).unwrap().providers[0].allowance,
+            QuotaAllowance::Limited(0)
+        );
+        assert_eq!(
+            cache.get(&c, 150, 100).unwrap().providers[0].allowance,
+            QuotaAllowance::Unlimited
+        );
+        assert_eq!(
+            cache.get(&b, 150, 100).unwrap().providers[0].state,
+            QuotaState::Exhausted
+        );
+        assert_eq!(
+            cache.get(&c, 150, 100).unwrap().providers[0].state,
+            QuotaState::Reported
+        );
+        assert!(cache.get(&a, 99, 100).is_none());
+        assert!(cache.get(&a, 151, 50).is_none());
+        assert!(cache.get(&a, 200, 1000).is_none());
+    }
+
+    #[tokio::test]
+    async fn quota_refresh_rejects_foreign_instance_and_unavailable_source() {
+        let a = instance("node-a", "profile-a");
+        let b = instance("node-b", "profile-a");
+        let mut cache = QuotaCache::default();
+        cache
+            .refresh(
+                &a,
+                &quota_reader(a.clone(), a.clone(), QuotaState::Reported),
+            )
+            .await
+            .unwrap();
+        let foreign = quota_reader(b.clone(), b.clone(), QuotaState::Exhausted);
+        assert!(matches!(
+            cache.refresh(&a, &foreign).await,
+            Err(ModelCatalogError::InstanceMismatch { .. })
+        ));
+        assert_eq!(foreign.calls.get(), 0);
+        let wrong_payload = quota_reader(a.clone(), b, QuotaState::Exhausted);
+        assert!(matches!(
+            cache.refresh(&a, &wrong_payload).await,
+            Err(ModelCatalogError::InstanceMismatch { .. })
+        ));
+        assert!(cache.get(&a, 150, 100).is_none());
+        cache
+            .refresh(
+                &a,
+                &quota_reader(a.clone(), a.clone(), QuotaState::Reported),
+            )
+            .await
+            .unwrap();
+        let unavailable = FixtureQuotaReader {
+            instance: a.clone(),
+            calls: Cell::new(0),
+            result: Err(ModelCatalogError::Source("unavailable".into())),
+        };
+        assert_eq!(
+            cache.refresh(&a, &unavailable).await.unwrap_err(),
+            ModelCatalogError::Source("unavailable".into())
+        );
+        assert!(cache.get(&a, 150, 100).is_none());
     }
 
     #[tokio::test]
