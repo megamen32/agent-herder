@@ -769,6 +769,7 @@ fn trusted_owner_other_ahap_types_use_same_public_create_read_and_restart() {
 
 fn owner_ahap_public_flow(kind: &str) {
     use std::io::{BufRead, BufReader, Write};
+    let binary = std::env::var_os("HERDER_V1_CANDIDATE_BINARY").unwrap_or_else(|| env!("CARGO_BIN_EXE_herder_native_stdio").into());
     let f = Fixture::new();
     f.migrate_v4();
     let script = f.root.join("adapter.py");
@@ -789,6 +790,7 @@ for line in sys.stdin:
   with open(events,'w') as out:json.dump(rows,out)
   with open(os.path.join(home,'sent'),'a') as out:out.write('1')
   v={'ok':True,'admitted':True,'nativeInputMessageId':mid,'inputId':p['options']['inputId']}
+  if p['options']['message']=='unknownmarker':v={'ok':True,'admitted':True}
  elif m=='getSessionMessages':v=messages()
  elif m=='getRawTranscript':v={'bytes_base64':base64.b64encode(json.dumps(messages()).encode()).decode(),'complete':True,'source':{'kind':'native-api','location':'fixture-session','format':'json'},'timestampCoverage':'none'}
  else:raise Exception(m)
@@ -796,7 +798,7 @@ for line in sys.stdin:
 "##).unwrap();
     let profile = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{"kind":kind,"principal":"owner","node":"node","instance":"opencode-fixture","executable":fs::canonicalize("/usr/bin/python3").unwrap(),"ahap_script":script,"ahap_base_url":if kind=="opencode" {Some("http://127.0.0.1:3456")} else {None},"code_home":f.root,"cwd":f.root}});
     fs::write(&f.profile, profile.to_string()).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
+    let mut child = Command::new(&binary)
         .arg("--trusted-owner-profile")
         .arg(&f.profile)
         .stdin(Stdio::piped())
@@ -816,6 +818,9 @@ for line in sys.stdin:
         serde_json::from_str::<serde_json::Value>(&line).unwrap()
     };
     let meta = serde_json::json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"extensions":{"io.modelcontextprotocol/tasks":{}}},"io.modelcontextprotocol/clientInfo":{"name":"fixture","version":"1"}});
+    let wrong = call(&mut input,&mut output,serde_json::json!({"jsonrpc":"2.0","id":100,"method":"tools/call","params":{"_meta":meta,"name":"create","arguments":{"action":"create","instance_ref":"foreign-instance","prompt":"forbidden","request_key":"foreign"}}}));
+    assert_eq!(wrong["result"]["isError"],true,"{wrong}");
+    assert!(!f.root.join("sent").exists());
     let create = call(
         &mut input,
         &mut output,
@@ -867,17 +872,26 @@ for line in sys.stdin:
     let duplicate=call(&mut input,&mut output,serde_json::json!({"jsonrpc":"2.0","id":33,"method":"tools/call","params":{"_meta":meta,"name":"deliver","arguments":second_args}}));
     assert_eq!(duplicate["result"]["taskId"],second_id,"{duplicate}");
     assert_eq!(fs::read_to_string(f.root.join("sent")).unwrap(),"11");
+    let mut conflicting = second_args.clone(); conflicting["message"]=serde_json::json!("different payload");
+    let conflict=call(&mut input,&mut output,serde_json::json!({"jsonrpc":"2.0","id":101,"method":"tools/call","params":{"_meta":meta,"name":"deliver","arguments":conflicting}}));
+    assert_eq!(conflict["result"]["structuredContent"]["code"],"idempotency_conflict","{conflict}");
+    assert_eq!(fs::read_to_string(f.root.join("sent")).unwrap(),"11");
     let exported=call(&mut input,&mut output,serde_json::json!({"jsonrpc":"2.0","id":34,"method":"tools/call","params":{"_meta":meta,"name":"export","arguments":{"action":"export","session_ref":session,"format":"native"}}}));
     assert_eq!(exported["result"]["structuredContent"]["complete"],true,"{exported}");
     let searched=call(&mut input,&mut output,serde_json::json!({"jsonrpc":"2.0","id":35,"method":"tools/call","params":{"_meta":meta,"name":"search","arguments":{"action":"search","query":"secondmarker"}}}));
     assert_eq!(searched["result"]["structuredContent"]["total_hits"],1,"{searched}");
     let projects=call(&mut input,&mut output,serde_json::json!({"jsonrpc":"2.0","id":36,"method":"tools/call","params":{"_meta":meta,"name":"discover","arguments":{"action":"projects"}}}));
     assert_eq!(projects["result"]["isError"],false,"{projects}");
+    let unknown_args=serde_json::json!({"action":"session","session_ref":session,"message":"unknownmarker","mode":mode,"request_key":"unknown-once"});
+    let unknown=call(&mut input,&mut output,serde_json::json!({"jsonrpc":"2.0","id":102,"method":"tools/call","params":{"_meta":meta,"name":"deliver","arguments":unknown_args}}));
+    assert_eq!(unknown["result"]["resultType"],"task","{unknown}");
+    let unknown_task=unknown["result"]["taskId"].as_str().unwrap().to_owned();
+    assert_eq!(fs::read_to_string(f.root.join("sent")).unwrap(),"111");
     let task_owned = task.to_owned();
     let session_owned = session.to_owned();
     drop(input);
     let _ = child.wait();
-    let mut reopened = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
+    let mut reopened = Command::new(&binary)
         .arg("--trusted-owner-profile")
         .arg(&f.profile)
         .stdin(Stdio::piped())
@@ -902,7 +916,17 @@ for line in sys.stdin:
         after_read["result"]["structuredContent"]["page"]["messages"][0]["text"], "ahap prompt",
         "{after_read}"
     );
-    assert_eq!(fs::read_to_string(f.root.join("sent")).unwrap(), "11");
+    let unresolved=call(&mut input,&mut output,serde_json::json!({"jsonrpc":"2.0","id":103,"method":"tasks/get","params":{"_meta":meta,"taskId":unknown_task}}));
+    assert_eq!(unresolved["result"]["result"]["structuredContent"]["code"],"outcome_unknown","{unresolved}");
+    assert_eq!(unresolved["result"]["result"]["structuredContent"]["retry"],"forbidden","{unresolved}");
+    let replay=call(&mut input,&mut output,serde_json::json!({"jsonrpc":"2.0","id":104,"method":"tools/call","params":{"_meta":meta,"name":"deliver","arguments":unknown_args}}));
+    assert_eq!(replay["result"]["taskId"],unknown_task,"{replay}");
+    assert_eq!(fs::read_to_string(f.root.join("sent")).unwrap(),"111");
+    let stopped=call(&mut input,&mut output,serde_json::json!({"jsonrpc":"2.0","id":105,"method":"tools/call","params":{"_meta":meta,"name":"stop","arguments":{"action":"stop","session_ref":session_owned,"request_key":"stop-once"}}}));
+    assert_eq!(stopped["result"]["structuredContent"]["hold"],"active","{stopped}");
+    let blocked=call(&mut input,&mut output,serde_json::json!({"jsonrpc":"2.0","id":106,"method":"tools/call","params":{"_meta":meta,"name":"deliver","arguments":{"action":"session","session_ref":session_owned,"message":"forbidden after stop","mode":mode,"request_key":"after-stop"}}}));
+    assert_eq!(blocked["result"]["isError"],true,"{blocked}");
+    assert_eq!(fs::read_to_string(f.root.join("sent")).unwrap(),"111");
     drop(input);
     let _ = reopened.wait();
 }
