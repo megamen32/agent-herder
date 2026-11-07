@@ -186,12 +186,254 @@ pub struct ListInventory {
     pub records: Vec<ListRecord>,
 }
 
+/// Opaque source bindings must be issued by the authoritative owner, not derived
+/// from config IDs. Config IDs are used only to verify the native instance.
+#[derive(Clone)]
+pub struct ConfiguredSourceBinding {
+    pub node_ref: String,
+    pub instance_ref: String,
+    pub instance: InstanceRef,
+    pub acl_resource: String,
+}
+
+/// A native observation is separate from both configuration and ref binding.
+#[derive(Clone)]
+pub struct NativeListObservation {
+    pub availability: InstanceAvailability,
+    pub sessions: Vec<CachedSession>,
+}
+
+/// Read exactly one page from the existing OpenCode reader. A native cursor is
+/// incomplete coverage; native project IDs are not opaque Herder project refs.
+pub async fn collect_opencode_list(
+    reader: &crate::adapters::opencode::read::OpenCodeSessionReader,
+    observed_at: String,
+    request_id: String,
+) -> NativeListObservation {
+    use crate::domain::adapter::SessionActivity;
+    let instance = reader.instance().clone();
+    match reader.list_sessions(request_id).await {
+        Ok(page) => NativeListObservation {
+            availability: InstanceAvailability {
+                instance,
+                availability: Availability::Available,
+                observed_at: Some(observed_at.clone()),
+                coverage: if page.next.is_some() {
+                    SourceCoverage::Incomplete
+                } else {
+                    SourceCoverage::Complete
+                },
+            },
+            sessions: page
+                .sessions
+                .into_iter()
+                .map(|row| CachedSession {
+                    project_ref: None,
+                    snapshot: SessionSnapshot {
+                        address: row.address,
+                        human_stop: false,
+                        activity: SessionActivity::Unknown,
+                        capabilities: vec![],
+                    },
+                    observed_at: Some(observed_at.clone()),
+                })
+                .collect(),
+        },
+        Err(_) => NativeListObservation {
+            availability: InstanceAvailability {
+                instance,
+                // Reader errors also include authorization, malformed data and
+                // timeouts; they do not prove that the instance is offline.
+                availability: Availability::Unknown,
+                observed_at: Some(observed_at),
+                coverage: SourceCoverage::Unknown,
+            },
+            sessions: vec![],
+        },
+    }
+}
+
+/// Compose a cached view from the complete configured inventory and native
+/// observations, resolving every candidate session reference through the
+/// authoritative registry (currently Writer's forward-only v2 reader).
+/// There is no reverse lookup or enumeration in Writer yet: unmapped native
+/// rows are omitted, and coverage remains incomplete even if every supplied
+/// candidate happens to match. This function never mints or stores a ref.
+pub fn compose_configured_inventory<R: crate::application::target::SessionRegistry>(
+    config: &crate::config::Config,
+    bindings: &[ConfiguredSourceBinding],
+    observations: &[NativeListObservation],
+    candidates: &[crate::domain::address::SessionRef],
+    registry: &R,
+) -> Result<ListInventory, &'static str> {
+    use std::collections::{HashMap, HashSet};
+    config.validate().map_err(|_| "invalid_config")?;
+    let expected: HashSet<InstanceRef> = config
+        .nodes
+        .iter()
+        .flat_map(|node| {
+            node.instances.iter().map(|instance| InstanceRef {
+                node: crate::domain::address::NodeRef(node.id.clone()),
+                instance_id: instance.id.clone(),
+            })
+        })
+        .collect();
+    let mut identities = HashSet::new();
+    let mut refs = HashSet::new();
+    let mut acl_refs = HashSet::new();
+    let mut node_refs = HashMap::new();
+    let mut nodes = HashMap::new();
+    for b in bindings {
+        if b.node_ref.trim().is_empty()
+            || b.instance_ref.trim().is_empty()
+            || b.acl_resource.trim().is_empty()
+            || !expected.contains(&b.instance)
+            || !identities.insert(b.instance.clone())
+            || !refs.insert(b.instance_ref.clone())
+            || !acl_refs.insert(b.acl_resource.clone())
+            || node_refs
+                .insert(b.node_ref.clone(), b.instance.node.clone())
+                .is_some_and(|old| old != b.instance.node)
+            || nodes
+                .insert(b.instance.node.clone(), b.node_ref.clone())
+                .is_some_and(|old| old != b.node_ref)
+        {
+            return Err("invalid_source_binding");
+        }
+    }
+    if identities != expected {
+        return Err("missing_source_binding");
+    }
+    // No binding enumerator or issuer exists yet. An empty supplied list is
+    // ambiguous and must not be presented as an authoritative empty store.
+    if candidates.is_empty() {
+        return Err("binding_inventory_unavailable");
+    }
+    let mut by_address = HashMap::new();
+    for reference in candidates {
+        let address = registry
+            .resolve(reference)
+            .map_err(|_| "registry_unavailable")?
+            .ok_or("binding_missing")?;
+        if !expected.contains(&address.instance)
+            || by_address.insert(address, reference.clone()).is_some()
+        {
+            return Err("invalid_session_binding");
+        }
+    }
+    let mut by_instance = HashMap::new();
+    for observation in observations {
+        if !expected.contains(&observation.availability.instance)
+            || observation
+                .sessions
+                .iter()
+                .any(|s| s.snapshot.address.instance != observation.availability.instance)
+            || by_instance
+                .insert(observation.availability.instance.clone(), observation)
+                .is_some()
+        {
+            return Err("invalid_native_observation");
+        }
+    }
+    let mut sources = Vec::new();
+    let mut records = Vec::new();
+    let mut seen_addresses = HashSet::new();
+    for binding in bindings {
+        let mut availability = by_instance
+            .get(&binding.instance)
+            .map(|o| o.availability.clone());
+        if let Some(obs) = by_instance.get(&binding.instance) {
+            for cached in &obs.sessions {
+                if !seen_addresses.insert(cached.snapshot.address.clone()) {
+                    return Err("duplicate_native_address");
+                }
+                if let Some(reference) = by_address.get(&cached.snapshot.address) {
+                    // A native project ID is not an issued project ref.
+                    let mut cached = cached.clone();
+                    cached.project_ref = None;
+                    records.push(ListRecord {
+                        session_ref: reference.clone(),
+                        cached,
+                    });
+                }
+            }
+        }
+        // Writer cannot enumerate all refs yet; never infer complete coverage.
+        if let Some(o) = &mut availability
+            && o.coverage == SourceCoverage::Complete
+        {
+            o.coverage = SourceCoverage::Incomplete;
+        }
+        sources.push(ListSource {
+            node_ref: binding.node_ref.clone(),
+            instance_ref: binding.instance_ref.clone(),
+            instance: binding.instance.clone(),
+            acl_resource: binding.acl_resource.clone(),
+            observation: availability,
+        });
+    }
+    Ok(ListInventory { sources, records })
+}
+
 /// Implemented by the authoritative composition layer, not client metadata.
 /// Return a pre-collected snapshot without making native calls. Return an error
 /// when the inventory cannot be obtained; an empty inventory is not evidence of
 /// fleet-wide completeness. Sources are authorized before data is returned.
 pub trait ListInventoryPort: Send + Sync + 'static {
     fn snapshot(&self) -> Result<ListInventory, ()>;
+}
+
+/// Read-only composition over the existing Writer, with native observations
+/// collected by the caller. This is a view, not a registry or reference issuer.
+pub struct ConfiguredListInventory {
+    config: crate::config::Config,
+    source_bindings: Vec<ConfiguredSourceBinding>,
+    native_observations: std::sync::RwLock<Vec<NativeListObservation>>,
+    session_refs: Vec<crate::domain::address::SessionRef>,
+    writer: std::sync::Mutex<crate::store::Writer>,
+}
+
+impl ConfiguredListInventory {
+    pub fn new(
+        config: crate::config::Config,
+        source_bindings: Vec<ConfiguredSourceBinding>,
+        native_observations: Vec<NativeListObservation>,
+        session_refs: Vec<crate::domain::address::SessionRef>,
+        writer: crate::store::Writer,
+    ) -> Self {
+        Self {
+            config,
+            source_bindings,
+            native_observations: std::sync::RwLock::new(native_observations),
+            session_refs,
+            writer: std::sync::Mutex::new(writer),
+        }
+    }
+
+    /// Publish one freshly collected native observation set. Existing paginated
+    /// views remain frozen; the next first-page call uses this replacement.
+    pub fn replace_native_observations(
+        &self,
+        observations: Vec<NativeListObservation>,
+    ) -> Result<(), ()> {
+        *self.native_observations.write().map_err(|_| ())? = observations;
+        Ok(())
+    }
+}
+
+impl ListInventoryPort for ConfiguredListInventory {
+    fn snapshot(&self) -> Result<ListInventory, ()> {
+        let observations = self.native_observations.read().map_err(|_| ())?;
+        let writer = self.writer.lock().map_err(|_| ())?;
+        compose_configured_inventory(
+            &self.config,
+            &self.source_bindings,
+            &observations,
+            &self.session_refs,
+            &*writer,
+        )
+        .map_err(|_| ())
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
