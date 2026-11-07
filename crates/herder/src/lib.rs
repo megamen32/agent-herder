@@ -13,6 +13,7 @@ pub mod adapters {
 }
 pub mod application {
     pub mod list;
+    pub mod models;
     pub mod recent;
     pub mod reconcile;
 }
