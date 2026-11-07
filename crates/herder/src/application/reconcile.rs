@@ -38,6 +38,36 @@ pub enum DurableDispatch {
     NotClaimed,
 }
 
+impl crate::store::Writer {
+    /// Uses this writer's fenced connection; the target binding must be authoritative.
+    pub async fn dispatch_once<C: crate::domain::adapter::NativeSessionControl>(
+        &mut self,
+        binding: &ReceiptBinding<'_>,
+        plan: crate::domain::adapter::DispatchPlan,
+        message: &str,
+        now: &str,
+        control: &C,
+    ) -> rusqlite::Result<DurableDispatch> {
+        dispatch_once(self.connection_mut(), binding, plan, message, now, control).await
+    }
+
+    /// Only call after the previous dispatcher is known to have stopped.
+    pub fn recover_missing_receipt(
+        &mut self,
+        intent_id: &str,
+        now: &str,
+    ) -> rusqlite::Result<MissingReceiptRecovery> {
+        recover_missing_receipt(self.connection_mut(), intent_id, now)
+    }
+
+    pub fn load_native_receipt(
+        &self,
+        binding: &ReceiptBinding<'_>,
+    ) -> rusqlite::Result<StoredReceipt> {
+        load_native_receipt(self.connection(), binding)
+    }
+}
+
 /// Claim the exact stored intent before a single call to the supplied control.
 /// Requires the authoritative target resolution and a control implementation
 /// whose returned admission belongs to this invocation. On any uncertainty no
@@ -343,6 +373,214 @@ mod tests {
     use crate::domain::adapter::{ReadError, SessionSnapshot};
     use crate::domain::address::{InstanceRef, NodeRef, SessionAddress};
     use std::cell::Cell;
+
+    #[tokio::test]
+    async fn file_writer_preserves_fake_admission_receipt_across_reopen() {
+        use crate::domain::adapter::{
+            Admission, DispatchPlan, NativeSessionControl, RequestKey, SendMode, SubmitError,
+        };
+        use crate::store::{Writer, intents::NewIntent};
+        struct Control {
+            calls: Cell<usize>,
+        }
+        impl NativeSessionControl for Control {
+            async fn submit(
+                &self,
+                plan: DispatchPlan,
+                _: &str,
+                key: &RequestKey,
+            ) -> Result<Admission, SubmitError> {
+                assert_eq!(key.0, "key");
+                self.calls.set(self.calls.get() + 1);
+                Ok(Admission {
+                    receipt: NativeReceipt {
+                        target: plan.target,
+                        native_id: "fake-turn".into(),
+                    },
+                })
+            }
+        }
+        let path = std::env::temp_dir().join(format!(
+            "herder-writer-admit-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(path.clone());
+        let mut w = Writer::create_file(&path).unwrap();
+        let r = receipt();
+        let plan = DispatchPlan {
+            target: r.target.clone(),
+            mode: SendMode::Start,
+            expected_turn: None,
+        };
+        let binding = ReceiptBinding {
+            intent_id: "i",
+            principal: "p",
+            target_ref: "target",
+            request_key: "key",
+            address: &r.target,
+        };
+        let hash = dispatch_payload_binding(&plan, "fixture");
+        w.prepare_intent(&NewIntent {
+            intent_id: "i",
+            task_id: "t",
+            principal: "p",
+            target: "target",
+            request_key: "key",
+            payload_hash: &hash,
+            now: "then",
+            retain_until: "later",
+        })
+        .unwrap();
+        let control = Control {
+            calls: Cell::new(0),
+        };
+        let expected = NativeReceipt {
+            target: r.target.clone(),
+            native_id: "fake-turn".into(),
+        };
+        assert_eq!(
+            w.dispatch_once(&binding, plan.clone(), "fixture", "now", &control)
+                .await
+                .unwrap(),
+            DurableDispatch::Admitted(expected.clone())
+        );
+        drop(w);
+        let mut w = Writer::open_file(&path).unwrap();
+        assert_eq!(
+            w.load_native_receipt(&binding).unwrap(),
+            StoredReceipt::Found(expected)
+        );
+        assert_eq!(
+            w.dispatch_once(&binding, plan, "fixture", "again", &control)
+                .await
+                .unwrap(),
+            DurableDispatch::NotClaimed
+        );
+        assert_eq!(control.calls.get(), 1);
+    }
+
+    #[test]
+    fn fenced_file_writer_recovers_interrupted_fake_submit_without_resending() {
+        use crate::domain::adapter::{
+            Admission, DispatchPlan, NativeSessionControl, RequestKey, SendMode, SubmitError,
+        };
+        use crate::store::{Writer, intents::NewIntent};
+        use std::{
+            future::Future,
+            task::{Context, Poll, Waker},
+        };
+        struct PendingControl(Cell<usize>);
+        impl NativeSessionControl for PendingControl {
+            async fn submit(
+                &self,
+                _: DispatchPlan,
+                _: &str,
+                _: &RequestKey,
+            ) -> Result<Admission, SubmitError> {
+                self.0.set(self.0.get() + 1);
+                std::future::pending().await
+            }
+        }
+        let child_path = std::env::var_os("HERDER_CRASH_TEST_DB");
+        let path = child_path
+            .as_ref()
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::env::temp_dir().join(format!(
+                    "herder-writer-restart-{}-{}.sqlite",
+                    std::process::id(),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos()
+                ))
+            });
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        let r = receipt();
+        let plan = DispatchPlan {
+            target: r.target.clone(),
+            mode: SendMode::Start,
+            expected_turn: None,
+        };
+        let binding = ReceiptBinding {
+            intent_id: "i",
+            principal: "p",
+            target_ref: "target",
+            request_key: "key",
+            address: &r.target,
+        };
+        if child_path.is_some() {
+            let mut w = Writer::create_file(&path).unwrap();
+            let hash = dispatch_payload_binding(&plan, "fixture");
+            w.prepare_intent(&NewIntent {
+                intent_id: "i",
+                task_id: "t",
+                principal: "p",
+                target: "target",
+                request_key: "key",
+                payload_hash: &hash,
+                now: "then",
+                retain_until: "later",
+            })
+            .unwrap();
+            let control = PendingControl(Cell::new(0));
+            {
+                let mut future = std::pin::pin!(w.dispatch_once(
+                    &binding,
+                    plan.clone(),
+                    "fixture",
+                    "dispatch",
+                    &control
+                ));
+                let mut cx = Context::from_waker(Waker::noop());
+                assert!(matches!(future.as_mut().poll(&mut cx), Poll::Pending));
+            }
+            assert_eq!(control.0.get(), 1);
+            // Terminate the test process without dropping the writer or completing submit.
+            std::process::exit(77);
+        }
+        let _cleanup = Cleanup(path.clone());
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("application::reconcile::tests::fenced_file_writer_recovers_interrupted_fake_submit_without_resending")
+            .env("HERDER_CRASH_TEST_DB", &path)
+            .status().unwrap();
+        assert_eq!(child.code(), Some(77));
+        assert!(Writer::create_file(&path).is_err());
+        let mut w = Writer::open_file(&path).unwrap();
+        assert_eq!(
+            w.recover_missing_receipt("i", "restart").unwrap(),
+            MissingReceiptRecovery::Unknown
+        );
+        assert_eq!(
+            w.load_native_receipt(&binding).unwrap(),
+            StoredReceipt::Unknown
+        );
+        let control = PendingControl(Cell::new(0));
+        let mut future =
+            std::pin::pin!(w.dispatch_once(&binding, plan, "fixture", "retry", &control));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(matches!(
+            future.as_mut().poll(&mut cx),
+            Poll::Ready(Ok(DurableDispatch::NotClaimed))
+        ));
+        assert_eq!(control.0.get(), 0);
+    }
 
     #[test]
     fn sha256_matches_standard_vectors() {
