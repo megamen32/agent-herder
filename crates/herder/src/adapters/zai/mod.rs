@@ -13,7 +13,8 @@ use crate::application::recent::{RecentMessages, SourceMessage, normalize_recent
 use crate::domain::{
     address::{InstanceRef, NodeRef, SessionAddress},
     transcript::{
-        RawTranscriptBlock, TranscriptPage, TranscriptSourceRef, normalize_transcript_blocks,
+        RawTranscriptBlock, TranscriptBlock, TranscriptBlockKind, TranscriptPage,
+        TranscriptSourceRef, normalize_transcript_blocks,
     },
 };
 
@@ -720,28 +721,38 @@ fn project_transcript_page(
             message_id: message_id.clone(),
             turn_id: None,
         };
-        for (index, native_block) in message
+        if let Some(native_blocks) = message
             .content_blocks
             .as_deref()
-            .unwrap_or_default()
-            .iter()
-            .enumerate()
+            .filter(|native_blocks| !native_blocks.is_empty())
         {
-            let Some(native_type) = native_block.kind.as_deref().filter(|kind| !kind.is_empty())
-            else {
-                continue;
-            };
-            let mut normalized = normalize_transcript_blocks(
-                &source,
-                [RawTranscriptBlock {
-                    native_type: native_type.to_owned(),
-                    text: native_block.content.clone(),
-                }],
-            );
-            if let Some(block) = normalized.first_mut() {
-                block.block_index = index as u32;
+            for (index, native_block) in native_blocks.iter().enumerate() {
+                let Some(native_type) =
+                    native_block.kind.as_deref().filter(|kind| !kind.is_empty())
+                else {
+                    continue;
+                };
+                let mut normalized = normalize_transcript_blocks(
+                    &source,
+                    [RawTranscriptBlock {
+                        native_type: native_type.to_owned(),
+                        text: native_block.content.clone(),
+                    }],
+                );
+                if let Some(block) = normalized.first_mut() {
+                    block.block_index = Some(index as u32);
+                }
+                blocks.extend(normalized);
             }
-            blocks.extend(normalized);
+        } else if let Some(text) = message.content.as_ref().and_then(Value::as_str) {
+            blocks.push(TranscriptBlock {
+                kind: TranscriptBlockKind::Text,
+                text: Some(text.to_owned()),
+                source,
+                block_index: None,
+                native_type: None,
+                source_field: Some("content".into()),
+            });
         }
     }
     let snapshot_hex = snapshot
@@ -1064,9 +1075,7 @@ mod tests {
         )
         .unwrap();
 
-        // The user fixture has a plain `content` string with no native block
-        // type, so it is intentionally omitted rather than assigned a fake type.
-        assert_eq!(page.blocks.len(), 3);
+        assert_eq!(page.blocks.len(), 4);
         assert_eq!(
             page.blocks[0].source.session.native_session_id,
             "chat-fixture-z-001"
@@ -1076,18 +1085,25 @@ mod tests {
             page.blocks[0].source.session.instance.instance_id,
             "instance-1"
         );
-        assert_eq!(page.blocks[0].source.message_id, "assistant-001");
-        assert_eq!(page.blocks[0].native_type, "markdown");
-        assert_eq!(page.blocks[0].block_index, 0);
-        assert_eq!(page.blocks[0].text.as_deref(), Some("answer"));
+        assert_eq!(page.blocks[0].source.message_id, "user-001");
+        assert_eq!(page.blocks[0].kind, TranscriptBlockKind::Text);
+        assert_eq!(page.blocks[0].native_type, None);
+        assert_eq!(page.blocks[0].source_field.as_deref(), Some("content"));
+        assert_eq!(page.blocks[0].block_index, None);
+        assert_eq!(page.blocks[0].text.as_deref(), Some(" question text "));
         assert_eq!(page.blocks[1].source.message_id, "assistant-001");
-        assert_eq!(page.blocks[1].native_type, "image");
-        assert_eq!(page.blocks[1].block_index, 1);
-        assert_eq!(page.blocks[1].text, None);
+        assert_eq!(page.blocks[1].native_type.as_deref(), Some("markdown"));
+        assert_eq!(page.blocks[1].source_field, None);
+        assert_eq!(page.blocks[1].block_index, Some(0));
+        assert_eq!(page.blocks[1].text.as_deref(), Some("answer"));
         assert_eq!(page.blocks[2].source.message_id, "assistant-001");
-        assert_eq!(page.blocks[2].native_type, "text");
-        assert_eq!(page.blocks[2].block_index, 2);
-        assert_eq!(page.blocks[2].text.as_deref(), Some("continued"));
+        assert_eq!(page.blocks[2].native_type.as_deref(), Some("image"));
+        assert_eq!(page.blocks[2].block_index, Some(1));
+        assert_eq!(page.blocks[2].text, None);
+        assert_eq!(page.blocks[3].source.message_id, "assistant-001");
+        assert_eq!(page.blocks[3].native_type.as_deref(), Some("text"));
+        assert_eq!(page.blocks[3].block_index, Some(2));
+        assert_eq!(page.blocks[3].text.as_deref(), Some("continued"));
         assert_eq!(page.next_cursor, None);
         assert!(page.truncated);
         assert!(page.is_complete());
