@@ -44,3 +44,16 @@ uncertain receipt fails without resubmission. Input markers are test data,
 not native idempotency keys. This direct check does not exercise Herder MCP,
 its adapter, or E001/E002. The smoke test checks a host-file sentinel as well
 as host loopback; this is a scoped fixture, not a general-purpose sandbox.
+
+For a direct native OpenCode v2 receipt check, run:
+
+```sh
+python3 tests/native/launch.py -- /usr/bin/python3 "$PWD/tests/native/opencode_receipt.py" /absolute/path/to/opencode
+```
+
+The check starts a disposable OpenCode server, verifies its fixture provider
+points to the isolated loopback endpoint, creates two native sessions, and
+checks each input followed by a completed assistant answer. It prints the
+native session ID before admission so uncertain outcomes are never retried.
+This does not exercise Herder, prove complete paginated transcripts, or satisfy
+the release gate.
