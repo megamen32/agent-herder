@@ -2315,3 +2315,99 @@ async fn mcp_read_wire_requires_read_grant_and_exact_scoped_mapping() {
     );
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn mcp_stop_wire_waits_for_inflight_handoff_then_commits_hold() {
+    use herder::{
+        application::scoped_stop::mcp_stop::ScopedStopApplication, mcp::transport::NativeServer,
+    };
+    use rmcp::ServiceExt;
+    use serde_json::{Value, json};
+    use std::time::Duration;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let f = Fixture::new();
+    create(&f);
+    let p = plan();
+    f.prepare("intent", "k", &p);
+    let target = address();
+    let b = binding(&target, "intent", "k");
+    assert!(
+        f.authority()
+            .claim(&identity(), &grants(), &b, "scope-1", &p, "message", "now")
+            .unwrap()
+    );
+    let (ready_tx, ready_rx) = mpsc::sync_channel(0);
+    let (go_tx, go_rx) = mpsc::sync_channel(0);
+    let db = f.db.clone();
+    let gate = f.gate.clone();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let submit_calls = calls.clone();
+    let handoff = std::thread::spawn(move || {
+        let target = address();
+        let binding = binding(&target, "intent", "k");
+        let control = Control {
+            calls: submit_calls,
+            db: db.clone(),
+            ready: Some(ready_tx),
+            proceed: Some(std::sync::Mutex::new(go_rx)),
+        };
+        ScopedAuthority::new(db, gate, "authority-1".into())
+            .unwrap()
+            .handoff(
+                &identity(),
+                &grants(),
+                &binding,
+                "scope-1",
+                plan(),
+                "message",
+                "now",
+                &control,
+            )
+            .unwrap()
+    });
+    ready_rx.recv().unwrap();
+    let app = Arc::new(ScopedStopApplication::new(
+        f.authority(),
+        target.instance,
+        grants(),
+    ));
+    let (sent_tx, sent_rx) = mpsc::sync_channel(0);
+    let (result_tx, result_rx) = mpsc::sync_channel(1);
+    let stop = std::thread::spawn(move || {
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async move {
+            let server=NativeServer::with_connection_identity(identity(),app);
+            let (client,io)=tokio::io::duplex(65536);
+            let task=tokio::spawn(async move {server.serve(io).await.unwrap().waiting().await.unwrap()});
+            let (r,mut w)=tokio::io::split(client); let mut lines=BufReader::new(r).lines();
+            let meta=json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"barrier","version":"1"}});
+            let request=json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":meta,"name":"stop","arguments":{"action":"stop","session_ref":"issued","request_key":"stop-key"}}});
+            w.write_all(format!("{request}\n").as_bytes()).await.unwrap(); sent_tx.send(()).unwrap();
+            let response:Value=serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+            result_tx.send(response).unwrap(); drop(w); drop(lines); task.await.unwrap();
+        });
+    });
+    sent_rx.recv().unwrap();
+    let early = result_rx.recv_timeout(Duration::from_millis(300));
+    go_tx.send(()).unwrap();
+    assert!(matches!(
+        handoff.join().unwrap(),
+        DurableDispatch::Admitted(_)
+    ));
+    let result = match early {
+        Ok(v) => v,
+        Err(mpsc::RecvTimeoutError::Timeout) => result_rx.recv().unwrap(),
+        Err(e) => panic!("{e}"),
+    };
+    stop.join().unwrap();
+    assert_eq!(
+        result["result"]["structuredContent"]["hold"], "active",
+        "{result}"
+    );
+    assert_eq!(
+        result["result"]["structuredContent"]["native_interrupt"],
+        "required_or_reconcile"
+    );
+    let c = Connection::open(&f.db).unwrap();
+    assert_eq!(c.query_row("SELECT count(*) FROM humanstop_holds WHERE scope_ref='session:issued' AND released_at IS NULL",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
