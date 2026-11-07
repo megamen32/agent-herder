@@ -187,7 +187,15 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
         args: vec![script.to_string_lossy().into_owned()],
         cwd: opened.owner.cwd.clone(),
         env,
-        timeout: Duration::from_secs(20),
+        // Browser operations compose several existing 30-second transport calls
+        // (inventory, pinned-page lookup, account verification). The outer
+        // deadline must not kill a healthy inner call after only 20 seconds.
+        // Expiry still poisons the runner and never retries a mutation.
+        timeout: Duration::from_secs(if matches!(harness.as_str(), "chatgpt" | "zai") {
+            120
+        } else {
+            20
+        }),
     })
     .map_err(|error| format!("AHAP {harness} startup failed: {error:?}. Verify the configured runner, native app-server arguments and provider configuration in owner.code_home/ahap_env; browser init requires the exact pinned account verifier. No create/send request was submitted by the core."))?;
     let delivery_mode = if harness == "opencode"
