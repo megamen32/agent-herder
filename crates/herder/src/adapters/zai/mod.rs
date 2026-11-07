@@ -29,6 +29,14 @@ pub struct NormalizedMessage {
     pub model: Option<String>,
 }
 
+/// Stable address returned by Z.ai's first native chat-list page.
+/// The adapter exposes only the provider chat ID because other list fields
+/// have not been captured in the accepted provider evidence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZaiChatRef {
+    pub id: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NormalizeError {
     InvalidPayload,
@@ -219,16 +227,33 @@ impl ZaiReader {
         self.cdp.identity()
     }
 
+    /// Read Z.ai's first chat-list page for the account already verified by
+    /// this reader. The observed API is page based; this method does not claim
+    /// that later pages are absent.
+    pub async fn list_chats(&mut self) -> Result<Vec<ZaiChatRef>, ZaiReadError> {
+        let result = self
+            .cdp
+            .evaluate(ZAI_CHAT_LIST_EXPRESSION)
+            .await
+            .map_err(ZaiReadError::Cdp)?;
+        if result.get("origin").and_then(Value::as_str) != Some("https://chat.z.ai") {
+            return Err(ZaiReadError::WrongOrigin);
+        }
+        let status = result.get("status").and_then(Value::as_u64).unwrap_or(200) as u16;
+        if status != 200 {
+            return Err(ZaiReadError::ProviderStatus(status));
+        }
+        let chats = result
+            .get("chats")
+            .ok_or(ZaiReadError::InvalidResponse)?;
+        normalize_chat_list(chats).map_err(ZaiReadError::Normalize)
+    }
+
     pub async fn read_chat(
         &mut self,
         chat_id: &str,
     ) -> Result<Vec<NormalizedMessage>, ZaiReadError> {
-        if chat_id.is_empty()
-            || chat_id.len() > 80
-            || !chat_id
-                .bytes()
-                .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
-        {
+        if !valid_chat_id(chat_id) {
             return Err(ZaiReadError::InvalidResponse);
         }
         let id = serde_json::to_string(chat_id).map_err(|_| ZaiReadError::InvalidResponse)?;
@@ -429,6 +454,15 @@ const ZAI_ACCOUNT_SCOPE_EXPRESSION: &str = r#"(async()=>{
   return {origin:location.origin,scope:[...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('')};
 })()"#;
 
+const ZAI_CHAT_LIST_EXPRESSION: &str = r#"(async()=>{
+  if(location.origin!=="https://chat.z.ai")return {origin:location.origin};
+  const r=await fetch('/api/v1/chats/?page=1&type=all&channel=zai-web&project_id=',{credentials:'same-origin',cache:'no-store'});
+  if(!r.ok)return {origin:location.origin,status:r.status};
+  let chats;try{chats=await r.json()}catch{return {origin:location.origin,error:'invalid_json'}};
+  if(!Array.isArray(chats))return {origin:location.origin,error:'invalid_list'};
+  return {origin:location.origin,chats};
+})()"#;
+
 const ZAI_COMPOSER_SELECTOR: &str = r#"textarea[placeholder="Send a Message"]"#;
 const ZAI_SEND_PREFLIGHT: &str = r#"(()=>{
   if(!globalThis.__herderCdpInputListener){
@@ -487,6 +521,34 @@ pub fn normalize_batch(
         .collect())
 }
 
+/// Project stable provider IDs from the observed list array, rejecting
+/// malformed entries and duplicates instead of returning ambiguous addresses.
+pub fn normalize_chat_list(input: &Value) -> Result<Vec<ZaiChatRef>, NormalizeError> {
+    let values = input.as_array().ok_or(NormalizeError::InvalidPayload)?;
+    let mut seen = std::collections::HashSet::with_capacity(values.len());
+    let mut chats = Vec::with_capacity(values.len());
+    for value in values {
+        let id = value
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| valid_chat_id(id))
+            .ok_or(NormalizeError::InvalidPayload)?;
+        if !seen.insert(id) {
+            return Err(NormalizeError::InvalidPayload);
+        }
+        chats.push(ZaiChatRef { id: id.to_owned() });
+    }
+    Ok(chats)
+}
+
+fn valid_chat_id(chat_id: &str) -> bool {
+    chat_id.len() >= 12
+        && chat_id.len() <= 80
+        && chat_id
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
+}
+
 fn project_message(requested_id: &str, message: &RawMessage) -> Option<NormalizedMessage> {
     let id = message.id.as_deref().unwrap_or(requested_id).trim();
     if id.is_empty() || id != requested_id {
@@ -538,6 +600,8 @@ mod tests {
 
     const OBSERVED_SHAPE: &str =
         include_str!("../../../../../acceptance/native/z-ai/messages-batch.json");
+    const CHAT_LIST_SHAPE: &str =
+        include_str!("../../../../../acceptance/native/z-ai/chat-list.json");
 
     #[test]
     fn validates_chat_and_preserves_requested_order_and_text_blocks() {
@@ -561,6 +625,31 @@ mod tests {
         assert_eq!(
             normalize_batch("different-chat", &["user-001"], OBSERVED_SHAPE),
             Err(NormalizeError::ChatMismatch)
+        );
+    }
+
+    #[test]
+    fn projects_stable_chat_ids_from_native_list() {
+        let list: Value = serde_json::from_str(CHAT_LIST_SHAPE).unwrap();
+        let chats = normalize_chat_list(&list).unwrap();
+        assert_eq!(
+            chats.iter().map(|chat| chat.id.as_str()).collect::<Vec<_>>(),
+            ["c001000000000001", "c002000000000002"]
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_or_duplicate_chat_ids() {
+        assert_eq!(
+            normalize_chat_list(&serde_json::json!([
+                {"id":"c001000000000001"},
+                {"id":"c001000000000001"}
+            ])),
+            Err(NormalizeError::InvalidPayload)
+        );
+        assert_eq!(
+            normalize_chat_list(&serde_json::json!([{"id":"not/a/native-id"}])),
+            Err(NormalizeError::InvalidPayload)
         );
     }
 }
