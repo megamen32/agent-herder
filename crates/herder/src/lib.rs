@@ -30,6 +30,7 @@ pub mod error;
 pub mod store;
 
 pub mod ownership {
+    pub mod claim;
     pub mod manifest;
 }
 
