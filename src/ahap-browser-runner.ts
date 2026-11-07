@@ -23,6 +23,30 @@ const CONTROL_CAPABILITIES = {
 };
 const ACCOUNT_SCOPE = /^[a-f0-9]{64}$/u;
 
+type InitStage = "adapter_init" | "verify_pinned_account" | "account_match";
+// Exact known literals only: never expose or classify arbitrary error suffixes.
+const INIT_REASONS = new Map<string, string>([
+  ["pinned browser account scope mismatch", "account_scope_mismatch"],
+  ["ChatGPT pinned account scope mismatch; no read data returned", "account_scope_mismatch"],
+  ["Pinned ChatGPT page unavailable; no read data returned", "pinned_page_unavailable"],
+  ["Configured ChatGPT page unavailable; no page fallback allowed", "pinned_page_unavailable"],
+  ["Configured Z.ai page unavailable; no page fallback allowed", "pinned_page_unavailable"],
+  ["ChatGPT Mac mini tab is not an authenticated page", "authentication_required"],
+  ["ZAI Chrome tab is not a logged-in chat page; sign in in Mac mini Chrome", "authentication_required"],
+  ["Mac mini Chrome operation timeout; do not replay an uncertain write", "transport_timeout"],
+  ["direct_cdp_connect_timeout", "transport_timeout"],
+  ["direct_cdp_closed", "transport_disconnected"],
+  ["direct_cdp_connect_closed", "transport_disconnected"],
+  ["direct_cdp_disconnected", "transport_disconnected"],
+  ["direct_cdp_disconnected; operation outcome may be unknown", "transport_disconnected"],
+  ["Mac mini Chrome gateway returned no JSON", "transport_no_json"],
+  ["Chrome evaluation did not return a JSON value", "evaluation_invalid"],
+  ["direct_cdp_evaluate_no_value", "evaluation_invalid"],
+  ["direct_cdp_target_context_mismatch", "target_context_mismatch"],
+  ["Chrome MCP response exceeds bound", "response_too_large"],
+]);
+
+
 /** Run the bounded browser BrowserChatAdapter surface over AHAP v0.1 stdio. */
 export async function serveBrowserChatAhap(
   adapter: BrowserAdapterPort,
@@ -89,14 +113,19 @@ export async function serveBrowserChatAhap(
       continue;
     }
 
+    let initStage: InitStage = "adapter_init";
     try {
       let result: unknown;
       switch (request.method) {
         case "init":
           accountVerified = false;
+          if (adapter.verifyPinnedAccountScope) {
+            initStage = "verify_pinned_account";
+            await adapter.verifyPinnedAccountScope();
+          }
+          initStage = "adapter_init";
           await adapter.init();
-          // Passive inventory init need not populate account scope in a fresh profile.
-          await adapter.verifyPinnedAccountScope?.();
+          initStage = "account_match";
           if (adapter.getAccountScope() !== expectedAccountScope) {
             throw new Error("pinned browser account scope mismatch");
           }
@@ -149,6 +178,13 @@ export async function serveBrowserChatAhap(
       }
       write({ jsonrpc: "2.0", id, result: result ?? null });
     } catch (cause) {
+      if (request.method === "init") {
+        error(id, -32000, "Browser adapter initialization failed", {
+          ...adapterFailureContext("init", false), stage: initStage,
+          reason: cause instanceof Error ? INIT_REASONS.get(cause.message) ?? "unknown" : "unknown",
+        });
+        continue;
+      }
       if (cause instanceof AhapReadError) {
         error(id, cause.code, cause.message, cause.code === -32001 ? adapterFailureContext(request.method, request.method === "sendMessage" || request.method === "createSession") : undefined);
         continue;

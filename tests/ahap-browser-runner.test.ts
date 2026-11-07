@@ -311,7 +311,7 @@ for (const harness of ["chatgpt", "zai"]) {
 
 for (const harness of ["chatgpt", "zai"] as const) {
   for (const matches of [true, false]) {
-    it(`${harness} verifies an unpopulated fresh-profile scope after passive init (matches=${matches})`, async () => {
+    it(`${harness} verifies an unpopulated fresh-profile scope before passive init (matches=${matches})`, async () => {
       let currentScope: string | undefined;
       const calls: string[] = [];
       let sends = 0;
@@ -331,7 +331,7 @@ for (const harness of ["chatgpt", "zai"] as const) {
         },
         async sendMessage() { sends++; return { ok: true }; },
       }, requests);
-      expect(calls).toEqual(["passive-init", "verify"]);
+      expect(calls).toEqual(["verify", "passive-init"]);
       if (matches) {
         expect(replies[1].error).toBeUndefined();
         expect(replies[1].result).toBeNull();
@@ -363,4 +363,60 @@ it("configured Z.ai verifier exposes its verified scope with an empty driver cac
   observedScope = "b".repeat(64);
   await expect(adapter.verifyPinnedAccountScope?.()).rejects.toThrow("scope mismatch");
   expect(adapter.getAccountScope()).toBeUndefined();
+});
+
+for (const [stage, message, reason] of [
+  ["adapter_init", "Mac mini Chrome gateway returned no JSON", "transport_no_json"],
+  ["verify_pinned_account", "Pinned ChatGPT page unavailable; no read data returned", "pinned_page_unavailable"],
+  ["verify_pinned_account", "ChatGPT pinned account scope mismatch; no read data returned", "account_scope_mismatch"],
+  ["account_match", "", "account_scope_mismatch"],
+  ["adapter_init", "PRIVATE token=secret https://private.example/account", "unknown"],
+  ["verify_pinned_account", "Pinned ChatGPT page unavailable; no read data returned PRIVATE", "unknown"],
+] as const) {
+  it(`FIXBI reports safe init stage ${stage}/${reason} without exception text`, async () => {
+    let sends = 0;
+    const replies = await run({
+      type: "chatgpt", name: "fixture", browserFeatures: {},
+      async init() { if (stage === "adapter_init") throw new Error(message); },
+      async verifyPinnedAccountScope() { if (stage === "verify_pinned_account") throw new Error(message); },
+      getAccountScope: () => "b".repeat(64),
+      async sendMessage() { sends++; return { ok: true }; },
+    }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" },
+      { jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "fixture", options: { message: "blocked", queue: true } } }]);
+    expect(replies[1].error).toMatchObject({ code: -32000, data: { outcome: "read_failed", method: "init", stage, reason } });
+    expect(replies[2].error).toBeDefined();
+    expect(sends).toBe(0);
+    const output = JSON.stringify(replies);
+    for (const secret of ["PRIVATE", "token=secret", "https://", "b".repeat(64)]) expect(output).not.toContain(secret);
+    if (message) expect(output).not.toContain(message);
+  });
+}
+
+it("FIXBI verifies before passive init that depends on the verified account", async () => {
+  let currentScope: string | undefined;
+  const calls: string[] = [];
+  const replies = await run({
+    type: "chatgpt", name: "fixture", browserFeatures: {},
+    getAccountScope: () => currentScope,
+    async verifyPinnedAccountScope() { calls.push("verify"); currentScope = scope; },
+    async init() { calls.push("passive-init"); if (currentScope !== scope) throw new Error("ChatGPT pinned account scope mismatch; no read data returned"); },
+  }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" }]);
+  expect(replies[1].error).toBeUndefined();
+  expect(replies[1].result).toBeNull();
+  expect(calls).toEqual(["verify", "passive-init"]);
+});
+
+it("FIXBI verifier mismatch prevents passive reads and send", async () => {
+  let reads = 0, sends = 0;
+  const replies = await run({
+    type: "chatgpt", name: "fixture", browserFeatures: {},
+    getAccountScope: () => undefined,
+    async verifyPinnedAccountScope() { throw new Error("ChatGPT pinned account scope mismatch; no read data returned"); },
+    async init() { reads++; },
+    async sendMessage() { sends++; return { ok: true }; },
+  }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" },
+    { jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "fixture", options: { message: "blocked", queue: true } } }]);
+  expect(replies[1].error).toMatchObject({ data: { stage: "verify_pinned_account", reason: "account_scope_mismatch" } });
+  expect(reads).toBe(0);
+  expect(sends).toBe(0);
 });
