@@ -17,6 +17,7 @@ type ZaiSnapshot = {
   composer: boolean;
   phase: ZaiPhase;
   draftPresent: boolean;
+  securityVerification?: boolean;
 };
 export type BrowserPage = { id: number; url: string; selected?: boolean };
 
@@ -69,6 +70,10 @@ export const ZAI_ACTIVITY_SCRIPT = `() => {
   );
   const send = document.querySelector('#send-message-button');
   const composer = document.querySelector('textarea[placeholder="Send a Message"]');
+  const securityVerification = [...document.querySelectorAll('body *')].some(element =>
+    visible(element) && element.children.length === 0 &&
+    /please complete security verification|please drag the slider to complete the puzzle/i.test(element.textContent || '')
+  );
   return {
     origin: location.origin, path: location.pathname,
     loggedIn: !!document.querySelector('#chat-group-tab-zai-web'),
@@ -78,6 +83,7 @@ export const ZAI_ACTIVITY_SCRIPT = `() => {
     composer: !!composer,
     phase: stop ? 'generating' : (visible(send) && !!composer ? 'idle' : 'unknown'),
     draftPresent: !!composer?.value,
+    securityVerification,
   };
 }`;
 
@@ -144,7 +150,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     const data = parseChromeEvaluation<ZaiSnapshot>(
       await this.tools.call("evaluate_script", { pageId, function: ZAI_ACTIVITY_SCRIPT }),
     );
-    if (data.origin !== ZAI_ORIGIN || !data.loggedIn || !data.composer) {
+    if (data.origin !== ZAI_ORIGIN || (!data.securityVerification && (!data.loggedIn || !data.composer))) {
       throw new Error("ZAI Chrome tab is not a logged-in chat page; sign in in Mac mini Chrome");
     }
     // A renderer/transport that omits phase must never be interpreted as idle.
@@ -158,7 +164,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     // A user draft is preserved and restored around the herder's send (see
     // readComposerDraft/restoreComposerDraft), so it no longer counts as
     // busy. Only an active generation or the post-send guard blocks the next send.
-    return state.phase !== "idle" ||
+    return state.securityVerification === true || state.phase !== "idle" ||
       Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS;
   }
 
@@ -626,6 +632,15 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       if (!known) throw new Error("ZAI chat is not in the authenticated browser inventory");
       const page = await this.page();
       let state = await this.snapshot(page.id);
+      if (state.securityVerification) {
+        try {
+          await this.tools.call("navigate_page", { pageId: page.id, type: "reload" });
+          state = await this.snapshot(page.id);
+        } catch {
+          throw new Error("ZAI security verification remains open; reload the browser page and complete verification before sending");
+        }
+        if (state.securityVerification) throw new Error("ZAI security verification remains open; complete it in the browser before sending");
+      }
       if (this.busy(state)) {
         if (state.phase === "generating" || Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS) {
           throw new Error("prompt is already running; ZAI queue must wait");
@@ -638,12 +653,14 @@ export class ZaiCdpDriver implements BrowserChatDriver {
         if (outcome === "missing") throw new Error("ZAI conversation is missing or ambiguous; message not sent");
         state = await this.confirmTarget(page.id, chatId, known);
       }
+      if (state.securityVerification) throw new Error("ZAI security verification is open; complete it in the browser before sending");
       if (this.busy(state)) {
         if (state.phase === "generating") throw new Error("prompt is already running; ZAI queue must wait");
         throw new Error("ZAI composer not ready; message not sent");
       }
       // Last read before composing: a human may have started another turn.
       const latest = await this.snapshot(page.id);
+      if (latest.securityVerification) throw new Error("ZAI security verification is open; complete it in the browser before sending");
       if (!this.isSelected(chatId, known, latest) || this.busy(latest)) {
         throw new Error("prompt is already running; ZAI queue must wait");
       }
@@ -690,6 +707,14 @@ export class ZaiCdpDriver implements BrowserChatDriver {
           if (setter) setter.call(editor, ''); else editor.value = '';
           editor.dispatchEvent(new Event('input', { bubbles: true }));
         };
+        const securityVerification = [...document.querySelectorAll('body *')].some(element =>
+          element.getClientRects().length > 0 && element.children.length === 0 &&
+          /please complete security verification|please drag the slider to complete the puzzle/i.test(element.textContent || '')
+        );
+        if (securityVerification) {
+          clearOwnedDraft();
+          return {submitted:false,reason:'security_verification'};
+        }
         const stop = [...document.querySelectorAll('button')].some(button =>
           button.getClientRects().length > 0 &&
           !!button.querySelector(':scope > span.block.size-3.rounded-xs.bg-text-inverted')
@@ -727,6 +752,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       }
       if (!receipt.submitted) {
         if (receipt.reason === "busy") throw new Error("prompt is already running; ZAI queue must wait");
+        if (receipt.reason === "security_verification") throw new Error("ZAI security verification is open; complete it in the browser before sending");
         throw new Error("ZAI submission blocked before click: " + (receipt.reason || "unknown"));
       }
       this.lastSubmittedAt = Date.now();

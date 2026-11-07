@@ -26,6 +26,7 @@ class MockChromeTools implements ChromePageTools {
   draft = "";
   sent: string[] = [];
   preClickBusy = false;
+  preClickVerification = false;
   async call(name: string, args: Record<string, unknown> = {}): Promise<string> {
     this.actions.push({ name, args });
     if (name === "list_pages") return "11: Z.ai (https://chat.z.ai/) [selected]";
@@ -47,6 +48,7 @@ class MockChromeTools implements ChromePageTools {
       return evalJson({ selected: true });
     }
     if (fn.includes("const expected =")) {
+      if (this.preClickVerification) return evalJson({ submitted: false, reason: "security_verification" });
       if (this.preClickBusy || this.page.phase === "generating") {
         return evalJson({ submitted: false, reason: "busy" });
       }
@@ -65,7 +67,7 @@ class MockChromeTools implements ChromePageTools {
 }
 
 describe("ZAI real DOM activity selectors", () => {
-  function runMarkupFixture(options: { stop: boolean; send: boolean; disabled?: boolean }) {
+  function runMarkupFixture(options: { stop: boolean; send: boolean; disabled?: boolean; verification?: boolean }) {
     const stopButton = {
       getClientRects: () => [1],
       querySelector: (selector: string) => selector.includes("span.block.size-3.rounded-xs.bg-text-inverted") && options.stop
@@ -74,7 +76,9 @@ describe("ZAI real DOM activity selectors", () => {
     const editor = { value: "" };
     const send = { disabled: options.disabled ?? true, getClientRects: () => [1] };
     const document = {
-      querySelectorAll: (selector: string) => selector === "button" ? [stopButton] : [],
+      querySelectorAll: (selector: string) => selector === "button" ? [stopButton]
+        : selector === "body *" && options.verification
+          ? [{ children: [], textContent: "Please complete security verification", getClientRects: () => [1] }] : [],
       querySelector: (selector: string) => {
         if (selector === "#chat-group-tab-zai-web") return {};
         if (selector === "#send-message-button") return options.send ? send : null;
@@ -84,7 +88,7 @@ describe("ZAI real DOM activity selectors", () => {
     };
     return runInNewContext("(" + ZAI_ACTIVITY_SCRIPT + ")()", {
       document, location: { origin: "https://chat.z.ai", pathname: route },
-    }) as { phase: Phase; draftPresent: boolean };
+    }) as { phase: Phase; draftPresent: boolean; securityVerification: boolean };
   }
 
   it("recognizes the square Stop button as generating even when Send exists", () => {
@@ -94,9 +98,74 @@ describe("ZAI real DOM activity selectors", () => {
     expect(runMarkupFixture({ stop: false, send: true, disabled: true }).phase).toBe("idle");
     expect(runMarkupFixture({ stop: false, send: false }).phase).toBe("unknown");
   });
+  it("recognizes a visible security verification and its absence", () => {
+    expect(runMarkupFixture({ stop: true, send: true, verification: true }).securityVerification).toBe(true);
+    expect(runMarkupFixture({ stop: false, send: true }).securityVerification).toBe(false);
+  });
 });
 
 describe("Mac mini CDP ZAI provider", () => {
+  it("explains an active security verification and never submits a message", async () => {
+    class PersistentVerification extends MockChromeTools {
+      override async call(name: string, args: Record<string, unknown> = {}): Promise<string> {
+        if (name === "navigate_page" && args.type === "reload") { this.actions.push({ name, args }); return "ok"; }
+        return super.call(name, args);
+      }
+    }
+    const tools = new PersistentVerification();
+    const driver = new ZaiCdpDriver(tools);
+    await driver.listChats();
+    Object.assign(tools.page, { securityVerification: true, phase: "generating" });
+    await expect(driver.sendMessage({ chatId: "sidebar:Test%20fixture", text: "fixture-only" }))
+      .rejects.toThrow(/security verification.*browser/i);
+    expect(tools.sent).toEqual([]);
+    expect(tools.actions.filter(action => action.name === "fill")).toHaveLength(0);
+    expect(tools.actions.filter(action => action.name === "navigate_page" && action.args.type === "reload")).toHaveLength(1);
+  });
+  it("reloads a verification once then sends once after fresh idle target confirmation", async () => {
+    class ClearedVerification extends MockChromeTools {
+      override async call(name: string, args: Record<string, unknown> = {}): Promise<string> {
+        if (name === "navigate_page" && args.type === "reload") {
+          this.actions.push({ name, args });
+          this.page = state(route, ["Test fixture", "Another fixture"], "Test fixture", "idle");
+          return "ok";
+        }
+        return super.call(name, args);
+      }
+    }
+    const tools = new ClearedVerification();
+    const driver = new ZaiCdpDriver(tools);
+    await driver.listChats();
+    Object.assign(tools.page, { securityVerification: true, phase: "generating" });
+    await expect(driver.sendMessage({ chatId: "sidebar:Test%20fixture", text: "fixture-only" })).resolves.toEqual({});
+    expect(tools.sent).toEqual(["fixture-only"]);
+    expect(tools.actions.filter(action => action.name === "navigate_page" && action.args.type === "reload")).toHaveLength(1);
+  });
+  it("recovers verification even when the composer is hidden by the challenge", async () => {
+    class ClearsHiddenComposer extends MockChromeTools {
+      override async call(name: string, args: Record<string, unknown> = {}): Promise<string> {
+        if (name === "navigate_page" && args.type === "reload") {
+          this.actions.push({ name, args });
+          this.page = state(route, ["Test fixture", "Another fixture"], "Test fixture", "idle");
+          return "ok";
+        }
+        return super.call(name, args);
+      }
+    }
+    const tools = new ClearsHiddenComposer(); const driver = new ZaiCdpDriver(tools);
+    await driver.listChats();
+    Object.assign(tools.page, { securityVerification: true, composer: false, phase: "unknown" });
+    await expect(driver.sendMessage({ chatId: "sidebar:Test%20fixture", text: "fixture-only" })).resolves.toEqual({});
+    expect(tools.sent).toEqual(["fixture-only"]);
+  });
+  it("does not send if verification appears after filling the message", async () => {
+    const tools = new MockChromeTools(); const driver = new ZaiCdpDriver(tools);
+    await driver.listChats(); tools.preClickVerification = true;
+    await expect(driver.sendMessage({ chatId: "sidebar:Test%20fixture", text: "fixture-only" }))
+      .rejects.toThrow(/security verification.*browser/i);
+    expect(tools.sent).toEqual([]);
+    expect(tools.actions.filter(action => action.name === "navigate_page" && action.args.type === "reload")).toHaveLength(0);
+  });
   it("parses only exact ZAI origins and handles 404-only Chrome browser sockets", () => {
     expect(parseZaiPages("11: Z.ai (https://chat.z.ai/)\n12: Unknown (https://chat.z.ai.evil.invalid/)\n13: ChatGPT (https://chatgpt.com/)"))
       .toEqual([{ id: 11, url: "https://chat.z.ai/" }]);
