@@ -270,6 +270,7 @@ mod tests {
         let cases = [
             ("discover", json!({"action":"nodes"}), Access::Read),
             ("discover", json!({"action":"instances"}), Access::Read),
+            ("discover", json!({"action":"projects","instance_ref":"i"}), Access::Read),
             (
                 "discover",
                 json!({"action":"models","instance_ref":"i"}),
