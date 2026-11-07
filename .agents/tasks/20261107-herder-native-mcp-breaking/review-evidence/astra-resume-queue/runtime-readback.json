@@ -1,0 +1,23 @@
+{
+  "checked_at": "2026-11-07T09:19:00Z",
+  "source_commit": "6195e46b",
+  "main_commit": "b00c778d",
+  "installed_release": "bafb71f5e272a08e72e4987f31e468fbbfe88c19",
+  "service": "agent-herder.service",
+  "main_pid": 2954443,
+  "old_pid": 982842,
+  "old_pid_absent": true,
+  "installed_pendingSweep_and_prequeue_filter": true,
+  "pre_retry_exact_wait": null,
+  "pre_retry_owner_wait_states": [
+    "resumed",
+    "resumed"
+  ],
+  "retry_reason": "old process terminated, full owner registry has no pending wait, reused original requestId",
+  "requestId": "astra-herder-hourly-20261107T0922Z",
+  "wait_id": "wait_1c84ce639ceae5e8029b19b7e73204eb",
+  "registered_state": "waiting",
+  "status_readback": "waiting",
+  "scheduled_at": "2026-11-07T10:18:49.705Z",
+  "delivery_not_yet_due": true
+}
