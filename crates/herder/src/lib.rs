@@ -15,6 +15,7 @@ pub mod application {
     pub mod list;
     pub mod models;
     pub mod recent;
+    pub mod target;
     pub mod reconcile;
 }
 pub mod auth {
