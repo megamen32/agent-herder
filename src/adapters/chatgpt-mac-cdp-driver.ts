@@ -647,6 +647,13 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
 
   async getChat(id: string): Promise<BrowserChat | null> {
     return this.exclusive(async () => {
+      if (id.startsWith("draft:")) {
+        // A driver restart clears the in-memory store. Restore only the
+        // currently verified account's drafts before resolving an exact ID.
+        const ownerPage = await this.page();
+        this.accountScope = await verifyNewChatAccountScope(this.tools, "chatgpt", ownerPage.id);
+        await this.drafts.useScope(this.accountScope);
+      }
       const draft = this.drafts.get(id);
       if (draft) return this.drafts.asChat(draft, draft.remoteId ? this.cache.get(draft.remoteId) : undefined);
       if (!NATIVE_CHAT_ID.test(id)) return null;

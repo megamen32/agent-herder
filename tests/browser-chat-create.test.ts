@@ -279,6 +279,15 @@ class NewChatIntegratedFixture extends NewChatPageFixture {
 }
 
 describe("driver integration: draft to native conversation, no synthetic prompt",()=>{
+  it("restores an exact ChatGPT draft after the driver restarts",async()=>{
+    const p=await root();vi.stubEnv("AGENT_HERDER_BROWSER_DRAFT_ROOT",p);
+    const tools=new NewChatIntegratedFixture("chatgpt");
+    const before=new ChatGptMacCdpDriver(tools);
+    const draft=await before.createChat({title:"Persistent test draft"});
+    const after=new ChatGptMacCdpDriver(tools);
+    expect(await after.getChat(draft.id)).toMatchObject({id:draft.id,title:"Persistent test draft",pendingRemoteCreation:true});
+    expect(tools.calls.some(c=>c.name==="fill" || c.name==="new_page")).toBe(false);
+  });
   for(const site of ["chatgpt","zai"] as const){
     it(site+" creates a selectable draft then admits exactly one user first message",async()=>{
       const p=await root();
