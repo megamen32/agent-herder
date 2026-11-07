@@ -2191,6 +2191,20 @@ export class ZcodeAdapter implements HarnessAdapter {
     } catch { return undefined; }
   }
 
+  /** List projects from the app-server owner's native catalog. */
+  async listProjects(): Promise<Array<{ id: string; name: string }>> {
+    const tree = record(await this.client.call("project", "readTree", []));
+    if (!Array.isArray(tree.projects)) throw new Error("ZCode native project catalog is unavailable or invalid");
+    return tree.projects.map((value: unknown) => {
+      const project = record(value);
+      const id = nonEmptyString(project.id);
+      if (!id) throw new Error("ZCode native project catalog contains a project without an ID");
+      const roots = Array.isArray(project.roots) ? project.roots.map(record) : [];
+      const name = nonEmptyString(project.name) || nonEmptyString(project.title) || nonEmptyString(roots[0]?.rootPath) || id;
+      return { id, name };
+    });
+  }
+
   /** Resolve a project only from the current native owner catalog and an exact root match. */
   private async resolveNativeProjectId(workspacePath: string): Promise<string> {
     let tree: Record<string, unknown>;
