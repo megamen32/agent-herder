@@ -1,5 +1,6 @@
 import { PassThrough } from "node:stream";
 import { expect, it, vi } from "vitest";
+import { CodexQuotaBlockedError, type QuotaDecision } from "../src/codex-quota-guard.js";
 import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
 import { codexRunnerConfig, makeConfiguredAdapter, serveCodexAhap } from "../src/ahap-codex-runner.js";
 const rpc = (id:number,method:string,params={}) => ({jsonrpc:"2.0",id,method,params});
@@ -155,3 +156,36 @@ it.each([false, true])("idle Codex queue with activeTurnOnly=%s uses the legacy 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+const quotaDecision = (reason: string): QuotaDecision => ({ allowed: false, reason, remainingPercent: null, windows: [], checkedAt: "2026-11-08T00:00:00Z" });
+for (const reason of ["provider_denied", "below_reserve", "quota_snapshot_expired", "quota_unknown", "quota_policy_unavailable"]) {
+  it(`FIXQ classifies typed createSession thread/start refusal with allowlisted reason ${reason}`, async () => {
+    const cause = new CodexQuotaBlockedError(quotaDecision(reason), "thread/start");
+    cause.message = "PRIVATE raw exception payload";
+    const createSession = vi.fn(async () => { throw cause; });
+    const replies = await run({ createSession }, [rpc(2, "createSession", { options: { name: "quota-fixture", cwd: "/tmp" } })]);
+    expect(createSession).toHaveBeenCalledTimes(1);
+    expect(replies[1].error.code).toBe(-32000);
+    expect(replies[1].error.data).toEqual({ outcome: "not_submitted", admitted: false, notSubmitted: true, retryable: false,
+      code: "codex_quota_guard", method: "createSession", operation: "thread/start", reason });
+    expect(JSON.stringify(replies)).not.toContain("PRIVATE");
+  });
+}
+for (const [label, method, cause] of [
+  ["ordinary error", "createSession", new Error("PRIVATE raw error")],
+  ["duck type", "createSession", { name: "CodexQuotaBlockedError", code: "codex_quota_guard", notSubmitted: true, admitted: false, operation: "thread/start", decision: quotaDecision("below_reserve") }],
+  ["other operation", "createSession", new CodexQuotaBlockedError(quotaDecision("below_reserve"), "turn/start")],
+  ["other mutation", "sendMessage", new CodexQuotaBlockedError(quotaDecision("below_reserve"), "thread/start")],
+  ["unrecognized reason", "createSession", new CodexQuotaBlockedError(quotaDecision("PRIVATE invented reason"), "thread/start")],
+] as const) {
+  it(`FIXQ keeps ${label} UNKNOWN without replay or raw text`, async () => {
+    const call = vi.fn(async () => { throw cause; });
+    const params = method === "createSession" ? { options: { name: "quota-fixture", cwd: "/tmp" } }
+      : { id: "fixture-only", options: { message: "fixture", queue: true, inputId: "fixture-only" } };
+    const replies = await run({ [method]: call }, [rpc(2, method, params)]);
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(replies[1].error).toMatchObject({ code: -32000, data: { outcome: "unknown", retryable: false, method } });
+    expect(replies[1].error.data.notSubmitted).toBeUndefined();
+    expect(JSON.stringify(replies)).not.toContain("PRIVATE");
+  });
+}

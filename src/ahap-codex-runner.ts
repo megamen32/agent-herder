@@ -4,6 +4,7 @@ import { isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
 import type { CreateSessionOptions, SendMessageOptions, SendMessageResult } from "./types/common.js";
+import { CodexQuotaBlockedError } from "./codex-quota-guard.js";
 import { CodexAppServerAdapter } from "./adapters/codex-app-server.js";
 
 type RpcId = string | number;
@@ -17,6 +18,9 @@ const CONTROL_CAPABILITIES = {
   events: false, steer: false,
 };
 const MAX_FRAME_BYTES = 4 * 1024 * 1024;
+const QUOTA_DENIAL_REASONS = new Set([
+  "provider_denied", "below_reserve", "quota_snapshot_expired", "quota_unknown", "quota_policy_unavailable",
+]);
 
 /** AHAP v0.1 facade over the existing CI/legacy CodexAppServerAdapter. It owns no
  * native protocol; delivery and receipts remain owned by the legacy adapter. */
@@ -122,6 +126,16 @@ export async function serveCodexAhap(
       }
       write({ jsonrpc: "2.0", id, result: result ?? null });
     } catch (cause) {
+      // Only this typed pre-admission guard proves that thread creation was not sent.
+      // Never infer safety from an error name, message, or duck-typed receipt.
+      if (request.method === "createSession" && cause instanceof CodexQuotaBlockedError
+        && cause.operation === "thread/start" && QUOTA_DENIAL_REASONS.has(cause.decision.reason)) {
+        error(id, -32000, "Codex quota guard blocked session creation before submission", {
+          outcome: "not_submitted", admitted: false, notSubmitted: true, retryable: false,
+          code: "codex_quota_guard", method: "createSession", operation: "thread/start", reason: cause.decision.reason,
+        });
+        continue;
+      }
       if (cause instanceof AhapReadError) {
         error(id, cause.code, cause.message, cause.code === -32001 ? adapterFailureContext(request.method, request.method === "sendMessage" || request.method === "createSession") : undefined);
         continue;
