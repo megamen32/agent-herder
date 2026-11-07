@@ -1,0 +1,84 @@
+{
+  "consumer": "Last Human Commit plan publisher",
+  "integration_kind": "ui_deeplink",
+  "owner": "megamen32",
+  "repository": {
+    "name": "LastHumanCommit",
+    "url": "https://github.com/megamen32/LastHumanCommit.git",
+    "local_source": "/home/roomhacker/agents-projects/LastHumanCommit-adoption-20261101",
+    "observed_commit": "6198a0fc6583d36fd2add22360ccb32c2cc37c88",
+    "source_plugin_version": "1.7.20",
+    "installed_plugin_version": "1.15.1",
+    "installed_source": "/home/roomhacker/.codex/plugins/cache/megamen32-plugins/last-human-commit/1.15.1",
+    "source_match": {
+      "files": [
+        "src/common/tools/lhc_plan_ui.py",
+        "src/common/tools/lhc_plan_publish.py"
+      ],
+      "owner": "megamen32 owns the LastHumanCommit repository; these src/common/tools files are the writable source of truth.",
+      "generated_projections": [
+        "plugins/last-human-commit/common/tools/lhc_plan_ui.py",
+        "plugins/last-human-commit/common/tools/lhc_plan_publish.py",
+        "plugins/last-human-commit/native/codex/common/tools/lhc_plan_ui.py",
+        "plugins/last-human-commit/native/codex/common/tools/lhc_plan_publish.py"
+      ],
+      "projection_rule": "scripts/publish_package.py projects src/common/tools/ into package copies.",
+      "verification": "SHA-256 of both source files matches the installed 1.15.1 tools/lhc_plan_ui.py and tools/lhc_plan_publish.py."
+    }
+  },
+  "caller_route": {
+    "symbol": "lhc_plan_ui.herder_panel(tasks)",
+    "files": [
+      "src/common/tools/lhc_plan_ui.py",
+      "src/common/tools/lhc_plan_publish.py"
+    ],
+    "entry_point": "lhc_plan_publish.publish(...) injects herder_panel(current.get('tasks', [])) into the published plan page.",
+    "behavior": "Uses explicitly recorded Codex, ZCode, or OpenCode session IDs and creates an iframe plus a direct link. It does not call the Agent Herder MCP or an old API."
+  },
+  "native_ref_contract": {
+    "reference": "<harness>:<nativeSessionId>",
+    "url_template": "https://agent.bezrabotnyi.com/?from=lhc#/session/<encodeURIComponent(reference)>",
+    "encoding": "URL-encode the complete harness:sessionId reference as one hash-route segment; decode once in the Herder UI.",
+    "lhc_constraints": "LHC currently emits only codex, zcode, and opencode, with session IDs matching [A-Za-z0-9][A-Za-z0-9._-]{0,199}.",
+    "resolution": "The from=lhc query opts into fleet-aware exact native identity resolution. Herder resolves the observed (harness, nativeSessionId); it waits or rejects on missing/ambiguous evidence and does not guess.",
+    "host_limitation": "The LHC link does not carry hostId. If the same harness and nativeSessionId exist on multiple hosts, this link is ambiguous. Herder's explicit host-addressed form is mesh:<JSON.stringify([hostId,harness,nativeSessionId])>, which this LHC caller does not currently emit.",
+    "compatibility_comparison": {
+      "existing_lhc_ui_link": {
+        "kind": "UI locator; not an MCP resource reference or legacy Agent Herder API call",
+        "identity": "harness + nativeSessionId",
+        "wire_form": "URL-encoded <harness>:<nativeSessionId> in #/session/<segment>, with ?from=lhc",
+        "behavior": "Supported by the current Herder UI; resolves only exact observed harness/session identities and returns pending or ambiguous instead of guessing."
+      },
+      "typed_host_addressed_ui_identity": {
+        "kind": "UI deep-link identity; not a task/message resource reference",
+        "identity": "hostId + harness + nativeSessionId",
+        "wire_form": "mesh:<JSON.stringify([hostId,harness,nativeSessionId])> in the same #/session/<segment> route",
+        "behavior": "The current Herder UI parses this typed tuple and selects the exact local or remote native session."
+      },
+      "decision": "No LHC caller/API migration is required for the current UI-link contract: LHC does not call an old Agent Herder API, and its existing deep link is already supported. A hostId-aware LHC change is a separate dependent gate only if the product requires host-specific links or a real duplicate-identity case must be resolved; current LHC task data has no hostId."
+    },
+    "herder_implementation": [
+      "src/web-ui/session-list.ts:sessionKeyFromHash",
+      "src/web-ui/session-list.ts:isFleetSessionLink",
+      "src/web-ui/session-list.ts:resolveSessionDeepLink"
+    ]
+  },
+  "test_route": {
+    "file": "tests/test_plan_publish.py",
+    "cases": [
+      "test_herder_panel_uses_current_session_and_keeps_selection_safe",
+      "test_herder_panel_does_not_guess_missing_or_remote_sessions",
+      "test_herder_panel_preserves_supported_native_harness",
+      "test_herder_panel_does_not_default_unknown_harness"
+    ],
+    "command": "pytest -q tests/test_plan_publish.py -k herder_panel",
+    "last_run": "6 passed, 26 deselected",
+    "scope": "LHC source unit tests for the caller output and safety filtering; this is not a live browser/Agent Herder consumer readback."
+  },
+  "owned_paths_for_followup": [
+    "src/common/tools/lhc_plan_ui.py",
+    "src/common/tools/lhc_plan_publish.py",
+    "tests/test_plan_publish.py"
+  ],
+  "scope_boundary": "Records the existing LHC UI deep-link contract for Agent Herder integration planning. Current contract already targets exact native sessions and preserves the caller UI path, so no bridge or LHC runtime change is indicated. No settings apply or additional state store is authorized by this record."
+}
