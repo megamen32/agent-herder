@@ -2,7 +2,10 @@
 use std::{borrow::Cow, future::Future, pin::Pin, sync::Arc};
 
 use crate::{
-    auth::identity::{Action, Caller, ConnectionIdentity, Grant, IdentityError, PrivateResource},
+    auth::identity::{
+        Action, Caller, ConnectionIdentity, Grant, IdentityError, OAuthAuthority, OAuthPolicy,
+        PrivateResource, authenticate_oauth_request,
+    },
     config::Config,
     mcp::catalog,
 };
@@ -26,6 +29,56 @@ pub trait ApplicationPort: Send + Sync + 'static {
         identity: &'a ConnectionIdentity,
         request: catalog::Request,
     ) -> ApplicationFuture<'a>;
+}
+
+/// Request-scoped gate for a trusted HTTP ingress. The ingress supplies the
+/// Bearer value from the current HTTP request, never from MCP metadata.
+/// This object stores no credential or identity between calls. The authority
+/// must be the owner of the live token store, not another cached copy.
+pub struct OAuthRequestGate {
+    authority: Arc<dyn OAuthAuthority>,
+    policy: OAuthPolicy,
+    application: Arc<dyn ApplicationPort>,
+}
+
+impl OAuthRequestGate {
+    pub fn new(
+        authority: Arc<dyn OAuthAuthority>,
+        policy: OAuthPolicy,
+        application: Arc<dyn ApplicationPort>,
+    ) -> Self {
+        Self {
+            authority,
+            policy,
+            application,
+        }
+    }
+
+    pub async fn call(&self, bearer: &str, request: catalog::Request) -> CallToolResult {
+        let identity = match authenticate_oauth_request(
+            self.authority.as_ref(),
+            bearer,
+            &self.policy,
+        )
+        .await
+        {
+            Ok(identity) => identity,
+            Err(_) => {
+                return CallToolResult::structured_error(
+                    json!({"code":"unauthorized", "effect":"none", "message":"OAuth authority rejected this request"}),
+                );
+            }
+        };
+        if matches!(
+            &request,
+            catalog::Request::Session(catalog::Session::Context {})
+        ) {
+            return CallToolResult::structured_error(
+                json!({"code":"self_binding_required", "effect":"none", "message":"verified self-session binding required"}),
+            );
+        }
+        self.application.call(&identity, request).await.unwrap_or_else(|| CallToolResult::structured_error(json!({"code":"unsupported", "effect":"none", "message":"operation is not connected"})))
+    }
 }
 
 /// Read-only configuration-backed operations; no native action is attached.
