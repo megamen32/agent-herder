@@ -215,3 +215,43 @@ fn claim_cleans_abandoned_owner_temps_under_guard_before_writing() {
 fn resource_dir_owner_exists(root: &Path) -> bool {
     root.join("resources/r/owner.json").exists()
 }
+
+#[test]
+fn owner_guard_inode_survives_claim_renew_and_release() {
+    use std::os::unix::fs::MetadataExt;
+
+    let (root, authority) = fixture();
+    let resource_ref = ResourceRef("r".into());
+    let resource_dir = root.join("resources/r");
+    let request = requested("cccccccc-dddd-4eee-8fff-000000000000");
+    let guard_path = resource_dir.join("guard.lock");
+
+    claim(
+        &authority,
+        &resource_ref,
+        Authorization::Authorized,
+        request.clone(),
+    )
+    .unwrap();
+    let initial = fs::metadata(&guard_path).unwrap();
+    renew(
+        &authority,
+        &resource_ref,
+        Authorization::Authorized,
+        &request.claim_id,
+        Some("2030-01-01T00:00:00Z".into()),
+    )
+    .unwrap();
+    release(
+        &authority,
+        &resource_ref,
+        Authorization::Authorized,
+        &request.claim_id,
+    )
+    .unwrap();
+    let final_guard = fs::metadata(&guard_path).unwrap();
+
+    assert_eq!((initial.dev(), initial.ino()), (final_guard.dev(), final_guard.ino()));
+    assert!(!resource_dir.join("owner.json").exists());
+    fs::remove_dir_all(root).unwrap();
+}
