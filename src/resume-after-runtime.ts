@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { HarnessAdapter, MessageAdmissionResult, SendMessageResult } from "./types/index.js";
 import { ResumeAfterService, type ResumeAfterWait, type SessionRef } from "./resume-after.js";
+import { readExactCodexActiveSession } from "./adapters/codex-active-runtime.js";
 
 interface Supervisor {
   sendMessage(harness:string,id:string,options:{message:string;origin:"automation";inputId:string;queue:boolean}):Promise<SendMessageResult & {delivery?:string}>;
@@ -43,8 +44,30 @@ export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,sup
     },
     readDependency:async ref=>{
       const adapter=adapters.get(ref.harness);
-      const session=await adapter?.getSession(ref.sessionId);
+      let session=await adapter?.getSession(ref.sessionId);
       if(!session)throw new Error("Exact dependency unavailable");
+      const lastMeta=session.meta?.nativeLastTurn && typeof session.meta.nativeLastTurn==="object"
+        ? session.meta.nativeLastTurn as Record<string,unknown> : undefined;
+      const hasTurnIdentity=typeof session.meta?.activeTurnId==="string"
+        || typeof session.meta?.nativeActiveTurnId==="string"
+        || typeof lastMeta?.turnId==="string";
+      // The persisted Codex projection may be an idle archive summary while
+      // the connected app-server has an exact active turn. Probe only that
+      // narrow case, with HumanStop/automation holds checked on both sides.
+      if(ref.harness==="codex" && session.status==="idle" && session.needsPermission!==true
+        && session.meta?.humanStopHeld!==true && !hasTurnIdentity
+        && session.meta?.nativeTurnStateUnavailable!==true && session.meta?.nativeStateObserved!==false){
+        let isHeldNow=true;
+        try { isHeldNow=await held(ref.harness,ref.sessionId) || await supervisor.isAutomationHeld(ref.harness,ref.sessionId); }
+        catch { isHeldNow=true; }
+        if(!isHeldNow){
+          const active=await readExactCodexActiveSession(adapter!,ref.sessionId).catch(()=>null);
+          let stillHeld=true;
+          try { stillHeld=await held(ref.harness,ref.sessionId) || await supervisor.isAutomationHeld(ref.harness,ref.sessionId); }
+          catch { stillHeld=true; }
+          if(!stillHeld && active) session={...session,status:"running",needsPermission:session.needsPermission,meta:{...session.meta,...active.meta}};
+        }
+      }
       const string=(value:unknown)=>typeof value==="string" && value.trim()?value:undefined;
       const nativeTimestamp=(value:unknown):string|undefined=>{
         const millis=typeof value==="number"&&Number.isFinite(value)?value

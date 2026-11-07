@@ -1,9 +1,14 @@
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { McpServer } from "@modelcontextprotocol/server";
 import { expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { registerSessionTools } from "../src/mcp/session-tools.js";
 import { HerderEventBus } from "../src/herder-events.js";
 import { HerderJobRegistry } from "../src/herder-jobs.js";
+import { agentInfoResult } from "../src/mcp-tools/handlers.js";
+import { getHumanStopStore } from "../src/human-stop-store.js";
 
 it("returns the latest user and assistant by default and skips history in compact mode", async () => {
   const session = { id: "s1", harness: "codex", status: "idle", title: "test", cwd: "/tmp", hostId: "fixture", lastActivity: "2026-01-01", needsPermission: false };
@@ -32,24 +37,56 @@ it("returns the latest user and assistant by default and skips history in compac
   } finally { await client.close(); await server.close(); }
 });
 
-it("fills missing exact native activity from the existing active-session projection", async () => {
+it("fills missing exact native activity through a bounded session read, not a full active sweep", async () => {
   const direct = { id: "native-active", harness: "codex", status: "idle", title: "test", cwd: "/tmp", hostId: "fixture", lastActivity: "2026-01-01", needsPermission: false, meta: { sourceRoute: "native" , humanStopHeld: false } };
-  const active = { ...direct, status: "running", meta: { activeTurnId: "turn-exact", nativeLastTurn: { turnId: "turn-exact", status: "inProgress" }, nativeThreadStatus: "active" } };
-  const adapter = { type: "codex", name: "fixture", getSession: async (id: string) => id === direct.id ? direct : null,
-    listActiveSessions: async () => [active] };
-  const events = new HerderEventBus();
-  const server = new McpServer({ name: "session-native-activity", version: "1" });
-  registerSessionTools(server, { adapters: new Map([["codex", adapter as any]]), jobs: new HerderJobRegistry(events), events });
-  const [ct, st] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "test", version: "1" }, { versionNegotiation: { mode: "auto" } });
-  await server.connect(st); await client.connect(ct);
+  const getActiveSessionForInfo = vi.fn(async () => ({ ...direct, status: "running", meta: { activeTurnId: "turn-exact", nativeLastTurn: { turnId: "turn-exact", status: "inProgress" }, nativeThreadStatus: "active" } }));
+  const listActiveSessions = vi.fn(async () => []);
+  const adapter = { type: "codex", name: "fixture", getSession: async (id: string) => id === direct.id ? direct : null, getActiveSessionForInfo, listActiveSessions };
+  const result = await agentInfoResult(new Map([["codex", adapter as any]]), { sessionId: direct.id, harness: "codex" });
+  expect(result).toMatchObject({ status: "running", meta: {
+    activeTurnId: "turn-exact", nativeLastTurn: { turnId: "turn-exact", status: "inProgress" },
+    sourceRoute: "native", humanStopHeld: false,
+  } });
+  expect(getActiveSessionForInfo).toHaveBeenCalledTimes(1);
+  expect(listActiveSessions).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["stopped", { status: "stopped", needsPermission: false, meta: {} }],
+  ["approval", { status: "idle", needsPermission: true, meta: {} }],
+  ["metadata hold", { status: "idle", needsPermission: false, meta: { humanStopHeld: true } }],
+] as const)("does not replace a direct %s session projection", async (_name, state) => {
+  const direct = { id: "protected-direct", harness: "codex", title: "test", cwd: "/tmp", hostId: "fixture", lastActivity: "2026-01-01", ...state };
+  const getActiveSessionForInfo = vi.fn(async () => ({ ...direct, status: "running", needsPermission: false, meta: { activeTurnId: "turn-other", nativeLastTurn: { turnId: "turn-other", status: "inProgress" } } }));
+  const listActiveSessions = vi.fn(async () => [{ ...direct, status: "running", needsPermission: false, meta: { activeTurnId: "turn-other", nativeLastTurn: { turnId: "turn-other", status: "inProgress" } } }]);
+  const adapter = { type: "codex", name: "fixture", getSession: async () => direct, getActiveSessionForInfo, listActiveSessions };
+  const result = await agentInfoResult(new Map([["codex", adapter as any]]), { sessionId: direct.id, harness: "codex" });
+  expect(result?.status).toBe(state.status);
+  expect(result?.needsPermission).toBe(state.needsPermission);
+  expect(getActiveSessionForInfo).not.toHaveBeenCalled();
+  expect(listActiveSessions).not.toHaveBeenCalled();
+});
+
+it("respects a durable HumanStop hold even when the direct session metadata omits it", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "agent-info-human-stop-"));
+  const previous = process.env.AGENT_HERDER_HUMAN_STOP_STORE;
+  process.env.AGENT_HERDER_HUMAN_STOP_STORE = join(directory, "human-stops.json");
   try {
-    const result = await client.callTool({ name: "agent_info", arguments: { sessionId: direct.id, harness: "codex" } });
-    expect(result.structuredContent).toMatchObject({ session: { status: "running", meta: {
-      activeTurnId: "turn-exact", nativeLastTurn: { turnId: "turn-exact", status: "inProgress" },
-      sourceRoute: "native", humanStopHeld: false,
-    } } });
-  } finally { await client.close(); await server.close(); }
+    await getHumanStopStore().hold({ harness: "codex", id: "held-direct" }, { id: "stop-1", at: new Date().toISOString(), reason: "explicit stop" });
+    const direct = { id: "held-direct", harness: "codex", status: "idle", title: "test", cwd: "/tmp", hostId: "fixture", lastActivity: "2026-01-01", needsPermission: false, meta: {} };
+    const getActiveSessionForInfo = vi.fn(async () => ({ ...direct, status: "running", meta: { activeTurnId: "turn-held", nativeLastTurn: { turnId: "turn-held", status: "inProgress" } } }));
+    const listActiveSessions = vi.fn(async () => [{ ...direct, status: "running", meta: { activeTurnId: "turn-held", nativeLastTurn: { turnId: "turn-held", status: "inProgress" } } }]);
+    const adapter = { type: "codex", name: "fixture", getSession: async () => direct, getActiveSessionForInfo, listActiveSessions };
+    const result = await agentInfoResult(new Map([["codex", adapter as any]]), { sessionId: direct.id, harness: "codex" });
+    expect(result?.status).toBe("idle");
+    expect(result?.meta?.humanStopHeld).toBe(true);
+    expect(getActiveSessionForInfo).not.toHaveBeenCalled();
+    expect(listActiveSessions).not.toHaveBeenCalled();
+  } finally {
+    if (previous === undefined) delete process.env.AGENT_HERDER_HUMAN_STOP_STORE;
+    else process.env.AGENT_HERDER_HUMAN_STOP_STORE = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 it("recovers the latest human-readable messages when the recent window contains only tool activity", async () => {

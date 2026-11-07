@@ -1,9 +1,26 @@
 import type { AgentSession } from "../types/index.js";
+import type { HarnessAdapter } from "../types/index.js";
 export interface CodexActiveThread {
   id: string; parentThreadId?: string; cwd?: string; path?: string; name?: string; preview?: string;
   model?: string | null; modelProvider?: string; createdAt?: string | number; updatedAt?: string | number;
   status?: string | { type?: string; activeFlags?: string[] };
 }
+
+/** One shared exact-turn read for consumers whose direct session projection
+ * may be an idle archive summary. It never accepts status-only activity. */
+export async function readExactCodexActiveSession(
+  adapter: HarnessAdapter & { getActiveSessionForInfo?: (id: string) => Promise<AgentSession | null> },
+  id: string,
+): Promise<AgentSession | null> {
+  if (adapter.type !== "codex" || !adapter.getActiveSessionForInfo) return null;
+  const session = await adapter.getActiveSessionForInfo(id);
+  if (!session || session.harness !== "codex" || session.id !== id || session.status !== "running" || session.needsPermission === true) return null;
+  const activeTurnId = typeof session.meta?.activeTurnId === "string" ? session.meta.activeTurnId : undefined;
+  const last = session.meta?.nativeLastTurn && typeof session.meta.nativeLastTurn === "object"
+    ? session.meta.nativeLastTurn as Record<string, unknown> : undefined;
+  return activeTurnId && last?.turnId === activeTurnId && last.status === "inProgress" ? session : null;
+}
+
 export interface CodexActiveReceipt {
   exhaustive: boolean; observedAt: string; expiresAt: string; source: "codex-loaded-native-runtime";
   candidateCount: number; failedCandidateCount: number; pages: number;

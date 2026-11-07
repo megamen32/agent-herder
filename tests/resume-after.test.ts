@@ -49,6 +49,50 @@ describe("resume after exact sessions", () => {
     expect((await runtime.service.get(wait.id))?.state).toBe("resumed");
   });
 
+  it("uses the exact Codex active projection when resume_after direct getSession is idle without turn metadata", async () => {
+    await mkdir(join(process.cwd(), ".tmp"), {recursive:true});
+    const directory = await mkdtemp(join(process.cwd(), ".tmp/resume-after-exact-active-projection-")); dirs.push(directory);
+    const session = {id:"child",harness:"codex",status:"idle",needsPermission:false,meta:{}};
+    let active = {id:"child",harness:"codex",status:"running",needsPermission:false,
+      meta:{activeTurnId:"turn-native-exact",nativeLastTurn:{turnId:"turn-native-exact",status:"inProgress"}}};
+    const getActiveSessionForInfo=vi.fn(async(id:string)=>id==="child"?active:null);
+    const adapter={type:"codex",async getSession(id:string){return id==="child"?session:{id,status:"idle"};},getActiveSessionForInfo,subscribeEvents(){return()=>{};}} as unknown as HarnessAdapter;
+    const sendMessage=vi.fn(async()=>({ok:true,admitted:true}));
+    const runtime=createResumeAfterRuntime(new Map([["codex",adapter]]),{sendMessage,async isAutomationHeld(){return false;}},async()=>false,directory);
+    const wait=await runtime.service.register({owner,dependencies:[{harness:"codex",sessionId:"child"}],message:"continue",requestId:"exact-projection"});
+    expect(getActiveSessionForInfo).toHaveBeenCalled();
+    expect(getActiveSessionForInfo.mock.calls.every(([id])=>id==="child")).toBe(true);
+    expect(wait.state).toBe("waiting");
+    expect(wait.dependencyTurns).toMatchObject({'["codex","child"]':"turn-native-exact"});
+    active={id:"child",harness:"codex",status:"idle",needsPermission:false,
+      meta:{nativeLastTurn:{turnId:"turn-native-exact",status:"completed",completedAt:new Date().toISOString()}}};
+    expect(sendMessage).not.toHaveBeenCalled();
+    await runtime.service.observe({harness:"codex",sessionId:"child",kind:"turn.completed",data:{turnId:"turn-native-exact"}});
+    await runtime.service.observe({harness:"codex",sessionId:"child",kind:"turn.completed",data:{turnId:"turn-native-exact"}});
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect((await runtime.service.get(wait.id))?.state).toBe("resumed");
+  });
+
+  it("does not use the active projection through stopped, permission, HumanStop, or conflicting turn guards", async () => {
+    for (const scenario of [
+      {status:"stopped",needsPermission:false,meta:{},held:false},
+      {status:"idle",needsPermission:true,meta:{},held:false},
+      {status:"idle",needsPermission:false,meta:{},held:true},
+      {status:"idle",needsPermission:false,meta:{nativeLastTurn:{turnId:"old-turn",status:"completed"}},held:false},
+      {status:"idle",needsPermission:false,meta:{},held:false,projectionMismatch:true},
+    ]) {
+      await mkdir(join(process.cwd(), ".tmp"), {recursive:true});
+      const directory=await mkdtemp(join(process.cwd(), ".tmp/resume-after-active-guard-")); dirs.push(directory);
+      const getActiveSessionForInfo=vi.fn(async()=>({id:"child",harness:"codex",status:"running",needsPermission:false,
+        meta:{activeTurnId:"turn-native-exact",nativeLastTurn:{turnId:scenario.projectionMismatch?"other-turn":"turn-native-exact",status:"inProgress"}}}));
+      const adapter={type:"codex",async getSession(id:string){return id==="child"?{id,harness:"codex",...scenario}: {id,status:"idle"};},getActiveSessionForInfo,subscribeEvents(){return()=>{};}} as unknown as HarnessAdapter;
+      const runtime=createResumeAfterRuntime(new Map([["codex",adapter]]),{async sendMessage(){return {ok:true,admitted:true};},async isAutomationHeld(){return false;}},async()=>scenario.held,directory);
+      await runtime.service.register({owner,dependencies:[{harness:"codex",sessionId:"child"}],message:"continue",requestId:`guard-${Math.random()}`});
+      if(scenario.projectionMismatch) expect(getActiveSessionForInfo).toHaveBeenCalled();
+      else expect(getActiveSessionForInfo).not.toHaveBeenCalled();
+    }
+  });
+
   it("does not queue native probes for unrelated progress events before registration", async () => {
     const isHeld = vi.fn(async () => false);
     const {service, deliver} = await fixture({isHeld});

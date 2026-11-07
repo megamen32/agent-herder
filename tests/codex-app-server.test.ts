@@ -2355,8 +2355,25 @@ it("reads only the latest Codex turn summary when this process missed its events
   await internals.refreshActiveTurnId("external-thread");
   const session=internals.toSession({id:"external-thread",cwd:"/external/worktree",status:{type:"idle"}});
   expect(session.meta?.nativeLastTurn).toEqual({turnId:"external-turn",status:"completed",completedAt:"2026-10-20T09:59:00.000Z"});
-  expect(request).toHaveBeenCalledWith("thread/turns/list",{threadId:"external-thread",limit:1,sortDirection:"desc",itemsView:"notLoaded"});
+  expect(request).toHaveBeenCalledWith("thread/turns/list",{threadId:"external-thread",limit:1,sortDirection:"desc",itemsView:"notLoaded"},"thread/turns/list",30_000);
   expect(JSON.stringify(request.mock.calls)).not.toContain("itemsView\":\"full");
+ } finally {await adapter.dispose();}
+});
+
+it("reads one exact active session for session_info within two bounded native requests", async () => {
+ const adapter=new CodexAppServerAdapter({quotaReader:async()=>({rateLimits:{primary:{usedPercent:0}}}),codexBin:"/not-started",socketPath:"/tmp/codex-session-info-active.sock"});
+ const internals=adapter as unknown as {isReady:()=>boolean;request:(method:string,params:unknown,stage?:string,timeoutMs?:number)=>Promise<unknown>};
+ internals.isReady=()=>true;
+ const request=vi.spyOn(internals,"request").mockImplementation(async(method)=>method==="thread/read"
+  ?{thread:{id:"exact-active",cwd:"/workspace",status:{type:"active",activeFlags:[]}}}
+  :{data:[{id:"turn-exact-active",status:"inProgress"}]});
+ try {
+  const session=await adapter.getActiveSessionForInfo("exact-active");
+  expect(session).toMatchObject({id:"exact-active",status:"running",meta:{activeTurnId:"turn-exact-active",nativeLastTurn:{turnId:"turn-exact-active",status:"inProgress"}}});
+  expect(request.mock.calls).toEqual([
+   ["thread/read",{threadId:"exact-active",includeTurns:false},"session_info_exact_thread_read",3500],
+   ["thread/turns/list",{threadId:"exact-active",limit:1,sortDirection:"desc",itemsView:"notLoaded"},"session_info_exact_turn_read",3500],
+  ]);
  } finally {await adapter.dispose();}
 });
 

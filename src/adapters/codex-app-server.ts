@@ -650,6 +650,23 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     return result.sessions;
   }
 
+  /** Exact single-session fallback for public session_info. Never enumerates
+   * all loaded threads or starts an inactive native transport. */
+  async getActiveSessionForInfo(id: string): Promise<AgentSession | null> {
+    if (!this.isReady()) throw new Error("codex_active_existing_transport_unavailable");
+    if (this.projectRuntimePolicy && (!this.projectThreadIds.has(id) || !(await this.hasCurrentProjectRoot()))) return null;
+    const timeoutMs = 3_500;
+    const result = await this.request("thread/read", {threadId: id, includeTurns: false}, "session_info_exact_thread_read", timeoutMs) as {thread?: CodexThread};
+    const thread = result?.thread;
+    if (thread?.id !== id || !["active", "inProgress", "running"].includes(this.threadStatusTag(thread.status) || "")) return null;
+    await this.refreshActiveTurnId(id, thread.model, timeoutMs, "session_info_exact_turn_read");
+    const turnId = this.activeTurns.get(id);
+    const latest = this.lastNativeTurns.get(id);
+    if (!turnId || latest?.turnId !== turnId || latest.status !== "inProgress") return null;
+    this.threads.set(id, thread);
+    return this.toSession(thread);
+  }
+
   async listSessions(options: {limit?: number} = {}): Promise<AgentSession[]> {
     if (this.projectRuntimePolicy) {
       if (!(await this.hasCurrentProjectRoot())) {
@@ -1810,14 +1827,14 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     } catch { return undefined; }
   }
 
-  private async refreshActiveTurnId(id: string, model = this.threads.get(id)?.model): Promise<unknown> {
+  private async refreshActiveTurnId(id: string, model = this.threads.get(id)?.model, timeoutMs = this.requestTimeoutMs, requestStage = "thread/turns/list"): Promise<unknown> {
     try {
       const result = await this.request("thread/turns/list", {
         threadId: id,
         limit: 1,
         sortDirection: "desc",
         itemsView: "notLoaded",
-      }) as { data?: Array<{ id?: string; status?: string; completedAt?: string | number | null }> };
+      }, requestStage, timeoutMs) as { data?: Array<{ id?: string; status?: string; completedAt?: string | number | null }> };
       if (!Array.isArray(result.data)) throw new Error("Codex native turn list is unavailable");
       this.unavailableNativeTurnStates.delete(id);
       this.eventStartedTurns.delete(id);

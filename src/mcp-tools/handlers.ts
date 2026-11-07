@@ -6,6 +6,7 @@ import { HarnessAdapter, AgentSession } from "../types/index.js";
 import { isShortSessionId, sessionShortId } from "../session-short-id.js";
 import { z } from "zod";
 import { getHumanStopStore } from "../human-stop-store.js";
+import { readExactCodexActiveSession } from "../adapters/codex-active-runtime.js";
 import { MeshDeliveryLedger } from "../mesh/delivery-ledger.js";
 import {
   ListAgentsSchema,
@@ -469,16 +470,27 @@ export async function agentInfoResult(adapters: Map<string, HarnessAdapter>, arg
   // still owns an exact in-progress turn. Reuse its existing bounded active
   // projection only when the direct read has no native turn identity.
   if (session?.harness === "codex"
+    && session.status === "idle"
+    && session.needsPermission !== true
+    && session.meta?.humanStopHeld !== true
     && typeof session.meta?.activeTurnId !== "string"
     && !(session.meta?.nativeLastTurn && typeof session.meta.nativeLastTurn === "object"
       && typeof (session.meta.nativeLastTurn as Record<string, unknown>).turnId === "string")) {
-    const reader = (found!.adapter as HarnessAdapter & {listActiveSessions?: () => Promise<AgentSession[]>}).listActiveSessions;
-    if (reader) {
-      try {
-        const active = (await reader.call(found!.adapter)).find(candidate => candidate.harness === "codex" && candidate.id === session!.id);
-        if (active) session = {...session, status: active.status, needsPermission: active.needsPermission,
-          meta: {...session.meta, ...active.meta}};
-      } catch { /* Keep the exact direct read when the optional native projection is unavailable. */ }
+    const held = async () => session!.meta?.humanStopHeld === true
+      || await getHumanStopStore().isHeld("codex", session!.id).catch(() => true);
+    if (await held()) {
+      session = {...session, meta: {...session.meta, humanStopHeld: true}};
+    } else {
+      if (found) {
+        try {
+          const active = await readExactCodexActiveSession(found.adapter, session.id);
+          if (active) {
+            if (await held()) session = {...session, meta: {...session.meta, humanStopHeld: true}};
+            else session = {...session, status: "running", needsPermission: session.needsPermission,
+              meta: {...session.meta, ...active.meta}};
+          }
+        } catch { /* Keep the exact direct read when the bounded native read is unavailable. */ }
+      }
     }
   }
   return session ? withSessionLabelMeta(withSessionHost(session)) : null;
