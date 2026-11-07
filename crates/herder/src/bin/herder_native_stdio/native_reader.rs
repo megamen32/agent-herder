@@ -219,4 +219,50 @@ mod tests {
             SessionActivity::Unknown
         );
     }
+    #[tokio::test]
+    async fn reader_checks_profile_target_and_exact_receipt_over_rpc() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!(
+            "herder-reader-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let script = dir.join("codex");
+        std::fs::write(&script,r#"#!/usr/bin/python3
+import json,os,sys
+for line in sys.stdin:
+ r=json.loads(line)
+ if 'id' not in r: continue
+ if r['method']=='initialize': result={'codexHome':os.path.realpath(os.environ['CODEX_HOME'])}
+ elif r['method']=='thread/read':
+  assert r['params']['threadId']=='s' and r['params']['includeTurns'] is True
+  result={'thread':{'id':'s','turns':[{'id':'t','status':'completed','items':[{'type':'userMessage'}]}]}}
+ else: raise Exception('unexpected method')
+ print(json.dumps({'id':r['id'],'result':result}),flush=True)
+"#).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let r = receipt();
+        let process = CodexInstance {
+            instance_id: "i".into(),
+            executable: script,
+            code_home: dir.clone(),
+            cwd: dir.clone(),
+        };
+        let reader =
+            NativeReader::open(process, r.target.instance.clone(), Duration::from_secs(3)).unwrap();
+        assert_eq!(
+            reader.snapshot(&r.target).await.unwrap().activity,
+            SessionActivity::Idle
+        );
+        assert!(matches!(
+            reader.reconcile(&r).await.unwrap(),
+            Observation::Confirmed { .. }
+        ));
+        let mut wrong = r.target.clone();
+        wrong.instance.instance_id = "other".into();
+        assert!(reader.snapshot(&wrong).await.is_err());
+        drop(reader);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

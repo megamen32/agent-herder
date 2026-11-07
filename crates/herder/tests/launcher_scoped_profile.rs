@@ -451,3 +451,126 @@ fn scoped_stdio_rejects_spoofed_identity_and_mutation() {
         0
     );
 }
+
+#[test]
+fn owner_profile_requires_explicit_complete_protected_configuration() {
+    let f = Fixture::new();
+    assert!(scoped_profile::open_owner(&f.profile).is_err());
+    let profile = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{"principal":"local-owner","node":"local","instance":"codex-test","executable":"/usr/bin/codex","code_home":f.root,"cwd":f.root}});
+    fs::write(&f.profile, profile.to_string()).unwrap();
+    let opened = scoped_profile::open_owner(&f.profile).unwrap();
+    assert_eq!(opened.owner.principal, "local-owner");
+    assert_eq!(opened.owner.instance, "codex-test");
+    let mut invalid = profile;
+    invalid["owner"]["code_home"] = serde_json::json!("relative");
+    fs::write(&f.profile, invalid.to_string()).unwrap();
+    assert!(scoped_profile::open_owner(&f.profile).is_err());
+    fs::set_permissions(&f.profile, fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(scoped_profile::open_owner(&f.profile).is_err());
+}
+
+#[test]
+fn trusted_owner_launcher_wires_create_and_scoped_read_over_stdio() {
+    use std::io::{BufRead, BufReader, Write};
+    let f = Fixture::new();
+    let fake = f.root.join("fake-codex");
+    fs::write(&fake,r##"#!/usr/bin/python3
+import json,os,sys
+home=os.environ['CODEX_HOME']
+experimental=False
+for line in sys.stdin:
+ r=json.loads(line)
+ if 'id' not in r: continue
+ m=r['method']; p=r.get('params',{})
+ if m=='initialize':
+  experimental=p.get('capabilities',{}).get('experimentalApi') is True
+  v={'codexHome':os.path.realpath(home)}
+ elif m=='thread/start': v={'thread':{'id':'fake-thread'}}
+ elif m=='thread/read': v={'thread':{'id':'fake-thread','turns':[]}}
+ elif m=='turn/start':
+  open(os.path.join(home,'sent'),'w').write('1')
+  v={'turn':{'id':'fake-turn'}}
+ elif m=='thread/items/list' and not experimental:
+  print(json.dumps({'id':r['id'],'error':{'code':-32601,'message':'experimentalApi required'}}),flush=True); continue
+ elif m=='thread/items/list': v={'data':[{'turnId':'fake-turn','item':{'id':'fake-item','type':'userMessage','content':[{'type':'text','text':'unique test prompt'}]}}], 'nextCursor':None, 'backwardsCursor':None}
+ else: raise Exception('unexpected '+m)
+ print(json.dumps({'id':r['id'],'result':v}),flush=True)
+"##).unwrap();
+    fs::set_permissions(&fake, fs::Permissions::from_mode(0o700)).unwrap();
+    let p = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{"principal":"local-owner","node":"local","instance":"codex-test","executable":fake,"code_home":f.root,"cwd":f.root}});
+    fs::write(&f.profile, p.to_string()).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
+        .arg("--trusted-owner-profile")
+        .arg(&f.profile)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let mut out = BufReader::new(child.stdout.take().unwrap());
+    let call = |input: &mut std::process::ChildStdin,
+                out: &mut BufReader<std::process::ChildStdout>,
+                v: serde_json::Value| {
+        writeln!(input, "{v}").unwrap();
+        input.flush().unwrap();
+        let mut line = String::new();
+        out.read_line(&mut line).unwrap();
+        serde_json::from_str::<serde_json::Value>(&line).unwrap()
+    };
+    let meta = serde_json::json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"extensions":{"io.modelcontextprotocol/tasks":{}}},"io.modelcontextprotocol/clientInfo":{"name":"owner-test","version":"1"},"principal":"spoof"});
+    let created = call(
+        &mut input,
+        &mut out,
+        serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":meta,"name":"create","arguments":{"action":"create","instance_ref":"codex-test","prompt":"unique test prompt","request_key":"one"}}}),
+    );
+    assert_eq!(created["result"]["resultType"], "task", "{created}");
+    assert!(
+        f.root.join("sent").exists(),
+        "prompt must pass through actual bounded fake port: {created}"
+    );
+    let db = Connection::open(&f.db).unwrap();
+    let session: String = db
+        .query_row("SELECT session_ref FROM session_bindings", [], |r| r.get(0))
+        .unwrap();
+    let response = call(
+        &mut input,
+        &mut out,
+        serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"_meta":meta,"name":"session","arguments":{"action":"messages","session_ref":session}}}),
+    );
+    assert_eq!(
+        response["result"]["structuredContent"]["page"]["messages"][0]["text"],
+        "unique test prompt",
+        "{response}"
+    );
+    drop(input);
+    let _ = child.wait();
+    // A fresh launcher must derive the same exact grant from the durable receipt.
+    let mut reopened = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
+        .arg("--trusted-owner-profile")
+        .arg(&f.profile)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = reopened.stdin.take().unwrap();
+    let mut out = BufReader::new(reopened.stdout.take().unwrap());
+    let after = call(
+        &mut input,
+        &mut out,
+        serde_json::json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"_meta":meta,"name":"session","arguments":{"action":"messages","session_ref":session}}}),
+    );
+    assert_eq!(
+        after["result"]["structuredContent"]["page"]["messages"][0]["text"], "unique test prompt",
+        "{after}"
+    );
+    let imported = call(
+        &mut input,
+        &mut out,
+        serde_json::json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"_meta":meta,"name":"session","arguments":{"action":"messages","session_ref":"imported"}}}),
+    );
+    assert_eq!(imported["result"]["isError"], true, "{imported}");
+    drop(input);
+    let _ = reopened.wait();
+}

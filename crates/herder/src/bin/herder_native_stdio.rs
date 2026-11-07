@@ -2,6 +2,14 @@
 use std::{env, io, sync::Arc};
 
 #[cfg(target_os = "linux")]
+#[path = "herder_native_stdio/owner_launch.rs"]
+mod owner_launch;
+
+#[cfg(target_os = "linux")]
+#[path = "herder_native_stdio/owner_policy.rs"]
+mod owner_policy;
+
+#[cfg(target_os = "linux")]
 #[path = "herder_native_stdio/native_reader.rs"]
 mod native_reader;
 
@@ -20,6 +28,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = env::args_os().skip(1);
     match args.next() {
         None => transport::serve_stdio().await,
+        #[cfg(target_os = "linux")]
+        Some(flag) if flag == "--trusted-owner-profile" => {
+            let path = args.next().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "--trusted-owner-profile requires a path",
+                )
+            })?;
+            if args.next().is_some() {
+                return Err(
+                    io::Error::new(io::ErrorKind::InvalidInput, "unexpected arguments").into(),
+                );
+            }
+            owner_launch::serve(scoped_profile::open_owner(std::path::Path::new(&path))?).await
+        }
         Some(flag) if flag == "--config" => {
             let path = args.next().ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidInput, "--config requires a path")

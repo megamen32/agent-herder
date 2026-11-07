@@ -18,6 +18,27 @@ struct Profile {
     database: PathBuf,
     gate: PathBuf,
     generation: String,
+    #[serde(default)]
+    owner: Option<OwnerProfile>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OwnerProfile {
+    pub principal: String,
+    pub node: String,
+    pub instance: String,
+    pub executable: PathBuf,
+    pub code_home: PathBuf,
+    pub cwd: PathBuf,
+}
+
+pub struct OpenedOwner {
+    pub authority: ScopedAuthority,
+    pub owner: OwnerProfile,
+    pub database: PathBuf,
+    pub gate: PathBuf,
+    pub generation: String,
 }
 
 fn invalid() -> io::Error {
@@ -30,6 +51,32 @@ fn invalid() -> io::Error {
 /// The profile is a local protected file, not MCP arguments or request metadata.
 /// Its authority remains subject to the normal generation and hold rechecks.
 pub fn open(path: &Path) -> Result<ScopedAuthority, Box<dyn std::error::Error>> {
+    Ok(open_profile(path)?.0)
+}
+
+/// Explicit opt-in only; an ordinary scoped profile never establishes caller identity.
+pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>> {
+    let (authority, profile) = open_profile(path)?;
+    let owner = profile.owner.ok_or_else(invalid)?;
+    if [&owner.principal, &owner.node, &owner.instance]
+        .iter()
+        .any(|s| s.is_empty() || s.len() > 4096 || s.chars().any(char::is_control))
+        || !owner.executable.is_absolute()
+        || !owner.code_home.is_absolute()
+        || !owner.cwd.is_absolute()
+    {
+        return Err(invalid().into());
+    }
+    Ok(OpenedOwner {
+        authority,
+        owner,
+        database: profile.database,
+        gate: profile.gate,
+        generation: profile.generation,
+    })
+}
+
+fn open_profile(path: &Path) -> Result<(ScopedAuthority, Profile), Box<dyn std::error::Error>> {
     unsafe extern "C" {
         fn geteuid() -> u32;
     }
@@ -143,5 +190,7 @@ pub fn open(path: &Path) -> Result<ScopedAuthority, Box<dyn std::error::Error>> 
         return Err(invalid().into());
     }
     db.execute_batch("COMMIT")?;
-    ScopedAuthority::new(p.database, p.gate, p.generation).map_err(|_| invalid().into())
+    let authority = ScopedAuthority::new(p.database.clone(), p.gate.clone(), p.generation.clone())
+        .map_err(|_| invalid())?;
+    Ok((authority, p))
 }

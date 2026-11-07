@@ -101,7 +101,7 @@ impl CodexReader {
                     "name": "agent-herder-native",
                     "version": env!("CARGO_PKG_VERSION"),
                 },
-                "capabilities": {},
+                "capabilities": {"experimentalApi": true},
             }),
             timeout,
         )?;
