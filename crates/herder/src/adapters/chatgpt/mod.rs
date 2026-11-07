@@ -117,6 +117,17 @@ impl ChatGptReader {
             cdp,
             account_scope: expected_account_scope.to_ascii_lowercase(),
         };
+        match reader.cdp.wait_for_origin("https://chatgpt.com").await {
+            Ok(true) => {}
+            Ok(false) => {
+                reader.cdp.close_created_target().await;
+                return Err(ChatGptReadError::WrongOrigin);
+            }
+            Err(error) => {
+                reader.cdp.close_created_target().await;
+                return Err(ChatGptReadError::Cdp(error));
+            }
+        }
         let scope = reader.cdp.evaluate(CHATGPT_ACCOUNT_SCOPE_EXPRESSION).await;
         let verified = match scope {
             Ok(scope)

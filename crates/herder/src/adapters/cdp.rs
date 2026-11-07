@@ -3,7 +3,7 @@
 //! It talks to Chrome's browser/page WebSocket endpoints over loopback (usually
 //! an SSH tunnel); provider credentials remain inside the selected page.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
@@ -421,6 +421,25 @@ impl CdpConnection {
             .and_then(|remote| remote.get("value"))
             .cloned()
             .unwrap_or(Value::Null))
+    }
+
+    /// Wait for a newly created provider target to finish its initial
+    /// navigation. Chrome may attach the target while it is still about:blank.
+    pub async fn wait_for_origin(&mut self, expected_origin: &str) -> Result<bool, CdpError> {
+        if !matches!(expected_origin, "https://chatgpt.com" | "https://chat.z.ai") {
+            return Err(CdpError::InvalidEndpoint);
+        }
+        let deadline = Instant::now() + Duration::from_secs(12);
+        while Instant::now() < deadline {
+            match self.evaluate("location.origin").await {
+                Ok(origin) if origin.as_str() == Some(expected_origin) => return Ok(true),
+                Ok(_) | Err(CdpError::Protocol) => {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(false)
     }
 
     pub async fn activate_target(&mut self) -> Result<(), CdpError> {

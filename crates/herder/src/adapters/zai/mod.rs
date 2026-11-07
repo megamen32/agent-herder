@@ -116,6 +116,17 @@ impl ZaiReader {
             cdp,
             account_scope: expected_account_scope.to_ascii_lowercase(),
         };
+        match reader.cdp.wait_for_origin("https://chat.z.ai").await {
+            Ok(true) => {}
+            Ok(false) => {
+                reader.cdp.close_created_target().await;
+                return Err(ZaiReadError::WrongOrigin);
+            }
+            Err(error) => {
+                reader.cdp.close_created_target().await;
+                return Err(ZaiReadError::Cdp(error));
+            }
+        }
         if let Err(error) = reader.verify_account().await {
             reader.cdp.close_created_target().await;
             return Err(error);
