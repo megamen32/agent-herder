@@ -541,14 +541,14 @@ export class OpenCodeClient implements HarnessClient {
     return this.apiPrefix === "/api";
   }
 
-  /** Explicit OpenCode 2.2.4 API: `/api/health` plus the unprefixed session API. */
+  /** Explicit OpenCode 2.2.4 API: `/global/health` and the unprefixed session API. */
   get isV22(): boolean {
     return this.pinnedProtocol === "v22";
   }
 
   async init(): Promise<void> {
     await this.probeProtocol();
-    const res = await this.fetch(this.isV22 ? "/api/health" : this.isV2 ? this.api("/config") : "/global/health");
+    const res = await this.fetch(this.isV22 ? "/global/health" : this.isV2 ? this.api("/config") : "/global/health");
     if (!res.ok) throw new Error(`OpenCode ${this.baseUrl} is not reachable: HTTP ${res.status}${await this.errorHint(res)}`);
   }
 

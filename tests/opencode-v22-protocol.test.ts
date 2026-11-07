@@ -26,7 +26,8 @@ async function startFixture(fixture: Fixture): Promise<{ server: Server; baseUrl
     const body = request.method === "POST" ? await readJson(request) : undefined;
     fixture.paths.push({ method: request.method || "GET", path, ...(body ? { body } : {}) });
 
-    if (path === "/api/health" && request.method === "GET") return json(response, 200, { healthy: true });
+    if (path === "/api/health" && request.method === "GET") return json(response, 404, { error: "not found" });
+    if (path === "/global/health" && request.method === "GET") return json(response, 200, { healthy: true });
     if (path === "/api/config") return json(response, 404, { error: "not found" });
     if (path === "/session" && request.method === "POST") {
       return json(response, 200, { id: "ses_fresh", title: body?.title, directory: "/tmp/work", time: { created: 1, updated: 1 } });
@@ -81,7 +82,7 @@ it("uses pinned v22 create, initial Start, and exact new native user-message rea
     expect(receipt).toMatchObject({ ok: true, admitted: true, nativeInputMessageId: "msg_exact1" });
     expect(receipt.nativeInputMessageId).not.toBe("caller-input-1");
     expect(duplicate).toMatchObject({ ok: false, notSubmitted: true, admission: "not_submitted" });
-    expect(state.paths).toContainEqual({ method: "GET", path: "/api/health" });
+    expect(state.paths).toContainEqual({ method: "GET", path: "/global/health" });
     expect(state.paths.some((call) => call.path === "/api/config")).toBe(false);
     const create = state.paths.find((call) => call.method === "POST" && call.path === "/session")!;
     expect(create.body).toEqual({ title: "worker" });
