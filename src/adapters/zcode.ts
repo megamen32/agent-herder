@@ -2906,7 +2906,11 @@ export class ZcodeAdapter implements HarnessAdapter {
   async getRawTranscript(id: string): Promise<RawTranscriptExport | null> {
     try {
       const workspace = this.sessionWorkspaces.get(id) || this.workspace();
-      const snapshot = await this.readSnapshot(id, workspace);
+      // A current-state fallback may contain just one message and cannot be
+      // presented as a complete transcript. Fail closed on native errors.
+      const snapshot = await this.callAgent("readSession", {
+        ...workspace, runtimePolicy: "existing-only", sessionId: id,
+      });
       return {
         bytes: Buffer.from(JSON.stringify(snapshot, null, 2), "utf8"),
         complete: true,
