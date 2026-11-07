@@ -79,6 +79,33 @@ class RunnerConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(runner_config.ConfigError, "not executable"):
             runner_config.build(self.config)
 
+    def test_consumer_can_read_the_exact_manifest_inside_sandbox(self):
+        argv = runner_config.build(self.config)["argv"]
+        mounts = [argv[i+1] for i, value in enumerate(argv[:-1]) if value == "--ro-bind"]
+        self.assertIn(str(self.manifest_path), mounts)
+
+    def test_v1_manifest_uses_explicit_hashed_external_opencode(self):
+        binary = Path(self.tmp.name) / "official-opencode"
+        binary.write_bytes(b"official-native")
+        binary.chmod(0o755)
+        self.manifest.pop("opencode")
+        self.manifest["sha256"].pop("opencode")
+        self.save_manifest()
+        self.config.update(opencode=str(binary), opencode_sha256=hashlib.sha256(b"official-native").hexdigest())
+        result = runner_config.build(self.config)
+        self.assertEqual(result["argv"][result["argv"].index("--opencode")+1], str(binary))
+        binary.write_bytes(b"changed-native")
+        with self.assertRaisesRegex(runner_config.ConfigError, "SHA-256 mismatch"):
+            runner_config.build(self.config)
+
+    def test_v1_node_and_bootstrap_must_match_manifest_hashes(self):
+        for name in ("node", "bootstrap"):
+            self.manifest["sha256"][name] = "b" * 64
+            self.save_manifest()
+            with self.subTest(name=name), self.assertRaisesRegex(runner_config.ConfigError, "SHA-256 mismatch"):
+                runner_config.build(self.config)
+            self.manifest["sha256"].pop(name)
+
     def test_malformed_manifest_is_bounded_and_does_not_echo_secret(self):
         self.manifest["source_commit"] = "secret-value"
         self.save_manifest()
