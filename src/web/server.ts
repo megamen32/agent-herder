@@ -1,3 +1,4 @@
+import {incidentSessionPolicy} from '../automation/incident-session-router.js';
 import { recordProjectLifecycle, type IntegrationWake } from "../project-integration.js";
 import { hostname as releaseAuthorityHost } from "node:os";
 import { projectReleaseLeases, terminalReleaseAt } from "../project-release-lease.js";
@@ -2526,7 +2527,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
     try {
       const result = await projectLaunchDispatch({
-        ...(healthAnalysis ? { [NOTICEPLACE_HEALTH_AUTHORIZED]: true as const } : {}),
+        ...(healthAnalysis ? { [NOTICEPLACE_HEALTH_AUTHORIZED]: true as const, incidentSessionPolicy: incidentSessionPolicy(body.incident_session_policy) } : {}),
         project: typeof body.project === "string" ? body.project : "",
         cwd: typeof body.cwd === "string" ? body.cwd : "",
         message: typeof body.message === "string" ? body.message : "",

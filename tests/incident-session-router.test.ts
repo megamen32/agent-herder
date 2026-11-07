@@ -3,7 +3,7 @@ import {mkdir, mkdtemp, rm} from 'node:fs/promises';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {afterEach, expect, it} from 'vitest';
-import {IncidentSessionRouter, incidentLegacySourceKeys, incidentSourceKey} from '../src/automation/incident-session-router.js';
+import {IncidentSessionRouter, incidentLegacySourceKeys, incidentSourceKey, incidentSessionPolicy} from '../src/automation/incident-session-router.js';
 import type {AgentSession} from '../src/types/common.js';
 
 const roots: string[] = [];
@@ -19,7 +19,8 @@ async function fixture() {
   const sessions = new Map<string, AgentSession>();
   const deliveries: Array<{id: string; input: string}> = [];
   let created = 0;
-  const ports = {readSession: async (_: string, id: string) => sessions.get(id) ?? null,
+  let now = Date.now();
+  const ports = {now: () => now, readSession: async (_: string, id: string) => sessions.get(id) ?? null,
     unfinished: async (session: AgentSession) => session.status !== 'stopped'};
   const router = () => new IncidentSessionRouter(path, ports);
   const launch = (input: string) => async (existing?: string) => {
@@ -29,7 +30,7 @@ async function fixture() {
     deliveries.push({id, input});
     return {ok: true, created: !existing, harness: 'opencode', cwd: '/workspace', name: input, sessionId: id};
   };
-  return {router, launch, sessions, deliveries, count: () => created, path};
+  return {router, launch, sessions, deliveries, count: () => created, path, now: () => now, advance: (ms: number) => {now += ms;}};
 }
 
 it('serializes concurrent new incidents and retains one executor after restart', async () => {
@@ -52,7 +53,7 @@ it('separates hosts and starts a new generation only after the bound incident is
     unfinished: async session => session.status !== 'stopped',
     boundIncidentOpen: async () => false,
   });
-  const c = await closedIncident.run(request('three'), f.launch('three'));
+  const c = await closedIncident.run({...request('three'), incidentSessionPolicy: {enabled: false, ttlSeconds: 86400}}, f.launch('three'));
   expect(f.count()).toBe(3);
   expect(c.sessionId).not.toBe(a.sessionId);
   expect(incidentSourceKey(request('one').message)).toBe(incidentSourceKey(request('two').message));
@@ -180,7 +181,7 @@ it('blocks a missing or closed bound session without creating a replacement', as
     unfinished: async () => false,
     boundIncidentOpen: async () => false,
   });
-  const nextIncident = await closed.run(request('three'), f.launch('three'));
+  const nextIncident = await closed.run({...request('three'), incidentSessionPolicy: {enabled: false, ttlSeconds: 86400}}, f.launch('three'));
   expect(nextIncident).toMatchObject({ok: true, created: true});
   expect(nextIncident.sessionId).not.toBe(first.sessionId);
   expect(f.count()).toBe(2);
@@ -243,7 +244,9 @@ it('keeps a held executor attached even when it is stopped', async () => {
   const f = await fixture();
   const a = await f.router().run(request('one'), f.launch('one'));
   f.sessions.get(a.sessionId!)!.status = 'stopped';
+  f.advance(48 * 3600_000);
   const router = new IncidentSessionRouter(f.path, {
+    now: f.now, boundIncidentOpen: async () => false,
     readSession: async () => f.sessions.get(a.sessionId!)!, unfinished: async () => false, held: async () => true,
   });
   let target: string | undefined;
@@ -254,4 +257,49 @@ it('keeps a held executor attached even when it is stopped', async () => {
   expect(target).toBe(a.sessionId);
   expect(b.created).toBe(false);
   expect(f.count()).toBe(1);
+});
+
+
+it('reuses a resolved episode session within the default 24 hour window', async () => {
+  const f = await fixture();
+  const first = await f.router().run(request('first'), f.launch('first'));
+  f.sessions.get(first.sessionId!)!.status = 'stopped';
+  f.advance(23 * 3600_000);
+  const router = new IncidentSessionRouter(f.path, {
+    now: f.now, readSession: async (_, id) => f.sessions.get(id) ?? null,
+    unfinished: async () => false, boundIncidentOpen: async () => false,
+  });
+  const next = await router.run(request('repeat'), f.launch('repeat'));
+  expect(next.sessionId).toBe(first.sessionId);
+  expect(f.count()).toBe(1);
+});
+
+it('expires completed-session stickiness without losing pending operation guards', async () => {
+  const f = await fixture();
+  const first = await f.router().run(request('first'), f.launch('first'));
+  f.sessions.get(first.sessionId!)!.status = 'stopped';
+  f.advance(24 * 3600_000 + 1);
+  const router = new IncidentSessionRouter(f.path, {
+    now: f.now, readSession: async (_, id) => f.sessions.get(id) ?? null,
+    unfinished: async () => false, boundIncidentOpen: async () => false,
+  });
+  const next = await router.run(request('expired'), f.launch('expired'));
+  expect(next.sessionId).not.toBe(first.sessionId);
+  expect(f.count()).toBe(2);
+});
+
+it('does not split an active repair when its sticky TTL expires', async () => {
+  const f = await fixture();
+  const first = await f.router().run(request('first'), f.launch('first'));
+  f.advance(48 * 3600_000);
+  const next = await f.router().run(request('active-repeat'), f.launch('active-repeat'));
+  expect(next.sessionId).toBe(first.sessionId);
+  expect(f.count()).toBe(1);
+});
+
+it('validates the operator policy and never accepts malformed TTL', () => {
+  expect(incidentSessionPolicy()).toEqual({enabled: true, ttlSeconds: 86400});
+  expect(incidentSessionPolicy({enabled: false, ttlSeconds: 0})).toEqual({enabled: false, ttlSeconds: 0});
+  for (const ttlSeconds of [-1, 1.5, NaN, Infinity, 2592001, '86400', true])
+    expect(() => incidentSessionPolicy({enabled: true, ttlSeconds})).toThrow();
 });
