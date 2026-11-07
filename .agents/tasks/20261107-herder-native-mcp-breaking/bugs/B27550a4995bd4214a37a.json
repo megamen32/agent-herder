@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T04:40:44+00:00",
+  "details": "Worker воспроизвёл: v1 с изменённым user_version=2 открывается без таблицы и обязательных защит v2. Подготовлен RED/GREEN candidate d763e926; проверка и интеграция выполняются.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "at": "2026-11-07T04:40:44+00:00",
+      "changes": {
+        "details": "Worker воспроизвёл: v1 с изменённым user_version=2 открывается без таблицы и обязательных защит v2. Подготовлен RED/GREEN candidate d763e926; проверка и интеграция выполняются.",
+        "source": "review Writer::open_file v2",
+        "status": "open",
+        "title": "Writer принимает неполную схему v2 по номеру версии"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1b3c3-fcf9-7460-b40b-7bed40aaf0b8",
+      "at": "2026-11-07T04:45:56+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "review-evidence/B27550a4995bd4214a37a/green-d763e9263dcc51d262ab6836307579fbfa0cec1b.log",
+            "red_proof_path": "review-evidence/B27550a4995bd4214a37a/red-f08ec95f40070980da13baca0a882aa630d6555b.log",
+            "red_result": "assertion failed: Writer::open_file(&path).is_err()",
+            "red_sha256": "c0d41f26b8efaacc4e4540bd854f836808a546496a1105f17f5d68aae974ee18",
+            "result": "1 passed",
+            "sha256": "f1d992eff21468961b2e03b3bc8bffee812b617d1deeccf14c96bbaeb27a21a0",
+            "test_command": "cargo test --manifest-path crates/herder/Cargo.toml --lib store::tests::open_rejects_partial_v2_even_when_number_is_two --offline -- --exact"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B27550a4995bd4214a37a",
+  "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "reporter": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "resolution": {
+    "evidence": {
+      "proof_path": "review-evidence/B27550a4995bd4214a37a/green-d763e9263dcc51d262ab6836307579fbfa0cec1b.log",
+      "red_proof_path": "review-evidence/B27550a4995bd4214a37a/red-f08ec95f40070980da13baca0a882aa630d6555b.log",
+      "red_result": "assertion failed: Writer::open_file(&path).is_err()",
+      "red_sha256": "c0d41f26b8efaacc4e4540bd854f836808a546496a1105f17f5d68aae974ee18",
+      "result": "1 passed",
+      "sha256": "f1d992eff21468961b2e03b3bc8bffee812b617d1deeccf14c96bbaeb27a21a0",
+      "test_command": "cargo test --manifest-path crates/herder/Cargo.toml --lib store::tests::open_rejects_partial_v2_even_when_number_is_two --offline -- --exact"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "review Writer::open_file v2",
+  "status": "fixed",
+  "title": "Writer принимает неполную схему v2 по номеру версии",
+  "updated_at": "2026-11-07T04:45:56+00:00"
+}
