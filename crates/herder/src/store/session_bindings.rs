@@ -16,7 +16,7 @@ impl SessionRegistry for Writer {
             "SELECT (SELECT user_version FROM pragma_user_version), herder_writer_version(), b.node_ref, b.instance_id, b.native_session_id FROM (SELECT 1) LEFT JOIN session_bindings b ON b.session_ref = ?1",
             [&session.0], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))
         ).map_err(|_| RegistryUnavailable)?;
-        if schema != 2 || writer != 2 {
+        if !matches!(schema, 2 | 3) || schema != writer {
             return Err(RegistryUnavailable);
         }
         match (node, instance, native) {

@@ -16,11 +16,14 @@ pub struct Writer {
 impl Writer {
     /// Verify required definitions, including the old fences and the v2
     /// immutability triggers. An integer version alone is not a schema identity.
-    fn validate_v2_schema(connection: &Connection) -> Result<()> {
+    fn validate_schema(connection: &Connection, version: i32) -> Result<()> {
         use rusqlite::OptionalExtension;
         let reference = Self::configure(Connection::open_in_memory()?, WRITER_VERSION)?;
         reference.execute_batch(&format!("BEGIN EXCLUSIVE;\n{SCHEMA}\nCOMMIT;"))?;
         reference.execute_batch(include_str!("migration_v1_v2.sql"))?;
+        if version == 3 {
+            reference.execute_batch(include_str!("migration_v2_v3.sql"))?;
+        }
         let mut stmt=reference.prepare("SELECT type,name,sql FROM sqlite_schema WHERE type IN ('table','index','trigger') AND name NOT LIKE 'sqlite_%' ORDER BY type,name")?;
         let rows = stmt.query_map([], |r| {
             Ok((
@@ -91,14 +94,14 @@ impl Writer {
         let connection =
             Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         let version: i32 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if !matches!(version, 1 | 2) {
+        if !matches!(version, 1 | 2 | 3) {
             return Err(rusqlite::Error::SqliteFailure(
                 rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_SCHEMA),
                 Some(format!("unsupported store schema version {version}")),
             ));
         }
-        if version == 2 {
-            Self::validate_v2_schema(&connection)?;
+        if version >= 2 {
+            Self::validate_schema(&connection, version)?;
         }
         let connection = Self::configure(connection, version)?;
         Ok(Self { connection })

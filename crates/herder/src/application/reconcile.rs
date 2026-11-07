@@ -85,6 +85,15 @@ pub async fn dispatch_once<C: crate::domain::adapter::NativeSessionControl>(
     if !valid_binding(binding) || plan.target != *binding.address {
         return Ok(DurableDispatch::NotClaimed);
     }
+    // Schema v3 reserves this path for the scoped interprocess gate. Until
+    // that gate is wired, the legacy entry point must never bypass it.
+    let version: i32 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version >= 3 {
+        return Err(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_AUTH),
+            Some("v3 scoped HumanStop gate is not connected".into()),
+        ));
+    }
     let payload = dispatch_payload_binding(&plan, message);
     let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let claimed = tx.execute("UPDATE intents SET state='dispatching',updated_at=?6 WHERE intent_id=?1 AND principal=?2 AND target=?3 AND request_key=?4 AND payload_hash=?5 AND state='prepared' AND native_receipt IS NULL", params![binding.intent_id,binding.principal,binding.target_ref,binding.request_key,payload,now])?;
