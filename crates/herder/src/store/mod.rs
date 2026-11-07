@@ -1,5 +1,7 @@
 use rusqlite::{Connection, Result, functions::FunctionFlags, params};
 
+pub mod intents;
+
 const WRITER_VERSION: i32 = 1;
 const SCHEMA: &str = include_str!("schema.sql");
 
