@@ -14,6 +14,14 @@ pub struct TargetGateGuard {
     _file: File,
 }
 
+impl Drop for TargetGateGuard {
+    fn drop(&mut self) {
+        // A forked child may temporarily retain a duplicate descriptor until
+        // exec. Explicit unlock releases the shared open-file-description lock.
+        let _ = self._file.unlock();
+    }
+}
+
 /// A verified pin; unlike the raw fixture guard it cannot be constructed
 /// without the inode, ownership and permission checks below.
 #[cfg(target_os = "linux")]

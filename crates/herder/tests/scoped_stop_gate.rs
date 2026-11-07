@@ -1568,19 +1568,20 @@ async fn delivery_requires_authority_exact_instance_and_snapshot_before_fake_sub
         Err(TargetError::SnapshotMismatch)
     );
     assert_eq!(calls.load(Ordering::SeqCst), 0);
-    assert!(matches!(
-        deliver_scoped(
-            &f.authority(),
-            &target.instance,
-            &identity(),
-            &grants(),
-            &reader,
-            &control,
-            request()
-        )
-        .await,
-        Ok(DurableDispatch::Admitted(_))
-    ));
+    let first_delivery = deliver_scoped(
+        &f.authority(),
+        &target.instance,
+        &identity(),
+        &grants(),
+        &reader,
+        &control,
+        request(),
+    )
+    .await;
+    assert!(
+        matches!(first_delivery, Ok(DurableDispatch::Admitted(_))),
+        "first delivery: {first_delivery:?}"
+    );
     assert_eq!(
         deliver_scoped(
             &f.authority(),
@@ -1892,4 +1893,109 @@ fn global_hold_before_create_blocks_native_creation_and_intent() {
         .query_row("SELECT count(*) FROM intents", [], |r| r.get(0))
         .unwrap();
     assert_eq!(count, 0);
+}
+
+struct NotSent {
+    calls: Arc<AtomicUsize>,
+}
+impl BoundedNativeHandoff for NotSent {
+    fn submit_bounded(
+        &self,
+        _: DispatchPlan,
+        _: &str,
+        _: &RequestKey,
+    ) -> Result<Admission, SubmitError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Err(SubmitError::DefinitelyNotSent {
+            reason: "fixture refused before write".into(),
+        })
+    }
+}
+#[test]
+fn definitely_not_sent_is_durable_and_allows_a_new_key() {
+    let f = Fixture::new();
+    create(&f);
+    let a = address();
+    let p = plan();
+    let old = binding(&a, "not-sent", "old-key");
+    f.prepare(old.intent_id, old.request_key, &p);
+    assert!(
+        f.authority()
+            .claim(&identity(), &grants(), &old, "scope-1", &p, "message", "t")
+            .unwrap()
+    );
+    let calls = Arc::new(AtomicUsize::new(0));
+    let control = NotSent {
+        calls: calls.clone(),
+    };
+    let outcome = f
+        .authority()
+        .handoff(
+            &identity(),
+            &grants(),
+            &old,
+            "scope-1",
+            p.clone(),
+            "message",
+            "t",
+            &control,
+        )
+        .unwrap();
+    assert_eq!(outcome, DurableDispatch::DefinitelyNotSent);
+    let db = Connection::open(&f.db).unwrap();
+    let (state, diagnostic): (String, Option<String>) = db.query_row("SELECT i.state,t.result_json FROM intents i JOIN tasks t ON t.task_id=i.task_id WHERE i.intent_id=?1", [old.intent_id], |r| Ok((r.get(0)?,r.get(1)?))).unwrap();
+    assert_eq!(
+        state, "rejected",
+        "outcome={outcome:?}, diagnostic={diagnostic:?}"
+    );
+    let diagnostic = diagnostic.expect("durable diagnostic");
+    assert!(
+        diagnostic.contains("definitely_not_sent")
+            && diagnostic.contains("fixture refused before write"),
+        "{diagnostic}"
+    );
+    drop(db);
+    assert!(
+        !f.authority()
+            .claim(&identity(), &grants(), &old, "scope-1", &p, "message", "t")
+            .unwrap()
+    );
+    assert_eq!(
+        f.authority()
+            .handoff(
+                &identity(),
+                &grants(),
+                &old,
+                "scope-1",
+                p.clone(),
+                "message",
+                "t",
+                &control
+            )
+            .unwrap(),
+        DurableDispatch::NotClaimed
+    );
+    let new = binding(&a, "new-intent", "new-key");
+    f.prepare(new.intent_id, new.request_key, &p);
+    assert!(
+        f.authority()
+            .claim(&identity(), &grants(), &new, "scope-1", &p, "message", "t")
+            .unwrap()
+    );
+    assert_eq!(
+        f.authority()
+            .handoff(
+                &identity(),
+                &grants(),
+                &new,
+                "scope-1",
+                p.clone(),
+                "message",
+                "t",
+                &control
+            )
+            .unwrap(),
+        DurableDispatch::DefinitelyNotSent
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
 }

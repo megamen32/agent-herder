@@ -36,6 +36,8 @@ pub enum DurableDispatch {
     Admitted(NativeReceipt),
     /// A verified hold won the gate before the native handoff: no send occurred.
     StoppedBeforeHandoff,
+    /// The native control proved no submission occurred; the key remains consumed.
+    DefinitelyNotSent,
     Unknown,
     NotClaimed,
 }

@@ -129,3 +129,20 @@ while waiting. The isolated native proof was repeated on this base: thread
 `01a1b4be-c0ef-7852-8aa9-4c79490e46f5`, exact interrupt acknowledged,
 reopened native read `interrupted`, next claim denied. This does not change the
 production-composition limitation above.
+
+### Reviewer corrections: submit outcome and concurrent test lock
+
+A bounded `DefinitelyNotSent` result is committed atomically as a rejected
+intent, finished dispatch and task diagnostic containing the reason. Its key
+cannot be reused; an independently keyed intent can proceed. The existing lost
+response case remains UNKNOWN and blocks a different key. Before the fix the
+new regression failed with `outcome=Unknown, diagnostic=None`.
+
+The reported parallel-suite flake reproduced as `first delivery: Err(Store)`;
+temporary stage diagnostics on the old implementation captured `claim gate:
+Busy` in that same assertion. A deterministic duplicate-descriptor regression
+showed the old guard drop retained the OS flock while another descriptor for
+the same open file description stayed open, as can occur across fork before
+exec. Guard drop now explicitly unlocks. The regression passes, and the exact
+four-test offline command passed 20 consecutive runs. Temporary diagnostics
+were removed. This evidence does not alter the production-composition limit.

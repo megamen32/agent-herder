@@ -55,3 +55,37 @@ fn pinned_gate_rejects_replaced_linked_or_public_inode_and_serializes() {
     fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
     assert!(target_gate::acquire_pinned(&gate, dev, ino).is_err());
 }
+
+#[test]
+fn guard_drop_unlocks_even_when_descriptor_was_inherited() {
+    let path = std::env::temp_dir().join(format!(
+        "herder-gate-dup-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir(&path).unwrap();
+    let _dir = Dir(path.clone());
+    let gate = path.join("gate");
+    let descriptor = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(&gate)
+        .unwrap();
+    let inherited = descriptor.try_clone().unwrap();
+    let guard = target_gate::try_acquire(descriptor).unwrap();
+    drop(guard);
+    let independent = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&gate)
+        .unwrap();
+    assert!(
+        target_gate::try_acquire(independent).is_ok(),
+        "released guard must not leave inherited descriptor holding the lock"
+    );
+    drop(inherited);
+}
