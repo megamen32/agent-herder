@@ -20,6 +20,61 @@ function done(service: ResumeAfterService, ref=a, kind="turn.completed") {
 }
 
 describe("resume after exact sessions", () => {
+  it("does not queue native probes for unrelated progress events before registration", async () => {
+    const isHeld = vi.fn(async () => false);
+    const {service, deliver} = await fixture({isHeld});
+    await service.register({owner, trigger:{kind:"delay",delayMs:3600000}, message:"later", requestId:"old-slot"});
+    isHeld.mockClear();
+    const progress = Array.from({length:40}, () => service.observe({
+      harness:"codex", sessionId:"unrelated", kind:"token",
+    }));
+    const next = service.register({owner, trigger:{kind:"delay",delayMs:3600000}, message:"next", requestId:"next-slot"});
+    await Promise.all(progress);
+    expect((await next).state).toBe("waiting");
+    // One admission check plus the two waits in the registration sweep.
+    expect(isHeld).toHaveBeenCalledTimes(3);
+    expect(deliver).not.toHaveBeenCalled();
+  });
+
+  it("coalesces overlapping timer sweeps and permits a fresh sweep afterwards", async () => {
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>(resolve => { release = resolve; });
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const isHeld = vi.fn(async () => false);
+    const {service} = await fixture({isHeld});
+    await service.register({owner, trigger:{kind:"delay",delayMs:3600000}, message:"later", requestId:"timer"});
+    isHeld.mockClear();
+    isHeld.mockImplementationOnce(async () => { entered(); await blocked; return false; });
+    const first = service.sweep();
+    await started;
+    const ticks = Array.from({length:32}, () => service.sweep());
+    release();
+    await Promise.all([first, ...ticks]);
+    expect(isHeld).toHaveBeenCalledTimes(1);
+    await service.sweep();
+    expect(isHeld).toHaveBeenCalledTimes(2);
+  });
+
+  it("still cancels on an automationStop carried by a nonterminal event", async () => {
+    const {service, deliver} = await fixture();
+    const wait = await service.register({owner, trigger:{kind:"delay",delayMs:3600000}, message:"later", requestId:"stop-progress"});
+    await service.observe({...owner, kind:"session.updated", data:{automationStop:true}});
+    expect((await service.get(wait.id))?.state).toBe("cancelled");
+    expect(deliver).not.toHaveBeenCalled();
+  });
+
+  it("allows a later sweep after a native probe rejects", async () => {
+    const isHeld = vi.fn(async () => false);
+    const {service} = await fixture({isHeld});
+    const wait = await service.register({owner, trigger:{kind:"delay",delayMs:3600000}, message:"later", requestId:"probe-error"});
+    isHeld.mockRejectedValueOnce(new Error("native unavailable"));
+    await expect(service.sweep()).rejects.toThrow("native unavailable");
+    isHeld.mockResolvedValue(true);
+    await service.sweep();
+    expect((await service.get(wait.id))?.state).toBe("cancelled");
+  });
+
   it("waits for all dependencies and resumes exactly once", async () => {
     const {service,deliver}=await fixture();
     const wait=await service.register({owner,dependencies:[a,b],message:"merge and verify",requestId:"all-of"});

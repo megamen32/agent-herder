@@ -66,6 +66,7 @@ const defaultMessage = "Указанные сессии закончили вы�
 /** One process-owned, durable join. No model polling and no extra agent. */
 export class ResumeAfterService {
   private queue: Promise<unknown> = Promise.resolve();
+  private pendingSweep: Promise<void> | undefined;
   private readonly startupHeldWaitIds = new Set<string>();
   // Retain events received before registration. After a cold start, adapters
   // must prove the last native turn or registration records a terminal blocker.
@@ -233,6 +234,11 @@ export class ResumeAfterService {
     });
   }
   observe(event:{harness:string;sessionId?:string;kind:string;at?:string;data?:Record<string,unknown>}):Promise<void>{
+    // Streaming tokens/progress cannot change a dependency join. Filtering
+    // before serialization prevents them from queuing native probes ahead of
+    // registrations. Explicit HumanStop must still win for any event kind.
+    if(!event.sessionId || (event.kind!=="turn.started" && !terminal.has(event.kind) && !event.data?.automationStop))
+      return Promise.resolve();
     return this.serialized(async()=>{
       if(!event.sessionId)return;
       const ref={harness:event.harness,sessionId:event.sessionId};
@@ -301,7 +307,17 @@ export class ResumeAfterService {
     }
     return snapshot?.busy ?? await this.options.isBusy(ref);
   }
-  sweep():Promise<void>{return this.serialized(()=>this.sweepUnlocked());}
+  sweep():Promise<void>{
+    // A slow native probe must not turn each timer tick into another full
+    // queued scan. Registrations and relevant events retain their own ordered
+    // sweep; after settlement the next timer tick starts a fresh scan.
+    if(this.pendingSweep)return this.pendingSweep;
+    const operation=this.serialized(()=>this.sweepUnlocked());
+    this.pendingSweep=operation;
+    const clear=()=>{if(this.pendingSweep===operation)this.pendingSweep=undefined;};
+    void operation.then(clear,clear);
+    return operation;
+  }
   private async sweepUnlocked():Promise<void>{
     for(const wait of await this.list()){
       if(["resumed","cancelled","delivery_failed","delivery_blocked"].includes(wait.state))continue;
