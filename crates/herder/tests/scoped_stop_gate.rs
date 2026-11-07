@@ -4586,3 +4586,102 @@ async fn create_wire_reports_actionable_input_errors_without_effect_or_echo() {
     drop(lines);
     job.await.unwrap();
 }
+
+#[tokio::test]
+async fn fresh_create_uses_explicit_trusted_queue_mode_and_never_replays() {
+    use herder::application::scoped_stop::create_prompt::{
+        CreatePromptOutcome, NoAdditionalGrant, create_with_prompt,
+    };
+    use herder::domain::adapter::{
+        NativeReceipt, NativeSessionReader, Observation, ReadError, SendMode, SessionSnapshot,
+    };
+    struct Create {
+        instance: InstanceRef,
+        calls: AtomicUsize,
+    }
+    impl BoundedFreshRootCreate for Create {
+        fn instance(&self) -> &InstanceRef {
+            &self.instance
+        }
+        fn initial_delivery_mode(&self) -> SendMode {
+            SendMode::Queue
+        }
+        fn create_root_bounded(&self, _: &str, _: &str) -> Result<SessionAddress, SubmitError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(address())
+        }
+    }
+    struct QueueReader(FixtureReader);
+    impl NativeSessionReader for QueueReader {
+        async fn snapshot(&self, a: &SessionAddress) -> Result<SessionSnapshot, ReadError> {
+            let mut s = self.0.snapshot(a).await?;
+            s.capabilities[0].name = "deliver.queue".into();
+            Ok(s)
+        }
+        async fn reconcile(&self, r: &NativeReceipt) -> Result<Observation, ReadError> {
+            self.0.reconcile(r).await
+        }
+    }
+    struct Sender(AtomicUsize);
+    impl BoundedNativeHandoff for Sender {
+        fn submit_bounded(
+            &self,
+            p: DispatchPlan,
+            _: &str,
+            _: &RequestKey,
+        ) -> Result<Admission, SubmitError> {
+            assert_eq!(p.mode, SendMode::Queue);
+            assert_eq!(p.expected_turn, None);
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(Admission {
+                receipt: NativeReceipt {
+                    target: p.target,
+                    native_id: "queue-receipt".into(),
+                },
+            })
+        }
+    }
+    let f = Fixture::new();
+    let a = address();
+    let creator = Create {
+        instance: a.instance.clone(),
+        calls: AtomicUsize::new(0),
+    };
+    let sender = Sender(AtomicUsize::new(0));
+    let reader = QueueReader(FixtureReader {
+        target: a,
+        reads: AtomicUsize::new(0),
+        db: f.db.clone(),
+    });
+    let req = || CreateRequest {
+        intent_id: "queue-create",
+        task_id: "queue-task",
+        request_key: "queue-key",
+        specification: "prompt",
+        now: "now",
+        retain_until: "later",
+    };
+    let auth = f.authority();
+    for _ in 0..2 {
+        let result = create_with_prompt(
+            &auth,
+            &identity(),
+            &grants(),
+            &creator,
+            &Issuer,
+            &Generation,
+            &reader,
+            &sender,
+            &NoAdditionalGrant,
+            req(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            matches!(result, CreatePromptOutcome::Admitted { .. }),
+            "{result:?}"
+        );
+    }
+    assert_eq!(creator.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(sender.0.load(Ordering::SeqCst), 1);
+}

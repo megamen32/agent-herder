@@ -93,6 +93,11 @@ pub enum InterruptDisposition {
 /// Only a trusted native adapter that can prove an isolated root creation may
 /// implement this synchronous bounded seam. UNKNOWN must never be retried.
 pub trait BoundedFreshRootCreate {
+    /// Selected by the trusted adapter, never by an MCP request. Existing
+    /// adapters retain Start; Queue must be explicitly supported by snapshot.
+    fn initial_delivery_mode(&self) -> crate::domain::adapter::SendMode {
+        crate::domain::adapter::SendMode::Start
+    }
     fn instance(&self) -> &crate::domain::address::InstanceRef;
     fn create_root_bounded(
         &self,

@@ -135,6 +135,10 @@ where
         return Err(GateError::Invalid);
     };
     let instance = creator.instance();
+    let delivery_mode = creator.initial_delivery_mode();
+    if !matches!(delivery_mode, SendMode::Start | SendMode::Queue) {
+        return Err(GateError::Invalid);
+    }
     let (delivery_key, intent_id, task_id) =
         delivery_identifiers(&principal.id, instance, request.request_key)?;
     // Recovery is read-only and is allowed even when a global hold prevents
@@ -247,7 +251,7 @@ where
         let expected = dispatch_payload_binding(
             &DispatchPlan {
                 target: address.clone(),
-                mode: SendMode::Start,
+                mode: delivery_mode,
                 expected_turn: None,
             },
             request.specification,
@@ -329,7 +333,7 @@ where
             request_key: &delivery_key,
             message: request.specification,
             command: SendCommand {
-                mode: SendMode::Start,
+                mode: delivery_mode,
             },
             now: request.now,
             retain_until: request.retain_until,
