@@ -88,9 +88,16 @@ pub fn update_session(
         )
         .optional()?;
 
-    if saved_state.as_ref().is_some_and(|(saved_id, truncated)| {
-        saved_id == snapshot_id && *truncated == content_truncated
-    }) {
+    let document_exists: bool = transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM session_search_fts WHERE session_ref=?1)",
+        [&session_ref],
+        |row| row.get(0),
+    )?;
+    if document_exists
+        && saved_state.as_ref().is_some_and(|(saved_id, truncated)| {
+            saved_id == snapshot_id && *truncated == content_truncated
+        })
+    {
         transaction.commit()?;
         return Ok(IndexOutcome::Unchanged);
     }
@@ -223,9 +230,10 @@ fn has_truncated_allowed_session(
     let allowed_json = serde_json::to_string(allowed_refs)
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
     connection.query_row(
-        "SELECT EXISTS(SELECT 1 FROM session_search_state \
-         WHERE content_truncated = 1 \
-           AND session_ref IN (SELECT value FROM json_each(?1)))",
+        "SELECT EXISTS(SELECT 1 FROM json_each(?1) AS allowed \
+         LEFT JOIN session_search_state AS state ON state.session_ref=allowed.value \
+         WHERE state.session_ref IS NULL OR state.content_truncated = 1 \
+            OR NOT EXISTS(SELECT 1 FROM session_search_fts AS f WHERE f.session_ref=allowed.value))",
         [allowed_json],
         |row| row.get(0),
     )
@@ -237,6 +245,54 @@ mod tests {
     use crate::domain::address::{InstanceRef, NodeRef, SessionAddress};
     use rusqlite::{Connection, OptionalExtension};
     use std::num::NonZeroUsize;
+
+    #[test]
+    fn missing_authorized_session_cannot_claim_complete_coverage() {
+        let mut connection = connection();
+        let missing = address("node", "profile", "not-indexed");
+        let page = super::search_page(
+            &connection,
+            "hello",
+            &[missing],
+            true,
+            0,
+            NonZeroUsize::new(10).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(page.coverage, super::SearchCoverage::Partial);
+        let indexed = address("node", "profile", "lost-document");
+        update_session(&mut connection, &indexed, "v1", "hello", false).unwrap();
+        connection
+            .execute(
+                "DELETE FROM session_search_fts WHERE session_ref=?1",
+                [session_ref(&indexed)],
+            )
+            .unwrap();
+        let page = super::search_page(
+            &connection,
+            "hello",
+            &[indexed.clone()],
+            true,
+            0,
+            NonZeroUsize::new(10).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(page.coverage, super::SearchCoverage::Partial);
+        assert_eq!(
+            update_session(&mut connection, &indexed, "v1", "hello", false).unwrap(),
+            IndexOutcome::Updated
+        );
+        let page = super::search_page(
+            &connection,
+            "hello",
+            &[indexed],
+            true,
+            0,
+            NonZeroUsize::new(10).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(page.coverage, super::SearchCoverage::Complete);
+    }
 
     fn address(node: &str, instance: &str, native: &str) -> SessionAddress {
         SessionAddress {

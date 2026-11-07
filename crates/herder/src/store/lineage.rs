@@ -136,7 +136,7 @@ impl Writer {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let authority: Option<String> = tx.query_row(
-            "SELECT generation FROM humanstop_authority WHERE singleton=1 AND gate_device=?1 AND gate_inode=?2 AND (SELECT user_version FROM pragma_user_version)=3 AND herder_writer_version()=3",
+            "SELECT generation FROM humanstop_authority WHERE singleton=1 AND gate_device=?1 AND gate_inode=?2 AND (SELECT user_version FROM pragma_user_version) IN (3,4) AND herder_writer_version()=(SELECT user_version FROM pragma_user_version)",
             params![device, inode], |r| r.get(0),
         ).optional()?;
         let Some(authority) = authority else {

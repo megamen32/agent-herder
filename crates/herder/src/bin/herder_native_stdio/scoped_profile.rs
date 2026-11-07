@@ -128,7 +128,7 @@ pub fn open(path: &Path) -> Result<ScopedAuthority, Box<dyn std::error::Error>> 
     if opened_metadata.dev() != dm.dev() || opened_metadata.ino() != dm.ino() {
         return Err(invalid().into());
     }
-    Writer::validate_exact_v3(&db)?;
+    Writer::validate_scoped_schema(&db)?;
     let row: (String, i64, i64, i64, i64) = db.query_row("SELECT generation,gate_device,gate_inode,database_device,database_inode FROM humanstop_authority WHERE singleton=1", [], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)))?;
     if row
         != (

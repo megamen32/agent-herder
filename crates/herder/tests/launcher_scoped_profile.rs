@@ -24,6 +24,14 @@ impl Drop for Fixture {
     }
 }
 impl Fixture {
+    fn migrate_v4(&self) {
+        let meta = fs::metadata(&self.gate).unwrap();
+        let gate = acquire_pinned(&self.gate, meta.dev(), meta.ino()).unwrap();
+        Writer::open_file(&self.db)
+            .unwrap()
+            .migrate_search_v4(&gate)
+            .unwrap();
+    }
     fn new() -> Self {
         Self::new_in(&PathBuf::from(std::env::var_os("HOME").unwrap()))
     }
@@ -105,6 +113,41 @@ impl Fixture {
             .unwrap()
     }
 }
+#[test]
+fn v4_migration_rejects_gate_from_another_authority() {
+    let first = Fixture::new();
+    let second = Fixture::new();
+    let meta = fs::metadata(&second.gate).unwrap();
+    let wrong_gate = acquire_pinned(&second.gate, meta.dev(), meta.ino()).unwrap();
+    assert!(
+        Writer::open_file(&first.db)
+            .unwrap()
+            .migrate_search_v4(&wrong_gate)
+            .is_err()
+    );
+    let db = Connection::open(&first.db).unwrap();
+    let version: i32 = db
+        .pragma_query_value(None, "user_version", |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, 3);
+}
+
+#[test]
+fn launcher_opens_migrated_v4_without_losing_authority() {
+    let f = Fixture::new();
+    f.migrate_v4();
+    assert!(scoped_profile::open(&f.profile).is_ok());
+    let db = Connection::open(&f.db).unwrap();
+    let generation: String = db
+        .query_row(
+            "SELECT generation FROM humanstop_authority WHERE singleton=1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(generation, "generation");
+}
+
 #[test]
 fn launcher_opens_only_pinned_authority_and_refuses_changed_generation() {
     let f = Fixture::new();
@@ -255,7 +298,7 @@ fn launched_authority_retains_fresh_create_receipt_in_the_same_store() {
             .create_fresh_root(
                 &id,
                 &grants,
-                &Creator(instance),
+                &Creator(instance.clone()),
                 &Issuer,
                 &Issuer,
                 CreateRequest {
@@ -294,6 +337,27 @@ fn launched_authority_retains_fresh_create_receipt_in_the_same_store() {
         .unwrap(),
         1
     );
+    drop(db);
+    let session = SessionRef("fresh".into());
+    let session_grants = [Grant {
+        principal: PrincipalId("alice".into()),
+        resource: PrivateResource::Session(session.clone()),
+        action: Action::Write,
+    }];
+    scoped_profile::open(&f.profile)
+        .unwrap()
+        .stop(&id, &session_grants, "session:fresh", "manual", "now")
+        .unwrap();
+    f.migrate_v4();
+    let reopened = scoped_profile::open(&f.profile).unwrap();
+    let (address, scope) = reopened
+        .resolve_session(&id, &session_grants, &session, &instance)
+        .unwrap();
+    assert_eq!(address.native_session_id, "native-fresh");
+    assert_eq!(scope, "fresh-generation");
+    let db = Connection::open(&f.db).unwrap();
+    let hold: String = db.query_row("SELECT reason FROM humanstop_holds WHERE scope_ref='session:fresh' AND released_at IS NULL", [], |r| r.get(0)).unwrap();
+    assert_eq!(hold, "manual");
 }
 
 #[test]

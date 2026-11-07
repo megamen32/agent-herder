@@ -21,8 +21,11 @@ impl Writer {
         let reference = Self::configure(Connection::open_in_memory()?, WRITER_VERSION)?;
         reference.execute_batch(&format!("BEGIN EXCLUSIVE;\n{SCHEMA}\nCOMMIT;"))?;
         reference.execute_batch(include_str!("migration_v1_v2.sql"))?;
-        if version == 3 {
+        if version >= 3 {
             reference.execute_batch(include_str!("migration_v2_v3.sql"))?;
+        }
+        if version >= 4 {
+            reference.execute_batch(include_str!("migration_v3_v4.sql"))?;
         }
         let mut stmt=reference.prepare("SELECT type,name,sql FROM sqlite_schema WHERE type IN ('table','index','trigger') AND name NOT LIKE 'sqlite_%' ORDER BY type,name")?;
         let rows = stmt.query_map([], |r| {
@@ -71,6 +74,63 @@ impl Writer {
         }
         Self::validate_schema(connection, 3)
     }
+    /// Scoped authority accepts only a complete, validated v3 or v4 store.
+    pub fn validate_scoped_schema(connection: &Connection) -> Result<()> {
+        let version: i32 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if !matches!(version, 3 | 4) {
+            return Err(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_SCHEMA),
+                Some("scoped authority requires schema version 3 or 4".into()),
+            ));
+        }
+        Self::validate_schema(connection, version)
+    }
+
+    /// Migrate a validated v3 store atomically. The old writer is consumed;
+    /// callers must reopen to obtain the v4 writer fence. Never called by open.
+    #[cfg(target_os = "linux")]
+    pub fn migrate_search_v4(
+        mut self,
+        gate: &crate::application::target_gate::PinnedTargetGateGuard,
+    ) -> Result<()> {
+        use rusqlite::TransactionBehavior;
+        use std::os::unix::fs::MetadataExt;
+        let database: String = self.connection.query_row(
+            "SELECT file FROM pragma_database_list WHERE name='main'",
+            [],
+            |r| r.get(0),
+        )?;
+        let path = std::path::Path::new(&database);
+        let meta = std::fs::symlink_metadata(path).map_err(|_| rusqlite::Error::InvalidQuery)?;
+        let (dev, ino) = gate.identity().map_err(|_| rusqlite::Error::InvalidQuery)?;
+        if !path.is_absolute()
+            || path.parent() != Some(gate.directory())
+            || path.canonicalize().ok().as_deref() != Some(path)
+            || !meta.is_file()
+            || meta.nlink() != 1
+            || meta.uid() != gate.owner().map_err(|_| rusqlite::Error::InvalidQuery)?
+            || meta.mode() & 0o077 != 0
+        {
+            return Err(rusqlite::Error::InvalidQuery);
+        }
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Exclusive)?;
+        let version: i32 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if version != 3 {
+            return Err(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_SCHEMA),
+                Some("search migration requires exact v3".into()),
+            ));
+        }
+        Self::validate_schema(&tx, 3)?;
+        let bound: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM humanstop_authority WHERE singleton=1 AND gate_device=?1 AND gate_inode=?2 AND database_device=?3 AND database_inode=?4)", params![i64::try_from(dev).map_err(|_| rusqlite::Error::InvalidQuery)?, i64::try_from(ino).map_err(|_| rusqlite::Error::InvalidQuery)?, i64::try_from(meta.dev()).map_err(|_| rusqlite::Error::InvalidQuery)?, i64::try_from(meta.ino()).map_err(|_| rusqlite::Error::InvalidQuery)?], |r| r.get(0))?;
+        if !bound {
+            return Err(rusqlite::Error::InvalidQuery);
+        }
+        tx.execute_batch(include_str!("migration_v3_v4.sql"))?;
+        tx.commit()
+    }
     fn configure(connection: Connection, version: i32) -> Result<Connection> {
         connection.pragma_update(None, "foreign_keys", true)?;
         connection.busy_timeout(std::time::Duration::from_secs(5))?;
@@ -106,7 +166,7 @@ impl Writer {
         let connection =
             Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         let version: i32 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if !matches!(version, 1 | 2 | 3) {
+        if !matches!(version, 1 | 2 | 3 | 4) {
             return Err(rusqlite::Error::SqliteFailure(
                 rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_SCHEMA),
                 Some(format!("unsupported store schema version {version}")),
@@ -173,7 +233,7 @@ impl Writer {
         let tx = self
             .connection
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let valid: bool = tx.query_row("SELECT (SELECT user_version FROM pragma_user_version)=3 AND herder_writer_version()=3 AND NOT EXISTS(SELECT 1 FROM tasks) AND NOT EXISTS(SELECT 1 FROM intents) AND NOT EXISTS(SELECT 1 FROM session_bindings) AND NOT EXISTS(SELECT 1 FROM lineage) AND NOT EXISTS(SELECT 1 FROM holds) AND NOT EXISTS(SELECT 1 FROM humanstop_authority) AND NOT EXISTS(SELECT 1 FROM humanstop_holds)", [], |r| r.get(0))?;
+        let valid: bool = tx.query_row("SELECT (SELECT user_version FROM pragma_user_version) IN (3,4) AND herder_writer_version()=(SELECT user_version FROM pragma_user_version) AND NOT EXISTS(SELECT 1 FROM tasks) AND NOT EXISTS(SELECT 1 FROM intents) AND NOT EXISTS(SELECT 1 FROM session_bindings) AND NOT EXISTS(SELECT 1 FROM lineage) AND NOT EXISTS(SELECT 1 FROM holds) AND NOT EXISTS(SELECT 1 FROM humanstop_authority) AND NOT EXISTS(SELECT 1 FROM humanstop_holds)", [], |r| r.get(0))?;
         if !valid {
             return Ok(false);
         }
@@ -200,6 +260,164 @@ impl Writer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn v4_migration_wrong_version_rolls_back_without_tables() {
+        let mut c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "user_version", 2).unwrap();
+        let tx = c.transaction().unwrap();
+        assert!(
+            tx.execute_batch(include_str!("migration_v3_v4.sql"))
+                .is_err()
+        );
+        drop(tx);
+        let version: i32 = c
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        let count: i64 = c
+            .query_row(
+                "SELECT count(*) FROM sqlite_schema WHERE name LIKE 'session_search_%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!((version, count), (2, 0));
+    }
+
+    #[test]
+    fn v4_migration_rolls_back_after_fts_creation_fails_later() {
+        let mut c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "user_version", 3).unwrap();
+        c.execute_batch("CREATE TABLE session_search_state (existing TEXT)")
+            .unwrap();
+        let tx = c.transaction().unwrap();
+        assert!(
+            tx.execute_batch(include_str!("migration_v3_v4.sql"))
+                .is_err()
+        );
+        drop(tx);
+        let version: i32 = c
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        let count: i64 = c
+            .query_row(
+                "SELECT count(*) FROM sqlite_schema WHERE name='session_search_fts'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!((version, count), (3, 0));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn migrated_v4_reopens_and_fences_old_v3_writer() {
+        use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+        let root = std::env::temp_dir().join(format!(
+            "herder-search-v4-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        std::fs::create_dir(&root).unwrap();
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let _cleanup = Cleanup(root.clone());
+        let path = root.join("state.db");
+        let initial = Writer::create_file(&path).unwrap();
+        drop(initial);
+        let mut migration = Connection::open(&path).unwrap();
+        for script in [
+            include_str!("migration_v1_v2.sql"),
+            include_str!("migration_v2_v3.sql"),
+        ] {
+            let tx = migration.transaction().unwrap();
+            tx.execute_batch(script).unwrap();
+            tx.commit().unwrap();
+        }
+        let gate_path = root.join("gate");
+        let gate_file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&gate_path)
+            .unwrap();
+        let meta = gate_file.metadata().unwrap();
+        let gate =
+            crate::application::target_gate::acquire_pinned(&gate_path, meta.dev(), meta.ino())
+                .unwrap();
+        let mut provision = Writer::open_file(&path).unwrap();
+        assert!(
+            provision
+                .initialize_fresh_stop_authority(&gate, "generation", "now")
+                .unwrap()
+        );
+        provision
+            .insert_task("kept", "p", "prepared", "now")
+            .unwrap();
+        drop(provision);
+        let old = Writer::open_file(&path).unwrap();
+        Writer::open_file(&path)
+            .unwrap()
+            .migrate_search_v4(&gate)
+            .unwrap();
+        assert!(
+            old.insert_task("old-write", "p", "prepared", "now")
+                .is_err()
+        );
+        drop(old);
+        let mut fresh = Writer::open_file(&path).expect("valid v4 should reopen");
+        fresh
+            .insert_task("new-write", "p", "prepared", "now")
+            .unwrap();
+        let kept: i64 = fresh
+            .connection
+            .query_row("SELECT count(*) FROM tasks WHERE task_id='kept'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(kept, 1);
+        let address = crate::domain::address::SessionAddress {
+            instance: crate::domain::address::InstanceRef {
+                node: crate::domain::address::NodeRef("n".into()),
+                instance_id: "i".into(),
+            },
+            native_session_id: "native".into(),
+        };
+        crate::search::index::update_session(
+            fresh.connection_mut(),
+            &address,
+            "snapshot",
+            "hello indexed",
+            false,
+        )
+        .unwrap();
+        let count: i64 = fresh
+            .connection
+            .query_row(
+                "SELECT count(*) FROM session_search_fts WHERE session_search_fts MATCH 'indexed'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+        drop(fresh);
+        migration
+            .execute_batch("DROP TRIGGER v4_search_state_update_fence")
+            .unwrap();
+        assert!(
+            Writer::open_file(&path).is_err(),
+            "missing v4 fence must fail schema identity"
+        );
+    }
 
     #[test]
     fn open_rejects_partial_v2_even_when_number_is_two() {
