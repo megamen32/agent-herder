@@ -39,6 +39,61 @@ pub struct TranscriptBlock {
     pub native_type: String,
 }
 
+/// Pagination cursor bound to trusted caller identity and one immutable snapshot.
+/// The native cursor remains opaque; its contents are never parsed or rewritten.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BoundTranscriptCursor {
+    pub principal_id: String,
+    pub snapshot_id: String,
+    pub native_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CursorBindingError {
+    EmptyPrincipal,
+    EmptySnapshot,
+    PrincipalMismatch,
+    SnapshotMismatch,
+}
+
+impl BoundTranscriptCursor {
+    /// Bind a native cursor using principal identity from the trusted auth boundary
+    /// and a stable snapshot identifier produced by the transcript reader.
+    pub fn bind(
+        principal_id: &str,
+        snapshot_id: &str,
+        native_cursor: Option<String>,
+    ) -> Result<Self, CursorBindingError> {
+        if principal_id.is_empty() {
+            return Err(CursorBindingError::EmptyPrincipal);
+        }
+        if snapshot_id.is_empty() {
+            return Err(CursorBindingError::EmptySnapshot);
+        }
+        Ok(Self {
+            principal_id: principal_id.into(),
+            snapshot_id: snapshot_id.into(),
+            native_cursor,
+        })
+    }
+
+    /// Validate the cursor against the authenticated principal and current snapshot.
+    pub fn validate(
+        &self,
+        principal_id: &str,
+        snapshot_id: &str,
+    ) -> Result<Option<&str>, CursorBindingError> {
+        if self.principal_id != principal_id {
+            return Err(CursorBindingError::PrincipalMismatch);
+        }
+        if self.snapshot_id != snapshot_id {
+            return Err(CursorBindingError::SnapshotMismatch);
+        }
+        Ok(self.native_cursor.as_deref())
+    }
+}
+
 /// Input to the projection after a harness reader has decoded native blocks.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawTranscriptBlock {
@@ -159,6 +214,42 @@ mod tests {
         assert_eq!(blocks[2].native_type, "vendor_block_v7");
         assert_eq!(blocks[2].text, None);
         assert_eq!(blocks[0].source.turn_id, None);
+    }
+
+    #[test]
+    fn bound_cursor_round_trips_and_rejects_other_principal_or_snapshot() {
+        let cursor = BoundTranscriptCursor::bind(
+            "principal-alice",
+            "snapshot-2026-11-07T08:00Z",
+            Some("opaque-native-cursor".into()),
+        )
+        .unwrap();
+        let encoded = serde_json::to_string(&cursor).unwrap();
+        let decoded: BoundTranscriptCursor = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(
+            decoded.validate("principal-alice", "snapshot-2026-11-07T08:00Z"),
+            Ok(Some("opaque-native-cursor"))
+        );
+        assert_eq!(
+            decoded.validate("principal-bob", "snapshot-2026-11-07T08:00Z"),
+            Err(CursorBindingError::PrincipalMismatch)
+        );
+        assert_eq!(
+            decoded.validate("principal-alice", "snapshot-next"),
+            Err(CursorBindingError::SnapshotMismatch)
+        );
+    }
+
+    #[test]
+    fn cursor_binding_requires_nonempty_verified_context() {
+        assert_eq!(
+            BoundTranscriptCursor::bind("", "snapshot", None),
+            Err(CursorBindingError::EmptyPrincipal)
+        );
+        assert_eq!(
+            BoundTranscriptCursor::bind("principal", "", None),
+            Err(CursorBindingError::EmptySnapshot)
+        );
     }
 
     #[test]
