@@ -2331,7 +2331,24 @@ export class ZcodeAdapter implements HarnessAdapter {
         ...(options.inputId ? { inputId: options.inputId } : {}),
         error: "ZCode не подтверждает отложенную очередь: команда «После ответа» не отправлена, чтобы не запустить её сразу." };
     }
-    if (options.steer || options.queue || options.images?.length) return normalizeSendAdmission(await this.sendConversationInput(id, options));
+    if (options.steer || options.queue || options.images?.length) {
+      const result = normalizeSendAdmission(await this.sendConversationInput(id, options));
+      const callerInputId = result.inputId ?? options.inputId;
+      if (callerInputId && (!result.inputId || !options.inputId || result.inputId === options.inputId)) {
+        const origin = options.origin === "human" ? "human" : "automation";
+        const native = zcodeNativeAdmission(this.localDbPath, id, [zcodeInputId(callerInputId, origin)]);
+        // Only the native message row's exact sourceCommandId correlation is a
+        // message receipt. A caller inputId or turnId alone is never promoted.
+        if (native.state !== "unknown" && native.userMessageId) {
+          return {
+            ...result,
+            nativeInputMessageId: native.userMessageId,
+            ...(native.turnId ? { turnId: native.turnId } : {}),
+          };
+        }
+      }
+      return result;
+    }
     const origin = options.origin === "human" ? "human" : "automation";
     const send = async (): Promise<{
       ok: boolean;

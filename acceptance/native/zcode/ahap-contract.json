@@ -21,6 +21,12 @@
   },
   "exposed_methods": ["initialize", "init", "createSession", "sendMessage", "getSession", "getSessionMessages", "shutdown"],
   "send_policy": "Queue only; preserves caller inputId separately from native receipt; ambiguous create/send is UNKNOWN and never retried",
+  "receipt_contract": {
+    "nativeInputMessageId": "Only the exact ZCode native user message row whose sourceCommandId matches the adapter-derived native command ID; read-only zcodeNativeAdmission lookup",
+    "turnId": "Optional distinct native turn identity; never substituted for nativeInputMessageId",
+    "without_native_user_message_anchor": "Return the original admitted/pending/inputId fields without nativeInputMessageId; AHAP core keeps the receipt UNKNOWN",
+    "caller_input_id": "Never renamed, hashed, or copied into nativeInputMessageId"
+  },
   "source_contract_command": "npx vitest run --root . --config vitest.config.ts tests/ahap-zcode-runner.test.ts",
   "native_acceptance": "NOT RUN; separate leaf V078; do not replay V072D/V072E UNKNOWN"
 }

@@ -99,8 +99,9 @@ export async function serveZcodeAhap(
             origin: "automation",
           };
           const receipt: SendMessageResult = await adapter.sendMessage(params.id, options);
-          // Keep the legacy adapter's receipt fields verbatim. In particular,
-          // inputId is correlation and is never renamed as a native message ID.
+          // Keep the adapter's receipt fields verbatim. inputId remains the
+          // caller correlation; nativeInputMessageId is present only when the
+          // adapter read an exact native ZCode message anchor. turnId is separate.
           result = receipt;
           break;
         }
