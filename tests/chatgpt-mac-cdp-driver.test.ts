@@ -34,6 +34,36 @@ class BrowserFixture implements ChromePageTools {
   }
 }
 describe("ChatGPT on existing Mac mini CDP", () => {
+  it("retains explicitly verified account scope with a fresh inventory and no passive hook", async () => {
+    const scope = "a".repeat(64);
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return `7: ChatGPT (https://chatgpt.com/c/${ID})`;
+      if (name === "evaluate_script" && args.function === CHATGPT_CREATE_SCOPE_SCRIPT) return json({ scope });
+      if (name === "evaluate_script" && args.function === CHATGPT_MAC_SNAPSHOT) return json({
+        origin: "https://chatgpt.com", path: "/c/" + ID, authenticated: true,
+        composer: true, phase: "idle", draftPresent: false, chats: [],
+      });
+      if (name === "evaluate_script" && args.function === CHATGPT_LIST_API_PASSIVE_SCRIPT) return json({ scope: "", chats: [], source: "passive" });
+      throw new Error(`unexpected action ${name}`);
+    } };
+    const driver = new ChatGptMacCdpDriver(tools, 7, 0, scope);
+    expect(driver.getAccountScope()).toBeUndefined();
+    await driver.verifyPinnedAccountScope();
+    expect(driver.getAccountScope()).toBe(scope);
+    await expect(driver.listObservedChats()).resolves.toBeDefined();
+  });
+
+  it("does not cache a mismatched account during explicit verification", async () => {
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return `7: ChatGPT (https://chatgpt.com/c/${ID})`;
+      if (name === "evaluate_script" && args.function === CHATGPT_CREATE_SCOPE_SCRIPT) return json({ scope: "b".repeat(64) });
+      throw new Error(`unexpected action ${name}`);
+    } };
+    const driver = new ChatGptMacCdpDriver(tools, 7, 0, "a".repeat(64));
+    await expect(driver.verifyPinnedAccountScope()).rejects.toThrow("pinned account scope mismatch");
+    expect(driver.getAccountScope()).toBeUndefined();
+  });
+
   it("rejects list data from an account that differs from the pinned account", async () => {
     const actions: string[] = [];
     const tools: ChromePageTools = { call: async (name, args = {}) => {
