@@ -574,3 +574,61 @@ for line in sys.stdin:
     drop(input);
     let _ = reopened.wait();
 }
+
+#[test]
+#[ignore = "run exactly once in the isolated tests/native launcher after Task reconciliation review"]
+fn real_sdk_owner_stdio_create_task_and_reopened_messages() {
+    use std::io::{Read, Write};
+    let f = Fixture::new();
+    let model =
+        std::env::var("HERDER_TEST_MODEL_BASE_URL").expect("isolated loopback model required");
+    assert!(model.starts_with("http://127.0.0.1:") && model.ends_with("/v1"));
+    let home = f.root.join("codex-home");
+    fs::create_dir(&home).unwrap();
+    fs::write(home.join("config.toml"),format!("model = \"herder-test\"\nmodel_provider = \"fixture\"\n[model_providers.fixture]\nname = \"fixture\"\nbase_url = \"{model}\"\nwire_api = \"responses\"\nexperimental_bearer_token = \"fixture-only\"\n")).unwrap();
+    let codex = std::env::var("HERDER_TEST_CODEX_BIN").unwrap();
+    let binary = std::env::var("HERDER_OWNER_NATIVE_BINARY").unwrap();
+    let probe = std::env::var("HERDER_OWNER_SDK_PROBE").unwrap();
+    let profile = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{"principal":"isolated-owner","node":"isolated-node","instance":"isolated-codex","executable":codex,"code_home":home,"cwd":f.root}});
+    fs::write(&f.profile, profile.to_string()).unwrap();
+    let marker = format!(
+        "HERDER_OWNER_INPUT_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let receipt = f.root.join("one-shot-receipt.jsonl");
+    println!("OWNER_PROOF_PREPARED marker={marker} no-replay=true");
+    let status = Command::new(probe)
+        .arg(binary)
+        .arg(&f.profile)
+        .arg("isolated-codex")
+        .arg(&marker)
+        .arg(&receipt)
+        .status()
+        .unwrap();
+    let evidence = fs::read_to_string(&receipt).unwrap_or_else(|_| "NO_RECEIPT_UNKNOWN".into());
+    println!("OWNER_PROOF_RECEIPT {evidence}");
+    assert!(
+        status.success(),
+        "one-shot result failed or unknown; never resend"
+    );
+    let port = model
+        .trim_start_matches("http://127.0.0.1:")
+        .trim_end_matches("/v1")
+        .parse::<u16>()
+        .unwrap();
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    stream
+        .write_all(b"GET /_stats HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .unwrap();
+    let mut result = String::new();
+    stream.read_to_string(&mut result).unwrap();
+    let body = result.split_once("\r\n\r\n").unwrap().1;
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(body).unwrap()["requests"],
+        1,
+        "fixture must observe exactly one native model request"
+    );
+}
