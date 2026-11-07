@@ -290,7 +290,8 @@ afterEach(() => {
 describe("BackgroundAutopilotStop browser-chat deliver", () => {
   function buildStop(deliver: (input: { harness: string; sessionId: string; cwd: string }, goal: string, inputId: string) => Promise<unknown>) {
     const jobs = { start: vi.fn(async ({ run }: { run: ({ signal, progress }: { signal: AbortSignal; progress: (n: number, msg?: string) => void }) => Promise<unknown> }) => run({ signal: new AbortController().signal, progress: () => undefined })), get: () => undefined } as unknown as HerderJobRegistry;
-    const adapter = { listSessions: vi.fn(async () => [fakeSession({ status: "idle" })]), getSession: vi.fn(async () => fakeSession({ status: "idle" })), getSessionMessages: vi.fn(async () => [{ id: "m1", role: "user", text: "hi", parts: [{ type: "text", text: "hi" }] }, { id: "m2", role: "assistant", text: "hi back", parts: [{ type: "text", text: "hi back" }] }]) } as unknown as HarnessAdapter;
+    const messages = [{ id: "m1", role: "user", text: "hi", parts: [{ type: "text", text: "hi" }] }, { id: "m2", role: "assistant", text: "hi back", parts: [{ type: "text", text: "hi back" }] }];
+    const adapter = { listSessions: vi.fn(async () => [fakeSession({ status: "idle" })]), getSession: vi.fn(async () => fakeSession({ status: "idle" })), getSessionMessages: vi.fn(async () => messages), getBackgroundMessages: vi.fn(async () => messages) } as unknown as HarnessAdapter;
     return new BackgroundAutopilotStop({
       jobs, adapters: new Map([["chatgpt", adapter], ["zai", adapter]]),
       evaluate: async () => ({ decision: "continue", next_goal: "next step" }),

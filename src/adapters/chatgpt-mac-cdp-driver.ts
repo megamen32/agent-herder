@@ -1,8 +1,14 @@
 import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { chatgptFullConversationApiScript, chatgptConversationChunkScript, chatgptConversationCleanupScript } from "./chatgpt-full-conversation.js";
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import { BrowserChatDraftStore } from "./browser-chat-drafts.js";
 import { submitFirstChatMessage, verifyNewChatAccountScope } from "./browser-chat-new-page.js";
+import { chatgptPassiveHistoryScript } from "./chatgpt-passive-history.js";
+import { ChatGptBackgroundBudget } from "./chatgpt-background-budget.js";
+import { ChatGptBackgroundNavigator } from "./chatgpt-background-navigator.js";
+import { resolveAutopilotStateDir } from "../autopilot/state-dir.js";
 import type { HarnessEvent, SessionMessageView } from "../types/index.js";
 import { CHATGPT_LIST_API_SCRIPT, CHATGPT_LIST_API_PASSIVE_SCRIPT, CHATGPT_FULL_SCAN_SCRIPT, chatgptMessagesApiScript } from "./browser-chat-api-scripts.js";
 import { BrowserChatInventoryCache } from "./browser-chat-inventory-cache.js";
@@ -175,6 +181,21 @@ export const CHATGPT_MAC_SNAPSHOT = `() => {
  * on demand; there is never a fallback to the other provider's tab.
  */
 export class ChatGptMacCdpDriver implements BrowserChatDriver {
+  private backgroundNavigator?: ChatGptBackgroundNavigator;
+  private backgroundBudget?: ChatGptBackgroundBudget;
+  private backgroundBudgetUnsafe = false;
+
+  private getBackgroundBudget(): ChatGptBackgroundBudget | undefined {
+    if (this.backgroundBudgetUnsafe) return undefined;
+    if (!this.backgroundBudget) {
+      const stateDir = resolveAutopilotStateDir();
+      try {
+        mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+        this.backgroundBudget = new ChatGptBackgroundBudget(join(stateDir, "chatgpt-background-budget.json"));
+      } catch { this.backgroundBudgetUnsafe = true; return undefined; }
+    }
+    return this.backgroundBudget;
+  }
   readonly browserFeatures = {
     nativeConversationIds: true,
     queueAfterGeneration: true,
@@ -466,14 +487,20 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     }
   }
 
-  private async listUnlocked(): Promise<BrowserChat[]> {
-    const page = await this.page();
+  private async listUnlocked(forcePassive = false): Promise<BrowserChat[]> {
+    // Passive background inventory must not silently open and load a new
+    // ChatGPT page when the browser currently has no matching tab.
+    const paused = forcePassive || !liveHarnessPollingEnabled("chatgpt");
+    const pages = paused ? parseChatGptPages(await this.tools.call("list_pages")) : undefined;
+    if (pages && !pages.length) return [];
+    const pinned = pages?.find(candidate => candidate.id === this.pinnedPageId && candidate.conversation);
+    const page = pages ? (pinned ?? pickChatGptPage(pages)) : await this.page();
     const s = await this.snapshot(page.id);
     // The runtime switch of the owner: while the site requests of this
     // harness are paused, the list answers from passive sources only — the
     // responses the site itself made (the intercept hook) plus the durable
     // inventory — and never from a fetch the herder initiates.
-    if (!liveHarnessPollingEnabled("chatgpt")) return this.listPassive(s, page.id);
+    if (paused) return this.listPassive(s, page.id);
     // Bayesian 429 verdict: while the adaptive cooldown is active the list
     // answers from passive sources instead of spending another request.
     if (Date.now() < getChatGptBayesBackoff().cooldownUntilMs(BAYES_TARGET_CHATGPT_LIST)) {
@@ -627,6 +654,14 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     });
   }
 
+  async listObservedChats(): Promise<readonly BrowserChat[]> {
+    return this.exclusive(async () => {
+      const native = await this.listUnlocked(true);
+      await this.drafts.useScope(this.accountScope);
+      return this.drafts.merge(native);
+    });
+  }
+
   getKnownChat(id: string): BrowserChat | null {
     if (id.startsWith("draft:")) {
       const draft=this.drafts.get(id);
@@ -659,6 +694,54 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       if (!NATIVE_CHAT_ID.test(id)) return null;
       return (await this.listUnlocked()).find(c => c.id === id) ?? null;
     });
+  }
+
+  /** Read visible messages only from an already-open exact conversation.
+   * This background path does not navigate, create tabs, or fetch. */
+  async getObservedMessages(id: string): Promise<SessionMessageView[] | null> {
+    if (id.startsWith("draft:")) id = this.drafts.get(id)?.remoteId || "";
+    if (!NATIVE_CHAT_ID.test(id)) return null;
+    const pages = parseChatGptPages(await this.tools.call("list_pages"));
+    const matching = pages.filter(candidate => {
+      const path = new URL(candidate.url).pathname;
+      return path === `/c/${id}` || path.endsWith(`/c/${id}`);
+    });
+    if (!matching.length) return null;
+    let agreed: SessionMessageView[] | null = null;
+    let freshVisit = false;
+    for (const page of matching) {
+      const result = parseChromeEvaluation<{sessionId?:string;phase?:string;freshVisit?:boolean;last429?:string;cooldownUntil?:number;messages?:Array<{id?:unknown;role?:unknown;text?:unknown}>}>(
+        await this.tools.call("evaluate_script",{pageId:page.id,function:chatgptPassiveHistoryScript()}));
+      if (result.last429) {
+        const budget = this.getBackgroundBudget();
+        if (!budget || !budget.observe429(result.last429, result.cooldownUntil ?? 0)) {
+          this.backgroundBudgetUnsafe = true;
+          return null;
+        }
+      }
+      if(result.sessionId!==id || result.phase!=='idle' || !Array.isArray(result.messages) || (result.cooldownUntil||0)>Date.now())return null;
+      freshVisit ||= result.freshVisit === true;
+      if (result.messages.some(message => (message.role === 'user' || message.role === 'assistant')
+        && (typeof message.id !== 'string' || !message.id || typeof message.text !== 'string' || !message.text.trim()))) return null;
+      const messages=result.messages.filter(message=>(message.role==='user'||message.role==='assistant')
+        && typeof message.id==='string' && !!message.id && typeof message.text==='string' && !!message.text.trim())
+        .map(message=>({id:message.id as string,role:message.role as 'user'|'assistant',text:message.text as string,parts:[{type:'text' as const,text:message.text as string}]}));
+      if (messages.at(-1)?.role !== 'assistant') return null;
+      if (agreed && JSON.stringify(agreed) !== JSON.stringify(messages)) return null;
+      agreed = messages;
+    }
+    return freshVisit ? agreed : null;
+  }
+
+  async visitBackgroundChat(id: string): Promise<void> {
+    if (id.startsWith("draft:")) id = this.drafts.get(id)?.remoteId || "";
+    if (!NATIVE_CHAT_ID.test(id)) return;
+    const budget = this.getBackgroundBudget();
+    if (!budget) return;
+    if (!this.backgroundNavigator) {
+      this.backgroundNavigator = new ChatGptBackgroundNavigator(this.tools, budget);
+    }
+    await this.backgroundNavigator.visit(id);
   }
 
   async getRawConversation(chatId: string): Promise<unknown | null> {

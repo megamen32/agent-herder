@@ -25,6 +25,8 @@ export interface BrowserChat {
 /** A browser transport owns its authenticated page and implements these operations. */
 export interface BrowserChatDriver {
   listChats(signal?: AbortSignal): Promise<readonly BrowserChat[]>;
+  /** Inventory observed without causing provider requests or prewarming history. */
+  listObservedChats?(): Promise<readonly BrowserChat[]>;
   getChat?(chatId: string, signal?: AbortSignal): Promise<BrowserChat | null>;
   /** Pure exact-link metadata without browser navigation. Allows opening an
    * older chat outside the current 100-item inventory from an existing URL.
@@ -33,6 +35,10 @@ export interface BrowserChatDriver {
   getKnownChat?(chatId: string): BrowserChat | null;
   /** Authenticated read-only owner API; no navigation or model turn. */
   getMessages?(chatId: string): Promise<SessionMessageView[] | null>;
+  /** Passive background observation; never triggers a provider request. */
+  getObservedMessages?(chatId: string): Promise<SessionMessageView[] | null>;
+  /** Optional throttled visit for a completed ChatGPT turn without visible history. */
+  visitBackgroundChat?(chatId: string): Promise<unknown>;
   getRawConversation?(chatId: string): Promise<unknown | null>;
   /** One bounded re-read of the turn state of one chat from the
    * provider's own API, merging the fresh result into the durable
@@ -208,15 +214,26 @@ export class BrowserChatAdapter implements HarnessAdapter {
     return session.id === id ? session : { ...session, id };
   }
 
-  private updateInventory(chats: readonly BrowserChat[]): void {
+  private updateInventory(chats: readonly BrowserChat[], prewarm = true): void {
     this.inventory.clear();
     for (const chat of chats) this.inventory.set(chat.id, chat);
     this.inventoryAt = Date.now();
     this.historyCache.setAccountScope(this.driver.getAccountScope?.());
-    this.historyCache.prewarm(chats.map(chat => ({ id: chat.id, revision: chat.updatedAtSemantics === "remote-update-time" ? chat.updatedAt : undefined })));
+    if (prewarm) this.historyCache.prewarm(chats.map(chat => ({ id: chat.id, revision: chat.updatedAtSemantics === "remote-update-time" ? chat.updatedAt : undefined })));
+  }
+
+  async listBackgroundSessions(): Promise<AgentSession[]> {
+    if (this.provider.id !== "chatgpt" || !this.driver.listObservedChats) return [];
+    const chats = await this.driver.listObservedChats();
+    this.updateInventory(chats, false);
+    return chats.map(chat => this.toSession(chat));
   }
 
   async init(): Promise<void> {
+    if (this.provider.id === "chatgpt") {
+      await this.listBackgroundSessions();
+      return;
+    }
     // The startup scan is a request to the site like any other: a paused
     // harness starts with an empty inventory and serves nothing until the
     // owner resumes it — unless its driver answers passively (the ChatGPT
@@ -227,6 +244,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
 
   async listSessions(options: ListSessionsOptions = {}): Promise<AgentSession[]> {
     void options;
+    if (this.provider.id === "chatgpt") return this.listBackgroundSessions();
     const polling = liveHarnessPollingEnabled(this.pollingHarness);
     // A passive driver (the ChatGPT intercept hook) keeps the inventory
     // fresh without one request of the herder's own, so its stale-while-
@@ -252,6 +270,9 @@ export class BrowserChatAdapter implements HarnessAdapter {
   async findNamedSessions(name: string, cwd: string): Promise<AgentSession[]> {
     void cwd;
     const normalized = name.trim();
+    if (this.provider.id === "chatgpt") {
+      return (await this.listBackgroundSessions()).filter(session => session.title.trim() === normalized);
+    }
     // A paused harness answers from the cached inventory: a name lookup is
     // not worth one more request to a site the owner paused.
     const chats = liveHarnessPollingEnabled(this.pollingHarness)
@@ -338,6 +359,15 @@ export class BrowserChatAdapter implements HarnessAdapter {
     if (this.historyCache.available) return this.historyCache.messages(native, limit);
     const live = await this.driver.getMessages(native);
     return live?.slice(-Math.max(1, limit)) ?? null;
+  }
+
+  async getBackgroundMessages(id: string): Promise<SessionMessageView[] | null> {
+    if (this.provider.id !== "chatgpt" || !this.driver.getObservedMessages) return null;
+    return this.driver.getObservedMessages(this.nativeId(id));
+  }
+
+  async requestBackgroundVisit(id: string): Promise<void> {
+    if (this.provider.id === "chatgpt") await this.driver.visitBackgroundChat?.(this.nativeId(id));
   }
 
   async getRawTranscript(id: string, signal?: AbortSignal): Promise<RawTranscriptExport | null> {

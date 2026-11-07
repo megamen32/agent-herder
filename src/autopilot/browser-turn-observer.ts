@@ -196,10 +196,13 @@ export class BrowserTurnAutopilotObserver {
       // paused.
       this.announcePause(harness, !liveHarnessPollingEnabled(harness));
       const adapter = this.options.adapters.get(harness);
-      if (!adapter?.listSessions) continue;
+      if (!adapter || (harness !== "chatgpt" && !adapter.listSessions)) continue;
       let sessions: AgentSession[];
       try {
-        sessions = await adapter.listSessions();
+        if (harness === "chatgpt") {
+          const passive = adapter as HarnessAdapter & { listBackgroundSessions?: () => Promise<AgentSession[]> };
+          sessions = await passive.listBackgroundSessions?.() ?? [];
+        } else sessions = await adapter.listSessions();
       } catch (error) {
         this.options.onError?.(`${harness} browser inventory failed: ${error instanceof Error ? error.message : String(error)}`);
         continue;
@@ -225,6 +228,14 @@ export class BrowserTurnAutopilotObserver {
 
     // One remote turn finished: the observed running→idle transition.
     if (previous?.running && !running) {
+      if (harness === "chatgpt") {
+        // Keep the durable running marker until passive history is available.
+        // Otherwise a cooldown or a closed tab permanently loses this turn.
+        if (!await this.submitStop(harness, adapter, session)) return;
+        this.tracked.set(key, { running, activity: session.lastActivity, runningSince: 0 });
+        this.saveTurns();
+        return;
+      }
       this.tracked.set(key, { running, activity: session.lastActivity, runningSince: 0 });
       this.saveTurns();
       await this.submitStop(harness, adapter, session);
@@ -247,7 +258,7 @@ export class BrowserTurnAutopilotObserver {
     // driver-side refresh per staleRefreshMs re-reads the turn state from
     // the provider's own API, so the next tick observes the real state and
     // the finished turn still reaches the Stop consumer.
-    if (running && this.staleRefreshMs > 0 && liveHarnessPollingEnabled(harness)
+    if (harness !== "chatgpt" && running && this.staleRefreshMs > 0 && liveHarnessPollingEnabled(harness)
       && Date.now() - state.runningSince > this.staleRefreshMs
       && Date.now() - (state.lastStaleRefreshAt ?? 0) > this.staleRefreshMs) {
       state.lastStaleRefreshAt = Date.now();
@@ -280,36 +291,54 @@ export class BrowserTurnAutopilotObserver {
     if (wasRunning !== running) this.saveTurns();
   }
 
-  private async submitStop(harness: string, adapter: HarnessAdapter, session: AgentSession): Promise<void> {
-    if (typeof session.cwd !== "string" || !session.cwd.startsWith("/")) return;
+  private async submitStop(harness: string, adapter: HarnessAdapter, session: AgentSession): Promise<boolean> {
+    if (typeof session.cwd !== "string" || !session.cwd.startsWith("/")) return true;
     // A finished remote turn changed the conversation history. Drop the
     // adapter's cached copy for this chat BEFORE fingerprinting, so the
     // fingerprint of the new turn differs from the already-judged one even
     // when the prewarm pipeline is paused and no revision signal arrives.
-    try { await adapter.invalidateHistory?.(session.id); } catch { /* cache invalidation must never block the Stop submission */ }
+    if (harness !== "chatgpt") {
+      try { await adapter.invalidateHistory?.(session.id); } catch { /* cache invalidation must never block the Stop submission */ }
+    }
     // The messages of the finished turn, read once: its fingerprint and its
     // chat commands come from the same read.
     let messages: ReadonlyArray<{ id?: string; role: string; text?: string }> | undefined;
     try {
-      messages = (await adapter.getSessionMessages?.(session.id, 10)) ?? undefined;
+      if (harness === "chatgpt") {
+        const passive = adapter as HarnessAdapter & { getBackgroundMessages?: (id:string) => Promise<ReadonlyArray<{id?:string;role:string;text?:string}> | null> };
+        messages = (await passive.getBackgroundMessages?.(session.id)) ?? undefined;
+      } else messages = (await adapter.getSessionMessages?.(session.id, 10)) ?? undefined;
     } catch (error) {
       this.options.onError?.(`${harness} turn read failed for ${session.id}: ${error instanceof Error ? error.message : String(error)}`);
-      return;
+      return false;
     }
-    if (!messages || !messages.length) return;
+    if (!messages || !messages.length) {
+      if (harness === "chatgpt") {
+        const target = { harness, sessionId: session.id, cwd: session.cwd } as AutopilotRunnerInput;
+        const passive = adapter as HarnessAdapter & { requestBackgroundVisit?: (id: string) => Promise<unknown> };
+        try {
+          if (!await this.options.held(harness, session.id) && await this.isEnabled(target)) {
+            await passive.requestBackgroundVisit?.(session.id);
+          }
+        } catch (error) {
+          this.options.onError?.(`ChatGPT background visit failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      return false;
+    }
     // The owner may talk to the herder from the chat itself: a turn whose
     // newest user message is a chat command (/pilot) is that command
     // exchange, not work. The command runs, its answer lands in the chat,
     // and the Stop of this turn is skipped — there is nothing to judge.
     if (this.options.handleTurnCommands) {
       try {
-        if (await this.options.handleTurnCommands(harness, session.id, session.cwd, messages)) return;
+        if (await this.options.handleTurnCommands(harness, session.id, session.cwd, messages)) return true;
       } catch (error) {
         this.options.onError?.(`chat command handling failed for ${harness}/${session.id}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
     const fingerprint = this.fingerprintOf(messages);
-    if (!fingerprint) return;
+    if (!fingerprint) return false;
     const input: AutopilotRunnerInput = {
       harness: harness as AutopilotRunnerInput["harness"],
       sessionId: session.id,
@@ -317,11 +346,13 @@ export class BrowserTurnAutopilotObserver {
       turnId: `browser:${fingerprint}`,
     };
     try {
-      if (await this.options.held(harness, session.id)) return;
-      if (!await this.isEnabled(input)) return;
+      if (await this.options.held(harness, session.id)) return true;
+      if (!await this.isEnabled(input)) return true;
       this.options.submit(input);
+      return true;
     } catch (error) {
       this.options.onError?.(`Autopilot browser Stop submission failed for ${harness}/${session.id}: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
     }
   }
 

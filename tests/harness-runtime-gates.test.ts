@@ -125,6 +125,7 @@ describe("the browser chat adapter obeys the runtime switch", () => {
     return {
       driver: {
         listChats: vi.fn(async () => chats),
+        listObservedChats: vi.fn(async () => chats),
         getMessages: vi.fn(async () => null),
         getAccountScope: () => "b".repeat(64),
       } as unknown as BrowserChatDriver,
@@ -136,24 +137,26 @@ describe("the browser chat adapter obeys the runtime switch", () => {
     return new BrowserChatAdapter(driver, { id: "chatgpt", name: "ChatGPT test", harness: "chatgpt" as HarnessType, cwd: "/tmp/w" });
   }
 
-  it("scans the site at startup while running and serves the cache while paused", async () => {
+  it("starts from passive inventory and serves the cache while paused", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const built = chatDriver();
     built.listChats = built.driver.listChats as unknown as ReturnType<typeof vi.fn>;
     const adapter = adapterOf(built.driver);
     await adapter.init();
-    expect(built.listChats).toHaveBeenCalledTimes(1);
+    expect(built.listChats).not.toHaveBeenCalled();
+    expect(built.driver.listObservedChats).toHaveBeenCalledTimes(1);
     // The cached inventory ages past its TTL while the harness is paused: a
     // paused harness serves what it has and makes no list request.
     await pauseHarness("chatgpt");
     vi.setSystemTime(Date.now() + 120_000);
     const sessions = await adapter.listSessions();
     expect(sessions).toHaveLength(1);
-    expect(built.listChats).toHaveBeenCalledTimes(1);
+    expect(built.listChats).not.toHaveBeenCalled();
   });
 
   it("starts with an empty inventory and scans nothing while paused", async () => {
     const built = chatDriver();
+    delete built.driver.listObservedChats;
     built.listChats = built.driver.listChats as unknown as ReturnType<typeof vi.fn>;
     await pauseHarness("chatgpt");
     const adapter = adapterOf(built.driver);
@@ -174,6 +177,7 @@ describe("the browser chat adapter obeys the runtime switch", () => {
     const listChats = vi.fn(async () => chats);
     const driver = {
       listChats,
+      listObservedChats: listChats,
       getMessages: async () => null,
       getAccountScope: () => "b".repeat(64),
       passiveInventory: true,

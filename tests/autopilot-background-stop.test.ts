@@ -23,6 +23,18 @@ async function fixture() {
 }
 async function waitUntil(fn:()=>boolean) { const end=Date.now()+3000; while(!fn()){if(Date.now()>end)throw Error("unfinished job");await new Promise(r=>setTimeout(r,5));} }
 describe("background Stop delivery",()=>{
+ it("rechecks ChatGPT using passive history without a direct background fetch",async()=>{
+  const f=await fixture();
+  const messages=[{id:"u1",role:"user",text:"Почини",parts:[{type:"text",text:"Почини"}]},{id:"a1",role:"assistant",text:event.lastAssistantMessage,parts:[{type:"text",text:event.lastAssistantMessage}]}];
+  const passive=vi.fn(async()=>messages);
+  const network=vi.fn(async()=>{throw Error("background network read forbidden")});
+  const adapter={...f.adapter,getBackgroundMessages:passive,getSessionMessages:network};
+  const consumer=new BackgroundAutopilotStop({jobs:f.jobs,adapters:new Map([["chatgpt",adapter as any]]),evaluate:f.evaluate,deliver:f.deliver,held:async()=>false,allowed:async()=>true});
+  const job=consumer.submit({...event,harness:"chatgpt"});
+  await waitUntil(()=>f.evaluate.mock.calls.length===1);
+  f.finish({decision:"continue",next_goal:"Проверь"});await waitUntil(()=>f.jobs.get(job.id)?.state==="completed");
+  expect(passive).toHaveBeenCalledTimes(2);expect(network).not.toHaveBeenCalled();expect(f.deliver).toHaveBeenCalledTimes(1);
+ });
  it("HTTP returns202 before the judge finishes, then continues the same SID once",async()=>{
   const f=await fixture();const server=createWebServer({adapters:new Map(),converter:{} as any,jobs:f.jobs,backgroundAutopilotStop:f.consumer});
   await new Promise<void>(r=>server.listen(0,"127.0.0.1",r));resources.push(()=>new Promise<void>((r,j)=>server.close(e=>e?j(e):r())));

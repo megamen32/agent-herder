@@ -130,7 +130,12 @@ export class BackgroundAutopilotStop {
       ? (await adapter.listSessions({ cwd: input.cwd })).find(s => s.id === input.sessionId)
       : await adapter.getSession(input.sessionId);
     if (!session || session.id !== input.sessionId || resolve(session.cwd) !== resolve(input.cwd) || session.needsPermission) return null;
-    const messages = await adapter.getSessionMessages?.(session.id, 50);
+    // Browser observations are background work: never turn the safety
+    // recheck into a direct ChatGPT history request.
+    const passive = adapter as HarnessAdapter & { getBackgroundMessages?: (id: string) => Promise<import("../types/index.js").SessionMessageView[] | null> };
+    const messages = input.harness === "chatgpt"
+      ? await passive.getBackgroundMessages?.(session.id)
+      : await adapter.getSessionMessages?.(session.id, 50);
     if (!messages || (!messages.length && !await autopilotGoalArmed(input))) return null;
     const fingerprint = createHash("sha256").update(JSON.stringify(messages.map(m => [m.id, m.role, m.text, m.parts]))).digest("hex");
     let nativeReportObservation = observeNativeReport(input, messages, fingerprint);
