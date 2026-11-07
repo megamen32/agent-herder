@@ -9,8 +9,10 @@ from ahap_opencode_stand import (
     completed_message_pair,
     detect_opencode_api_family,
     message_texts,
+    native_api_read,
     native_session_for,
     parse_fresh_seed,
+    probe_native_tools,
     require_runner_route_compat,
     rpc_tool,
     validate_stand_isolation,
@@ -28,6 +30,24 @@ class FakeRpc:
 
 
 class AhapOpenCodeStandTest(unittest.TestCase):
+    def test_preflight_uses_inline_metadata_without_legacy_initialize(self):
+        class Client:
+            def __init__(self):
+                self.calls = []
+
+            def request(self, method, params):
+                self.calls.append((method, params))
+                return {"tools": [{"name": "create"}, {"name": "session"}]}
+
+        client = Client()
+        names = probe_native_tools(client)
+        self.assertEqual(names, ["create", "session"])
+        self.assertEqual([method for method, _ in client.calls], ["tools/list"])
+        meta = client.calls[0][1]["_meta"]
+        self.assertEqual(meta["io.modelcontextprotocol/protocolVersion"], "2026-07-28")
+        self.assertIn("io.modelcontextprotocol/tasks",
+                      meta["io.modelcontextprotocol/clientCapabilities"]["extensions"])
+
     def test_mcp_create_uses_task_capability_and_exact_tool_arguments(self):
         client = FakeRpc()
         args = {"action": "create", "instance_ref": "opencode-fixture",
@@ -70,6 +90,22 @@ class AhapOpenCodeStandTest(unittest.TestCase):
         with patch("ahap_opencode_stand.native_api_read", side_effect=[
                 (503, None), (200, {"model": "fixture"})]), patch("ahap_opencode_stand.time.sleep"):
             self.assertEqual(detect_opencode_api_family("http://127.0.0.1:4100"), "api-session")
+
+    def test_native_read_accepts_empty_or_non_json_success_body(self):
+        class Response:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def read(self, _limit):
+                return b""
+
+        with patch("ahap_opencode_stand.urllib.request.urlopen", return_value=Response()):
+            self.assertEqual(native_api_read("http://127.0.0.1:4100", "/api/health"), (200, None))
 
     def test_owner_profile_never_falls_back_to_unprotected_provider_route(self):
         with patch("ahap_opencode_stand.native_api_read", return_value=(200, {"model": "fixture"})):

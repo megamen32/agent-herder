@@ -31,6 +31,27 @@ from opencode_receipt import complete_native_readback, summarize_native_messages
 ANSWER = "HERDER_TEST_MODEL_OK"
 RPC_TIMEOUT = 15
 TASK_TIMEOUT = 75
+MCP_PROTOCOL_VERSION = "2026-07-28"
+
+
+def inline_client_meta():
+    return {"io.modelcontextprotocol/protocolVersion": MCP_PROTOCOL_VERSION,
+            "io.modelcontextprotocol/clientCapabilities": {
+                "extensions": {"io.modelcontextprotocol/tasks": {}}},
+            "io.modelcontextprotocol/clientInfo": {"name": "ahap-opencode-fixture", "version": "1"}}
+
+
+def probe_native_tools(client):
+    result = client.request("tools/list", {"_meta": inline_client_meta()})
+    tools = result.get("tools") if isinstance(result, dict) else None
+    if not isinstance(tools, list):
+        raise RuntimeError("native MCP tools/list returned no tool catalogue")
+    names = [entry.get("name") for entry in tools if isinstance(entry, dict)]
+    if len(names) != len(tools) or any(not isinstance(name, str) or not name for name in names):
+        raise RuntimeError("native MCP tools/list returned malformed tool names")
+    if len(set(names)) != len(names):
+        raise RuntimeError("native MCP tools/list returned duplicate tool names")
+    return names
 
 
 class RpcProcess:
@@ -75,15 +96,8 @@ class RpcProcess:
                 raise RuntimeError(f"native core closed stdout during {method}: {diagnostic[-2000:]}")
             self.buffer += chunk.decode("utf-8")
 
-    def initialize(self):
-        result = self.request("initialize", {
-            "protocolVersion": "2026-07-28", "capabilities": {},
-            "clientInfo": {"name": "ahap-opencode-fixture", "version": "1"},
-        })
-        self.process.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized",
-                                             "params": {}}) + "\n")
-        self.process.stdin.flush()
-        return result
+    def preflight(self):
+        return probe_native_tools(self)
 
     def close(self):
         if self.process.poll() is None:
@@ -100,18 +114,14 @@ class RpcProcess:
 
 
 def rpc_tool(client, name, arguments, tasks=True):
-    meta = {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
-            "io.modelcontextprotocol/clientCapabilities": {
-                "extensions": {"io.modelcontextprotocol/tasks": {}} if tasks else {}},
-            "io.modelcontextprotocol/clientInfo": {"name": "ahap-opencode-fixture", "version": "1"}}
+    meta = inline_client_meta()
+    if not tasks:
+        meta["io.modelcontextprotocol/clientCapabilities"]["extensions"] = {}
     return client.request("tools/call", {"_meta": meta, "name": name, "arguments": arguments})
 
 
 def task_get(client, task_id):
-    meta = {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
-            "io.modelcontextprotocol/clientCapabilities": {"extensions": {"io.modelcontextprotocol/tasks": {}}},
-            "io.modelcontextprotocol/clientInfo": {"name": "ahap-opencode-fixture", "version": "1"}}
-    return client.request("tasks/get", {"_meta": meta, "taskId": task_id})
+    return client.request("tasks/get", {"_meta": inline_client_meta(), "taskId": task_id})
 
 
 def wait_task(client, task_id, timeout=TASK_TIMEOUT):
@@ -171,7 +181,12 @@ def native_api_read(root, path, password="fixture-only"):
     request = urllib.request.Request(root + path, headers={"Authorization": "Basic " + authorization})
     try:
         with urllib.request.urlopen(request, timeout=4) as response:
-            return response.status, json.loads(response.read(2_000_000))
+            raw = response.read(2_000_000)
+            try:
+                body = json.loads(raw) if raw else None
+            except (ValueError, UnicodeError):
+                body = None
+            return response.status, body
     except urllib.error.HTTPError as error:
         body = error.read(4096)
         try:
@@ -519,7 +534,29 @@ def run_case(args):
                          }})
         persist_evidence(evidence_path, evidence)
         core = RpcProcess(args.core, profile_path, env)
-        initialized = core.initialize()
+        available_tools = core.preflight()
+        if args.preflight_only:
+            with urllib.request.urlopen(model_origin + "/_stats", timeout=3) as response:
+                requests_after_init = json.loads(response.read(4096))["requests"]
+            requests_during_init = requests_after_init - model_requests_before
+            if requests_during_init != 0:
+                raise RuntimeError(f"read-only preflight unexpectedly called the fixture model: {requests_during_init}")
+            evidence.update({"phase": "core_preflight_complete", "result": "PREMUTATION_READY",
+                             "mcp_inline_ready": True, "native_tools": available_tools,
+                             "native_mutations": 0,
+                             "model_requests_preflight": requests_during_init})
+            persist_evidence(evidence_path, evidence)
+            print(json.dumps({"status": "PREFLIGHT_READY", "harness": "opencode",
+                              "api_family": api_family, "mcp_inline_ready": True,
+                              "native_tools": available_tools,
+                              "native_mutations": 0, "model_requests_preflight": requests_during_init,
+                              "opencode_sha256": evidence["opencode_sha256"],
+                              "read_only_http_probes": probe_shapes,
+                              "namespace_euid": evidence["namespace_euid"],
+                              "namespace_paths": evidence["namespace_paths"],
+                              "profile": str(profile_path), "opencode_url": opencode_url},
+                             sort_keys=True), flush=True)
+            return
         marker = "AHAP_OPENCODE_FIXTURE_" + uuid.uuid4().hex
         request_key = "ahap-opencode-" + uuid.uuid4().hex
         evidence.update({"phase": "create_submitted", "input": marker, "request_key": request_key,
@@ -572,7 +609,7 @@ def run_case(args):
         core.close()
         core = None
         reopened = RpcProcess(args.core, profile_path, env)
-        reopened.initialize()
+        reopened.preflight()
         reopened_task = wait_task(reopened, task_id)
         after_reopen = rpc_tool(reopened, "session", {"action": "messages", "session_ref": session})
         reopened_messages = message_texts(after_reopen)
@@ -591,7 +628,7 @@ def run_case(args):
                          "reopened_task_status": reopened_task.get("status"),
                          "model_requests": requests, "messages": reopened_messages})
         persist_evidence(evidence_path, evidence)
-        print(json.dumps({"status": "PASS", "harness": "opencode", "initialized": initialized,
+        print(json.dumps({"status": "PASS", "harness": "opencode", "native_tools": available_tools,
             "api_family": api_family,
             "task_id": task_id, "task_status": task.get("status"), "session_ref": session,
             "input": marker, "delivery_receipt": receipt, "native_receipt_id": receipt_id,
@@ -630,6 +667,8 @@ def main(argv=None):
     parser.add_argument("--opencode", required=True, help="real OpenCode executable")
     parser.add_argument("--node", default="/usr/bin/node", help="Node executable recorded in owner profile")
     parser.add_argument("--bootstrap", required=True, help="fresh authority bootstrap built against the owner SDK fixture library")
+    parser.add_argument("--preflight-only", action="store_true",
+                        help="stop after read-only inline MCP tools/list; do not call create or send")
     parser.add_argument("--instance", default="opencode-fixture")
     args = parser.parse_args(argv)
     for name in ("core", "runner", "opencode", "node", "bootstrap"):
