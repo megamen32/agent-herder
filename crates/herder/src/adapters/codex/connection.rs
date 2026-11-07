@@ -82,6 +82,11 @@ pub enum RpcError {
         request_id: u64,
         source: io::Error,
     },
+    /// A one-way notification write can be partial; do not replay blindly.
+    NotificationWrite {
+        method: String,
+        source: io::Error,
+    },
     MalformedResponse {
         request_id: u64,
         reason: String,
@@ -115,6 +120,10 @@ impl std::fmt::Display for RpcError {
             Self::Write { request_id, source } => write!(
                 f,
                 "could not finish writing Codex request {request_id}; outcome may be unknown: {source}"
+            ),
+            Self::NotificationWrite { method, source } => write!(
+                f,
+                "could not finish writing Codex notification {method}; outcome may be unknown: {source}"
             ),
             Self::MalformedResponse { request_id, reason } => write!(
                 f,
@@ -229,6 +238,27 @@ impl CodexConnection {
 
     pub fn process_id(&self) -> u32 {
         self.child.id()
+    }
+
+    /// Send a one-way app-server notification such as `initialized`.
+    pub fn notify(&mut self, method: &str, params: Value) -> Result<(), RpcError> {
+        if self.child.try_wait().map_err(RpcError::Process)?.is_some() {
+            return Err(RpcError::NotRunning);
+        }
+        let mut notification = serde_json::to_vec(&json!({
+            "method": method,
+            "params": params,
+        }))
+        .map_err(RpcError::Encode)?;
+        notification.push(b'\n');
+        let stdin = self.stdin.as_mut().ok_or(RpcError::NotRunning)?;
+        stdin
+            .write_all(&notification)
+            .and_then(|()| stdin.flush())
+            .map_err(|source| RpcError::NotificationWrite {
+                method: method.to_owned(),
+                source,
+            })
     }
 
     /// Send one request and return only the response with this request's ID.
