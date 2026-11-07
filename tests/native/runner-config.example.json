@@ -1,0 +1,10 @@
+{
+  "python": "/absolute/path/to/python3",
+  "node": "/absolute/path/to/node",
+  "bootstrap": "/absolute/path/to/ahap-owner-bootstrap",
+  "stand": "/absolute/path/to/tests/native/ahap_opencode_stand.py",
+  "launcher": "/absolute/path/to/tests/native/launch.py",
+  "artifact_root": "/absolute/path/to/artifact-release",
+  "manifest": "/absolute/path/to/artifact-release/manifest.json",
+  "capabilities": {"os": "linux", "arch": "x86_64", "backend": "linux-netns-bwrap"}
+}

@@ -52,8 +52,10 @@ def sandbox_command(command, scratch, extra_ro=()):
     exposed = {Path(__file__).resolve().parent}
     for item in extra_ro:
         path = Path(item)
-        if not path.is_absolute() or not path.is_dir() or path.is_symlink():
-            raise ValueError('explicit read-only mount must be an existing absolute directory')
+        if not path.is_absolute() or path.is_symlink() or not (path.is_file() or path.is_dir()):
+            raise ValueError('explicit read-only mount must be an existing absolute file or directory')
+        if path in (Path('/'), Path('/tmp'), Path.home()):
+            raise ValueError('explicit read-only mount is too broad')
         exposed.add(path)
     links = {}
     # Node-based installed harnesses may live in a user's npm directory.
@@ -151,6 +153,12 @@ def main():
             print(f'candidate isolation unavailable: {error}', file=sys.stderr)
             return 2
         command = command[2:]
+    while command[:1] == ['--ro-bind']:
+        if len(command) < 2:
+            print('read-only mount path missing', file=sys.stderr)
+            return 2
+        extra_ro.append(Path(command[1]))
+        command = command[2:]
     if command and command[0] == "--":
         command = command[1:]
     if not command:
@@ -179,7 +187,7 @@ def main():
         try:
             model_cmd = sandbox_command([sys.executable, str(Path(__file__).with_name('test-model-server.py')), '--scenario', scenario], root)
             client_cmd = sandbox_command(command, root, extra_ro)
-        except RuntimeError as error:
+        except (RuntimeError, ValueError) as error:
             print(str(error), file=sys.stderr)
             return 2
         server = subprocess.Popen(
