@@ -63,6 +63,37 @@ describe("ChatGPT AHAP browser runner", () => {
     expect(replies[1].error).toBeDefined();
   });
 
+  it("does not return a read result if the adapter scope changes during the call", async () => {
+    let currentScope = scope;
+    const session = { id: "chatgpt::native%2Fid", harness: "chatgpt", name: "wrong account", cwd: "/tmp", status: "idle" } as never;
+    const replies = await run({
+      getAccountScope: () => currentScope,
+      async init() {},
+      async listSessions() { currentScope = "b".repeat(64); return [session]; },
+    }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" },
+      { jsonrpc: "2.0", id: 3, method: "listSessions" },
+      { jsonrpc: "2.0", id: 4, method: "shutdown" },
+    ]);
+    expect(replies[2].error).toBeDefined();
+    expect(replies[2].result).toBeUndefined();
+  });
+
+  it("checks the current provider scope before consulting cached session inventory", async () => {
+    let currentScope = scope;
+    let listed = false;
+    const replies = await run({
+      getAccountScope: () => currentScope,
+      async init() {},
+      async verifyPinnedAccountScope() { currentScope = "b".repeat(64); },
+      async listSessions() { listed = true; return []; },
+    }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" },
+      { jsonrpc: "2.0", id: 3, method: "listSessions" },
+      { jsonrpc: "2.0", id: 4, method: "shutdown" },
+    ]);
+    expect(replies[2].error).toBeDefined();
+    expect(listed).toBe(false);
+  });
+
   it("preserves an ambiguous send as UNKNOWN and never retries", async () => {
     let sends = 0;
     const replies = await run({

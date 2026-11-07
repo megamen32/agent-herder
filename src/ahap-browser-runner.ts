@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
-import { BrowserChatAdapter, type BrowserChatDriver } from "./adapters/browser-chat.js";
+import { BrowserChatAdapter } from "./adapters/browser-chat.js";
 import { ChatGptMacCdpDriver } from "./adapters/chatgpt-mac-cdp-driver.js";
 import { DirectCdpPageTools } from "./adapters/direct-cdp-page-tools.js";
 
@@ -9,7 +9,7 @@ type RpcId = string | number;
 type RpcRequest = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
 type BrowserAdapterPort = Pick<BrowserChatAdapter,
   "init" | "listSessions" | "getSession" | "getSessionMessages" | "sendMessage" | "createSession">
-  & { getAccountScope(): string | undefined; close?(): void };
+  & { getAccountScope(): string | undefined; verifyPinnedAccountScope?(): Promise<void>; close?(): void };
 
 const METHODS = ["init", "listSessions", "getSession", "getSessionMessages", "sendMessage", "createSession"];
 const CONTROL_CAPABILITIES = {
@@ -41,6 +41,11 @@ export async function serveBrowserChatAhap(
     if (!accountVerified || adapter.getAccountScope() !== expectedAccountScope) {
       throw new Error("pinned ChatGPT account scope mismatch");
     }
+  };
+  const assertCurrentAccount = async () => {
+    assertAccount();
+    await adapter.verifyPinnedAccountScope?.();
+    assertAccount();
   };
 
   for await (const line of lines) {
@@ -91,22 +96,25 @@ export async function serveBrowserChatAhap(
           result = null;
           break;
         case "listSessions":
-          assertAccount();
+          await assertCurrentAccount();
           result = await adapter.listSessions(params.options as never);
+          await assertCurrentAccount();
           break;
         case "getSession":
-          assertAccount();
+          await assertCurrentAccount();
           if (typeof params.id !== "string" || !params.id.trim()) { error(id, -32602, "getSession requires session id"); continue; }
           result = await adapter.getSession(params.id);
+          await assertCurrentAccount();
           break;
         case "getSessionMessages":
-          assertAccount();
+          await assertCurrentAccount();
           if (typeof params.id !== "string" || !params.id.trim()
             || (params.limit !== undefined && (!Number.isSafeInteger(params.limit) || Number(params.limit) < 1 || Number(params.limit) > 200))) {
             error(id, -32602, "getSessionMessages requires session id and a limit from 1 to 200");
             continue;
           }
           result = await adapter.getSessionMessages(params.id, params.limit as number | undefined);
+          await assertCurrentAccount();
           break;
         case "sendMessage": {
           assertAccount();
@@ -160,9 +168,13 @@ async function makeConfiguredAdapter(): Promise<BrowserAdapterPort> {
     throw new Error("Pinned ChatGPT CDP endpoint, context, target and account scope are required");
   }
   const pageTools = new DirectCdpPageTools({ endpoint, contextId, targetId });
-  const driver: BrowserChatDriver = new ChatGptMacCdpDriver(pageTools, 1, 0, expectedScope);
+  const driver = new ChatGptMacCdpDriver(pageTools, 1, 0, expectedScope);
   const adapter = new BrowserChatAdapter(driver, { id: "chatgpt", name: "ChatGPT browser", harness: "chatgpt", cwd: process.cwd() }, process.cwd(), true);
-  return Object.assign(adapter, { getAccountScope: () => driver.getAccountScope?.(), close: () => pageTools.close() });
+  return Object.assign(adapter, {
+    getAccountScope: () => driver.getAccountScope?.(),
+    verifyPinnedAccountScope: () => driver.verifyPinnedAccountScope(),
+    close: () => pageTools.close(),
+  });
 }
 
 async function main(): Promise<void> {

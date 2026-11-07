@@ -361,8 +361,22 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
 
   private requirePinnedAccountScope(scope: string): void {
     if (this.expectedAccountScope && scope !== this.expectedAccountScope) {
-      throw new Error("ChatGPT pinned account scope mismatch; no mutation performed");
+      throw new Error("ChatGPT pinned account scope mismatch; no read data returned");
     }
+  }
+
+  private async verifyCurrentPinnedAccountScope(pageId?: number): Promise<void> {
+    if (!this.expectedAccountScope) return;
+    const page = this.pinnedPageId === undefined
+      ? (pageId === undefined ? await this.page() : { id: pageId } as Page)
+      : parseChatGptPages(await this.tools.call("list_pages")).find(candidate => candidate.id === this.pinnedPageId);
+    if (!page) throw new Error("Pinned ChatGPT page unavailable; no read data returned");
+    const scope = await verifyNewChatAccountScope(this.tools, "chatgpt", page.id);
+    this.requirePinnedAccountScope(scope);
+  }
+
+  async verifyPinnedAccountScope(): Promise<void> {
+    await this.verifyCurrentPinnedAccountScope();
   }
 
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {
@@ -526,6 +540,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       }>(await this.tools.call("evaluate_script", { pageId: page.id, function: CHATGPT_LIST_API_SCRIPT }));
       this.requestTrace.ingestBrowserHttp(data.trace);
       this.feedBackoff(data.trace);
+      if (data.scope && /^[a-f0-9]{64}$/.test(data.scope)) this.requirePinnedAccountScope(data.scope);
       if (data?.scope && /^[a-f0-9]{64}$/.test(data.scope)) this.accountScope = data.scope;
       if (data.scope && /^[a-f0-9]{64}$/.test(data.scope) && Array.isArray(data.chats)) {
         this.accountScope = data.scope;
@@ -557,7 +572,10 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
           || /^list_http_[1-5][0-9]{2}$/.test(error) ? error : "unknown_error";
         console.warn("[chatgpt] list API " + classification + "; falling back to sidebar DOM");
       }
-    } catch { /* The site may change its private API; retain the DOM fallback. */ }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("pinned account scope mismatch")) throw error;
+      /* The site may change its private API; retain the DOM fallback. */
+    }
     return this.listFromSidebarDom(s);
   }
 
@@ -571,6 +589,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
         chats?: Array<{ id: string; title: string; updatedAt?: number; asyncStatus?: number }>;
       }>(await this.tools.call("evaluate_script", { pageId, function: CHATGPT_LIST_API_PASSIVE_SCRIPT }));
       const scope = (data.scope && /^[a-f0-9]{64}$/.test(data.scope) ? data.scope : undefined) ?? this.accountScope;
+      if (this.expectedAccountScope && scope !== this.expectedAccountScope) this.requirePinnedAccountScope(scope ?? "");
       if (scope) {
         this.inventoryCache.setAccountScope(scope);
         if (!this.inventoryLoaded) { await this.inventoryCache.load(); this.inventoryLoaded = true; }
@@ -661,7 +680,9 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
 
   async listChats(): Promise<readonly BrowserChat[]> {
     return this.exclusive(async () => {
+      await this.verifyCurrentPinnedAccountScope();
       const native = await this.listUnlocked();
+      await this.verifyCurrentPinnedAccountScope();
       await this.drafts.useScope(this.accountScope);
       return this.drafts.merge(native);
     });
@@ -695,17 +716,25 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
 
   async getChat(id: string): Promise<BrowserChat | null> {
     return this.exclusive(async () => {
+      await this.verifyCurrentPinnedAccountScope();
       if (id.startsWith("draft:")) {
         // A driver restart clears the in-memory store. Restore only the
         // currently verified account's drafts before resolving an exact ID.
         const ownerPage = await this.page();
         this.accountScope = await verifyNewChatAccountScope(this.tools, "chatgpt", ownerPage.id);
+        this.requirePinnedAccountScope(this.accountScope);
         await this.drafts.useScope(this.accountScope);
       }
       const draft = this.drafts.get(id);
-      if (draft) return this.drafts.asChat(draft, draft.remoteId ? this.cache.get(draft.remoteId) : undefined);
+      if (draft) {
+        const result = this.drafts.asChat(draft, draft.remoteId ? this.cache.get(draft.remoteId) : undefined);
+        await this.verifyCurrentPinnedAccountScope();
+        return result;
+      }
       if (!NATIVE_CHAT_ID.test(id)) return null;
-      return (await this.listUnlocked()).find(c => c.id === id) ?? null;
+      const result = (await this.listUnlocked()).find(c => c.id === id) ?? null;
+      await this.verifyCurrentPinnedAccountScope();
+      return result;
     });
   }
 
@@ -795,11 +824,13 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     }
     if (!NATIVE_CHAT_ID.test(chatId)) return null;
     const page = await this.page();
+    await this.verifyCurrentPinnedAccountScope(page.id);
     const result = parseChromeEvaluation<{
       error?: string; trace?: unknown; messages?: Array<{ id: string; role: string; text: string;
         timestamp?: string; model?: string }>;
     }>(await this.tools.call("evaluate_script",
       { pageId: page.id, function: chatgptMessagesApiScript(chatId) }));
+    await this.verifyCurrentPinnedAccountScope(page.id);
     this.requestTrace.ingestBrowserHttp(result.trace);
     this.feedBackoff(result.trace);
     if (result.error || !Array.isArray(result.messages)) {

@@ -34,6 +34,60 @@ class BrowserFixture implements ChromePageTools {
   }
 }
 describe("ChatGPT on existing Mac mini CDP", () => {
+  it("rejects list data from an account that differs from the pinned account", async () => {
+    const actions: string[] = [];
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      actions.push(name);
+      if (name === "list_pages") return `7: ChatGPT (https://chatgpt.com/c/${ID})`;
+      if (name === "evaluate_script" && args.function === CHATGPT_CREATE_SCOPE_SCRIPT) return json({ scope: "a".repeat(64) });
+      if (name === "evaluate_script" && args.function === CHATGPT_MAC_SNAPSHOT) return json({
+        origin: "https://chatgpt.com", path: "/c/" + ID, authenticated: true,
+        composer: true, phase: "idle", draftPresent: false, chats: [],
+      });
+      if (name === "evaluate_script" && args.function === CHATGPT_LIST_API_SCRIPT) return json({
+        scope: "b".repeat(64), chats: [{ id: ID, title: "Other account" }],
+      });
+      throw new Error(`unexpected tool ${name}`);
+    } };
+    const driver = new ChatGptMacCdpDriver(tools, 7, 0, "a".repeat(64));
+    await expect(driver.listChats()).rejects.toThrow("pinned account scope mismatch");
+    expect(actions).toContain("evaluate_script");
+  });
+
+  it("rejects message data returned by the provider under a different account", async () => {
+    let scopeReads = 0;
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return `7: ChatGPT (https://chatgpt.com/c/${ID})`;
+      if (name === "evaluate_script" && args.function === CHATGPT_CREATE_SCOPE_SCRIPT) {
+        return json({ scope: ++scopeReads === 1 ? "a".repeat(64) : "b".repeat(64) });
+      }
+      if (name === "evaluate_script" && String(args.function).includes("conversation_read")) {
+        return json({ messages: [{ id: "m1", role: "assistant", text: "other account" }] });
+      }
+      throw new Error(`unexpected tool ${name}`);
+    } };
+    const driver = new ChatGptMacCdpDriver(tools, 7, 0, "a".repeat(64));
+    await expect(driver.getMessages(ID)).rejects.toThrow("pinned account scope mismatch");
+  });
+
+  it("returns a read when the provider response is from the pinned account", async () => {
+    let scopeReads = 0;
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return `7: ChatGPT (https://chatgpt.com/c/${ID})`;
+      if (name === "evaluate_script" && args.function === CHATGPT_CREATE_SCOPE_SCRIPT) {
+        scopeReads += 1;
+        return json({ scope: "a".repeat(64) });
+      }
+      if (name === "evaluate_script" && String(args.function).includes("conversation_read")) {
+        return json({ messages: [{ id: "m1", role: "assistant", text: "same account" }] });
+      }
+      throw new Error(`unexpected tool ${name}`);
+    } };
+    const driver = new ChatGptMacCdpDriver(tools, 7, 0, "a".repeat(64));
+    await expect(driver.getMessages(ID)).resolves.toMatchObject([{ id: "m1", text: "same account" }]);
+    expect(scopeReads).toBe(2);
+  });
+
   it("rejects draft creation when the site account changes from the pinned scope", async () => {
     const actions: string[] = [];
     const tools: ChromePageTools = { call: async (name, args = {}) => {
