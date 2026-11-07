@@ -1623,7 +1623,6 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         try {
           await getHumanStopStore().rememberGeneratedPrompt("codex", id, options.message, turnId);
         } catch (error) {
-      if (error instanceof CodexQuotaBlockedError) { if (completion) this.clearCompletion(id); return {ok:false,notSubmitted:true,admitted:false,nonRetryable:true,error:error.message}; }
           if (turnId && result.turn?.status === "inProgress") this.activeTurns.set(id, turnId);
           if (completion) this.clearCompletion(id);
           return {
@@ -1651,6 +1650,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         ...(!completed.ok ? { nonRetryable: true } : {}) };
     } catch (error) {
       if (completion) this.clearCompletion(id);
+      const refusal = this.quotaRefusal(error);
+      if (refusal) return refusal;
       if (steerActive && startRaceRetries > 0 && error instanceof CodexRpcError && error.code === -32600
         && /already has an active writer/i.test(error.message)) {
         const fresh = await this.getSession(id);

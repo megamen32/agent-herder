@@ -129,6 +129,41 @@ it("a refused resume is not submitted and must not be replayed",async()=>{
  }finally{await rm(dir,{recursive:true,force:true});}
 });
 
+describe("Codex send admission receipts",()=>{
+ it.each(["quota", "transport"])("preserves %s failure through send and durable lookup without replay",async(failure)=>{
+  const dir=await mkdtemp(join(tmpdir(),"quota-send-receipt-"));
+  vi.stubEnv("AGENT_HERDER_AUTOPILOT_STATE_DIR",dir);
+  const a=new CodexAppServerAdapter({codexDir:dir,quotaReader:async()=>sample(failure==="quota"?86:0)});
+  const x=a as any;const writes:string[]=[];
+  x.isReady=()=>true;
+  x.isTransportWritable=()=>true;
+  x.getSession=async()=>({id:"thread-send",status:"idle",model:"gpt-6"});
+  x.resumeSession=async()=>({ok:true});
+  x.writeMessage=(m:any)=>{
+   writes.push(m.method);
+   const pending=x.pending.get(m.id);clearTimeout(pending.timer);x.pending.delete(m.id);
+   pending.reject(new Error("transport lost after write"));
+  };
+  try {
+   const options={message:"bounded fixture",origin:"human" as const,queue:true,inputId:"receipt-fixture"};
+   const result=await a.sendMessage("thread-send",options);
+   if(failure==="quota"){
+    expect(result).toMatchObject({ok:false,notSubmitted:true,admitted:false,nonRetryable:true,admissionUnknown:false});
+    expect(writes).toEqual([]);
+    expect(await a.getMessageAdmission("thread-send",options.inputId)).toMatchObject({state:"failed",receipt:result});
+   }else{
+    expect(result).toMatchObject({ok:false,admissionUnknown:true,nonRetryable:true});
+    expect(result.notSubmitted).not.toBe(true);
+    expect(writes).toEqual(["turn/start"]);
+    expect(await a.getMessageAdmission("thread-send",options.inputId)).toMatchObject({state:"unknown"});
+   }
+   const before=writes.length;
+   expect(await a.sendMessage("thread-send",options)).toEqual(result);
+   expect(writes).toHaveLength(before);
+  }finally{await rm(dir,{recursive:true,force:true});}
+ });
+});
+
 describe("Codex quota read bound versus reader deadline",()=>{
  const isolatedState=async()=>{
   const dir=await mkdtemp(join(tmpdir(),"quota-bound-"));
