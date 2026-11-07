@@ -78,6 +78,7 @@ impl NativeCreateControl for CodexCreateControl {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl crate::application::scoped_stop::BoundedFreshRootCreate for CodexCreateControl {
     fn instance(&self) -> &InstanceRef {
         self.control.instance()
