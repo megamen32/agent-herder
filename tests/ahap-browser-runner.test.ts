@@ -1,24 +1,116 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import type { BrowserChatAdapter } from "../src/adapters/browser-chat.js";
-import { serveBrowserChatAhap } from "../src/ahap-browser-runner.js";
+import { makeConfiguredAdapter, serveBrowserChatAhap } from "../src/ahap-browser-runner.js";
 
 const scope = "a".repeat(64);
 const initialize = { jsonrpc: "2.0", id: 1, method: "initialize", params: { harness: "chatgpt", ahapVersion: "0.1" } };
+type TestAdapter = Partial<BrowserChatAdapter> & {
+  getAccountScope?: () => string | undefined;
+  verifyPinnedAccountScope?: () => Promise<void>;
+  close?: () => void;
+};
 
-async function run(adapter: Partial<BrowserChatAdapter>, requests: unknown[]) {
+async function run(adapter: TestAdapter, requests: unknown[]) {
   const input = new PassThrough();
   const output = new PassThrough();
   let data = "";
   output.setEncoding("utf8");
   output.on("data", chunk => { data += chunk; });
-  const serving = serveBrowserChatAhap(adapter as BrowserChatAdapter, input, output, scope);
+  const serving = serveBrowserChatAhap(adapter as Parameters<typeof serveBrowserChatAhap>[0], input, output, scope);
   input.end(requests.map(request => JSON.stringify(request)).join("\n") + "\n");
   await serving;
   return data.trim().split("\n").map(line => JSON.parse(line) as Record<string, unknown>);
 }
 
 describe("ChatGPT AHAP browser runner", () => {
+  it("explicitly selects MacMiniChromeTransport and verifies the configured page and account", async () => {
+    const selected: string[] = [];
+    const calls: Array<{ name: string; args?: Record<string, unknown> }> = [];
+    const macMini = {
+      async call(name: string, args: Record<string, unknown> = {}) {
+        calls.push({ name, args });
+        if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/c/abc)\n8: ChatGPT (https://chatgpt.com/c/def)";
+        return `Script ran on page and returned:\n\`\`\`json\n${JSON.stringify({ scope })}\n\`\`\``;
+      },
+    };
+    const adapter = makeConfiguredAdapter({
+      AHAP_CHATGPT_TRANSPORT: "mac-mini",
+      AHAP_CHATGPT_PAGE_ID: "7",
+      AHAP_CHATGPT_ACCOUNT_SCOPE: scope,
+    }, {
+      macMini() { selected.push("mac-mini"); return macMini; },
+      directCdp() { selected.push("direct-cdp"); throw new Error("unexpected direct CDP selection"); },
+    });
+    await adapter.verifyPinnedAccountScope?.();
+    expect(selected).toEqual(["mac-mini"]);
+    expect(calls.map(call => call.name)).toEqual(["list_pages", "evaluate_script"]);
+    expect(calls[1]?.args?.pageId).toBe(7);
+  });
+
+  it("fails closed instead of selecting another page when the configured page is absent", async () => {
+    const calls: string[] = [];
+    const adapter = makeConfiguredAdapter({
+      AHAP_CHATGPT_TRANSPORT: "mac-mini",
+      AHAP_CHATGPT_PAGE_ID: "7",
+      AHAP_CHATGPT_ACCOUNT_SCOPE: scope,
+    }, {
+      macMini() {
+        return { async call(name: string) {
+          calls.push(name);
+          return name === "list_pages" ? "8: ChatGPT (https://chatgpt.com/c/other)" : "";
+        } };
+      },
+      directCdp() { throw new Error("unexpected direct CDP selection"); },
+    });
+    await expect(adapter.listSessions()).rejects.toThrow("Configured ChatGPT page unavailable");
+    expect(calls).toEqual(["list_pages"]);
+  });
+
+  it("requires an explicit transport and does not infer direct CDP from its variables", () => {
+    expect(() => makeConfiguredAdapter({
+      AHAP_CHATGPT_CDP_WS_URL: "ws://unused",
+      AHAP_CHATGPT_CDP_CONTEXT_ID: "unused",
+      AHAP_CHATGPT_CDP_TARGET_ID: "unused",
+      AHAP_CHATGPT_PAGE_ID: "7",
+      AHAP_CHATGPT_ACCOUNT_SCOPE: scope,
+    })).toThrow("AHAP_CHATGPT_TRANSPORT must explicitly select");
+  });
+
+  it("fails closed when Mac Mini transport lacks exact page or account scope", () => {
+    expect(() => makeConfiguredAdapter({ AHAP_CHATGPT_TRANSPORT: "mac-mini", AHAP_CHATGPT_ACCOUNT_SCOPE: scope }))
+      .toThrow(/exact page ID and account scope are required/i);
+    expect(() => makeConfiguredAdapter({ AHAP_CHATGPT_TRANSPORT: "mac-mini", AHAP_CHATGPT_PAGE_ID: "7" }))
+      .toThrow(/exact page ID and account scope are required/i);
+  });
+
+  it("selects raw direct CDP only when explicitly configured and verifies its exact page", async () => {
+    const selected: unknown[] = [];
+    const calls: Array<{ name: string; args?: Record<string, unknown> }> = [];
+    const adapter = makeConfiguredAdapter({
+      AHAP_CHATGPT_TRANSPORT: "direct-cdp",
+      AHAP_CHATGPT_CDP_WS_URL: "ws://127.0.0.1:9222/devtools",
+      AHAP_CHATGPT_CDP_CONTEXT_ID: "context-exact",
+      AHAP_CHATGPT_CDP_TARGET_ID: "target-exact",
+      AHAP_CHATGPT_PAGE_ID: "9",
+      AHAP_CHATGPT_ACCOUNT_SCOPE: scope,
+    }, {
+      macMini() { throw new Error("unexpected Mac Mini selection"); },
+      directCdp(config) {
+        selected.push(config);
+        return { async call(name, args = {}) {
+          calls.push({ name, args });
+          return name === "list_pages" ? "9: ChatGPT (https://chatgpt.com/c/abc)"
+            : `Script ran on page and returned:\n\`\`\`json\n${JSON.stringify({ scope })}\n\`\`\``;
+        } };
+      },
+    });
+    await adapter.verifyPinnedAccountScope?.();
+    expect(selected).toEqual([{ endpoint: "ws://127.0.0.1:9222/devtools", contextId: "context-exact", targetId: "target-exact" }]);
+    expect(calls.map(call => call.name)).toEqual(["list_pages", "evaluate_script"]);
+    expect(calls[1]?.args?.pageId).toBe(9);
+  });
+
   it("advertises only its bounded surface and routes init and exact reads", async () => {
     const calls: string[] = [];
     let closed = false;

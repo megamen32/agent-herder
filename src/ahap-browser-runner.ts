@@ -3,7 +3,8 @@ import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
 import { BrowserChatAdapter } from "./adapters/browser-chat.js";
 import { ChatGptMacCdpDriver } from "./adapters/chatgpt-mac-cdp-driver.js";
-import { DirectCdpPageTools } from "./adapters/direct-cdp-page-tools.js";
+import { DirectCdpPageTools, type DirectCdpConfig } from "./adapters/direct-cdp-page-tools.js";
+import { MacMiniChromeTransport, type ChromePageTools } from "./adapters/mac-mini-chrome-transport.js";
 
 type RpcId = string | number;
 type RpcRequest = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
@@ -159,21 +160,64 @@ function isCreateOptions(value: unknown): value is Parameters<BrowserChatAdapter
   return typeof options.name === "string" && !!options.name.trim()
     && typeof options.cwd === "string" && options.cwd.startsWith("/");
 }
-async function makeConfiguredAdapter(): Promise<BrowserAdapterPort> {
-  const endpoint = process.env.AHAP_CHATGPT_CDP_WS_URL?.trim();
-  const contextId = process.env.AHAP_CHATGPT_CDP_CONTEXT_ID?.trim();
-  const targetId = process.env.AHAP_CHATGPT_CDP_TARGET_ID?.trim();
-  const expectedScope = process.env.AHAP_CHATGPT_ACCOUNT_SCOPE?.trim();
-  if (!endpoint || !contextId || !targetId || !expectedScope || !ACCOUNT_SCOPE.test(expectedScope)) {
-    throw new Error("Pinned ChatGPT CDP endpoint, context, target and account scope are required");
+export interface BrowserChatRunnerTransportFactories {
+  directCdp(config: DirectCdpConfig): ChromePageTools;
+  macMini(): ChromePageTools;
+}
+
+const DEFAULT_TRANSPORT_FACTORIES: BrowserChatRunnerTransportFactories = {
+  directCdp: config => new DirectCdpPageTools(config),
+  macMini: () => new MacMiniChromeTransport(),
+};
+
+export function makeConfiguredAdapter(
+  env: NodeJS.ProcessEnv = process.env,
+  factories: BrowserChatRunnerTransportFactories = DEFAULT_TRANSPORT_FACTORIES,
+): BrowserAdapterPort {
+  const transport = env.AHAP_CHATGPT_TRANSPORT?.trim();
+  if (transport !== "direct-cdp" && transport !== "mac-mini") {
+    throw new Error("AHAP_CHATGPT_TRANSPORT must explicitly select direct-cdp or mac-mini");
   }
-  const pageTools = new DirectCdpPageTools({ endpoint, contextId, targetId });
-  const driver = new ChatGptMacCdpDriver(pageTools, 1, 0, expectedScope);
+  const rawPageId = env.AHAP_CHATGPT_PAGE_ID?.trim();
+  const pageId = rawPageId && /^[1-9][0-9]*$/u.test(rawPageId) ? Number(rawPageId) : Number.NaN;
+  const expectedScope = env.AHAP_CHATGPT_ACCOUNT_SCOPE?.trim();
+  if (!Number.isSafeInteger(pageId) || pageId < 1 || !expectedScope || !ACCOUNT_SCOPE.test(expectedScope)) {
+    throw new Error("Exact page ID and account scope are required");
+  }
+
+  let selectedTransport: ChromePageTools;
+  if (transport === "mac-mini") {
+    selectedTransport = factories.macMini();
+  } else {
+    const endpoint = env.AHAP_CHATGPT_CDP_WS_URL?.trim();
+    const contextId = env.AHAP_CHATGPT_CDP_CONTEXT_ID?.trim();
+    const targetId = env.AHAP_CHATGPT_CDP_TARGET_ID?.trim();
+    if (!endpoint || !contextId || !targetId) {
+      throw new Error("Direct CDP requires endpoint, context and target IDs");
+    }
+    selectedTransport = factories.directCdp({ endpoint, contextId, targetId });
+  }
+  // The existing ChatGPT driver can discover another tab when a pin is stale.
+  // AHAP supplies a strict list_pages view so that only the configured page
+  // can be used, and a missing page fails before any read or navigation.
+  const pageTools: ChromePageTools = {
+    async call(name, args = {}) {
+      const result = await selectedTransport.call(name, args);
+      if (name !== "list_pages") return result;
+      const exactPagePattern = new RegExp(`^\\s*${pageId}\\s*:.*?\\(https://chatgpt\\.com(?:/[^)]*)?\\)`);
+      const exactPage = result.split("\n").find(line => exactPagePattern.test(line));
+      if (!exactPage) throw new Error("Configured ChatGPT page unavailable; no page fallback allowed");
+      return exactPage;
+    },
+  };
+  const driver = new ChatGptMacCdpDriver(pageTools, pageId, 0, expectedScope);
   const adapter = new BrowserChatAdapter(driver, { id: "chatgpt", name: "ChatGPT browser", harness: "chatgpt", cwd: process.cwd() }, process.cwd(), true);
   return Object.assign(adapter, {
     getAccountScope: () => driver.getAccountScope?.(),
     verifyPinnedAccountScope: () => driver.verifyPinnedAccountScope(),
-    close: () => pageTools.close(),
+    close: () => {
+      if ("close" in selectedTransport && typeof selectedTransport.close === "function") selectedTransport.close();
+    },
   });
 }
 
