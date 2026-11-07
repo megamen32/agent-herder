@@ -1,0 +1,58 @@
+{
+  "before": {
+    "at": "2026-11-07T21:44:02.918Z",
+    "origin": "https://chatgpt.com",
+    "path": "/",
+    "readyState": "complete",
+    "editors": [
+      {
+        "id": "pending-home-input",
+        "visible": true,
+        "empty": true
+      }
+    ]
+  },
+  "page_id": 8,
+  "status": "RECOVERY_STOPPED_AFTER_SINGLE_RELOAD",
+  "reload_attempt_budget": 1,
+  "native_sends": 0,
+  "new_page_calls": 0,
+  "gateway_job_id": "0d5ee93cdb74ba2f270a77b2bf2a79dd",
+  "reload_call_submissions": 1,
+  "identity_before_reload": {
+    "page8": "https://chatgpt.com/",
+    "page3_existing_chat": "6aee9fd5-7ee0-83ea-a06f-a3ed148605e8",
+    "mapping_verified": true
+  },
+  "reload": {
+    "tool": "navigate_page",
+    "pageId": 8,
+    "type": "reload",
+    "ignoreCache": false,
+    "handleBeforeUnload": "dismiss",
+    "timeout_ms": 25000,
+    "call_count": 1,
+    "http_wait_timeout_ms": 35000,
+    "outcome": "UNKNOWN_SOCKET_TIMEOUT",
+    "job_id": "0d5ee93cdb74ba2f270a77b2bf2a79dd",
+    "job_status": "completed",
+    "returncode": 1
+  },
+  "after": {
+    "observation_attempts": 1,
+    "tool": "evaluate_script",
+    "http_wait_timeout_ms": 25000,
+    "result": "SOCKET_TIMEOUT_NO_DOM_OR_AUTH_RESULT",
+    "job_id": "843128ae615398073b044dd03cd03586",
+    "job_status": "completed",
+    "returncode": 1,
+    "composer_ready": null,
+    "account_verified": false,
+    "reload_effect_confirmed": false
+  },
+  "recovery_stopped": true,
+  "claim_acquired": false,
+  "model_unknown_replayed": false,
+  "profile_login_infra_changes": false,
+  "next_condition": "Gateway/browser must become readable; then reconcile existing page8 before any new action. Reload budget exhausted; no second reload authorized by this slice."
+}

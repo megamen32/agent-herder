@@ -1,5 +1,5 @@
 Граф задач: Переносимый CI реальных приложений
-Ревизия плана: 170b06fd4bb4
+Ревизия плана: d713f5802cb1
 Это снимок плана, а не панель управления: фактическое состояние работы приходит из API владельцев, а не из пересказа агента в графе.
 Цель: До 08.11.2026 00:38 МСК довести CI и прежние адаптеры Herder V1: ChatGPT/Z.ai первыми, затем OpenCode, Codex, ZCode. Ядро и тонкое подключение у продуктовой стороны; без новых адаптеров/test-only API.
 Бизнес-результат: Одна команда CI, конфигурация вместо привязки к машине, реальные CLI с лжемоделью и browser lanes; неполное обновление не принимается.
@@ -12,14 +12,14 @@
 frontier $1.45 (provisional) — 100.0% всех долларов плана
 остатку к запуску $1.06 (provisional)
 бюджет не задан
-снимок b3044531c367 от 2026-11-07T18:27:29Z · возраст 3 ч 15 мин · скорость токенов: frontier provisional
+снимок b3044531c367 от 2026-11-07T18:27:29Z · возраст 3 ч 20 мин · скорость токенов: frontier provisional
 Листьев в графе: 12 · слотов: 3 · волн: 5
 Параллельность: сейчас 0 из 3 слотов, пик по плану 3
 Исполнители: занято 0 из 3 слотов · ждёт листа: 1 (MOVE) · ждёт исполнителя: 0 · готово к запуску: 0
-Прогноз: известная активная часть 1 ч (от 1 ч), финиш неизвестен из-за внешнего ожидания. отсчёт от последнего события 2026-11-08T00:42+03:00 · простой 0 мин · неточно: срок внешнего ожидания не подтверждён
+Прогноз: известная активная часть 1 ч (от 1 ч), финиш неизвестен из-за внешнего ожидания. отсчёт от последнего события 2026-11-08T00:46+03:00 · простой 0 мин · неточно: срок внешнего ожидания не подтверждён
 Критический путь: Задать runner через config/manifest, проверить capabilities → Выпустить единый отчёт и отказ неполного gate → Подключить опубликованный OpenCode AHAP consumer → Доказать перенос на второй runner конфигурацией → Выпустить post-install gate через тот же consumer
 Блокеры:
-  - Почему ждём: Page8 bootstrap:22 CDN script requests ERR_HTTP2_PING_FAILED including manifest; auth_timeout, no verified blankscope
+  - Почему ждём: Single permitted page8 reload socket_timeout35s; after-read socket_timeout25s; recovery stopped
     Кто делает: Astra
     Следующий шаг: No fake running while candidate is built. Resume on candidate receipt; install updated hook through normal browser lifecycle; do not clear backoff or replay accepted sends.
     Нужен ли человек: Пока неизвестно. Действие человека не уточнено.
@@ -52,14 +52,14 @@ frontier $1.45 (provisional) — 100.0% всех долларов плана
       Описание задачи: RED→GREEN для нового SHA, отсутствующего current и rebuild активного SHA; scoped main publication. Только builder и его regression.
       Приёмка: RED→GREEN для нового SHA, отсутствующего current и rebuild активного SHA; scoped main publication. Только builder и его regression.
       Результат: 23df966f887159327619d224f87d2ffb6b3f4c5a опубликован в main, exact2files. RED: 3 новых regression failures (current switched, empty catalog auto-installed, active SHA moved). GREEN: все5 tests за0.009s; py_compile и diff-check. assemble теперь не меняет current; rebuild активного release отвергается до перемещения; main проверяет snapshot. Проверка реального assemble во временном каталоге, без live mutation. Runtime не перезапускался: это release tooling, не installed/five-adapter PASS.
-  - CHATGPT · ⛔ Заблокировано · (Подключить ChatGPT на разрешённом browser runner) · оценка 15 мин · усилие не измерено · волна 1 · зависит: — · стоимость $0.32 · модель 302ai/gpt-6-astra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional · блокер: Page8 bootstrap:22 CDN script requests ERR_HTTP2_PING_FAILED including manifest; auth_timeout, no verified blankscope
+  - CHATGPT · ⛔ Заблокировано · (Подключить ChatGPT на разрешённом browser runner) · оценка 15 мин · усилие не измерено · волна 1 · зависит: — · стоимость $0.32 · модель 302ai/gpt-6-astra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional · блокер: Single permitted page8 reload socket_timeout35s; after-read socket_timeout25s; recovery stopped
       Описание задачи: Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.
       Приёмка: Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.
       Затрагиваемые файлы: `src/adapters/chatgpt-passive-history.ts`, `src/adapters/chatgpt-background-budget.ts`, `tests/chatgpt-passive-backoff-burst.test.ts`, `tests/chatgpt-background-budget.test.ts`
-      Результат: Fresh readonly samepage8 2026-11-07T21:40:09Z, listidentity unchanged; DOMcomplete but profileloading/pending-home-input. One explicitauth check timedout10s. Existingnetwork44rows: document200,22 scripts HTTP2_PING_FAILED inclmanifest; auth2ERR_ABORTED records. Console sameerror26times. Underlyingnetworkcause not established; no reproducible Herder sourcebug, no sourcefix/login/profile/infra changes. Nativecreate/send0,newpage0,UNKNOWN untouched. evidence/chatgpt-page8-bootstrap-network-20261108.json. Next networkowner diagnostics then exactpage/account/claim revalidation; gate unchanged.
+      Результат: Before exactpage8 origin/path=/ emptydraft+mapping verified. One navigate_page reload submitted, no repetition; job0d5ee93cdb74ba2f270a77b2bf2a79dd exit1. After evaluate_script job843128ae615398073b044dd03cd03586 exit1, no DOM/auth result. Reload effect unconfirmed; cannot claim ready or execute fullcase. Nativecreate/send0,newpage0,oldUNKNOWN untouched. evidence/chatgpt-page8-single-reload-20261108.json. Next readablegateway/browser then reconcile samepage; reload budget exhausted.
       Сохранённый статус: blocked
       Назначение: неизвестно; тип=неизвестно; attempt=неизвестно
-      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1ac52-d25c-7050-a65d-3fca32642c26; source=mcp_metadata; at=2026-11-08T00:42:05+03:00
+      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1ac52-d25c-7050-a65d-3fca32642c26; source=mcp_metadata; at=2026-11-08T00:46:53+03:00
       Lead (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
       Native parent (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
       Исполнитель (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
@@ -72,7 +72,7 @@ frontier $1.45 (provisional) — 100.0% всех долларов плана
       Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
       Допуск к запуску: нет; записан блокер (external_blocked)
       Незавершённые зависимости: нет
-      Причина ожидания / доставки: leaf: Page8 bootstrap:22 CDN script requests ERR_HTTP2_PING_FAILED including manifest; auth_timeout, no verified blankscope
+      Причина ожидания / доставки: leaf: Single permitted page8 reload socket_timeout35s; after-read socket_timeout25s; recovery stopped
   - CONFIG · ✅ Готово · (Задать runner через config/manifest, проверить capabilities) · оценка 15 мин · усилие 17 мин по часам · по часам 17 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Описание задачи: Пути CLI/Node/bootstrap, transport, OS/arch — входы; missing capability до mutation; никаких machine constants в сценарии.
       Приёмка: Пути CLI/Node/bootstrap, transport, OS/arch — входы; missing capability до mutation; никаких machine constants в сценарии.
