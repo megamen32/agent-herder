@@ -50,6 +50,28 @@ class OpenCodeFailureTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, '401'):
             receipt.wait_for_ready(lambda: (401, {}), lambda: True, timeout=2, sleep=lambda _:None)
 
+    def test_v22_readiness_uses_json_health_when_old_config_path_is_html(self):
+        calls = []
+        def read(path):
+            calls.append(path)
+            return (200, None) if path == '/api/config' else (200, {'healthy': True})
+        self.assertEqual(receipt.readiness_probe(read)[0], 200)
+        self.assertEqual(calls, ['/api/config', '/api/health'])
+        self.assertEqual(receipt.readiness_probe(lambda _: (401, None))[0], 401)
+        self.assertEqual(receipt.readiness_probe(lambda path: (404, None) if path == '/api/config' else (200, {'healthy':True}))[0], 200)
+        self.assertEqual(receipt.readiness_probe(lambda _: (200, [{'source':'fixture'}]))[0], 200)
+        self.assertEqual(receipt.readiness_probe(lambda _: (404, None))[0], 503)
+
+    def test_v22_provider_verification_requires_connected_exact_loopback_model(self):
+        base = 'http://127.0.0.1:12345/v1'
+        response = {'connected':['fixture'], 'all':[{'id':'fixture','options':{'baseURL':base},'models':{'herder-test':{}}}]}
+        self.assertTrue(receipt.v22_fixture_verified(response, base))
+        response['all'][0]['options']['baseURL'] = 'https://paid.example/v1'
+        self.assertFalse(receipt.v22_fixture_verified(response, base))
+        response['all'][0]['options']['baseURL'] = base
+        response['connected'] = []
+        self.assertFalse(receipt.v22_fixture_verified(response, base))
+
     def test_duplicate_session_is_rejected_before_second_send(self):
         previous = [{'native_session_id':'ses_one'}]
         self.assertFalse(receipt.is_new_session('ses_one', previous))
