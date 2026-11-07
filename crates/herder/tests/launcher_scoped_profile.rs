@@ -204,7 +204,11 @@ fn launched_authority_retains_fresh_create_receipt_in_the_same_store() {
         fn instance(&self) -> &InstanceRef {
             &self.0
         }
-        fn create_root_bounded(&self, _: &str, _: &str) -> Result<SessionAddress, ()> {
+        fn create_root_bounded(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Result<SessionAddress, herder::domain::adapter::SubmitError> {
             Ok(SessionAddress {
                 instance: self.0.clone(),
                 native_session_id: "native-fresh".into(),
