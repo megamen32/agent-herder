@@ -40,14 +40,44 @@ export async function readCodexActiveRuntime(
         if (!["active", "inProgress", "running"].includes(type) || !accepts(thread)) return;
         const flags = typeof thread.status === "object" ? thread.status.activeFlags || [] : [];
         const blocked = flags.some(flag => flag === "waitingOnApproval" || flag === "waitingOnUserInput");
+        // Loaded-thread status proves activity but has no turn identity. Read
+        // the current native turn through the adapter's existing exact read
+        // route; cached IDs from `map` must never stand in for this receipt.
+        let activeTurnId: string | undefined;
+        let nativeLastTurn: { turnId: string; status: string; completedAt?: string | number } | undefined;
+        let nativeTurnStateUnavailable = false;
+        try {
+          const turns = await request("thread/turns/list", {
+            threadId: id, limit: 1, sortDirection: "desc", itemsView: "notLoaded",
+          }) as { data?: Array<{ id?: unknown; status?: unknown; completedAt?: unknown }> };
+          if (!Array.isArray(turns?.data)) throw new Error("codex_active_turn_state_unavailable");
+          const latest = turns.data[0];
+          if (typeof latest?.id !== "string" || !latest.id || typeof latest.status !== "string") {
+            nativeTurnStateUnavailable = true;
+          } else {
+            nativeLastTurn = {
+              turnId: latest.id,
+              status: latest.status,
+              ...(typeof latest.completedAt === "string" || typeof latest.completedAt === "number"
+                ? { completedAt: latest.completedAt } : {}),
+            };
+            if (latest.status === "inProgress") activeTurnId = latest.id;
+          }
+        } catch {
+          nativeTurnStateUnavailable = true;
+        }
+        if (nativeTurnStateUnavailable) failedCandidateCount += 1;
         const observedAt = new Date().toISOString();
         const session = map(thread);
-        // This metadata-only read proves current thread activity, not a cached turn ID.
+        // Replace stale cached turn metadata with only the exact fresh receipt.
         const meta = {...session.meta};
         delete meta.activeTurnId;
         delete meta.nativeLastTurn;
+        delete meta.nativeTurnStateUnavailable;
         sessions.push({...session, status: blocked ? "needs_input" : "running", needsPermission: flags.includes("waitingOnApproval"),
-          meta: {...meta, activityEvidence: "codex-loaded-native-runtime", activityObservedAt: observedAt,
+          meta: {...meta, ...(activeTurnId ? {activeTurnId} : {}), ...(nativeLastTurn ? {nativeLastTurn} : {}),
+            ...(nativeTurnStateUnavailable ? {nativeTurnStateUnavailable: true} : {}),
+            activityEvidence: "codex-loaded-native-runtime", activityObservedAt: observedAt,
             activityExpiresAt: new Date(Date.now()+30_000).toISOString(), nativeThreadStatus: type, nativeActiveFlags: flags}});
       } catch { failedCandidateCount += 1; }
     }));

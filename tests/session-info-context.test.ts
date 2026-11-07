@@ -32,6 +32,26 @@ it("returns the latest user and assistant by default and skips history in compac
   } finally { await client.close(); await server.close(); }
 });
 
+it("fills missing exact native activity from the existing active-session projection", async () => {
+  const direct = { id: "native-active", harness: "codex", status: "idle", title: "test", cwd: "/tmp", hostId: "fixture", lastActivity: "2026-01-01", needsPermission: false, meta: { sourceRoute: "native" , humanStopHeld: false } };
+  const active = { ...direct, status: "running", meta: { activeTurnId: "turn-exact", nativeLastTurn: { turnId: "turn-exact", status: "inProgress" }, nativeThreadStatus: "active" } };
+  const adapter = { type: "codex", name: "fixture", getSession: async (id: string) => id === direct.id ? direct : null,
+    listActiveSessions: async () => [active] };
+  const events = new HerderEventBus();
+  const server = new McpServer({ name: "session-native-activity", version: "1" });
+  registerSessionTools(server, { adapters: new Map([["codex", adapter as any]]), jobs: new HerderJobRegistry(events), events });
+  const [ct, st] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "test", version: "1" }, { versionNegotiation: { mode: "auto" } });
+  await server.connect(st); await client.connect(ct);
+  try {
+    const result = await client.callTool({ name: "agent_info", arguments: { sessionId: direct.id, harness: "codex" } });
+    expect(result.structuredContent).toMatchObject({ session: { status: "running", meta: {
+      activeTurnId: "turn-exact", nativeLastTurn: { turnId: "turn-exact", status: "inProgress" },
+      sourceRoute: "native", humanStopHeld: false,
+    } } });
+  } finally { await client.close(); await server.close(); }
+});
+
 it("recovers the latest human-readable messages when the recent window contains only tool activity", async () => {
   const session = { id: "s2", harness: "codex", status: "running", title: "test", cwd: "/tmp", hostId: "fixture", lastActivity: "2026-01-01", needsPermission: false };
   const lines = [

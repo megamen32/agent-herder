@@ -464,7 +464,23 @@ export async function agentInfoResult(adapters: Map<string, HarnessAdapter>, arg
     if (adapter?.lazyStart && !adapter.nativeReadWithoutActivation && (!adapter.isReady || !adapter.isReady())) throw new Error("fleet_session_native_not_ready");
   }
   const found = await findSession(adapters, parsed.sessionId, parsed.harness);
-  const session = found ? await found.adapter.getSession(found.session.id, {includeMetrics:true}) : null;
+  let session = found ? await found.adapter.getSession(found.session.id, {includeMetrics:true}) : null;
+  // A persisted Codex transcript can be idle while the connected app-server
+  // still owns an exact in-progress turn. Reuse its existing bounded active
+  // projection only when the direct read has no native turn identity.
+  if (session?.harness === "codex"
+    && typeof session.meta?.activeTurnId !== "string"
+    && !(session.meta?.nativeLastTurn && typeof session.meta.nativeLastTurn === "object"
+      && typeof (session.meta.nativeLastTurn as Record<string, unknown>).turnId === "string")) {
+    const reader = (found!.adapter as HarnessAdapter & {listActiveSessions?: () => Promise<AgentSession[]>}).listActiveSessions;
+    if (reader) {
+      try {
+        const active = (await reader.call(found!.adapter)).find(candidate => candidate.harness === "codex" && candidate.id === session!.id);
+        if (active) session = {...session, status: active.status, needsPermission: active.needsPermission,
+          meta: {...session.meta, ...active.meta}};
+      } catch { /* Keep the exact direct read when the optional native projection is unavailable. */ }
+    }
+  }
   return session ? withSessionLabelMeta(withSessionHost(session)) : null;
 }
 
