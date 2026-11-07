@@ -4,7 +4,13 @@
 //! Codex does not promise to deduplicate it. A missing lookup result is UNKNOWN,
 //! never permission to submit the same request again.
 
-use std::{collections::HashSet, fs, path::PathBuf, sync::Mutex, time::Duration};
+use std::{
+    collections::HashSet,
+    fs,
+    path::PathBuf,
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 use serde_json::{Value, json};
 
@@ -355,16 +361,19 @@ impl CodexControl {
             };
         }
 
-        let Ok(mut state) = self.state.lock() else {
+        let deadline = Instant::now()
+            .checked_add(self.timeout)
+            .unwrap_or_else(Instant::now);
+        let Ok(mut state) = self.state.try_lock() else {
             return InterruptOutcome::DefinitelyNotSent {
-                reason: "Codex control connection lock is poisoned".into(),
+                reason: "Codex control connection is busy or unavailable".into(),
             };
         };
         let before = match read_turn_status(
             &mut state.connection,
             &target.native_session_id,
             native_turn_id,
-            self.timeout,
+            deadline,
         ) {
             Ok(Some(status)) if status == "inProgress" => status,
             Ok(Some(status)) => {
@@ -385,10 +394,19 @@ impl CodexControl {
         };
         debug_assert_eq!(before, "inProgress");
 
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return InterruptOutcome::DefinitelyNotSent {
+                reason: "interrupt deadline elapsed before send".into(),
+            };
+        }
+        // Reserve part of the single deadline for an exact readback if the
+        // acknowledgement is lost. This never repeats the interrupt.
+        let send_timeout = remaining / 2;
         match state.connection.request(
             "turn/interrupt",
             json!({"threadId": target.native_session_id, "turnId": native_turn_id}),
-            self.timeout,
+            send_timeout,
         ) {
             Ok(_) => InterruptOutcome::Interrupted,
             Err(error) if definitely_not_sent(&error) => InterruptOutcome::DefinitelyNotSent {
@@ -401,7 +419,7 @@ impl CodexControl {
                     &mut state.connection,
                     &target.native_session_id,
                     native_turn_id,
-                    self.timeout,
+                    deadline,
                 ) {
                     Ok(Some(status)) if status == "interrupted" => InterruptOutcome::Interrupted,
                     Ok(status) => InterruptOutcome::OutcomeUnknown {
@@ -439,11 +457,15 @@ fn read_turn_status(
     connection: &mut CodexConnection,
     thread_id: &str,
     turn_id: &str,
-    timeout: Duration,
+    deadline: Instant,
 ) -> Result<Option<String>, RpcError> {
     let mut cursor: Option<String> = None;
     let mut seen = HashSet::new();
     for _ in 0..LOOKUP_MAX_PAGES {
+        let timeout = deadline.saturating_duration_since(Instant::now());
+        if timeout.is_zero() {
+            return Err(RpcError::Timeout { request_id: 0 });
+        }
         let response = connection.request(
             "thread/turns/list",
             json!({
@@ -642,6 +664,51 @@ mod tests {
     use crate::domain::address::{NodeRef, SessionAddress};
 
     static FIXTURE_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn interrupt_uses_one_deadline_across_status_pages() {
+        let _fixture = fixture_lock();
+        let script = "import json, os, sys, time\ncount=0\nfor line in sys.stdin:\n r=json.loads(line)\n if 'id' not in r: continue\n m=r['method']\n if m == 'initialize': result={'codexHome':os.path.realpath(os.environ['CODEX_HOME'])}\n elif m == 'thread/turns/list':\n  time.sleep(0.07); count+=1\n  result={'data':([{'id':'turn-exact','status':'inProgress'}] if count == 3 else []),'nextCursor': (str(count) if count < 3 else None)}\n else: result={}\n print(json.dumps({'id':r['id'],'result':result}),flush=True)\n";
+        let (control, root) = fake_control(script, Duration::from_millis(150));
+        let started = Instant::now();
+        let result =
+            control.interrupt_exact(&interrupt_target(&control, "thread-exact"), "turn-exact");
+        assert!(
+            matches!(result, InterruptOutcome::DefinitelyNotSent { .. }),
+            "{result:?}"
+        );
+        assert!(started.elapsed() < Duration::from_millis(500));
+        drop(control);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn busy_control_does_not_wait_unbounded_for_interrupt() {
+        let _fixture = fixture_lock();
+        let (control, root) =
+            fake_control(&interrupt_server("interrupted"), Duration::from_millis(100));
+        let control = std::sync::Arc::new(control);
+        let target = SessionAddress {
+            instance: control.instance.clone(),
+            native_session_id: "thread-exact".into(),
+        };
+        let guard = control.state.lock().unwrap();
+        let child = control.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            tx.send(child.interrupt_exact(&target, "turn-exact"))
+                .unwrap();
+        });
+        let result = rx.recv_timeout(Duration::from_millis(500));
+        drop(guard);
+        worker.join().unwrap();
+        assert!(
+            matches!(result, Ok(InterruptOutcome::DefinitelyNotSent { .. })),
+            "busy interrupt must not wait or send: {result:?}"
+        );
+        drop(control);
+        let _ = fs::remove_dir_all(root);
+    }
 
     #[test]
     fn busy_control_does_not_wait_unbounded_for_create() {
