@@ -499,6 +499,21 @@ for line in sys.stdin:
     fs::set_permissions(&fake, fs::Permissions::from_mode(0o700)).unwrap();
     let p = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{"principal":"local-owner","node":"local","instance":"codex-test","executable":fake,"code_home":f.root,"cwd":f.root}});
     fs::write(&f.profile, p.to_string()).unwrap();
+    if let Some(probe) = std::env::var_os("HERDER_OWNER_SDK_PROBE") {
+        let result = Command::new(probe)
+            .arg("--preflight")
+            .arg(env!("CARGO_BIN_EXE_herder_native_stdio"))
+            .arg(&f.profile)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "SDK preflight: {} {}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(String::from_utf8_lossy(&result.stdout).contains("self=unknown no_effect=true"));
+    }
     let mut child = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
         .arg("--trusted-owner-profile")
         .arg(&f.profile)

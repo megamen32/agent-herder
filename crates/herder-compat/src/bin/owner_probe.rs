@@ -38,6 +38,33 @@ async fn connect(
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
+    if args.len() == 4 && args[1] == "--preflight" {
+        let client = connect(&args[2], &args[3]).await?;
+        let tools = client.peer().list_tools(None).await?;
+        if !["create", "deliver", "session"]
+            .iter()
+            .all(|name| tools.tools.iter().any(|t| &t.name == name))
+        {
+            return Err("required tools absent".into());
+        }
+        let arguments = json!({"action":"context"}).as_object().unwrap().clone();
+        let result = client
+            .peer()
+            .call_tool(CallToolRequestParams::new("session").with_arguments(arguments))
+            .await?;
+        if result
+            .structured_content
+            .as_ref()
+            .and_then(|v| v.get("code"))
+            .and_then(Value::as_str)
+            != Some("self_binding_required")
+        {
+            return Err("trusted owner unexpectedly has a verified self binding".into());
+        }
+        println!("SDK_PREFLIGHT tools=ok self=unknown no_effect=true");
+        client.cancel().await?;
+        return Ok(());
+    }
     if args.len() != 6 {
         return Err("usage: owner_probe BINARY PROFILE INSTANCE MARKER RECEIPT_PATH".into());
     }
