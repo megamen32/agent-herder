@@ -37,3 +37,15 @@ Nietzsche: REVISE по двум независимым source дефектам. 
 Оба findings переданы Tesla; исправления ещё не приняты.
 
 Owner-only policy без новой grants таблицы — SUPPORTED как предпосылка: existing create intent/receipt/mapping/scoped generation атомарны и достаточны для membership. Нужен verifier по exact session с согласованным snapshot и pinned authority. Успешный create хранится admitted, поэтому literal confirmed не обязателен и не означает завершённый prompt. Explicit trusted config выдаёт permission, lineage alone не выдаёт. Unknown/imported/чужая generation/principal или отсутствие policy — deny. Нельзя повторно брать gate из policy при уже удерживаемом guard. Terra получила уточнения; фактическая реализация ещё требует proof.
+
+## Принятые source дельты — 11:08 UTC
+
+`ccfd813b`: cached aggregate exact Session Read-revoke исправлен, policy вынесена из gate; восстановление raw/projected no-send корректно. Review выявил дополнительный global hold: existing create вызывался до recovery. `ddc17d40` закрывает это: Created используется прямо, только Missing допускается в create_fresh_root, Pending/Unknown не повторяются. Regression session/global hold через claim→stop→handoff проверяет оба повтора до/после task projection, create1/submit0. Nietzsche SUPPORTED immutable source; WIP не использовался и author tests независимо не повторялись. Direct Task current grants и terminal reconciliation ещё открыты у Tesla.
+
+`d6cb17b4` NativeReader — independent source SUPPORTED: exact profile/thread/единственный turn, read-only, pending/unknown не превращаются в confirmed. Confirmed означает receipt, не бизнес-успех.
+
+`a3517774` trusted owner stdio wiring — independent SUPPORTED в explicit protected local profile boundary без hostile same-UID. Owner config обязателен, default launcher Unknown, self=None, единственный exact create receipt + current generation/mapping/scopes, no second grants store; policy читает один snapshot и проверяет pinned DB/gate inode без nested gate. Reviewer независимо выполнил2 owner-policy и2 launcher tests включая fake create→read→reopen/import deny. Live/native proof ещё не выполнен.
+
+`f5f27200` ZCode — independent SUPPORTED source/synthetic: partial без доказательства полноты, content/info.content различаются; local pages одного immutable payload собираются до одного общего feed. Reviewer5 targeted transcript tests PASS. Actual connection.rs компилируется, transport seam fake; это не captured/live protocol. V072D UNKNOWN не затронут.
+
+`365c1fdf` (после rebase32bc8099) Resources — Astra source review принят: чистая prepare_reply возвращает exact stored sender/in_reply_to, проверяет verified self и exact grants; новый ReplyDispatch удалён. Автор3tests+SQLite reopen. Native delivery/replay proof остаётся V027; отправка только через общий fenced deliver. Исполнитель получил готовый независимый V017A/B resources source, shared transport/lib owner Terra.
