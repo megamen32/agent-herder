@@ -2,9 +2,11 @@
 pub mod adapters {
     pub mod codex {
         pub mod connection;
+        pub mod read;
     }
     pub mod opencode {
         pub mod connection;
+        pub mod read;
     }
     pub mod chatgpt;
     pub mod zai;
