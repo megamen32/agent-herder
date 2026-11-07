@@ -7,3 +7,5 @@ pub mod domain {
     pub mod adapter;
     pub mod address;
 }
+
+pub mod error;
