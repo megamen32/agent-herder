@@ -2,7 +2,7 @@ use crate::domain::address::{Authorization, NodeRef};
 use crate::domain::resource::{ResourceClaim, ResourceDescriptor, ResourceKind, ResourceRef, ResourceScope};
 use crate::ownership::claim;
 use crate::ownership::manifest::{AuthorityRoute, ResourceMarker, StorageAuthority, StorageId, StorageMarker};
-use crate::ownership::release_receipt::{self, spawn_admitted};
+use crate::ownership::release_receipt::{self, spawn_admitted, ReceiptStatus};
 use crate::ownership::release_runner::TargetExecutionLock;
 use std::fs;
 use std::process::Command;
@@ -169,5 +169,102 @@ fn rejects_admitted_effect_after_owner_changes_before_spawn() {
         .principal_ref,
         "principal-new"
     );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn confirmed_request_key_replays_as_readback_without_second_effect() {
+    let (root, authority, resource_ref) = fixture();
+    let claim_id = "87654321-4321-4321-8321-cba987654321";
+    let request_key = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
+    claim::claim(
+        &authority,
+        &resource_ref,
+        Authorization::Authorized,
+        request(&resource_ref, "principal-a", claim_id),
+    )
+    .unwrap();
+    let lock = TargetExecutionLock::acquire(
+        &authority,
+        &resource_ref,
+        Authorization::Authorized,
+    )
+    .unwrap();
+    let first = release_receipt::admit(
+        &authority,
+        &lock,
+        Authorization::Authorized,
+        claim_id,
+        1,
+        request_key,
+        &"c".repeat(64),
+    )
+    .unwrap();
+    assert!(first.newly_admitted);
+
+    let effect_path = root.join("effect.txt");
+    let mut command = Command::new("/bin/sh");
+    command
+        .arg("-c")
+        .arg("printf x >> \"$1\"")
+        .arg("release-effect")
+        .arg(&effect_path);
+    let mut child = spawn_admitted(
+        &authority,
+        &lock,
+        Authorization::Authorized,
+        1,
+        &first,
+        &mut command,
+    )
+    .unwrap();
+    assert!(child.wait().unwrap().success());
+    release_receipt::finish_under_lock(
+        &authority,
+        &lock,
+        request_key,
+        ReceiptStatus::Confirmed,
+    )
+    .unwrap();
+
+    let replay = release_receipt::admit(
+        &authority,
+        &lock,
+        Authorization::Authorized,
+        claim_id,
+        1,
+        request_key,
+        &"c".repeat(64),
+    )
+    .unwrap();
+    assert!(!replay.newly_admitted);
+    assert_eq!(replay.receipt.status, ReceiptStatus::Confirmed);
+    assert_eq!(
+        release_receipt::resolve_after_lock(&authority, &lock, request_key)
+            .unwrap()
+            .status,
+        ReceiptStatus::Confirmed
+    );
+
+    let mut retry = Command::new("/bin/sh");
+    retry
+        .arg("-c")
+        .arg("printf x >> \"$1\"")
+        .arg("release-effect")
+        .arg(&effect_path);
+    assert_eq!(
+        spawn_admitted(
+            &authority,
+            &lock,
+            Authorization::Authorized,
+            1,
+            &replay,
+            &mut retry,
+        )
+        .unwrap_err()
+        .kind(),
+        std::io::ErrorKind::InvalidInput
+    );
+    assert_eq!(fs::read_to_string(effect_path).unwrap(), "x");
     fs::remove_dir_all(root).unwrap();
 }
