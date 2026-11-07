@@ -245,15 +245,41 @@ where
             request.specification,
         );
         let (_guard, writer) = authority.lock()?;
-        let row:Option<(String,String,String)> = writer.connection().query_row(
-            "SELECT intent_id,payload_hash,state FROM intents WHERE principal=?1 AND target=?2 AND request_key=?3",
-            rusqlite::params![principal.id.0,session.0,delivery_key],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))
+        let row:Option<(String,String,String,Option<String>,String,Option<String>)> = writer.connection().query_row(
+            "SELECT i.intent_id,i.payload_hash,i.state,i.native_receipt,t.status,t.result_json FROM intents i JOIN tasks t ON t.task_id=i.task_id WHERE i.principal=?1 AND i.target=?2 AND i.request_key=?3",
+            rusqlite::params![principal.id.0,session.0,delivery_key],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?))
         ).optional().map_err(|_|GateError::Store)?;
-        let Some((prior_intent, hash, state)) = row else {
+        let Some((prior_intent, hash, state, raw_receipt, task_status, raw_diagnostic)) = row
+        else {
             return Ok(None);
         };
         if hash != expected {
             return Ok(Some(CreatePromptOutcome::Conflict));
+        }
+        if state == "rejected" && raw_receipt.is_none() {
+            let value = raw_diagnostic
+                .as_deref()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+                .unwrap_or(serde_json::Value::Null);
+            let raw_no_send = value["native_submit"] == "definitely_not_sent";
+            let projected = task_status == "completed"
+                && value["isError"] == true
+                && value["structuredContent"]["effect"] == "none"
+                && value["structuredContent"]["retry"] == "forbidden";
+            if (raw_no_send && value["outcome"] == "stopped_before_handoff")
+                || (projected && value["structuredContent"]["code"] == "human_stop_active")
+            {
+                return Ok(Some(CreatePromptOutcome::StoppedBeforeHandoff {
+                    session: session.clone(),
+                }));
+            }
+            if (raw_no_send && value["outcome"] == "rejected")
+                || (projected && value["structuredContent"]["code"] == "adapter_refused")
+            {
+                return Ok(Some(CreatePromptOutcome::DeliveryDefinitelyNotSent {
+                    session: session.clone(),
+                }));
+            }
         }
         if matches!(state.as_str(), "admitted" | "confirmed") {
             let binding = ReceiptBinding {

@@ -202,21 +202,10 @@ impl ScopedAuthority {
                 Action::Write,
             )
             .map_err(|_| GateError::Invalid)?;
-        if status == "completed" {
-            let object = record
-                .result
-                .and_then(|v| v.as_object().cloned())
-                .ok_or(GateError::Store)?;
-            return Ok(Some(GetTaskResult::new(DetailedTask::new(
-                Task::new(id, TaskStatus::Completed, created, updated),
-                TaskPayload::Completed { result: object },
-            ))));
-        }
-        if status != "working" {
-            return Err(GateError::Store);
-        }
         let child = record.delivery_task.clone();
         let session = record.session_ref.clone();
+        drop(writer);
+        drop(_gate);
         let mut child_grants = grants.to_vec();
         if let (Some(policy), Some(session_ref)) = (policy, session.as_ref()) {
             let exact = crate::domain::address::SessionRef(session_ref.clone());
@@ -231,8 +220,30 @@ impl ScopedAuthority {
                 }
             }
         }
-        drop(writer);
-        drop(_gate);
+        if status == "completed" {
+            if child.is_some() {
+                let exact =
+                    crate::domain::address::SessionRef(session.clone().ok_or(GateError::Store)?);
+                identity
+                    .authorize(
+                        &child_grants,
+                        &PrivateResource::Session(exact),
+                        Action::Read,
+                    )
+                    .map_err(|_| GateError::Invalid)?;
+            }
+            let object = record
+                .result
+                .and_then(|v| v.as_object().cloned())
+                .ok_or(GateError::Store)?;
+            return Ok(Some(GetTaskResult::new(DetailedTask::new(
+                Task::new(id, TaskStatus::Completed, created, updated),
+                TaskPayload::Completed { result: object },
+            ))));
+        }
+        if status != "working" {
+            return Err(GateError::Store);
+        }
         if let (Some(child), Some(session)) = (child, session) {
             if let Ok(Some(d)) = self.get_delivery_task(identity, &child_grants, &child) {
                 if let TaskPayload::Completed {

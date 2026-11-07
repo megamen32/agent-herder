@@ -3788,7 +3788,7 @@ async fn scoped_create_application_wire_preserves_session_and_deduplicates_promp
                 base: base.clone(),
                 policy: policy.clone(),
             });
-            let server = ScopedTaskServer::new(identity(), base, authority, app)
+            let server = ScopedTaskServer::new(identity(), base.clone(), authority, app)
                 .with_create_policy(policy.clone());
             let (client, io) = tokio::io::duplex(65536);
             let job =
@@ -3836,13 +3836,79 @@ async fn scoped_create_application_wire_preserves_session_and_deduplicates_promp
                 }
                 _ => assert_eq!(data["prompt"]["outcome"], "confirmed"),
             };
+            if scenario == "confirmed" {
+                policy.0.store(false, Ordering::SeqCst);
+                let revoked=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":80,"method":"tasks/get","params":{"_meta":meta,"taskId":task}})).await;
+                assert!(
+                    revoked.get("error").is_some(),
+                    "revoked session read must deny cached aggregate: {revoked}"
+                );
+                assert!(
+                    f.authority()
+                        .get_create_task_with_policy(
+                            &identity(),
+                            &base,
+                            &task,
+                            Some(policy.as_ref())
+                        )
+                        .is_err()
+                );
+                assert_eq!(creator.calls.load(Ordering::SeqCst), 1);
+                assert_eq!(sender.calls.load(Ordering::SeqCst), 1);
+                policy.0.store(true, Ordering::SeqCst);
+            }
             if scenario == "no_grant" {
                 policy.0.store(true, Ordering::SeqCst);
             }
             let again = request(&mut w, &mut lines, create(3)).await;
             assert_eq!(again["result"]["resultType"], "task", "{again}");
+            if scenario == "not_sent" {
+                let id = again["result"]["taskId"].as_str().unwrap();
+                let replay=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":81,"method":"tasks/get","params":{"_meta":meta,"taskId":id}})).await;
+                assert_eq!(
+                    replay["result"]["result"]["structuredContent"]["prompt"]["code"],
+                    "adapter_refused",
+                    "{replay}"
+                );
+                assert_eq!(
+                    replay["result"]["result"]["structuredContent"]["create"]["session_ref"],
+                    "issued"
+                );
+                let db = Connection::open(&f.db).unwrap();
+                let child: String = db
+                    .query_row(
+                        "SELECT task_id FROM intents WHERE state='rejected' AND target='issued'",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                drop(db);
+                let mut read_grants = grants();
+                read_grants.push(Grant {
+                    principal: PrincipalId("alice".into()),
+                    resource: PrivateResource::Session(SessionRef("issued".into())),
+                    action: Action::Read,
+                });
+                assert!(
+                    f.authority()
+                        .get_delivery_task(&identity(), &read_grants, &child)
+                        .unwrap()
+                        .is_some()
+                );
+            }
+
             let third = request(&mut w, &mut lines, create(5)).await;
             assert_eq!(third["result"]["resultType"], "task", "{third}");
+            if scenario == "not_sent" {
+                let id = third["result"]["taskId"].as_str().unwrap();
+                let projected=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":82,"method":"tasks/get","params":{"_meta":meta,"taskId":id}})).await;
+                assert_eq!(
+                    projected["result"]["result"]["structuredContent"]["prompt"]["code"],
+                    "adapter_refused",
+                    "{projected}"
+                );
+            }
+
             if scenario == "confirmed" {
                 assert_eq!(third["result"]["status"], "completed");
                 let repeated_task = third["result"]["taskId"].as_str().unwrap();
@@ -3888,4 +3954,162 @@ async fn scoped_create_application_wire_preserves_session_and_deduplicates_promp
             job.await.unwrap();
         }
     }
+}
+
+#[tokio::test]
+async fn create_prompt_recovers_stopped_before_handoff_before_and_after_projection() {
+    use herder::application::scoped_stop::create_prompt::{
+        CreatePromptOutcome, NoAdditionalGrant, create_with_prompt,
+    };
+    use sha2::{Digest, Sha256};
+    struct Create {
+        instance: InstanceRef,
+        calls: AtomicUsize,
+    }
+    impl BoundedFreshRootCreate for Create {
+        fn instance(&self) -> &InstanceRef {
+            &self.instance
+        }
+        fn create_root_bounded(&self, _: &str, _: &str) -> Result<SessionAddress, SubmitError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(address())
+        }
+    }
+    let f = Fixture::new();
+    let target = address();
+    let creator = Create {
+        instance: target.instance.clone(),
+        calls: AtomicUsize::new(0),
+    };
+    let req = || CreateRequest {
+        intent_id: "create",
+        task_id: "create-task",
+        request_key: "create-key",
+        specification: "isolated",
+        now: "now",
+        retain_until: "later",
+    };
+    assert_eq!(
+        f.authority()
+            .create_fresh_root(
+                &identity(),
+                &grants(),
+                &creator,
+                &Issuer,
+                &Generation,
+                req()
+            )
+            .unwrap(),
+        CreateResult::Created(SessionRef("issued".into()))
+    );
+    let hash = Sha256::digest(
+        serde_json::to_vec(&("create-prompt-v1", "alice", &target.instance, "create-key")).unwrap(),
+    )
+    .iter()
+    .map(|b| format!("{b:02x}"))
+    .collect::<String>();
+    let key = format!("create-prompt:{hash}");
+    let b = binding(&target, "delivery-stopped", &key);
+    let p = plan();
+    let mut writer = Writer::open_file(&f.db).unwrap();
+    writer
+        .prepare_intent(&NewIntent {
+            intent_id: b.intent_id,
+            task_id: "delivery-task",
+            principal: "alice",
+            target: "issued",
+            request_key: &key,
+            payload_hash: &dispatch_payload_binding(&p, "isolated"),
+            now: "now",
+            retain_until: "later",
+        })
+        .unwrap();
+    drop(writer);
+    assert!(
+        f.authority()
+            .claim(&identity(), &grants(), &b, "scope-1", &p, "isolated", "now")
+            .unwrap()
+    );
+    f.authority()
+        .stop(&identity(), &grants(), "session:issued", "human", "now")
+        .unwrap();
+    let sends = Arc::new(AtomicUsize::new(0));
+    let control = NotSent {
+        calls: sends.clone(),
+    };
+    assert_eq!(
+        f.authority()
+            .handoff(
+                &identity(),
+                &grants(),
+                &b,
+                "scope-1",
+                p,
+                "isolated",
+                "now",
+                &control
+            )
+            .unwrap(),
+        DurableDispatch::StoppedBeforeHandoff
+    );
+    let reader = FixtureReader {
+        target,
+        reads: AtomicUsize::new(0),
+        db: f.db.clone(),
+    };
+    let authority = f.authority();
+    let first = create_with_prompt(
+        &authority,
+        &identity(),
+        &grants(),
+        &creator,
+        &Issuer,
+        &Generation,
+        &reader,
+        &control,
+        &NoAdditionalGrant,
+        req(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        first,
+        CreatePromptOutcome::StoppedBeforeHandoff {
+            session: SessionRef("issued".into())
+        }
+    );
+    let mut read_grants = grants();
+    read_grants.push(Grant {
+        principal: PrincipalId("alice".into()),
+        resource: PrivateResource::Session(SessionRef("issued".into())),
+        action: Action::Read,
+    });
+    assert!(
+        authority
+            .get_delivery_task(&identity(), &read_grants, "delivery-task")
+            .unwrap()
+            .is_some()
+    );
+    let after = create_with_prompt(
+        &authority,
+        &identity(),
+        &grants(),
+        &creator,
+        &Issuer,
+        &Generation,
+        &reader,
+        &control,
+        &NoAdditionalGrant,
+        req(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        after,
+        CreatePromptOutcome::StoppedBeforeHandoff {
+            session: SessionRef("issued".into())
+        }
+    );
+    assert_eq!(creator.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(sends.load(Ordering::SeqCst), 0);
 }
