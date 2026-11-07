@@ -59,3 +59,11 @@ it('keeps an existing cursor usable when another consumer starts reading', async
   await reader({ scope, cursor: null, limit: 1 });
   expect((await reader({ scope, cursor: first.nextCursor, limit: 1 })).events[0].eventId).toBe('b');
 });
+
+it('pages an admitted ChatGPT draft using its verified native export identity', async () => {
+  const { createChatgptTranscriptReader } = await import('../src/chatgpt-transcript-reader.js');
+  const native = '6aa7e444-0ba4-83ed-992f-d2afaa3159e8';
+  const scope = { hostId: 'host', harness: 'chatgpt', nativeSessionId: 'chatgpt::draft%3Afixture' };
+  const reader = createChatgptTranscriptReader({ scope, getRawTranscript: async () => ({ complete: true, source: { kind: 'native-api', format: 'json', location: 'https://chatgpt.com/c/' + native }, bytes: Buffer.from(JSON.stringify({ conversation_id: native, mapping: { a: { message: { id: 'a', author: { role: 'user' }, content: { parts: ['question'] } } } } })) }) });
+  expect((await reader({ scope, cursor: null, limit: 10 })).events[0]).toMatchObject({ eventId: 'a', text: 'question' });
+});

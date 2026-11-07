@@ -27,7 +27,10 @@ export function createChatgptTranscriptReader(input: {
       if (nativeId.startsWith("chatgpt::")) {
         try { nativeId = decodeURIComponent(nativeId.slice(9)); } catch { return fail("invalid session ID"); }
       }
-      if (!data || data.conversation_id !== nativeId || !data.mapping || typeof data.mapping !== "object" || Array.isArray(data.mapping)) return fail("native session or mapping mismatch");
+      const resolved = data?.conversation_id;
+      const admittedDraft = nativeId.startsWith("draft:") && typeof resolved === "string" && /^[a-f0-9-]{28,80}$/i.test(resolved)
+        && raw.source.location === `https://chatgpt.com/c/${resolved}`;
+      if (!data || (resolved !== nativeId && !admittedDraft) || !data.mapping || typeof data.mapping !== "object" || Array.isArray(data.mapping)) return fail("native session or mapping mismatch");
       const seen = new Set<string>();
       const events: NativeTranscriptEvent[] = [];
       for (const node of Object.values(data.mapping) as any[]) {

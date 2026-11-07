@@ -75,3 +75,29 @@ it('retrieves the complete export through the real Z.ai driver in verified chunk
   expect(chunks).toBeGreaterThan(1);
   expect(runInContext('Object.keys(globalThis.__herderFullConversationTransfers).length', context)).toBe(0);
 });
+
+it('exports a Z.ai virtual session through the regular transcript tool', async () => {
+  const { mkdtemp, rm, readFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { BrowserChatAdapter } = await import('../src/adapters/browser-chat.js');
+  const { TranscriptArchive } = await import('../src/transcript-archive.js');
+  const { handleExportTranscript } = await import('../src/mcp-tools/handlers.js');
+  const root = await mkdtemp(join(tmpdir(), 'herder-zai-export-'));
+  try {
+    const driver: any = { listChats: async () => [{ id: 'route:' + id, title: 'fixture', unread: false, working: false, updatedAt: new Date(0).toISOString() }], sendMessage: async () => ({}), getRawConversation: async () => ({ conversation_id: id, messages: { a: { id: 'a', role: 'user', content: 'question' } } }) };
+    const adapter = new BrowserChatAdapter(driver, { id: 'zai', name: 'Z.ai', harness: 'zai', cwd: '/virtual/zai' });
+    await adapter.listSessions();
+    const result = await handleExportTranscript(new Map([['zai', adapter]]), { sessionId: 'route:' + id, harness: 'zai' }, new TranscriptArchive({ workspaceRoot: root }));
+    expect(result).toContain('Transcript exported: ');
+    const path = result.split('\n')[0]!.replace('Transcript exported: ', '');
+    expect(JSON.parse(await readFile(path, 'utf8')).messages.a.content).toBe('question');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+it('pages an admitted Z.ai draft using its verified native export identity', async () => {
+  const { createZaiTranscriptReader } = await import('../src/zai-transcript-reader.js');
+  const scope = { hostId: 'host', harness: 'zai', nativeSessionId: 'zai::draft%3Afixture' };
+  const reader = createZaiTranscriptReader({ scope, getRawTranscript: async () => ({ complete: true, source: { kind: 'native-api', format: 'json', location: 'https://chat.z.ai/c/' + id }, bytes: Buffer.from(JSON.stringify({ conversation_id: id, messages: { a: { id: 'a', role: 'user', content: 'question' } } })) }) });
+  expect((await reader({ scope, cursor: null, limit: 10 })).events[0]).toMatchObject({ eventId: 'a', text: 'question' });
+});

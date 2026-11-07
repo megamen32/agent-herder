@@ -13,7 +13,11 @@ export function createZaiTranscriptReader(input: { scope: TranscriptSessionScope
     if (!raw || !raw.complete || raw.source?.kind !== "native-api" || raw.source.format !== "json" || raw.bytes.byteLength > 16 * 1024 * 1024) return null;
     let data: any;
     try { data = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw.bytes)); } catch { return null; }
-    if (!nativeId || data?.conversation_id !== nativeId || !data.messages || typeof data.messages !== "object" || Array.isArray(data.messages)) return null;
+    const resolvedId = data?.conversation_id;
+    const resolvedFromVirtual = (nativeId.startsWith("draft:") || nativeId.startsWith("sidebar:"))
+      && typeof resolvedId === "string" && /^[a-f0-9-]{12,80}$/i.test(resolvedId)
+      && raw.source.location === `https://chat.z.ai/c/${resolvedId}`;
+    if (!nativeId || (resolvedId !== nativeId && !resolvedFromVirtual) || !data.messages || typeof data.messages !== "object" || Array.isArray(data.messages)) return null;
     const mapping: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data.messages)) {
       const message = value as any;

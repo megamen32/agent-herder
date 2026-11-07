@@ -231,8 +231,8 @@ async function exportRawLineage(
   signal?: AbortSignal,
 ): Promise<{ archive: TranscriptArchiveResult; targetRaw: ArchivedTranscript["raw"] } | null> {
   throwIfAborted(signal);
-  const isVirtualChatGpt = (session: AgentSession) => session.harness === "chatgpt" && session.meta?.browserProvider === "chatgpt";
-  if (!adapter.getRawTranscript || (!isVirtualChatGpt(target) && !await isInsideWorkspace(archive.workspaceRoot, target.cwd))) return null;
+  const isVirtualBrowser = (session: AgentSession) => (session.harness === "chatgpt" || session.harness === "zai") && session.meta?.browserProvider === session.harness;
+  if (!adapter.getRawTranscript || (!isVirtualBrowser(target) && !await isInsideWorkspace(archive.workspaceRoot, target.cwd))) return null;
   const visited = new Set<string>();
   const related: ArchivedTranscript[] = [];
   const excluded: TranscriptArchiveResult["excluded"] = [];
@@ -246,7 +246,7 @@ async function exportRawLineage(
       excluded.push({ harness: session.harness, sessionId: session.id, reason: "foreign_harness" });
       return null;
     }
-    if (!isVirtualChatGpt(session) && !await isInsideWorkspace(archive.workspaceRoot, session.cwd)) {
+    if (!isVirtualBrowser(session) && !await isInsideWorkspace(archive.workspaceRoot, session.cwd)) {
       excluded.push({ harness: session.harness, sessionId: session.id, reason: "outside_workspace" });
       return null;
     }
@@ -260,7 +260,7 @@ async function exportRawLineage(
       excluded.push({ harness: session.harness, sessionId: session.id, reason: "raw_unavailable" });
       return null;
     }
-    const snapshot = { harness: session.harness, sessionId: session.id, cwd: isVirtualChatGpt(session) ? archive.workspaceRoot : session.cwd, raw };
+    const snapshot = { harness: session.harness, sessionId: session.id, cwd: isVirtualBrowser(session) ? archive.workspaceRoot : session.cwd, raw };
     if (!targetSession) related.push(snapshot);
     if (adapter.getParent) {
       try {

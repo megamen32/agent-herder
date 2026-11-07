@@ -59,7 +59,7 @@ function fileStem(sessionId: string): string {
 }
 
 function harnessDirectory(harness: string): string {
-  if (["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt"].includes(harness)) return harness;
+  if (["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "zai"].includes(harness)) return harness;
   throw new Error(`Unsupported transcript archive harness: ${harness}`);
 }
 
