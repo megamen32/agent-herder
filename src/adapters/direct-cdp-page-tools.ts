@@ -21,6 +21,7 @@ export interface DirectCdpConfig {
 export class DirectCdpPageTools implements ChromePageTools {
   private socket?: Socket;
   private connecting?: Promise<void>;
+  private attaching?: Promise<void>;
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
   private sessionId?: string;
@@ -136,7 +137,10 @@ export class DirectCdpPageTools implements ChromePageTools {
   }
 
   private async ensureSession(): Promise<string> {
-    if (!this.sessionId) await this.attachExactTarget();
+    if (!this.sessionId) {
+      if (!this.attaching) this.attaching = this.attachExactTarget().finally(() => { this.attaching = undefined; });
+      await this.attaching;
+    }
     if (!this.sessionId) throw new Error("direct_cdp_target_not_attached");
     return this.sessionId;
   }

@@ -42,6 +42,8 @@ describe("ChatGPT AHAP browser runner", () => {
     expect(caps.methods).toContain("getSessionMessages");
     expect(caps.methods).not.toContain("listProjects");
     expect(caps.methods).not.toContain("subscribeEvents");
+    expect(caps.methods).not.toContain("stopTurn");
+    expect(caps.methods).not.toContain("listModels");
     expect(caps.controlCapabilities.events).toBe(false);
     expect(calls).toEqual(["init", "listSessions", "getSession:chatgpt::native%2Fid", "getSessionMessages:chatgpt::native%2Fid:25", "createSession:new:/tmp"]);
     expect(replies[1].result).toBeNull();
@@ -63,14 +65,27 @@ describe("ChatGPT AHAP browser runner", () => {
     const replies = await run({
       getAccountScope: () => scope,
       async init() {},
-      async sendMessage() { sends += 1; return { ok: false, admissionUnknown: true, nonRetryable: true, error: "unknown" }; },
+      async sendMessage() { sends += 1; return { ok: false, admissionUnknown: true, nonRetryable: true, notSubmitted: true, error: "unknown" }; },
     }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" },
       { jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "chatgpt::x", options: { message: "hello" } } },
       { jsonrpc: "2.0", id: 4, method: "shutdown" },
     ]);
     expect(sends).toBe(1);
-    expect((replies[2].result as Record<string, unknown>).outcome).toBe("unknown");
-    expect((replies[2].result as Record<string, unknown>).retryable).toBe(false);
+    expect((replies[2].error as { data: Record<string, unknown> }).data.outcome).toBe("unknown");
+    expect((replies[2].error as { data: Record<string, unknown> }).data.retryable).toBe(false);
+  });
+
+  it("treats legacy notSubmitted send failures as UNKNOWN unless typed pre-effect proof exists", async () => {
+    const replies = await run({
+      getAccountScope: () => scope,
+      async init() {},
+      async sendMessage() { return { ok: false, notSubmitted: true, nonRetryable: true, error: "local draft admit failed after click" }; },
+    }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" },
+      { jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "chatgpt::x", options: { message: "hello" } } },
+      { jsonrpc: "2.0", id: 4, method: "shutdown" },
+    ]);
+    expect(replies[2].error).toBeDefined();
+    expect((replies[2].error as { data: Record<string, unknown> }).data).toMatchObject({ outcome: "unknown", retryable: false });
   });
 
   it("rejects malformed frames without preventing later valid requests", async () => {

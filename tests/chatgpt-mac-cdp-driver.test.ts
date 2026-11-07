@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CHATGPT_MAC_SNAPSHOT, ChatGptMacCdpDriver, parseChatGptPages, pickChatGptPage } from "../src/adapters/chatgpt-mac-cdp-driver.js";
 import { parseChromeEvaluation, type ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
+import { CHATGPT_CREATE_SCOPE_SCRIPT } from "../src/adapters/browser-chat-new-page.js";
 // The driver now owns a durable inventory cache; every test keeps its own
 // private root so nothing ever touches the state directory of the host.
 let _invDir: string;
@@ -33,6 +34,22 @@ class BrowserFixture implements ChromePageTools {
   }
 }
 describe("ChatGPT on existing Mac mini CDP", () => {
+  it("rejects draft creation when the site account changes from the pinned scope", async () => {
+    const actions: string[] = [];
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      actions.push(name);
+      if (name === "list_pages") return `7: ChatGPT (https://chatgpt.com/c/${ID})`;
+      if (name === "evaluate_script" && args.function === CHATGPT_CREATE_SCOPE_SCRIPT) return json({ scope: "b".repeat(64) });
+      throw new Error(`unexpected action ${name}`);
+    } };
+    const Driver = ChatGptMacCdpDriver as unknown as new (
+      tools: ChromePageTools, pinnedPageId?: number, openWaitMs?: number, expectedScope?: string,
+    ) => ChatGptMacCdpDriver;
+    const driver = new Driver(tools, 7, 0, "a".repeat(64));
+    await expect(driver.createChat({ title: "must not be created" })).rejects.toThrow("pinned account scope mismatch");
+    expect(actions).toEqual(["list_pages", "evaluate_script"]);
+  });
+
   it("parses only the official ChatGPT origin", () => {
     expect(parseChatGptPages(
       "7: ChatGPT (https://chatgpt.com/c/" + ID + ")\n"

@@ -2,18 +2,19 @@ import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
 import { BrowserChatAdapter, type BrowserChatDriver } from "./adapters/browser-chat.js";
-import { createBrowserChatDriver } from "./adapters/chatgpt-mac-cdp-driver.js";
+import { ChatGptMacCdpDriver } from "./adapters/chatgpt-mac-cdp-driver.js";
+import { DirectCdpPageTools } from "./adapters/direct-cdp-page-tools.js";
 
 type RpcId = string | number;
 type RpcRequest = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
 type BrowserAdapterPort = Pick<BrowserChatAdapter,
-  "init" | "listSessions" | "getSession" | "getSessionMessages" | "sendMessage"
-  | "cancelTurn" | "createSession" | "listModels" | "changeModel"> & { getAccountScope(): string | undefined };
+  "init" | "listSessions" | "getSession" | "getSessionMessages" | "sendMessage" | "createSession">
+  & { getAccountScope(): string | undefined };
 
-const METHODS = ["init", "listSessions", "getSession", "getSessionMessages", "sendMessage", "stopTurn", "createSession", "listModels", "changeModel"];
+const METHODS = ["init", "listSessions", "getSession", "getSessionMessages", "sendMessage", "createSession"];
 const CONTROL_CAPABILITIES = {
-  cancelTurn: true, detach: false, resume: false, terminate: false,
-  recover: false, fork: false, modelSwitch: true, subagents: false,
+  cancelTurn: false, detach: false, resume: false, terminate: false,
+  recover: false, fork: false, modelSwitch: false, subagents: false,
   events: false, steer: false,
 };
 const ACCOUNT_SCOPE = /^[a-f0-9]{64}$/u;
@@ -65,8 +66,7 @@ export async function serveBrowserChatAhap(
       initialized = true;
       write({ jsonrpc: "2.0", id, result: {
         harness: "chatgpt", name: "ChatGPT BrowserChatAdapter",
-        capabilities: { methods: METHODS, controlCapabilities: CONTROL_CAPABILITIES,
-          browserFeatures: { nativeConversationIds: true, queueAfterGeneration: true, chatCreation: true, accountArchiveViaCdp: true } },
+        capabilities: { methods: METHODS, controlCapabilities: CONTROL_CAPABILITIES },
       } });
       continue;
     }
@@ -115,32 +115,16 @@ export async function serveBrowserChatAhap(
           }
           result = await adapter.sendMessage(params.id, params.options);
           const receipt = result as { admissionUnknown?: boolean; nonRetryable?: boolean };
-          if (receipt.admissionUnknown) {
-            result = { ...receipt, outcome: "unknown", retryable: false };
+          if (receipt.admissionUnknown || (result as { ok?: boolean }).ok === false) {
+            error(id, -32000, "ChatGPT send outcome unknown", { outcome: "unknown", retryable: false });
+            continue;
           }
           break;
         }
-        case "stopTurn":
-          assertAccount();
-          if (typeof params.id !== "string" || !params.id.trim()) { error(id, -32602, "stopTurn requires session id"); continue; }
-          result = await adapter.cancelTurn(params.id);
-          break;
         case "createSession":
           assertAccount();
           if (!isCreateOptions(params.options)) { error(id, -32602, "createSession requires a name and absolute cwd"); continue; }
           result = await adapter.createSession(params.options);
-          break;
-        case "listModels":
-          assertAccount();
-          result = await adapter.listModels();
-          break;
-        case "changeModel":
-          assertAccount();
-          if (typeof params.id !== "string" || !params.id.trim() || !isModelOptions(params.options)) {
-            error(id, -32602, "changeModel requires session id and model");
-            continue;
-          }
-          result = await adapter.changeModel(params.id, params.options.model);
           break;
         default: error(id, -32601, "method not implemented"); continue;
       }
@@ -166,21 +150,16 @@ function isCreateOptions(value: unknown): value is Parameters<BrowserChatAdapter
   return typeof options.name === "string" && !!options.name.trim()
     && typeof options.cwd === "string" && options.cwd.startsWith("/");
 }
-function isModelOptions(value: unknown): value is { model: string } {
-  return !!value && typeof value === "object" && !Array.isArray(value)
-    && typeof (value as Record<string, unknown>).model === "string"
-    && !!((value as Record<string, unknown>).model as string).trim();
-}
-
 async function makeConfiguredAdapter(): Promise<BrowserAdapterPort> {
-  const pageId = process.env.AGENT_HERDER_CHATGPT_PAGE_ID?.trim();
+  const endpoint = process.env.AHAP_CHATGPT_CDP_WS_URL?.trim();
+  const contextId = process.env.AHAP_CHATGPT_CDP_CONTEXT_ID?.trim();
+  const targetId = process.env.AHAP_CHATGPT_CDP_TARGET_ID?.trim();
   const expectedScope = process.env.AHAP_CHATGPT_ACCOUNT_SCOPE?.trim();
-  if (!pageId || !/^[1-9]\d*$/u.test(pageId) || !expectedScope || !ACCOUNT_SCOPE.test(expectedScope)) {
-    throw new Error("Pinned ChatGPT page ID and account scope are required");
+  if (!endpoint || !contextId || !targetId || !expectedScope || !ACCOUNT_SCOPE.test(expectedScope)) {
+    throw new Error("Pinned ChatGPT CDP endpoint, context, target and account scope are required");
   }
-  // Disable the provider's optional background prompt observer in this bounded runner.
-  process.env.AGENT_HERDER_CHATGPT_PROMPT_POLLING = "off";
-  const driver: BrowserChatDriver = await createBrowserChatDriver();
+  const pageTools = new DirectCdpPageTools({ endpoint, contextId, targetId });
+  const driver: BrowserChatDriver = new ChatGptMacCdpDriver(pageTools, 1, 0, expectedScope);
   const adapter = new BrowserChatAdapter(driver, { id: "chatgpt", name: "ChatGPT browser", harness: "chatgpt", cwd: process.cwd() }, process.cwd(), true);
   return Object.assign(adapter, { getAccountScope: () => driver.getAccountScope?.() });
 }

@@ -123,4 +123,19 @@ describe("DirectCdpPageTools", () => {
     await expect(tools.call("click")).rejects.toThrow("unsupported_direct_cdp_tool:click");
     tools.close();
   });
+
+  it("rejects in-flight commands on disconnect without replay", async () => {
+    const socket = new FakeSocket();
+    socket.respond = frame => frame.method === "Target.getTargets"
+      ? { targetInfos: [{ targetId: "target-A", type: "page", title: "ChatGPT", url: "https://chatgpt.com/", browserContextId: "ctx-A" }] }
+      : frame.method === "Target.attachToTarget" ? { sessionId: "session-target-A" } : undefined;
+    const tools = create(socket, { timeoutMs: 5_000 });
+    const pending = tools.call("evaluate_script", { pageId: 1, function: "() => ({ ok: true })" });
+    for (let index = 0; index < 20 && !socket.sent.some(frame => frame.method === "Runtime.evaluate"); index += 1) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    socket.close();
+    await expect(pending).rejects.toThrow("direct_cdp_disconnected; operation outcome may be unknown");
+    expect(socket.sent.filter(frame => frame.method === "Runtime.evaluate")).toHaveLength(1);
+  });
 });
