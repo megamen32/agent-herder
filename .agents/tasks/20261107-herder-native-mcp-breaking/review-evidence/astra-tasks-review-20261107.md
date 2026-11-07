@@ -49,3 +49,11 @@ Owner-only policy без новой grants таблицы — SUPPORTED как �
 `f5f27200` ZCode — independent SUPPORTED source/synthetic: partial без доказательства полноты, content/info.content различаются; local pages одного immutable payload собираются до одного общего feed. Reviewer5 targeted transcript tests PASS. Actual connection.rs компилируется, transport seam fake; это не captured/live protocol. V072D UNKNOWN не затронут.
 
 `365c1fdf` (после rebase32bc8099) Resources — Astra source review принят: чистая prepare_reply возвращает exact stored sender/in_reply_to, проверяет verified self и exact grants; новый ReplyDispatch удалён. Автор3tests+SQLite reopen. Native delivery/replay proof остаётся V027; отправка только через общий fenced deliver. Исполнитель получил готовый независимый V017A/B resources source, shared transport/lib owner Terra.
+
+## Native Task path — source delta принято 11:18 UTC
+
+`dfe5f79a` independent Nietzsche SUPPORTED. task_grants разрешает текущий exact Read только после task/intent principal, mapping/current generation/scopes lookup; policy вне gate. task_reconcile использует сохранённую bound receipt, освобождает gate/SQLite перед native read и подтверждает только matching observation с повторным условным UPDATE по exact binding/неизменным receipt bytes. Submit-порт отсутствует. Aggregate направляет reconciliation в сохранённый child с самостоятельной проверкой доступа.
+
+Два independent immutable tests PASS: task_reconciliation_checks_exact_receipt_without_holding_gate_or_transaction; direct_delivery_task_uses_current_exact_policy_after_reopen. Они подтверждают mismatch→working/match→terminal+reopen, submit1, dynamic policy и revoke denial. Aggregate wire test прошёл, но reviewer не засчитал его как immutable proof из-за concurrent WIP; committed вариант просмотрен source. Автор combined48PASS+1ignored.
+
+Terra получила verdict и продолжает previously authorized isolated real-Codex SDK consumer с явно подключённым reconciler (owner wiring45b99e04). На момент записи live result ещё не получен. Исполнитель Tesla продолжает bounded V025CREATEINPUT; он не блокирует уже принятый runtime integration.
