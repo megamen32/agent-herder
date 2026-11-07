@@ -1,5 +1,6 @@
 //! Shared building blocks for the Herder daemon.
 pub mod adapters {
+    pub mod cdp;
     pub mod codex {
         pub mod connection;
         pub mod read;
