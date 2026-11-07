@@ -12,6 +12,7 @@ pub mod adapters {
 pub mod application {
     pub mod list;
     pub mod recent;
+    pub mod reconcile;
 }
 pub mod auth {
     pub mod identity;
