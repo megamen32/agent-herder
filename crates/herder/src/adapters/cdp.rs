@@ -62,10 +62,40 @@ pub async fn create_page_target(
     instance_id: &str,
     browser_context_id: &str,
 ) -> Result<CdpConnection, CdpCreateError> {
-    let mut connection =
-        CdpConnection::connect_browser(browser_websocket_endpoint, node_id, instance_id)
+    create_page_target_with_origin_port(
+        browser_websocket_endpoint,
+        origin,
+        node_id,
+        instance_id,
+        browser_context_id,
+        None,
+    )
+    .await
+}
+
+pub async fn create_page_target_with_origin_port(
+    browser_websocket_endpoint: &str,
+    origin: &str,
+    node_id: &str,
+    instance_id: &str,
+    browser_context_id: &str,
+    origin_port: Option<u16>,
+) -> Result<CdpConnection, CdpCreateError> {
+    let mut connection = match origin_port {
+        Some(port) => {
+            CdpConnection::connect_browser_with_origin_port(
+                browser_websocket_endpoint,
+                node_id,
+                instance_id,
+                port,
+            )
             .await
-            .map_err(CdpCreateError::Attach)?;
+        }
+        None => {
+            CdpConnection::connect_browser(browser_websocket_endpoint, node_id, instance_id).await
+        }
+    }
+    .map_err(CdpCreateError::Attach)?;
     connection.create_target(origin, browser_context_id).await?;
     Ok(connection)
 }
@@ -74,7 +104,7 @@ pub async fn create_page_target(
 #[serde(rename_all = "camelCase")]
 pub struct CdpTargetInfo {
     pub target_id: String,
-    pub browser_context_id: String,
+    pub browser_context_id: Option<String>,
     #[serde(rename = "type")]
     pub target_type: String,
     pub url: String,
@@ -108,10 +138,39 @@ impl CdpConnection {
         instance_id: &str,
         request_timeout: Duration,
     ) -> Result<Self, CdpError> {
+        Self::connect_browser_inner(endpoint, node_id, instance_id, None, request_timeout).await
+    }
+
+    pub async fn connect_browser_with_origin_port(
+        endpoint: &str,
+        node_id: &str,
+        instance_id: &str,
+        remote_origin_port: u16,
+    ) -> Result<Self, CdpError> {
+        if remote_origin_port == 0 {
+            return Err(CdpError::InvalidEndpoint);
+        }
+        Self::connect_browser_inner(
+            endpoint,
+            node_id,
+            instance_id,
+            Some(remote_origin_port),
+            DEFAULT_TIMEOUT,
+        )
+        .await
+    }
+
+    async fn connect_browser_inner(
+        endpoint: &str,
+        node_id: &str,
+        instance_id: &str,
+        origin_port: Option<u16>,
+        request_timeout: Duration,
+    ) -> Result<Self, CdpError> {
         if node_id.trim().is_empty() || instance_id.trim().is_empty() || request_timeout.is_zero() {
             return Err(CdpError::InvalidIdentity);
         }
-        let socket = open_socket(endpoint, "browser", None, request_timeout).await?;
+        let socket = open_socket(endpoint, "browser", None, request_timeout, origin_port).await?;
         let mut connection = Self {
             identity: CdpTargetIdentity {
                 node_id: node_id.to_owned(),
@@ -148,8 +207,14 @@ impl CdpConnection {
         if !identity.is_complete() || request_timeout.is_zero() {
             return Err(CdpError::InvalidIdentity);
         }
-        let socket =
-            open_socket(endpoint, "page", Some(&identity.target_id), request_timeout).await?;
+        let socket = open_socket(
+            endpoint,
+            "page",
+            Some(&identity.target_id),
+            request_timeout,
+            None,
+        )
+        .await?;
         let mut connection = Self {
             identity,
             socket,
@@ -195,7 +260,7 @@ impl CdpConnection {
             .iter()
             .find(|target| target.target_id == target_id && target.target_type == "page")
             .ok_or(CdpError::InvalidIdentity)?;
-        if target.browser_context_id != expected_context_id {
+        if target.browser_context_id.as_deref() != Some(expected_context_id) {
             return Err(CdpError::InvalidIdentity);
         }
         self.attach_session(target_id, expected_context_id).await
@@ -400,6 +465,7 @@ async fn open_socket(
     expected_kind: &str,
     target_id: Option<&str>,
     request_timeout: Duration,
+    origin_port: Option<u16>,
 ) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, CdpError> {
     let mut request = endpoint
         .into_client_request()
@@ -424,10 +490,13 @@ async fn open_socket(
     {
         return Err(CdpError::InvalidEndpoint);
     }
-    let origin = format!(
-        "http://{}",
-        uri.authority().ok_or(CdpError::InvalidEndpoint)?
-    );
+    let origin = match origin_port {
+        Some(port) => format!("http://127.0.0.1:{port}"),
+        None => format!(
+            "http://{}",
+            uri.authority().ok_or(CdpError::InvalidEndpoint)?
+        ),
+    };
     request.headers_mut().insert(
         ORIGIN,
         origin.parse().map_err(|_| CdpError::InvalidEndpoint)?,
