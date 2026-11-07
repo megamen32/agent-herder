@@ -16,10 +16,10 @@ pub fn execute(args: &[String]) -> Result<Value, String> {
     let Some(action) = args.first().map(String::as_str) else {
         return Err(usage());
     };
-    if !matches!(action, "status" | "claim") {
+    if !matches!(action, "status" | "claim" | "renew" | "release") {
         return Err(usage());
     }
-    let options = parse_options(&args[1..], action == "claim")?;
+    let options = parse_options(&args[1..], action)?;
     let authority = load_authority(&options.authority)?;
     let principal_ref = authorize_local_storage(&authority).map_err(user_error)?;
     let resource_ref = ResourceRef(options.resource);
@@ -46,6 +46,23 @@ pub fn execute(args: &[String]) -> Result<Value, String> {
     }
 
     let claim_id = options.claim_id.ok_or_else(usage)?;
+    if action == "release" {
+        claim::release(&authority, &resource_ref, Authorization::Authorized, &claim_id)
+            .map_err(user_error)?;
+        return Ok(json!({"status": "released", "resource": descriptor.resource_ref()}));
+    }
+    if action == "renew" {
+        let expires_at = options.expires_at.ok_or_else(usage)?;
+        let claim = claim::renew(
+            &authority,
+            &resource_ref,
+            Authorization::Authorized,
+            &claim_id,
+            Some(expires_at),
+        )
+        .map_err(user_error)?;
+        return Ok(json!({"status": "renewed", "resource": descriptor.resource_ref(), "claim": claim}));
+    }
     let purpose = options.purpose.ok_or_else(usage)?;
     let acquired_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -80,13 +97,16 @@ struct Options {
     resource: String,
     claim_id: Option<String>,
     purpose: Option<String>,
+    expires_at: Option<String>,
 }
 
-fn parse_options(args: &[String], claiming: bool) -> Result<Options, String> {
+fn parse_options(args: &[String], action: &str) -> Result<Options, String> {
+    let has_claim_id = matches!(action, "claim" | "renew" | "release");
     let mut authority = None;
     let mut resource = None;
     let mut claim_id = None;
     let mut purpose = None;
+    let mut expires_at = None;
     let mut index = 0;
     while index < args.len() {
         let key = args[index].as_str();
@@ -97,8 +117,9 @@ fn parse_options(args: &[String], claiming: bool) -> Result<Options, String> {
         let slot = match key {
             "--authority" => &mut authority,
             "--resource" => &mut resource,
-            "--claim-id" if claiming => &mut claim_id,
-            "--purpose" if claiming => &mut purpose,
+            "--claim-id" if has_claim_id => &mut claim_id,
+            "--purpose" if action == "claim" => &mut purpose,
+            "--expires-at" if action == "renew" => &mut expires_at,
             _ => return Err(usage()),
         };
         if slot.replace(value.clone()).is_some() {
@@ -111,6 +132,7 @@ fn parse_options(args: &[String], claiming: bool) -> Result<Options, String> {
         resource: resource.ok_or_else(usage)?,
         claim_id,
         purpose,
+        expires_at,
     })
 }
 
@@ -207,5 +229,5 @@ fn ownership_unavailable() -> String {
 }
 
 fn usage() -> String {
-    "Использование: herder ownership status --authority <absolute-path> --resource <ref> | herder ownership claim --authority <absolute-path> --resource <ref> --claim-id <uuid> --purpose <text>".into()
+    "Использование: herder ownership status --authority <absolute-path> --resource <ref> | claim --authority <path> --resource <ref> --claim-id <uuid> --purpose <text> | renew --authority <path> --resource <ref> --claim-id <uuid> --expires-at <value> | release --authority <path> --resource <ref> --claim-id <uuid>".into()
 }
