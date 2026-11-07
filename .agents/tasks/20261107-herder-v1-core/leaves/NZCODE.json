@@ -14,7 +14,7 @@
   "created_at": "2026-11-07T22:06:06+03:00",
   "session": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
   "harness": "codex",
-  "updated_at": "2026-11-08T00:20:20+03:00",
+  "updated_at": "2026-11-08T00:41:42+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:06:06+03:00",
@@ -90,9 +90,25 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:41:42+03:00",
+      "note": "",
+      "changes": {
+        "blocker": "Original ZCodecreateUNKNOWN remains. Fixture projectsetup is now fixed/published61503548 with7tests inclreal supervisor preflight. That does not reconcile originalmutation; CI owns exactnative recovery/no replay.",
+        "result": "OfficialWS preflight14toolsPASS; fixturesetup RED→GREEN7tests. OriginalUNKNOWN unchanged; full lane notPASS."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
   ],
   "note": "Observed existing CI canonical assignment23:24МСК, exactcandidate d66c9c07; source CI20261107 NZCODE. Native result not yet ready. This is integration acceptance tracking, not a new dispatch.",
-  "blocker": "Original create UNKNOWN, model0; official fixture lacks project.saveProject/readTree. CI Terra owns setup+readonly preflight fix, no newcreate.",
-  "result": "Original create UNKNOWN, model0; official fixture lacks project.saveProject/readTree. CI Terra owns setup+readonly preflight fix, no newcreate."
+  "blocker": "Original ZCodecreateUNKNOWN remains. Fixture projectsetup is now fixed/published61503548 with7tests inclreal supervisor preflight. That does not reconcile originalmutation; CI owns exactnative recovery/no replay.",
+  "result": "OfficialWS preflight14toolsPASS; fixturesetup RED→GREEN7tests. OriginalUNKNOWN unchanged; full lane notPASS."
 }

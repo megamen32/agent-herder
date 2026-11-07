@@ -1,0 +1,95 @@
+{
+  "at": "2026-11-07T21:41:00Z",
+  "project": "20261107-herder-v1-core",
+  "deadline": "2026-11-07T21:38:00Z",
+  "deadline_result": "missed: full native lanes and installed acceptance incomplete",
+  "human_stop": "No new owner stop in current mandate/canonical plan; historical approval refusals retained",
+  "previous_wake": {
+    "id": "wait_2b6467d223459d25644ea2c3f3b41da8",
+    "state": "resumed"
+  },
+  "next_wake": {
+    "id": "wait_e723c3fd8f962a05cf041563a252e0c9",
+    "scheduled_at": "2026-11-07T22:37:06.023Z",
+    "state": "waiting",
+    "request_id": "astra-herder-hourly-20261107T2237Z"
+  },
+  "legacy_sessions": [
+    {
+      "name": "Terra-old",
+      "status": "idle",
+      "last_activity": "2026-11-07T16:50:26Z",
+      "session_id": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "action": "not resumed: superseded V1 queue; preserve completed work, WIP and prior refusals"
+    },
+    {
+      "name": "translator",
+      "status": "idle",
+      "last_activity": "2026-11-07T06:11:22Z",
+      "session_id": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+      "action": "not resumed: superseded V1 queue; preserve completed work, WIP and prior refusals"
+    },
+    {
+      "name": "resources",
+      "status": "idle",
+      "last_activity": "2026-11-07T18:06:09Z",
+      "session_id": "01a1b399-4210-7471-8286-93750dff10b7",
+      "action": "not resumed: superseded V1 queue; preserve completed work, WIP and prior refusals"
+    },
+    {
+      "name": "Codex-old",
+      "status": "idle",
+      "last_activity": "2026-11-07T08:26:55Z",
+      "session_id": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "action": "not resumed: superseded V1 queue; preserve completed work, WIP and prior refusals"
+    },
+    {
+      "name": "OpenCode-old",
+      "status": "idle",
+      "last_activity": "2026-11-07T13:31:12Z",
+      "session_id": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "action": "not resumed: superseded V1 queue; preserve completed work, WIP and prior refusals"
+    },
+    {
+      "name": "ZCode-old",
+      "status": "idle",
+      "last_activity": "2026-11-07T19:38:03Z",
+      "session_id": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "action": "not resumed: superseded V1 queue; preserve completed work, WIP and prior refusals"
+    },
+    {
+      "name": "browser-old",
+      "status": "idle",
+      "last_activity": "2026-11-07T18:06:36Z",
+      "session_id": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "action": "not resumed: superseded V1 queue; preserve completed work, WIP and prior refusals"
+    }
+  ],
+  "current_workers": [
+    {
+      "name": "Singer",
+      "observation": "native completed result returned individually; integrated source ready, no new assignment needed"
+    },
+    {
+      "name": "Ampere",
+      "observation": "native completed result returned individually; integrated source ready, no new assignment needed"
+    },
+    {
+      "name": "Archimedes",
+      "observation": "native completed result returned individually; integrated source ready, no new assignment needed"
+    }
+  ],
+  "app_status_limitation": "Each of 8 required targets received its own wait_threads(timeoutMs:0). None returned before bounded read cell terminated; no mutations were retried. session_info fallback individually returned all 8 including CI.",
+  "ci": {
+    "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+    "before": "idle with completed blocker report; lastActivity21:34:21Z",
+    "assignment": "astra-v1-page8-recovery-20261107T2139",
+    "receipt": "accepted",
+    "turn_id": "01a1b7f3-a55f-77c0-84f7-cd376460dbd5",
+    "after": "native rollout has tool calls and completions21:39:33–21:40:08Z, confirms active work beyond ACK",
+    "next": "One read-only readiness/account check on same exact page8; claim then full authorized ChatGPT scenario only if ready; otherwise bounded browser bootstrap diagnosis, no new tabs, login/profile/infra changes, or UNKNOWN replay"
+  },
+  "candidate": "5ea28f51838f",
+  "native_full_gate": "INCOMPLETE",
+  "installed": "NOT_RUN"
+}
