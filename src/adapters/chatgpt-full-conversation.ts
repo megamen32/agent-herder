@@ -4,15 +4,27 @@ export function chatgptFullConversationApiScript(chatId: string, transferId?: st
   return `async () => {
     const id=${JSON.stringify(chatId)};
     if(location.origin!=='https://chatgpt.com'||!/^[a-f0-9-]{28,80}$/i.test(id)) return {error:'invalid_chat'};
-    if(Date.now() < (globalThis.__herderChatGptReadCooldownUntil || 0)) return {error:'read_cooldown'};
+    if(Date.now() < Math.max(globalThis.__herderChatGptReadCooldownUntil || 0,globalThis.__herderPassiveCooldownUntil || 0)) return {error:'read_cooldown'};
+    const backoff=response=>{
+      if(response.status!==429) return;
+      const value=response.headers?.get?.('retry-after');
+      const seconds=typeof value==='string'&&/^\\d+$/.test(value.trim())?Number(value):0;
+      const asDate=typeof value==='string'&&!seconds?Date.parse(value):NaN;
+      const serverWait=seconds>0?seconds*1000:Number.isFinite(asDate)?Math.max(0,asDate-Date.now()):0;
+      const strikes=Math.min(10,(globalThis.__herderFullRead429Strikes||0)+1);
+      globalThis.__herderFullRead429Strikes=strikes;
+      const until=Date.now()+Math.max(300000*Math.pow(2,strikes-1),serverWait);
+      globalThis.__herderChatGptReadCooldownUntil=Math.max(globalThis.__herderChatGptReadCooldownUntil||0,until);
+      globalThis.__herderPassiveCooldownUntil=Math.max(globalThis.__herderPassiveCooldownUntil||0,until);
+    };
     const auth=await fetch('/api/auth/session',{credentials:'same-origin'});
-    if(!auth.ok) return {error:'auth_http_'+auth.status};
+    if(!auth.ok) { backoff(auth); return {error:'auth_http_'+auth.status}; }
     const session=await auth.json();
     if(!session.accessToken) return {error:'account_unavailable'};
     const headers={authorization:'Bearer '+session.accessToken};
     if(session.account?.id) headers['chatgpt-account-id']=session.account.id;
     const response=await fetch('/backend-api/conversation/'+encodeURIComponent(id),{headers,credentials:'same-origin'});
-    if(!response.ok) return {error:'history_http_'+response.status};
+    if(!response.ok) { backoff(response); return {error:'history_http_'+response.status}; }
     const data=await response.json();
     if(data.conversation_id!==id || !data.mapping || typeof data.mapping!=='object' || Array.isArray(data.mapping)) return {error:'identity_mismatch'};
     const transferId=${JSON.stringify(transferId || "")};
