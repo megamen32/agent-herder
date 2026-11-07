@@ -4,6 +4,11 @@
 //! MCP client metadata, request fields, a node credential, and parent relationships
 //! are not evidence of a caller or a session binding.
 use crate::domain::address::SessionRef;
+use std::{
+    future::Future,
+    pin::Pin,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 /// Stable identifier assigned by the authentication authority, not by the request.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -84,6 +89,74 @@ impl ConnectionIdentity {
             .ok_or(IdentityError::SelfBindingRequired)?;
         resolve_self(&self.caller, binding, claimed).ok_or(IdentityError::SelfBindingMismatch)
     }
+}
+
+/// A successful response from the existing authority, over a trusted boundary.
+/// This is not deserializable from an MCP request or client metadata.
+#[derive(Debug, Clone)]
+pub struct VerifiedOAuthGrant {
+    pub subject: String,
+    pub issuer: String,
+    pub audience: String,
+    pub scopes: Vec<String>,
+    /// Unix milliseconds, matching the existing token store's clock.
+    pub expires_at_ms: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct OAuthPolicy {
+    pub issuer: String,
+    pub audience: String,
+    pub required_scope: String,
+}
+
+/// Must consult the authoritative store, including revocation, on every call.
+/// An error means the authority is unavailable; neither error nor None permits access.
+pub trait OAuthAuthority: Send + Sync {
+    fn verify<'a>(
+        &'a self,
+        bearer: &'a str,
+        policy: &'a OAuthPolicy,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<VerifiedOAuthGrant>, ()>> + Send + 'a>>;
+}
+
+/// Call once for each HTTP MCP request, including requests on existing sessions.
+/// Never cache its result as authority for a subsequent request.
+pub async fn authenticate_oauth_request(
+    authority: &dyn OAuthAuthority,
+    bearer: &str,
+    policy: &OAuthPolicy,
+) -> Result<ConnectionIdentity, IdentityError> {
+    if bearer.is_empty()
+        || policy.issuer.is_empty()
+        || policy.audience.is_empty()
+        || policy.required_scope.is_empty()
+    {
+        return Err(IdentityError::Unauthorized);
+    }
+    let grant = authority
+        .verify(bearer, policy)
+        .await
+        .map_err(|_| IdentityError::Unauthorized)?
+        .ok_or(IdentityError::Unauthorized)?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| IdentityError::Unauthorized)?
+        .as_millis();
+    if grant.subject.trim().is_empty()
+        || grant.issuer != policy.issuer
+        || grant.audience != policy.audience
+        || !grant.scopes.contains(&policy.required_scope)
+        || u128::from(grant.expires_at_ms) <= now
+    {
+        return Err(IdentityError::Unauthorized);
+    }
+    Ok(ConnectionIdentity::new(
+        Caller::Principal(VerifiedPrincipal {
+            id: PrincipalId(grant.subject),
+        }),
+        None,
+    ))
 }
 
 /// Resolve self solely from trusted evidence. A claimed sender must match the
