@@ -452,4 +452,61 @@ mod tests {
         }
         fs::remove_dir_all(root).unwrap();
     }
+
+    #[test]
+    fn concurrent_claims_have_exactly_one_winner() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let (root, authority) = fixture();
+        let authority = Arc::new(authority);
+        let resource_ref = Arc::new(ResourceRef("r".into()));
+        let barrier = Arc::new(Barrier::new(3));
+        let claims = [
+            requested("01234567-89ab-4cde-8fab-0123456789ab"),
+            requested("fedcba98-7654-4321-8abc-fedcba987654"),
+        ];
+        let workers = claims.clone().map(|request| {
+            let authority = Arc::clone(&authority);
+            let resource_ref = Arc::clone(&resource_ref);
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                claim(
+                    &authority,
+                    &resource_ref,
+                    Authorization::Authorized,
+                    request,
+                )
+                .unwrap()
+            })
+        });
+        barrier.wait();
+        let outcomes: Vec<_> = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect();
+        assert_eq!(
+            outcomes
+                .iter()
+                .filter(|outcome| **outcome == ClaimOutcome::Acquired)
+                .count(),
+            1,
+            "exactly one concurrent caller must acquire the claim"
+        );
+        assert_eq!(
+            outcomes
+                .iter()
+                .filter(|outcome| **outcome == ClaimOutcome::Busy)
+                .count(),
+            1,
+            "the losing caller must observe the existing owner"
+        );
+        let owner: OwnerRecord = serde_json::from_slice(
+            &fs::read(root.join("resources/r/owner.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(claims.iter().any(|claim| claim.claim_id == owner.claim.claim_id));
+        fs::remove_dir_all(root).unwrap();
+    }
 }
