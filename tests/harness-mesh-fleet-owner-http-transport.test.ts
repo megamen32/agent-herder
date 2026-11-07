@@ -58,7 +58,7 @@ describe('owner cookie native HTTP transport (fast unit; expected2s/max25s)',()=
    return {structuredContent:{hostId:'server-44',nativeUser:'roomhacker'}};
   });
   expect(await f.transport.readSession(target44,'minimax-code','mvs_existing')).toMatchObject({hostId:'server-44',details:{session:{id:'mvs_existing'}}});
-  expect(f.calls.filter(c=>c.options.method==='GET').map(c=>c.options.path)).toEqual(['/api/sessions/minimax-code/mvs_existing/details?limit=3&quick=1']);
+  expect(f.calls.filter(c=>c.options.method==='GET').map(c=>c.options.path)).toEqual(['/api/sessions/minimax-code/mvs_existing/details?limit=50&quick=1']);
  });
  it('uses only approved TLS aliases/physicalHAOS and required own Origin, with no bearer/pooled socket',async()=>{
   const f=fixture();expect(await f.transport.schema(target44)).toEqual({tools:[{name:'create_session'}]});

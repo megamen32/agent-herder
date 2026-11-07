@@ -200,7 +200,7 @@ export class FleetOwnerHttpTransport implements GptAdminTransport {
   return this.operation(target,10000,async(state,signal)=>{
    await this.connect(state,signal);await this.info(state,signal);
    const path=`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(sessionId)}`;
-   let response=await this.http(state,signal,'GET',path+'/details?limit=3&quick=1');const unavailable=response.status===502;
+   let response=await this.http(state,signal,'GET',path+'/details?limit=50&quick=1');const unavailable=response.status===502;
    if(unavailable)response=await this.http(state,signal,'GET',path);
    if(response.status!==200)throw new Error('owner_http_http_'+response.status);
    const details=record(response.data),session=record(details?.session);

@@ -185,7 +185,7 @@ if r['method']=='session/read':
  info=rpc('tools/call',{'name':'fleet_node_info','arguments':{}})
  info=json.loads(info['result']['content'][0]['text'])
  if info.get('hostId')!=r['hostId'] or info.get('nativeUser')!=r['nativeUser']:raise RuntimeError('native_owner_identity_mismatch')
- p=r['params'];path='/api/sessions/'+urllib.parse.quote(p['harness'],safe='')+'/'+urllib.parse.quote(p['sessionId'],safe='')+'/details?limit=3&quick=1'
+ p=r['params'];path='/api/sessions/'+urllib.parse.quote(p['harness'],safe='')+'/'+urllib.parse.quote(p['sessionId'],safe='')+'/details?limit=50&quick=1'
  history_unavailable=False
  try:
   with opener.open(url[:-4]+path,timeout=max(.001,deadline-time.monotonic())) as response:body=response.read(1048577)

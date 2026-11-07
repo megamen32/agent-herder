@@ -212,7 +212,7 @@ sys.stdin=io.TextIOWrapper(io.BytesIO(json.dumps(request).encode()))
 exec(compile(source,'owned-http-bridge','exec'))`;
   const stdout=execFileSync('/usr/bin/python3',['-I','-S','-B','-c',fixture],{input:JSON.stringify({program}),encoding:'utf8',timeout:5000,maxBuffer:65536});expect(JSON.parse(stdout).marker).toBe('Я'.repeat(3000));
  });
- it.each(['history-unavailable','history-response','foreign-id','auth-failure'])('actual bridge local logic preserves native metadata/history distinction: %s',async(mode)=>{
+ it.each(['history-unavailable','history-response','history-tail','foreign-id','auth-failure'])('actual bridge local logic preserves native metadata/history distinction: %s',async(mode)=>{
   const {execFileSync}=await vi.importActual<typeof import('node:child_process')>('node:child_process');
   const program=readFileSync('src/mesh/fleet-direct-transport.ts','utf8').split('const bridge=String.raw`')[1]!.split('`;')[0]!;
   const fixture=String.raw`import sys,json,io,socket,pwd,os,urllib.request,urllib.error
@@ -228,6 +228,9 @@ class Opener:
  def open(self,request,timeout):
   if isinstance(request,str):
    if '/details?' in request:
+    if mode=='history-tail':
+     count=int(urllib.parse.parse_qs(urllib.parse.urlsplit(request).query).get('limit',['0'])[0]); messages=[{'role':'user','text':'real request'}]+[{'role':'assistant','text':'reply'}]*9
+     return Response({'session':{'id':'native-id','harness':'codex'},'history':{'source':'acp-load','complete':False},'messages':messages[-count:]})
     if mode=='history-response':return Response({'session':{'id':'native-id','harness':'codex'},'history':{'source':'unavailable','complete':False},'messages':[]})
     raise urllib.error.HTTPError(request,401 if mode=='auth-failure' else 502,'unavailable',{},io.BytesIO())
    return Response({'session':{'id':'foreign' if mode=='foreign-id' else 'native-id','harness':'codex','title':'verified'}})
@@ -238,7 +241,8 @@ request={'hostId':socket.gethostname(),'nativeUser':pwd.getpwuid(os.getuid()).pw
 sys.stdin=io.TextIOWrapper(io.BytesIO(json.dumps(request).encode()))
 exec(compile(source,'owned-http-bridge','exec'))`;
   const execute=()=>execFileSync('/usr/bin/python3',['-I','-S','-B','-c',fixture],{input:JSON.stringify({program,mode}),encoding:'utf8',timeout:5000,maxBuffer:65536,stdio:['pipe','pipe','pipe']});
-  if(mode==='history-response'){expect(JSON.parse(execute()).details.historyUnavailable).toBe(true);}
+  if(mode==='history-tail'){const actual=JSON.parse(execute());expect(actual.details.messages.some((m:any)=>m.role==='user'&&m.text==='real request')).toBe(true);expect(actual.details.history.complete).toBe(false);}
+  else if(mode==='history-response'){expect(JSON.parse(execute()).details.historyUnavailable).toBe(true);}
   else if(mode==='history-unavailable'){const actual=JSON.parse(execute());expect(actual.details.session.id).toBe('native-id');expect(actual.details.historyUnavailable).toBe(true);expect(actual.details.messages).toBeUndefined();}
   else expect(execute).toThrow(mode==='foreign-id'?'native_session_identity_mismatch':'HTTP Error 401');
  });
