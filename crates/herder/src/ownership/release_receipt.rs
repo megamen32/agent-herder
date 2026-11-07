@@ -32,6 +32,14 @@ pub struct ReleaseReceipt {
     pub admitted_at: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Admission {
+    pub receipt: ReleaseReceipt,
+    /// True only for the invocation that durably created this receipt.
+    /// Retries must not spawn an effect when this is false.
+    pub newly_admitted: bool,
+}
+
 /// Persist an immutable admission receipt while the caller holds this target's
 /// execution lock. The caller may spawn the effect only after this returns.
 pub fn admit(
@@ -42,7 +50,7 @@ pub fn admit(
     expected_revision: u64,
     request_key: &str,
     request_hash: &str,
-) -> io::Result<ReleaseReceipt> {
+) -> io::Result<Admission> {
     validate_uuid(request_key)?;
     if request_hash.len() != 64 || !request_hash.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(io::Error::new(
@@ -74,6 +82,25 @@ pub fn admit(
     };
     let dir = authority.root.join("release-receipts");
     fs::create_dir_all(&dir)?;
+    for entry in fs::read_dir(&dir)? {
+        let entry = entry?;
+        if entry.path().extension().is_none_or(|ext| ext != "json") {
+            continue;
+        }
+        if entry.path() == receipt_path(&dir, request_key) {
+            continue;
+        }
+        let bytes = fs::read(entry.path())?;
+        let previous: ReleaseReceipt = serde_json::from_slice(&bytes).map_err(invalid_data)?;
+        if previous.resource_ref == receipt.resource_ref
+            && matches!(previous.status, ReceiptStatus::Admitted | ReceiptStatus::Unknown)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "an earlier effect on this resource has an unresolved outcome",
+            ));
+        }
+    }
     let path = receipt_path(&dir, request_key);
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
@@ -87,7 +114,10 @@ pub fn admit(
             file.write_all(&serde_json::to_vec(&receipt).map_err(invalid_data)?)?;
             file.sync_all()?;
             File::open(&dir)?.sync_all()?;
-            Ok(receipt)
+            Ok(Admission {
+                receipt,
+                newly_admitted: true,
+            })
         }
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
             let existing: ReleaseReceipt = serde_json::from_slice(&fs::read(path)?)
@@ -99,7 +129,10 @@ pub fn admit(
                 && existing.request_key == receipt.request_key
                 && existing.request_hash == receipt.request_hash
             {
-                Ok(existing)
+                Ok(Admission {
+                    receipt: existing,
+                    newly_admitted: false,
+                })
             } else {
                 Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
@@ -111,18 +144,121 @@ pub fn admit(
     }
 }
 
+/// Read a receipt after acquiring its target lock. A stale admitted receipt
+/// means the parent disappeared before recording an outcome, so resolve it as
+/// UNKNOWN and never authorize another spawn for that request key.
+pub fn resolve_after_lock(
+    authority: &StorageAuthority,
+    lock: &TargetExecutionLock,
+    request_key: &str,
+) -> io::Result<ReleaseReceipt> {
+    validate_uuid(request_key)?;
+    let path = receipt_path(&authority.root.join("release-receipts"), request_key);
+    let mut receipt: ReleaseReceipt =
+        serde_json::from_slice(&fs::read(&path)?).map_err(invalid_data)?;
+    validate_receipt_target(authority, lock, &receipt)?;
+    if receipt.status == ReceiptStatus::Admitted {
+        receipt.status = ReceiptStatus::Unknown;
+        write_receipt_atomic(&path, &receipt)?;
+    }
+    Ok(receipt)
+}
+
+/// Record an externally confirmed or unknown result while the target lock is
+/// still held. Terminal outcomes are immutable and cannot be upgraded later.
+pub fn finish_under_lock(
+    authority: &StorageAuthority,
+    lock: &TargetExecutionLock,
+    request_key: &str,
+    status: ReceiptStatus,
+) -> io::Result<ReleaseReceipt> {
+    if status == ReceiptStatus::Admitted {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "finish status must be confirmed or unknown",
+        ));
+    }
+    validate_uuid(request_key)?;
+    let path = receipt_path(&authority.root.join("release-receipts"), request_key);
+    let mut receipt: ReleaseReceipt =
+        serde_json::from_slice(&fs::read(&path)?).map_err(invalid_data)?;
+    validate_receipt_target(authority, lock, &receipt)?;
+    match receipt.status {
+        ReceiptStatus::Admitted => {
+            receipt.status = status;
+            write_receipt_atomic(&path, &receipt)?;
+            Ok(receipt)
+        }
+        current if current == status => Ok(receipt),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "terminal release receipt outcome is immutable",
+        )),
+    }
+}
+
+fn validate_receipt_target(
+    authority: &StorageAuthority,
+    lock: &TargetExecutionLock,
+    receipt: &ReleaseReceipt,
+) -> io::Result<()> {
+    if receipt.schema != authority.schema
+        || receipt.storage_id != authority.storage_id.0
+        || receipt.resource_ref != *lock.resource_ref()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "release receipt belongs to another authority or target",
+        ));
+    }
+    Ok(())
+}
+
+fn write_receipt_atomic(path: &Path, receipt: &ReleaseReceipt) -> io::Result<()> {
+    static TEMP_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "receipt path has no parent"))?;
+    let temp = parent.join(format!(
+        ".receipt-{}-{}-{}.tmp",
+        std::process::id(),
+        TEMP_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        receipt.request_key
+    ));
+    let result = (|| {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&temp)?;
+        file.write_all(&serde_json::to_vec(receipt).map_err(invalid_data)?)?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temp, path)?;
+        File::open(parent)?.sync_all()
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(temp);
+    }
+    result
+}
+
 /// Spawn a child while transferring the already-held target lock into its
 /// process descriptor table. The reserved descriptor is exposed to the child
 /// as `HERDER_EXECUTION_LOCK_FD`; the lock is released by the OS at child exit.
 #[cfg(unix)]
 pub fn spawn_with_execution_lock(
     command: &mut Command,
-    lock: TargetExecutionLock,
+    lock: &TargetExecutionLock,
 ) -> io::Result<Child> {
     use std::os::unix::process::CommandExt;
 
     const CHILD_LOCK_FD: libc::c_int = 198;
-    let source_fd = lock.raw_lock_fd();
+    let child_lock = lock.cloned_lock_file()?;
+    let source_fd = TargetExecutionLock::raw_lock_fd(&child_lock);
     command.env("HERDER_EXECUTION_LOCK_FD", CHILD_LOCK_FD.to_string());
     // SAFETY: dup2 is async-signal-safe and the closure touches no shared Rust
     // state; the parent keeps the source descriptor alive through spawn().
@@ -269,7 +405,8 @@ mod tests {
             &"a".repeat(64),
         )
         .unwrap();
-        assert_eq!(first.status, ReceiptStatus::Admitted);
+        assert_eq!(first.receipt.status, ReceiptStatus::Admitted);
+        assert!(first.newly_admitted);
         let replay = admit(
             &authority,
             &lock,
@@ -280,7 +417,8 @@ mod tests {
             &"a".repeat(64),
         )
         .unwrap();
-        assert_eq!(replay, first);
+        assert_eq!(replay.receipt, first.receipt);
+        assert!(!replay.newly_admitted);
         assert_eq!(
             admit(
                 &authority,
@@ -299,7 +437,10 @@ mod tests {
             root.join("release-receipts/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.json"),
         )
         .unwrap();
-        assert_eq!(serde_json::from_slice::<ReleaseReceipt>(&bytes).unwrap(), first);
+        assert_eq!(
+            serde_json::from_slice::<ReleaseReceipt>(&bytes).unwrap(),
+            first.receipt
+        );
         let contender = OpenOptions::new()
             .read(true)
             .write(true)
@@ -307,7 +448,12 @@ mod tests {
             .unwrap();
         let mut command = Command::new("/bin/sh");
         command.arg("-c").arg("read line").stdin(Stdio::piped());
-        let mut child = spawn_with_execution_lock(&mut command, lock).unwrap();
+        let mut child = spawn_with_execution_lock(&mut command, &lock).unwrap();
+        assert!(matches!(
+            contender.try_lock(),
+            Err(std::fs::TryLockError::WouldBlock)
+        ));
+        drop(lock);
         assert!(matches!(
             contender.try_lock(),
             Err(std::fs::TryLockError::WouldBlock)
@@ -317,6 +463,57 @@ mod tests {
         drop(child_stdin);
         assert!(child.wait().unwrap().success());
         contender.try_lock().unwrap();
+        contender.unlock().unwrap();
+        let recovered_lock = TargetExecutionLock::acquire(
+            &authority,
+            &resource_ref,
+            Authorization::Authorized,
+        )
+        .unwrap();
+        let recovered = resolve_after_lock(
+            &authority,
+            &recovered_lock,
+            "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        )
+        .unwrap();
+        assert_eq!(recovered.status, ReceiptStatus::Unknown);
+        let replay = admit(
+            &authority,
+            &recovered_lock,
+            Authorization::Authorized,
+            claim_id,
+            7,
+            "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+            &"a".repeat(64),
+        )
+        .unwrap();
+        assert!(!replay.newly_admitted);
+        assert_eq!(replay.receipt.status, ReceiptStatus::Unknown);
+        assert_eq!(
+            admit(
+                &authority,
+                &recovered_lock,
+                Authorization::Authorized,
+                claim_id,
+                7,
+                "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff",
+                &"b".repeat(64),
+            )
+            .unwrap_err()
+            .kind(),
+            io::ErrorKind::WouldBlock
+        );
+        assert_eq!(
+            finish_under_lock(
+                &authority,
+                &recovered_lock,
+                "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+                ReceiptStatus::Confirmed,
+            )
+            .unwrap_err()
+            .kind(),
+            io::ErrorKind::InvalidInput
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

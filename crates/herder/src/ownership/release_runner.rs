@@ -65,9 +65,19 @@ impl TargetExecutionLock {
     }
 
     #[cfg(unix)]
-    pub(crate) fn raw_lock_fd(&self) -> std::os::fd::RawFd {
+    pub(crate) fn cloned_lock_file(&self) -> io::Result<File> {
+        self._file.try_clone()
+    }
+
+    #[cfg(not(unix))]
+    pub(crate) fn cloned_lock_file(&self) -> io::Result<File> {
+        self._file.try_clone()
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn raw_lock_fd(file: &File) -> std::os::fd::RawFd {
         use std::os::fd::AsRawFd;
-        self._file.as_raw_fd()
+        file.as_raw_fd()
     }
 
     /// Revalidate the deployed descriptor revision and current owner while
