@@ -1,0 +1,22 @@
+{
+  "leaf": "V065AHAPCISETUP",
+  "owner_session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+  "baseline_commit": "c3a9481de76805be4a8c2027378246113965c52e",
+  "owned_files": {
+    "tests/native/ahap_opencode_consumer.py": "f580f371f9ef95175976a82a271c60590416042aa9f2eef32d10ad2e978fd60f",
+    "tests/native/test_ahap_opencode_consumer.py": "7d50436eeb40c2e199b148429a44063af0fdbb7b1bbb40a2fd47363a83e18a87"
+  },
+  "fixture_source": "origin/main at c3a9481de76805be4a8c2027378246113965c52e",
+  "offline_command": "python3 -m unittest discover -s tests/native -p test_ahap_opencode_consumer.py -v",
+  "offline_result": "PASS: 5 tests",
+  "syntax_result": "PASS: py_compile for both owned Python files",
+  "diff_check": "PASS: git diff --check",
+  "contract": "Immutable artifact manifest pins artifact_root plus Rust core, TypeScript runner, and real OpenCode executable. All must be regular files inside the candidate release root. launch argv binds all three paths; model endpoint remains controlled by existing launch.py.",
+  "not_proven": [
+    "Terra artifact handoff and actual artifact digests",
+    "real OpenCode AHAP create/send/read/reopen",
+    "native receipt and exact input correlation",
+    "model request counter and failure retention on the real consumer path"
+  ],
+  "next": "Wait for the immutable reviewed artifact handoff, adapt only this owned consumer contract if necessary, then execute the single authorized isolated case."
+}
