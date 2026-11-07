@@ -1,0 +1,17 @@
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-runner-config/agent-herder/tests/native/v1_browser_stand.py", line 199, in <module>
+    main()
+  File "/home/roomhacker/.codex/worktrees/herder-ci-runner-config/agent-herder/tests/native/v1_browser_stand.py", line 195, in main
+    print(json.dumps(run(json.loads(Path(args.config).read_text()), args.run_case)))
+  File "/home/roomhacker/.codex/worktrees/herder-ci-runner-config/agent-herder/tests/native/v1_browser_stand.py", line 94, in run
+    record['native_tools'] = core.preflight()
+  File "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/ahap_opencode_stand.py", line 102, in preflight
+    return probe_native_tools(self)
+  File "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/ahap_opencode_stand.py", line 46, in probe_native_tools
+    result = client.request("tools/list", {"_meta": inline_client_meta()})
+  File "/home/roomhacker/.codex/worktrees/herder-ci-runner-config/agent-herder/tests/native/v1_browser_stand.py", line 60, in request
+    return super().request(method, params, timeout=timeout)
+  File "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/ahap_opencode_stand.py", line 98, in request
+    raise RuntimeError(f"native core closed stdout during {method}: {diagnostic[-2000:]}")
+RuntimeError: native core closed stdout during tools/list: Error: "AHAP chatgpt startup failed: Initialization { phase: \"init\", cause: OutcomeUnknown }. Verify the configured runner, native app-server arguments and provider configuration in owner.code_home/ahap_env; browser init requires the exact pinned account verifier. No create/send request was submitted by the core."
+

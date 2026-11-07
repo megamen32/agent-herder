@@ -1,0 +1,33 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-ci-runner-config/agent-herder
+
+ ❯ tests/chatgpt-mac-cdp-driver.test.ts (35 tests | 1 failed) 204ms
+     × retains explicitly verified account scope with a fresh inventory and no passive hook 20ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/chatgpt-mac-cdp-driver.test.ts > ChatGPT on existing Mac mini CDP > retains explicitly verified account scope with a fresh inventory and no passive hook
+AssertionError: expected undefined to be 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…' // Object.is equality
+
+- Expected:
+"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
++ Received:
+undefined
+
+ ❯ tests/chatgpt-mac-cdp-driver.test.ts:52:38
+     50|     expect(driver.getAccountScope()).toBeUndefined();
+     51|     await driver.verifyPinnedAccountScope();
+     52|     expect(driver.getAccountScope()).toBe(scope);
+       |                                      ^
+     53|     await expect(driver.listObservedChats()).resolves.toBeDefined();
+     54|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 34 passed (35)
+   Start at  00:21:09
+   Duration  1.19s (transform 722ms, setup 71ms, import 677ms, tests 204ms, environment 0ms)
+

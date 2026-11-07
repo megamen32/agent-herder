@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T21:21:44+00:00",
+  "details": "verifyCurrentPinnedAccountScope validates pinned account but leaves this.accountScope undefined. Fresh inventory/no passive hook regression expected matching digest, got undefined. Cache only after successful mismatch guard; no browser sends.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "CI Astra",
+      "at": "2026-11-07T21:21:44+00:00",
+      "changes": {
+        "details": "verifyCurrentPinnedAccountScope validates pinned account but leaves this.accountScope undefined. Fresh inventory/no passive hook regression expected matching digest, got undefined. Cache only after successful mismatch guard; no browser sends.",
+        "source": "npx vitest run tests/chatgpt-mac-cdp-driver.test.ts",
+        "status": "open",
+        "title": "Fresh ChatGPT driver loses explicitly verified account scope"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "CI Astra",
+      "at": "2026-11-07T21:22:32+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/chatgpt-scope-green.txt",
+            "red_proof_path": "evidence/chatgpt-scope-red.txt",
+            "red_result": "1 failed | 34 passed",
+            "red_sha256": "c232a345d038700b4956c1d6d9464e9c491e78d771e22810e2fe3dd53d2ee6e4",
+            "result": "107 passed",
+            "sha256": "15d8bd10dad958643a06cb1ea6eff3e04d7e2cd07c2fe4506b243a538f72168e",
+            "test_command": "npx vitest run tests/chatgpt-mac-cdp-driver.test.ts tests/chatgpt-background-passive.test.ts tests/browser-chat-create.test.ts"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bd1707ccab10747bfba61",
+  "owner": "CI Astra",
+  "reporter": "CI Astra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/chatgpt-scope-green.txt",
+      "red_proof_path": "evidence/chatgpt-scope-red.txt",
+      "red_result": "1 failed | 34 passed",
+      "red_sha256": "c232a345d038700b4956c1d6d9464e9c491e78d771e22810e2fe3dd53d2ee6e4",
+      "result": "107 passed",
+      "sha256": "15d8bd10dad958643a06cb1ea6eff3e04d7e2cd07c2fe4506b243a538f72168e",
+      "test_command": "npx vitest run tests/chatgpt-mac-cdp-driver.test.ts tests/chatgpt-background-passive.test.ts tests/browser-chat-create.test.ts"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "npx vitest run tests/chatgpt-mac-cdp-driver.test.ts",
+  "status": "fixed",
+  "title": "Fresh ChatGPT driver loses explicitly verified account scope",
+  "updated_at": "2026-11-07T21:22:32+00:00"
+}

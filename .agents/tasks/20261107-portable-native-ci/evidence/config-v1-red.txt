@@ -1,0 +1,33 @@
+.....E
+======================================================================
+ERROR: test_v1_manifest_uses_explicit_hashed_external_opencode (test_runner_config.RunnerConfigTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-runner-config/agent-herder/tests/native/test_runner_config.py", line 90, in test_v1_manifest_uses_explicit_hashed_external_opencode
+    result = runner_config.build(self.config)
+  File "/home/roomhacker/.codex/worktrees/herder-ci-runner-config/agent-herder/tests/native/runner_config.py", line 94, in build
+    value = required_string(manifest, name, "manifest")
+  File "/home/roomhacker/.codex/worktrees/herder-ci-runner-config/agent-herder/tests/native/runner_config.py", line 36, in required_string
+    raise ConfigError(f"{label}.{key}: expected a nonempty string")
+runner_config.ConfigError: manifest.opencode: expected a nonempty string
+
+======================================================================
+FAIL: test_v1_node_and_bootstrap_must_match_manifest_hashes (test_runner_config.RunnerConfigTest) (name='node')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-runner-config/agent-herder/tests/native/test_runner_config.py", line 100, in test_v1_node_and_bootstrap_must_match_manifest_hashes
+    with self.subTest(name=name), self.assertRaisesRegex(runner_config.ConfigError, "SHA-256 mismatch"):
+AssertionError: ConfigError not raised
+
+======================================================================
+FAIL: test_v1_node_and_bootstrap_must_match_manifest_hashes (test_runner_config.RunnerConfigTest) (name='bootstrap')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-runner-config/agent-herder/tests/native/test_runner_config.py", line 100, in test_v1_node_and_bootstrap_must_match_manifest_hashes
+    with self.subTest(name=name), self.assertRaisesRegex(runner_config.ConfigError, "SHA-256 mismatch"):
+AssertionError: ConfigError not raised
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.035s
+
+FAILED (failures=2, errors=1)

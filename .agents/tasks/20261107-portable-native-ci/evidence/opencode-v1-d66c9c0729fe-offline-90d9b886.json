@@ -1,0 +1,15 @@
+{
+  "result": "PASS",
+  "scope": "offline completion-reader regression only",
+  "command": "PYTHONPATH=tests/native python3 -m unittest test_ahap_opencode_stand",
+  "tests_passed": 26,
+  "native_launch_performed": false,
+  "native_mutation_performed": false,
+  "source_commit": "7cc88e486ce4689117306a50293af7e2ebb5e341",
+  "source_files_sha256": {
+    "tests/native/ahap_opencode_stand.py": "ac2b4906d9c0fbaeb540484619555562ce0704c7771dc5e7fdc3a9b77fa705a4",
+    "tests/native/test_ahap_opencode_stand.py": "f2362a9b4a5bc5fb519f1c8ef8722af834755fc7177aa138750039f547957328"
+  },
+  "output_ref": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-portable-native-ci/evidence/opencode-v1-d66c9c0729fe-offline-90d9b886.txt",
+  "output_sha256": "9dc1a44d847b8a1a1aeda8ef009a509a72c7086471b5e612c8b7507e217e4ac7"
+}

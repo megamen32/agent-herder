@@ -1,0 +1,1781 @@
+{
+  "schema_version": 2,
+  "title": "Переносимый CI реальных приложений",
+  "goal": "До 08.11.2026 00:38 МСК довести CI и прежние адаптеры Herder V1: ChatGPT/Z.ai первыми, затем OpenCode, Codex, ZCode. Ядро и тонкое подключение у продуктовой стороны; без новых адаптеров/test-only API.",
+  "business_result": "Одна команда CI, конфигурация вместо привязки к машине, реальные CLI с лжемоделью и browser lanes; неполное обновление не принимается.",
+  "business_results": [
+    "Одна команда CI, конфигурация вместо привязки к машине, реальные CLI с лжемоделью и browser lanes; неполное обновление не принимается."
+  ],
+  "acceptance_scenarios": [
+    "Одна команда на двух настроенных runners без правок scenario source. Реальные приложения и обычный MCP consumer. Положительный путь и внесённый сбой проверяют CI; обязательный missing/unsupported/UNKNOWN не даёт release PASS. Installed использует тот же consumer с точной runtime identity."
+  ],
+  "recon": [
+    "Разбор >=15мин 18:13:17–18:28:19 UTC, два builder repro :: ANALYSIS.md",
+    "Native 3-lane candidate ~50с сохранён, installed не принят :: ../20261105-deterministic-harness-ci/evidence/CI-SHARED-INPUTS-20261107.md",
+    "Public MCP launch/ownership согласованы dccf9cb7; V2 export unsupported, search unproven, projects absent :: ../20261107-herder-native-mcp-breaking/CI-CONSUMER-CONTRACT.md"
+  ],
+  "current_progress": "BUILD23df966f published; ChatGPT burst fix e86df81b source43tests. INPUTS complete verified3hashes. CONFIG86106a9c source5tests, Terra closes sandbox mounts. Z.ai dedicated page9/account verified; BROWSER-CONFIG.md. Native OpenCode v2 second same-session send passed2modelrequests; forcedv22 rejected before send. Public5lane/installed not yet proven.",
+  "deliverable": "implementation",
+  "decomposition": "complete",
+  "revisions": [
+    {
+      "at": "2026-11-07T21:29:24+03:00",
+      "reason": "Прямой запрос владельца заменить старый план после >=15мин анализа.",
+      "summary": "Старые результаты сохранены; новый ограниченный scope согласован dccf9cb7. Без новых исполнителей и fleet-wide rollout каждого fix."
+    },
+    {
+      "at": "2026-11-07T21:38:58+03:00",
+      "reason": "Прямое уточнение владельца: ChatGPT/Z.ai первыми; сложное Astra, рутина Luna, среднее Terra.",
+      "summary": "Перегруппированы четыре этапа, сняты лишние зависимости browser от CONFIG/REPORT. Приоритет не превращён в фиктивные data dependencies. Lead владеет решениями/интеграцией; worker поля обозначают план, не подтверждённый запуск. Разрешена делегация, прежний no-workers для этого объёма заменён."
+    },
+    {
+      "at": "2026-11-07T21:59:48+03:00",
+      "reason": "Решение владельца21:38МСК: reuse прежних адаптеров, CI доводит их, общий срок3ч.",
+      "summary": "Дедлайн08.11.2026 00:38МСК. Exact entrypoints/capabilities/defects в LEGACY-ADAPTERS.md. Ядро/thin hookup — новый продуктовый план; fixtures и CONFIG/REPORT сохраняются."
+    }
+  ],
+  "external_waits": "V1 product candidate supplies core/profile/wrappers and public consumer launch. OpenCode actual fixture verified familyv2; wrapper initial-only restriction product-owned. ChatGPT existing42h burst cooldown preserved until supported installation/reconciliation; no UNKNOWN replays.",
+  "slots": 3,
+  "updated_at": "2026-11-08T00:23:45+03:00",
+  "tasks": [
+    {
+      "id": "BUILD",
+      "label": "Исправить B83: сборка сохраняет current и активный релиз",
+      "status": "done",
+      "parent": "S1",
+      "description": "RED→GREEN для нового SHA, отсутствующего current и rebuild активного SHA; scoped main publication. Только builder и его regression.",
+      "acceptance": "RED→GREEN для нового SHA, отсутствующего current и rebuild активного SHA; scoped main publication. Только builder и его regression.",
+      "result": "23df966f887159327619d224f87d2ffb6b3f4c5a опубликован в main, exact2files. RED: 3 новых regression failures (current switched, empty catalog auto-installed, active SHA moved). GREEN: все5 tests за0.009s; py_compile и diff-check. assemble теперь не меняет current; rebuild активного release отвергается до перемещения; main проверяет snapshot. Проверка реального assemble во временном каталоге, без live mutation. Runtime не перезапускался: это release tooling, не installed/five-adapter PASS.",
+      "owner": "CI Astra",
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-07T21:29:27+03:00",
+          "note": "",
+          "changes": {
+            "id": "BUILD",
+            "parent": "S1",
+            "label": "Исправить B83: сборка сохраняет current и активный релиз",
+            "description": "RED→GREEN для нового SHA, отсутствующего current и rebuild активного SHA; scoped main publication. Только builder и его regression.",
+            "acceptance": "RED→GREEN для нового SHA, отсутствующего current и rebuild активного SHA; scoped main publication. Только builder и его regression.",
+            "depends_on": [],
+            "status": "queued",
+            "estimate_minutes": 15,
+            "owner": "CI Astra",
+            "harness": "codex",
+            "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "model": "gpt-6-astra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:30:11+03:00",
+          "note": "Начал работу в текущей сессии",
+          "changes": {
+            "status": "running"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "native_environment"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:32:19+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "23df966f887159327619d224f87d2ffb6b3f4c5a опубликован в main, exact2files. RED: 3 новых regression failures (current switched, empty catalog auto-installed, active SHA moved). GREEN: все5 tests за0.009s; py_compile и diff-check. assemble теперь не меняет current; rebuild активного release отвергается до перемещения; main проверяет snapshot. Проверка реального assemble во временном каталоге, без live mutation. Runtime не перезапускался: это release tooling, не installed/five-adapter PASS."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-07T21:29:27+03:00",
+      "started_at": "2026-11-07T21:30:11+03:00",
+      "finished_at": "2026-11-07T21:32:19+03:00"
+    },
+    {
+      "id": "CHATGPT",
+      "label": "Подключить ChatGPT на разрешённом browser runner",
+      "status": "blocked",
+      "parent": "S1",
+      "description": "Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.",
+      "acceptance": "Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.",
+      "result": "Published adaptere4c5edb6 caches explicitly verified account scope only after mismatchcheck. RED→107GREEN, tsc exit0. Original a836 directAHAP init22.093s ERROR exceeds core20s; coreowner fixes wrapperorder/budget. Oldreceipt/chatgpt-a836-ahap-timing.json retained. Need fresh combinedcandidate readonlypreflight, not nativePASS.",
+      "owner": "Astra",
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "note": "No fake running while candidate is built. Resume on candidate receipt; install updated hook through normal browser lifecycle; do not clear backoff or replay accepted sends.",
+      "blocker": "Await combined immutable candidate for readonly init; no sends",
+      "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-07T21:29:31+03:00",
+          "note": "",
+          "changes": {
+            "id": "CHATGPT",
+            "parent": "S3",
+            "label": "Подключить ChatGPT на разрешённом browser runner",
+            "description": "Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.",
+            "acceptance": "Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.",
+            "depends_on": [
+              "CONFIG",
+              "REPORT"
+            ],
+            "status": "queued",
+            "estimate_minutes": 15,
+            "owner": "CI Astra",
+            "harness": "codex",
+            "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "model": "gpt-6-astra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:30:07+03:00",
+          "note": "",
+          "changes": {
+            "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "native_environment"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:38:52+03:00",
+          "note": "",
+          "changes": {
+            "parent": "S1",
+            "depends_on": [],
+            "wave": 1,
+            "owner": "Astra",
+            "note": "Прямой приоритет владельца: начать первым, использовать готовый page7/account/claim и существующий consumer. CONFIG/REPORT не блокируют диагностику и приёмку. Сложные решения/браузерный scope только Lead; no replay."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:43:56+03:00",
+          "note": "",
+          "changes": {
+            "note": "Решение21:38МСК: CI теперь владеет минимальными legacy adapter fixes (TDD), не новой реализацией. Exact entrypoint/capabilities/наблюдаемый gap и fixture refs: LEGACY-ADAPTERS.md, строка этой среды. Тонкое подключение/единый public contract — ../20261107-herder-v1-core. Дедлайн08.11 00:38МСК; source capability не live PASS."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T22:00:29+03:00",
+          "note": "Начал работу в текущей сессии",
+          "changes": {
+            "status": "running"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "native_environment"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T22:22:37+03:00",
+          "note": "Read-only exactpage7/claim confirmed. Passive cooldown42h with strikes10; RED2failed→GREEN43passed burst dedup fix e86df81b push accepted, remote readback reconciling. Existing cooldown preserved; no sends/replay. Source fix does not prove installed full consumer; next installed hookup and live read reconciliation.",
+          "changes": {
+            "affected_files": [
+              "src/adapters/chatgpt-passive-history.ts",
+              "src/adapters/chatgpt-background-budget.ts",
+              "tests/chatgpt-passive-backoff-burst.test.ts",
+              "tests/chatgpt-background-budget.test.ts"
+            ]
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T22:48:50+03:00",
+          "note": "",
+          "changes": {
+            "status": "blocked",
+            "blocker": "V1 candidate not published; existing page has old hook/cooldown",
+            "result": "Source e86df81b published,43 focused tests pass; page7/account/claim preserved. Live acceptance not yet proven.",
+            "note": "No fake running while candidate is built. Resume on candidate receipt; install updated hook through normal browser lifecycle; do not clear backoff or replay accepted sends."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:13:53+03:00",
+          "note": "",
+          "changes": {
+            "blocker": "a836 public init OutcomeUnknown at exact account verifier; no sends",
+            "result": "Exact existing testchat page3, a836 hashes verified. tools/list failed with AHAP chatgpt startup Initialization phase init cause OutcomeUnknown. No create/send, retained ci-chatgpt-preflight-a836-0016. Prior explicit account verifier timed out on live site; no repeated auth polling/backoff reset. Evidence chatgpt-a836-preflight.log/receipt.json."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:23:28+03:00",
+          "note": "",
+          "changes": {
+            "blocker": "Await combined immutable candidate for readonly init; no sends",
+            "result": "Published adaptere4c5edb6 caches explicitly verified account scope only after mismatchcheck. RED→107GREEN, tsc exit0. Original a836 directAHAP init22.093s ERROR exceeds core20s; coreowner fixes wrapperorder/budget. Oldreceipt/chatgpt-a836-ahap-timing.json retained. Need fresh combinedcandidate readonlypreflight, not nativePASS."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/adapters/chatgpt-passive-history.ts",
+        "src/adapters/chatgpt-background-budget.ts",
+        "tests/chatgpt-passive-backoff-burst.test.ts",
+        "tests/chatgpt-background-budget.test.ts"
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-07T21:29:31+03:00",
+      "started_at": "2026-11-07T22:00:29+03:00",
+      "wave": 1
+    },
+    {
+      "id": "CONFIG",
+      "label": "Задать runner через config/manifest, проверить capabilities",
+      "status": "done",
+      "parent": "S2",
+      "description": "Пути CLI/Node/bootstrap, transport, OS/arch — входы; missing capability до mutation; никаких machine constants в сценарии.",
+      "acceptance": "Пути CLI/Node/bootstrap, transport, OS/arch — входы; missing capability до mutation; никаких machine constants в сценарии.",
+      "result": "Published313d8c64 + V1 compatibility8708597c74deb1778e0d4d61908d249a7905a9e0. 8 focused tests GREEN: explicit hashed native OpenCode outside candidate; node/bootstrap hashes; exact manifest readonly mount. Evidence config-v1-red.txt/config-manifest-red.txt/config-v1-green.txt. Native acceptance separate.",
+      "owner": "Terra",
+      "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "note": "Native subagent admitted; exact model catalog gpt-6.1-terra. Codex quota read timeout/unknown, explicit owner model assignment retained, no fallback. Isolated worktree herder-ci-runner-config; source only, no sends/install.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-07T21:29:27+03:00",
+          "note": "",
+          "changes": {
+            "id": "CONFIG",
+            "parent": "S1",
+            "label": "Задать runner через config/manifest, проверить capabilities",
+            "description": "Пути CLI/Node/bootstrap, transport, OS/arch — входы; missing capability до mutation; никаких machine constants в сценарии.",
+            "acceptance": "Пути CLI/Node/bootstrap, transport, OS/arch — входы; missing capability до mutation; никаких machine constants в сценарии.",
+            "depends_on": [],
+            "status": "queued",
+            "estimate_minutes": 15,
+            "owner": "CI Astra",
+            "harness": "codex",
+            "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "model": "gpt-6-astra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:38:53+03:00",
+          "note": "",
+          "changes": {
+            "parent": "S2",
+            "wave": 1,
+            "owner": "Terra (планируемое назначение)",
+            "model": "gpt-6-terra",
+            "session": "",
+            "note": "Ограниченная задача средней сложности: реализовать утверждённые runner config/manifest inputs. Без новых API, смены архитектуры или правок Luna stand. Фоновая подготовка не задерживает browser priority. Session/availability подтвердить перед dispatch; исполнитель ещё не запущен."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T22:28:21+03:00",
+          "note": "",
+          "changes": {
+            "model": "gpt-6.1-terra",
+            "owner": "Terra",
+            "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+            "status": "running",
+            "affected_files": [
+              "tests/native/runner_config.py",
+              "tests/native/test_runner_config.py",
+              "tests/native/runner-config.example.json"
+            ],
+            "note": "Native subagent admitted; exact model catalog gpt-6.1-terra. Codex quota read timeout/unknown, explicit owner model assignment retained, no fallback. Isolated worktree herder-ci-runner-config; source only, no sends/install."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T22:40:49+03:00",
+          "note": "86106a9c detached: 5 tests + dry-run, inputs SHA verified. Integration exposed missing artifact mounts; same Terra now fixes existing launch.py through TDD and proves read-only sandbox visibility, no native sends.",
+          "changes": {},
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T22:45:44+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "Published313d8c64cd73fc9881bb126af41eacfa6ab43144, remote main verified. 12 tests pass; actual unshare+bwrap read-only visibility/import proof for10inputs. Exact config/argv in CONFIG.md. This proves runnable inputs, not provider journey."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:06:28+03:00",
+          "note": "",
+          "changes": {
+            "result": "Published313d8c64 + V1 compatibility8708597c74deb1778e0d4d61908d249a7905a9e0. 8 focused tests GREEN: explicit hashed native OpenCode outside candidate; node/bootstrap hashes; exact manifest readonly mount. Evidence config-v1-red.txt/config-manifest-red.txt/config-v1-green.txt. Native acceptance separate."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "tests/native/runner_config.py",
+        "tests/native/test_runner_config.py",
+        "tests/native/runner-config.example.json"
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-07T21:29:27+03:00",
+      "started_at": "2026-11-07T22:28:21+03:00",
+      "finished_at": "2026-11-07T22:45:44+03:00",
+      "wave": 1
+    },
+    {
+      "id": "INPUTS",
+      "label": "Собрать точные опубликованные argv/manifest inputs без native sends",
+      "status": "done",
+      "parent": "S2",
+      "description": "Рутинный read-only сбор существующих binary/stand/bootstrap paths и hashes; отдаёт config inputs Terra/Lead. Никаких probes с model calls, адаптерных правок или browser операций.",
+      "acceptance": "Файл evidence/runner-inputs.json с verified paths/hash/runtimeversion provenance; unknown отдельно, source/config без secrets.",
+      "result": "runner-inputs.json SHA256 76e1f34d63b129f60fca094fdf7e0ed7b84ec4e6b0b24b4c745da1cb6f3d4d92: 3 artifact hashes match; Python3.10.12 Node22.22.2; no native send. ZCode remote references historical.",
+      "owner": "Luna",
+      "session": "01a1b77c-31ea-7841-ad90-d223884e345a",
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "note": "Native gpt-6-luna child admitted, read-only inventory; only own evidence file write.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-07T22:28:51+03:00",
+          "note": "",
+          "changes": {
+            "id": "INPUTS",
+            "parent": "S2",
+            "label": "Собрать точные опубликованные argv/manifest inputs без native sends",
+            "kind": "task",
+            "status": "queued",
+            "estimate_minutes": 10,
+            "owner": "Luna",
+            "model": "gpt-6-luna",
+            "description": "Рутинный read-only сбор существующих binary/stand/bootstrap paths и hashes; отдаёт config inputs Terra/Lead. Никаких probes с model calls, адаптерных правок или browser операций.",
+            "acceptance": "Файл evidence/runner-inputs.json с verified paths/hash/runtimeversion provenance; unknown отдельно, source/config без secrets."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T22:28:53+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "session": "01a1b77c-31ea-7841-ad90-d223884e345a",
+            "harness": "codex",
+            "note": "Native gpt-6-luna child admitted, read-only inventory; only own evidence file write."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T22:37:48+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "runner-inputs.json SHA256 76e1f34d63b129f60fca094fdf7e0ed7b84ec4e6b0b24b4c745da1cb6f3d4d92: 3 artifact hashes match; Python3.10.12 Node22.22.2; no native send. ZCode remote references historical."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 10.0
+      },
+      "created_at": "2026-11-07T22:28:51+03:00",
+      "started_at": "2026-11-07T22:28:53+03:00",
+      "finished_at": "2026-11-07T22:37:48+03:00"
+    },
+    {
+      "id": "ZAI",
+      "label": "Выпустить Z.ai browser lane",
+      "status": "blocked",
+      "parent": "S1",
+      "description": "Выделенный scope, обычный Herder consumer; challenge/cooldown — точная причина; без повторов UNKNOWN. Публикация browser этапа.",
+      "acceptance": "Выделенный scope, обычный Herder consumer; challenge/cooldown — точная причина; без повторов UNKNOWN. Публикация browser этапа.",
+      "result": "a836 preflight14tools PASS. One create confirms session51ff45f3cbdf769f0a147c520bb5cb5c; prompt UNKNOWN/retry forbidden. UI page7 native /c/c2c581df-d3a7-4a3b-8f57-4b8edff81fd3 shows model capacity and retained exact draft. Full retained root ci-zai-native-a836-0010. Evidence zai-a836-{receipt,reconcile-read,native-blocker}.json. No second send/model switch/replay.",
+      "owner": "Astra",
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "note": "Exact resource collision sent once to productowner inputci-browser-target-disappeared-2307; don't create new tabs until resolved. ChatGPTpage10 also disappeared.",
+      "blocker": "Z.ai GLM-5.3 at capacity after native click; prompt UNKNOWN, no retry",
+      "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-07T21:29:31+03:00",
+          "note": "",
+          "changes": {
+            "id": "ZAI",
+            "parent": "S3",
+            "label": "Выпустить Z.ai browser lane",
+            "description": "Выделенный scope, обычный Herder consumer; challenge/cooldown — точная причина; без повторов UNKNOWN. Публикация browser этапа.",
+            "acceptance": "Выделенный scope, обычный Herder consumer; challenge/cooldown — точная причина; без повторов UNKNOWN. Публикация browser этапа.",
+            "depends_on": [
+              "CONFIG",
+              "REPORT"
+            ],
+            "status": "queued",
+            "estimate_minutes": 15,
+            "owner": "CI Astra",
+            "harness": "codex",
+            "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "model": "gpt-6-astra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:30:07+03:00",
+          "note": "",
+          "changes": {
+            "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "native_environment"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:38:52+03:00",
+          "note": "",
+          "changes": {
+            "parent": "S1",
+            "depends_on": [],
+            "wave": 1,
+            "owner": "Astra",
+            "note": "Прямой приоритет владельца вместе с ChatGPT. Общий браузер использует один оператор последовательно; подготовка независимых входов может идти параллельно."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:43:57+03:00",
+          "note": "",
+          "changes": {
+            "note": "Решение21:38МСК: CI теперь владеет минимальными legacy adapter fixes (TDD), не новой реализацией. Exact entrypoint/capabilities/наблюдаемый gap и fixture refs: LEGACY-ADAPTERS.md, строка этой среды. Тонкое подключение/единый public contract — ../20261107-herder-v1-core. Дедлайн08.11 00:38МСК; source capability не live PASS."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T22:42:09+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "note": "Dedicated blank background tab requested once via authorized MacMini gateway; job eee4e36959e1f72ab990dc463ec3f6f3 reconciliation pending, no sends; ordinary page3 preserved."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T22:44:29+03:00",
+          "note": "Ready exact scope page9 (unique tab after one navigation timeout, reconciled no retry), empty composer/no challenge; account SHA1aa02989… verified with existing ZAI_LIST_API_SCRIPT. evidence/zai-page9-scope.json + BROWSER-CONFIG.md; zero sends. Await V1 candidate for normal public consumer.",
+          "changes": {},
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T22:48:51+03:00",
+          "note": "",
+          "changes": {
+            "status": "blocked",
+            "blocker": "V1 candidate public consumer/profile pending",
+            "result": "Dedicated page9 exact account verified, empty composer, no challenge,0sends. BROWSER-CONFIG.md + evidence/zai-page9-scope.json.",
+            "note": "Scope ready; CI remains sole browser operator. Resume consumer on candidate publication, ordinarypage3 preserved."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T22:58:48+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "blocker": "",
+            "note": "Confirmed pinned-page first-send defect Baf7506d1dc904dbd82ee: 6red→118green across4suites. Fix preserves pin, refuses existingchat/userdraft; waiting isolated dependency rebuild+tsc then scoped publish. Page9/account ready; live no sends."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T23:06:35+03:00",
+          "note": "",
+          "changes": {
+            "status": "blocked",
+            "blocker": "Prepared page9 disappeared from gateway after unexpected route drift; no native sends by CI",
+            "result": "Adapter pinnedfirstsend fix264eb01c source118tests+tscPASS. Initialpage9/account verified, later No page found; scope invalidated, no replay.",
+            "note": "Exact resource collision sent once to productowner inputci-browser-target-disappeared-2307; don't create new tabs until resolved. ChatGPTpage10 also disappeared."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:08:32+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "blocker": "",
+            "result": "a836 exact candidate public MCP preflight PASS,14 tools,native_sends0. Gateway page7 verified https://chat.z.ai/ blankcomposer no challenge. Scope confirmed by wrapper. Preparing one retained authorized case; former page9 invalidated."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:12:17+03:00",
+          "note": "",
+          "changes": {
+            "status": "blocked",
+            "blocker": "Z.ai GLM-5.3 at capacity after native click; prompt UNKNOWN, no retry",
+            "result": "a836 preflight14tools PASS. One create confirms session51ff45f3cbdf769f0a147c520bb5cb5c; prompt UNKNOWN/retry forbidden. UI page7 native /c/c2c581df-d3a7-4a3b-8f57-4b8edff81fd3 shows model capacity and retained exact draft. Full retained root ci-zai-native-a836-0010. Evidence zai-a836-{receipt,reconcile-read,native-blocker}.json. No second send/model switch/replay."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-07T21:29:31+03:00",
+      "started_at": "2026-11-07T22:42:09+03:00",
+      "wave": 1
+    },
+    {
+      "id": "REPORT",
+      "label": "Выпустить единый отчёт и отказ неполного gate",
+      "status": "done",
+      "parent": "S2",
+      "description": "PASS/FAIL/BLOCKED/UNSUPPORTED/UNKNOWN по каждой обязательной функции, source/runtime identity; stale receipt и candidate-as-installed отвергаются. Публикация S1.",
+      "acceptance": "PASS/FAIL/BLOCKED/UNSUPPORTED/UNKNOWN по каждой обязательной функции, source/runtime identity; stale receipt и candidate-as-installed отвергаются. Публикация S1.",
+      "result": "Published76ec55f305b01309d273cb55d3b234b0714f3694. 12focused tests. Existing candidate_release_gate --validate-v1 report expectedidentity enforces5harnesses×7checks+5negativechecks and exact run/source/artifact/stage. This validates reports, not native evidence by itself.",
+      "owner": "Terra",
+      "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "note": "Extend existing gate, no new framework. Strict V1 mandatory matrix + exact run/artifact/stage identities; positive and rejectionTDD; native consumer remains stand owner.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-07T21:29:28+03:00",
+          "note": "",
+          "changes": {
+            "id": "REPORT",
+            "parent": "S1",
+            "label": "Выпустить единый отчёт и отказ неполного gate",
+            "description": "PASS/FAIL/BLOCKED/UNSUPPORTED/UNKNOWN по каждой обязательной функции, source/runtime identity; stale receipt и candidate-as-installed отвергаются. Публикация S1.",
+            "acceptance": "PASS/FAIL/BLOCKED/UNSUPPORTED/UNKNOWN по каждой обязательной функции, source/runtime identity; stale receipt и candidate-as-installed отвергаются. Публикация S1.",
+            "depends_on": [
+              "CONFIG"
+            ],
+            "status": "queued",
+            "estimate_minutes": 15,
+            "owner": "CI Astra",
+            "harness": "codex",
+            "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "model": "gpt-6-astra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:38:54+03:00",
+          "note": "",
+          "changes": {
+            "parent": "S2",
+            "wave": 2,
+            "owner": "Astra",
+            "note": "Lead лично определяет и принимает обязательные сценарии, identity и отказ неполного gate. Положительные source tests не заменяют installed consumer."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T22:48:12+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "owner": "Terra",
+            "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+            "model": "gpt-6.1-terra",
+            "affected_files": [
+              "tests/native/candidate_release_gate.py",
+              "tests/native/test_candidate_release_gate.py"
+            ],
+            "note": "Extend existing gate, no new framework. Strict V1 mandatory matrix + exact run/artifact/stage identities; positive and rejectionTDD; native consumer remains stand owner."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T23:06:35+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "Published76ec55f305b01309d273cb55d3b234b0714f3694. 12focused tests. Existing candidate_release_gate --validate-v1 report expectedidentity enforces5harnesses×7checks+5negativechecks and exact run/source/artifact/stage. This validates reports, not native evidence by itself."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "tests/native/candidate_release_gate.py",
+        "tests/native/test_candidate_release_gate.py"
+      ],
+      "depends_on": [
+        "CONFIG"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-07T21:29:28+03:00",
+      "started_at": "2026-11-07T22:48:12+03:00",
+      "finished_at": "2026-11-07T23:06:35+03:00",
+      "wave": 2
+    },
+    {
+      "id": "CODEX",
+      "label": "Подключить реальный Codex и локальный model fixture",
+      "status": "blocked",
+      "parent": "S3",
+      "description": "Реальный app-server через обычный core consumer; точный native instance/provider. Нет supported launch — отдельный product blocker без повторного create/UNKNOWN.",
+      "acceptance": "Реальный app-server через обычный core consumer; точный native instance/provider. Нет supported launch — отдельный product blocker без повторного create/UNKNOWN.",
+      "result": "Terra readonly complete: logs0/threads0/no sessions; stderr discarded. quota guard hypothesis (herder-test not exempt, unknown quota denies) not proven historicalcause. Schema20checks valid from coreowner. Original task68ebef496b1d5ca9265c1a8c605ac631 preserved; no resend. Probe19dcfc9c; evidence codex-v1-result.md.",
+      "owner": "Terra",
+      "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "note": "Native exactcandidate d66c9c0729fe / manifest2db3cc41; explicit solelaneoperator, deterministic model isolated, publicMCP; nolegacycurrent/install, UNKNOWNnoreplay.",
+      "blocker": "Original create UNKNOWN; missing historical error stage, retry forbidden",
+      "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-07T21:29:29+03:00",
+          "note": "",
+          "changes": {
+            "id": "CODEX",
+            "parent": "S2",
+            "label": "Подключить реальный Codex и локальный model fixture",
+            "description": "Реальный app-server через обычный core consumer; точный native instance/provider. Нет supported launch — отдельный product blocker без повторного create/UNKNOWN.",
+            "acceptance": "Реальный app-server через обычный core consumer; точный native instance/provider. Нет supported launch — отдельный product blocker без повторного create/UNKNOWN.",
+            "depends_on": [
+              "CONFIG",
+              "REPORT"
+            ],
+            "status": "queued",
+            "estimate_minutes": 15,
+            "owner": "CI Astra",
+            "harness": "codex",
+            "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "model": "gpt-6-astra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:30:07+03:00",
+          "note": "",
+          "changes": {
+            "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "native_environment"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:38:55+03:00",
+          "note": "",
+          "changes": {
+            "parent": "S3",
+            "wave": 3,
+            "owner": "Astra",
+            "note": "Сложный native instance/provider и installed route разрабатывает/принимает Lead; UNKNOWN не повторять."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:43:58+03:00",
+          "note": "",
+          "changes": {
+            "note": "Решение21:38МСК: CI теперь владеет минимальными legacy adapter fixes (TDD), не новой реализацией. Exact entrypoint/capabilities/наблюдаемый gap и fixture refs: LEGACY-ADAPTERS.md, строка этой среды. Тонкое подключение/единый public contract — ../20261107-herder-v1-core. Дедлайн08.11 00:38МСК; source capability не live PASS."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T23:24:34+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+            "model": "gpt-6.1-terra",
+            "owner": "Terra",
+            "note": "Native exactcandidate d66c9c0729fe / manifest2db3cc41; explicit solelaneoperator, deterministic model isolated, publicMCP; nolegacycurrent/install, UNKNOWNnoreplay."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:12:53+03:00",
+          "note": "",
+          "changes": {
+            "status": "blocked",
+            "blocker": "Original create UNKNOWN; missing historical error stage, retry forbidden",
+            "result": "Terra readonly complete: logs0/threads0/no sessions; stderr discarded. quota guard hypothesis (herder-test not exempt, unknown quota denies) not proven historicalcause. Schema20checks valid from coreowner. Original task68ebef496b1d5ca9265c1a8c605ac631 preserved; no resend. Probe19dcfc9c; evidence codex-v1-result.md."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [
+        "CONFIG",
+        "REPORT"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-07T21:29:29+03:00",
+      "started_at": "2026-11-07T23:24:34+03:00",
+      "wave": 3
+    },
+    {
+      "id": "OPENCODE",
+      "label": "Подключить опубликованный OpenCode AHAP consumer",
+      "status": "blocked",
+      "parent": "S2",
+      "description": "Reuse Luna stand без конкурирующей правки. Initial send/read/reopen и отдельный deliver различаются; export/search/projects через public MCP либо явный неподдержанный результат.",
+      "acceptance": "Reuse Luna stand без конкурирующей правки. Initial send/read/reopen и отдельный deliver различаются; export/search/projects через public MCP либо явный неподдержанный результат.",
+      "result": "d66 attempt2 UNKNOWN_POST_EFFECT: user msg_1b7c25a85001XUIBWu63iP3rG8 + completed assistant msg_1b7c25abb001b7qtOtsBN6TFDD; trailing idle caused false completion failure. Luna fixes matcher 02ff1510. Original scratch deleted without retain-on-failure; no exact session/requestkey for reconciliation. No new create or second send. Evidence opencode-v1-d66c9c0729fe.json.",
+      "owner": "roomhacker",
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "note": "Completion-reader TDD исправлен: завершённый assistant после exact marker user, exact Task receipt ID; trailing idle игнорируется. 26 offline tests PASS. Native attempt2 — UNKNOWN_POST_EFFECT: лог подтверждает user msg_1b7c25a85001XUIBWu63iP3rG8 и completed assistant msg_1b7c25abb001b7qtOtsBN6TFDD (finish=stop), затем idle. Read-only reconciliation не нашёл исходный Task/request/input marker или disposable DB/profile: launcher удалил scratch без --retain-on-failure. Initial send не повторять; second send не разрешён без recovered first receipt. Дальнейшая native приёмка заблокирована удалённым scratch и запретом owner на fresh mutation.\n\nScoped publish завершён в origin/main: commit 7cc88e486ce4689117306a50293af7e2ebb5e341, ровно tests/native/ahap_opencode_stand.py SHA256 ac2b4906d9c0fbaeb540484619555562ce0704c7771dc5e7fdc3a9b77fa705a4 и tests/native/test_ahap_opencode_stand.py SHA256 f2362a9b4a5bc5fb519f1c8ef8722af834755fc7177aa138750039f547957328. Receipt .agents/tasks/20261107-portable-native-ci/evidence/opencode-v1-d66c9c0729fe.json SHA256 44405ca4487bb0a85206ec2a634b683c89bf7998ba46027ae97a783595ec52bc; top-level phase=post_effect,status=UNKNOWN_POST_EFFECT, attempt1 сохранён. Offline proof: evidence/opencode-v1-d66c9c0729fe-offline-90d9b886.json SHA256 02f6e238a1b66c9a97ae79ddbb597f7f8345338c8cdfa368c72f1036507d0e3f (26 tests PASS); raw output evidence/opencode-v1-d66c9c0729fe-offline-90d9b886.txt SHA256 9dc1a44d847b8a1a1aeda8ef009a509a72c7086471b5e612c8b7507e217e4ac7. Native launch/send/replay не выполнялись; native acceptance остаётся заблокирована удалённым scratch.\nRemote checkpoint: origin/main=5ea28f51838fcfc3230006a8709090f08009a47f; опубликованный OpenCode commit 7cc88e486ce4689117306a50293af7e2ebb5e341 — его ancestor, оба owned fixture-файла побайтно совпадают с origin/main.",
+      "blocker": "Original native effect confirmed, retained authority unavailable; no replay",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-07T21:29:29+03:00",
+          "note": "",
+          "changes": {
+            "id": "OPENCODE",
+            "parent": "S2",
+            "label": "Подключить опубликованный OpenCode AHAP consumer",
+            "description": "Reuse Luna stand без конкурирующей правки. Initial send/read/reopen и отдельный deliver различаются; export/search/projects через public MCP либо явный неподдержанный результат.",
+            "acceptance": "Reuse Luna stand без конкурирующей правки. Initial send/read/reopen и отдельный deliver различаются; export/search/projects через public MCP либо явный неподдержанный результат.",
+            "depends_on": [
+              "CONFIG",
+              "REPORT"
+            ],
+            "status": "queued",
+            "estimate_minutes": 15,
+            "owner": "CI Astra",
+            "harness": "codex",
+            "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "model": "gpt-6-astra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:38:54+03:00",
+          "note": "",
+          "changes": {
+            "wave": 2,
+            "owner": "Terra (планируемое назначение)",
+            "model": "gpt-6-terra",
+            "session": "",
+            "note": "После browser приоритета: подключение готового Luna stand по утверждённому контракту, без конкурентной записи stand. Неясный product gap решает Astra. Перед dispatch проверить опубликованные результаты существующей Luna-сессии."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:43:57+03:00",
+          "note": "",
+          "changes": {
+            "note": "Решение21:38МСК: CI теперь владеет минимальными legacy adapter fixes (TDD), не новой реализацией. Exact entrypoint/capabilities/наблюдаемый gap и fixture refs: LEGACY-ADAPTERS.md, строка этой среды. Тонкое подключение/единый public contract — ../20261107-herder-v1-core. Дедлайн08.11 00:38МСК; source capability не live PASS."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T23:24:31+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+            "model": "gpt-6-luna",
+            "owner": "Existing stand Luna",
+            "note": "Native exactcandidate d66c9c0729fe / manifest2db3cc41; explicit solelaneoperator, deterministic model isolated, publicMCP; nolegacycurrent/install, UNKNOWNnoreplay."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T23:31:15+03:00",
+          "note": "",
+          "changes": {
+            "owner": "roomhacker",
+            "note": "Прямое поручение владельца: OpenCode stand author/operator единственный. Один новый disposable native V1 consumer на manifest herder-v1-d66c9c0729fe (SHA256 2db3cc41b3411e1028ba641e1d3812369d054f01ab43cda135dd9c6ad5f454e4, source d66c9c0729fea2a18038fe6569625a14177a7adc), published 313d8c64 launch.py, exact --ro-bind inputs включая manifest и pinned OpenCode 1d89d04d. Не использовать --candidate и не replay прежние input/UNKNOWN. Report fields: stage/status/source_commit/manifest_sha256; core/bootstrap/node/adapter/OpenCode SHA+versions; run_id, instance/session, оба Task/request/user+assistant IDs; projects, export native bytes_base64 digest+length/complete/source, common unsupported receipt, search coverage, reopened task/session/transcript и model request delta; exact command, evidence, cleanup."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:06:08+03:00",
+          "note": "Сверен attempt2.log и выполнен read-only поиск original Task/request receipt. Native completion подтверждён в сохранённом логе, outer outcome reconciled в UNKNOWN_POST_EFFECT; scratch уже удалён. Offline completion-reader regression: 26 tests PASS; native create/send не запускались. Fresh mutation запрещена owner.",
+          "changes": {
+            "status": "blocked",
+            "note": "Completion-reader TDD исправлен: завершённый assistant после exact marker user, exact Task receipt ID; trailing idle игнорируется. 26 offline tests PASS. Native attempt2 — UNKNOWN_POST_EFFECT: лог подтверждает user msg_1b7c25a85001XUIBWu63iP3rG8 и completed assistant msg_1b7c25abb001b7qtOtsBN6TFDD (finish=stop), затем idle. Read-only reconciliation не нашёл исходный Task/request/input marker или disposable DB/profile: launcher удалил scratch без --retain-on-failure. Initial send не повторять; second send не разрешён без recovered first receipt. Дальнейшая native приёмка заблокирована удалённым scratch и запретом owner на fresh mutation."
+          },
+          "actor": {
+            "harness": "codex",
+            "session_id": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:10:05+03:00",
+          "note": "",
+          "changes": {
+            "blocker": "Original native effect confirmed, retained authority unavailable; no replay",
+            "result": "d66 attempt2 UNKNOWN_POST_EFFECT: user msg_1b7c25a85001XUIBWu63iP3rG8 + completed assistant msg_1b7c25abb001b7qtOtsBN6TFDD; trailing idle caused false completion failure. Luna fixes matcher 02ff1510. Original scratch deleted without retain-on-failure; no exact session/requestkey for reconciliation. No new create or second send. Evidence opencode-v1-d66c9c0729fe.json."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:21:58+03:00",
+          "note": "Scoped publish exact two OpenCode fixture files completed on origin/main; receipt summary and offline proof refs recorded. Native launch/replay untouched; leaf remains blocked on retained scratch for native reconciliation.",
+          "changes": {
+            "status": "blocked",
+            "note": "Scoped publish завершён в origin/main: commit 7cc88e486ce4689117306a50293af7e2ebb5e341, ровно tests/native/ahap_opencode_stand.py SHA256 ac2b4906d9c0fbaeb540484619555562ce0704c7771dc5e7fdc3a9b77fa705a4 и tests/native/test_ahap_opencode_stand.py SHA256 f2362a9b4a5bc5fb519f1c8ef8722af834755fc7177aa138750039f547957328. Receipt .agents/tasks/20261107-portable-native-ci/evidence/opencode-v1-d66c9c0729fe.json SHA256 44405ca4487bb0a85206ec2a634b683c89bf7998ba46027ae97a783595ec52bc; top-level phase=post_effect,status=UNKNOWN_POST_EFFECT, attempt1 сохранён. Offline proof: evidence/opencode-v1-d66c9c0729fe-offline-90d9b886.json SHA256 02f6e238a1b66c9a97ae79ddbb597f7f8345338c8cdfa368c72f1036507d0e3f (26 tests PASS); raw output evidence/opencode-v1-d66c9c0729fe-offline-90d9b886.txt SHA256 9dc1a44d847b8a1a1aeda8ef009a509a72c7086471b5e612c8b7507e217e4ac7. Native launch/send/replay не выполнялись; native acceptance остаётся заблокирована удалённым scratch."
+          },
+          "actor": {
+            "harness": "codex",
+            "session_id": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:23:45+03:00",
+          "note": "Remote checkpoint: origin/main=5ea28f51838fcfc3230006a8709090f08009a47f; опубликованный OpenCode commit 7cc88e486ce4689117306a50293af7e2ebb5e341 — его ancestor, оба owned fixture-файла побайтно совпадают с origin/main.",
+          "changes": {
+            "note": "Remote checkpoint: origin/main=5ea28f51838fcfc3230006a8709090f08009a47f; опубликованный OpenCode commit 7cc88e486ce4689117306a50293af7e2ebb5e341 — его ancestor, оба owned fixture-файла побайтно совпадают с origin/main.",
+            "status": "blocked"
+          },
+          "actor": {
+            "harness": "codex",
+            "session_id": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [
+        "CONFIG",
+        "REPORT"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-07T21:29:29+03:00",
+      "started_at": "2026-11-07T23:24:31+03:00",
+      "wave": 2
+    },
+    {
+      "id": "TRIGGER",
+      "label": "Подключить existing CI и update/release triggers",
+      "status": "blocked",
+      "parent": "S4",
+      "description": "PR fast tests; native compatibility на candidate и изменении native versions; required unavailable не даёт принять update. Никакого нового scheduler.",
+      "acceptance": "PR fast tests; native compatibility на candidate и изменении native versions; required unavailable не даёт принять update. Никакого нового scheduler.",
+      "result": "4464390a existing fleet-session.yml Linux/macOS CONFIG/REPORT unit checks published. TRIGGER.md exact existing gate invocation and patchpoints; manual exact candidate aggregate now produced, gate exit2. Full automatic five-native producer/install trigger NOT complete; do not replace legacy gate or claim nightly native PASS.",
+      "owner": "Terra research + Astra integration",
+      "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "note": "Native candidate became ready; Terra reassigned to CODEX by owner priority. Preserve TRIGGER.md result if ready; Astra integrates after live lanes. REPORT76ec55f3 published.",
+      "blocker": "Autonomous native producer requires complete authorized lanes; existing fast checks published, runtime gate not wired",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-07T21:29:32+03:00",
+          "note": "",
+          "changes": {
+            "id": "TRIGGER",
+            "parent": "S4",
+            "label": "Подключить existing CI и update/release triggers",
+            "description": "PR fast tests; native compatibility на candidate и изменении native versions; required unavailable не даёт принять update. Никакого нового scheduler.",
+            "acceptance": "PR fast tests; native compatibility на candidate и изменении native versions; required unavailable не даёт принять update. Никакого нового scheduler.",
+            "depends_on": [
+              "REPORT"
+            ],
+            "status": "queued",
+            "estimate_minutes": 15,
+            "owner": "CI Astra",
+            "harness": "codex",
+            "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "model": "gpt-6-astra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:38:56+03:00",
+          "note": "",
+          "changes": {
+            "wave": 2,
+            "owner": "Terra (планируемое назначение)",
+            "model": "gpt-6-terra",
+            "session": "",
+            "note": "Средняя задача: wiring существующего workflow/release entrypoint после отчёта. Никакого нового scheduler; Astra принимает последствия update/rollback."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T23:08:06+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "owner": "Terra research + Astra integration",
+            "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+            "model": "gpt-6.1-terra",
+            "note": "Read-only exact wiring points for existing workflow/release gates, V1 separate runtime only. No legacycurrent switch."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T23:24:38+03:00",
+          "note": "",
+          "changes": {
+            "status": "queued",
+            "note": "Native candidate became ready; Terra reassigned to CODEX by owner priority. Preserve TRIGGER.md result if ready; Astra integrates after live lanes. REPORT76ec55f3 published."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:16:08+03:00",
+          "note": "",
+          "changes": {
+            "status": "blocked",
+            "blocker": "Autonomous native producer requires complete authorized lanes; existing fast checks published, runtime gate not wired",
+            "result": "4464390a existing fleet-session.yml Linux/macOS CONFIG/REPORT unit checks published. TRIGGER.md exact existing gate invocation and patchpoints; manual exact candidate aggregate now produced, gate exit2. Full automatic five-native producer/install trigger NOT complete; do not replace legacy gate or claim nightly native PASS."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [
+        "REPORT"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-07T21:29:32+03:00",
+      "started_at": "2026-11-07T23:08:06+03:00",
+      "wave": 2
+    },
+    {
+      "id": "ZCODE",
+      "label": "Выпустить ZCode lane без зависимости от server44",
+      "status": "blocked",
+      "parent": "S3",
+      "description": "Точный реальный server package/runner берётся из manifest; нет hardcoded SSH/IP/live dependency store. Публикация CLI этапа, limits явны.",
+      "acceptance": "Точный реальный server package/runner берётся из manifest; нет hardcoded SSH/IP/live dependency store. Публикация CLI этапа, limits явны.",
+      "result": "Published6150354810e80bb35cec4ab40addbb48591088ea, exact2files,7GREEN. OfficialWS14tools and registeredproject exactroot confirmed on isolatedsupervisor,0modelcalls. Original a836 createUNKNOWN taskefccb595dadfbc9e413b39fdb1cb26d7 retained, no replay. Full lane/installed NOTPASS.",
+      "owner": "Terra",
+      "session": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "note": "Native exactcandidate d66c9c0729fe / manifest2db3cc41; explicit solelaneoperator, deterministic model isolated, publicMCP; nolegacycurrent/install, UNKNOWNnoreplay.",
+      "blocker": "Original a836 createUNKNOWN no replay; source setup now fixed, native fullcase remains unproven",
+      "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-07T21:29:30+03:00",
+          "note": "",
+          "changes": {
+            "id": "ZCODE",
+            "parent": "S2",
+            "label": "Выпустить ZCode lane без зависимости от server44",
+            "description": "Точный реальный server package/runner берётся из manifest; нет hardcoded SSH/IP/live dependency store. Публикация CLI этапа, limits явны.",
+            "acceptance": "Точный реальный server package/runner берётся из manifest; нет hardcoded SSH/IP/live dependency store. Публикация CLI этапа, limits явны.",
+            "depends_on": [
+              "CONFIG",
+              "REPORT"
+            ],
+            "status": "queued",
+            "estimate_minutes": 15,
+            "owner": "CI Astra",
+            "harness": "codex",
+            "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "model": "gpt-6-astra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:30:07+03:00",
+          "note": "",
+          "changes": {
+            "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "native_environment"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:38:56+03:00",
+          "note": "",
+          "changes": {
+            "parent": "S3",
+            "wave": 3,
+            "owner": "Terra (планируемое назначение)",
+            "model": "gpt-6-terra",
+            "session": "",
+            "note": "Средняя задача: подключить существующий runner через утверждённый manifest/config, без hardcoded host и новой adapter архитектуры. Архитектурные пробелы принимает Astra."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:43:59+03:00",
+          "note": "",
+          "changes": {
+            "note": "Решение21:38МСК: CI теперь владеет минимальными legacy adapter fixes (TDD), не новой реализацией. Exact entrypoint/capabilities/наблюдаемый gap и fixture refs: LEGACY-ADAPTERS.md, строка этой среды. Тонкое подключение/единый public contract — ../20261107-herder-v1-core. Дедлайн08.11 00:38МСК; source capability не live PASS."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T23:24:37+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "session": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+            "model": "gpt-6.1-terra",
+            "owner": "Terra",
+            "note": "Native exactcandidate d66c9c0729fe / manifest2db3cc41; explicit solelaneoperator, deterministic model isolated, publicMCP; nolegacycurrent/install, UNKNOWNnoreplay."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:19:48+03:00",
+          "note": "",
+          "changes": {
+            "status": "blocked",
+            "blocker": "Original a836 createUNKNOWN no replay; source setup now fixed, native fullcase remains unproven",
+            "result": "OfficialWS+14toolsPASS. TDD project preparation readTree→saveProject→readTree exactroot/projectID fixed aea3d92c;7tests including actual isolatedsupervisor/publiccore PASS,0modelcalls. Original taskefccb595dadfbc9e413b39fdb1cb26d7 UNKNOWN retained /tmp/herder-zcode-v1-a836-case-01. Scopedpublication underway; no newcreate."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:23:31+03:00",
+          "note": "",
+          "changes": {
+            "result": "Published6150354810e80bb35cec4ab40addbb48591088ea, exact2files,7GREEN. OfficialWS14tools and registeredproject exactroot confirmed on isolatedsupervisor,0modelcalls. Original a836 createUNKNOWN taskefccb595dadfbc9e413b39fdb1cb26d7 retained, no replay. Full lane/installed NOTPASS."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [
+        "CONFIG",
+        "REPORT"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-07T21:29:30+03:00",
+      "started_at": "2026-11-07T23:24:37+03:00",
+      "wave": 3
+    },
+    {
+      "id": "MOVE",
+      "label": "Доказать перенос на второй runner конфигурацией",
+      "status": "queued",
+      "parent": "S4",
+      "description": "Тот же опубликованный scenario SHA на двух runners; отличаются только manifest/config. Обе runtime версии и OS/arch записаны; неподдержанная ОС не объявлена проверенной.",
+      "acceptance": "Тот же опубликованный scenario SHA на двух runners; отличаются только manifest/config. Обе runtime версии и OS/arch записаны; неподдержанная ОС не объявлена проверенной.",
+      "owner": "Luna (планируемое назначение)",
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "note": "Только рутина по готовым проверенным argv/config: выполнить один и тот же сценарий на двух утверждённых runners, собрать версии/receipts и cleanup. Не чинить архитектуру самостоятельно, не создавать descendants. Availability/session проверить перед dispatch.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-07T21:29:33+03:00",
+          "note": "",
+          "changes": {
+            "id": "MOVE",
+            "parent": "S4",
+            "label": "Доказать перенос на второй runner конфигурацией",
+            "description": "Тот же опубликованный scenario SHA на двух runners; отличаются только manifest/config. Обе runtime версии и OS/arch записаны; неподдержанная ОС не объявлена проверенной.",
+            "acceptance": "Тот же опубликованный scenario SHA на двух runners; отличаются только manifest/config. Обе runtime версии и OS/arch записаны; неподдержанная ОС не объявлена проверенной.",
+            "depends_on": [
+              "OPENCODE",
+              "CONFIG"
+            ],
+            "status": "queued",
+            "estimate_minutes": 15,
+            "owner": "CI Astra",
+            "harness": "codex",
+            "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "model": "gpt-6-astra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:38:57+03:00",
+          "note": "",
+          "changes": {
+            "wave": 4,
+            "owner": "Luna (планируемое назначение)",
+            "model": "gpt-6-luna",
+            "session": "",
+            "note": "Только рутина по готовым проверенным argv/config: выполнить один и тот же сценарий на двух утверждённых runners, собрать версии/receipts и cleanup. Не чинить архитектуру самостоятельно, не создавать descendants. Availability/session проверить перед dispatch."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [
+        "OPENCODE",
+        "CONFIG"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-07T21:29:33+03:00",
+      "wave": 4
+    },
+    {
+      "id": "INSTALLED",
+      "label": "Выпустить post-install gate через тот же consumer",
+      "status": "blocked",
+      "parent": "S4",
+      "description": "Точный установленный artifact+consumer, позитивный CI и failure injection; full product PASS только все обязательные функции. Публикация отчёта, cleanup своих ресурсов, external gaps сохранены.",
+      "acceptance": "Точный установленный artifact+consumer, позитивный CI и failure injection; full product PASS только все обязательные функции. Публикация отчёта, cleanup своих ресурсов, external gaps сохранены.",
+      "result": "evidence/candidate-a836-report.json + independent expected identity + candidate-a836-gate.txt. NEG5PASS referenced with original run_id/hash/provenance, not native proof. No V1 runtime installation, no legacycurrent switch. Sameconsumer installed route awaits complete candidate acceptance.",
+      "owner": "Astra",
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "note": "Финальная сложная интеграция и release acceptance лично Lead. Worker результаты принимаются по реальному consumer; новые UNKNOWN sends не повторять.",
+      "blocker": "Exact a836 candidate gate exit2: chatgpt.create BLOCKED; native lanes incomplete",
+      "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-07T21:29:33+03:00",
+          "note": "",
+          "changes": {
+            "id": "INSTALLED",
+            "parent": "S4",
+            "label": "Выпустить post-install gate через тот же consumer",
+            "description": "Точный установленный artifact+consumer, позитивный CI и failure injection; full product PASS только все обязательные функции. Публикация отчёта, cleanup своих ресурсов, external gaps сохранены.",
+            "acceptance": "Точный установленный artifact+consumer, позитивный CI и failure injection; full product PASS только все обязательные функции. Публикация отчёта, cleanup своих ресурсов, external gaps сохранены.",
+            "depends_on": [
+              "TRIGGER",
+              "MOVE",
+              "OPENCODE",
+              "CODEX",
+              "ZCODE",
+              "CHATGPT",
+              "ZAI",
+              "BUILD"
+            ],
+            "status": "queued",
+            "estimate_minutes": 15,
+            "owner": "CI Astra",
+            "harness": "codex",
+            "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "model": "gpt-6-astra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:30:08+03:00",
+          "note": "",
+          "changes": {
+            "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "native_environment"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T21:38:58+03:00",
+          "note": "",
+          "changes": {
+            "wave": 4,
+            "owner": "Astra",
+            "note": "Финальная сложная интеграция и release acceptance лично Lead. Worker результаты принимаются по реальному consumer; новые UNKNOWN sends не повторять."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:15:27+03:00",
+          "note": "",
+          "changes": {
+            "status": "blocked",
+            "blocker": "Exact a836 candidate gate exit2: chatgpt.create BLOCKED; native lanes incomplete",
+            "result": "evidence/candidate-a836-report.json + independent expected identity + candidate-a836-gate.txt. NEG5PASS referenced with original run_id/hash/provenance, not native proof. No V1 runtime installation, no legacycurrent switch. Sameconsumer installed route awaits complete candidate acceptance."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [
+        "TRIGGER",
+        "MOVE",
+        "OPENCODE",
+        "CODEX",
+        "ZCODE",
+        "CHATGPT",
+        "ZAI",
+        "BUILD"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-07T21:29:33+03:00",
+      "wave": 4
+    }
+  ],
+  "leaf_count": 12,
+  "milestones": [
+    {
+      "id": "S1",
+      "label": "Приоритет 1: ChatGPT и Z.ai; безопасная сборка уже исправлена",
+      "status": "blocked",
+      "children": [
+        "BUILD",
+        "CHATGPT",
+        "ZAI"
+      ],
+      "estimate_minutes": {
+        "minimum": 45.0,
+        "maximum": 45.0
+      },
+      "done": 1,
+      "total": 3
+    },
+    {
+      "id": "S2",
+      "label": "Приоритет 2: переносимые входы, отчёт и OpenCode",
+      "status": "blocked",
+      "children": [
+        "CONFIG",
+        "INPUTS",
+        "OPENCODE",
+        "REPORT"
+      ],
+      "estimate_minutes": {
+        "minimum": 45.0,
+        "maximum": 45.0
+      },
+      "done": 3,
+      "total": 4
+    },
+    {
+      "id": "S3",
+      "label": "Приоритет 3: Codex и ZCode",
+      "status": "blocked",
+      "children": [
+        "CODEX",
+        "ZCODE"
+      ],
+      "estimate_minutes": {
+        "minimum": 30.0,
+        "maximum": 30.0
+      },
+      "done": 0,
+      "total": 2
+    },
+    {
+      "id": "S4",
+      "label": "Автозапуск CI, перенос runner и post-install acceptance",
+      "status": "blocked",
+      "children": [
+        "INSTALLED",
+        "MOVE",
+        "TRIGGER"
+      ],
+      "estimate_minutes": {
+        "minimum": 45.0,
+        "maximum": 45.0
+      },
+      "done": 0,
+      "total": 3
+    }
+  ],
+  "started_at": "2026-11-07T18:13:17Z",
+  "plan_origin": {
+    "at": "2026-11-07T18:13:17Z",
+    "source": "recorded_start",
+    "leaf_id": "",
+    "recorded_at": "2026-11-07T18:29:24.929727+00:00"
+  }
+}

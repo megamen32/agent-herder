@@ -1,0 +1,139 @@
+{
+  "phase": "post_effect",
+  "status": "UNKNOWN_POST_EFFECT",
+  "owner_instruction": "one fresh isolated native OpenCode consumer; no retry/replay",
+  "stage": "candidate",
+  "source_commit": "d66c9c0729fea2a18038fe6569625a14177a7adc",
+  "manifest_path": "/home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/manifest.json",
+  "manifest_sha256": "2db3cc41b3411e1028ba641e1d3812369d054f01ab43cda135dd9c6ad5f454e4",
+  "manifest_source_sha256": "d66c9c0729fea2a18038fe6569625a14177a7adc",
+  "artifact_hashes": {
+    "core": "480ba9df948e437868770609ebbbe0ade19176066da69c803438880dee2579c9",
+    "bootstrap": "a9b67672b9e19d38a320156a6b6d6bd071659fed06d44b7c2be1d0969ba97af0",
+    "node": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+    "adapter_opencode": "ed0821e07e3949d7bfe58cdc0fb7be759464f203cea32f7b3e95ceb862e23155",
+    "pinned_opencode_1d89d04d": "25facd7099c19018e83dce858f3ab922cd2d49ad29b144bc36968418ca6eb5aa"
+  },
+  "launcher_commit": "313d8c64cd73fc9881bb126af41eacfa6ab43144",
+  "launcher_sha256": "96213b82df3620d7283f54953a3e3cab2f29ce849b8c020191c65640d8473703",
+  "fake_model_sha256": "e456b650bda6c34973b06fb33c99639aea67a4eb4aba6538cb549a5d07a450ae",
+  "argv": [
+    "/usr/bin/python3.10",
+    "/home/roomhacker/.codex/worktrees/herder-ci-runner-config/agent-herder/tests/native/launch.py",
+    "--ro-bind",
+    "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native",
+    "--ro-bind",
+    "/usr/bin/python3.10",
+    "--ro-bind",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/manifest.json",
+    "--ro-bind",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/fixture/herder_native_stdio",
+    "--ro-bind",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/fixture/ahap-owner-bootstrap",
+    "--ro-bind",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/fixture/node",
+    "--ro-bind",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/fixture/ahap-opencode-runner.mjs",
+    "--ro-bind",
+    "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/opencode",
+    "--",
+    "/usr/bin/python3.10",
+    "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/ahap_opencode_stand.py",
+    "--core",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/fixture/herder_native_stdio",
+    "--runner",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/fixture/ahap-opencode-runner.mjs",
+    "--opencode",
+    "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/opencode",
+    "--node",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/fixture/node",
+    "--bootstrap",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/fixture/ahap-owner-bootstrap"
+  ],
+  "mounts": [
+    "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native",
+    "/usr/bin/python3.10",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/manifest.json",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/fixture/herder_native_stdio",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/fixture/ahap-owner-bootstrap",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/fixture/node",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/fixture/ahap-opencode-runner.mjs",
+    "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/opencode"
+  ],
+  "forbidden": {
+    "candidate_package_mount": false,
+    "production_or_paid_model": false,
+    "historical_receipts_replayed": false,
+    "legacy_current_or_installed_target": false
+  },
+  "final_log": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-portable-native-ci/evidence/opencode-v1-d66c9c0729fe-attempt2.log",
+  "attempts": [
+    {
+      "attempt": 1,
+      "result": "FAILED_PREMUTATION",
+      "launcher_exit": 2,
+      "mutation_started": false,
+      "native_create_or_deliver": false,
+      "model_request_delta": "not captured in durable stdout; stopped before create/deliver call sites",
+      "error": "AHAP OpenCode stand failed: V1 public MCP contract missing before mutation: discover.action=['projects'] (advertised []); deliver.action=['session'] (advertised []); search.action=['search'] (advertised []); export.action=['export'] (advertised []); export.format=['common', 'native'] (advertised [])",
+      "cleanup": "published launcher exited without retained_root; disposable profile removed"
+    },
+    {
+      "attempt": 2,
+      "result": "UNKNOWN_POST_EFFECT_RECONCILIATION_BLOCKED",
+      "launcher_exit": 2,
+      "mutation_started": true,
+      "native_create_started": true,
+      "native_user_message_id": "msg_1b7c25a85001XUIBWu63iP3rG8",
+      "native_assistant_message_id": "msg_1b7c25abb001b7qtOtsBN6TFDD",
+      "assistant_finish": "stop",
+      "assistant_completed_at": 1794084330235,
+      "trailing_native_role": "idle",
+      "task_id": "unavailable because disposable scratch was removed",
+      "request_key": "unavailable because disposable scratch was removed",
+      "input_marker": "unavailable because disposable scratch was removed",
+      "model_request_delta": "not durably captured; do not infer zero",
+      "log": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-portable-native-ci/evidence/opencode-v1-d66c9c0729fe-attempt2.log",
+      "cleanup": "published launcher exited without --retain-on-failure; TemporaryDirectory removed the disposable database/profile",
+      "native_completion_confirmed_in_saved_log": {
+        "user_message_id": "msg_1b7c25a85001XUIBWu63iP3rG8",
+        "assistant_message_id": "msg_1b7c25abb001b7qtOtsBN6TFDD",
+        "assistant_finish": "stop",
+        "assistant_completed_at": 1794084330235,
+        "trailing_role": "idle"
+      }
+    }
+  ],
+  "consumer_result": null,
+  "final_status": "UNKNOWN_POST_EFFECT",
+  "cleanup": {
+    "launcher_exit": 2,
+    "temporary_profile_retained": false,
+    "reason": "--retain-on-failure was not supplied",
+    "no_replay": true
+  },
+  "no_replay": true,
+  "reconciliation": {
+    "status": "BLOCKED_EVIDENCE_UNAVAILABLE",
+    "reason": "Read-only search found the exact native IDs only in the preserved attempt2 log and this receipt. The launcher did not retain its disposable root, so the original Task/request/input marker and database/session state cannot be recovered. Owner forbids a fresh mutation.",
+    "known_native_messages": [
+      "msg_1b7c25a85001XUIBWu63iP3rG8",
+      "msg_1b7c25abb001b7qtOtsBN6TFDD"
+    ],
+    "read_only_reconciliation_attempted": true,
+    "create_or_initial_send_replayed": false,
+    "second_send_authorized": false,
+    "read_only_search_scope": [
+      "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-portable-native-ci/evidence",
+      "/tmp"
+    ],
+    "matching_original_task_or_request_receipt_found": false
+  },
+  "completion_reader_regression": {
+    "status": "OFFLINE_TESTS_PASS",
+    "behavior": "Find completed assistant after exact marker user; require completed timestamp and non-error finish; ignore trailing idle; compare exact user receipt ID.",
+    "tests": 26,
+    "native_launch_performed": false,
+    "new_mutation_performed": false
+  }
+}

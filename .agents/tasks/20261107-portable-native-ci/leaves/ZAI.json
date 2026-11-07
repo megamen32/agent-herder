@@ -12,7 +12,7 @@
   "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
   "model": "gpt-6-astra",
   "created_at": "2026-11-07T21:29:31+03:00",
-  "updated_at": "2026-11-07T22:48:51+03:00",
+  "updated_at": "2026-11-08T00:12:17+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:31+03:00",
@@ -138,11 +138,80 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:58:48+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "blocker": "",
+        "note": "Confirmed pinned-page first-send defect Baf7506d1dc904dbd82ee: 6red→118green across4suites. Fix preserves pin, refuses existingchat/userdraft; waiting isolated dependency rebuild+tsc then scoped publish. Page9/account ready; live no sends."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:06:35+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Prepared page9 disappeared from gateway after unexpected route drift; no native sends by CI",
+        "result": "Adapter pinnedfirstsend fix264eb01c source118tests+tscPASS. Initialpage9/account verified, later No page found; scope invalidated, no replay.",
+        "note": "Exact resource collision sent once to productowner inputci-browser-target-disappeared-2307; don't create new tabs until resolved. ChatGPTpage10 also disappeared."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:08:32+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "blocker": "",
+        "result": "a836 exact candidate public MCP preflight PASS,14 tools,native_sends0. Gateway page7 verified https://chat.z.ai/ blankcomposer no challenge. Scope confirmed by wrapper. Preparing one retained authorized case; former page9 invalidated."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:12:17+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Z.ai GLM-5.3 at capacity after native click; prompt UNKNOWN, no retry",
+        "result": "a836 preflight14tools PASS. One create confirms session51ff45f3cbdf769f0a147c520bb5cb5c; prompt UNKNOWN/retry forbidden. UI page7 native /c/c2c581df-d3a7-4a3b-8f57-4b8edff81fd3 shows model capacity and retained exact draft. Full retained root ci-zai-native-a836-0010. Evidence zai-a836-{receipt,reconcile-read,native-blocker}.json. No second send/model switch/replay."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
     }
   ],
   "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
   "wave": 1,
-  "note": "Scope ready; CI remains sole browser operator. Resume consumer on candidate publication, ordinarypage3 preserved.",
-  "blocker": "V1 candidate public consumer/profile pending",
-  "result": "Dedicated page9 exact account verified, empty composer, no challenge,0sends. BROWSER-CONFIG.md + evidence/zai-page9-scope.json."
+  "note": "Exact resource collision sent once to productowner inputci-browser-target-disappeared-2307; don't create new tabs until resolved. ChatGPTpage10 also disappeared.",
+  "blocker": "Z.ai GLM-5.3 at capacity after native click; prompt UNKNOWN, no retry",
+  "result": "a836 preflight14tools PASS. One create confirms session51ff45f3cbdf769f0a147c520bb5cb5c; prompt UNKNOWN/retry forbidden. UI page7 native /c/c2c581df-d3a7-4a3b-8f57-4b8edff81fd3 shows model capacity and retained exact draft. Full retained root ci-zai-native-a836-0010. Evidence zai-a836-{receipt,reconcile-read,native-blocker}.json. No second send/model switch/replay."
 }

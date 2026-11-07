@@ -12,7 +12,7 @@
   "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
   "model": "gpt-6-astra",
   "created_at": "2026-11-07T21:29:31+03:00",
-  "updated_at": "2026-11-07T22:48:50+03:00",
+  "updated_at": "2026-11-08T00:23:28+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:31+03:00",
@@ -144,6 +144,38 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:13:53+03:00",
+      "note": "",
+      "changes": {
+        "blocker": "a836 public init OutcomeUnknown at exact account verifier; no sends",
+        "result": "Exact existing testchat page3, a836 hashes verified. tools/list failed with AHAP chatgpt startup Initialization phase init cause OutcomeUnknown. No create/send, retained ci-chatgpt-preflight-a836-0016. Prior explicit account verifier timed out on live site; no repeated auth polling/backoff reset. Evidence chatgpt-a836-preflight.log/receipt.json."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:23:28+03:00",
+      "note": "",
+      "changes": {
+        "blocker": "Await combined immutable candidate for readonly init; no sends",
+        "result": "Published adaptere4c5edb6 caches explicitly verified account scope only after mismatchcheck. RED→107GREEN, tsc exit0. Original a836 directAHAP init22.093s ERROR exceeds core20s; coreowner fixes wrapperorder/budget. Oldreceipt/chatgpt-a836-ahap-timing.json retained. Need fresh combinedcandidate readonlypreflight, not nativePASS."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
     }
   ],
   "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
@@ -155,6 +187,6 @@
     "tests/chatgpt-passive-backoff-burst.test.ts",
     "tests/chatgpt-background-budget.test.ts"
   ],
-  "blocker": "V1 candidate not published; existing page has old hook/cooldown",
-  "result": "Source e86df81b published,43 focused tests pass; page7/account/claim preserved. Live acceptance not yet proven."
+  "blocker": "Await combined immutable candidate for readonly init; no sends",
+  "result": "Published adaptere4c5edb6 caches explicitly verified account scope only after mismatchcheck. RED→107GREEN, tsc exit0. Original a836 directAHAP init22.093s ERROR exceeds core20s; coreowner fixes wrapperorder/budget. Oldreceipt/chatgpt-a836-ahap-timing.json retained. Need fresh combinedcandidate readonlypreflight, not nativePASS."
 }

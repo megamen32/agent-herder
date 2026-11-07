@@ -1,0 +1,12 @@
+{
+  "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-a836a7dcdfc1/manifest.json",
+  "manifest_sha256": "f1e99e12393eb3de9d92fa05f00df63d0270d74643b18e2d774a0aa8941022c7",
+  "consumer_helpers": "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/ahap_opencode_stand.py",
+  "harness": "zai",
+  "page_id": 7,
+  "account_scope": "1aa02989cb1349edca3ce1f9edae68a068369e5de570e9a6be3a53916595df0a",
+  "run_id": "ci-zai-preflight-a836-0008",
+  "stage": "candidate",
+  "instance": "ci-zai",
+  "run_root": "/home/roomhacker/herder-artifacts/ci-runs/ci-zai-preflight-a836-0008"
+}

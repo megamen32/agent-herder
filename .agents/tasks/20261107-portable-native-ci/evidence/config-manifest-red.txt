@@ -1,0 +1,13 @@
+.F......
+======================================================================
+FAIL: test_consumer_can_read_the_exact_manifest_inside_sandbox (test_runner_config.RunnerConfigTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-runner-config/agent-herder/tests/native/test_runner_config.py", line 85, in test_consumer_can_read_the_exact_manifest_inside_sandbox
+    self.assertIn(str(self.manifest_path), mounts)
+AssertionError: '/tmp/tmpqk91a2jz/artifact space/manifest.json' not found in ['/tmp/tmpqk91a2jz', '/tmp/tmpqk91a2jz/python', '/tmp/tmpqk91a2jz/node', '/tmp/tmpqk91a2jz/bootstrap', '/tmp/tmpqk91a2jz/artifact space/core', '/tmp/tmpqk91a2jz/artifact space/adapter', '/tmp/tmpqk91a2jz/artifact space/opencode']
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.043s
+
+FAILED (failures=1)

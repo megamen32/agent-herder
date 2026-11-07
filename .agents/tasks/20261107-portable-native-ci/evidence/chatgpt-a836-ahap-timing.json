@@ -1,0 +1,23 @@
+{
+  "candidate": "a836a7dc",
+  "scope": "single readonly bundled AHAP initialize/init; no core/no create/send",
+  "native_sends": 0,
+  "phases": [
+    {
+      "phase": "initialize",
+      "elapsed_seconds": 0.079,
+      "status": "PASS",
+      "error_code": null,
+      "error_category": null,
+      "error_message": ""
+    },
+    {
+      "phase": "init",
+      "elapsed_seconds": 22.093,
+      "status": "ERROR",
+      "error_code": -32000,
+      "error_category": null,
+      "error_message": "Browser adapter call failed"
+    }
+  ]
+}

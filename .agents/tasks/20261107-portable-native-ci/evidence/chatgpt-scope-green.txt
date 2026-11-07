@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-ci-runner-config/agent-herder
+
+
+ Test Files  3 passed (3)
+      Tests  107 passed (107)
+   Start at  00:21:30
+   Duration  1.80s (transform 2.42s, setup 147ms, import 2.75s, tests 436ms, environment 1ms)
+
