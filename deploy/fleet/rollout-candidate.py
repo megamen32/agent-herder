@@ -18,6 +18,8 @@ for read-only reconciliation, never treated as permission to retry or signal
 another process. No unrelated service or security setting is changed.
 """
 import argparse
+import filecmp
+import io
 import importlib.util
 import json
 import os
@@ -44,6 +46,56 @@ DEFAULT_CATALOG = Path.home() / "agents-projects/.fleet-candidate"
 BUDGET_MIB = 512
 MAX_RELEASES = 2
 PACKAGED = ("dist", "packages", "package.json", "package-lock.json", "build-manifest.json")
+
+
+def run_native_candidate_preflight(release: Path, sha: str, catalog: Path, gate) -> None:
+    """Run the committed candidate suite under the current release lease.
+
+    This is only the three-harness candidate stage. It does not attest the
+    installed process or accept the full release.
+    """
+    gate.check()
+    if not re.fullmatch(r"[a-f0-9]{40}", sha):
+        raise RuntimeError("native candidate SHA invalid")
+    repo = HERE.parents[1]
+    archived = subprocess.run(["git", "-C", str(repo), "archive", "--format=tar", sha, "tests/native"],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=30)
+    if archived.returncode:
+        raise RuntimeError("native candidate runner source unavailable")
+    with tempfile.TemporaryDirectory(prefix="herder-native-preflight-") as temporary:
+        directory = Path(temporary)
+        with tarfile.open(fileobj=io.BytesIO(archived.stdout), mode="r:") as tar:
+            for member in tar.getmembers():
+                path = Path(member.name)
+                if (path.is_absolute() or ".." in path.parts or not (member.isfile() or member.isdir())
+                        or path.parts[:2] != ("tests", "native")):
+                    # Git archives may contain the tests parent directory.
+                    if member.isdir() and path.parts == ("tests",):
+                        continue
+                    raise RuntimeError("native candidate runner archive invalid")
+            tar.extractall(directory)
+        runner = directory / "tests/native/candidate_release_gate.py"
+        codex = shutil.which("codex")
+        opencode = Path.home() / ".npm-global/lib/node_modules/@opencode/cli/bin/opencode.exe"
+        if not runner.is_file() or not codex or not opencode.is_file():
+            raise RuntimeError("native candidate runner or required clients unavailable")
+        receipt = catalog / "ci-receipts" / f"{sha}-rollout.json"
+        result = subprocess.run([sys.executable, str(runner), str(release.resolve()), sha,
+                                 str(Path(codex).resolve()), str(opencode.resolve()), str(receipt)],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=240)
+        if result.returncode:
+            raise RuntimeError("native candidate suite failed; release remains incomplete")
+        try:
+            value = json.loads(receipt.read_text())
+            report = value["report"]
+            if (value.get("cli_candidate") != "PASS" or value.get("zcode_candidate") != "PASS"
+                    or value.get("release") != "INCOMPLETE"
+                    or report["candidate_bundle"]["source_sha"] != sha):
+                raise ValueError("unexpected scoped status")
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise RuntimeError("native candidate receipt invalid; release remains incomplete") from error
+    gate.check()
+    print("native candidate preflight passed; full installed release acceptance remains INCOMPLETE")
 
 
 def remote_python_command(node):
@@ -519,7 +571,17 @@ def node_side(arguments) -> int:
     target_root = Path(arguments.catalog if arguments.kind == "owner" else arguments.fleet_dir).expanduser().resolve()
     with ReleaseGate(arguments.release_proof, target={"fleetDir": str(target_root), "unit": arguments.unit}) as gate:
         if arguments.kind != "owner":
-            return _leased_node_side_fleet(arguments, gate)
+            raise RuntimeError("candidate preflight required: use the fleet controller rollout; direct node-side fleet rollout cannot validate the candidate")
+        candidate = target_root / "releases" / arguments.sha
+        run_native_candidate_preflight(candidate, arguments.sha, target_root, gate)
+        # The owner mutation unpacks an archive: require exactly the archive
+        # produced from the candidate just tested, not an arbitrary input.
+        with tempfile.TemporaryDirectory(prefix="herder-owner-archive-") as temporary:
+            expected_archive = Path(temporary) / "release.tar"
+            pack_release(candidate, expected_archive)
+            if not filecmp.cmp(expected_archive, arguments.archive, shallow=False):
+                raise RuntimeError("candidate archive differs from tested release")
+        gate.check()
         config_path = target_root / "node-config.json"
         drop_in = Path(arguments.drop_in).expanduser()
         old_config = config_path.read_bytes()
@@ -696,6 +758,7 @@ def main() -> int:
             # staging, remote mutation, readiness and any guarded rollback.
             with ReleaseGate(arguments.release_proof, target=target) as gate:
                 gate.candidate_descends_from(live_sha, arguments.sha)
+                run_native_candidate_preflight(release, arguments.sha, catalog, gate)
                 ssh = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
                        "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=10",
                        "-o", "ServerAliveCountMax=2", "-p", ssh_port, host]
