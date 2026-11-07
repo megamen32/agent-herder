@@ -2,6 +2,10 @@
 use std::{env, io, sync::Arc};
 
 #[cfg(target_os = "linux")]
+#[path = "herder_native_stdio/native_reader.rs"]
+mod native_reader;
+
+#[cfg(target_os = "linux")]
 #[path = "herder_native_stdio/scoped_profile.rs"]
 mod scoped_profile;
 
@@ -33,9 +37,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Some(scoped_profile::open(std::path::Path::new(&profile))?)
                 }
                 Some(_) => {
-                    return Err(
-                        io::Error::new(io::ErrorKind::InvalidInput, "unexpected arguments").into(),
-                    );
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "unexpected arguments",
+                    )
+                    .into());
                 }
             };
             if args.next().is_some() {
