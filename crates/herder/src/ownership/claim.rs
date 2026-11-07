@@ -283,6 +283,34 @@ fn open_guard(resource_dir: &Path) -> io::Result<File> {
     options.open(path)
 }
 
+#[cfg(test)]
+const FAIL_BEFORE_RENAME: u8 = 1;
+#[cfg(test)]
+const FAIL_AFTER_RENAME: u8 = 2;
+#[cfg(test)]
+const FAIL_BEFORE_DIRECTORY_SYNC: u8 = 3;
+#[cfg(test)]
+const FAIL_AFTER_DIRECTORY_SYNC: u8 = 4;
+
+#[cfg(test)]
+thread_local! {
+    static OWNER_WRITE_FAILPOINT: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn inject_owner_write_failure(point: u8) -> io::Result<()> {
+    OWNER_WRITE_FAILPOINT.with(|failpoint| {
+        if failpoint.get() == point {
+            failpoint.set(0);
+            Err(io::Error::other(format!(
+                "injected owner write failure at {point}"
+            )))
+        } else {
+            Ok(())
+        }
+    })
+}
+
 fn write_owner_atomic(resource_dir: &Path, owner: &OwnerRecord) -> io::Result<()> {
     static TEMP_ID: AtomicU64 = AtomicU64::new(0);
     let bytes =
@@ -304,8 +332,17 @@ fn write_owner_atomic(resource_dir: &Path, owner: &OwnerRecord) -> io::Result<()
         file.write_all(&bytes)?;
         file.sync_all()?;
         drop(file);
+        #[cfg(test)]
+        inject_owner_write_failure(FAIL_BEFORE_RENAME)?;
         fs::rename(&temp, resource_dir.join("owner.json"))?;
-        File::open(resource_dir)?.sync_all()
+        #[cfg(test)]
+        inject_owner_write_failure(FAIL_AFTER_RENAME)?;
+        #[cfg(test)]
+        inject_owner_write_failure(FAIL_BEFORE_DIRECTORY_SYNC)?;
+        File::open(resource_dir)?.sync_all()?;
+        #[cfg(test)]
+        inject_owner_write_failure(FAIL_AFTER_DIRECTORY_SYNC)?;
+        Ok(())
     })();
     if result.is_err() {
         let _ = fs::remove_file(&temp);
@@ -629,3 +666,7 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/ownership/crash.rs"]
+mod crash_tests;
