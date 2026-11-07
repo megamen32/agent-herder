@@ -1,7 +1,11 @@
 //! Native MCP stdio boundary. The default server has no application attached.
 use std::{borrow::Cow, future::Future, pin::Pin, sync::Arc};
 
-use crate::{auth::identity::Caller, mcp::catalog};
+use crate::{
+    auth::identity::{self, Action, Caller, Grant, PrivateResource},
+    config::Config,
+    mcp::catalog,
+};
 use rmcp::{
     ErrorData, RoleServer, ServerHandler, ServiceExt,
     model::{
@@ -18,6 +22,51 @@ pub type ApplicationFuture<'a> = Pin<Box<dyn Future<Output = Option<CallToolResu
 pub trait ApplicationPort: Send + Sync + 'static {
     /// None means this operation has no handler and must have no effect.
     fn call<'a>(&'a self, caller: &'a Caller, request: catalog::Request) -> ApplicationFuture<'a>;
+}
+
+/// Read-only configuration-backed operations; no native action is attached.
+pub struct ConfigApplication {
+    config: Config,
+    grants: Vec<Grant>,
+}
+
+/// Granting read on this exact resource permits listing all configured nodes.
+pub const NODE_DISCOVERY_RESOURCE: &str = "herder:discover:nodes";
+
+impl ConfigApplication {
+    /// Grants must come from trusted server policy, never client metadata.
+    pub fn new(config: Config, grants: Vec<Grant>) -> Self {
+        Self { config, grants }
+    }
+}
+
+impl ApplicationPort for ConfigApplication {
+    fn call<'a>(&'a self, caller: &'a Caller, request: catalog::Request) -> ApplicationFuture<'a> {
+        Box::pin(async move {
+            match request {
+                catalog::Request::Discover(catalog::Discover::Nodes {}) => {
+                    if !identity::permits(
+                        caller,
+                        &self.grants,
+                        &PrivateResource::Resource(NODE_DISCOVERY_RESOURCE.into()),
+                        Action::Read,
+                    ) {
+                        return Some(CallToolResult::structured_error(
+                            json!({"code":"unauthorized", "effect":"none", "message":"node discovery requires a read grant"}),
+                        ));
+                    }
+                    let nodes: Vec<_> = self
+                        .config
+                        .nodes
+                        .iter()
+                        .map(|node| json!({"id": node.id, "endpoint": node.endpoint}))
+                        .collect();
+                    Some(CallToolResult::structured(json!({"nodes": nodes})))
+                }
+                _ => None,
+            }
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -126,7 +175,7 @@ impl ServerHandler for NativeServer {
             if parsed.access == catalog::Access::Mutate
                 && !matches!(self.caller, Caller::Principal(_))
             {
-                return Ok(CallToolResult::structured_error(json!({"code":"unauthorized", "effect":"none", "message":"verified caller required"})).into());
+                return Ok(CallToolResult::structured_error(json!({"code":"unsupported", "effect":"none", "message":"operation is not connected"})).into());
             }
             if let Some(result) = application.call(&self.caller, parsed.request).await {
                 return Ok(result.into());
@@ -140,7 +189,11 @@ impl ServerHandler for NativeServer {
 }
 
 pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
-    NativeServer::default()
+    serve_stdio_server(NativeServer::default()).await
+}
+
+pub async fn serve_stdio_server(server: NativeServer) -> Result<(), Box<dyn std::error::Error>> {
+    server
         .serve(rmcp::transport::stdio())
         .await?
         .waiting()
@@ -151,11 +204,94 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod wire_tests {
     use super::*;
+    use crate::auth::identity::{PrincipalId, VerifiedPrincipal};
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    #[tokio::test]
+    async fn configured_nodes_require_verified_principal_and_exact_read_grant() {
+        let config = Config::from_json(r#"{"local_node_id":"one","nodes":[{"id":"one","endpoint":"https://one.invalid","authority":{"principal":"one","secret_ref":null},"instances":[]},{"id":"two","endpoint":"https://two.invalid","authority":{"principal":"two","secret_ref":null},"instances":[]}]}"#).unwrap();
+        let alice = Caller::Principal(VerifiedPrincipal {
+            id: PrincipalId("alice".into()),
+        });
+        let bob = Caller::Principal(VerifiedPrincipal {
+            id: PrincipalId("bob".into()),
+        });
+        let grant = Grant {
+            principal: PrincipalId("alice".into()),
+            resource: PrivateResource::Resource(NODE_DISCOVERY_RESOURCE.into()),
+            action: Action::Read,
+        };
+        let app = ConfigApplication::new(config.clone(), vec![grant.clone()]);
+        for caller in [&Caller::Unknown, &Caller::NodeCredential, &bob] {
+            let result = app
+                .call(
+                    caller,
+                    catalog::Request::Discover(catalog::Discover::Nodes {}),
+                )
+                .await
+                .unwrap();
+            assert_eq!(result.is_error, Some(true));
+            assert!(
+                !serde_json::to_string(&result)
+                    .unwrap()
+                    .contains("one.invalid")
+            );
+        }
+        let no_grant = ConfigApplication::new(config.clone(), vec![]);
+        let denied = no_grant
+            .call(
+                &alice,
+                catalog::Request::Discover(catalog::Discover::Nodes {}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(denied.is_error, Some(true));
+        for wrong in [
+            Grant {
+                action: Action::Write,
+                ..grant.clone()
+            },
+            Grant {
+                resource: PrivateResource::Resource("other".into()),
+                ..grant.clone()
+            },
+        ] {
+            let denied = ConfigApplication::new(config.clone(), vec![wrong])
+                .call(
+                    &alice,
+                    catalog::Request::Discover(catalog::Discover::Nodes {}),
+                )
+                .await
+                .unwrap();
+            assert_eq!(denied.is_error, Some(true));
+        }
+
+        let server = NativeServer::with_application(alice, Arc::new(app));
+        let (client, io) = tokio::io::duplex(65536);
+        let task =
+            tokio::spawn(async move { server.serve(io).await.unwrap().waiting().await.unwrap() });
+        let (read, mut write) = tokio::io::split(client);
+        let mut lines = BufReader::new(read).lines();
+        let meta = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28", "io.modelcontextprotocol/clientCapabilities":{}, "caller":"bob"});
+        let request = json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":meta,"name":"discover","arguments":{"action":"nodes"}}});
+        write
+            .write_all(format!("{request}\n").as_bytes())
+            .await
+            .unwrap();
+        let response: Value =
+            serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+        assert_eq!(
+            response["result"]["structuredContent"]["nodes"],
+            json!([{"id":"one","endpoint":"https://one.invalid"},{"id":"two","endpoint":"https://two.invalid"}])
+        );
+        drop(write);
+        drop(lines);
+        task.await.unwrap();
+    }
 
     struct FakeApp(AtomicUsize);
     impl ApplicationPort for FakeApp {
