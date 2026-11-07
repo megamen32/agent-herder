@@ -128,13 +128,13 @@ describe("new session launch policy settings", () => {
     expect(incidentModelIssue("minimax-coding-plan/MiniMax-M3.1-Flash")).toContain("закреплён");
     expect(incidentModelIssue("zai/GLM-4.6")).toBeTruthy();
     expect(incidentModelIssue("omniroute/minimax-combo-m3.1")).toContain("закреплён");
-    expect(incidentModelIssue("omniroute/glm-5.3-flash-minimax-m3.1")).toBeUndefined();
+    expect(incidentModelIssue("MiniMax-M3.1-Flash")).toBeUndefined();
   });
 
   it("validates the canonical local incident route and refuses an arbitrary override", () => {
-    const draft = { ...DEFAULT_LAUNCH_POLICY, incidentExecution: { runtime: "opencode", provider: "omniroute", model: "omniroute/glm-5.3-flash-minimax-m3.1", reasoning: "default", topic: "health" } };
+    const draft = { ...DEFAULT_LAUNCH_POLICY, incidentExecution: { runtime: "opencode", provider: "minimax-coding-plan", model: "MiniMax-M3.1-Flash", reasoning: "default", topic: "health" } };
     const saved = validateAutomationLaunchPolicy(JSON.parse(JSON.stringify(draft)));
-    expect(saved.incidentExecution?.model).toBe("omniroute/glm-5.3-flash-minimax-m3.1");
+    expect(saved.incidentExecution?.model).toBe("MiniMax-M3.1-Flash");
     expect(() => validateAutomationLaunchPolicy({ ...draft, incidentExecution: { ...draft.incidentExecution, model: "omniroute/hand-typed-model" } })).toThrow(/incident execution model/);
   });
 

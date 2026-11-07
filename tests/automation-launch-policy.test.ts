@@ -240,7 +240,7 @@ describe("automation launch policy", () => {
       allowedHarnesses: ["opencode"],
       preferredHarness: "opencode",
       models: { opencode: "omniroute/hand-typed-model" },
-      incidentExecution: { runtime: "opencode", provider: "omniroute", model: "omniroute/glm-5.3-flash-minimax-m3.1", reasoning: "default", topic: "health" },
+      incidentExecution: { runtime: "opencode", provider: "minimax-coding-plan", model: "MiniMax-M3.1-Flash", reasoning: "default", topic: "health" },
     };
     const saved = await fetch(url, { method: "PUT", headers: { "content-type": "application/json", "if-match": ABSENT_LAUNCH_POLICY_ETAG }, body: JSON.stringify(document) });
     expect(saved.status).toBe(200);
