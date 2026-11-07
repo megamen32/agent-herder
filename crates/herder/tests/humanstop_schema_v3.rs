@@ -24,16 +24,14 @@ fn connection(path: &PathBuf, version: i32) -> Connection {
     c
 }
 fn fixture() -> Fixture {
-    let f = Fixture(
-        std::env::temp_dir().join(format!(
+    let f = Fixture(std::env::temp_dir().join(format!(
             "herder-humanstop-v3-{}-{}.db",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
-        )),
-    );
+        )));
     drop(Writer::create_file(&f.0).unwrap());
     let mut c = connection(&f.0, 1);
     let t = c.transaction().unwrap();
@@ -90,7 +88,7 @@ fn sealed_scope_and_authority_are_immutable_and_fenced() {
     )
     .unwrap();
     c.execute(
-        "INSERT INTO humanstop_authority VALUES (1,'generation',1,2,'now')",
+        "INSERT INTO humanstop_authority VALUES (1,'generation',1,2,3,4,'now')",
         [],
     )
     .unwrap();
@@ -121,7 +119,7 @@ fn sealed_scope_and_authority_are_immutable_and_fenced() {
     );
     assert!(
         c.execute(
-            "INSERT OR REPLACE INTO humanstop_authority VALUES (1,'generation',9,9,'now')",
+            "INSERT OR REPLACE INTO humanstop_authority VALUES (1,'generation',9,9,3,4,'now')",
             []
         )
         .is_err()

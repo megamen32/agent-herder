@@ -14,6 +14,32 @@ pub struct TargetGateGuard {
     _file: File,
 }
 
+/// A verified pin; unlike the raw fixture guard it cannot be constructed
+/// without the inode, ownership and permission checks below.
+#[cfg(target_os = "linux")]
+pub struct PinnedTargetGateGuard {
+    guard: TargetGateGuard,
+    path: std::path::PathBuf,
+}
+
+#[cfg(target_os = "linux")]
+impl PinnedTargetGateGuard {
+    pub(crate) fn identity(&self) -> io::Result<(u64, u64)> {
+        use std::os::unix::fs::MetadataExt;
+        let m = self.guard._file.metadata()?;
+        Ok((m.dev(), m.ino()))
+    }
+
+    pub(crate) fn directory(&self) -> &std::path::Path {
+        self.path.parent().expect("checked absolute gate path")
+    }
+
+    pub(crate) fn owner(&self) -> io::Result<u32> {
+        use std::os::unix::fs::MetadataExt;
+        Ok(self.guard._file.metadata()?.uid())
+    }
+}
+
 /// Nonblocking acquisition; a busy or unavailable gate is not permission to
 /// dispatch. `file` must be opened independently by the trusted authority for
 /// each process and refer to the same permanently retained guard inode.
@@ -34,7 +60,7 @@ pub fn acquire_pinned(
     path: &std::path::Path,
     device: u64,
     inode: u64,
-) -> io::Result<TargetGateGuard> {
+) -> io::Result<PinnedTargetGateGuard> {
     use std::{
         fs::OpenOptions,
         os::unix::{
@@ -81,5 +107,8 @@ pub fn acquire_pinned(
     if !check(guard._file.metadata()?) || !check(std::fs::symlink_metadata(path)?) {
         return Err(invalid());
     }
-    Ok(guard)
+    Ok(PinnedTargetGateGuard {
+        guard,
+        path: path.to_owned(),
+    })
 }

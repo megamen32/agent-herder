@@ -121,6 +121,55 @@ impl Writer {
         Ok(Self { connection })
     }
 
+    /// Provision only an empty, isolated v3 store while holding its protected
+    /// gate. This is not a legacy cutover or permission to adopt imported rows.
+    #[cfg(target_os = "linux")]
+    pub fn initialize_fresh_stop_authority(
+        &mut self,
+        gate: &crate::application::target_gate::PinnedTargetGateGuard,
+        generation: &str,
+        now: &str,
+    ) -> Result<bool> {
+        use std::os::unix::fs::MetadataExt;
+        if generation.is_empty()
+            || generation.len() > 4096
+            || generation.chars().any(char::is_control)
+            || now.is_empty()
+        {
+            return Ok(false);
+        }
+        let database: String = self.connection.query_row(
+            "SELECT file FROM pragma_database_list WHERE name='main'",
+            [],
+            |r| r.get(0),
+        )?;
+        let path = std::path::Path::new(&database);
+        let meta = std::fs::symlink_metadata(path).map_err(|_| rusqlite::Error::InvalidQuery)?;
+        if !path.is_absolute()
+            || path.parent() != Some(gate.directory())
+            || path.canonicalize().ok().as_deref() != Some(path)
+            || !meta.is_file()
+            || meta.nlink() != 1
+            || meta.uid() != gate.owner().map_err(|_| rusqlite::Error::InvalidQuery)?
+            || meta.mode() & 0o077 != 0
+        {
+            return Ok(false);
+        }
+        let (dev, ino) = gate.identity().map_err(|_| rusqlite::Error::InvalidQuery)?;
+        let dev = i64::try_from(dev).map_err(|_| rusqlite::Error::InvalidQuery)?;
+        let ino = i64::try_from(ino).map_err(|_| rusqlite::Error::InvalidQuery)?;
+        let tx = self
+            .connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let valid: bool = tx.query_row("SELECT (SELECT user_version FROM pragma_user_version)=3 AND herder_writer_version()=3 AND NOT EXISTS(SELECT 1 FROM tasks) AND NOT EXISTS(SELECT 1 FROM intents) AND NOT EXISTS(SELECT 1 FROM session_bindings) AND NOT EXISTS(SELECT 1 FROM lineage) AND NOT EXISTS(SELECT 1 FROM holds) AND NOT EXISTS(SELECT 1 FROM humanstop_authority) AND NOT EXISTS(SELECT 1 FROM humanstop_holds)", [], |r| r.get(0))?;
+        if !valid {
+            return Ok(false);
+        }
+        tx.execute("INSERT INTO humanstop_authority(singleton,generation,gate_device,gate_inode,database_device,database_inode,created_at) VALUES (1,?1,?2,?3,?4,?5,?6)", params![generation,dev,ino,i64::try_from(meta.dev()).map_err(|_| rusqlite::Error::InvalidQuery)?,i64::try_from(meta.ino()).map_err(|_| rusqlite::Error::InvalidQuery)?,now])?;
+        tx.commit()?;
+        Ok(true)
+    }
+
     pub fn insert_task(
         &self,
         task_id: &str,

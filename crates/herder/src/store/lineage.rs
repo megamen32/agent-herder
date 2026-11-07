@@ -90,6 +90,71 @@ impl Writer {
         tx.commit()?;
         Ok(true)
     }
+    /// Seal an isolated root's exact mapping and stop scope in the same
+    /// transaction as its native create receipt. The gate must already have
+    /// been held before the native create and remains held through this commit.
+    /// Imported/parented sessions have no proven handoff and are refused.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn commit_created_scoped_root(
+        &mut self,
+        gate: &crate::application::target_gate::PinnedTargetGateGuard,
+        intent: &NewCreateLineageIntent<'_>,
+        session_ref: &str,
+        address: &crate::domain::address::SessionAddress,
+        parent_ref: Option<&str>,
+        scope_generation: &str,
+        receipt: &str,
+    ) -> Result<bool> {
+        if parent_ref.is_some()
+            || session_ref.is_empty()
+            || scope_generation.is_empty()
+            || receipt.is_empty()
+        {
+            return Ok(false);
+        }
+        let (device, inode) = gate.identity().map_err(|_| rusqlite::Error::InvalidQuery)?;
+        let device = i64::try_from(device).map_err(|_| rusqlite::Error::InvalidQuery)?;
+        let inode = i64::try_from(inode).map_err(|_| rusqlite::Error::InvalidQuery)?;
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let authority: Option<String> = tx.query_row(
+            "SELECT generation FROM humanstop_authority WHERE singleton=1 AND gate_device=?1 AND gate_inode=?2 AND (SELECT user_version FROM pragma_user_version)=3 AND herder_writer_version()=3",
+            params![device, inode], |r| r.get(0),
+        ).optional()?;
+        let Some(authority) = authority else {
+            return Ok(false);
+        };
+        let claimed: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM intents WHERE intent_id=?1 AND principal=?2 AND target=?3 AND request_key=?4 AND payload_hash=?5 AND state='dispatching' AND native_receipt IS NULL)",
+            params![intent.intent_id,intent.creator_ref,intent.target,intent.request_ref,intent.payload_hash], |r|r.get(0))?;
+        if !claimed {
+            return Ok(false);
+        }
+        let session_scope = format!("session:{session_ref}");
+        let held: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM humanstop_holds WHERE scope_ref IN ('global',?1) AND released_at IS NULL) OR EXISTS(SELECT 1 FROM holds WHERE session_ref IN ('global',?2) AND released_at IS NULL)",
+            params![session_scope, session_ref], |r| r.get(0),
+        )?;
+        if held {
+            return Ok(false);
+        }
+        tx.execute("INSERT INTO session_bindings(session_ref,node_ref,instance_id,native_session_id) VALUES (?1,?2,?3,?4)", params![session_ref,address.instance.node.0,address.instance.instance_id,address.native_session_id])?;
+        tx.execute("INSERT INTO lineage(session_ref,creator_ref,parent_ref,created_at) VALUES (?1,?2,NULL,?3)", params![session_ref,intent.creator_ref,intent.now])?;
+        tx.execute(
+            "INSERT INTO humanstop_scopes(session_ref,scope_ref) VALUES (?1,'global')",
+            [session_ref],
+        )?;
+        tx.execute(
+            "INSERT INTO humanstop_scopes(session_ref,scope_ref) VALUES (?1,?2)",
+            params![session_ref, session_scope],
+        )?;
+        tx.execute("INSERT INTO humanstop_sessions(session_ref,authority_generation,scope_generation,created_at) VALUES (?1,?2,?3,?4)", params![session_ref,authority,scope_generation,intent.now])?;
+        if tx.execute("UPDATE intents SET state='admitted',native_receipt=?2,updated_at=?3 WHERE intent_id=?1 AND state='dispatching' AND native_receipt IS NULL", params![intent.intent_id,receipt,intent.now])? != 1 { return Ok(false) }
+        tx.commit()?;
+        Ok(true)
+    }
+
     /// Persist creator and request identity with the Task before any native call.
     pub fn prepare_create_lineage_intent(
         &mut self,

@@ -328,3 +328,94 @@ pub async fn deliver<R: SessionRegistry, N: NativeSessionReader + NativeSessionC
         .await
         .map_err(|_| TargetError::Store)
 }
+
+/// Scoped delivery for fresh isolated sessions. Every native handoff is
+/// serialized with HumanStop through the authority's canonical gate.
+#[cfg(target_os = "linux")]
+pub async fn deliver_scoped<
+    N: NativeSessionReader,
+    C: crate::application::scoped_stop::BoundedNativeHandoff,
+>(
+    authority: &crate::application::scoped_stop::ScopedAuthority,
+    instance: &InstanceRef,
+    identity: &ConnectionIdentity,
+    grants: &[Grant],
+    reader: &N,
+    control: &C,
+    request: DeliverRequest<'_>,
+) -> Result<DurableDispatch, TargetError> {
+    identity
+        .authorize(
+            grants,
+            &PrivateResource::Session(request.session.clone()),
+            Action::Write,
+        )
+        .map_err(|_| TargetError::Unauthorized)?;
+    let Caller::Principal(principal) = identity.caller() else {
+        return Err(TargetError::Unauthorized);
+    };
+    let (address, generation) = authority
+        .resolve_session(identity, grants, request.session, instance)
+        .map_err(|_| TargetError::RegistryUnavailable)?;
+    let snapshot = reader
+        .snapshot(&address)
+        .await
+        .map_err(|_| TargetError::ReadUnavailable)?;
+    if snapshot.address != address {
+        return Err(TargetError::SnapshotMismatch);
+    }
+    let plan = decide_send(&snapshot, &request.command).map_err(TargetError::Decision)?;
+    let initial = ReceiptBinding {
+        intent_id: request.intent_id,
+        principal: &principal.id.0,
+        target_ref: &request.session.0,
+        request_key: request.request_key,
+        address: &address,
+    };
+    let Some(intent_id) = authority
+        .prepare(
+            identity,
+            grants,
+            &initial,
+            &generation,
+            &plan,
+            request.message,
+            request.task_id,
+            request.now,
+            request.retain_until,
+        )
+        .map_err(|_| TargetError::Store)?
+    else {
+        return Ok(DurableDispatch::NotClaimed);
+    };
+    let binding = ReceiptBinding {
+        intent_id: &intent_id,
+        ..initial
+    };
+    if !authority
+        .claim(
+            identity,
+            grants,
+            &binding,
+            &generation,
+            &plan,
+            request.message,
+            request.now,
+        )
+        .map_err(|_| TargetError::Store)?
+    {
+        return Ok(DurableDispatch::NotClaimed);
+    }
+    authority
+        .handoff(
+            identity,
+            grants,
+            &binding,
+            &generation,
+            plan,
+            request.message,
+            request.now,
+            control,
+        )
+        .map_err(|_| TargetError::Store)
+}

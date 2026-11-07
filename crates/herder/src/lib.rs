@@ -21,6 +21,9 @@ pub mod application {
     pub mod resource;
     pub mod settings;
     pub mod target;
+    pub mod target_gate;
+    #[cfg(target_os = "linux")]
+    pub mod scoped_stop;
     pub mod reconcile;
 }
 pub mod auth {

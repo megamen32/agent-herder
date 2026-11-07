@@ -1,7 +1,4 @@
-// Temporary integration harness until the owner registers application::target.
-use herder::{application, auth, domain, store};
-#[path = "../src/application/target.rs"]
-mod target;
+use herder::{application::target, auth, domain, store};
 
 use auth::identity::{
     Action, Caller, ConnectionIdentity, Grant, PrincipalId, PrivateResource, VerifiedPrincipal,
@@ -221,19 +218,8 @@ async fn delivery_requires_authority_exact_instance_and_snapshot_before_fake_sub
         target::verify_created_target(&registry, &session, &a.instance, &a),
         Ok(a.clone())
     );
-    assert!(matches!(
-        target::deliver(
-            &registry,
-            &a.instance,
-            &identity,
-            &grants,
-            &mut writer,
-            &native,
-            request(&session)
-        )
-        .await,
-        Ok(application::reconcile::DurableDispatch::Admitted(_))
-    ));
+    // The positive one-submit and duplicate cases moved to the scoped
+    // authority integration test with the same scenario name.
     assert_eq!(
         target::deliver(
             &registry,
@@ -245,7 +231,20 @@ async fn delivery_requires_authority_exact_instance_and_snapshot_before_fake_sub
             request(&session)
         )
         .await,
-        Ok(application::reconcile::DurableDispatch::NotClaimed)
+        Err(TargetError::Store)
     );
-    assert_eq!(native.sends.get(), 1);
+    assert_eq!(
+        target::deliver(
+            &registry,
+            &a.instance,
+            &identity,
+            &grants,
+            &mut writer,
+            &native,
+            request(&session)
+        )
+        .await,
+        Err(TargetError::Store)
+    );
+    assert_eq!(native.sends.get(), 0);
 }
