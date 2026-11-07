@@ -36,6 +36,7 @@ pub mod ownership {
     pub mod claim;
     pub mod manifest;
     pub mod resource;
+    pub mod release_runner;
 }
 
 pub mod mcp {
