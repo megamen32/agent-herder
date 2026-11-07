@@ -1,0 +1,11 @@
+{
+  "data": {
+    "id": "ses_fixture_opencode_create001",
+    "parentID": null,
+    "projectID": "prj_fixture",
+    "cost": 0,
+    "tokens": { "input": 0, "output": 0, "reasoning": 0 },
+    "time": { "created": 1794020000000, "updated": 1794020000000 },
+    "location": { "directory": "/tmp/opencode-create-fixture" }
+  }
+}
