@@ -18,10 +18,10 @@ from search_proof import attach_search_proof
 
 
 def candidate_bundle_identity(release):
-    """Verify the same file/link inventory used by the release bundle manifest.
+    """Verify the portable payload, or the whole inventory for legacy manifests.
 
     Dependency symlinks are identified by target, not by hashing the shared
-    store bytes; the release builder separately verifies that store.
+    store bytes; candidate_store_identity separately fingerprints that store.
     """
     release = Path(release)
     manifest_path = release / 'build-manifest.json'
@@ -53,9 +53,22 @@ def candidate_bundle_identity(release):
             entries[name] = digest.hexdigest()
     payload = ''.join(f'{name}\0{entries[name]}\n' for name in sorted(entries)).encode()
     actual = hashlib.sha256(payload).hexdigest()
-    if actual != expected or len(entries) != count:
+    whole_matches = actual == expected and len(entries) == count
+    portable = {name: value for name, value in entries.items() if not name.startswith('node_modules/')}
+    portable_bytes = ''.join(f'{name}\0{portable[name]}\n' for name in sorted(portable)).encode()
+    portable_hash = hashlib.sha256(portable_bytes).hexdigest()
+    expected_portable = manifest.get('payloadFingerprint')
+    expected_count = manifest.get('payloadFiles')
+    if expected_portable is not None or expected_count is not None:
+        if (not isinstance(expected_portable, str) or len(expected_portable) != 64
+                or type(expected_count) is not int or portable_hash != expected_portable
+                or len(portable) != expected_count):
+            raise ValueError('bundle payload fingerprint or file count mismatch')
+    elif not whole_matches:
         raise ValueError('bundle fingerprint or file count mismatch')
-    return {'source_sha': source, 'bundle_fingerprint': actual, 'bundle_files': len(entries)}
+    return {'source_sha': source, 'bundle_fingerprint': actual, 'bundle_files': len(entries),
+            'whole_bundle_matches': whole_matches, 'payload_fingerprint': portable_hash,
+            'payload_files': len(portable), 'payload_manifest_verified': expected_portable is not None}
 
 
 def candidate_store_identity(release):

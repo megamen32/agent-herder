@@ -7,6 +7,26 @@ from candidate_driver import candidate_bundle_identity, candidate_store_identity
 
 
 class CandidateDriverTest(unittest.TestCase):
+    def test_installed_release_uses_portable_payload_when_package_links_differ(self):
+        with tempfile.TemporaryDirectory() as root:
+            release = Path(root)
+            (release / 'dist').mkdir()
+            (release / 'node_modules').mkdir()
+            (release / 'dist' / 'index.js').write_text('release payload')
+            (release / 'node_modules' / 'fixture').symlink_to('/node-specific-store/fixture')
+            value = hashlib.sha256((release / 'dist' / 'index.js').read_bytes()).hexdigest()
+            portable = hashlib.sha256(f'dist/index.js\0{value}\n'.encode()).hexdigest()
+            (release / 'build-manifest.json').write_text(json.dumps({
+                'sourceSha': 'a' * 40, 'bundleFingerprint': 'b' * 64, 'bundleFiles': 2,
+                'payloadFingerprint': portable, 'payloadFiles': 1,
+            }))
+            proof = candidate_bundle_identity(release)
+            self.assertEqual(proof['payload_fingerprint'], portable)
+            self.assertFalse(proof['whole_bundle_matches'])
+            (release / 'dist' / 'index.js').write_text('tampered')
+            with self.assertRaisesRegex(ValueError, 'bundle|payload'):
+                candidate_bundle_identity(release)
+
     def test_release_identity_checks_entire_bundle_not_just_entrypoint(self):
         with tempfile.TemporaryDirectory() as root:
             release = Path(root)
