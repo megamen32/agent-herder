@@ -36,7 +36,7 @@ use std::{
     time::Duration,
 };
 
-struct Ids;
+pub(super) struct Ids;
 fn random_id() -> Result<String, ()> {
     let mut b = [0u8; 16];
     std::fs::File::open("/dev/urandom")
@@ -201,6 +201,9 @@ impl ApplicationPort for OwnerApp {
     }
 }
 pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>> {
+    if opened.owner.kind == "opencode" {
+        return super::owner_opencode::serve(opened).await;
+    }
     let instance = InstanceRef {
         node: NodeRef(opened.owner.node.clone()),
         instance_id: opened.owner.instance.clone(),

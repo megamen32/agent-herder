@@ -712,3 +712,113 @@ fn real_sdk_owner_stdio_create_task_and_reopened_messages() {
         "fixture must observe exactly one native model request"
     );
 }
+
+#[test]
+fn trusted_owner_opencode_ahap_create_queue_task_and_read() {
+    use std::io::{BufRead, BufReader, Write};
+    let f = Fixture::new();
+    let script = f.root.join("adapter.py");
+    fs::write(&script,r##"import json,os,sys
+for line in sys.stdin:
+ r=json.loads(line);m=r['method'];p=r.get('params',{})
+ if m=='initialize':v={'harness':'opencode','capabilities':{'methods':['init','createSession','sendMessage','getSession','getSessionMessages']}}
+ elif m=='init':v=None
+ elif m=='createSession':v={'id':'sesABC','harness':'opencode'}
+ elif m=='getSession':v={'id':'sesABC','harness':'opencode','status':'idle'}
+ elif m=='sendMessage':
+  assert p['id']=='sesABC' and p['options']['queue'] and p['options']['activeTurnOnly'] and p['options']['inputId']
+  with open(os.path.join(os.environ['HOME'],'sent'),'a') as out:out.write('1')
+  v={'ok':True,'admitted':True,'nativeInputMessageId':'msg_ABC'}
+ elif m=='getSessionMessages':v=[{'id':'msg_ABC','role':'user','text':'ahap prompt'}]
+ else:raise Exception(m)
+ print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
+"##).unwrap();
+    let profile = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{"kind":"opencode","principal":"owner","node":"node","instance":"opencode-fixture","executable":"/usr/bin/python3","ahap_script":script,"ahap_base_url":"http://127.0.0.1:3456","code_home":f.root,"cwd":f.root}});
+    fs::write(&f.profile, profile.to_string()).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
+        .arg("--trusted-owner-profile")
+        .arg(&f.profile)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let mut output = BufReader::new(child.stdout.take().unwrap());
+    let call = |w: &mut std::process::ChildStdin,
+                r: &mut BufReader<std::process::ChildStdout>,
+                v: serde_json::Value| {
+        writeln!(w, "{v}").unwrap();
+        w.flush().unwrap();
+        let mut line = String::new();
+        r.read_line(&mut line).unwrap();
+        serde_json::from_str::<serde_json::Value>(&line).unwrap()
+    };
+    let meta = serde_json::json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"extensions":{"io.modelcontextprotocol/tasks":{}}},"io.modelcontextprotocol/clientInfo":{"name":"fixture","version":"1"}});
+    let create = call(
+        &mut input,
+        &mut output,
+        serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":meta,"name":"create","arguments":{"action":"create","instance_ref":"opencode-fixture","prompt":"ahap prompt","request_key":"once"}}}),
+    );
+    assert_eq!(create["result"]["resultType"], "task", "{create}");
+    let task = create["result"]["taskId"].as_str().unwrap();
+    let result = call(
+        &mut input,
+        &mut output,
+        serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tasks/get","params":{"_meta":meta,"taskId":task}}),
+    );
+    assert_eq!(result["result"]["status"], "completed", "{result}");
+    assert_eq!(
+        result["result"]["result"]["structuredContent"]["prompt"]["outcome"], "confirmed",
+        "{result}"
+    );
+    let session = result["result"]["result"]["structuredContent"]["create"]["session_ref"]
+        .as_str()
+        .unwrap();
+    let read = call(
+        &mut input,
+        &mut output,
+        serde_json::json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"_meta":meta,"name":"session","arguments":{"action":"messages","session_ref":session}}}),
+    );
+    assert_eq!(
+        read["result"]["structuredContent"]["page"]["messages"][0]["text"], "ahap prompt",
+        "{read}"
+    );
+    assert_eq!(
+        read["result"]["structuredContent"]["page"]["complete"],
+        false
+    );
+    assert_eq!(fs::read_to_string(f.root.join("sent")).unwrap(), "1");
+    let task_owned = task.to_owned();
+    let session_owned = session.to_owned();
+    drop(input);
+    let _ = child.wait();
+    let mut reopened = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
+        .arg("--trusted-owner-profile")
+        .arg(&f.profile)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = reopened.stdin.take().unwrap();
+    let mut output = BufReader::new(reopened.stdout.take().unwrap());
+    let after = call(
+        &mut input,
+        &mut output,
+        serde_json::json!({"jsonrpc":"2.0","id":4,"method":"tasks/get","params":{"_meta":meta,"taskId":task_owned}}),
+    );
+    assert_eq!(after["result"]["status"], "completed", "{after}");
+    let after_read = call(
+        &mut input,
+        &mut output,
+        serde_json::json!({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"_meta":meta,"name":"session","arguments":{"action":"messages","session_ref":session_owned}}}),
+    );
+    assert_eq!(
+        after_read["result"]["structuredContent"]["page"]["messages"][0]["text"], "ahap prompt",
+        "{after_read}"
+    );
+    assert_eq!(fs::read_to_string(f.root.join("sent")).unwrap(), "1");
+    drop(input);
+    let _ = reopened.wait();
+}

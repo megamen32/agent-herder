@@ -31,6 +31,15 @@ pub struct OwnerProfile {
     pub executable: PathBuf,
     pub code_home: PathBuf,
     pub cwd: PathBuf,
+    #[serde(default = "codex_kind")]
+    pub kind: String,
+    #[serde(default)]
+    pub ahap_script: Option<PathBuf>,
+    #[serde(default)]
+    pub ahap_base_url: Option<String>,
+}
+fn codex_kind() -> String {
+    "codex".into()
 }
 
 pub struct OpenedOwner {
@@ -66,6 +75,25 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
         || !owner.cwd.is_absolute()
     {
         return Err(invalid().into());
+    }
+    match owner.kind.as_str() {
+        "codex" if owner.ahap_script.is_none() && owner.ahap_base_url.is_none() => (),
+        "opencode" => {
+            if !owner.ahap_script.as_ref().is_some_and(|p| p.is_absolute()) {
+                return Err(invalid().into());
+            }
+            let url = reqwest::Url::parse(owner.ahap_base_url.as_deref().ok_or_else(invalid)?)?;
+            if !matches!(url.scheme(), "http" | "https")
+                || url.host_str().is_none()
+                || !url.username().is_empty()
+                || url.password().is_some()
+                || url.query().is_some()
+                || url.fragment().is_some()
+            {
+                return Err(invalid().into());
+            }
+        }
+        _ => return Err(invalid().into()),
     }
     Ok(OpenedOwner {
         authority,
