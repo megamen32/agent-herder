@@ -1,0 +1,56 @@
+{
+  "id": "V104B",
+  "label": "Показать Task polling и resource read в CLI",
+  "description": "Показать Task polling и resource read в CLI. Частный результат исходного V104: Subcommands из тех же DTO/application, polling Tasks и чтение ресурсов. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V104A.",
+  "acceptance": "Получен проверяемый результат: Показать Task polling и resource read в CLI. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+  "depends_on": [
+    "V104A"
+  ],
+  "affected_files": [
+    "crates/herder/src/cli/main.rs"
+  ],
+  "parent": "S08",
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V104 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V104 обязателен в конце цепочки.",
+  "created_at": "2026-11-07T03:53:04+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T03:53:04+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T03:53:04+03:00",
+      "note": "",
+      "changes": {
+        "id": "V104B",
+        "label": "Показать Task polling и resource read в CLI",
+        "description": "Показать Task polling и resource read в CLI. Частный результат исходного V104: Subcommands из тех же DTO/application, polling Tasks и чтение ресурсов. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V104A.",
+        "acceptance": "Получен проверяемый результат: Показать Task polling и resource read в CLI. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+        "depends_on": [
+          "V104A"
+        ],
+        "affected_files": [
+          "crates/herder/src/cli/main.rs"
+        ],
+        "parent": "S08",
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V104 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V104 обязателен в конце цепочки."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

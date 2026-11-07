@@ -1,0 +1,58 @@
+{
+  "id": "E007",
+  "label": "Выпустить importer и rollback на восстановленном снимке",
+  "description": "Установить candidate на изолированный импортированный state, прочитать holds, lineage и UNKNOWN без native send.",
+  "acceptance": "Установить candidate на изолированный импортированный state, прочитать holds, lineage и UNKNOWN без native send.",
+  "depends_on": [
+    "V133",
+    "V135"
+  ],
+  "affected_files": [
+    "release/dev-migration/"
+  ],
+  "parent": "S10",
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей.",
+  "created_at": "2026-11-07T03:52:44+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T03:52:44+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T03:52:44+03:00",
+      "note": "",
+      "changes": {
+        "id": "E007",
+        "label": "Выпустить importer и rollback на восстановленном снимке",
+        "description": "Установить candidate на изолированный импортированный state, прочитать holds, lineage и UNKNOWN без native send.",
+        "acceptance": "Установить candidate на изолированный импортированный state, прочитать holds, lineage и UNKNOWN без native send.",
+        "depends_on": [
+          "V133",
+          "V135"
+        ],
+        "affected_files": [
+          "release/dev-migration/"
+        ],
+        "parent": "S10",
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "id": "V114A",
+  "label": "Notice Place: заменить вызов на общий typed API",
+  "description": "Notice Place: заменить вызов на общий typed API. Частный результат исходного V114: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V113.",
+  "acceptance": "Получен проверяемый результат: Notice Place: заменить вызов на общий typed API. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+  "depends_on": [
+    "V113"
+  ],
+  "affected_files": [
+    "consumer:noticeplace:paths-from-target.json"
+  ],
+  "parent": "S09",
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V114 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V114 обязателен в конце цепочки.",
+  "estimate_unknown_reason": "Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.",
+  "created_at": "2026-11-07T03:52:36+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T03:52:36+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T03:52:36+03:00",
+      "note": "",
+      "changes": {
+        "id": "V114A",
+        "label": "Notice Place: заменить вызов на общий typed API",
+        "description": "Notice Place: заменить вызов на общий typed API. Частный результат исходного V114: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V113.",
+        "acceptance": "Получен проверяемый результат: Notice Place: заменить вызов на общий typed API. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+        "depends_on": [
+          "V113"
+        ],
+        "affected_files": [
+          "consumer:noticeplace:paths-from-target.json"
+        ],
+        "parent": "S09",
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V114 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V114 обязателен в конце цепочки.",
+        "estimate_unknown_reason": "Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

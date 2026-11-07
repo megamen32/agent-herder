@@ -1,30 +1,28 @@
 {
-  "label": "Артефакт linux/amd64",
-  "description": "Reproducible locked build с embedded UI/Skills, digest и platform manifest.",
-  "acceptance": "Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен.",
+  "label": "linux/amd64: запустить артефакт на соответствующем native runner",
+  "description": "linux/amd64: запустить артефакт на соответствующем native runner. Частный результат исходного V136: Reproducible locked build с embedded UI/Skills, digest и platform manifest. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V136B.",
+  "acceptance": "Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен. Это точка объединения всей цепочки V136A, V136B, V136.",
   "affected_files": [
     "release/build/linux-amd64/"
   ],
   "depends_on": [
-    "V104",
-    "V106",
-    "V125"
+    "V136B"
   ],
   "estimate_minutes": {
-    "minimum": 25,
-    "maximum": 50
+    "minimum": 10,
+    "maximum": 15
   },
   "kind": "task",
   "status": "queued",
   "owner": "unassigned",
   "wave": 10,
-  "note": "v1, нулевая ревизия. Дорожка build:linux-amd64; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
-  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V136 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V136 обязателен в конце цепочки.",
+  "estimate_over_limit_reason": "",
   "id": "V136",
   "created_at": "2026-11-07T01:52:42+03:00",
   "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
   "harness": "codex",
-  "updated_at": "2026-11-07T01:52:42+03:00",
+  "updated_at": "2026-11-07T03:54:53+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:42+03:00",
@@ -54,6 +52,34 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:54:53+03:00",
+      "note": "",
+      "changes": {
+        "label": "linux/amd64: запустить артефакт на соответствующем native runner",
+        "description": "linux/amd64: запустить артефакт на соответствующем native runner. Частный результат исходного V136: Reproducible locked build с embedded UI/Skills, digest и platform manifest. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V136B.",
+        "acceptance": "Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен. Это точка объединения всей цепочки V136A, V136B, V136.",
+        "depends_on": [
+          "V136B"
+        ],
+        "parent": "S11",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V136 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V136 обязателен в конце цепочки.",
+        "estimate_unknown_reason": "Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.",
+        "estimate_over_limit_reason": "",
+        "wait_reason": ""
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
     }
-  ]
+  ],
+  "parent": "S11",
+  "model": "gpt-6.1-terra",
+  "estimate_unknown_reason": "Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.",
+  "wait_reason": ""
 }

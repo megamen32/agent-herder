@@ -1,31 +1,28 @@
 {
-  "label": "Контракт одноразового импорта",
-  "description": "Узкие схемы только сохраняемого state: holds/intents/lineage/messages/settings/ownership.",
-  "acceptance": "Unknown provenance остаётся unknown; список active writers и read-only export для этих схем назван.",
+  "label": "Зафиксировать writers и отказ от угадывания происхождения",
+  "description": "Зафиксировать writers и отказ от угадывания происхождения. Частный результат исходного V129: Узкие схемы только сохраняемого state: holds/intents/lineage/messages/settings/ownership. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V129B.",
+  "acceptance": "Unknown provenance остаётся unknown; список active writers и read-only export для этих схем назван. Это точка объединения всей цепочки V129A, V129B, V129.",
   "affected_files": [
     "migration/state-map.md"
   ],
   "depends_on": [
-    "V011",
-    "V022",
-    "V027",
-    "V037"
+    "V129B"
   ],
   "estimate_minutes": {
-    "minimum": 30,
-    "maximum": 45
+    "minimum": 10,
+    "maximum": 15
   },
   "kind": "task",
   "status": "queued",
   "owner": "unassigned",
   "wave": 9,
-  "note": "v1, нулевая ревизия. Дорожка migration; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
-  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V129 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V129 обязателен в конце цепочки.",
+  "estimate_over_limit_reason": "",
   "id": "V129",
   "created_at": "2026-11-07T01:52:41+03:00",
   "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
   "harness": "codex",
-  "updated_at": "2026-11-07T01:52:41+03:00",
+  "updated_at": "2026-11-07T03:54:14+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:41+03:00",
@@ -56,6 +53,32 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:54:14+03:00",
+      "note": "",
+      "changes": {
+        "label": "Зафиксировать writers и отказ от угадывания происхождения",
+        "description": "Зафиксировать writers и отказ от угадывания происхождения. Частный результат исходного V129: Узкие схемы только сохраняемого state: holds/intents/lineage/messages/settings/ownership. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V129B.",
+        "acceptance": "Unknown provenance остаётся unknown; список active writers и read-only export для этих схем назван. Это точка объединения всей цепочки V129A, V129B, V129.",
+        "depends_on": [
+          "V129B"
+        ],
+        "parent": "S10",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V129 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V129 обязателен в конце цепочки.",
+        "estimate_over_limit_reason": "",
+        "wait_reason": ""
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
     }
-  ]
+  ],
+  "parent": "S10",
+  "model": "gpt-6.1-terra",
+  "wait_reason": ""
 }

@@ -1,0 +1,60 @@
+{
+  "id": "V021A",
+  "label": "Сохранять origin Task ref без второго lifecycle",
+  "description": "Сохранять origin Task ref без второго lifecycle. Частный результат исходного V021: Origin Task ref и маршрутизация standard polling/cancel/read по ACL. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V020, V013, V017.",
+  "acceptance": "Получен проверяемый результат: Сохранять origin Task ref без второго lifecycle. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+  "depends_on": [
+    "V020",
+    "V013",
+    "V017"
+  ],
+  "affected_files": [
+    "crates/herder/src/peer/tasks.rs"
+  ],
+  "parent": "S01",
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V021 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V021 обязателен в конце цепочки.",
+  "created_at": "2026-11-07T03:51:59+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T03:51:59+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T03:51:59+03:00",
+      "note": "",
+      "changes": {
+        "id": "V021A",
+        "label": "Сохранять origin Task ref без второго lifecycle",
+        "description": "Сохранять origin Task ref без второго lifecycle. Частный результат исходного V021: Origin Task ref и маршрутизация standard polling/cancel/read по ACL. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V020, V013, V017.",
+        "acceptance": "Получен проверяемый результат: Сохранять origin Task ref без второго lifecycle. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+        "depends_on": [
+          "V020",
+          "V013",
+          "V017"
+        ],
+        "affected_files": [
+          "crates/herder/src/peer/tasks.rs"
+        ],
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V021 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V021 обязателен в конце цепочки."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

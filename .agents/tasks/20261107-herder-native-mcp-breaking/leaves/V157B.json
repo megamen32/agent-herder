@@ -1,0 +1,56 @@
+{
+  "id": "V157B",
+  "label": "Восстановить creator и sender после очистки context",
+  "description": "Восстановить creator и sender после очистки context. Частный результат исходного V157: Свежий tester без кода/авторского отчёта: discover→create→deliver→read→stop и compaction reply. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V157A.",
+  "acceptance": "Получен проверяемый результат: Восстановить creator и sender после очистки context. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+  "depends_on": [
+    "V157A"
+  ],
+  "affected_files": [
+    "acceptance/independent/communication/"
+  ],
+  "parent": "S13",
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V157 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V157 обязателен в конце цепочки.",
+  "created_at": "2026-11-07T03:53:13+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T03:53:13+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T03:53:13+03:00",
+      "note": "",
+      "changes": {
+        "id": "V157B",
+        "label": "Восстановить creator и sender после очистки context",
+        "description": "Восстановить creator и sender после очистки context. Частный результат исходного V157: Свежий tester без кода/авторского отчёта: discover→create→deliver→read→stop и compaction reply. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V157A.",
+        "acceptance": "Получен проверяемый результат: Восстановить creator и sender после очистки context. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+        "depends_on": [
+          "V157A"
+        ],
+        "affected_files": [
+          "acceptance/independent/communication/"
+        ],
+        "parent": "S13",
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V157 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V157 обязателен в конце цепочки."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

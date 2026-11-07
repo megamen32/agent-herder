@@ -1,0 +1,62 @@
+{
+  "id": "V140A",
+  "label": "Установить binary и assets в параметризованный root",
+  "description": "Установить binary и assets в параметризованный root. Частный результат исходного V140: Install artifact/config/manifest/local instruction, preserve data; explicit paths и service launcher. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V136, V137, V138, V139.",
+  "acceptance": "Получен проверяемый результат: Установить binary и assets в параметризованный root. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+  "depends_on": [
+    "V136",
+    "V137",
+    "V138",
+    "V139"
+  ],
+  "affected_files": [
+    "release/install/"
+  ],
+  "parent": "S11",
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V140 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V140 обязателен в конце цепочки.",
+  "created_at": "2026-11-07T03:52:15+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T03:52:15+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T03:52:15+03:00",
+      "note": "",
+      "changes": {
+        "id": "V140A",
+        "label": "Установить binary и assets в параметризованный root",
+        "description": "Установить binary и assets в параметризованный root. Частный результат исходного V140: Install artifact/config/manifest/local instruction, preserve data; explicit paths и service launcher. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V136, V137, V138, V139.",
+        "acceptance": "Получен проверяемый результат: Установить binary и assets в параметризованный root. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+        "depends_on": [
+          "V136",
+          "V137",
+          "V138",
+          "V139"
+        ],
+        "affected_files": [
+          "release/install/"
+        ],
+        "parent": "S11",
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V140 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V140 обязателен в конце цепочки."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

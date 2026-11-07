@@ -1,0 +1,74 @@
+{
+  "id": "D001",
+  "label": "Перестроить зависимости и детализировать очередь до 15 минут",
+  "description": "Пересмотреть будущие V-листья без изменения выполненных и назначенных работ; выделить конкретные шаги и ранний native результат.",
+  "acceptance": "Карта старый V → новые шаги сохраняет исходные обязательства; все новые исполнимые листья <=15 минут, DAG без ложных зависимостей.",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "model": "gpt-6-astra",
+  "owner": "roomhacker",
+  "affected_files": [
+    "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/leaves",
+    "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/WORKPLAN.md",
+    "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/ESTIMATES.md"
+  ],
+  "depends_on": [],
+  "created_at": "2026-11-07T03:46:18+03:00",
+  "updated_at": "2026-11-07T03:55:57+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T03:46:18+03:00",
+      "note": "",
+      "changes": {
+        "id": "D001",
+        "label": "Перестроить зависимости и детализировать очередь до 15 минут",
+        "description": "Пересмотреть будущие V-листья без изменения выполненных и назначенных работ; выделить конкретные шаги и ранний native результат.",
+        "acceptance": "Карта старый V → новые шаги сохраняет исходные обязательства; все новые исполнимые листья <=15 минут, DAG без ложных зависимостей.",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "model": "gpt-6-astra",
+        "owner": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "affected_files": [
+          "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/leaves",
+          "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/WORKPLAN.md",
+          "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/ESTIMATES.md"
+        ],
+        "depends_on": []
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T03:46:20+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running",
+        "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:55:57+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "150 будущих V-задач разбиты на конкретные шаги; 316 новых записей включая этапы/ресурсы/ранние поставки созданы каноническим CLI. check: листья согласованы. Исходная история сохранена history/15m-revision/before.json; done и V003/V007/V011 не изменялись. Документы ресурсов и публикация ещё впереди.",
+        "parent": "S00"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "status": "done",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "result": "150 будущих V-задач разбиты на конкретные шаги; 316 новых записей включая этапы/ресурсы/ранние поставки созданы каноническим CLI. check: листья согласованы. Исходная история сохранена history/15m-revision/before.json; done и V003/V007/V011 не изменялись. Документы ресурсов и публикация ещё впереди.",
+  "parent": "S00"
+}

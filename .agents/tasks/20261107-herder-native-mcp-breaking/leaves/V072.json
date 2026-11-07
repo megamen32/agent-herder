@@ -1,29 +1,28 @@
 {
-  "label": "ZCode: session list и recent",
-  "description": "Одна подтверждённая native read route → адреса/status/последние user+assistant.",
-  "acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен.",
+  "label": "ZCode: Сверить recent с независимым native чтением",
+  "description": "ZCode: Сверить recent с независимым native чтением. Частный результат исходного V072: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V072B.",
+  "acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен. Это точка объединения всей цепочки V072A, V072B, V072.",
   "affected_files": [
     "crates/herder/src/adapters/zcode/read.rs"
   ],
   "depends_on": [
-    "V071",
-    "V028"
+    "V072B"
   ],
   "estimate_minutes": {
-    "minimum": 30,
-    "maximum": 60
+    "minimum": 10,
+    "maximum": 15
   },
   "kind": "task",
   "status": "queued",
   "owner": "unassigned",
   "wave": 5,
-  "note": "v1, нулевая ревизия. Дорожка adapter:zcode; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
-  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V072 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V072 обязателен в конце цепочки.",
+  "estimate_over_limit_reason": "",
   "id": "V072",
   "created_at": "2026-11-07T01:52:30+03:00",
   "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
   "harness": "codex",
-  "updated_at": "2026-11-07T01:52:30+03:00",
+  "updated_at": "2026-11-07T03:54:33+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:30+03:00",
@@ -52,6 +51,32 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:54:33+03:00",
+      "note": "",
+      "changes": {
+        "label": "ZCode: Сверить recent с независимым native чтением",
+        "description": "ZCode: Сверить recent с независимым native чтением. Частный результат исходного V072: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V072B.",
+        "acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен. Это точка объединения всей цепочки V072A, V072B, V072.",
+        "depends_on": [
+          "V072B"
+        ],
+        "parent": "S05",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V072 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V072 обязателен в конце цепочки.",
+        "estimate_over_limit_reason": "",
+        "wait_reason": ""
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
     }
-  ]
+  ],
+  "parent": "S05",
+  "model": "gpt-6.1-terra",
+  "wait_reason": ""
 }

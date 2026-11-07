@@ -1,0 +1,80 @@
+{
+  "id": "V061A",
+  "label": "OpenCode: Зафиксировать версию и один официальный native маршрут",
+  "description": "OpenCode: Зафиксировать версию и один официальный native маршрут. Частный результат исходного V061: Один versioned HTTP/events: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V006.",
+  "acceptance": "Получен проверяемый результат: OpenCode: Зафиксировать версию и один официальный native маршрут. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+  "depends_on": [
+    "V006"
+  ],
+  "affected_files": [
+    "acceptance/contracts/opencode.md"
+  ],
+  "parent": "S04",
+  "kind": "task",
+  "status": "done",
+  "owner": "roomhacker",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V061 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V061 обязателен в конце цепочки.",
+  "estimate_unknown_reason": "Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.",
+  "created_at": "2026-11-07T03:52:21+03:00",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "harness": "codex",
+  "updated_at": "2026-11-07T04:03:12+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T03:52:21+03:00",
+      "note": "",
+      "changes": {
+        "id": "V061A",
+        "label": "OpenCode: Зафиксировать версию и один официальный native маршрут",
+        "description": "OpenCode: Зафиксировать версию и один официальный native маршрут. Частный результат исходного V061: Один versioned HTTP/events: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V006.",
+        "acceptance": "Получен проверяемый результат: OpenCode: Зафиксировать версию и один официальный native маршрут. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+        "depends_on": [
+          "V006"
+        ],
+        "affected_files": [
+          "acceptance/contracts/opencode.md"
+        ],
+        "parent": "S04",
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V061 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V061 обязателен в конце цепочки.",
+        "estimate_unknown_reason": "Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:01:07+03:00",
+      "note": "Read-only native contract: 01a1b385-90e3-7782-a2ea-3dfc2c703b7d.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:03:12+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "OpenCode 2.2.4: source-backed GET /api/session и /api/event, сервер 127.0.0.1:4095 доступен; оба запроса без авторизации вернули 401. Authenticated read/events не проверены."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    }
+  ],
+  "result": "OpenCode 2.2.4: source-backed GET /api/session и /api/event, сервер 127.0.0.1:4095 доступен; оба запроса без авторизации вернули 401. Authenticated read/events не проверены."
+}

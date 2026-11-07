@@ -1,0 +1,37 @@
+{
+  "checked_at": "2026-11-07T04:01:23.187380+03:00",
+  "original_outcomes_retained": 159,
+  "split_outcomes_with_preserved_acceptance": 150,
+  "all_new_steps_max_minutes": 15,
+  "cycles": 0,
+  "records": 478,
+  "task_records": 464,
+  "remaining_original_estimate_exceptions": [
+    {
+      "id": "V003",
+      "status": "blocked",
+      "estimate_minutes": {
+        "minimum": 30,
+        "maximum": 60
+      }
+    },
+    {
+      "id": "V011",
+      "status": "waiting",
+      "estimate_minutes": {
+        "minimum": 30,
+        "maximum": 60
+      }
+    }
+  ],
+  "public_readback": {
+    "http": 200,
+    "markers": [
+      "R001",
+      "E001",
+      "V009A",
+      "шаги до 15 минут"
+    ]
+  },
+  "limits": "Проверка структуры плана, не тест реализации. V003 открыт. Текущие V003/V007/V011 принадлежат Тере."
+}

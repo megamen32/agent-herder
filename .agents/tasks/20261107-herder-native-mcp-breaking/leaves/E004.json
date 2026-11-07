@@ -1,0 +1,60 @@
+{
+  "id": "E004",
+  "label": "Выпустить расписание и автопилот на тестовой сессии",
+  "description": "Установить dev артефакт; один schedule и один autopilot проходят общий admission, HumanStop прекращает новые ходы.",
+  "acceptance": "Установить dev артефакт; один schedule и один autopilot проходят общий admission, HumanStop прекращает новые ходы.",
+  "depends_on": [
+    "V049",
+    "V050",
+    "E001"
+  ],
+  "affected_files": [
+    "release/dev-automation/"
+  ],
+  "parent": "S03",
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей.",
+  "created_at": "2026-11-07T03:53:39+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T03:53:39+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T03:53:39+03:00",
+      "note": "",
+      "changes": {
+        "id": "E004",
+        "label": "Выпустить расписание и автопилот на тестовой сессии",
+        "description": "Установить dev артефакт; один schedule и один autopilot проходят общий admission, HumanStop прекращает новые ходы.",
+        "acceptance": "Установить dev артефакт; один schedule и один autopilot проходят общий admission, HumanStop прекращает новые ходы.",
+        "depends_on": [
+          "V049",
+          "V050",
+          "E001"
+        ],
+        "affected_files": [
+          "release/dev-automation/"
+        ],
+        "parent": "S03",
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

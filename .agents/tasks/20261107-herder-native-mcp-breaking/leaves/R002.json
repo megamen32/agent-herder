@@ -1,0 +1,58 @@
+{
+  "id": "R002",
+  "label": "Регистрировать descriptor ресурса в каноническом storage",
+  "description": "Create/update resource.json с revision CAS; lookup/list по scope и правам. Никакой второй mutable DB ownership.",
+  "acceptance": "Дубликат identity и stale revision дают исправляемую ошибку; неразрешённый descriptor не раскрывается.",
+  "depends_on": [
+    "R001",
+    "V036"
+  ],
+  "affected_files": [
+    "crates/herder/src/ownership/resource.rs"
+  ],
+  "parent": "S02",
+  "kind": "task",
+  "status": "queued",
+  "owner": "unassigned",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей.",
+  "created_at": "2026-11-07T03:53:38+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T03:53:38+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T03:53:38+03:00",
+      "note": "",
+      "changes": {
+        "id": "R002",
+        "label": "Регистрировать descriptor ресурса в каноническом storage",
+        "description": "Create/update resource.json с revision CAS; lookup/list по scope и правам. Никакой второй mutable DB ownership.",
+        "acceptance": "Дубликат identity и stale revision дают исправляемую ошибку; неразрешённый descriptor не раскрывается.",
+        "depends_on": [
+          "R001",
+          "V036"
+        ],
+        "affected_files": [
+          "crates/herder/src/ownership/resource.rs"
+        ],
+        "parent": "S02",
+        "kind": "task",
+        "status": "queued",
+        "owner": "unassigned",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

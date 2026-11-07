@@ -1,4 +1,4 @@
-"""Canonical LHC writer with the human's 60-minute rule for this plan only."""
+"""Canonical LHC writer for this plan; the standard 15-minute limit applies."""
 from pathlib import Path
 import sys
 
@@ -10,6 +10,6 @@ if len(sys.argv) < 3 or Path(sys.argv[2]).resolve() != PLAN:
 sys.path.insert(0, str(TOOLS))
 import lhc_plan_json
 
-# Direct owner correction 2026-11-07. No installed file or global setting is changed.
-lhc_plan_json.LEAF_ESTIMATE_CAP_MINUTES = 60
+# Latest direct owner correction 2026-11-07: use the installed 15-minute limit.
+# No installed file or global setting is changed.
 raise SystemExit(lhc_plan_json.main())

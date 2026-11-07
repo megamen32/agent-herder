@@ -1,1157 +1,4897 @@
-# Рабочий план Agent Herder v1 — нулевая ревизия
+# Рабочий план Agent Herder v1 — ревизия шагов до 15 минут
 
-159 исполнимых листьев V001–V159 по 20–60 минут. Только Codex, OpenCode, ZCode, ChatGPT и Z.ai. Нет deferred/history leaves; прежние версии сохранены вне рабочего графа. Исполнители ещё не назначены.
+Прямое поручение владельца 07.11.2026: детализировать оставшуюся работу, упростить по Парето, включить общие ресурсы. Lead — Тера; Astra детализирует план и консультирует не реже часа. Текущий продуктовый scope: Codex, OpenCode, ZCode, ChatGPT, Z.ai.
 
-Каждый лист получает результаты depends_on и текущие SPEC/RUST-DESIGN/COORDINATION/RECOVERY-STORAGE. В consumer:... точные repo/files обязательны из предыдущего target.json gate. Отсутствующее native API не оценивается фиктивным часом: gate фиксирует пробел, зависимая реализация переразбивается. Дорожка допускает только одного одновременно пишущего исполнителя; независимые дорожки могут идти параллельно.
+## Что делать следующим
 
-Оценки и проверенный ресурсный календарь: ESTIMATES.md. Входные данные и канонические leaves согласованы.
+1. Закончить текущий V003: доказать именно клиентские Tasks/Skills/listen или назвать точный разрыв и передать решение владельцу. Нельзя выдавать основной tools/call за поддержку extensions. Повторное исследование без нового проверяемого варианта не запускать.
+2. Интегрировать уже сохранённые V007/V011, не поручать их написать заново. Начать R001 (контракт ресурсов), V036A (manifest), V031A (roster без FTS), V028A (recent), V052A/V061A (native route). Выбрать готовые шаги в пределах реальных исполнителей и конфликтов путей.
+3. После клиентского gate провести локальный create→deliver→read к E001 для Codex и E002 для OpenCode. Полный адаптер, поиск и remote proxy не блокируют ранний сценарий. Эти демонстрации не закрывают полную приёмку V060/V069.
+4. Пройти остальные этапы до финального RC, миграции, удаления legacy и установленного результата. Новая детализация не отменяет обязательный scope.
 
-## Основа
+## Правила исполнения
 
-### V001. Закрепить SDK и собрать минимальный wire probe — 30–45 мин
+- VnnnA/B — конкретные подготовительные части; исходный Vnnn — последний шаг и точка приёмки всей прежней задачи. Входящие ссылки на Vnnn по-прежнему ждут весь результат. Старые оценки и тексты сохранены в history/15m-revision/before.json; карта — mapping.json.
+- Один шаг даёт конкретный артефакт/поведение и занимает 10–15 минут при названных входах. Если вход неизвестен, research gate фиксирует факт и нужное решение; 15 минут не обещают реализовать отсутствующий API. После уточнения входа разбиение корректируется до кода.
+- 15 минут — размер работы, не срок действия полномочий и не повод ждать ответа лидера. Тот же исполнитель продолжает готовые шаги своей цепочки, объединяя соседние изменения в цельный проверяемый commit. Не создавать новый worktree, review или deploy на каждый шаг.
+- Параллельность следует из depends_on и непересекающихся путей/профилей. Parent milestone не добавляет скрытых зависимостей. Назначение модели в листе — плановый fallback Теры, не доказательство запуска исполнителя.
+- На границе каждого результата — установка на изолированный стенд или native installed lane. E001/E002 дают раннюю пользу; полные платформенные/consumer проверки делаются на едином RC. Не повторять неизменившийся полный набор на каждом edit.
+- У каждого внешнего потребителя target.json сначала фиксирует конкретные repo/paths и полномочия. Неизвестный объём означает неизвестную оценку до уточнения, а не автоматическое расширение задачи.
+- Пользовательские данные/чужой WIP сохраняются; UNKNOWN не повторяется; HumanStop действует; тестовых звонков и уведомлений людям нет.
 
-Вход: официальные источники MCP-EVIDENCE и scope v1. Дорожка: `core`.
-Результат: Cargo.lock/toolchain и probe server/discover → tools/call на rmcp 3.9.0.
+## Почему путь короче
+
+Локальный create больше не ждёт peer proxy. Roster не ждёт FTS. Recent не ждёт MCP resource delivery. Каталог моделей и настройки не ждут списка сессий. Native route исследуется независимо от готовности всего сервера. Import context не ждёт import effects. Linux/macOS проверяются независимо после общего cutover. Используются одна лжемодель, общие DTO/errors/intents и один ресурсный owner store.
+
+## Степень детализации
+
+451 будущих продуктовых шагов имеют верхнюю оценку <=15 минут. 2 уже назначенных/начатых исходных записи сохранены для Теры: V003, V011. Их исторические оценки не выданы за новые 15-минутные работы. Выполненные исходные листья также сохранены с доказательствами.
+
+
+## Сохранённая история и активные назначения
+
+### V001. Закрепить SDK и собрать минимальный wire probe — 30–45 минут
+
+Статус: done. Входы: нет.
+
+Cargo.lock/toolchain и probe server/discover → tools/call на rmcp 3.9.0.
+
 Приёмка: Записаны версии/feature flags; процесс запускается и отдаёт обязательный resultType. Если compile не проходит, точный минимальный failure и пересмотр до адаптеров.
-Область: `crates/herder/Cargo.toml`.
 
-### V002. Проверить Tasks/Skills/subscriptions выбранного SDK — 30–60 мин
+Пути: crates/herder/Cargo.toml.
 
-Вход: V001. Дорожка: `core`.
-Результат: Wire transcript get/update/cancel, skills/list/get/read и listen; без native эффектов.
+### V002. Проверить Tasks/Skills/subscriptions выбранного SDK — 30–60 минут
+
+Статус: done. Входы: V001.
+
+Wire transcript get/update/cancel, skills/list/get/read и listen; без native эффектов.
+
 Приёмка: Capabilities проверяются до возврата Task; отсутствуют tasks/list/result; найденные SDK пробелы названы.
-Область: `tests/protocol/sdk_probe.rs`.
 
-### V003. Проверить конкретный основной MCP-клиент — 30–60 мин
+Пути: tests/protocol/sdk_probe.rs.
 
-Вход: V002. Дорожка: `clients`.
-Результат: Один объявленный потребитель подключается к probe; revision/extensions/identity matrix.
+### V003. Проверить конкретный основной MCP-клиент — 30–60 минут
+
+Статус: blocked. Входы: V002.
+
+Один объявленный потребитель подключается к probe; revision/extensions/identity matrix.
+
 Приёмка: Есть прямой trace реального клиента, не SDK talking to itself; unsupported блокирует gate и зависимую реализацию.
-Область: `acceptance/contracts/primary-client.json`.
 
-### V004. Конфигурация Node и HarnessInstance — 30–45 мин
+Пути: acceptance/contracts/primary-client.json.
 
-Вход: V001. Дорожка: `core`.
-Результат: Typed config nodes/instances/profiles/authority/secret refs; duplicate ID validation.
+### V004. Конфигурация Node и HarnessInstance — 30–45 минут
+
+Статус: done. Входы: V001.
+
+Typed config nodes/instances/profiles/authority/secret refs; duplicate ID validation.
+
 Приёмка: Два профиля одного типа независимы; hostname/root не зашиты; диагностика неверного поля.
-Область: `crates/herder/src/config.rs`.
 
-### V005. Типы адресов и capabilities — 30–45 мин
+Пути: crates/herder/src/config.rs.
 
-Вход: V004. Дорожка: `core`.
-Результат: Node/instance/session refs, supported/available/authorized отдельно; версии capability.
+### V005. Типы адресов и capabilities — 30–45 минут
+
+Статус: done. Входы: V004.
+
+Node/instance/session refs, supported/available/authorized отдельно; версии capability.
+
 Приёмка: Одинаковые native IDs в разных instance не равны; offline не unsupported.
-Область: `crates/herder/src/domain/address.rs`.
 
-### V006. Контракт pure core и native port — 30–45 мин
+Пути: crates/herder/src/domain/address.rs.
 
-Вход: V005. Дорожка: `core`.
-Результат: DTO Admission/Unknown/Receipt и маленькие reader/control ports; enum registry.
+### V006. Контракт pure core и native port — 30–45 минут
+
+Статус: done. Входы: V005.
+
+DTO Admission/Unknown/Receipt и маленькие reader/control ports; enum registry.
+
 Приёмка: Табличный pure decision test без I/O; fake submit различает never sent и unknown.
-Область: `crates/herder/src/domain/adapter.rs`.
 
-### V007. Одна диагностическая схема ошибок — 30–45 мин
+Пути: crates/herder/src/domain/adapter.rs.
 
-Вход: V006. Дорожка: `core`.
-Результат: field/received/expected/fix/effect/retry/receipt; redaction секретов.
+### V007. Одна диагностическая схема ошибок — 30–45 минут
+
+Статус: done. Входы: V006.
+
+field/received/expected/fix/effect/retry/receipt; redaction секретов.
+
 Приёмка: Wrong mode и conflict reply_to дают однозначный исправляемый вызов без mutation.
-Область: `crates/herder/src/error.rs`.
 
-### V008. Привязать caller и области доступа — 30–60 мин
+Пути: crates/herder/src/error.rs.
 
-Вход: V005. Дорожка: `security`.
-Результат: Verified principal/self binding; deny-by-default для private session и ресурсов.
+### V008. Привязать caller и области доступа — 30–60 минут
+
+Статус: done. Входы: V005.
+
+Verified principal/self binding; deny-by-default для private session и ресурсов.
+
 Приёмка: Подмена sender/session_ref и общий node token не дают self; auth не следует из parent.
-Область: `crates/herder/src/auth/identity.rs`.
 
-### V009. Реестр 14 инструментов и typed variants — 30–45 мин
+Пути: crates/herder/src/auth/identity.rs.
 
-Вход: V007, V002. Дорожка: `core`.
-Результат: Единая декларация discovery/dispatch с oneOf schemas; actions read/mutate разделены.
-Приёмка: tools/list совпадает с dispatch; дополнительные поля/legacy names отвергаются.
-Область: `crates/herder/src/mcp/catalog.rs`.
+### V011. SQLite схема и транзакционные границы — 30–60 минут
 
-### V010. HTTP и stdio без legacy negotiation — 30–60 мин
+Статус: waiting. Входы: V006.
 
-Вход: V009, V003, V008. Дорожка: `core`.
-Результат: Транспорт SDK, обязательная request metadata, shutdown; application entrypoint.
-Приёмка: Основной клиент читает catalog обоими поддерживаемыми транспортами; wrong revision до эффекта.
-Область: `crates/herder/src/mcp/transport.rs`.
+Таблицы tasks/intents/messages/holds/lineage/settings; migration version.
 
-### V011. SQLite схема и транзакционные границы — 30–60 мин
-
-Вход: V006. Дорожка: `storage`.
-Результат: Таблицы tasks/intents/messages/holds/lineage/settings; migration version.
 Приёмка: Rollback transaction не оставляет half intent; новый schema version запрещает запись старому binary.
-Область: `crates/herder/src/store/schema.sql`.
 
-### V012. Атомарное принятие идемпотентного intent — 30–60 мин
+Пути: crates/herder/src/store/schema.sql.
 
-Вход: V011, V008, V007. Дорожка: `storage`.
-Результат: Unique principal/target/request_key + payload hash и CAS prepared→dispatching.
-Приёмка: Два одновременных обработчика вызывают fake submit один раз; conflict payload отклоняется.
-Область: `crates/herder/src/store/intents.rs`.
+## Детализация плана и единый контракт ресурсов
 
-### V013. Durable стандартные Tasks get/create — 30–60 мин
+### D001. Перестроить зависимости и детализировать очередь до 15 минут — 10–15 минут
 
-Вход: V012, V010. Дорожка: `storage`.
-Результат: SDK wire types и SQLite backend без in-memory authority.
-Приёмка: Task сохранён до ответа, polling после рестарта читает тот же ID/result.
-Область: `crates/herder/src/mcp/tasks.rs`.
+Статус: done. Входы: нет.
 
-### V014. Tasks update и cooperative cancel — 30–60 мин
+Пересмотреть будущие V-листья без изменения выполненных и назначенных работ; выделить конкретные шаги и ранний native результат.
 
-Вход: V013. Дорожка: `storage`.
-Результат: Persist pending inputs и ответы по ключам; cancel intent отдельно от effect outcome.
-Приёмка: Повтор input не продолжает дважды; cancel после admission не выдаёт отмену эффекта.
-Область: `crates/herder/src/store/task_inputs.rs`.
+Приёмка: Карта старый V → новые шаги сохраняет исходные обязательства; все новые исполнимые листья <=15 минут, DAG без ложных зависимостей.
 
-### V015. Reconcile неопределённой native отправки — 30–60 мин
+Пути: /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/leaves, /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/WORKPLAN.md, /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/ESTIMATES.md.
 
-Вход: V014. Дорожка: `storage`.
-Результат: Restart dispatcher читает native receipt по стабильной корреляции, без send.
-Приёмка: Kill после dispatching/admission даёт confirmed или unknown; unknown не получает safe retry.
-Область: `crates/herder/src/application/reconcile.rs`.
+### D002. Согласовать ресурсный контракт и документы с новым графом — 10–15 минут
 
-### V016. Разделить Task TTL и receipt retention — 30–45 мин
+Статус: done. Входы: D001.
 
-Вход: V015. Дорожка: `storage`.
-Результат: Tombstone дедупликации/удалённого текста, правила expiry.
-Приёмка: Истёкший Task и удалённый transcript не позволяют повтор request_key выполнить эффект.
-Область: `crates/herder/src/store/retention.rs`.
+Обновить SPEC, RUST-DESIGN, COORDINATION, RECOVERY-STORAGE и HANDOFF; resource заменяет workspace, без второго owner store.
 
-### V017. Ресурсы с ACL и приватным cache — 30–60 мин
+Приёмка: 14 tools, независимые scope/attachment/authority/claim, offline layout и приёмка согласованы; прежнее исключение 60 минут убрано.
 
-Вход: V010, V013, V008. Дорожка: `protocol`.
-Результат: Session/task/transcript resources с remote-readable refs и pagination.
-Приёмка: Другой principal не читает result/Task; cacheScope private и ttlMs корректны.
-Область: `crates/herder/src/mcp/resources.rs`.
+Пути: см. входной gate.
 
-### V018. Подписки с bounded очередью и resync — 30–60 мин
+### D003. Проверить граф, опубликовать детализацию и передать Тере — 10–15 минут
 
-Вход: V017. Дорожка: `protocol`.
-Результат: subscriptions/listen filters; drop→snapshot, без SSE replay.
-Приёмка: Медленный клиент не блокирует ноду; reconnect видит current revision без дублирования эффектов.
-Область: `crates/herder/src/mcp/subscriptions.rs`.
+Статус: done. Входы: D002.
 
-### V019. Статический Skills manifest — 30–45 мин
+Сверить исходные обязательства, DAG и лимит новых шагов; построить публичную страницу и передать готовую очередь с условной оценкой.
 
-Вход: V017. Дорожка: `protocol`.
-Результат: skills/list/get и resources/read с digest; directoryRead не объявлен.
-Приёмка: Проверены manifest boundary, приватность и content hash; read не объявляет activation.
-Область: `crates/herder/src/mcp/skills.rs`.
+Приёмка: Канонический check/build успешен, публичный HTML содержит resource и новые шаги; исходная история сохранена, Тере переданы ближайшие действия.
 
-### V020. Маршрутизация к owner Node — 30–60 мин
+Пути: см. входной gate.
 
-Вход: V010, V005. Дорожка: `protocol`.
-Результат: Peer auth, точный instance, deadline и сохранение errors; без local fallback.
-Приёмка: Две конфигурируемые ноды; чужой scope denied, недоступный origin остаётся unavailable.
-Область: `crates/herder/src/peer/route.rs`.
+## Рабочий MCP и полный адаптер Codex
 
-### V021. Удалённые Tasks и resources без второго lifecycle — 30–60 мин
+### E001. Показать первый native ответ Codex через новый MCP — 10–15 минут
 
-Вход: V020, V013, V017. Дорожка: `protocol`.
-Результат: Origin Task ref и маршрутизация standard polling/cancel/read по ACL.
-Приёмка: Proxy restart не дублирует native intent; origin task/result остаются теми же.
-Область: `crates/herder/src/peer/tasks.rs`.
+Статус: queued. Входы: V056, V054, V051, V003, V025.
 
-### V022. Долговечный creator и native parent — 30–45 мин
+Установить dev сборку. Реальный клиент создаёт сессию, доставляет уникальный input и читает ответ лжемодели с native refs. Эта ранняя проверка не заменяет полный V060.
 
-Вход: V012. Дорожка: `core`.
-Результат: Создатель в create intent, native parent и происхождение отдельно.
-Приёмка: Restart между intent и native receipt не меняет creator; неизвестное происхождение не угадано.
-Область: `crates/herder/src/store/lineage.rs`.
+Приёмка: Установить dev сборку. Реальный клиент создаёт сессию, доставляет уникальный input и читает ответ лжемодели с native refs. Эта ранняя проверка не заменяет полный V060.
 
-### V023. Общий create с точным instance — 30–60 мин
+Пути: acceptance/early/codex/.
 
-Вход: V022, V006, V021. Дорожка: `core`.
-Результат: Application create проверяет capability/auth и связывает intent с native ID.
-Приёмка: Fake native create вызывается один раз; completion только после session readback.
-Область: `crates/herder/src/application/create.rs`.
+### V009. Отклонять лишние поля и старые имена до вызова обработчика — 10–15 минут
 
-### V024. Общий deliver с явным режимом — 30–60 мин
+Статус: queued. Входы: V009B.
 
-Вход: V023, V015. Дорожка: `core`.
-Результат: current/queue/start, expected turn; implicit create и delayed send отсутствуют.
-Приёмка: Busy/unsupported не подменяют режим; persisted intent предшествует submit.
-Область: `crates/herder/src/application/deliver.rs`.
+Отклонять лишние поля и старые имена до вызова обработчика. Частный результат исходного V009: Единая декларация discovery/dispatch с oneOf schemas; actions read/mutate разделены. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V009B.
 
-### V025. HumanStop на admission boundary — 30–60 мин
+Приёмка: tools/list совпадает с dispatch; дополнительные поля/legacy names отвергаются. Это точка объединения всей цепочки V009A, V009B, V009.
 
-Вход: V024. Дорожка: `core`.
-Результат: Durable hold перед interrupt; dispatch/stop сериализуют admission.
-Приёмка: Race stop/deliver: post-hold send не стартует; уже принятое действие отражено честно.
-Область: `crates/herder/src/application/stop.rs`.
+Пути: crates/herder/src/mcp/catalog.rs.
 
-### V026. Одноразовое resume — 30–45 мин
+### V009A. Описать строгие варианты 14 инструментов, заменив workspace на resource — 10–15 минут
 
-Вход: V025. Дорожка: `core`.
-Результат: Один request_key → один native turn; HumanStop требует отдельного человеческого права на снятие.
-Приёмка: Дубликат resume не создаёт ход; флаг humanRequested от модели не снимает hold.
-Область: `crates/herder/src/application/resume.rs`.
+Статус: queued. Входы: V007, V002, R001.
 
-### V027. Журнал и reply_to — 30–60 мин
+Описать строгие варианты 14 инструментов, заменив workspace на resource. Частный результат исходного V009: Единая декларация discovery/dispatch с oneOf schemas; actions read/mutate разделены. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V007, V002, R001.
 
-Вход: V024, V022, V008. Дорожка: `storage`.
-Результат: Transaction связывает sender/recipient/message_ref с intent; reply target берётся сервером.
-Приёмка: C→B и ответ B адресованы C; A creator не подменяется; чужой reply_to denied.
-Область: `crates/herder/src/store/correspondence.rs`.
+Приёмка: Получен проверяемый результат: Описать строгие варианты 14 инструментов, заменив workspace на resource. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-### V028. Recent обеих ролей — 30–45 мин
+Пути: crates/herder/src/mcp/catalog.rs.
 
-Вход: V006, V017. Дорожка: `core`.
-Результат: Общий projection user+assistant с turn/time/partial; read-only session.
-Приёмка: Старый assistant не назван ответом на новый input; отсутствующий источник не пустая история.
-Область: `crates/herder/src/application/recent.rs`.
+### V009B. Получать discovery и dispatch из одной декларации — 10–15 минут
 
-### V029. Transcript snapshot и cursor — 30–45 мин
+Статус: queued. Входы: V009A.
 
-Вход: V028. Дорожка: `core`.
-Результат: Нормализованные blocks, raw ref и подписанный/привязанный snapshot cursor.
-Приёмка: Чужой cursor отвергнут; последняя страница, truncation и snapshot boundary проверены.
-Область: `crates/herder/src/domain/transcript.rs`.
+Получать discovery и dispatch из одной декларации. Частный результат исходного V009: Единая декларация discovery/dispatch с oneOf schemas; actions read/mutate разделены. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V009A.
 
-### V030. Инкрементальный поиск — 30–60 мин
+Приёмка: Получен проверяемый результат: Получать discovery и dispatch из одной декларации. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V029, V011. Дорожка: `storage`.
-Результат: SQLite FTS и source cursors; обновление только изменённой сессии.
-Приёмка: Одна новая запись не сканирует весь corpus; ACL и coverage сохраняются.
-Область: `crates/herder/src/search/index.rs`.
+Пути: crates/herder/src/mcp/catalog.rs.
 
-### V031. Sessions/discover и coverage — 30–45 мин
+### V010. Подтвердить новый wire на реальном клиенте обоими транспортами — 10–15 минут
 
-Вход: V030, V020. Дорожка: `core`.
-Результат: Постраничный список по project/instance; native availability отдельно от cached records.
-Приёмка: Offline peer явно отмечен, одинаковые basename не склеены.
-Область: `crates/herder/src/application/list.rs`.
+Статус: queued. Входы: V010B.
 
-### V032. Модели и квоты профиля — 30–45 мин
+Подтвердить новый wire на реальном клиенте обоими транспортами. Частный результат исходного V010: Транспорт SDK, обязательная request metadata, shutdown; application entrypoint. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V010B.
 
-Вход: V031. Дорожка: `core`.
-Результат: discover(kind=models) отдаёт verified catalog и unknown значения.
-Приёмка: Два профиля не разделяют auth/quota cache, unknown не zero/unlimited.
-Область: `crates/herder/src/application/models.rs`.
+Приёмка: Основной клиент читает catalog обоими поддерживаемыми транспортами; wrong revision до эффекта. Это точка объединения всей цепочки V010A, V010B, V010.
 
-### V033. Configure desired/applied CAS — 30–60 мин
+Пути: crates/herder/src/mcp/transport.rs.
 
-Вход: V032, V008. Дорожка: `core`.
-Результат: Node/instance/session settings поддерживаются только при capability, typed patches.
-Приёмка: Stale revision отвергнут; remote unavailable не applied; scope проверяется.
-Область: `crates/herder/src/application/settings.rs`.
+### V010A. Подключить stdio к application и проверке metadata — 10–15 минут
 
-### V034. Точный native permission request — 30–45 мин
+Статус: queued. Входы: V009, V003, V008.
 
-Вход: V033, V014. Дорожка: `core`.
-Результат: Pending request identity и authorized answer, без wildcard approvals.
-Приёмка: Expired ID не отвечает другому request; duplicate answer идемпотентен.
-Область: `crates/herder/src/application/permission.rs`.
+Подключить stdio к application и проверке metadata. Частный результат исходного V010: Транспорт SDK, обязательная request metadata, shutdown; application entrypoint. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V009, V003, V008.
 
-### V035. Внешний вопрос и MCP input раздельно — 30–60 мин
+Приёмка: Получен проверяемый результат: Подключить stdio к application и проверке metadata. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V034, V026. Дорожка: `core`.
-Результат: MRTR/Task input и external correlation используют одну delivery boundary.
-Приёмка: Ответ относится одной сессии, повтор callback не даёт два resume; внешняя отправка только в test route.
-Область: `crates/herder/src/application/human.rs`.
+Пути: crates/herder/src/mcp/transport.rs.
 
+### V010B. Подключить HTTP к той же application и identity — 10–15 минут
 
-## Владение
+Статус: queued. Входы: V010A.
 
-### V036. Manifest канонического storage — 30–45 мин
+Подключить HTTP к той же application и identity. Частный результат исходного V010: Транспорт SDK, обязательная request metadata, shutdown; application entrypoint. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V010A.
 
-Вход: V004, V008. Дорожка: `ownership`.
-Результат: Storage/project/resource markers, точный offline locator и ACL policy.
-Приёмка: Wrong root/storage/mount loss отличаются от owner ENOENT; секретов нет.
-Область: `crates/herder/src/ownership/manifest.rs`.
+Приёмка: Получен проверяемый результат: Подключить HTTP к той же application и identity. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-### V037. Одна owner запись и OS lock — 30–60 мин
+Пути: crates/herder/src/mcp/transport.rs.
 
-Вход: V036. Дорожка: `ownership`.
-Результат: Claim/renew/release с UUID epoch, atomic rename/unlink+fsync, CAS claim ID.
-Приёмка: Concurrent claims имеют одного победителя; release чужого ID denied; нет state.json transaction.
-Область: `crates/herder/src/ownership/claim.rs`.
+### V012. Проверить гонку дубликатов и конфликт payload без второго submit — 10–15 минут
 
-### V038. Crash proof файловых переходов — 30–60 мин
+Статус: queued. Входы: V012B.
 
-Вход: V037. Дорожка: `ownership`.
-Результат: Fault injection до/после rename/unlink/fsync; leftover temp cleanup под lock.
-Приёмка: Полный old/new owner или отсутствие; fsync failure unknown; guard inode не заменён.
-Область: `tests/ownership/crash.rs`.
+Проверить гонку дубликатов и конфликт payload без второго submit. Частный результат исходного V012: Unique principal/target/request_key + payload hash и CAS prepared→dispatching. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V012B.
 
-### V039. Offline CLI поверх той же библиотеки — 30–45 мин
+Приёмка: Два одновременных обработчика вызывают fake submit один раз; conflict payload отклоняется. Это точка объединения всей цепочки V012A, V012B, V012.
 
-Вход: V038. Дорожка: `ownership`.
-Результат: herder ownership без запуска daemon/SQLite/MCP; JSON и русские ошибки.
-Приёмка: Потерянный claim response читается по nonce без automatic reclaim после release.
-Область: `crates/herder/src/cli/ownership.rs`.
+Пути: crates/herder/src/store/intents.rs.
 
-### V040. Workspace declarations и общий claim route — 30–60 мин
+### V012A. Сохранять intent и payload hash под уникальным request_key — 10–15 минут
 
-Вход: V037, V031. Дорожка: `ownership`.
-Результат: Project/worktree identity/scopes/notes; MCP ownership вызывает ту же библиотеку.
-Приёмка: Декларация не lease; две ноды одного shared workspace используют один resource.
-Область: `crates/herder/src/application/workspace.rs`.
+Статус: queued. Входы: V011, V008, V007.
 
-### V041. Единственная точка release admission — 30–60 мин
+Сохранять intent и payload hash под уникальным request_key. Частный результат исходного V012: Unique principal/target/request_key + payload hash и CAS prepared→dispatching. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V011, V008, V007.
 
-Вход: V039. Дорожка: `ownership`.
-Результат: Target-local lock, live claim check после lock, expected deployed revision.
-Приёмка: Задержавшийся старый claim отвергнут; второй runner path запрещён конфигурацией.
-Область: `crates/herder/src/ownership/release_runner.rs`.
+Приёмка: Получен проверяемый результат: Сохранять intent и payload hash под уникальным request_key. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-### V042. Durable release receipt до spawn — 30–60 мин
+Пути: crates/herder/src/store/intents.rs.
 
-Вход: V041. Дорожка: `ownership`.
-Результат: Request key/hash, admitted/confirmed/unknown; child удерживает execution lock.
-Приёмка: Crash родителя не отпускает live child; unknown external effect блокирует новый конфликтующий effect.
-Область: `crates/herder/src/ownership/release_receipt.rs`.
+### V012B. Атомарно назначать единственного отправителя через CAS — 10–15 минут
 
-### V043. Гонка release и смена owner — 30–60 мин
+Статус: queued. Входы: V012A.
 
-Вход: V042, V040. Дорожка: `ownership`.
-Результат: Test runner делает безопасный локальный file revision effect; delay/crash/partition.
-Приёмка: Максимум один эффект; повтор key только readback; lost authority запрещает новый admission.
-Область: `tests/ownership/release_races.rs`.
+Атомарно назначать единственного отправителя через CAS. Частный результат исходного V012: Unique principal/target/request_key + payload hash и CAS prepared→dispatching. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V012A.
 
+Приёмка: Получен проверяемый результат: Атомарно назначать единственного отправителя через CAS. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-## Координация
+Пути: crates/herder/src/store/intents.rs.
 
-### V044. Context self/creator/senders/peers — 30–60 мин
+### V013. Прочитать тот же Task и результат после перезапуска — 10–15 минут
 
-Вход: V027, V040, V028. Дорожка: `core`.
-Результат: Один bounded snapshot с адресами, scopes, coverage и курсорами.
-Приёмка: A creator и C sender восстанавливаются без transcript memory; чужие closed sessions скрыты.
-Область: `crates/herder/src/application/context.rs`.
+Статус: queued. Входы: V013B.
 
-### V045. Offline context snapshot — 30–45 мин
+Прочитать тот же Task и результат после перезапуска. Частный результат исходного V013: SDK wire types и SQLite backend без in-memory authority. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V013B.
 
-Вход: V044, V039. Дорожка: `ownership`.
-Результат: Atomic JSON projection c generated_at, coverage и безопасными routes.
-Приёмка: Без daemon читается stale snapshot; это не owner или delivery receipt.
-Область: `crates/herder/src/ownership/context_snapshot.rs`.
+Приёмка: Task сохранён до ответа, polling после рестарта читает тот же ID/result. Клиент без Tasks capability отклоняется до создания исполнимой Task, постановки dispatch и native side effect; ошибка содержит effect=none и понятное исправление. Тест проверяет отсутствие submit и выполнения Task, не только код ответа. Это точка объединения всей цепочки V013A, V013B, V013.
 
-### V046. Контекстные generation и native hook client — 30–60 мин
+Пути: crates/herder/src/mcp/tasks.rs.
 
-Вход: V044, V018, V025. Дорожка: `core`.
-Результат: Projector snapshot/delta, новый context generation не подавляется fingerprint.
-Приёмка: Fake compact event вызывает snapshot без нового model turn и без снятия STOP.
-Область: `integrations/hooks/context_client.rs`.
+### V013A. Отказывать клиенту без Tasks до intent и native эффекта — 10–15 минут
 
+Статус: queued. Входы: V012, V010.
 
-## Автоматизация
+Отказывать клиенту без Tasks до intent и native эффекта. Частный результат исходного V013: SDK wire types и SQLite backend без in-memory authority. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V012, V010.
 
-### V047. Typed automation rules — 30–60 мин
+Приёмка: Получен проверяемый результат: Отказывать клиенту без Tasks до intent и native эффекта. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V033, V026. Дорожка: `core`.
-Результат: Schedule/one-shot и autopilot в одном CRUD; timezone, missed/overlap, CAS.
-Приёмка: Неверный cron объясняется; настройка не создаёт parallel job API.
-Область: `crates/herder/src/automation/rules.rs`.
+Пути: crates/herder/src/mcp/tasks.rs.
 
-### V048. Один admission executor триггеров — 30–60 мин
+### V013B. Сохранять стандартный Task до ответа через SQLite backend — 10–15 минут
 
-Вход: V047. Дорожка: `core`.
-Результат: Trigger ID + правило + native turn → постоянный delivery request_key.
-Приёмка: Hook/observer/end-turn повтор не создаёт второй continuation; hold всегда проверен.
-Область: `crates/herder/src/automation/executor.rs`.
+Статус: queued. Входы: V013A.
 
-### V049. DST/restart/pause расписания — 30–45 мин
+Сохранять стандартный Task до ответа через SQLite backend. Частный результат исходного V013: SDK wire types и SQLite backend без in-memory authority. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V013A.
 
-Вход: V048. Дорожка: `core`.
-Результат: Clock как вход pure reducer; bounded catch-up и no overlap.
-Приёмка: DST fold/gap, restart после admission и pause не дают дубля.
-Область: `tests/automation/schedule.rs`.
+Приёмка: Получен проверяемый результат: Сохранять стандартный Task до ответа через SQLite backend. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-### V050. Остановка автопилота по цели/бюджету — 30–60 мин
+Пути: crates/herder/src/mcp/tasks.rs.
 
-Вход: V048. Дорожка: `core`.
-Результат: Existing goal judge contract как input; bounded continuation, явный failure.
-Приёмка: Goal done, quota unknown/denied и HumanStop не вызывают retry-loop; одна continuation на turn.
-Область: `crates/herder/src/automation/autopilot.rs`.
+### V014. Проверить повтор input и отмену уже принятой операции — 10–15 минут
 
+Статус: queued. Входы: V014B.
 
-## Адаптеры
+Проверить повтор input и отмену уже принятой операции. Частный результат исходного V014: Persist pending inputs и ответы по ключам; cancel intent отдельно от effect outcome. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V014B.
 
-### V051. Нативный тестовый контур и endpoint — 30–60 мин
+Приёмка: Повтор input не продолжает дважды; cancel после admission не выдаёт отмену эффекта. Это точка объединения всей цепочки V014A, V014B, V014.
 
-Вход: V010, V023, V025. Дорожка: `qa`.
-Результат: Изолированные profiles, deterministic model endpoint для поддерживающих клиентов, receipt schema.
-Приёмка: Native процесс отличим от fake adapter; никакого личного аккаунта/звонка; отдельные browser test identities.
-Область: `tests/native/harness_runner.rs`.
+Пути: crates/herder/src/store/task_inputs.rs.
 
-### V052. Codex: подтвердить точный native контракт — 25–45 мин
+### V014A. Сохранять pending input и однократное принятие ответа — 10–15 минут
 
-Вход: V006, V051. Дорожка: `adapter:codex`.
-Результат: Один versioned app-server JSON-RPC: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.
-Приёмка: Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.
-Область: `acceptance/contracts/codex.md`.
+Статус: queued. Входы: V013.
 
-### V053. Codex: соединение одного instance — 30–60 мин
+Сохранять pending input и однократное принятие ответа. Частный результат исходного V014: Persist pending inputs и ответы по ключам; cancel intent отдельно от effect outcome. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V013.
 
-Вход: V052. Дорожка: `adapter:codex`.
-Результат: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.
-Приёмка: Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.
-Область: `crates/herder/src/adapters/codex/connection.rs`.
-Неопределённость: Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный.
+Приёмка: Получен проверяемый результат: Сохранять pending input и однократное принятие ответа. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-### V054. Codex: session list и recent — 30–60 мин
+Пути: crates/herder/src/store/task_inputs.rs.
 
-Вход: V053, V028. Дорожка: `adapter:codex`.
-Результат: Одна подтверждённая native read route → адреса/status/последние user+assistant.
-Приёмка: Две сессии возвращают свои роли/turn refs; partial отмечен.
-Область: `crates/herder/src/adapters/codex/read.rs`.
+### V014B. Провести cancel через intent с отдельным исходом эффекта — 10–15 минут
 
-### V055. Codex: создать и сверить session ID — 30–60 мин
+Статус: queued. Входы: V014A.
 
-Вход: V054, V023. Дорожка: `adapter:codex`.
-Результат: Одна native create route; request correlation и readback.
-Приёмка: Точное native ID, creator сохраняется; disconnect не запускает второй create.
-Область: `crates/herder/src/adapters/codex/create.rs`.
+Провести cancel через intent с отдельным исходом эффекта. Частный результат исходного V014: Persist pending inputs и ответы по ключам; cancel intent отдельно от effect outcome. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V014A.
 
-### V056. Codex: доставить и сверить input — 30–60 мин
+Приёмка: Получен проверяемый результат: Провести cancel через intent с отдельным исходом эффекта. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V055, V024. Дорожка: `adapter:codex`.
-Результат: Одна native send route; поддерживаемые modes кодируются явно; native receipt.
-Приёмка: Один input readback; unsupported mode до send; unknown после разрыва не replay.
-Область: `crates/herder/src/adapters/codex/deliver.rs`.
+Пути: crates/herder/src/store/task_inputs.rs.
 
-### V057. Codex: transcript страницы — 30–60 мин
+### V015. Подтвердить восстановление после сбоя в admission — 10–15 минут
 
-Вход: V056, V029, V030. Дорожка: `adapter:codex`.
-Результат: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса.
-Приёмка: Первая/последняя страница и role blocks не теряются; чужой cursor rejected.
-Область: `crates/herder/src/adapters/codex/transcript.rs`.
+Статус: queued. Входы: V015B.
 
-### V058. Codex: interrupt и параметры — 30–60 мин
+Подтвердить восстановление после сбоя в admission. Частный результат исходного V015: Restart dispatcher читает native receipt по стабильной корреляции, без send. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V015B.
 
-Вход: V057, V025, V034, V032. Дорожка: `adapter:codex`.
-Результат: Только доказанные stop/model/permission methods; unsupported явно, не успех.
-Приёмка: Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control.
-Область: `crates/herder/src/adapters/codex/control.rs`.
+Приёмка: Kill после dispatching/admission даёт confirmed или unknown; unknown не получает safe retry. Это точка объединения всей цепочки V015A, V015B, V015.
 
-### V059. Codex: подключить context bridge — 25–45 мин
+Пути: crates/herder/src/application/reconcile.rs.
 
-Вход: V058, V046. Дорожка: `adapter:codex`.
-Результат: Привязка self и один подтверждённый startup/resume/compact hook; absence явная.
-Приёмка: Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся.
-Область: `crates/herder/src/adapters/codex/context.rs`.
+### V015A. Сопоставить dispatching intent с точной native квитанцией — 10–15 минут
 
-### V060. Codex: установленная тестовая вертикаль — 30–60 мин
+Статус: queued. Входы: V012, V006.
 
-Вход: V059, V051, V016. Дорожка: `adapter:codex`.
-Результат: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop.
-Приёмка: Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane.
-Область: `acceptance/native/codex/`.
+Сопоставить dispatching intent с точной native квитанцией. Частный результат исходного V015: Restart dispatcher читает native receipt по стабильной корреляции, без send. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V012, V006.
 
-### V061. OpenCode: подтвердить точный native контракт — 25–45 мин
+Приёмка: Получен проверяемый результат: Сопоставить dispatching intent с точной native квитанцией. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V006, V051. Дорожка: `adapter:opencode`.
-Результат: Один versioned HTTP/events: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.
-Приёмка: Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.
-Область: `acceptance/contracts/opencode.md`.
+Пути: crates/herder/src/application/reconcile.rs.
 
-### V062. OpenCode: соединение одного instance — 30–60 мин
+### V015B. Восстанавливать confirmed или unknown без новой отправки — 10–15 минут
 
-Вход: V061. Дорожка: `adapter:opencode`.
-Результат: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.
-Приёмка: Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.
-Область: `crates/herder/src/adapters/opencode/connection.rs`.
-Неопределённость: Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный.
+Статус: queued. Входы: V015A.
 
-### V063. OpenCode: session list и recent — 30–60 мин
+Восстанавливать confirmed или unknown без новой отправки. Частный результат исходного V015: Restart dispatcher читает native receipt по стабильной корреляции, без send. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V015A.
 
-Вход: V062, V028. Дорожка: `adapter:opencode`.
-Результат: Одна подтверждённая native read route → адреса/status/последние user+assistant.
-Приёмка: Две сессии возвращают свои роли/turn refs; partial отмечен.
-Область: `crates/herder/src/adapters/opencode/read.rs`.
+Приёмка: Получен проверяемый результат: Восстанавливать confirmed или unknown без новой отправки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-### V064. OpenCode: создать и сверить session ID — 30–60 мин
+Пути: crates/herder/src/application/reconcile.rs.
 
-Вход: V063, V023. Дорожка: `adapter:opencode`.
-Результат: Одна native create route; request correlation и readback.
-Приёмка: Точное native ID, creator сохраняется; disconnect не запускает второй create.
-Область: `crates/herder/src/adapters/opencode/create.rs`.
+### V016. Проверить старый request_key после истечения Task — 10–15 минут
 
-### V065. OpenCode: доставить и сверить input — 30–60 мин
+Статус: queued. Входы: V016B.
 
-Вход: V064, V024. Дорожка: `adapter:opencode`.
-Результат: Одна native send route; поддерживаемые modes кодируются явно; native receipt.
-Приёмка: Один input readback; unsupported mode до send; unknown после разрыва не replay.
-Область: `crates/herder/src/adapters/opencode/deliver.rs`.
+Проверить старый request_key после истечения Task. Частный результат исходного V016: Tombstone дедупликации/удалённого текста, правила expiry. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V016B.
 
-### V066. OpenCode: transcript страницы — 30–60 мин
+Приёмка: Истёкший Task и удалённый transcript не позволяют повтор request_key выполнить эффект. Это точка объединения всей цепочки V016A, V016B, V016.
 
-Вход: V065, V029, V030. Дорожка: `adapter:opencode`.
-Результат: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса.
-Приёмка: Первая/последняя страница и role blocks не теряются; чужой cursor rejected.
-Область: `crates/herder/src/adapters/opencode/transcript.rs`.
+Пути: crates/herder/src/store/retention.rs.
 
-### V067. OpenCode: interrupt и параметры — 30–60 мин
+### V016A. Разделить сроки Task, текста и дедупликационной квитанции — 10–15 минут
 
-Вход: V066, V025, V034, V032. Дорожка: `adapter:opencode`.
-Результат: Только доказанные stop/model/permission methods; unsupported явно, не успех.
-Приёмка: Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control.
-Область: `crates/herder/src/adapters/opencode/control.rs`.
+Статус: queued. Входы: V015.
 
-### V068. OpenCode: подключить context bridge — 25–45 мин
+Разделить сроки Task, текста и дедупликационной квитанции. Частный результат исходного V016: Tombstone дедупликации/удалённого текста, правила expiry. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V015.
 
-Вход: V067, V046. Дорожка: `adapter:opencode`.
-Результат: Привязка self и один подтверждённый startup/resume/compact hook; absence явная.
-Приёмка: Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся.
-Область: `crates/herder/src/adapters/opencode/context.rs`.
+Приёмка: Получен проверяемый результат: Разделить сроки Task, текста и дедупликационной квитанции. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-### V069. OpenCode: установленная тестовая вертикаль — 30–60 мин
+Пути: crates/herder/src/store/retention.rs.
 
-Вход: V068, V051, V016. Дорожка: `adapter:opencode`.
-Результат: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop.
-Приёмка: Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane.
-Область: `acceptance/native/opencode/`.
+### V016B. Сохранять tombstone после удаления текста и Task — 10–15 минут
 
-### V070. ZCode: подтвердить точный native контракт — 25–45 мин
+Статус: queued. Входы: V016A.
 
-Вход: V006, V051. Дорожка: `adapter:zcode`.
-Результат: Один versioned подтверждаемый native session transport: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.
-Приёмка: Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.
-Область: `acceptance/contracts/zcode.md`.
+Сохранять tombstone после удаления текста и Task. Частный результат исходного V016: Tombstone дедупликации/удалённого текста, правила expiry. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V016A.
 
-### V071. ZCode: соединение одного instance — 30–60 мин
+Приёмка: Получен проверяемый результат: Сохранять tombstone после удаления текста и Task. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V070. Дорожка: `adapter:zcode`.
-Результат: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.
-Приёмка: Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.
-Область: `crates/herder/src/adapters/zcode/connection.rs`.
-Неопределённость: Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный.
+Пути: crates/herder/src/store/retention.rs.
 
-### V072. ZCode: session list и recent — 30–60 мин
+### V017. Проверить чужой principal, страницы и срок cache — 10–15 минут
 
-Вход: V071, V028. Дорожка: `adapter:zcode`.
-Результат: Одна подтверждённая native read route → адреса/status/последние user+assistant.
-Приёмка: Две сессии возвращают свои роли/turn refs; partial отмечен.
-Область: `crates/herder/src/adapters/zcode/read.rs`.
+Статус: queued. Входы: V017B.
 
-### V073. ZCode: создать и сверить session ID — 30–60 мин
+Проверить чужой principal, страницы и срок cache. Частный результат исходного V017: Session/task/transcript resources с remote-readable refs и pagination. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V017B.
 
-Вход: V072, V023. Дорожка: `adapter:zcode`.
-Результат: Одна native create route; request correlation и readback.
-Приёмка: Точное native ID, creator сохраняется; disconnect не запускает второй create.
-Область: `crates/herder/src/adapters/zcode/create.rs`.
+Приёмка: Другой principal не читает result/Task; cacheScope private и ttlMs корректны. Это точка объединения всей цепочки V017A, V017B, V017.
 
-### V074. ZCode: доставить и сверить input — 30–60 мин
+Пути: crates/herder/src/mcp/resources.rs.
 
-Вход: V073, V024. Дорожка: `adapter:zcode`.
-Результат: Одна native send route; поддерживаемые modes кодируются явно; native receipt.
-Приёмка: Один input readback; unsupported mode до send; unknown после разрыва не replay.
-Область: `crates/herder/src/adapters/zcode/deliver.rs`.
+### V017A. Адресовать session, Task и transcript стандартными MCP resource URI — 10–15 минут
 
-### V075. ZCode: transcript страницы — 30–60 мин
+Статус: queued. Входы: V010, V008.
 
-Вход: V074, V029, V030. Дорожка: `adapter:zcode`.
-Результат: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса.
-Приёмка: Первая/последняя страница и role blocks не теряются; чужой cursor rejected.
-Область: `crates/herder/src/adapters/zcode/transcript.rs`.
+Адресовать session, Task и transcript стандартными MCP resource URI. Частный результат исходного V017: Session/task/transcript resources с remote-readable refs и pagination. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V010, V008.
 
-### V076. ZCode: interrupt и параметры — 30–60 мин
+Приёмка: Получен проверяемый результат: Адресовать session, Task и transcript стандартными MCP resource URI. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V075, V025, V034, V032. Дорожка: `adapter:zcode`.
-Результат: Только доказанные stop/model/permission methods; unsupported явно, не успех.
-Приёмка: Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control.
-Область: `crates/herder/src/adapters/zcode/control.rs`.
+Пути: crates/herder/src/mcp/resources.rs.
 
-### V077. ZCode: подключить context bridge — 25–45 мин
+### V017B. Применять ACL и приватный cache к каждому чтению — 10–15 минут
 
-Вход: V076, V046. Дорожка: `adapter:zcode`.
-Результат: Привязка self и один подтверждённый startup/resume/compact hook; absence явная.
-Приёмка: Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся.
-Область: `crates/herder/src/adapters/zcode/context.rs`.
+Статус: queued. Входы: V017A.
 
-### V078. ZCode: установленная тестовая вертикаль — 30–60 мин
+Применять ACL и приватный cache к каждому чтению. Частный результат исходного V017: Session/task/transcript resources с remote-readable refs и pagination. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V017A.
 
-Вход: V077, V051, V016. Дорожка: `adapter:zcode`.
-Результат: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop.
-Приёмка: Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane.
-Область: `acceptance/native/zcode/`.
+Приёмка: Получен проверяемый результат: Применять ACL и приватный cache к каждому чтению. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-### V079. ChatGPT: подтвердить точный native контракт — 25–45 мин
+Пути: crates/herder/src/mcp/resources.rs.
 
-Вход: V006, V051. Дорожка: `adapter:chatgpt`.
-Результат: Один versioned авторизованный browser profile через разрешённый маршрут: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.
-Приёмка: Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.
-Область: `acceptance/contracts/chatgpt.md`.
+### V018. Проверить медленного подписчика без блокировки других клиентов — 10–15 минут
 
-### V080. ChatGPT: соединение одного instance — 30–60 мин
+Статус: queued. Входы: V018B.
 
-Вход: V079. Дорожка: `adapter:chatgpt`.
-Результат: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.
-Приёмка: Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.
-Область: `crates/herder/src/adapters/chatgpt/connection.rs`.
-Неопределённость: Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный.
+Проверить медленного подписчика без блокировки других клиентов. Частный результат исходного V018: subscriptions/listen filters; drop→snapshot, без SSE replay. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V018B.
 
-### V081. ChatGPT: session list и recent — 30–60 мин
+Приёмка: Медленный клиент не блокирует ноду; reconnect видит current revision без дублирования эффектов. Это точка объединения всей цепочки V018A, V018B, V018.
 
-Вход: V080, V028. Дорожка: `adapter:chatgpt`.
-Результат: Одна подтверждённая native read route → адреса/status/последние user+assistant.
-Приёмка: Две сессии возвращают свои роли/turn refs; partial отмечен.
-Область: `crates/herder/src/adapters/chatgpt/read.rs`.
+Пути: crates/herder/src/mcp/subscriptions.rs.
 
-### V082. ChatGPT: создать и сверить session ID — 30–60 мин
+### V018A. Отдавать изменения по фильтру с ограниченной очередью — 10–15 минут
 
-Вход: V081, V023. Дорожка: `adapter:chatgpt`.
-Результат: Одна native create route; request correlation и readback.
-Приёмка: Точное native ID, creator сохраняется; disconnect не запускает второй create.
-Область: `crates/herder/src/adapters/chatgpt/create.rs`.
+Статус: queued. Входы: V017.
 
-### V083. ChatGPT: доставить и сверить input — 30–60 мин
+Отдавать изменения по фильтру с ограниченной очередью. Частный результат исходного V018: subscriptions/listen filters; drop→snapshot, без SSE replay. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V017.
 
-Вход: V082, V024. Дорожка: `adapter:chatgpt`.
-Результат: Одна native send route; поддерживаемые modes кодируются явно; native receipt.
-Приёмка: Один input readback; unsupported mode до send; unknown после разрыва не replay.
-Область: `crates/herder/src/adapters/chatgpt/deliver.rs`.
+Приёмка: Получен проверяемый результат: Отдавать изменения по фильтру с ограниченной очередью. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-### V084. ChatGPT: transcript страницы — 30–60 мин
+Пути: crates/herder/src/mcp/subscriptions.rs.
 
-Вход: V083, V029, V030. Дорожка: `adapter:chatgpt`.
-Результат: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса.
-Приёмка: Первая/последняя страница и role blocks не теряются; чужой cursor rejected.
-Область: `crates/herder/src/adapters/chatgpt/transcript.rs`.
+### V018B. Восстанавливать snapshot после обрыва или переполнения — 10–15 минут
 
-### V085. ChatGPT: interrupt и параметры — 30–60 мин
+Статус: queued. Входы: V018A.
 
-Вход: V084, V025, V034, V032. Дорожка: `adapter:chatgpt`.
-Результат: Только доказанные stop/model/permission methods; unsupported явно, не успех.
-Приёмка: Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control.
-Область: `crates/herder/src/adapters/chatgpt/control.rs`.
+Восстанавливать snapshot после обрыва или переполнения. Частный результат исходного V018: subscriptions/listen filters; drop→snapshot, без SSE replay. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V018A.
 
-### V086. ChatGPT: подключить context bridge — 25–45 мин
+Приёмка: Получен проверяемый результат: Восстанавливать snapshot после обрыва или переполнения. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V085, V046. Дорожка: `adapter:chatgpt`.
-Результат: Привязка self и один подтверждённый startup/resume/compact hook; absence явная.
-Приёмка: Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся.
-Область: `crates/herder/src/adapters/chatgpt/context.rs`.
+Пути: crates/herder/src/mcp/subscriptions.rs.
 
-### V087. ChatGPT: установленная тестовая вертикаль — 30–60 мин
+### V019. Проверить границы manifest и отсутствие ложной activation — 10–15 минут
 
-Вход: V086, V051, V016. Дорожка: `adapter:chatgpt`.
-Результат: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop.
-Приёмка: Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane.
-Область: `acceptance/native/chatgpt/`.
+Статус: queued. Входы: V019B.
 
-### V088. Z.ai: подтвердить точный native контракт — 25–45 мин
+Проверить границы manifest и отсутствие ложной activation. Частный результат исходного V019: skills/list/get и resources/read с digest; directoryRead не объявлен. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V019B.
 
-Вход: V006, V051. Дорожка: `adapter:z-ai`.
-Результат: Один versioned авторизованный browser profile через разрешённый маршрут: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции.
-Приёмка: Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success.
-Область: `acceptance/contracts/z-ai.md`.
+Приёмка: Проверены manifest boundary, приватность и content hash; read не объявляет activation. Это точка объединения всей цепочки V019A, V019B, V019.
 
-### V089. Z.ai: соединение одного instance — 30–60 мин
+Пути: crates/herder/src/mcp/skills.rs.
 
-Вход: V088. Дорожка: `adapter:z-ai`.
-Результат: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте.
-Приёмка: Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю.
-Область: `crates/herder/src/adapters/z_ai/connection.rs`.
-Неопределённость: Объём интеграции неизвестен до подтверждения native route предыдущим gate; 30–60 минут покрывают только готовый versioned transport. При отсутствующем API нужны новые slices, прогноз полного срока пока условный.
+### V019A. Отдавать единый Skills manifest и content hash — 10–15 минут
 
-### V090. Z.ai: session list и recent — 30–60 мин
+Статус: queued. Входы: V017.
 
-Вход: V089, V028. Дорожка: `adapter:z-ai`.
-Результат: Одна подтверждённая native read route → адреса/status/последние user+assistant.
-Приёмка: Две сессии возвращают свои роли/turn refs; partial отмечен.
-Область: `crates/herder/src/adapters/z_ai/read.rs`.
+Отдавать единый Skills manifest и content hash. Частный результат исходного V019: skills/list/get и resources/read с digest; directoryRead не объявлен. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V017.
 
-### V091. Z.ai: создать и сверить session ID — 30–60 мин
+Приёмка: Получен проверяемый результат: Отдавать единый Skills manifest и content hash. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V090, V023. Дорожка: `adapter:z-ai`.
-Результат: Одна native create route; request correlation и readback.
-Приёмка: Точное native ID, creator сохраняется; disconnect не запускает второй create.
-Область: `crates/herder/src/adapters/z_ai/create.rs`.
+Пути: crates/herder/src/mcp/skills.rs.
 
-### V092. Z.ai: доставить и сверить input — 30–60 мин
+### V019B. Читать Skill через resource с теми же правами — 10–15 минут
 
-Вход: V091, V024. Дорожка: `adapter:z-ai`.
-Результат: Одна native send route; поддерживаемые modes кодируются явно; native receipt.
-Приёмка: Один input readback; unsupported mode до send; unknown после разрыва не replay.
-Область: `crates/herder/src/adapters/z_ai/deliver.rs`.
+Статус: queued. Входы: V019A.
 
-### V093. Z.ai: transcript страницы — 30–60 мин
+Читать Skill через resource с теми же правами. Частный результат исходного V019: skills/list/get и resources/read с digest; directoryRead не объявлен. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V019A.
 
-Вход: V092, V029, V030. Дорожка: `adapter:z-ai`.
-Результат: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса.
-Приёмка: Первая/последняя страница и role blocks не теряются; чужой cursor rejected.
-Область: `crates/herder/src/adapters/z_ai/transcript.rs`.
+Приёмка: Получен проверяемый результат: Читать Skill через resource с теми же правами. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-### V094. Z.ai: interrupt и параметры — 30–60 мин
+Пути: crates/herder/src/mcp/skills.rs.
 
-Вход: V093, V025, V034, V032. Дорожка: `adapter:z-ai`.
-Результат: Только доказанные stop/model/permission methods; unsupported явно, не успех.
-Приёмка: Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control.
-Область: `crates/herder/src/adapters/z_ai/control.rs`.
+### V020. Проверить недоступный origin без локального fallback — 10–15 минут
 
-### V095. Z.ai: подключить context bridge — 25–45 мин
+Статус: queued. Входы: V020B.
 
-Вход: V094, V046. Дорожка: `adapter:z-ai`.
-Результат: Привязка self и один подтверждённый startup/resume/compact hook; absence явная.
-Приёмка: Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся.
-Область: `crates/herder/src/adapters/z_ai/context.rs`.
+Проверить недоступный origin без локального fallback. Частный результат исходного V020: Peer auth, точный instance, deadline и сохранение errors; без local fallback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V020B.
 
-### V096. Z.ai: установленная тестовая вертикаль — 30–60 мин
+Приёмка: Две конфигурируемые ноды; чужой scope denied, недоступный origin остаётся unavailable. Это точка объединения всей цепочки V020A, V020B, V020.
 
-Вход: V095, V051, V016. Дорожка: `adapter:z-ai`.
-Результат: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop.
-Приёмка: Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane.
-Область: `acceptance/native/z-ai/`.
+Пути: crates/herder/src/peer/route.rs.
 
+### V020A. Выбирать origin node из точного адреса instance — 10–15 минут
 
-## Ранняя поставка
+Статус: queued. Входы: V010, V005.
 
-### V097. Выпустить тестовую вертикаль Codex + OpenCode — 30–60 мин
+Выбирать origin node из точного адреса instance. Частный результат исходного V020: Peer auth, точный instance, deadline и сохранение errors; без local fallback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V010, V005.
 
-Вход: V060, V069, V003. Дорожка: `release`.
-Результат: Установленный dev artifact и один основной MCP client с durable Task polling.
-Приёмка: Create/deliver/context работают через реальные adapters; missing extension не скрыт.
-Область: `release/dev-vertical/`.
+Приёмка: Получен проверяемый результат: Выбирать origin node из точного адреса instance. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
+Пути: crates/herder/src/peer/route.rs.
 
-## Сквозная приёмка
+### V020B. Передавать identity, deadline и исходную ошибку peer — 10–15 минут
 
-### V098. Два Codex instance на одной ноде — 30–60 мин
+Статус: queued. Входы: V020A.
 
-Вход: V060. Дорожка: `qa`.
-Результат: Изолированные profiles и двунаправленная отправка/чтение.
-Приёмка: В обоих профилях свои IDs/history; fixture одинакового native ID не смешивает ключи.
-Область: `acceptance/multi/codex/`.
+Передавать identity, deadline и исходную ошибку peer. Частный результат исходного V020: Peer auth, точный instance, deadline и сохранение errors; без local fallback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V020A.
 
-### V099. Два OpenCode instance на одной ноде — 30–60 мин
+Приёмка: Получен проверяемый результат: Передавать identity, deadline и исходную ошибку peer. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V069. Дорожка: `qa`.
-Результат: Изолированные connections и проверка control/history.
-Приёмка: Отправка и stop одного instance не касаются второго.
-Область: `acceptance/multi/opencode/`.
+Пути: crates/herder/src/peer/route.rs.
 
-### V100. Два браузерных профиля — 30–60 мин
+### V021. Проверить proxy restart и запрет чужого результата — 10–15 минут
 
-Вход: V087. Дорожка: `qa`.
-Результат: Два разрешённых тестовых profile refs и отдельные вкладки.
-Приёмка: History/send не пересекают аккаунты; нет использования чужой вкладки или credentials в receipt.
-Область: `acceptance/multi/browser/`.
+Статус: queued. Входы: V021B.
 
-### V101. Две ноды и remote Task readback — 30–60 мин
+Проверить proxy restart и запрет чужого результата. Частный результат исходного V021: Origin Task ref и маршрутизация standard polling/cancel/read по ACL. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V021B.
 
-Вход: V097, V021. Дорожка: `qa`.
-Результат: Codex→OpenCode через объявленные endpoints; exact origin refs.
-Приёмка: Чтение result с удалённой ноды доступно клиенту; offline coverage partial, no local retry.
-Область: `acceptance/multi/nodes/`.
+Приёмка: Proxy restart не дублирует native intent; origin task/result остаются теми же. Это точка объединения всей цепочки V021A, V021B, V021.
 
-### V102. Creator/sender после компакции — 30–60 мин
+Пути: crates/herder/src/peer/tasks.rs.
 
-Вход: V097, V044, V046, V027. Дорожка: `qa`.
-Результат: A создаёт B, C пишет B; очистить context и рестарт Herder; B отвечает C.
-Приёмка: Native readback одного ответа C; A остался creator; доказана инъекция, не только resource read.
-Область: `acceptance/context/compaction/`.
+### V021A. Сохранять origin Task ref без второго lifecycle — 10–15 минут
 
-### V103. Native admission crash matrix — 30–60 мин
+Статус: queued. Входы: V020, V013, V017.
 
-Вход: V097, V015. Дорожка: `qa`.
-Результат: Три точки сбоя: до вызова, после admission, после completion до ответа.
-Приёмка: Повтор key не создаёт input; unknown без native lookup остаётся unknown.
-Область: `acceptance/native/crash/`.
+Сохранять origin Task ref без второго lifecycle. Частный результат исходного V021: Origin Task ref и маршрутизация standard polling/cancel/read по ACL. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V020, V013, V017.
 
-### V127. Свежий пользователь: выбор инструмента и errors — 30–60 мин
+Приёмка: Получен проверяемый результат: Сохранять origin Task ref без второго lifecycle. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V126, V106, V104. Дорожка: `qa`.
-Результат: Свежий контекст без исходников: найти роли, исправить wrong mode/field и ответить отправителю.
-Приёмка: Trace показывает исправление за один повтор без новых effects; UNKNOWN/forbidden не вызывают unsafe retry.
-Область: `acceptance/usability/`.
+Пути: crates/herder/src/peer/tasks.rs.
 
-### V128. Свежий агент при выключенном MCP — 30–60 мин
+### V021B. Маршрутизировать get, cancel и resource read к origin — 10–15 минут
 
-Вход: V125, V043, V112. Дорожка: `qa`.
-Результат: Остановить только test daemon; read markers→claim→безопасный release через runner→receipt.
-Приёмка: Ноль вопросов о назначении свободного owner, одна операция; повтор MCP видит тот же owner.
-Область: `acceptance/recovery/offline/`.
+Статус: queued. Входы: V021A.
 
-### V141. Bounded нагрузочный сценарий — 30–60 мин
+Маршрутизировать get, cancel и resource read к origin. Частный результат исходного V021: Origin Task ref и маршрутизация standard polling/cancel/read по ACL. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V021A.
 
-Вход: V097, V030, V018. Дорожка: `qa`.
-Результат: Фиксированный corpus, concurrent read/send/index и slow subscriber; baseline metrics.
-Приёмка: Нет busy loop/unbounded queue; latency/RSS и границы workload записаны, starvation не наблюдается.
-Область: `acceptance/performance/`.
+Приёмка: Получен проверяемый результат: Маршрутизировать get, cancel и resource read к origin. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
+Пути: crates/herder/src/peer/tasks.rs.
 
-## Потребители
+### V022. Проверить происхождение после рестарта и unknown parent — 10–15 минут
 
-### V104. CLI обычных операций — 30–60 мин
+Статус: queued. Входы: V022B.
 
-Вход: V097, V009. Дорожка: `clients`.
-Результат: Subcommands из тех же DTO/application, polling Tasks и чтение ресурсов.
-Приёмка: create/deliver/read ошибки и completion показаны раздельно; old routes отсутствуют.
-Область: `crates/herder/src/cli/main.rs`.
+Проверить происхождение после рестарта и unknown parent. Частный результат исходного V022: Создатель в create intent, native parent и происхождение отдельно. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V022B.
 
-### V105. Web UI чтение и reload — 30–60 мин
+Приёмка: Restart между intent и native receipt не меняет creator; неизвестное происхождение не угадано. Это точка объединения всей цепочки V022A, V022B, V022.
 
-Вход: V097, V017. Дорожка: `web`.
-Результат: Typed client sessions/recent/transcript, partial/turn refs.
-Приёмка: Обычный браузер показывает обе роли после reload и remote resource.
-Область: `web/src/session.ts`.
+Пути: crates/herder/src/store/lineage.rs.
 
-### V106. Web UI действия и Task lifecycle — 30–60 мин
+### V022A. Сохранять creator и request_ref в create intent — 10–15 минут
 
-Вход: V105, V033. Дорожка: `web`.
-Результат: Create/deliver/stop/settings; standard polling и cancelled/unknown rendering.
-Приёмка: Повтор кнопки не даёт duplicate; unknown не предлагает повторную отправку.
-Область: `web/src/control.ts`.
+Статус: queued. Входы: V012.
 
-### V107. Hub: зафиксировать точный контракт потребителя — 20–40 мин
+Сохранять creator и request_ref в create intent. Частный результат исходного V022: Создатель в create intent, native parent и происхождение отдельно. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V012.
 
-Вход: V097, V002, V019, V018. Дорожка: `consumer:hub`.
-Результат: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route.
-Приёмка: target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции.
-Область: `integrations/consumers/hub/target.json`.
+Приёмка: Получен проверяемый результат: Сохранять creator и request_ref в create intent. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-### V108. Hub: перевести один вызывающий маршрут — 30–60 мин
+Пути: crates/herder/src/store/lineage.rs.
 
-Вход: V107. Дорожка: `consumer:hub`.
-Результат: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях.
-Приёмка: Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены.
-Область: `consumer:hub:paths-from-target.json`.
+### V022B. Добавлять native parent отдельно от creator после admission — 10–15 минут
 
-### V109. Hub: проверить реальный consumer readback — 30–60 мин
+Статус: queued. Входы: V022A.
 
-Вход: V108. Дорожка: `consumer:hub`.
-Результат: Один изолированный сценарий через обычного потребителя и native result.
-Приёмка: Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль.
-Область: `acceptance/consumers/hub/`.
+Добавлять native parent отдельно от creator после admission. Частный результат исходного V022: Создатель в create intent, native parent и происхождение отдельно. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V022A.
 
-### V110. LHC: зафиксировать точный контракт потребителя — 20–40 мин
+Приёмка: Получен проверяемый результат: Добавлять native parent отдельно от creator после admission. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V097, V039, V043. Дорожка: `consumer:lhc`.
-Результат: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route.
-Приёмка: target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции.
-Область: `integrations/consumers/lhc/target.json`.
+Пути: crates/herder/src/store/lineage.rs.
 
-### V111. LHC: перевести один вызывающий маршрут — 30–60 мин
+### V023. Подтвердить одну созданную сессию точным readback — 10–15 минут
 
-Вход: V110. Дорожка: `consumer:lhc`.
-Результат: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях.
-Приёмка: Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены.
-Область: `consumer:lhc:paths-from-target.json`.
+Статус: queued. Входы: V023B.
 
-### V112. LHC: проверить реальный consumer readback — 30–60 мин
+Подтвердить одну созданную сессию точным readback. Частный результат исходного V023: Application create проверяет capability/auth и связывает intent с native ID. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V023B.
 
-Вход: V111. Дорожка: `consumer:lhc`.
-Результат: Один изолированный сценарий через обычного потребителя и native result.
-Приёмка: Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль.
-Область: `acceptance/consumers/lhc/`.
+Приёмка: Fake native create вызывается один раз; completion только после session readback. Это точка объединения всей цепочки V023A, V023B, V023.
 
-### V113. Notice Place: зафиксировать точный контракт потребителя — 20–40 мин
+Пути: crates/herder/src/application/create.rs.
 
-Вход: V097, V035. Дорожка: `consumer:noticeplace`.
-Результат: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route.
-Приёмка: target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции.
-Область: `integrations/consumers/noticeplace/target.json`.
+### V023A. Проверять instance, права и capability перед локальным create — 10–15 минут
 
-### V114. Notice Place: перевести один вызывающий маршрут — 30–60 мин
+Статус: queued. Входы: V022, V006, V013.
 
-Вход: V113. Дорожка: `consumer:noticeplace`.
-Результат: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях.
-Приёмка: Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены.
-Область: `consumer:noticeplace:paths-from-target.json`.
+Проверять instance, права и capability перед локальным create. Частный результат исходного V023: Application create проверяет capability/auth и связывает intent с native ID. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V022, V006, V013.
 
-### V115. Notice Place: проверить реальный consumer readback — 30–60 мин
+Приёмка: Получен проверяемый результат: Проверять instance, права и capability перед локальным create. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V114. Дорожка: `consumer:noticeplace`.
-Результат: Один изолированный сценарий через обычного потребителя и native result.
-Приёмка: Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль.
-Область: `acceptance/consumers/noticeplace/`.
+Пути: crates/herder/src/application/create.rs.
 
-### V116. UserIO: зафиксировать точный контракт потребителя — 20–40 мин
+### V023B. Связать сохранённый intent с native session ID — 10–15 минут
 
-Вход: V097, V035, V017. Дорожка: `consumer:userio`.
-Результат: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route.
-Приёмка: target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции.
-Область: `integrations/consumers/userio/target.json`.
+Статус: queued. Входы: V023A.
 
-### V117. UserIO: перевести один вызывающий маршрут — 30–60 мин
+Связать сохранённый intent с native session ID. Частный результат исходного V023: Application create проверяет capability/auth и связывает intent с native ID. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V023A.
 
-Вход: V116. Дорожка: `consumer:userio`.
-Результат: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях.
-Приёмка: Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены.
-Область: `consumer:userio:paths-from-target.json`.
+Приёмка: Получен проверяемый результат: Связать сохранённый intent с native session ID. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-### V118. UserIO: проверить реальный consumer readback — 30–60 мин
+Пути: crates/herder/src/application/create.rs.
 
-Вход: V117. Дорожка: `consumer:userio`.
-Результат: Один изолированный сценарий через обычного потребителя и native result.
-Приёмка: Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль.
-Область: `acceptance/consumers/userio/`.
+### V024. Подтвердить busy и unsupported без неявного create — 10–15 минут
 
-### V119. ExManager Board: зафиксировать точный контракт потребителя — 20–40 мин
+Статус: queued. Входы: V024B.
 
-Вход: V097, V023, V024. Дорожка: `consumer:board`.
-Результат: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route.
-Приёмка: target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции.
-Область: `integrations/consumers/board/target.json`.
+Подтвердить busy и unsupported без неявного create. Частный результат исходного V024: current/queue/start, expected turn; implicit create и delayed send отсутствуют. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V024B.
 
-### V120. ExManager Board: перевести один вызывающий маршрут — 30–60 мин
+Приёмка: Busy/unsupported не подменяют режим; persisted intent предшествует submit. Это точка объединения всей цепочки V024A, V024B, V024.
 
-Вход: V119. Дорожка: `consumer:board`.
-Результат: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях.
-Приёмка: Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены.
-Область: `consumer:board:paths-from-target.json`.
+Пути: crates/herder/src/application/deliver.rs.
 
-### V121. ExManager Board: проверить реальный consumer readback — 30–60 мин
+### V024A. Разобрать current, queue и start без подмены режима — 10–15 минут
 
-Вход: V120. Дорожка: `consumer:board`.
-Результат: Один изолированный сценарий через обычного потребителя и native result.
-Приёмка: Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль.
-Область: `acceptance/consumers/board/`.
+Статус: queued. Входы: V012, V013, V015, V006.
 
-### V122. Секретарь: зафиксировать точный контракт потребителя — 20–40 мин
+Разобрать current, queue и start без подмены режима. Частный результат исходного V024: current/queue/start, expected turn; implicit create и delayed send отсутствуют. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V012, V013, V015, V006.
 
-Вход: V097, V087, V049. Дорожка: `consumer:secretary`.
-Результат: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route.
-Приёмка: target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции.
-Область: `integrations/consumers/secretary/target.json`.
+Приёмка: Получен проверяемый результат: Разобрать current, queue и start без подмены режима. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-### V123. Секретарь: перевести один вызывающий маршрут — 30–60 мин
+Пути: crates/herder/src/application/deliver.rs.
 
-Вход: V122. Дорожка: `consumer:secretary`.
-Результат: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях.
-Приёмка: Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены.
-Область: `consumer:secretary:paths-from-target.json`.
+### V024B. Отправлять сохранённый intent с expected turn — 10–15 минут
 
-### V124. Секретарь: проверить реальный consumer readback — 30–60 мин
+Статус: queued. Входы: V024A.
 
-Вход: V123. Дорожка: `consumer:secretary`.
-Результат: Один изолированный сценарий через обычного потребителя и native result.
-Приёмка: Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль.
-Область: `acceptance/consumers/secretary/`.
+Отправлять сохранённый intent с expected turn. Частный результат исходного V024: current/queue/start, expected turn; implicit create и delayed send отсутствуют. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V024A.
 
-### V125. Recovery Skill и локальная инструкция — 30–45 мин
+Приёмка: Получен проверяемый результат: Отправлять сохранённый intent с expected turn. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V019, V039, V045. Дорожка: `docs`.
-Результат: Один исходник инструкции и manifest template; expose Skills и package local copy.
-Приёмка: Отключённый MCP не мешает найти путь; команды read/claim с подставленным locator и без секретов.
-Область: `skills/herder-recovery/SKILL.md`.
+Пути: crates/herder/src/application/deliver.rs.
 
-### V126. Короткий Skill обычной координации — 30–45 мин
+### V025. Проверить гонку stop с отправкой и фактический interrupt — 10–15 минут
 
-Вход: V019, V102. Дорожка: `docs`.
-Результат: context→messages→reply_to, roster/worktree и errors; один источник примеров.
-Приёмка: Каталог/schema примеров совпадают; read skill и activation отмечены отдельно.
-Область: `skills/herder/SKILL.md`.
+Статус: queued. Входы: V025B.
 
+Проверить гонку stop с отправкой и фактический interrupt. Частный результат исходного V025: Durable hold перед interrupt; dispatch/stop сериализуют admission. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V025B.
 
-## Миграция
+Приёмка: Race stop/deliver: post-hold send не стартует; уже принятое действие отражено честно. Это точка объединения всей цепочки V025A, V025B, V025.
 
-### V129. Контракт одноразового импорта — 30–45 мин
+Пути: crates/herder/src/application/stop.rs.
 
-Вход: V011, V022, V027, V037. Дорожка: `migration`.
-Результат: Узкие схемы только сохраняемого state: holds/intents/lineage/messages/settings/ownership.
-Приёмка: Unknown provenance остаётся unknown; список active writers и read-only export для этих схем назван.
-Область: `migration/state-map.md`.
+### V025A. Записать HumanStop перед попыткой interrupt — 10–15 минут
 
-### V130. Импорт holds и intents — 30–60 мин
+Статус: queued. Входы: V024.
 
-Вход: V129, V016. Дорожка: `migration`.
-Результат: Offline importer сохраняет request keys, неизвестные исходы и tombstones; не исполняет ничего.
-Приёмка: Fixture повторов и HumanStop после импорта остаётся тем же; input digest/counts записаны.
-Область: `migration/import_effects.rs`.
+Записать HumanStop перед попыткой interrupt. Частный результат исходного V025: Durable hold перед interrupt; dispatch/stop сериализуют admission. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V024.
 
-### V131. Импорт lineage/settings/correspondence — 30–60 мин
+Приёмка: Получен проверяемый результат: Записать HumanStop перед попыткой interrupt. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V130. Дорожка: `migration`.
-Результат: Explicit schema transform, sender evidence, потерянный текст помечен.
-Приёмка: Creator не заменён sender; foreign refs не склеены; повтор import безопасен.
-Область: `migration/import_context.rs`.
+Пути: crates/herder/src/application/stop.rs.
 
-### V132. Ownership cutover без второго writer — 30–60 мин
+### V025B. Сериализовать hold и dispatch на admission boundary — 10–15 минут
 
-Вход: V131, V043. Дорожка: `migration`.
-Результат: Stop writers → проверка receipts → JSON owner import → старые writers остаются выключены.
-Приёмка: Git/DB fallback не активируется при падении MCP; fencing assumptions заменены target runner проверками.
-Область: `migration/ownership.rs`.
+Статус: queued. Входы: V025A.
 
-### V133. Репетиция migration на снимке — 30–60 мин
+Сериализовать hold и dispatch на admission boundary. Частный результат исходного V025: Durable hold перед interrupt; dispatch/stop сериализуют admission. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V025A.
 
-Вход: V132, V103. Дорожка: `migration`.
-Результат: Checksums/counts, run importer дважды, restart, no-send readback.
-Приёмка: Ноль native send/create; все holds/UNKNOWN сохранены; корректный отказ при corrupt input.
-Область: `acceptance/migration/rehearsal/`.
+Приёмка: Получен проверяемый результат: Сериализовать hold и dispatch на admission boundary. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-### V134. Rollback после новых записей — 30–60 мин
+Пути: crates/herder/src/application/stop.rs.
 
-Вход: V133. Дорожка: `migration`.
-Результат: Maintenance + сохранённый ledger + предыдущий новый binary/schema compatible; старый daemon не включать без reverse proof.
-Приёмка: New hold/receipt переживают откат; old writer не получает ownership; rollback отдельно от release.
-Область: `release/rollback.md`.
+### V026. Проверить повтор resume без второго хода — 10–15 минут
 
-### V135. Репетиция rollback с новым intent — 30–60 мин
+Статус: queued. Входы: V026B.
 
-Вход: V134. Дорожка: `migration`.
-Результат: Изолированный candidate принимает тестовый intent, rollback читает его без replay.
-Приёмка: Unknown/confirmed и HumanStop не потеряны; incompatible schema останавливает writes.
-Область: `acceptance/migration/rollback/`.
+Проверить повтор resume без второго хода. Частный результат исходного V026: Один request_key → один native turn; HumanStop требует отдельного человеческого права на снятие. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V026B.
 
+Приёмка: Дубликат resume не создаёт ход; флаг humanRequested от модели не снимает hold. Это точка объединения всей цепочки V026A, V026B, V026.
 
-## Поставка
+Пути: crates/herder/src/application/resume.rs.
 
-### V136. Артефакт linux/amd64 — 25–50 мин
+### V026A. Проводить одноразовый resume через общий intent — 10–15 минут
 
-Вход: V104, V106, V125. Дорожка: `build:linux-amd64`.
-Результат: Reproducible locked build с embedded UI/Skills, digest и platform manifest.
-Приёмка: Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен.
-Область: `release/build/linux-amd64/`.
+Статус: queued. Входы: V025.
 
-### V137. Артефакт linux/arm64 — 25–50 мин
+Проводить одноразовый resume через общий intent. Частный результат исходного V026: Один request_key → один native turn; HumanStop требует отдельного человеческого права на снятие. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V025.
 
-Вход: V104, V106, V125. Дорожка: `build:linux-arm64`.
-Результат: Reproducible locked build с embedded UI/Skills, digest и platform manifest.
-Приёмка: Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен.
-Область: `release/build/linux-arm64/`.
+Приёмка: Получен проверяемый результат: Проводить одноразовый resume через общий intent. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-### V138. Артефакт macos/arm64 — 25–50 мин
+Пути: crates/herder/src/application/resume.rs.
 
-Вход: V104, V106, V125. Дорожка: `build:macos-arm64`.
-Результат: Reproducible locked build с embedded UI/Skills, digest и platform manifest.
-Приёмка: Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен.
-Область: `release/build/macos-arm64/`.
+### V026B. Отделить право снять HumanStop от флага модели — 10–15 минут
 
-### V139. Артефакт macos/amd64 — 25–50 мин
+Статус: queued. Входы: V026A.
 
-Вход: V104, V106, V125. Дорожка: `build:macos-amd64`.
-Результат: Reproducible locked build с embedded UI/Skills, digest и platform manifest.
-Приёмка: Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен.
-Область: `release/build/macos-amd64/`.
+Отделить право снять HumanStop от флага модели. Частный результат исходного V026: Один request_key → один native turn; HumanStop требует отдельного человеческого права на снятие. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V026A.
 
-### V140. Параметризованный installer — 30–60 мин
+Приёмка: Получен проверяемый результат: Отделить право снять HumanStop от флага модели. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V136, V137, V138, V139. Дорожка: `release`.
-Результат: Install artifact/config/manifest/local instruction, preserve data; explicit paths и service launcher.
-Приёмка: Нестандартный root работает; offline CLI доступен без daemon; чужой service/config не меняется.
-Область: `release/install/`.
+Пути: crates/herder/src/application/resume.rs.
 
-### V142. Интеграционное ревью кандидата — 30–60 мин
+### V027. Проверить ответ C вместо creator A и запрет чужого reply — 10–15 минут
 
-Вход: V060, V069, V078, V087, V096, V109, V112, V115, V118, V121, V124, V102, V098, V099, V100, V101, V103, V127, V128, V141, V135, V050. Дорожка: `review`.
-Результат: Один diff review по boundaries/errors/ownership/cutover; конкретный журнал дефектов.
-Приёмка: Все найденные defects имеют owned fix/retest leaf до release; review не выдаёт будущий PASS.
-Область: `acceptance/review/`.
+Статус: queued. Входы: V027B.
 
-### V143. Удалить legacy daemon и registrations — 30–60 мин
+Проверить ответ C вместо creator A и запрет чужого reply. Частный результат исходного V027: Transaction связывает sender/recipient/message_ref с intent; reply target берётся сервером. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V027B.
 
-Вход: V142, V140. Дорожка: `release`.
-Результат: Удалить заменённые TS daemon/job API/_async/aliases из source и package entrypoints.
-Приёмка: Старые имена не вызываются напрямую; frontend TS сохранён как frontend; native histories не удалены.
-Область: `legacy-removal:runtime paths resolved in reviewed diff`.
+Приёмка: C→B и ответ B адресованы C; A creator не подменяется; чужой reply_to denied. Это точка объединения всей цепочки V027A, V027B, V027.
 
-### V144. Удалить legacy active clients/launchers — 30–45 мин
+Пути: crates/herder/src/store/correspondence.rs.
 
-Вход: V143. Дорожка: `release`.
-Результат: Пакеты/hooks/docs consumers используют новый API; прежние fallback writers disabled.
-Приёмка: Legacy references только в историческом archive; runtime graph не запускает старый daemon.
-Область: `legacy-removal:active client paths from consumer targets`.
+### V027A. Сохранять проверенного sender вместе с message_ref — 10–15 минут
 
-### V145. Зафиксировать immutable release candidate — 30–45 мин
+Статус: queued. Входы: V012, V022, V008.
 
-Вход: V144. Дорожка: `release`.
-Результат: Build exact reviewed source после удаления legacy, manifests всех платформ.
-Приёмка: Каждая тестовая lane указывает один source revision/artifact family; чужой WIP не включён.
-Область: `release/candidate.json`.
+Сохранять проверенного sender вместе с message_ref. Частный результат исходного V027: Transaction связывает sender/recipient/message_ref с intent; reply target берётся сервером. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V012, V022, V008.
 
-### V146. Candidate: контроль codex — 20–45 мин
+Приёмка: Получен проверяемый результат: Сохранять проверенного sender вместе с message_ref. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V145, V060. Дорожка: `adapter:codex`.
-Результат: Один обязательный adapter lane повторён на финальном artifact без иных изменений.
-Приёмка: Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.
-Область: `acceptance/candidate/codex/`.
+Пути: crates/herder/src/store/correspondence.rs.
 
-### V147. Candidate: контроль opencode — 20–45 мин
+### V027B. Разрешать reply_to только получателю исходного сообщения — 10–15 минут
 
-Вход: V145, V069. Дорожка: `adapter:opencode`.
-Результат: Один обязательный adapter lane повторён на финальном artifact без иных изменений.
-Приёмка: Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.
-Область: `acceptance/candidate/opencode/`.
+Статус: queued. Входы: V027A.
 
-### V148. Candidate: контроль zcode — 20–45 мин
+Разрешать reply_to только получателю исходного сообщения. Частный результат исходного V027: Transaction связывает sender/recipient/message_ref с intent; reply target берётся сервером. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V027A.
 
-Вход: V145, V078. Дорожка: `adapter:zcode`.
-Результат: Один обязательный adapter lane повторён на финальном artifact без иных изменений.
-Приёмка: Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.
-Область: `acceptance/candidate/zcode/`.
+Приёмка: Получен проверяемый результат: Разрешать reply_to только получателю исходного сообщения. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-### V149. Candidate: контроль chatgpt — 20–45 мин
+Пути: crates/herder/src/store/correspondence.rs.
 
-Вход: V145, V087. Дорожка: `adapter:chatgpt`.
-Результат: Один обязательный adapter lane повторён на финальном artifact без иных изменений.
-Приёмка: Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.
-Область: `acceptance/candidate/chatgpt/`.
+### V028. Проверить старый ответ и недоступный источник — 10–15 минут
 
-### V150. Candidate: контроль z-ai — 20–45 мин
+Статус: queued. Входы: V028B.
 
-Вход: V145, V096. Дорожка: `adapter:z-ai`.
-Результат: Один обязательный adapter lane повторён на финальном artifact без иных изменений.
-Приёмка: Точные native refs и digest; missing lane остаётся blocked, не fixture PASS.
-Область: `acceptance/candidate/z-ai/`.
+Проверить старый ответ и недоступный источник. Частный результат исходного V028: Общий projection user+assistant с turn/time/partial; read-only session. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V028B.
 
-### V151. Candidate: проверка соединённых consumers — 30–45 мин
+Приёмка: Старый assistant не назван ответом на новый input; отсутствующий источник не пустая история. Это точка объединения всей цепочки V028A, V028B, V028.
 
-Вход: V145, V109, V112, V115, V118, V121, V124. Дорожка: `clients`.
-Результат: Сверить ранее полученные consumer proofs с API/schema digest RC; повторить затронутый основной путь.
-Приёмка: Несовпадение digest требует отдельной адресной проверки; нельзя принять устаревший receipt.
-Область: `acceptance/candidate/consumers/`.
+Пути: crates/herder/src/application/recent.rs.
 
-### V152. Preflight cutover и резервная копия — 30–45 мин
+### V028A. Нормализовать последние user и assistant с turn и временем — 10–15 минут
 
-Вход: V140, V135, V146, V147, V148, V149, V150, V151. Дорожка: `release`.
-Результат: Проверить точные target/config/version/права, snapshot и maintenance window выбранного выпуска.
-Приёмка: Нет неизвестных active writers/release effects; backup восстановим; fail-fast до остановки.
-Область: `release/cutover/preflight.json`.
+Статус: queued. Входы: V006.
 
-### V153. Переключить state и единственного writer — 30–60 мин
+Нормализовать последние user и assistant с turn и временем. Частный результат исходного V028: Общий projection user+assistant с turn/time/partial; read-only session. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V006.
 
-Вход: V152. Дорожка: `release`.
-Результат: Остановить старый entrypoint, выполнить проверенный импорт и установить Linux target candidate.
-Приёмка: Новый runtime SHA/digest/schema; один owner writer; не возобновлены UNKNOWN или HumanStop.
-Область: `release/cutover/linux/`.
+Приёмка: Получен проверяемый результат: Нормализовать последние user и assistant с turn и временем. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-### V154. Linux: обычный потребитель после установки — 30–60 мин
+Пути: crates/herder/src/application/recent.rs.
 
-Вход: V153. Дорожка: `qa`.
-Результат: Primary MCP consumer create/deliver/recent/export/context на тестовых сессиях, reload.
-Приёмка: Runtime→receipt→native readback доказаны; приложение работает после штатного restart.
-Область: `acceptance/installed/linux/`.
+### V028B. Пометить partial, truncation и связь ответа с input — 10–15 минут
 
-### V155. macOS: установка точного артефакта — 30–60 мин
+Статус: queued. Входы: V028A.
 
-Вход: V154, V140. Дорожка: `release`.
-Результат: Target preflight, config/manifest, штатный launcher; без чужих profiles.
-Приёмка: Artifact digest и version совпали, offline path установлен; rollback доступен.
-Область: `release/cutover/macos/`.
+Пометить partial, truncation и связь ответа с input. Частный результат исходного V028: Общий projection user+assistant с turn/time/partial; read-only session. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V028A.
 
-### V156. macOS: обычный потребитель после установки — 30–60 мин
+Приёмка: Получен проверяемый результат: Пометить partial, truncation и связь ответа с input. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
 
-Вход: V155. Дорожка: `qa`.
-Результат: Create/read/deliver/stop и restart конкретного native instance.
-Приёмка: Installed consumer readback, permissions и native filesystem semantics доказаны.
-Область: `acceptance/installed/macos/`.
+Пути: crates/herder/src/application/recent.rs.
 
+### V029. Проверить последнюю страницу и чужой cursor — 10–15 минут
 
-## Передача
+Статус: queued. Входы: V029B.
 
-### V157. Независимая приёмка общения — 30–60 мин
+Проверить последнюю страницу и чужой cursor. Частный результат исходного V029: Нормализованные blocks, raw ref и подписанный/привязанный snapshot cursor. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V029B.
 
-Вход: V154, V156, V102. Дорожка: `qa`.
-Результат: Свежий tester без кода/авторского отчёта: discover→create→deliver→read→stop и compaction reply.
-Приёмка: Правильный sender/creator и отсутствие duplicate; тестовый circuit, никаких звонков людям.
-Область: `acceptance/independent/communication/`.
+Приёмка: Чужой cursor отвергнут; последняя страница, truncation и snapshot boundary проверены. Это точка объединения всей цепочки V029A, V029B, V029.
 
-### V158. Независимая приёмка recovery — 30–60 мин
+Пути: crates/herder/src/domain/transcript.rs.
 
-Вход: V157, V128. Дорожка: `qa`.
-Результат: Свежий tester по локальному Skill при выключенном test MCP; checkout conflict и release receipt.
-Приёмка: Успешный claim без назначения человеком; UNKNOWN не повторён; wrong root не свободен.
-Область: `acceptance/independent/recovery/`.
+### V029A. Нормализовать transcript blocks с ссылкой на исходник — 10–15 минут
 
-### V159. Main, runbook и передача результата — 30–45 мин
+Статус: queued. Входы: V028.
 
-Вход: V158. Дорожка: `release`.
-Результат: Только owned commits; опубликованный main, artifacts и acceptance manifest; чистка только своих принятых временных сред.
-Приёмка: Remote main включает результат; zero unresolved mandatory defects; scope exclusions названы и явно приняты, не молча вычеркнуты.
-Область: `release/handoff/`.
+Нормализовать transcript blocks с ссылкой на исходник. Частный результат исходного V029: Нормализованные blocks, raw ref и подписанный/привязанный snapshot cursor. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V028.
+
+Приёмка: Получен проверяемый результат: Нормализовать transcript blocks с ссылкой на исходник. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/domain/transcript.rs.
+
+### V029B. Привязать cursor к snapshot и principal — 10–15 минут
+
+Статус: queued. Входы: V029A.
+
+Привязать cursor к snapshot и principal. Частный результат исходного V029: Нормализованные blocks, raw ref и подписанный/привязанный snapshot cursor. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V029A.
+
+Приёмка: Получен проверяемый результат: Привязать cursor к snapshot и principal. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/domain/transcript.rs.
+
+### V030. Проверить обновление без полного обхода корпуса — 10–15 минут
+
+Статус: queued. Входы: V030B.
+
+Проверить обновление без полного обхода корпуса. Частный результат исходного V030: SQLite FTS и source cursors; обновление только изменённой сессии. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V030B.
+
+Приёмка: Одна новая запись не сканирует весь corpus; ACL и coverage сохраняются. Это точка объединения всей цепочки V030A, V030B, V030.
+
+Пути: crates/herder/src/search/index.rs.
+
+### V030A. Добавлять изменённую сессию в SQLite FTS по cursor — 10–15 минут
+
+Статус: queued. Входы: V029, V011.
+
+Добавлять изменённую сессию в SQLite FTS по cursor. Частный результат исходного V030: SQLite FTS и source cursors; обновление только изменённой сессии. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V029, V011.
+
+Приёмка: Получен проверяемый результат: Добавлять изменённую сессию в SQLite FTS по cursor. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/search/index.rs.
+
+### V030B. Фильтровать поисковую выдачу по ACL и coverage — 10–15 минут
+
+Статус: queued. Входы: V030A.
+
+Фильтровать поисковую выдачу по ACL и coverage. Частный результат исходного V030: SQLite FTS и source cursors; обновление только изменённой сессии. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V030A.
+
+Приёмка: Получен проверяемый результат: Фильтровать поисковую выдачу по ACL и coverage. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/search/index.rs.
+
+### V031. Проверить одинаковые имена и частично недоступные источники — 10–15 минут
+
+Статус: queued. Входы: V031B.
+
+Проверить одинаковые имена и частично недоступные источники. Частный результат исходного V031: Постраничный список по project/instance; native availability отдельно от cached records. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V031B.
+
+Приёмка: Offline peer явно отмечен, одинаковые basename не склеены. Это точка объединения всей цепочки V031A, V031B, V031.
+
+Пути: crates/herder/src/application/list.rs.
+
+### V031A. Выдать список сессий по project и instance без FTS — 10–15 минут
+
+Статус: queued. Входы: V006, V005.
+
+Выдать список сессий по project и instance без FTS. Частный результат исходного V031: Постраничный список по project/instance; native availability отдельно от cached records. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V006, V005.
+
+Приёмка: Получен проверяемый результат: Выдать список сессий по project и instance без FTS. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/application/list.rs.
+
+### V031B. Добавить страницы, observed_at и offline coverage — 10–15 минут
+
+Статус: queued. Входы: V031A.
+
+Добавить страницы, observed_at и offline coverage. Частный результат исходного V031: Постраничный список по project/instance; native availability отдельно от cached records. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V031A.
+
+Приёмка: Получен проверяемый результат: Добавить страницы, observed_at и offline coverage. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/application/list.rs.
+
+### V032. Проверить неизвестную квоту без нуля или unlimited — 10–15 минут
+
+Статус: queued. Входы: V032B.
+
+Проверить неизвестную квоту без нуля или unlimited. Частный результат исходного V032: discover(kind=models) отдаёт verified catalog и unknown значения. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V032B.
+
+Приёмка: Два профиля не разделяют auth/quota cache, unknown не zero/unlimited. Это точка объединения всей цепочки V032A, V032B, V032.
+
+Пути: crates/herder/src/application/models.rs.
+
+### V032A. Читать каталог моделей точного instance — 10–15 минут
+
+Статус: queued. Входы: V005, V006.
+
+Читать каталог моделей точного instance. Частный результат исходного V032: discover(kind=models) отдаёт verified catalog и unknown значения. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V005, V006.
+
+Приёмка: Получен проверяемый результат: Читать каталог моделей точного instance. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/application/models.rs.
+
+### V032B. Отделить cache квоты разных профилей и unknown — 10–15 минут
+
+Статус: queued. Входы: V032A.
+
+Отделить cache квоты разных профилей и unknown. Частный результат исходного V032: discover(kind=models) отдаёт verified catalog и unknown значения. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V032A.
+
+Приёмка: Получен проверяемый результат: Отделить cache квоты разных профилей и unknown. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/application/models.rs.
+
+### V033. Проверить stale CAS и отличить desired от applied — 10–15 минут
+
+Статус: queued. Входы: V033B.
+
+Проверить stale CAS и отличить desired от applied. Частный результат исходного V033: Node/instance/session settings поддерживаются только при capability, typed patches. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V033B.
+
+Приёмка: Stale revision отвергнут; remote unavailable не applied; scope проверяется. Это точка объединения всей цепочки V033A, V033B, V033.
+
+Пути: crates/herder/src/application/settings.rs.
+
+### V033A. Разобрать typed patch node, instance и session — 10–15 минут
+
+Статус: queued. Входы: V004, V008, V007.
+
+Разобрать typed patch node, instance и session. Частный результат исходного V033: Node/instance/session settings поддерживаются только при capability, typed patches. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V004, V008, V007.
+
+Приёмка: Получен проверяемый результат: Разобрать typed patch node, instance и session. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/application/settings.rs.
+
+### V033B. Сохранить desired revision и применить поддерживаемый patch — 10–15 минут
+
+Статус: queued. Входы: V033A.
+
+Сохранить desired revision и применить поддерживаемый patch. Частный результат исходного V033: Node/instance/session settings поддерживаются только при capability, typed patches. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V033A.
+
+Приёмка: Получен проверяемый результат: Сохранить desired revision и применить поддерживаемый patch. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/application/settings.rs.
+
+### V034. Проверить истёкший запрос и повтор ответа — 10–15 минут
+
+Статус: queued. Входы: V034B.
+
+Проверить истёкший запрос и повтор ответа. Частный результат исходного V034: Pending request identity и authorized answer, без wildcard approvals. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V034B.
+
+Приёмка: Expired ID не отвечает другому request; duplicate answer идемпотентен. Это точка объединения всей цепочки V034A, V034B, V034.
+
+Пути: crates/herder/src/application/permission.rs.
+
+### V034A. Прочитать конкретный pending native permission request — 10–15 минут
+
+Статус: queued. Входы: V014, V008, V006.
+
+Прочитать конкретный pending native permission request. Частный результат исходного V034: Pending request identity и authorized answer, без wildcard approvals. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V014, V008, V006.
+
+Приёмка: Получен проверяемый результат: Прочитать конкретный pending native permission request. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/application/permission.rs.
+
+### V034B. Передать авторизованный ответ по точному request ID — 10–15 минут
+
+Статус: queued. Входы: V034A.
+
+Передать авторизованный ответ по точному request ID. Частный результат исходного V034: Pending request identity и authorized answer, без wildcard approvals. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V034A.
+
+Приёмка: Получен проверяемый результат: Передать авторизованный ответ по точному request ID. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/application/permission.rs.
+
+### V035. Проверить повтор callback без второго resume на тестовом контакте — 10–15 минут
+
+Статус: queued. Входы: V035B.
+
+Проверить повтор callback без второго resume на тестовом контакте. Частный результат исходного V035: MRTR/Task input и external correlation используют одну delivery boundary. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V035B.
+
+Приёмка: Ответ относится одной сессии, повтор callback не даёт два resume; внешняя отправка только в test route. Это точка объединения всей цепочки V035A, V035B, V035.
+
+Пути: crates/herder/src/application/human.rs.
+
+### V035A. Сопоставить MCP input с исходным Task и сессией — 10–15 минут
+
+Статус: queued. Входы: V014, V026, V008.
+
+Сопоставить MCP input с исходным Task и сессией. Частный результат исходного V035: MRTR/Task input и external correlation используют одну delivery boundary. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V014, V026, V008.
+
+Приёмка: Получен проверяемый результат: Сопоставить MCP input с исходным Task и сессией. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/application/human.rs.
+
+### V035B. Связать внешний вопрос и callback через тот же admission — 10–15 минут
+
+Статус: queued. Входы: V035A.
+
+Связать внешний вопрос и callback через тот же admission. Частный результат исходного V035: MRTR/Task input и external correlation используют одну delivery boundary. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V035A.
+
+Приёмка: Получен проверяемый результат: Связать внешний вопрос и callback через тот же admission. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/application/human.rs.
+
+### V051. Подтвердить уникальные input и native receipt без вызова реальной модели — 10–15 минут
+
+Статус: queued. Входы: V051B.
+
+Подтвердить уникальные input и native receipt без вызова реальной модели. Частный результат исходного V051: Изолированные profiles, deterministic model endpoint для поддерживающих клиентов, receipt schema. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V051B.
+
+Приёмка: Native процесс отличим от fake adapter; никакого личного аккаунта/звонка; отдельные browser test identities. Это точка объединения всей цепочки V051A, V051B, V051.
+
+Пути: tests/native/harness_runner.rs.
+
+### V051A. Перенести существующую лжемодель и изолированный launcher — 10–15 минут
+
+Статус: queued. Входы: V010.
+
+Перенести существующую лжемодель и изолированный launcher. Частный результат исходного V051: Изолированные profiles, deterministic model endpoint для поддерживающих клиентов, receipt schema. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V010.
+
+Приёмка: Получен проверяемый результат: Перенести существующую лжемодель и изолированный launcher. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: tests/native/harness_runner.rs.
+
+### V051B. Заменить старый probe wrapper вызовами публичного Rust MCP — 10–15 минут
+
+Статус: queued. Входы: V051A.
+
+Заменить старый probe wrapper вызовами публичного Rust MCP. Частный результат исходного V051: Изолированные profiles, deterministic model endpoint для поддерживающих клиентов, receipt schema. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V051A.
+
+Приёмка: Получен проверяемый результат: Заменить старый probe wrapper вызовами публичного Rust MCP. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: tests/native/harness_runner.rs.
+
+### V052. Codex: Записать capability matrix с точным неподдерживаемым вызовом — 10–15 минут
+
+Статус: queued. Входы: V052B.
+
+Codex: Записать capability matrix с точным неподдерживаемым вызовом. Частный результат исходного V052: Один versioned app-server JSON-RPC: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V052B.
+
+Приёмка: Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success. Это точка объединения всей цепочки V052A, V052B, V052.
+
+Пути: acceptance/contracts/codex.md.
+
+Неопределённость: Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.
+
+### V052A. Codex: Зафиксировать версию и один официальный native маршрут — 10–15 минут
+
+Статус: running. Входы: V006.
+
+Codex: Зафиксировать версию и один официальный native маршрут. Частный результат исходного V052: Один versioned app-server JSON-RPC: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V006.
+
+Приёмка: Получен проверяемый результат: Codex: Зафиксировать версию и один официальный native маршрут. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/contracts/codex.md.
+
+Неопределённость: Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.
+
+### V052B. Codex: Проверить доступность test profile и корреляцию input — 10–15 минут
+
+Статус: queued. Входы: V052A.
+
+Codex: Проверить доступность test profile и корреляцию input. Частный результат исходного V052: Один versioned app-server JSON-RPC: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V052A.
+
+Приёмка: Получен проверяемый результат: Codex: Проверить доступность test profile и корреляцию input. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/contracts/codex.md.
+
+Неопределённость: Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.
+
+### V053. Codex: Проверить изоляцию подключения и ошибку доступа — 10–15 минут
+
+Статус: queued. Входы: V053B.
+
+Codex: Проверить изоляцию подключения и ошибку доступа. Частный результат исходного V053: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V053B.
+
+Приёмка: Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю. Это точка объединения всей цепочки V053A, V053B, V053.
+
+Пути: crates/herder/src/adapters/codex/connection.rs.
+
+Неопределённость: Объём подключения неизвестен до подтверждения native route входным gate. Этот шаг до 15 минут покрывает проверку готового versioned transport; отсутствующий API требует конкретного нового разбиения и пересчёта.
+
+### V053A. Codex: Открыть соединение конкретного instance — 10–15 минут
+
+Статус: queued. Входы: V052.
+
+Codex: Открыть соединение конкретного instance. Частный результат исходного V053: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V052.
+
+Приёмка: Получен проверяемый результат: Codex: Открыть соединение конкретного instance. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/codex/connection.rs.
+
+### V053B. Codex: Связать request IDs, disconnect и время ожидания — 10–15 минут
+
+Статус: queued. Входы: V053A.
+
+Codex: Связать request IDs, disconnect и время ожидания. Частный результат исходного V053: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V053A.
+
+Приёмка: Получен проверяемый результат: Codex: Связать request IDs, disconnect и время ожидания. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/codex/connection.rs.
+
+### V054. Codex: Сверить recent с независимым native чтением — 10–15 минут
+
+Статус: queued. Входы: V054B.
+
+Codex: Сверить recent с независимым native чтением. Частный результат исходного V054: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V054B.
+
+Приёмка: Две сессии возвращают свои роли/turn refs; partial отмечен. Это точка объединения всей цепочки V054A, V054B, V054.
+
+Пути: crates/herder/src/adapters/codex/read.rs.
+
+### V054A. Codex: Прочитать native список и устойчивые session IDs — 10–15 минут
+
+Статус: queued. Входы: V053, V028.
+
+Codex: Прочитать native список и устойчивые session IDs. Частный результат исходного V054: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V053, V028.
+
+Приёмка: Получен проверяемый результат: Codex: Прочитать native список и устойчивые session IDs. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/codex/read.rs.
+
+### V054B. Codex: Нормализовать user и assistant с turn refs — 10–15 минут
+
+Статус: queued. Входы: V054A.
+
+Codex: Нормализовать user и assistant с turn refs. Частный результат исходного V054: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V054A.
+
+Приёмка: Получен проверяемый результат: Codex: Нормализовать user и assistant с turn refs. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/codex/read.rs.
+
+### V055. Codex: Сверить единственную созданную сессию через public MCP — 10–15 минут
+
+Статус: queued. Входы: V055B.
+
+Codex: Сверить единственную созданную сессию через public MCP. Частный результат исходного V055: Одна native create route; request correlation и readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V055B.
+
+Приёмка: Точное native ID, creator сохраняется; disconnect не запускает второй create. Это точка объединения всей цепочки V055A, V055B, V055.
+
+Пути: crates/herder/src/adapters/codex/create.rs.
+
+### V055A. Codex: Вызвать native create из общего application — 10–15 минут
+
+Статус: queued. Входы: V053, V023.
+
+Codex: Вызвать native create из общего application. Частный результат исходного V055: Одна native create route; request correlation и readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V053, V023.
+
+Приёмка: Получен проверяемый результат: Codex: Вызвать native create из общего application. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/codex/create.rs.
+
+### V055B. Codex: Связать receipt с точным session ID — 10–15 минут
+
+Статус: queued. Входы: V055A.
+
+Codex: Связать receipt с точным session ID. Частный результат исходного V055: Одна native create route; request correlation и readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V055A.
+
+Приёмка: Получен проверяемый результат: Codex: Связать receipt с точным session ID. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/codex/create.rs.
+
+### V056. Codex: Подтвердить доставку и отказ от повторения UNKNOWN — 10–15 минут
+
+Статус: queued. Входы: V056B.
+
+Codex: Подтвердить доставку и отказ от повторения UNKNOWN. Частный результат исходного V056: Одна native send route; поддерживаемые modes кодируются явно; native receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V056B.
+
+Приёмка: Один input readback; unsupported mode до send; unknown после разрыва не replay. Это точка объединения всей цепочки V056A, V056B, V056.
+
+Пути: crates/herder/src/adapters/codex/deliver.rs.
+
+### V056A. Codex: Передать message с request key в поддерживаемом режиме — 10–15 минут
+
+Статус: queued. Входы: V055, V024, V025.
+
+Codex: Передать message с request key в поддерживаемом режиме. Частный результат исходного V056: Одна native send route; поддерживаемые modes кодируются явно; native receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V055, V024, V025.
+
+Приёмка: Получен проверяемый результат: Codex: Передать message с request key в поддерживаемом режиме. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/codex/deliver.rs.
+
+### V056B. Codex: Найти input в точном native turn или queue — 10–15 минут
+
+Статус: queued. Входы: V056A.
+
+Codex: Найти input в точном native turn или queue. Частный результат исходного V056: Одна native send route; поддерживаемые modes кодируются явно; native receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V056A.
+
+Приёмка: Получен проверяемый результат: Codex: Найти input в точном native turn или queue. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/codex/deliver.rs.
+
+### V057. Codex: Сверить export и search с исходной историей — 10–15 минут
+
+Статус: queued. Входы: V057B.
+
+Codex: Сверить export и search с исходной историей. Частный результат исходного V057: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V057B.
+
+Приёмка: Первая/последняя страница и role blocks не теряются; чужой cursor rejected. Это точка объединения всей цепочки V057A, V057B, V057.
+
+Пути: crates/herder/src/adapters/codex/transcript.rs.
+
+### V057A. Codex: Прочитать native transcript страницами — 10–15 минут
+
+Статус: queued. Входы: V053, V029, V030.
+
+Codex: Прочитать native transcript страницами. Частный результат исходного V057: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V053, V029, V030.
+
+Приёмка: Получен проверяемый результат: Codex: Прочитать native transcript страницами. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/codex/transcript.rs.
+
+### V057B. Codex: Нормализовать snapshot и обновить общий индекс — 10–15 минут
+
+Статус: queued. Входы: V057A.
+
+Codex: Нормализовать snapshot и обновить общий индекс. Частный результат исходного V057: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V057A.
+
+Приёмка: Получен проверяемый результат: Codex: Нормализовать snapshot и обновить общий индекс. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/codex/transcript.rs.
+
+### V058. Codex: Проверить stop, stale request и границы capability — 10–15 минут
+
+Статус: queued. Входы: V058B.
+
+Codex: Проверить stop, stale request и границы capability. Частный результат исходного V058: Только доказанные stop/model/permission methods; unsupported явно, не успех. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V058B.
+
+Приёмка: Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control. Это точка объединения всей цепочки V058A, V058B, V058.
+
+Пути: crates/herder/src/adapters/codex/control.rs.
+
+### V058A. Codex: Привязать interrupt к точному native turn — 10–15 минут
+
+Статус: queued. Входы: V053, V025, V034, V032.
+
+Codex: Привязать interrupt к точному native turn. Частный результат исходного V058: Только доказанные stop/model/permission methods; unsupported явно, не успех. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V053, V025, V034, V032.
+
+Приёмка: Получен проверяемый результат: Codex: Привязать interrupt к точному native turn. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/codex/control.rs.
+
+### V058B. Codex: Применить поддерживаемые параметры и permission reply — 10–15 минут
+
+Статус: queued. Входы: V058A.
+
+Codex: Применить поддерживаемые параметры и permission reply. Частный результат исходного V058: Только доказанные stop/model/permission methods; unsupported явно, не успех. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V058A.
+
+Приёмка: Получен проверяемый результат: Codex: Применить поддерживаемые параметры и permission reply. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/codex/control.rs.
+
+### V059. Codex: Подтвердить видимость карточки агенту и честный unsupported — 10–15 минут
+
+Статус: queued. Входы: V059B.
+
+Codex: Подтвердить видимость карточки агенту и честный unsupported. Частный результат исходного V059: Привязка self и один подтверждённый startup/resume/compact hook; absence явная. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V059B.
+
+Приёмка: Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся. Это точка объединения всей цепочки V059A, V059B, V059.
+
+Пути: crates/herder/src/adapters/codex/context.rs.
+
+### V059A. Codex: Подключить native точку вставки context — 10–15 минут
+
+Статус: queued. Входы: V053, V046.
+
+Codex: Подключить native точку вставки context. Частный результат исходного V059: Привязка self и один подтверждённый startup/resume/compact hook; absence явная. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V053, V046.
+
+Приёмка: Получен проверяемый результат: Codex: Подключить native точку вставки context. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/codex/context.rs.
+
+### V059B. Codex: Восстановить generation при поддерживаемом resume или compaction — 10–15 минут
+
+Статус: queued. Входы: V059A.
+
+Codex: Восстановить generation при поддерживаемом resume или compaction. Частный результат исходного V059: Привязка self и один подтверждённый startup/resume/compact hook; absence явная. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V059A.
+
+Приёмка: Получен проверяемый результат: Codex: Восстановить generation при поддерживаемом resume или compaction. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/codex/context.rs.
+
+### V060. Codex: Подтвердить stop, контекст и digest всей вертикали — 10–15 минут
+
+Статус: queued. Входы: V060B, E001.
+
+Codex: Подтвердить stop, контекст и digest всей вертикали. Частный результат исходного V060: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V060B.
+
+Приёмка: Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane. Это точка объединения всей цепочки V060A, V060B, V060.
+
+Пути: acceptance/native/codex/.
+
+### V060A. Codex: Установить текущий dev artifact в изолированный native контур — 10–15 минут
+
+Статус: queued. Входы: V054, V056, V057, V058, V059, V051, V016.
+
+Codex: Установить текущий dev artifact в изолированный native контур. Частный результат исходного V060: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V054, V056, V057, V058, V059, V051, V016.
+
+Приёмка: Получен проверяемый результат: Codex: Установить текущий dev artifact в изолированный native контур. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/native/codex/.
+
+### V060B. Codex: Пройти create, deliver, read и export через публичный MCP — 10–15 минут
+
+Статус: queued. Входы: V060A.
+
+Codex: Пройти create, deliver, read и export через публичный MCP. Частный результат исходного V060: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V060A.
+
+Приёмка: Получен проверяемый результат: Codex: Пройти create, deliver, read и export через публичный MCP. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/native/codex/.
+
+## Ресурсы, offline владение и восстановление контекста
+
+### E003. Выпустить ресурсы и offline CLI на изолированном стенде — 10–15 минут
+
+Статус: queued. Входы: V043, V045, R004.
+
+Установить dev артефакт и local manifest; при выключенном тестовом MCP прочитать и занять зарегистрированный глобальный ресурс, затем сверить owner через MCP.
+
+Приёмка: Установить dev артефакт и local manifest; при выключенном тестовом MCP прочитать и занять зарегистрированный глобальный ресурс, затем сверить owner через MCP.
+
+Пути: release/dev-resources/.
+
+### R001. Определить неизменный Resource ID и независимые scope, attachment и owner — 10–15 минут
+
+Статус: done. Входы: V005, V008.
+
+Типизированный descriptor: global/project/node, kind, external_ref, authority_ref, attachment с observed_at; без секретов и свободного executable кода.
+
+Приёмка: Телефон сохраняет ID при смене attachment; global не выдаёт права; scope отделён от storage authority.
+
+Пути: crates/herder/src/domain/resource.rs.
+
+### R002. Регистрировать descriptor ресурса в каноническом storage — 10–15 минут
+
+Статус: queued. Входы: R001, V036.
+
+Create/update resource.json с revision CAS; lookup/list по scope и правам. Никакой второй mutable DB ownership.
+
+Приёмка: Дубликат identity и stale revision дают исправляемую ошибку; неразрешённый descriptor не раскрывается.
+
+Пути: crates/herder/src/ownership/resource.rs.
+
+### R003. Публиковать resource list/get и наблюдаемый маршрут подключения — 10–15 минут
+
+Статус: queued. Входы: R002, V017.
+
+Стандартные MCP resource чтения используют общий descriptor; available, unavailable, unknown отдельно от owner.
+
+Приёмка: Отключённый телефон остаётся в списке; reconnect не освобождает владельца; ACL применяется к маршруту.
+
+Пути: crates/herder/src/application/resource.rs.
+
+### R004. Проверить перенос телефона и гонку владельцев общего ресурса — 10–15 минут
+
+Статус: queued. Входы: R003, V037, V039.
+
+Fixture S21 и второго телефона; сменить attachment, выполнить конфликтующие claim через MCP и offline CLI.
+
+Приёмка: У каждого телефона свой ID; перенос не меняет claim; один победитель на ресурс; старый claim отвергнут.
+
+Пути: tests/ownership/resources.rs.
+
+### R005. Подключить существующую точку управления S21 к resource claim — 10–15 минут
+
+Статус: queued. Входы: R005B.
+
+Сначала назвать точный действующий вход s21-lease/runner и владельца пути; использовать одну authority владения; переключение исключает два параллельных writer. Без тестовых звонков.
+
+Приёмка: Обычная точка управления проверяет актуальный claim и отвергает старого владельца; доказано чтением разрешённого тестового состояния, без звонков или уведомлений человеку.
+
+Пути: integrations/resources/s21/target.json.
+
+### R005A. Подключить существующую точку управления S21 к resource claim: точный вход — 10–15 минут
+
+Статус: queued. Входы: R004, V041.
+
+Сначала назвать точный действующий вход s21-lease/runner и владельца пути; использовать одну authority владения; переключение исключает два параллельных writer. Без тестовых звонков.
+
+Приёмка: Записаны callable entrypoint, writer, разрешённые paths и сценарий проверки. Недоступность — точный blocker.
+
+Пути: integrations/resources/s21/target.json.
+
+Неопределённость: Точный внешний entrypoint и объём замены определяются этим gate.
+
+### R005B. Подключить существующую точку управления S21 к resource claim: единая проверка владения — 10–15 минут
+
+Статус: queued. Входы: R005A.
+
+Сначала назвать точный действующий вход s21-lease/runner и владельца пути; использовать одну authority владения; переключение исключает два параллельных writer. Без тестовых звонков.
+
+Приёмка: Названный entrypoint использует общий claim; второй mutable owner store не остаётся.
+
+Пути: integrations/resources/s21/target.json.
+
+Неопределённость: После target gate уточнить owned paths и разделить работу, если она не помещается в 15 минут.
+
+### R006. Подключить владение планом LHC к общему resource — 10–15 минут
+
+Статус: queued. Входы: R006B.
+
+LHC хранит план и историю; Herder хранит external_ref и владельца редактирования. Запись LHC проверяет claim.
+
+Приёмка: Два редактора одного plan ref получают конфликт; читать разрешено по ACL; содержимое плана не копируется в Herder.
+
+Пути: integrations/resources/lhc/target.json.
+
+### R006A. Подключить владение планом LHC к общему resource: точный вход — 10–15 минут
+
+Статус: queued. Входы: R004, V111.
+
+LHC хранит план и историю; Herder хранит external_ref и владельца редактирования. Запись LHC проверяет claim.
+
+Приёмка: Записаны callable entrypoint, writer, разрешённые paths и сценарий проверки. Недоступность — точный blocker.
+
+Пути: integrations/resources/lhc/target.json.
+
+Неопределённость: Точный внешний entrypoint и объём замены определяются этим gate.
+
+### R006B. Подключить владение планом LHC к общему resource: единая проверка владения — 10–15 минут
+
+Статус: queued. Входы: R006A.
+
+LHC хранит план и историю; Herder хранит external_ref и владельца редактирования. Запись LHC проверяет claim.
+
+Приёмка: Названный entrypoint использует общий claim; второй mutable owner store не остаётся.
+
+Пути: integrations/resources/lhc/target.json.
+
+Неопределённость: После target gate уточнить owned paths и разделить работу, если она не помещается в 15 минут.
+
+### V036. Отличить отсутствие owner от wrong root, mount loss и EACCES — 10–15 минут
+
+Статус: queued. Входы: V036B.
+
+Отличить отсутствие owner от wrong root, mount loss и EACCES. Частный результат исходного V036: Storage/project/resource markers, точный offline locator и ACL policy. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V036B.
+
+Приёмка: Wrong root/storage/mount loss отличаются от owner ENOENT; секретов нет. Это точка объединения всей цепочки V036A, V036B, V036.
+
+Пути: crates/herder/src/ownership/manifest.rs.
+
+### V036A. Описать storage authority и global, project, node scope — 10–15 минут
+
+Статус: queued. Входы: V004, V008.
+
+Описать storage authority и global, project, node scope. Частный результат исходного V036: Storage/project/resource markers, точный offline locator и ACL policy. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V004, V008.
+
+Приёмка: Получен проверяемый результат: Описать storage authority и global, project, node scope. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/ownership/manifest.rs.
+
+### V036B. Проверять независимый resource marker и разрешённый offline маршрут — 10–15 минут
+
+Статус: queued. Входы: V036A.
+
+Проверять независимый resource marker и разрешённый offline маршрут. Частный результат исходного V036: Storage/project/resource markers, точный offline locator и ACL policy. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V036A.
+
+Приёмка: Получен проверяемый результат: Проверять независимый resource marker и разрешённый offline маршрут. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/ownership/manifest.rs.
+
+### V037. Проверить гонку MCP и CLI с одним победителем — 10–15 минут
+
+Статус: queued. Входы: V037B.
+
+Проверить гонку MCP и CLI с одним победителем. Частный результат исходного V037: Claim/renew/release с UUID epoch, atomic rename/unlink+fsync, CAS claim ID. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V037B.
+
+Приёмка: Concurrent claims имеют одного победителя; release чужого ID denied; нет state.json transaction. Это точка объединения всей цепочки V037A, V037B, V037.
+
+Пути: crates/herder/src/ownership/claim.rs.
+
+### V037A. Создать стабильный guard и атомарный claim с nonce — 10–15 минут
+
+Статус: queued. Входы: V036.
+
+Создать стабильный guard и атомарный claim с nonce. Частный результат исходного V037: Claim/renew/release с UUID epoch, atomic rename/unlink+fsync, CAS claim ID. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V036.
+
+Приёмка: Получен проверяемый результат: Создать стабильный guard и атомарный claim с nonce. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/ownership/claim.rs.
+
+### V037B. Выполнять renew и release с проверкой текущего claim_id — 10–15 минут
+
+Статус: queued. Входы: V037A.
+
+Выполнять renew и release с проверкой текущего claim_id. Частный результат исходного V037: Claim/renew/release с UUID epoch, atomic rename/unlink+fsync, CAS claim ID. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V037A.
+
+Приёмка: Получен проверяемый результат: Выполнять renew и release с проверкой текущего claim_id. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/ownership/claim.rs.
+
+### V038. Подтвердить целый owner и UNKNOWN при сбое fsync — 10–15 минут
+
+Статус: queued. Входы: V038B.
+
+Подтвердить целый owner и UNKNOWN при сбое fsync. Частный результат исходного V038: Fault injection до/после rename/unlink/fsync; leftover temp cleanup под lock. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V038B.
+
+Приёмка: Полный old/new owner или отсутствие; fsync failure unknown; guard inode не заменён. Это точка объединения всей цепочки V038A, V038B, V038.
+
+Пути: tests/ownership/crash.rs.
+
+### V038A. Ввести сбои вокруг rename и fsync при claim — 10–15 минут
+
+Статус: queued. Входы: V037.
+
+Ввести сбои вокруг rename и fsync при claim. Частный результат исходного V038: Fault injection до/после rename/unlink/fsync; leftover temp cleanup под lock. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V037.
+
+Приёмка: Получен проверяемый результат: Ввести сбои вокруг rename и fsync при claim. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: tests/ownership/crash.rs.
+
+### V038B. Ввести сбои вокруг unlink и уборки временного файла — 10–15 минут
+
+Статус: queued. Входы: V038A.
+
+Ввести сбои вокруг unlink и уборки временного файла. Частный результат исходного V038: Fault injection до/после rename/unlink/fsync; leftover temp cleanup под lock. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V038A.
+
+Приёмка: Получен проверяемый результат: Ввести сбои вокруг unlink и уборки временного файла. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: tests/ownership/crash.rs.
+
+### V039. Прочитать потерянный результат по nonce без повторного занятия — 10–15 минут
+
+Статус: queued. Входы: V039B.
+
+Прочитать потерянный результат по nonce без повторного занятия. Частный результат исходного V039: herder ownership без запуска daemon/SQLite/MCP; JSON и русские ошибки. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V039B.
+
+Приёмка: Потерянный claim response читается по nonce без automatic reclaim после release. Это точка объединения всей цепочки V039A, V039B, V039.
+
+Пути: crates/herder/src/cli/ownership.rs.
+
+### V039A. Добавить offline status и claim через общую библиотеку — 10–15 минут
+
+Статус: queued. Входы: V037.
+
+Добавить offline status и claim через общую библиотеку. Частный результат исходного V039: herder ownership без запуска daemon/SQLite/MCP; JSON и русские ошибки. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V037.
+
+Приёмка: Получен проверяемый результат: Добавить offline status и claim через общую библиотеку. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/cli/ownership.rs.
+
+### V039B. Добавить renew и release без daemon и SQLite — 10–15 минут
+
+Статус: queued. Входы: V039A.
+
+Добавить renew и release без daemon и SQLite. Частный результат исходного V039: herder ownership без запуска daemon/SQLite/MCP; JSON и русские ошибки. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V039A.
+
+Приёмка: Получен проверяемый результат: Добавить renew и release без daemon и SQLite. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/cli/ownership.rs.
+
+### V040. Проверить общий workspace двух нод и различие заметки и владения — 10–15 минут
+
+Статус: queued. Входы: V040B.
+
+Проверить общий workspace двух нод и различие заметки и владения. Частный результат исходного V040: Project/worktree identity/scopes/notes; MCP ownership вызывает ту же библиотеку. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V040B.
+
+Приёмка: Декларация не lease; две ноды одного shared workspace используют один resource. Это точка объединения всей цепочки V040A, V040B, V040.
+
+Пути: crates/herder/src/application/workspace.rs.
+
+### V040A. Сохранить объявления worktree, scopes и заметки в resource — 10–15 минут
+
+Статус: queued. Входы: V037, V031, R003.
+
+Сохранить объявления worktree, scopes и заметки в resource. Частный результат исходного V040: Project/worktree identity/scopes/notes; MCP ownership вызывает ту же библиотеку. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V037, V031, R003.
+
+Приёмка: Получен проверяемый результат: Сохранить объявления worktree, scopes и заметки в resource. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/application/workspace.rs.
+
+### V040B. Направить MCP resource claim в общую файловую библиотеку — 10–15 минут
+
+Статус: queued. Входы: V040A.
+
+Направить MCP resource claim в общую файловую библиотеку. Частный результат исходного V040: Project/worktree identity/scopes/notes; MCP ownership вызывает ту же библиотеку. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V040A.
+
+Приёмка: Получен проверяемый результат: Направить MCP resource claim в общую файловую библиотеку. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/application/workspace.rs.
+
+### V041. Отклонить старого владельца и второй маршрут runner — 10–15 минут
+
+Статус: queued. Входы: V041B.
+
+Отклонить старого владельца и второй маршрут runner. Частный результат исходного V041: Target-local lock, live claim check после lock, expected deployed revision. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V041B.
+
+Приёмка: Задержавшийся старый claim отвергнут; второй runner path запрещён конфигурацией. Это точка объединения всей цепочки V041A, V041B, V041.
+
+Пути: crates/herder/src/ownership/release_runner.rs.
+
+### V041A. Взять execution lock конкретной цели перед проверкой owner — 10–15 минут
+
+Статус: queued. Входы: V037, V039.
+
+Взять execution lock конкретной цели перед проверкой owner. Частный результат исходного V041: Target-local lock, live claim check после lock, expected deployed revision. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V037, V039.
+
+Приёмка: Получен проверяемый результат: Взять execution lock конкретной цели перед проверкой owner. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/ownership/release_runner.rs.
+
+### V041B. Проверить текущий claim и deployed revision под lock — 10–15 минут
+
+Статус: queued. Входы: V041A.
+
+Проверить текущий claim и deployed revision под lock. Частный результат исходного V041: Target-local lock, live claim check после lock, expected deployed revision. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V041A.
+
+Приёмка: Получен проверяемый результат: Проверить текущий claim и deployed revision под lock. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/ownership/release_runner.rs.
+
+### V042. Проверить смерть родителя и UNKNOWN без повторного запуска — 10–15 минут
+
+Статус: queued. Входы: V042B.
+
+Проверить смерть родителя и UNKNOWN без повторного запуска. Частный результат исходного V042: Request key/hash, admitted/confirmed/unknown; child удерживает execution lock. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V042B.
+
+Приёмка: Crash родителя не отпускает live child; unknown external effect блокирует новый конфликтующий effect. Это точка объединения всей цепочки V042A, V042B, V042.
+
+Пути: crates/herder/src/ownership/release_receipt.rs.
+
+### V042A. Записать request_key и durable receipt до spawn — 10–15 минут
+
+Статус: queued. Входы: V041.
+
+Записать request_key и durable receipt до spawn. Частный результат исходного V042: Request key/hash, admitted/confirmed/unknown; child удерживает execution lock. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V041.
+
+Приёмка: Получен проверяемый результат: Записать request_key и durable receipt до spawn. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/ownership/release_receipt.rs.
+
+### V042B. Передать удержание execution lock процессу изменения — 10–15 минут
+
+Статус: queued. Входы: V042A.
+
+Передать удержание execution lock процессу изменения. Частный результат исходного V042: Request key/hash, admitted/confirmed/unknown; child удерживает execution lock. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V042A.
+
+Приёмка: Получен проверяемый результат: Передать удержание execution lock процессу изменения. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/ownership/release_receipt.rs.
+
+### V043. Подтвердить максимум один эффект и сверку UNKNOWN — 10–15 минут
+
+Статус: queued. Входы: V043B.
+
+Подтвердить максимум один эффект и сверку UNKNOWN. Частный результат исходного V043: Test runner делает безопасный локальный file revision effect; delay/crash/partition. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V043B.
+
+Приёмка: Максимум один эффект; повтор key только readback; lost authority запрещает новый admission. Это точка объединения всей цепочки V043A, V043B, V043.
+
+Пути: tests/ownership/release_races.rs.
+
+### V043A. Воспроизвести смену owner во время принятого release — 10–15 минут
+
+Статус: queued. Входы: V042.
+
+Воспроизвести смену owner во время принятого release. Частный результат исходного V043: Test runner делает безопасный локальный file revision effect; delay/crash/partition. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V042.
+
+Приёмка: Получен проверяемый результат: Воспроизвести смену owner во время принятого release. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: tests/ownership/release_races.rs.
+
+### V043B. Отклонить задержанный запрос прежнего владельца — 10–15 минут
+
+Статус: queued. Входы: V043A.
+
+Отклонить задержанный запрос прежнего владельца. Частный результат исходного V043: Test runner делает безопасный локальный file revision effect; delay/crash/partition. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V043A.
+
+Приёмка: Получен проверяемый результат: Отклонить задержанный запрос прежнего владельца. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: tests/ownership/release_races.rs.
+
+### V044. Проверить ограниченный context с курсорами без скрытых участников — 10–15 минут
+
+Статус: queued. Входы: V044B.
+
+Проверить ограниченный context с курсорами без скрытых участников. Частный результат исходного V044: Один bounded snapshot с адресами, scopes, coverage и курсорами. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V044B.
+
+Приёмка: A creator и C sender восстанавливаются без transcript memory; чужие closed sessions скрыты. Это точка объединения всей цепочки V044A, V044B, V044.
+
+Пути: crates/herder/src/application/context.rs.
+
+### V044A. Собрать self, creator и последних отправителей из durable данных — 10–15 минут
+
+Статус: queued. Входы: V027, V040, V028.
+
+Собрать self, creator и последних отправителей из durable данных. Частный результат исходного V044: Один bounded snapshot с адресами, scopes, coverage и курсорами. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V027, V040, V028.
+
+Приёмка: Получен проверяемый результат: Собрать self, creator и последних отправителей из durable данных. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/application/context.rs.
+
+### V044B. Добавить peers, worktrees и занятые ресурсы с coverage — 10–15 минут
+
+Статус: queued. Входы: V044A.
+
+Добавить peers, worktrees и занятые ресурсы с coverage. Частный результат исходного V044: Один bounded snapshot с адресами, scopes, coverage и курсорами. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V044A.
+
+Приёмка: Получен проверяемый результат: Добавить peers, worktrees и занятые ресурсы с coverage. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/application/context.rs.
+
+### V045. Подтвердить отсутствие закрытых текстов и owner authority в snapshot — 10–15 минут
+
+Статус: queued. Входы: V045B.
+
+Подтвердить отсутствие закрытых текстов и owner authority в snapshot. Частный результат исходного V045: Atomic JSON projection c generated_at, coverage и безопасными routes. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V045B.
+
+Приёмка: Без daemon читается stale snapshot; это не owner или delivery receipt. Это точка объединения всей цепочки V045A, V045B, V045.
+
+Пути: crates/herder/src/ownership/context_snapshot.rs.
+
+### V045A. Сохранить разрешённую проекцию context в JSON — 10–15 минут
+
+Статус: queued. Входы: V044, V039.
+
+Сохранить разрешённую проекцию context в JSON. Частный результат исходного V045: Atomic JSON projection c generated_at, coverage и безопасными routes. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V044, V039.
+
+Приёмка: Получен проверяемый результат: Сохранить разрешённую проекцию context в JSON. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/ownership/context_snapshot.rs.
+
+### V045B. Показывать generated_at и partial при offline чтении — 10–15 минут
+
+Статус: queued. Входы: V045A.
+
+Показывать generated_at и partial при offline чтении. Частный результат исходного V045: Atomic JSON projection c generated_at, coverage и безопасными routes. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V045A.
+
+Приёмка: Получен проверяемый результат: Показывать generated_at и partial при offline чтении. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/ownership/context_snapshot.rs.
+
+### V046. Подтвердить восстановление при неизменном fingerprint — 10–15 минут
+
+Статус: queued. Входы: V046B.
+
+Подтвердить восстановление при неизменном fingerprint. Частный результат исходного V046: Projector snapshot/delta, новый context generation не подавляется fingerprint. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V046B.
+
+Приёмка: Fake compact event вызывает snapshot без нового model turn и без снятия STOP. Это точка объединения всей цепочки V046A, V046B, V046.
+
+Пути: integrations/hooks/context_client.rs.
+
+### V046A. Отмечать generation после resume и compaction — 10–15 минут
+
+Статус: queued. Входы: V044, V018, V025.
+
+Отмечать generation после resume и compaction. Частный результат исходного V046: Projector snapshot/delta, новый context generation не подавляется fingerprint. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V044, V018, V025.
+
+Приёмка: Получен проверяемый результат: Отмечать generation после resume и compaction. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: integrations/hooks/context_client.rs.
+
+### V046B. Вставлять карточку через поддерживаемую native точку — 10–15 минут
+
+Статус: queued. Входы: V046A.
+
+Вставлять карточку через поддерживаемую native точку. Частный результат исходного V046: Projector snapshot/delta, новый context generation не подавляется fingerprint. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V046A.
+
+Приёмка: Получен проверяемый результат: Вставлять карточку через поддерживаемую native точку. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: integrations/hooks/context_client.rs.
+
+## Расписание и автопилот через общий executor
+
+### E004. Выпустить расписание и автопилот на тестовой сессии — 10–15 минут
+
+Статус: queued. Входы: V049, V050, E001.
+
+Установить dev артефакт; один schedule и один autopilot проходят общий admission, HumanStop прекращает новые ходы.
+
+Приёмка: Установить dev артефакт; один schedule и один autopilot проходят общий admission, HumanStop прекращает новые ходы.
+
+Пути: release/dev-automation/.
+
+### V047. Проверить неверную цель, режим и права — 10–15 минут
+
+Статус: queued. Входы: V047B.
+
+Проверить неверную цель, режим и права. Частный результат исходного V047: Schedule/one-shot и autopilot в одном CRUD; timezone, missed/overlap, CAS. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V047B.
+
+Приёмка: Неверный cron объясняется; настройка не создаёт parallel job API. Это точка объединения всей цепочки V047A, V047B, V047.
+
+Пути: crates/herder/src/automation/rules.rs.
+
+### V047A. Описать typed schedule и autopilot без общего workflow языка — 10–15 минут
+
+Статус: queued. Входы: V033, V026.
+
+Описать typed schedule и autopilot без общего workflow языка. Частный результат исходного V047: Schedule/one-shot и autopilot в одном CRUD; timezone, missed/overlap, CAS. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V033, V026.
+
+Приёмка: Получен проверяемый результат: Описать typed schedule и autopilot без общего workflow языка. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/automation/rules.rs.
+
+### V047B. Сохранять правила по CAS для точной сессии — 10–15 минут
+
+Статус: queued. Входы: V047A.
+
+Сохранять правила по CAS для точной сессии. Частный результат исходного V047: Schedule/one-shot и autopilot в одном CRUD; timezone, missed/overlap, CAS. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V047A.
+
+Приёмка: Получен проверяемый результат: Сохранять правила по CAS для точной сессии. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/automation/rules.rs.
+
+### V048. Проверить повтор события без второго resume — 10–15 минут
+
+Статус: queued. Входы: V048B.
+
+Проверить повтор события без второго resume. Частный результат исходного V048: Trigger ID + правило + native turn → постоянный delivery request_key. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V048B.
+
+Приёмка: Hook/observer/end-turn повтор не создаёт второй continuation; hold всегда проверен. Это точка объединения всей цепочки V048A, V048B, V048.
+
+Пути: crates/herder/src/automation/executor.rs.
+
+### V048A. Принять триггер в общий intent executor с request_key — 10–15 минут
+
+Статус: queued. Входы: V047.
+
+Принять триггер в общий intent executor с request_key. Частный результат исходного V048: Trigger ID + правило + native turn → постоянный delivery request_key. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V047.
+
+Приёмка: Получен проверяемый результат: Принять триггер в общий intent executor с request_key. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/automation/executor.rs.
+
+### V048B. Проверить HumanStop непосредственно перед admission — 10–15 минут
+
+Статус: queued. Входы: V048A.
+
+Проверить HumanStop непосредственно перед admission. Частный результат исходного V048: Trigger ID + правило + native turn → постоянный delivery request_key. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V048A.
+
+Приёмка: Получен проверяемый результат: Проверить HumanStop непосредственно перед admission. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/automation/executor.rs.
+
+### V049. Проверить пропущенный срок без повторения UNKNOWN — 10–15 минут
+
+Статус: queued. Входы: V049B.
+
+Проверить пропущенный срок без повторения UNKNOWN. Частный результат исходного V049: Clock как вход pure reducer; bounded catch-up и no overlap. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V049B.
+
+Приёмка: DST fold/gap, restart после admission и pause не дают дубля. Это точка объединения всей цепочки V049A, V049B, V049.
+
+Пути: tests/automation/schedule.rs.
+
+### V049A. Вычислять следующий срок с timezone и DST — 10–15 минут
+
+Статус: queued. Входы: V048.
+
+Вычислять следующий срок с timezone и DST. Частный результат исходного V049: Clock как вход pure reducer; bounded catch-up и no overlap. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V048.
+
+Приёмка: Получен проверяемый результат: Вычислять следующий срок с timezone и DST. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: tests/automation/schedule.rs.
+
+### V049B. Сохранять pause и исход выполнявшегося события при рестарте — 10–15 минут
+
+Статус: queued. Входы: V049A.
+
+Сохранять pause и исход выполнявшегося события при рестарте. Частный результат исходного V049: Clock как вход pure reducer; bounded catch-up и no overlap. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V049A.
+
+Приёмка: Получен проверяемый результат: Сохранять pause и исход выполнявшегося события при рестарте. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: tests/automation/schedule.rs.
+
+### V050. Подтвердить отсутствие нового хода после остановки — 10–15 минут
+
+Статус: queued. Входы: V050B.
+
+Подтвердить отсутствие нового хода после остановки. Частный результат исходного V050: Existing goal judge contract как input; bounded continuation, явный failure. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V050B.
+
+Приёмка: Goal done, quota unknown/denied и HumanStop не вызывают retry-loop; одна continuation на turn. Это точка объединения всей цепочки V050A, V050B, V050.
+
+Пути: crates/herder/src/automation/autopilot.rs.
+
+### V050A. Остановить autopilot по достигнутой цели или бюджету — 10–15 минут
+
+Статус: queued. Входы: V048.
+
+Остановить autopilot по достигнутой цели или бюджету. Частный результат исходного V050: Existing goal judge contract как input; bounded continuation, явный failure. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V048.
+
+Приёмка: Получен проверяемый результат: Остановить autopilot по достигнутой цели или бюджету. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/automation/autopilot.rs.
+
+### V050B. Сохранять причину остановки и HumanStop — 10–15 минут
+
+Статус: queued. Входы: V050A.
+
+Сохранять причину остановки и HumanStop. Частный результат исходного V050: Existing goal judge contract как input; bounded continuation, явный failure. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V050A.
+
+Приёмка: Получен проверяемый результат: Сохранять причину остановки и HumanStop. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/automation/autopilot.rs.
+
+## OpenCode и совместная работа с Codex
+
+### E002. Показать первый native ответ OpenCode через новый MCP — 10–15 минут
+
+Статус: queued. Входы: V065, V063, V051, V003, V025.
+
+Установить dev сборку. Пройти create→deliver→read на изолированном OpenCode с лжемоделью. Полная приёмка V069 остаётся обязательной.
+
+Приёмка: Установить dev сборку. Пройти create→deliver→read на изолированном OpenCode с лжемоделью. Полная приёмка V069 остаётся обязательной.
+
+Пути: acceptance/early/opencode/.
+
+### V061. OpenCode: Записать capability matrix с точным неподдерживаемым вызовом — 10–15 минут
+
+Статус: queued. Входы: V061B.
+
+OpenCode: Записать capability matrix с точным неподдерживаемым вызовом. Частный результат исходного V061: Один versioned HTTP/events: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V061B.
+
+Приёмка: Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success. Это точка объединения всей цепочки V061A, V061B, V061.
+
+Пути: acceptance/contracts/opencode.md.
+
+Неопределённость: Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.
+
+### V061A. OpenCode: Зафиксировать версию и один официальный native маршрут — 10–15 минут
+
+Статус: running. Входы: V006.
+
+OpenCode: Зафиксировать версию и один официальный native маршрут. Частный результат исходного V061: Один versioned HTTP/events: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V006.
+
+Приёмка: Получен проверяемый результат: OpenCode: Зафиксировать версию и один официальный native маршрут. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/contracts/opencode.md.
+
+Неопределённость: Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.
+
+### V061B. OpenCode: Проверить доступность test profile и корреляцию input — 10–15 минут
+
+Статус: queued. Входы: V061A.
+
+OpenCode: Проверить доступность test profile и корреляцию input. Частный результат исходного V061: Один versioned HTTP/events: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V061A.
+
+Приёмка: Получен проверяемый результат: OpenCode: Проверить доступность test profile и корреляцию input. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/contracts/opencode.md.
+
+Неопределённость: Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.
+
+### V062. OpenCode: Проверить изоляцию подключения и ошибку доступа — 10–15 минут
+
+Статус: queued. Входы: V062B.
+
+OpenCode: Проверить изоляцию подключения и ошибку доступа. Частный результат исходного V062: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V062B.
+
+Приёмка: Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю. Это точка объединения всей цепочки V062A, V062B, V062.
+
+Пути: crates/herder/src/adapters/opencode/connection.rs.
+
+Неопределённость: Объём подключения неизвестен до подтверждения native route входным gate. Этот шаг до 15 минут покрывает проверку готового versioned transport; отсутствующий API требует конкретного нового разбиения и пересчёта.
+
+### V062A. OpenCode: Открыть соединение конкретного instance — 10–15 минут
+
+Статус: queued. Входы: V061.
+
+OpenCode: Открыть соединение конкретного instance. Частный результат исходного V062: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V061.
+
+Приёмка: Получен проверяемый результат: OpenCode: Открыть соединение конкретного instance. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/opencode/connection.rs.
+
+### V062B. OpenCode: Связать request IDs, disconnect и время ожидания — 10–15 минут
+
+Статус: queued. Входы: V062A.
+
+OpenCode: Связать request IDs, disconnect и время ожидания. Частный результат исходного V062: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V062A.
+
+Приёмка: Получен проверяемый результат: OpenCode: Связать request IDs, disconnect и время ожидания. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/opencode/connection.rs.
+
+### V063. OpenCode: Сверить recent с независимым native чтением — 10–15 минут
+
+Статус: queued. Входы: V063B.
+
+OpenCode: Сверить recent с независимым native чтением. Частный результат исходного V063: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V063B.
+
+Приёмка: Две сессии возвращают свои роли/turn refs; partial отмечен. Это точка объединения всей цепочки V063A, V063B, V063.
+
+Пути: crates/herder/src/adapters/opencode/read.rs.
+
+### V063A. OpenCode: Прочитать native список и устойчивые session IDs — 10–15 минут
+
+Статус: queued. Входы: V062, V028.
+
+OpenCode: Прочитать native список и устойчивые session IDs. Частный результат исходного V063: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V062, V028.
+
+Приёмка: Получен проверяемый результат: OpenCode: Прочитать native список и устойчивые session IDs. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/opencode/read.rs.
+
+### V063B. OpenCode: Нормализовать user и assistant с turn refs — 10–15 минут
+
+Статус: queued. Входы: V063A.
+
+OpenCode: Нормализовать user и assistant с turn refs. Частный результат исходного V063: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V063A.
+
+Приёмка: Получен проверяемый результат: OpenCode: Нормализовать user и assistant с turn refs. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/opencode/read.rs.
+
+### V064. OpenCode: Сверить единственную созданную сессию через public MCP — 10–15 минут
+
+Статус: queued. Входы: V064B.
+
+OpenCode: Сверить единственную созданную сессию через public MCP. Частный результат исходного V064: Одна native create route; request correlation и readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V064B.
+
+Приёмка: Точное native ID, creator сохраняется; disconnect не запускает второй create. Это точка объединения всей цепочки V064A, V064B, V064.
+
+Пути: crates/herder/src/adapters/opencode/create.rs.
+
+### V064A. OpenCode: Вызвать native create из общего application — 10–15 минут
+
+Статус: queued. Входы: V062, V023.
+
+OpenCode: Вызвать native create из общего application. Частный результат исходного V064: Одна native create route; request correlation и readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V062, V023.
+
+Приёмка: Получен проверяемый результат: OpenCode: Вызвать native create из общего application. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/opencode/create.rs.
+
+### V064B. OpenCode: Связать receipt с точным session ID — 10–15 минут
+
+Статус: queued. Входы: V064A.
+
+OpenCode: Связать receipt с точным session ID. Частный результат исходного V064: Одна native create route; request correlation и readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V064A.
+
+Приёмка: Получен проверяемый результат: OpenCode: Связать receipt с точным session ID. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/opencode/create.rs.
+
+### V065. OpenCode: Подтвердить доставку и отказ от повторения UNKNOWN — 10–15 минут
+
+Статус: queued. Входы: V065B.
+
+OpenCode: Подтвердить доставку и отказ от повторения UNKNOWN. Частный результат исходного V065: Одна native send route; поддерживаемые modes кодируются явно; native receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V065B.
+
+Приёмка: Один input readback; unsupported mode до send; unknown после разрыва не replay. Это точка объединения всей цепочки V065A, V065B, V065.
+
+Пути: crates/herder/src/adapters/opencode/deliver.rs.
+
+### V065A. OpenCode: Передать message с request key в поддерживаемом режиме — 10–15 минут
+
+Статус: queued. Входы: V064, V024, V025.
+
+OpenCode: Передать message с request key в поддерживаемом режиме. Частный результат исходного V065: Одна native send route; поддерживаемые modes кодируются явно; native receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V064, V024, V025.
+
+Приёмка: Получен проверяемый результат: OpenCode: Передать message с request key в поддерживаемом режиме. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/opencode/deliver.rs.
+
+### V065B. OpenCode: Найти input в точном native turn или queue — 10–15 минут
+
+Статус: queued. Входы: V065A.
+
+OpenCode: Найти input в точном native turn или queue. Частный результат исходного V065: Одна native send route; поддерживаемые modes кодируются явно; native receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V065A.
+
+Приёмка: Получен проверяемый результат: OpenCode: Найти input в точном native turn или queue. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/opencode/deliver.rs.
+
+### V066. OpenCode: Сверить export и search с исходной историей — 10–15 минут
+
+Статус: queued. Входы: V066B.
+
+OpenCode: Сверить export и search с исходной историей. Частный результат исходного V066: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V066B.
+
+Приёмка: Первая/последняя страница и role blocks не теряются; чужой cursor rejected. Это точка объединения всей цепочки V066A, V066B, V066.
+
+Пути: crates/herder/src/adapters/opencode/transcript.rs.
+
+### V066A. OpenCode: Прочитать native transcript страницами — 10–15 минут
+
+Статус: queued. Входы: V062, V029, V030.
+
+OpenCode: Прочитать native transcript страницами. Частный результат исходного V066: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V062, V029, V030.
+
+Приёмка: Получен проверяемый результат: OpenCode: Прочитать native transcript страницами. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/opencode/transcript.rs.
+
+### V066B. OpenCode: Нормализовать snapshot и обновить общий индекс — 10–15 минут
+
+Статус: queued. Входы: V066A.
+
+OpenCode: Нормализовать snapshot и обновить общий индекс. Частный результат исходного V066: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V066A.
+
+Приёмка: Получен проверяемый результат: OpenCode: Нормализовать snapshot и обновить общий индекс. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/opencode/transcript.rs.
+
+### V067. OpenCode: Проверить stop, stale request и границы capability — 10–15 минут
+
+Статус: queued. Входы: V067B.
+
+OpenCode: Проверить stop, stale request и границы capability. Частный результат исходного V067: Только доказанные stop/model/permission methods; unsupported явно, не успех. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V067B.
+
+Приёмка: Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control. Это точка объединения всей цепочки V067A, V067B, V067.
+
+Пути: crates/herder/src/adapters/opencode/control.rs.
+
+### V067A. OpenCode: Привязать interrupt к точному native turn — 10–15 минут
+
+Статус: queued. Входы: V062, V025, V034, V032.
+
+OpenCode: Привязать interrupt к точному native turn. Частный результат исходного V067: Только доказанные stop/model/permission methods; unsupported явно, не успех. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V062, V025, V034, V032.
+
+Приёмка: Получен проверяемый результат: OpenCode: Привязать interrupt к точному native turn. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/opencode/control.rs.
+
+### V067B. OpenCode: Применить поддерживаемые параметры и permission reply — 10–15 минут
+
+Статус: queued. Входы: V067A.
+
+OpenCode: Применить поддерживаемые параметры и permission reply. Частный результат исходного V067: Только доказанные stop/model/permission methods; unsupported явно, не успех. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V067A.
+
+Приёмка: Получен проверяемый результат: OpenCode: Применить поддерживаемые параметры и permission reply. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/opencode/control.rs.
+
+### V068. OpenCode: Подтвердить видимость карточки агенту и честный unsupported — 10–15 минут
+
+Статус: queued. Входы: V068B.
+
+OpenCode: Подтвердить видимость карточки агенту и честный unsupported. Частный результат исходного V068: Привязка self и один подтверждённый startup/resume/compact hook; absence явная. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V068B.
+
+Приёмка: Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся. Это точка объединения всей цепочки V068A, V068B, V068.
+
+Пути: crates/herder/src/adapters/opencode/context.rs.
+
+### V068A. OpenCode: Подключить native точку вставки context — 10–15 минут
+
+Статус: queued. Входы: V062, V046.
+
+OpenCode: Подключить native точку вставки context. Частный результат исходного V068: Привязка self и один подтверждённый startup/resume/compact hook; absence явная. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V062, V046.
+
+Приёмка: Получен проверяемый результат: OpenCode: Подключить native точку вставки context. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/opencode/context.rs.
+
+### V068B. OpenCode: Восстановить generation при поддерживаемом resume или compaction — 10–15 минут
+
+Статус: queued. Входы: V068A.
+
+OpenCode: Восстановить generation при поддерживаемом resume или compaction. Частный результат исходного V068: Привязка self и один подтверждённый startup/resume/compact hook; absence явная. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V068A.
+
+Приёмка: Получен проверяемый результат: OpenCode: Восстановить generation при поддерживаемом resume или compaction. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/opencode/context.rs.
+
+### V069. OpenCode: Подтвердить stop, контекст и digest всей вертикали — 10–15 минут
+
+Статус: queued. Входы: V069B, E002.
+
+OpenCode: Подтвердить stop, контекст и digest всей вертикали. Частный результат исходного V069: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V069B.
+
+Приёмка: Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane. Это точка объединения всей цепочки V069A, V069B, V069.
+
+Пути: acceptance/native/opencode/.
+
+### V069A. OpenCode: Установить текущий dev artifact в изолированный native контур — 10–15 минут
+
+Статус: queued. Входы: V063, V065, V066, V067, V068, V051, V016.
+
+OpenCode: Установить текущий dev artifact в изолированный native контур. Частный результат исходного V069: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V063, V065, V066, V067, V068, V051, V016.
+
+Приёмка: Получен проверяемый результат: OpenCode: Установить текущий dev artifact в изолированный native контур. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/native/opencode/.
+
+### V069B. OpenCode: Пройти create, deliver, read и export через публичный MCP — 10–15 минут
+
+Статус: queued. Входы: V069A.
+
+OpenCode: Пройти create, deliver, read и export через публичный MCP. Частный результат исходного V069: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V069A.
+
+Приёмка: Получен проверяемый результат: OpenCode: Пройти create, deliver, read и export через публичный MCP. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/native/opencode/.
+
+### V097. Сохранить native readback и durable Task после рестарта — 10–15 минут
+
+Статус: queued. Входы: V097B.
+
+Сохранить native readback и durable Task после рестарта. Частный результат исходного V097: Установленный dev artifact и один основной MCP client с durable Task polling. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V097B.
+
+Приёмка: Create/deliver/context работают через реальные adapters; missing extension не скрыт. Это точка объединения всей цепочки V097A, V097B, V097.
+
+Пути: release/dev-vertical/.
+
+### V097A. Установить dev артефакт с Codex и OpenCode — 10–15 минут
+
+Статус: queued. Входы: V060, V069, V003, V044, V046.
+
+Установить dev артефакт с Codex и OpenCode. Частный результат исходного V097: Установленный dev artifact и один основной MCP client с durable Task polling. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V060, V069, V003, V044, V046.
+
+Приёмка: Получен проверяемый результат: Установить dev артефакт с Codex и OpenCode. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/dev-vertical/.
+
+### V097B. Пройти create, deliver и context через основной MCP client — 10–15 минут
+
+Статус: queued. Входы: V097A.
+
+Пройти create, deliver и context через основной MCP client. Частный результат исходного V097: Установленный dev artifact и один основной MCP client с durable Task polling. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V097A.
+
+Приёмка: Получен проверяемый результат: Пройти create, deliver и context через основной MCP client. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/dev-vertical/.
+
+## ZCode через общий интерфейс
+
+### V070. ZCode: Записать capability matrix с точным неподдерживаемым вызовом — 10–15 минут
+
+Статус: queued. Входы: V070B.
+
+ZCode: Записать capability matrix с точным неподдерживаемым вызовом. Частный результат исходного V070: Один versioned подтверждаемый native session transport: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V070B.
+
+Приёмка: Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success. Это точка объединения всей цепочки V070A, V070B, V070.
+
+Пути: acceptance/contracts/zcode.md.
+
+Неопределённость: Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.
+
+### V070A. ZCode: Зафиксировать версию и один официальный native маршрут — 10–15 минут
+
+Статус: running. Входы: V006.
+
+ZCode: Зафиксировать версию и один официальный native маршрут. Частный результат исходного V070: Один versioned подтверждаемый native session transport: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V006.
+
+Приёмка: Получен проверяемый результат: ZCode: Зафиксировать версию и один официальный native маршрут. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/contracts/zcode.md.
+
+Неопределённость: Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.
+
+### V070B. ZCode: Проверить доступность test profile и корреляцию input — 10–15 минут
+
+Статус: queued. Входы: V070A.
+
+ZCode: Проверить доступность test profile и корреляцию input. Частный результат исходного V070: Один versioned подтверждаемый native session transport: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V070A.
+
+Приёмка: Получен проверяемый результат: ZCode: Проверить доступность test profile и корреляцию input. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/contracts/zcode.md.
+
+Неопределённость: Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.
+
+### V071. ZCode: Проверить изоляцию подключения и ошибку доступа — 10–15 минут
+
+Статус: queued. Входы: V071B.
+
+ZCode: Проверить изоляцию подключения и ошибку доступа. Частный результат исходного V071: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V071B.
+
+Приёмка: Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю. Это точка объединения всей цепочки V071A, V071B, V071.
+
+Пути: crates/herder/src/adapters/zcode/connection.rs.
+
+Неопределённость: Объём подключения неизвестен до подтверждения native route входным gate. Этот шаг до 15 минут покрывает проверку готового versioned transport; отсутствующий API требует конкретного нового разбиения и пересчёта.
+
+### V071A. ZCode: Открыть соединение конкретного instance — 10–15 минут
+
+Статус: queued. Входы: V070.
+
+ZCode: Открыть соединение конкретного instance. Частный результат исходного V071: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V070.
+
+Приёмка: Получен проверяемый результат: ZCode: Открыть соединение конкретного instance. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/zcode/connection.rs.
+
+### V071B. ZCode: Связать request IDs, disconnect и время ожидания — 10–15 минут
+
+Статус: queued. Входы: V071A.
+
+ZCode: Связать request IDs, disconnect и время ожидания. Частный результат исходного V071: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V071A.
+
+Приёмка: Получен проверяемый результат: ZCode: Связать request IDs, disconnect и время ожидания. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/zcode/connection.rs.
+
+### V072. ZCode: Сверить recent с независимым native чтением — 10–15 минут
+
+Статус: queued. Входы: V072B.
+
+ZCode: Сверить recent с независимым native чтением. Частный результат исходного V072: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V072B.
+
+Приёмка: Две сессии возвращают свои роли/turn refs; partial отмечен. Это точка объединения всей цепочки V072A, V072B, V072.
+
+Пути: crates/herder/src/adapters/zcode/read.rs.
+
+### V072A. ZCode: Прочитать native список и устойчивые session IDs — 10–15 минут
+
+Статус: queued. Входы: V071, V028.
+
+ZCode: Прочитать native список и устойчивые session IDs. Частный результат исходного V072: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V071, V028.
+
+Приёмка: Получен проверяемый результат: ZCode: Прочитать native список и устойчивые session IDs. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/zcode/read.rs.
+
+### V072B. ZCode: Нормализовать user и assistant с turn refs — 10–15 минут
+
+Статус: queued. Входы: V072A.
+
+ZCode: Нормализовать user и assistant с turn refs. Частный результат исходного V072: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V072A.
+
+Приёмка: Получен проверяемый результат: ZCode: Нормализовать user и assistant с turn refs. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/zcode/read.rs.
+
+### V073. ZCode: Сверить единственную созданную сессию через public MCP — 10–15 минут
+
+Статус: queued. Входы: V073B.
+
+ZCode: Сверить единственную созданную сессию через public MCP. Частный результат исходного V073: Одна native create route; request correlation и readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V073B.
+
+Приёмка: Точное native ID, creator сохраняется; disconnect не запускает второй create. Это точка объединения всей цепочки V073A, V073B, V073.
+
+Пути: crates/herder/src/adapters/zcode/create.rs.
+
+### V073A. ZCode: Вызвать native create из общего application — 10–15 минут
+
+Статус: queued. Входы: V071, V023.
+
+ZCode: Вызвать native create из общего application. Частный результат исходного V073: Одна native create route; request correlation и readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V071, V023.
+
+Приёмка: Получен проверяемый результат: ZCode: Вызвать native create из общего application. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/zcode/create.rs.
+
+### V073B. ZCode: Связать receipt с точным session ID — 10–15 минут
+
+Статус: queued. Входы: V073A.
+
+ZCode: Связать receipt с точным session ID. Частный результат исходного V073: Одна native create route; request correlation и readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V073A.
+
+Приёмка: Получен проверяемый результат: ZCode: Связать receipt с точным session ID. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/zcode/create.rs.
+
+### V074. ZCode: Подтвердить доставку и отказ от повторения UNKNOWN — 10–15 минут
+
+Статус: queued. Входы: V074B.
+
+ZCode: Подтвердить доставку и отказ от повторения UNKNOWN. Частный результат исходного V074: Одна native send route; поддерживаемые modes кодируются явно; native receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V074B.
+
+Приёмка: Один input readback; unsupported mode до send; unknown после разрыва не replay. Это точка объединения всей цепочки V074A, V074B, V074.
+
+Пути: crates/herder/src/adapters/zcode/deliver.rs.
+
+### V074A. ZCode: Передать message с request key в поддерживаемом режиме — 10–15 минут
+
+Статус: queued. Входы: V073, V024, V025.
+
+ZCode: Передать message с request key в поддерживаемом режиме. Частный результат исходного V074: Одна native send route; поддерживаемые modes кодируются явно; native receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V073, V024, V025.
+
+Приёмка: Получен проверяемый результат: ZCode: Передать message с request key в поддерживаемом режиме. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/zcode/deliver.rs.
+
+### V074B. ZCode: Найти input в точном native turn или queue — 10–15 минут
+
+Статус: queued. Входы: V074A.
+
+ZCode: Найти input в точном native turn или queue. Частный результат исходного V074: Одна native send route; поддерживаемые modes кодируются явно; native receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V074A.
+
+Приёмка: Получен проверяемый результат: ZCode: Найти input в точном native turn или queue. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/zcode/deliver.rs.
+
+### V075. ZCode: Сверить export и search с исходной историей — 10–15 минут
+
+Статус: queued. Входы: V075B.
+
+ZCode: Сверить export и search с исходной историей. Частный результат исходного V075: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V075B.
+
+Приёмка: Первая/последняя страница и role blocks не теряются; чужой cursor rejected. Это точка объединения всей цепочки V075A, V075B, V075.
+
+Пути: crates/herder/src/adapters/zcode/transcript.rs.
+
+### V075A. ZCode: Прочитать native transcript страницами — 10–15 минут
+
+Статус: queued. Входы: V071, V029, V030.
+
+ZCode: Прочитать native transcript страницами. Частный результат исходного V075: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V071, V029, V030.
+
+Приёмка: Получен проверяемый результат: ZCode: Прочитать native transcript страницами. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/zcode/transcript.rs.
+
+### V075B. ZCode: Нормализовать snapshot и обновить общий индекс — 10–15 минут
+
+Статус: queued. Входы: V075A.
+
+ZCode: Нормализовать snapshot и обновить общий индекс. Частный результат исходного V075: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V075A.
+
+Приёмка: Получен проверяемый результат: ZCode: Нормализовать snapshot и обновить общий индекс. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/zcode/transcript.rs.
+
+### V076. ZCode: Проверить stop, stale request и границы capability — 10–15 минут
+
+Статус: queued. Входы: V076B.
+
+ZCode: Проверить stop, stale request и границы capability. Частный результат исходного V076: Только доказанные stop/model/permission methods; unsupported явно, не успех. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V076B.
+
+Приёмка: Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control. Это точка объединения всей цепочки V076A, V076B, V076.
+
+Пути: crates/herder/src/adapters/zcode/control.rs.
+
+### V076A. ZCode: Привязать interrupt к точному native turn — 10–15 минут
+
+Статус: queued. Входы: V071, V025, V034, V032.
+
+ZCode: Привязать interrupt к точному native turn. Частный результат исходного V076: Только доказанные stop/model/permission methods; unsupported явно, не успех. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V071, V025, V034, V032.
+
+Приёмка: Получен проверяемый результат: ZCode: Привязать interrupt к точному native turn. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/zcode/control.rs.
+
+### V076B. ZCode: Применить поддерживаемые параметры и permission reply — 10–15 минут
+
+Статус: queued. Входы: V076A.
+
+ZCode: Применить поддерживаемые параметры и permission reply. Частный результат исходного V076: Только доказанные stop/model/permission methods; unsupported явно, не успех. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V076A.
+
+Приёмка: Получен проверяемый результат: ZCode: Применить поддерживаемые параметры и permission reply. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/zcode/control.rs.
+
+### V077. ZCode: Подтвердить видимость карточки агенту и честный unsupported — 10–15 минут
+
+Статус: queued. Входы: V077B.
+
+ZCode: Подтвердить видимость карточки агенту и честный unsupported. Частный результат исходного V077: Привязка self и один подтверждённый startup/resume/compact hook; absence явная. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V077B.
+
+Приёмка: Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся. Это точка объединения всей цепочки V077A, V077B, V077.
+
+Пути: crates/herder/src/adapters/zcode/context.rs.
+
+### V077A. ZCode: Подключить native точку вставки context — 10–15 минут
+
+Статус: queued. Входы: V071, V046.
+
+ZCode: Подключить native точку вставки context. Частный результат исходного V077: Привязка self и один подтверждённый startup/resume/compact hook; absence явная. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V071, V046.
+
+Приёмка: Получен проверяемый результат: ZCode: Подключить native точку вставки context. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/zcode/context.rs.
+
+### V077B. ZCode: Восстановить generation при поддерживаемом resume или compaction — 10–15 минут
+
+Статус: queued. Входы: V077A.
+
+ZCode: Восстановить generation при поддерживаемом resume или compaction. Частный результат исходного V077: Привязка self и один подтверждённый startup/resume/compact hook; absence явная. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V077A.
+
+Приёмка: Получен проверяемый результат: ZCode: Восстановить generation при поддерживаемом resume или compaction. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/zcode/context.rs.
+
+### V078. ZCode: Подтвердить stop, контекст и digest всей вертикали — 10–15 минут
+
+Статус: queued. Входы: V078B.
+
+ZCode: Подтвердить stop, контекст и digest всей вертикали. Частный результат исходного V078: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V078B.
+
+Приёмка: Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane. Это точка объединения всей цепочки V078A, V078B, V078.
+
+Пути: acceptance/native/zcode/.
+
+### V078A. ZCode: Установить текущий dev artifact в изолированный native контур — 10–15 минут
+
+Статус: queued. Входы: V072, V074, V075, V076, V077, V051, V016.
+
+ZCode: Установить текущий dev artifact в изолированный native контур. Частный результат исходного V078: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V072, V074, V075, V076, V077, V051, V016.
+
+Приёмка: Получен проверяемый результат: ZCode: Установить текущий dev artifact в изолированный native контур. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/native/zcode/.
+
+### V078B. ZCode: Пройти create, deliver, read и export через публичный MCP — 10–15 минут
+
+Статус: queued. Входы: V078A.
+
+ZCode: Пройти create, deliver, read и export через публичный MCP. Частный результат исходного V078: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V078A.
+
+Приёмка: Получен проверяемый результат: ZCode: Пройти create, deliver, read и export через публичный MCP. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/native/zcode/.
+
+## ChatGPT через общий интерфейс
+
+### V079. ChatGPT: Записать capability matrix с точным неподдерживаемым вызовом — 10–15 минут
+
+Статус: queued. Входы: V079B.
+
+ChatGPT: Записать capability matrix с точным неподдерживаемым вызовом. Частный результат исходного V079: Один versioned авторизованный browser profile через разрешённый маршрут: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V079B.
+
+Приёмка: Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success. Это точка объединения всей цепочки V079A, V079B, V079.
+
+Пути: acceptance/contracts/chatgpt.md.
+
+Неопределённость: Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.
+
+### V079A. ChatGPT: Зафиксировать версию и один официальный native маршрут — 10–15 минут
+
+Статус: queued. Входы: V006.
+
+ChatGPT: Зафиксировать версию и один официальный native маршрут. Частный результат исходного V079: Один versioned авторизованный browser profile через разрешённый маршрут: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V006.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Зафиксировать версию и один официальный native маршрут. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/contracts/chatgpt.md.
+
+Неопределённость: Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.
+
+### V079B. ChatGPT: Проверить доступность test profile и корреляцию input — 10–15 минут
+
+Статус: queued. Входы: V079A.
+
+ChatGPT: Проверить доступность test profile и корреляцию input. Частный результат исходного V079: Один versioned авторизованный browser profile через разрешённый маршрут: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V079A.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Проверить доступность test profile и корреляцию input. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/contracts/chatgpt.md.
+
+Неопределённость: Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.
+
+### V080. ChatGPT: Проверить изоляцию подключения и ошибку доступа — 10–15 минут
+
+Статус: queued. Входы: V080B.
+
+ChatGPT: Проверить изоляцию подключения и ошибку доступа. Частный результат исходного V080: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V080B.
+
+Приёмка: Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю. Это точка объединения всей цепочки V080A, V080B, V080.
+
+Пути: crates/herder/src/adapters/chatgpt/connection.rs.
+
+Неопределённость: Объём подключения неизвестен до подтверждения native route входным gate. Этот шаг до 15 минут покрывает проверку готового versioned transport; отсутствующий API требует конкретного нового разбиения и пересчёта.
+
+### V080A. ChatGPT: Открыть соединение конкретного instance — 10–15 минут
+
+Статус: queued. Входы: V079.
+
+ChatGPT: Открыть соединение конкретного instance. Частный результат исходного V080: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V079.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Открыть соединение конкретного instance. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/chatgpt/connection.rs.
+
+### V080B. ChatGPT: Связать request IDs, disconnect и время ожидания — 10–15 минут
+
+Статус: queued. Входы: V080A.
+
+ChatGPT: Связать request IDs, disconnect и время ожидания. Частный результат исходного V080: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V080A.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Связать request IDs, disconnect и время ожидания. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/chatgpt/connection.rs.
+
+### V081. ChatGPT: Сверить recent с независимым native чтением — 10–15 минут
+
+Статус: queued. Входы: V081B.
+
+ChatGPT: Сверить recent с независимым native чтением. Частный результат исходного V081: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V081B.
+
+Приёмка: Две сессии возвращают свои роли/turn refs; partial отмечен. Это точка объединения всей цепочки V081A, V081B, V081.
+
+Пути: crates/herder/src/adapters/chatgpt/read.rs.
+
+### V081A. ChatGPT: Прочитать native список и устойчивые session IDs — 10–15 минут
+
+Статус: queued. Входы: V080, V028.
+
+ChatGPT: Прочитать native список и устойчивые session IDs. Частный результат исходного V081: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V080, V028.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Прочитать native список и устойчивые session IDs. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/chatgpt/read.rs.
+
+### V081B. ChatGPT: Нормализовать user и assistant с turn refs — 10–15 минут
+
+Статус: queued. Входы: V081A.
+
+ChatGPT: Нормализовать user и assistant с turn refs. Частный результат исходного V081: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V081A.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Нормализовать user и assistant с turn refs. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/chatgpt/read.rs.
+
+### V082. ChatGPT: Сверить единственную созданную сессию через public MCP — 10–15 минут
+
+Статус: queued. Входы: V082B.
+
+ChatGPT: Сверить единственную созданную сессию через public MCP. Частный результат исходного V082: Одна native create route; request correlation и readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V082B.
+
+Приёмка: Точное native ID, creator сохраняется; disconnect не запускает второй create. Это точка объединения всей цепочки V082A, V082B, V082.
+
+Пути: crates/herder/src/adapters/chatgpt/create.rs.
+
+### V082A. ChatGPT: Вызвать native create из общего application — 10–15 минут
+
+Статус: queued. Входы: V080, V023.
+
+ChatGPT: Вызвать native create из общего application. Частный результат исходного V082: Одна native create route; request correlation и readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V080, V023.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Вызвать native create из общего application. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/chatgpt/create.rs.
+
+### V082B. ChatGPT: Связать receipt с точным session ID — 10–15 минут
+
+Статус: queued. Входы: V082A.
+
+ChatGPT: Связать receipt с точным session ID. Частный результат исходного V082: Одна native create route; request correlation и readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V082A.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Связать receipt с точным session ID. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/chatgpt/create.rs.
+
+### V083. ChatGPT: Подтвердить доставку и отказ от повторения UNKNOWN — 10–15 минут
+
+Статус: queued. Входы: V083B.
+
+ChatGPT: Подтвердить доставку и отказ от повторения UNKNOWN. Частный результат исходного V083: Одна native send route; поддерживаемые modes кодируются явно; native receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V083B.
+
+Приёмка: Один input readback; unsupported mode до send; unknown после разрыва не replay. Это точка объединения всей цепочки V083A, V083B, V083.
+
+Пути: crates/herder/src/adapters/chatgpt/deliver.rs.
+
+### V083A. ChatGPT: Передать message с request key в поддерживаемом режиме — 10–15 минут
+
+Статус: queued. Входы: V082, V024, V025.
+
+ChatGPT: Передать message с request key в поддерживаемом режиме. Частный результат исходного V083: Одна native send route; поддерживаемые modes кодируются явно; native receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V082, V024, V025.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Передать message с request key в поддерживаемом режиме. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/chatgpt/deliver.rs.
+
+### V083B. ChatGPT: Найти input в точном native turn или queue — 10–15 минут
+
+Статус: queued. Входы: V083A.
+
+ChatGPT: Найти input в точном native turn или queue. Частный результат исходного V083: Одна native send route; поддерживаемые modes кодируются явно; native receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V083A.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Найти input в точном native turn или queue. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/chatgpt/deliver.rs.
+
+### V084. ChatGPT: Сверить export и search с исходной историей — 10–15 минут
+
+Статус: queued. Входы: V084B.
+
+ChatGPT: Сверить export и search с исходной историей. Частный результат исходного V084: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V084B.
+
+Приёмка: Первая/последняя страница и role blocks не теряются; чужой cursor rejected. Это точка объединения всей цепочки V084A, V084B, V084.
+
+Пути: crates/herder/src/adapters/chatgpt/transcript.rs.
+
+### V084A. ChatGPT: Прочитать native transcript страницами — 10–15 минут
+
+Статус: queued. Входы: V080, V029, V030.
+
+ChatGPT: Прочитать native transcript страницами. Частный результат исходного V084: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V080, V029, V030.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Прочитать native transcript страницами. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/chatgpt/transcript.rs.
+
+### V084B. ChatGPT: Нормализовать snapshot и обновить общий индекс — 10–15 минут
+
+Статус: queued. Входы: V084A.
+
+ChatGPT: Нормализовать snapshot и обновить общий индекс. Частный результат исходного V084: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V084A.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Нормализовать snapshot и обновить общий индекс. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/chatgpt/transcript.rs.
+
+### V085. ChatGPT: Проверить stop, stale request и границы capability — 10–15 минут
+
+Статус: queued. Входы: V085B.
+
+ChatGPT: Проверить stop, stale request и границы capability. Частный результат исходного V085: Только доказанные stop/model/permission methods; unsupported явно, не успех. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V085B.
+
+Приёмка: Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control. Это точка объединения всей цепочки V085A, V085B, V085.
+
+Пути: crates/herder/src/adapters/chatgpt/control.rs.
+
+### V085A. ChatGPT: Привязать interrupt к точному native turn — 10–15 минут
+
+Статус: queued. Входы: V080, V025, V034, V032.
+
+ChatGPT: Привязать interrupt к точному native turn. Частный результат исходного V085: Только доказанные stop/model/permission methods; unsupported явно, не успех. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V080, V025, V034, V032.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Привязать interrupt к точному native turn. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/chatgpt/control.rs.
+
+### V085B. ChatGPT: Применить поддерживаемые параметры и permission reply — 10–15 минут
+
+Статус: queued. Входы: V085A.
+
+ChatGPT: Применить поддерживаемые параметры и permission reply. Частный результат исходного V085: Только доказанные stop/model/permission methods; unsupported явно, не успех. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V085A.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Применить поддерживаемые параметры и permission reply. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/chatgpt/control.rs.
+
+### V086. ChatGPT: Подтвердить видимость карточки агенту и честный unsupported — 10–15 минут
+
+Статус: queued. Входы: V086B.
+
+ChatGPT: Подтвердить видимость карточки агенту и честный unsupported. Частный результат исходного V086: Привязка self и один подтверждённый startup/resume/compact hook; absence явная. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V086B.
+
+Приёмка: Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся. Это точка объединения всей цепочки V086A, V086B, V086.
+
+Пути: crates/herder/src/adapters/chatgpt/context.rs.
+
+### V086A. ChatGPT: Подключить native точку вставки context — 10–15 минут
+
+Статус: queued. Входы: V080, V046.
+
+ChatGPT: Подключить native точку вставки context. Частный результат исходного V086: Привязка self и один подтверждённый startup/resume/compact hook; absence явная. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V080, V046.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Подключить native точку вставки context. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/chatgpt/context.rs.
+
+### V086B. ChatGPT: Восстановить generation при поддерживаемом resume или compaction — 10–15 минут
+
+Статус: queued. Входы: V086A.
+
+ChatGPT: Восстановить generation при поддерживаемом resume или compaction. Частный результат исходного V086: Привязка self и один подтверждённый startup/resume/compact hook; absence явная. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V086A.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Восстановить generation при поддерживаемом resume или compaction. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/chatgpt/context.rs.
+
+### V087. ChatGPT: Подтвердить stop, контекст и digest всей вертикали — 10–15 минут
+
+Статус: queued. Входы: V087B.
+
+ChatGPT: Подтвердить stop, контекст и digest всей вертикали. Частный результат исходного V087: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V087B.
+
+Приёмка: Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane. Это точка объединения всей цепочки V087A, V087B, V087.
+
+Пути: acceptance/native/chatgpt/.
+
+### V087A. ChatGPT: Установить текущий dev artifact в изолированный native контур — 10–15 минут
+
+Статус: queued. Входы: V081, V083, V084, V085, V086, V051, V016.
+
+ChatGPT: Установить текущий dev artifact в изолированный native контур. Частный результат исходного V087: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V081, V083, V084, V085, V086, V051, V016.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Установить текущий dev artifact в изолированный native контур. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/native/chatgpt/.
+
+### V087B. ChatGPT: Пройти create, deliver, read и export через публичный MCP — 10–15 минут
+
+Статус: queued. Входы: V087A.
+
+ChatGPT: Пройти create, deliver, read и export через публичный MCP. Частный результат исходного V087: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V087A.
+
+Приёмка: Получен проверяемый результат: ChatGPT: Пройти create, deliver, read и export через публичный MCP. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/native/chatgpt/.
+
+## Z.ai через общий интерфейс
+
+### V088. Z.ai: Записать capability matrix с точным неподдерживаемым вызовом — 10–15 минут
+
+Статус: queued. Входы: V088B.
+
+Z.ai: Записать capability matrix с точным неподдерживаемым вызовом. Частный результат исходного V088: Один versioned авторизованный browser profile через разрешённый маршрут: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V088B.
+
+Приёмка: Результат — capability matrix с источником. Если нужной операции нет, dependent leaf не считается выполнимым; конкретный route/design gap записан, не выдуман success. Это точка объединения всей цепочки V088A, V088B, V088.
+
+Пути: acceptance/contracts/z-ai.md.
+
+Неопределённость: Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.
+
+### V088A. Z.ai: Зафиксировать версию и один официальный native маршрут — 10–15 минут
+
+Статус: queued. Входы: V006.
+
+Z.ai: Зафиксировать версию и один официальный native маршрут. Частный результат исходного V088: Один versioned авторизованный browser profile через разрешённый маршрут: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V006.
+
+Приёмка: Получен проверяемый результат: Z.ai: Зафиксировать версию и один официальный native маршрут. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/contracts/z-ai.md.
+
+Неопределённость: Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.
+
+### V088B. Z.ai: Проверить доступность test profile и корреляцию input — 10–15 минут
+
+Статус: queued. Входы: V088A.
+
+Z.ai: Проверить доступность test profile и корреляцию input. Частный результат исходного V088: Один versioned авторизованный browser profile через разрешённый маршрут: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V088A.
+
+Приёмка: Получен проверяемый результат: Z.ai: Проверить доступность test profile и корреляцию input. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/contracts/z-ai.md.
+
+Неопределённость: Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.
+
+### V089. Z.ai: Проверить изоляцию подключения и ошибку доступа — 10–15 минут
+
+Статус: queued. Входы: V089B.
+
+Z.ai: Проверить изоляцию подключения и ошибку доступа. Частный результат исходного V089: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V089B.
+
+Приёмка: Неверный profile/endpoint даёт unavailable; нет подключения к соседнему профилю. Это точка объединения всей цепочки V089A, V089B, V089.
+
+Пути: crates/herder/src/adapters/z_ai/connection.rs.
+
+Неопределённость: Объём подключения неизвестен до подтверждения native route входным gate. Этот шаг до 15 минут покрывает проверку готового versioned transport; отсутствующий API требует конкретного нового разбиения и пересчёта.
+
+### V089A. Z.ai: Открыть соединение конкретного instance — 10–15 минут
+
+Статус: queued. Входы: V088.
+
+Z.ai: Открыть соединение конкретного instance. Частный результат исходного V089: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V088.
+
+Приёмка: Получен проверяемый результат: Z.ai: Открыть соединение конкретного instance. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/z_ai/connection.rs.
+
+### V089B. Z.ai: Связать request IDs, disconnect и время ожидания — 10–15 минут
+
+Статус: queued. Входы: V089A.
+
+Z.ai: Связать request IDs, disconnect и время ожидания. Частный результат исходного V089: Подключение explicit profile; timeout/shutdown; process/socket state в одном объекте. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V089A.
+
+Приёмка: Получен проверяемый результат: Z.ai: Связать request IDs, disconnect и время ожидания. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/z_ai/connection.rs.
+
+### V090. Z.ai: Сверить recent с независимым native чтением — 10–15 минут
+
+Статус: queued. Входы: V090B.
+
+Z.ai: Сверить recent с независимым native чтением. Частный результат исходного V090: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V090B.
+
+Приёмка: Две сессии возвращают свои роли/turn refs; partial отмечен. Это точка объединения всей цепочки V090A, V090B, V090.
+
+Пути: crates/herder/src/adapters/z_ai/read.rs.
+
+### V090A. Z.ai: Прочитать native список и устойчивые session IDs — 10–15 минут
+
+Статус: queued. Входы: V089, V028.
+
+Z.ai: Прочитать native список и устойчивые session IDs. Частный результат исходного V090: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V089, V028.
+
+Приёмка: Получен проверяемый результат: Z.ai: Прочитать native список и устойчивые session IDs. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/z_ai/read.rs.
+
+### V090B. Z.ai: Нормализовать user и assistant с turn refs — 10–15 минут
+
+Статус: queued. Входы: V090A.
+
+Z.ai: Нормализовать user и assistant с turn refs. Частный результат исходного V090: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V090A.
+
+Приёмка: Получен проверяемый результат: Z.ai: Нормализовать user и assistant с turn refs. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/z_ai/read.rs.
+
+### V091. Z.ai: Сверить единственную созданную сессию через public MCP — 10–15 минут
+
+Статус: queued. Входы: V091B.
+
+Z.ai: Сверить единственную созданную сессию через public MCP. Частный результат исходного V091: Одна native create route; request correlation и readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V091B.
+
+Приёмка: Точное native ID, creator сохраняется; disconnect не запускает второй create. Это точка объединения всей цепочки V091A, V091B, V091.
+
+Пути: crates/herder/src/adapters/z_ai/create.rs.
+
+### V091A. Z.ai: Вызвать native create из общего application — 10–15 минут
+
+Статус: queued. Входы: V089, V023.
+
+Z.ai: Вызвать native create из общего application. Частный результат исходного V091: Одна native create route; request correlation и readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V089, V023.
+
+Приёмка: Получен проверяемый результат: Z.ai: Вызвать native create из общего application. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/z_ai/create.rs.
+
+### V091B. Z.ai: Связать receipt с точным session ID — 10–15 минут
+
+Статус: queued. Входы: V091A.
+
+Z.ai: Связать receipt с точным session ID. Частный результат исходного V091: Одна native create route; request correlation и readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V091A.
+
+Приёмка: Получен проверяемый результат: Z.ai: Связать receipt с точным session ID. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/z_ai/create.rs.
+
+### V092. Z.ai: Подтвердить доставку и отказ от повторения UNKNOWN — 10–15 минут
+
+Статус: queued. Входы: V092B.
+
+Z.ai: Подтвердить доставку и отказ от повторения UNKNOWN. Частный результат исходного V092: Одна native send route; поддерживаемые modes кодируются явно; native receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V092B.
+
+Приёмка: Один input readback; unsupported mode до send; unknown после разрыва не replay. Это точка объединения всей цепочки V092A, V092B, V092.
+
+Пути: crates/herder/src/adapters/z_ai/deliver.rs.
+
+### V092A. Z.ai: Передать message с request key в поддерживаемом режиме — 10–15 минут
+
+Статус: queued. Входы: V091, V024, V025.
+
+Z.ai: Передать message с request key в поддерживаемом режиме. Частный результат исходного V092: Одна native send route; поддерживаемые modes кодируются явно; native receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V091, V024, V025.
+
+Приёмка: Получен проверяемый результат: Z.ai: Передать message с request key в поддерживаемом режиме. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/z_ai/deliver.rs.
+
+### V092B. Z.ai: Найти input в точном native turn или queue — 10–15 минут
+
+Статус: queued. Входы: V092A.
+
+Z.ai: Найти input в точном native turn или queue. Частный результат исходного V092: Одна native send route; поддерживаемые modes кодируются явно; native receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V092A.
+
+Приёмка: Получен проверяемый результат: Z.ai: Найти input в точном native turn или queue. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/z_ai/deliver.rs.
+
+### V093. Z.ai: Сверить export и search с исходной историей — 10–15 минут
+
+Статус: queued. Входы: V093B.
+
+Z.ai: Сверить export и search с исходной историей. Частный результат исходного V093: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V093B.
+
+Приёмка: Первая/последняя страница и role blocks не теряются; чужой cursor rejected. Это точка объединения всей цепочки V093A, V093B, V093.
+
+Пути: crates/herder/src/adapters/z_ai/transcript.rs.
+
+### V093A. Z.ai: Прочитать native transcript страницами — 10–15 минут
+
+Статус: queued. Входы: V089, V029, V030.
+
+Z.ai: Прочитать native transcript страницами. Частный результат исходного V093: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V089, V029, V030.
+
+Приёмка: Получен проверяемый результат: Z.ai: Прочитать native transcript страницами. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/z_ai/transcript.rs.
+
+### V093B. Z.ai: Нормализовать snapshot и обновить общий индекс — 10–15 минут
+
+Статус: queued. Входы: V093A.
+
+Z.ai: Нормализовать snapshot и обновить общий индекс. Частный результат исходного V093: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V093A.
+
+Приёмка: Получен проверяемый результат: Z.ai: Нормализовать snapshot и обновить общий индекс. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/z_ai/transcript.rs.
+
+### V094. Z.ai: Проверить stop, stale request и границы capability — 10–15 минут
+
+Статус: queued. Входы: V094B.
+
+Z.ai: Проверить stop, stale request и границы capability. Частный результат исходного V094: Только доказанные stop/model/permission methods; unsupported явно, не успех. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V094B.
+
+Приёмка: Stop реального тестового turn; fixture подтверждает mapping каждого заявленного control. Это точка объединения всей цепочки V094A, V094B, V094.
+
+Пути: crates/herder/src/adapters/z_ai/control.rs.
+
+### V094A. Z.ai: Привязать interrupt к точному native turn — 10–15 минут
+
+Статус: queued. Входы: V089, V025, V034, V032.
+
+Z.ai: Привязать interrupt к точному native turn. Частный результат исходного V094: Только доказанные stop/model/permission methods; unsupported явно, не успех. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V089, V025, V034, V032.
+
+Приёмка: Получен проверяемый результат: Z.ai: Привязать interrupt к точному native turn. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/z_ai/control.rs.
+
+### V094B. Z.ai: Применить поддерживаемые параметры и permission reply — 10–15 минут
+
+Статус: queued. Входы: V094A.
+
+Z.ai: Применить поддерживаемые параметры и permission reply. Частный результат исходного V094: Только доказанные stop/model/permission methods; unsupported явно, не успех. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V094A.
+
+Приёмка: Получен проверяемый результат: Z.ai: Применить поддерживаемые параметры и permission reply. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/z_ai/control.rs.
+
+### V095. Z.ai: Подтвердить видимость карточки агенту и честный unsupported — 10–15 минут
+
+Статус: queued. Входы: V095B.
+
+Z.ai: Подтвердить видимость карточки агенту и честный unsupported. Частный результат исходного V095: Привязка self и один подтверждённый startup/resume/compact hook; absence явная. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V095B.
+
+Приёмка: Новая generation получает карточку; если инъекции нет, capability manual-only и acceptance gap остаётся. Это точка объединения всей цепочки V095A, V095B, V095.
+
+Пути: crates/herder/src/adapters/z_ai/context.rs.
+
+### V095A. Z.ai: Подключить native точку вставки context — 10–15 минут
+
+Статус: queued. Входы: V089, V046.
+
+Z.ai: Подключить native точку вставки context. Частный результат исходного V095: Привязка self и один подтверждённый startup/resume/compact hook; absence явная. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V089, V046.
+
+Приёмка: Получен проверяемый результат: Z.ai: Подключить native точку вставки context. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/z_ai/context.rs.
+
+### V095B. Z.ai: Восстановить generation при поддерживаемом resume или compaction — 10–15 минут
+
+Статус: queued. Входы: V095A.
+
+Z.ai: Восстановить generation при поддерживаемом resume или compaction. Частный результат исходного V095: Привязка self и один подтверждённый startup/resume/compact hook; absence явная. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V095A.
+
+Приёмка: Получен проверяемый результат: Z.ai: Восстановить generation при поддерживаемом resume или compaction. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/adapters/z_ai/context.rs.
+
+### V096. Z.ai: Подтвердить stop, контекст и digest всей вертикали — 10–15 минут
+
+Статус: queued. Входы: V096B.
+
+Z.ai: Подтвердить stop, контекст и digest всей вертикали. Частный результат исходного V096: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V096B.
+
+Приёмка: Native input/turn IDs, artifact digest и результат каждого действия; fixture не заменяет browser/native lane. Это точка объединения всей цепочки V096A, V096B, V096.
+
+Пути: acceptance/native/z-ai/.
+
+### V096A. Z.ai: Установить текущий dev artifact в изолированный native контур — 10–15 минут
+
+Статус: queued. Входы: V090, V092, V093, V094, V095, V051, V016.
+
+Z.ai: Установить текущий dev artifact в изолированный native контур. Частный результат исходного V096: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V090, V092, V093, V094, V095, V051, V016.
+
+Приёмка: Получен проверяемый результат: Z.ai: Установить текущий dev artifact в изолированный native контур. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/native/z-ai/.
+
+### V096B. Z.ai: Пройти create, deliver, read и export через публичный MCP — 10–15 минут
+
+Статус: queued. Входы: V096A.
+
+Z.ai: Пройти create, deliver, read и export через публичный MCP. Частный результат исходного V096: Один candidate на изолированном стенде: create→deliver→recent→export/search→stop. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V096A.
+
+Приёмка: Получен проверяемый результат: Z.ai: Пройти create, deliver, read и export через публичный MCP. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/native/z-ai/.
+
+## Несколько экземпляров и обычные CLI/Web потребители
+
+### E005. Выпустить CLI и Web UI с проверенными несколькими instance — 10–15 минут
+
+Статус: queued. Входы: V098, V099, V100, V101, V102, V103, V104, V105, V106.
+
+Установить dev artifact. Через обычный UI после reload видны user/assistant и разные instance; сохранены уже полученные проверки изоляции.
+
+Приёмка: Установить dev artifact. Через обычный UI после reload видны user/assistant и разные instance; сохранены уже полученные проверки изоляции.
+
+Пути: release/dev-consumers/.
+
+### V098. Проверить изоляцию истории и управления двух Codex — 10–15 минут
+
+Статус: queued. Входы: V098B.
+
+Проверить изоляцию истории и управления двух Codex. Частный результат исходного V098: Изолированные profiles и двунаправленная отправка/чтение. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V098B.
+
+Приёмка: В обоих профилях свои IDs/history; fixture одинакового native ID не смешивает ключи. Это точка объединения всей цепочки V098A, V098B, V098.
+
+Пути: acceptance/multi/codex/.
+
+### V098A. Настроить два изолированных Codex instance — 10–15 минут
+
+Статус: queued. Входы: V060.
+
+Настроить два изолированных Codex instance. Частный результат исходного V098: Изолированные profiles и двунаправленная отправка/чтение. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V060.
+
+Приёмка: Получен проверяемый результат: Настроить два изолированных Codex instance. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/multi/codex/.
+
+### V098B. Отправить разные маркеры и сопоставить native IDs — 10–15 минут
+
+Статус: queued. Входы: V098A.
+
+Отправить разные маркеры и сопоставить native IDs. Частный результат исходного V098: Изолированные profiles и двунаправленная отправка/чтение. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V098A.
+
+Приёмка: Получен проверяемый результат: Отправить разные маркеры и сопоставить native IDs. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/multi/codex/.
+
+### V099. Проверить сохранение работы и истории второго instance — 10–15 минут
+
+Статус: queued. Входы: V099B.
+
+Проверить сохранение работы и истории второго instance. Частный результат исходного V099: Изолированные connections и проверка control/history. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V099B.
+
+Приёмка: Отправка и stop одного instance не касаются второго. Это точка объединения всей цепочки V099A, V099B, V099.
+
+Пути: acceptance/multi/opencode/.
+
+### V099A. Настроить два изолированных OpenCode instance — 10–15 минут
+
+Статус: queued. Входы: V069.
+
+Настроить два изолированных OpenCode instance. Частный результат исходного V099: Изолированные connections и проверка control/history. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V069.
+
+Приёмка: Получен проверяемый результат: Настроить два изолированных OpenCode instance. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/multi/opencode/.
+
+### V099B. Отправить разные маркеры и остановить один instance — 10–15 минут
+
+Статус: queued. Входы: V099A.
+
+Отправить разные маркеры и остановить один instance. Частный результат исходного V099: Изолированные connections и проверка control/history. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V099A.
+
+Приёмка: Получен проверяемый результат: Отправить разные маркеры и остановить один instance. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/multi/opencode/.
+
+### V100. Подтвердить отсутствие пересечения истории и отправки — 10–15 минут
+
+Статус: queued. Входы: V100B.
+
+Подтвердить отсутствие пересечения истории и отправки. Частный результат исходного V100: Два разрешённых тестовых profile refs и отдельные вкладки. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V100B.
+
+Приёмка: History/send не пересекают аккаунты; нет использования чужой вкладки или credentials в receipt. Это точка объединения всей цепочки V100A, V100B, V100.
+
+Пути: acceptance/multi/browser/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V100A. Выбрать два разрешённых браузерных профиля — 10–15 минут
+
+Статус: queued. Входы: V087.
+
+Выбрать два разрешённых браузерных профиля. Частный результат исходного V100: Два разрешённых тестовых profile refs и отдельные вкладки. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V087.
+
+Приёмка: Получен проверяемый результат: Выбрать два разрешённых браузерных профиля. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/multi/browser/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V100B. Создать разные тестовые сообщения в отдельных профилях — 10–15 минут
+
+Статус: queued. Входы: V100A.
+
+Создать разные тестовые сообщения в отдельных профилях. Частный результат исходного V100: Два разрешённых тестовых profile refs и отдельные вкладки. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V100A.
+
+Приёмка: Получен проверяемый результат: Создать разные тестовые сообщения в отдельных профилях. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/multi/browser/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V101. Отключить origin и подтвердить partial без локального повтора — 10–15 минут
+
+Статус: queued. Входы: V101B.
+
+Отключить origin и подтвердить partial без локального повтора. Частный результат исходного V101: Codex→OpenCode через объявленные endpoints; exact origin refs. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V101B.
+
+Приёмка: Чтение result с удалённой ноды доступно клиенту; offline coverage partial, no local retry. Это точка объединения всей цепочки V101A, V101B, V101.
+
+Пути: acceptance/multi/nodes/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V101A. Настроить два endpoint и проверить origin identity — 10–15 минут
+
+Статус: queued. Входы: V097, V021.
+
+Настроить два endpoint и проверить origin identity. Частный результат исходного V101: Codex→OpenCode через объявленные endpoints; exact origin refs. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V097, V021.
+
+Приёмка: Получен проверяемый результат: Настроить два endpoint и проверить origin identity. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/multi/nodes/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V101B. Создать удалённый Task и прочитать его результат — 10–15 минут
+
+Статус: queued. Входы: V101A.
+
+Создать удалённый Task и прочитать его результат. Частный результат исходного V101: Codex→OpenCode через объявленные endpoints; exact origin refs. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V101A.
+
+Приёмка: Получен проверяемый результат: Создать удалённый Task и прочитать его результат. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/multi/nodes/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V102. Подтвердить восстановление creator A и единственный ответ C — 10–15 минут
+
+Статус: queued. Входы: V102B.
+
+Подтвердить восстановление creator A и единственный ответ C. Частный результат исходного V102: A создаёт B, C пишет B; очистить context и рестарт Herder; B отвечает C. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V102B.
+
+Приёмка: Native readback одного ответа C; A остался creator; доказана инъекция, не только resource read. Это точка объединения всей цепочки V102A, V102B, V102.
+
+Пути: acceptance/context/compaction/.
+
+### V102A. Создать B от A и доставить B сообщение от C — 10–15 минут
+
+Статус: queued. Входы: V097, V044, V046, V027.
+
+Создать B от A и доставить B сообщение от C. Частный результат исходного V102: A создаёт B, C пишет B; очистить context и рестарт Herder; B отвечает C. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V097, V044, V046, V027.
+
+Приёмка: Получен проверяемый результат: Создать B от A и доставить B сообщение от C. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/context/compaction/.
+
+### V102B. Очистить context и перезапустить тестовый Herder — 10–15 минут
+
+Статус: queued. Входы: V102A.
+
+Очистить context и перезапустить тестовый Herder. Частный результат исходного V102: A создаёт B, C пишет B; очистить context и рестарт Herder; B отвечает C. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V102A.
+
+Приёмка: Получен проверяемый результат: Очистить context и перезапустить тестовый Herder. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/context/compaction/.
+
+### V103. Проверить сбой после completion без повторной отправки — 10–15 минут
+
+Статус: queued. Входы: V103B.
+
+Проверить сбой после completion без повторной отправки. Частный результат исходного V103: Три точки сбоя: до вызова, после admission, после completion до ответа. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V103B.
+
+Приёмка: Повтор key не создаёт input; unknown без native lookup остаётся unknown. Это точка объединения всей цепочки V103A, V103B, V103.
+
+Пути: acceptance/native/crash/.
+
+### V103A. Проверить сбой до native вызова — 10–15 минут
+
+Статус: queued. Входы: V097, V015.
+
+Проверить сбой до native вызова. Частный результат исходного V103: Три точки сбоя: до вызова, после admission, после completion до ответа. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V097, V015.
+
+Приёмка: Получен проверяемый результат: Проверить сбой до native вызова. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/native/crash/.
+
+### V103B. Проверить сбой после admission до фиксации результата — 10–15 минут
+
+Статус: queued. Входы: V103A.
+
+Проверить сбой после admission до фиксации результата. Частный результат исходного V103: Три точки сбоя: до вызова, после admission, после completion до ответа. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V103A.
+
+Приёмка: Получен проверяемый результат: Проверить сбой после admission до фиксации результата. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/native/crash/.
+
+### V104. Проверить admission, completion и исправляемую ошибку — 10–15 минут
+
+Статус: queued. Входы: V104B.
+
+Проверить admission, completion и исправляемую ошибку. Частный результат исходного V104: Subcommands из тех же DTO/application, polling Tasks и чтение ресурсов. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V104B.
+
+Приёмка: create/deliver/read ошибки и completion показаны раздельно; old routes отсутствуют. Это точка объединения всей цепочки V104A, V104B, V104.
+
+Пути: crates/herder/src/cli/main.rs.
+
+### V104A. Подключить CLI create и deliver к общим DTO — 10–15 минут
+
+Статус: queued. Входы: V097, V009.
+
+Подключить CLI create и deliver к общим DTO. Частный результат исходного V104: Subcommands из тех же DTO/application, polling Tasks и чтение ресурсов. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V097, V009.
+
+Приёмка: Получен проверяемый результат: Подключить CLI create и deliver к общим DTO. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/cli/main.rs.
+
+### V104B. Показать Task polling и resource read в CLI — 10–15 минут
+
+Статус: queued. Входы: V104A.
+
+Показать Task polling и resource read в CLI. Частный результат исходного V104: Subcommands из тех же DTO/application, polling Tasks и чтение ресурсов. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V104A.
+
+Приёмка: Получен проверяемый результат: Показать Task polling и resource read в CLI. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: crates/herder/src/cli/main.rs.
+
+### V105. Подтвердить обе роли и remote resource после reload — 10–15 минут
+
+Статус: queued. Входы: V105B.
+
+Подтвердить обе роли и remote resource после reload. Частный результат исходного V105: Typed client sessions/recent/transcript, partial/turn refs. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V105B.
+
+Приёмка: Обычный браузер показывает обе роли после reload и remote resource. Это точка объединения всей цепочки V105A, V105B, V105.
+
+Пути: web/src/session.ts.
+
+### V105A. Подключить список и recent к typed web client — 10–15 минут
+
+Статус: queued. Входы: V097, V017.
+
+Подключить список и recent к typed web client. Частный результат исходного V105: Typed client sessions/recent/transcript, partial/turn refs. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V097, V017.
+
+Приёмка: Получен проверяемый результат: Подключить список и recent к typed web client. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: web/src/session.ts.
+
+### V105B. Отобразить transcript и partial с turn refs — 10–15 минут
+
+Статус: queued. Входы: V105A.
+
+Отобразить transcript и partial с turn refs. Частный результат исходного V105: Typed client sessions/recent/transcript, partial/turn refs. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V105A.
+
+Приёмка: Получен проверяемый результат: Отобразить transcript и partial с turn refs. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: web/src/session.ts.
+
+### V106. Проверить двойной клик и UNKNOWN без предложения resend — 10–15 минут
+
+Статус: queued. Входы: V106B.
+
+Проверить двойной клик и UNKNOWN без предложения resend. Частный результат исходного V106: Create/deliver/stop/settings; standard polling и cancelled/unknown rendering. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V106B.
+
+Приёмка: Повтор кнопки не даёт duplicate; unknown не предлагает повторную отправку. Это точка объединения всей цепочки V106A, V106B, V106.
+
+Пути: web/src/control.ts.
+
+### V106A. Подключить create, deliver и stop к общему client — 10–15 минут
+
+Статус: queued. Входы: V105, V033.
+
+Подключить create, deliver и stop к общему client. Частный результат исходного V106: Create/deliver/stop/settings; standard polling и cancelled/unknown rendering. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V105, V033.
+
+Приёмка: Получен проверяемый результат: Подключить create, deliver и stop к общему client. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: web/src/control.ts.
+
+### V106B. Показать settings и стандартные состояния Task — 10–15 минут
+
+Статус: queued. Входы: V106A.
+
+Показать settings и стандартные состояния Task. Частный результат исходного V106: Create/deliver/stop/settings; standard polling и cancelled/unknown rendering. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V106A.
+
+Приёмка: Получен проверяемый результат: Показать settings и стандартные состояния Task. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: web/src/control.ts.
+
+## Перевод внешних потребителей и понятные инструкции
+
+### E006. Выпустить обновлённые consumer маршруты и Skills — 10–15 минут
+
+Статус: queued. Входы: V109, V112, V115, V118, V121, V124, V125, V126, V127, V128, R005, R006.
+
+Активировать проверенные consumer версии в их разрешённом тестовом маршруте; сверить API digest и одну доступную навигацию. Без повторения внешних отправок.
+
+Приёмка: Активировать проверенные consumer версии в их разрешённом тестовом маршруте; сверить API digest и одну доступную навигацию. Без повторения внешних отправок.
+
+Пути: release/dev-integrations/.
+
+### V107. Hub: записать target.json с точным контрактом и тестовым маршрутом — 10–15 минут
+
+Статус: queued. Входы: V107A.
+
+Hub: записать target.json с точным контрактом и тестовым маршрутом. Частный результат исходного V107: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V107A.
+
+Приёмка: target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции. Это точка объединения всей цепочки V107A, V107.
+
+Пути: integrations/consumers/hub/target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V107A. Hub: найти один вызывающий Herder маршрут и владельца путей — 10–15 минут
+
+Статус: queued. Входы: V009, V003.
+
+Hub: найти один вызывающий Herder маршрут и владельца путей. Частный результат исходного V107: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V009, V003.
+
+Приёмка: Получен проверяемый результат: Hub: найти один вызывающий Herder маршрут и владельца путей. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: integrations/consumers/hub/target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V108. Hub: проверить отсутствие legacy alias и второго job lifecycle — 10–15 минут
+
+Статус: queued. Входы: V108B.
+
+Hub: проверить отсутствие legacy alias и второго job lifecycle. Частный результат исходного V108: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V108B.
+
+Приёмка: Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены. Это точка объединения всей цепочки V108A, V108B, V108.
+
+Пути: consumer:hub:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V108A. Hub: заменить вызов на общий typed API — 10–15 минут
+
+Статус: queued. Входы: V107.
+
+Hub: заменить вызов на общий typed API. Частный результат исходного V108: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V107.
+
+Приёмка: Получен проверяемый результат: Hub: заменить вызов на общий typed API. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: consumer:hub:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V108B. Hub: сохранить request key, Task и диагностические ошибки — 10–15 минут
+
+Статус: queued. Входы: V108A.
+
+Hub: сохранить request key, Task и диагностические ошибки. Частный результат исходного V108: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V108A.
+
+Приёмка: Получен проверяемый результат: Hub: сохранить request key, Task и диагностические ошибки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: consumer:hub:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V109. Hub: сверить native результат и версии без повторной отправки — 10–15 минут
+
+Статус: queued. Входы: V109A.
+
+Hub: сверить native результат и версии без повторной отправки. Частный результат исходного V109: Один изолированный сценарий через обычного потребителя и native result. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V109A.
+
+Приёмка: Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль. Это точка объединения всей цепочки V109A, V109.
+
+Пути: acceptance/consumers/hub/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V109A. Hub: выполнить основной сценарий через обычного потребителя — 10–15 минут
+
+Статус: queued. Входы: V108.
+
+Hub: выполнить основной сценарий через обычного потребителя. Частный результат исходного V109: Один изолированный сценарий через обычного потребителя и native result. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V108.
+
+Приёмка: Получен проверяемый результат: Hub: выполнить основной сценарий через обычного потребителя. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/consumers/hub/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V110. LHC: записать target.json с точным контрактом и тестовым маршрутом — 10–15 минут
+
+Статус: queued. Входы: V110A.
+
+LHC: записать target.json с точным контрактом и тестовым маршрутом. Частный результат исходного V110: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V110A.
+
+Приёмка: target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции. Это точка объединения всей цепочки V110A, V110.
+
+Пути: integrations/consumers/lhc/target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V110A. LHC: найти один вызывающий Herder маршрут и владельца путей — 10–15 минут
+
+Статус: queued. Входы: V009, R001.
+
+LHC: найти один вызывающий Herder маршрут и владельца путей. Частный результат исходного V110: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V009, R001.
+
+Приёмка: Получен проверяемый результат: LHC: найти один вызывающий Herder маршрут и владельца путей. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: integrations/consumers/lhc/target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V111. LHC: проверить отсутствие legacy alias и второго job lifecycle — 10–15 минут
+
+Статус: queued. Входы: V111B.
+
+LHC: проверить отсутствие legacy alias и второго job lifecycle. Частный результат исходного V111: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V111B.
+
+Приёмка: Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены. Это точка объединения всей цепочки V111A, V111B, V111.
+
+Пути: consumer:lhc:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V111A. LHC: заменить вызов на общий typed API — 10–15 минут
+
+Статус: queued. Входы: V110.
+
+LHC: заменить вызов на общий typed API. Частный результат исходного V111: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V110.
+
+Приёмка: Получен проверяемый результат: LHC: заменить вызов на общий typed API. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: consumer:lhc:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V111B. LHC: сохранить request key, Task и диагностические ошибки — 10–15 минут
+
+Статус: queued. Входы: V111A.
+
+LHC: сохранить request key, Task и диагностические ошибки. Частный результат исходного V111: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V111A.
+
+Приёмка: Получен проверяемый результат: LHC: сохранить request key, Task и диагностические ошибки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: consumer:lhc:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V112. LHC: сверить native результат и версии без повторной отправки — 10–15 минут
+
+Статус: queued. Входы: V112A.
+
+LHC: сверить native результат и версии без повторной отправки. Частный результат исходного V112: Один изолированный сценарий через обычного потребителя и native result. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V112A.
+
+Приёмка: Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль. Это точка объединения всей цепочки V112A, V112.
+
+Пути: acceptance/consumers/lhc/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V112A. LHC: выполнить основной сценарий через обычного потребителя — 10–15 минут
+
+Статус: queued. Входы: V111.
+
+LHC: выполнить основной сценарий через обычного потребителя. Частный результат исходного V112: Один изолированный сценарий через обычного потребителя и native result. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V111.
+
+Приёмка: Получен проверяемый результат: LHC: выполнить основной сценарий через обычного потребителя. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/consumers/lhc/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V113. Notice Place: записать target.json с точным контрактом и тестовым маршрутом — 10–15 минут
+
+Статус: queued. Входы: V113A.
+
+Notice Place: записать target.json с точным контрактом и тестовым маршрутом. Частный результат исходного V113: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V113A.
+
+Приёмка: target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции. Это точка объединения всей цепочки V113A, V113.
+
+Пути: integrations/consumers/noticeplace/target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V113A. Notice Place: найти один вызывающий Herder маршрут и владельца путей — 10–15 минут
+
+Статус: queued. Входы: V009, V035.
+
+Notice Place: найти один вызывающий Herder маршрут и владельца путей. Частный результат исходного V113: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V009, V035.
+
+Приёмка: Получен проверяемый результат: Notice Place: найти один вызывающий Herder маршрут и владельца путей. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: integrations/consumers/noticeplace/target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V114. Notice Place: проверить отсутствие legacy alias и второго job lifecycle — 10–15 минут
+
+Статус: queued. Входы: V114B.
+
+Notice Place: проверить отсутствие legacy alias и второго job lifecycle. Частный результат исходного V114: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V114B.
+
+Приёмка: Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены. Это точка объединения всей цепочки V114A, V114B, V114.
+
+Пути: consumer:noticeplace:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V114A. Notice Place: заменить вызов на общий typed API — 10–15 минут
+
+Статус: queued. Входы: V113.
+
+Notice Place: заменить вызов на общий typed API. Частный результат исходного V114: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V113.
+
+Приёмка: Получен проверяемый результат: Notice Place: заменить вызов на общий typed API. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: consumer:noticeplace:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V114B. Notice Place: сохранить request key, Task и диагностические ошибки — 10–15 минут
+
+Статус: queued. Входы: V114A.
+
+Notice Place: сохранить request key, Task и диагностические ошибки. Частный результат исходного V114: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V114A.
+
+Приёмка: Получен проверяемый результат: Notice Place: сохранить request key, Task и диагностические ошибки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: consumer:noticeplace:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V115. Notice Place: сверить native результат и версии без повторной отправки — 10–15 минут
+
+Статус: queued. Входы: V115A.
+
+Notice Place: сверить native результат и версии без повторной отправки. Частный результат исходного V115: Один изолированный сценарий через обычного потребителя и native result. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V115A.
+
+Приёмка: Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль. Это точка объединения всей цепочки V115A, V115.
+
+Пути: acceptance/consumers/noticeplace/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V115A. Notice Place: выполнить основной сценарий через обычного потребителя — 10–15 минут
+
+Статус: queued. Входы: V114.
+
+Notice Place: выполнить основной сценарий через обычного потребителя. Частный результат исходного V115: Один изолированный сценарий через обычного потребителя и native result. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V114.
+
+Приёмка: Получен проверяемый результат: Notice Place: выполнить основной сценарий через обычного потребителя. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/consumers/noticeplace/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V116. UserIO: записать target.json с точным контрактом и тестовым маршрутом — 10–15 минут
+
+Статус: queued. Входы: V116A.
+
+UserIO: записать target.json с точным контрактом и тестовым маршрутом. Частный результат исходного V116: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V116A.
+
+Приёмка: target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции. Это точка объединения всей цепочки V116A, V116.
+
+Пути: integrations/consumers/userio/target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V116A. UserIO: найти один вызывающий Herder маршрут и владельца путей — 10–15 минут
+
+Статус: queued. Входы: V009, V035.
+
+UserIO: найти один вызывающий Herder маршрут и владельца путей. Частный результат исходного V116: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V009, V035.
+
+Приёмка: Получен проверяемый результат: UserIO: найти один вызывающий Herder маршрут и владельца путей. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: integrations/consumers/userio/target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V117. UserIO: проверить отсутствие legacy alias и второго job lifecycle — 10–15 минут
+
+Статус: queued. Входы: V117B.
+
+UserIO: проверить отсутствие legacy alias и второго job lifecycle. Частный результат исходного V117: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V117B.
+
+Приёмка: Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены. Это точка объединения всей цепочки V117A, V117B, V117.
+
+Пути: consumer:userio:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V117A. UserIO: заменить вызов на общий typed API — 10–15 минут
+
+Статус: queued. Входы: V116.
+
+UserIO: заменить вызов на общий typed API. Частный результат исходного V117: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V116.
+
+Приёмка: Получен проверяемый результат: UserIO: заменить вызов на общий typed API. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: consumer:userio:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V117B. UserIO: сохранить request key, Task и диагностические ошибки — 10–15 минут
+
+Статус: queued. Входы: V117A.
+
+UserIO: сохранить request key, Task и диагностические ошибки. Частный результат исходного V117: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V117A.
+
+Приёмка: Получен проверяемый результат: UserIO: сохранить request key, Task и диагностические ошибки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: consumer:userio:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V118. UserIO: сверить native результат и версии без повторной отправки — 10–15 минут
+
+Статус: queued. Входы: V118A.
+
+UserIO: сверить native результат и версии без повторной отправки. Частный результат исходного V118: Один изолированный сценарий через обычного потребителя и native result. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V118A.
+
+Приёмка: Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль. Это точка объединения всей цепочки V118A, V118.
+
+Пути: acceptance/consumers/userio/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V118A. UserIO: выполнить основной сценарий через обычного потребителя — 10–15 минут
+
+Статус: queued. Входы: V117.
+
+UserIO: выполнить основной сценарий через обычного потребителя. Частный результат исходного V118: Один изолированный сценарий через обычного потребителя и native result. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V117.
+
+Приёмка: Получен проверяемый результат: UserIO: выполнить основной сценарий через обычного потребителя. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/consumers/userio/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V119. ExManager Board: записать target.json с точным контрактом и тестовым маршрутом — 10–15 минут
+
+Статус: queued. Входы: V119A.
+
+ExManager Board: записать target.json с точным контрактом и тестовым маршрутом. Частный результат исходного V119: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V119A.
+
+Приёмка: target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции. Это точка объединения всей цепочки V119A, V119.
+
+Пути: integrations/consumers/board/target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V119A. ExManager Board: найти один вызывающий Herder маршрут и владельца путей — 10–15 минут
+
+Статус: queued. Входы: V009, V023, V024.
+
+ExManager Board: найти один вызывающий Herder маршрут и владельца путей. Частный результат исходного V119: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V009, V023, V024.
+
+Приёмка: Получен проверяемый результат: ExManager Board: найти один вызывающий Herder маршрут и владельца путей. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: integrations/consumers/board/target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V120. ExManager Board: проверить отсутствие legacy alias и второго job lifecycle — 10–15 минут
+
+Статус: queued. Входы: V120B.
+
+ExManager Board: проверить отсутствие legacy alias и второго job lifecycle. Частный результат исходного V120: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V120B.
+
+Приёмка: Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены. Это точка объединения всей цепочки V120A, V120B, V120.
+
+Пути: consumer:board:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V120A. ExManager Board: заменить вызов на общий typed API — 10–15 минут
+
+Статус: queued. Входы: V119.
+
+ExManager Board: заменить вызов на общий typed API. Частный результат исходного V120: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V119.
+
+Приёмка: Получен проверяемый результат: ExManager Board: заменить вызов на общий typed API. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: consumer:board:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V120B. ExManager Board: сохранить request key, Task и диагностические ошибки — 10–15 минут
+
+Статус: queued. Входы: V120A.
+
+ExManager Board: сохранить request key, Task и диагностические ошибки. Частный результат исходного V120: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V120A.
+
+Приёмка: Получен проверяемый результат: ExManager Board: сохранить request key, Task и диагностические ошибки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: consumer:board:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V121. ExManager Board: сверить native результат и версии без повторной отправки — 10–15 минут
+
+Статус: queued. Входы: V121A.
+
+ExManager Board: сверить native результат и версии без повторной отправки. Частный результат исходного V121: Один изолированный сценарий через обычного потребителя и native result. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V121A.
+
+Приёмка: Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль. Это точка объединения всей цепочки V121A, V121.
+
+Пути: acceptance/consumers/board/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V121A. ExManager Board: выполнить основной сценарий через обычного потребителя — 10–15 минут
+
+Статус: queued. Входы: V120.
+
+ExManager Board: выполнить основной сценарий через обычного потребителя. Частный результат исходного V121: Один изолированный сценарий через обычного потребителя и native result. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V120.
+
+Приёмка: Получен проверяемый результат: ExManager Board: выполнить основной сценарий через обычного потребителя. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/consumers/board/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V122. Секретарь: записать target.json с точным контрактом и тестовым маршрутом — 10–15 минут
+
+Статус: queued. Входы: V122A.
+
+Секретарь: записать target.json с точным контрактом и тестовым маршрутом. Частный результат исходного V122: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V122A.
+
+Приёмка: target.json содержит точные writable paths и нативный сценарий; не общее обследование. Нет полномочий — blocker этой интеграции. Это точка объединения всей цепочки V122A, V122.
+
+Пути: integrations/consumers/secretary/target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V122A. Секретарь: найти один вызывающий Herder маршрут и владельца путей — 10–15 минут
+
+Статус: queued. Входы: V009, V049.
+
+Секретарь: найти один вызывающий Herder маршрут и владельца путей. Частный результат исходного V122: Узко прочитать только вызывающий Herder маршрут и назвать repo/files, owner, versions и test route. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V009, V049.
+
+Приёмка: Получен проверяемый результат: Секретарь: найти один вызывающий Herder маршрут и владельца путей. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: integrations/consumers/secretary/target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V123. Секретарь: проверить отсутствие legacy alias и второго job lifecycle — 10–15 минут
+
+Статус: queued. Входы: V123B.
+
+Секретарь: проверить отсутствие legacy alias и второго job lifecycle. Частный результат исходного V123: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V123B.
+
+Приёмка: Contract check показывает сохранение effect/receipt/errors; aliases и duplicate jobs не добавлены. Это точка объединения всей цепочки V123A, V123B, V123.
+
+Пути: consumer:secretary:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V123A. Секретарь: заменить вызов на общий typed API — 10–15 минут
+
+Статус: queued. Входы: V122.
+
+Секретарь: заменить вызов на общий typed API. Частный результат исходного V123: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V122.
+
+Приёмка: Получен проверяемый результат: Секретарь: заменить вызов на общий typed API. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: consumer:secretary:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V123B. Секретарь: сохранить request key, Task и диагностические ошибки — 10–15 минут
+
+Статус: queued. Входы: V123A.
+
+Секретарь: сохранить request key, Task и диагностические ошибки. Частный результат исходного V123: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V123A.
+
+Приёмка: Получен проверяемый результат: Секретарь: сохранить request key, Task и диагностические ошибки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: consumer:secretary:paths-from-target.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V124. Секретарь: сверить native результат и версии без повторной отправки — 10–15 минут
+
+Статус: queued. Входы: V124A.
+
+Секретарь: сверить native результат и версии без повторной отправки. Частный результат исходного V124: Один изолированный сценарий через обычного потребителя и native result. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V124A.
+
+Приёмка: Artifact/consumer version + exact receipt; accepted не completed; Notice Place только test contact, звонков людям ноль. Это точка объединения всей цепочки V124A, V124.
+
+Пути: acceptance/consumers/secretary/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V124A. Секретарь: выполнить основной сценарий через обычного потребителя — 10–15 минут
+
+Статус: queued. Входы: V123.
+
+Секретарь: выполнить основной сценарий через обычного потребителя. Частный результат исходного V124: Один изолированный сценарий через обычного потребителя и native result. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V123.
+
+Приёмка: Получен проверяемый результат: Секретарь: выполнить основной сценарий через обычного потребителя. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/consumers/secretary/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V125. Проверить команды при выключенном MCP и нестандартном root — 10–15 минут
+
+Статус: queued. Входы: V125B.
+
+Проверить команды при выключенном MCP и нестандартном root. Частный результат исходного V125: Один исходник инструкции и manifest template; expose Skills и package local copy. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V125B.
+
+Приёмка: Отключённый MCP не мешает найти путь; команды read/claim с подставленным locator и без секретов. Это точка объединения всей цепочки V125A, V125B, V125.
+
+Пути: skills/herder-recovery/SKILL.md.
+
+### V125A. Написать одну локальную инструкцию поиска authority и claim — 10–15 минут
+
+Статус: queued. Входы: V019, V039, V045.
+
+Написать одну локальную инструкцию поиска authority и claim. Частный результат исходного V125: Один исходник инструкции и manifest template; expose Skills и package local copy. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V019, V039, V045.
+
+Приёмка: Получен проверяемый результат: Написать одну локальную инструкцию поиска authority и claim. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: skills/herder-recovery/SKILL.md.
+
+### V125B. Упаковать тот же исходник как MCP Skill — 10–15 минут
+
+Статус: queued. Входы: V125A.
+
+Упаковать тот же исходник как MCP Skill. Частный результат исходного V125: Один исходник инструкции и manifest template; expose Skills и package local copy. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V125A.
+
+Приёмка: Получен проверяемый результат: Упаковать тот же исходник как MCP Skill. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: skills/herder-recovery/SKILL.md.
+
+### V126. Проверить краткий путь координации без специальных команд harness — 10–15 минут
+
+Статус: queued. Входы: V126B.
+
+Проверить краткий путь координации без специальных команд harness. Частный результат исходного V126: context→messages→reply_to, roster/worktree и errors; один источник примеров. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V126B.
+
+Приёмка: Каталог/schema примеров совпадают; read skill и activation отмечены отдельно. Это точка объединения всей цепочки V126A, V126B, V126.
+
+Пути: skills/herder/SKILL.md.
+
+### V126A. Описать context, сообщения, reply_to и ресурс в одном Skill — 10–15 минут
+
+Статус: queued. Входы: V019, V102.
+
+Описать context, сообщения, reply_to и ресурс в одном Skill. Частный результат исходного V126: context→messages→reply_to, roster/worktree и errors; один источник примеров. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V019, V102.
+
+Приёмка: Получен проверяемый результат: Описать context, сообщения, reply_to и ресурс в одном Skill. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: skills/herder/SKILL.md.
+
+### V126B. Сверить примеры с реальными схемами каталога — 10–15 минут
+
+Статус: queued. Входы: V126A.
+
+Сверить примеры с реальными схемами каталога. Частный результат исходного V126: context→messages→reply_to, roster/worktree и errors; один источник примеров. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V126A.
+
+Приёмка: Получен проверяемый результат: Сверить примеры с реальными схемами каталога. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: skills/herder/SKILL.md.
+
+### V127. Подтвердить один правильный повтор и отсутствие resend UNKNOWN — 10–15 минут
+
+Статус: queued. Входы: V127B.
+
+Подтвердить один правильный повтор и отсутствие resend UNKNOWN. Частный результат исходного V127: Свежий контекст без исходников: найти роли, исправить wrong mode/field и ответить отправителю. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V127B.
+
+Приёмка: Trace показывает исправление за один повтор без новых effects; UNKNOWN/forbidden не вызывают unsafe retry. Это точка объединения всей цепочки V127A, V127B, V127.
+
+Пути: acceptance/usability/.
+
+### V127A. Дать свежему агенту задачу найти коллег и отправителя — 10–15 минут
+
+Статус: queued. Входы: V126, V106, V104.
+
+Дать свежему агенту задачу найти коллег и отправителя. Частный результат исходного V127: Свежий контекст без исходников: найти роли, исправить wrong mode/field и ответить отправителю. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V126, V106, V104.
+
+Приёмка: Получен проверяемый результат: Дать свежему агенту задачу найти коллег и отправителя. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/usability/.
+
+### V127B. Попросить исправить неверный аргумент по сообщению ошибки — 10–15 минут
+
+Статус: queued. Входы: V127A.
+
+Попросить исправить неверный аргумент по сообщению ошибки. Частный результат исходного V127: Свежий контекст без исходников: найти роли, исправить wrong mode/field и ответить отправителю. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V127A.
+
+Приёмка: Получен проверяемый результат: Попросить исправить неверный аргумент по сообщению ошибки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/usability/.
+
+### V128. Включить MCP и подтвердить прежнего owner и одну квитанцию — 10–15 минут
+
+Статус: queued. Входы: V128B.
+
+Включить MCP и подтвердить прежнего owner и одну квитанцию. Частный результат исходного V128: Остановить только test daemon; read markers→claim→безопасный release через runner→receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V128B.
+
+Приёмка: Ноль вопросов о назначении свободного owner, одна операция; повтор MCP видит тот же owner. Это точка объединения всей цепочки V128A, V128B, V128.
+
+Пути: acceptance/recovery/offline/.
+
+### V128A. Выключить тестовый daemon и найти authority по manifest — 10–15 минут
+
+Статус: queued. Входы: V125, V043, V112.
+
+Выключить тестовый daemon и найти authority по manifest. Частный результат исходного V128: Остановить только test daemon; read markers→claim→безопасный release через runner→receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V125, V043, V112.
+
+Приёмка: Получен проверяемый результат: Выключить тестовый daemon и найти authority по manifest. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/recovery/offline/.
+
+### V128B. Занять свободный ресурс и выполнить тестовый release через runner — 10–15 минут
+
+Статус: queued. Входы: V128A.
+
+Занять свободный ресурс и выполнить тестовый release через runner. Частный результат исходного V128: Остановить только test daemon; read markers→claim→безопасный release через runner→receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V128A.
+
+Приёмка: Получен проверяемый результат: Занять свободный ресурс и выполнить тестовый release через runner. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/recovery/offline/.
+
+## Сохранение данных при переходе и откате
+
+### E007. Выпустить importer и rollback на восстановленном снимке — 10–15 минут
+
+Статус: queued. Входы: V133, V135.
+
+Установить candidate на изолированный импортированный state, прочитать holds, lineage и UNKNOWN без native send.
+
+Приёмка: Установить candidate на изолированный импортированный state, прочитать holds, lineage и UNKNOWN без native send.
+
+Пути: release/dev-migration/.
+
+### V129. Зафиксировать writers и отказ от угадывания происхождения — 10–15 минут
+
+Статус: queued. Входы: V129B.
+
+Зафиксировать writers и отказ от угадывания происхождения. Частный результат исходного V129: Узкие схемы только сохраняемого state: holds/intents/lineage/messages/settings/ownership. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V129B.
+
+Приёмка: Unknown provenance остаётся unknown; список active writers и read-only export для этих схем назван. Это точка объединения всей цепочки V129A, V129B, V129.
+
+Пути: migration/state-map.md.
+
+### V129A. Сопоставить сохраняемые поля holds, intents и receipts — 10–15 минут
+
+Статус: queued. Входы: V011, V022, V027, R001.
+
+Сопоставить сохраняемые поля holds, intents и receipts. Частный результат исходного V129: Узкие схемы только сохраняемого state: holds/intents/lineage/messages/settings/ownership. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V011, V022, V027, R001.
+
+Приёмка: Получен проверяемый результат: Сопоставить сохраняемые поля holds, intents и receipts. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: migration/state-map.md.
+
+### V129B. Сопоставить lineage, settings, сообщения и resource refs — 10–15 минут
+
+Статус: queued. Входы: V129A.
+
+Сопоставить lineage, settings, сообщения и resource refs. Частный результат исходного V129: Узкие схемы только сохраняемого state: holds/intents/lineage/messages/settings/ownership. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V129A.
+
+Приёмка: Получен проверяемый результат: Сопоставить lineage, settings, сообщения и resource refs. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: migration/state-map.md.
+
+### V130. Проверить повторы по digest и числу записей — 10–15 минут
+
+Статус: queued. Входы: V130B.
+
+Проверить повторы по digest и числу записей. Частный результат исходного V130: Offline importer сохраняет request keys, неизвестные исходы и tombstones; не исполняет ничего. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V130B.
+
+Приёмка: Fixture повторов и HumanStop после импорта остаётся тем же; input digest/counts записаны. Это точка объединения всей цепочки V130A, V130B, V130.
+
+Пути: migration/import_effects.rs.
+
+### V130A. Импортировать HumanStop и неизменные request keys — 10–15 минут
+
+Статус: queued. Входы: V129, V016.
+
+Импортировать HumanStop и неизменные request keys. Частный результат исходного V130: Offline importer сохраняет request keys, неизвестные исходы и tombstones; не исполняет ничего. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V129, V016.
+
+Приёмка: Получен проверяемый результат: Импортировать HumanStop и неизменные request keys. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: migration/import_effects.rs.
+
+### V130B. Импортировать UNKNOWN и tombstones без запуска эффектов — 10–15 минут
+
+Статус: queued. Входы: V130A.
+
+Импортировать UNKNOWN и tombstones без запуска эффектов. Частный результат исходного V130: Offline importer сохраняет request keys, неизвестные исходы и tombstones; не исполняет ничего. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V130A.
+
+Приёмка: Получен проверяемый результат: Импортировать UNKNOWN и tombstones без запуска эффектов. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: migration/import_effects.rs.
+
+### V131. Проверить повтор импорта без склейки чужих refs — 10–15 минут
+
+Статус: queued. Входы: V131B.
+
+Проверить повтор импорта без склейки чужих refs. Частный результат исходного V131: Explicit schema transform, sender evidence, потерянный текст помечен. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V131B.
+
+Приёмка: Creator не заменён sender; foreign refs не склеены; повтор import безопасен. Это точка объединения всей цепочки V131A, V131B, V131.
+
+Пути: migration/import_context.rs.
+
+### V131A. Преобразовать creator, native parent и sender отдельно — 10–15 минут
+
+Статус: queued. Входы: V129.
+
+Преобразовать creator, native parent и sender отдельно. Частный результат исходного V131: Explicit schema transform, sender evidence, потерянный текст помечен. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V129.
+
+Приёмка: Получен проверяемый результат: Преобразовать creator, native parent и sender отдельно. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: migration/import_context.rs.
+
+### V131B. Преобразовать settings и неполную correspondence — 10–15 минут
+
+Статус: queued. Входы: V131A.
+
+Преобразовать settings и неполную correspondence. Частный результат исходного V131: Explicit schema transform, sender evidence, потерянный текст помечен. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V131A.
+
+Приёмка: Получен проверяемый результат: Преобразовать settings и неполную correspondence. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: migration/import_context.rs.
+
+### V132. Подтвердить отсутствие прежнего fallback после остановки MCP — 10–15 минут
+
+Статус: queued. Входы: V132B.
+
+Подтвердить отсутствие прежнего fallback после остановки MCP. Частный результат исходного V132: Stop writers → проверка receipts → JSON owner import → старые writers остаются выключены. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V132B.
+
+Приёмка: Git/DB fallback не активируется при падении MCP; fencing assumptions заменены target runner проверками. Это точка объединения всей цепочки V132A, V132B, V132.
+
+Пути: migration/ownership.rs.
+
+### V132A. Остановить старых writers и сверить активные эффекты — 10–15 минут
+
+Статус: queued. Входы: V130, V131, V043, R004.
+
+Остановить старых writers и сверить активные эффекты. Частный результат исходного V132: Stop writers → проверка receipts → JSON owner import → старые writers остаются выключены. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V130, V131, V043, R004.
+
+Приёмка: Получен проверяемый результат: Остановить старых writers и сверить активные эффекты. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: migration/ownership.rs.
+
+### V132B. Импортировать владельцев в единственный resource store — 10–15 минут
+
+Статус: queued. Входы: V132A.
+
+Импортировать владельцев в единственный resource store. Частный результат исходного V132: Stop writers → проверка receipts → JSON owner import → старые writers остаются выключены. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V132A.
+
+Приёмка: Получен проверяемый результат: Импортировать владельцев в единственный resource store. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: migration/ownership.rs.
+
+### V133. Подтвердить ноль send и отказ на повреждённом входе — 10–15 минут
+
+Статус: queued. Входы: V133B.
+
+Подтвердить ноль send и отказ на повреждённом входе. Частный результат исходного V133: Checksums/counts, run importer дважды, restart, no-send readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V133B.
+
+Приёмка: Ноль native send/create; все holds/UNKNOWN сохранены; корректный отказ при corrupt input. Это точка объединения всей цепочки V133A, V133B, V133.
+
+Пути: acceptance/migration/rehearsal/.
+
+### V133A. Сделать снимок fixture и запустить импорт дважды — 10–15 минут
+
+Статус: queued. Входы: V132, V103.
+
+Сделать снимок fixture и запустить импорт дважды. Частный результат исходного V133: Checksums/counts, run importer дважды, restart, no-send readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V132, V103.
+
+Приёмка: Получен проверяемый результат: Сделать снимок fixture и запустить импорт дважды. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/migration/rehearsal/.
+
+### V133B. Перезапустить новый daemon и сверить holds и UNKNOWN — 10–15 минут
+
+Статус: queued. Входы: V133A.
+
+Перезапустить новый daemon и сверить holds и UNKNOWN. Частный результат исходного V133: Checksums/counts, run importer дважды, restart, no-send readback. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V133A.
+
+Приёмка: Получен проверяемый результат: Перезапустить новый daemon и сверить holds и UNKNOWN. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/migration/rehearsal/.
+
+### V134. Зафиксировать отказ от запуска старого writer без reverse proof — 10–15 минут
+
+Статус: queued. Входы: V134B.
+
+Зафиксировать отказ от запуска старого writer без reverse proof. Частный результат исходного V134: Maintenance + сохранённый ledger + предыдущий новый binary/schema compatible; старый daemon не включать без reverse proof. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V134B.
+
+Приёмка: New hold/receipt переживают откат; old writer не получает ownership; rollback отдельно от release. Это точка объединения всей цепочки V134A, V134B, V134.
+
+Пути: release/rollback.md.
+
+### V134A. Описать maintenance и сохранение нового ledger при откате — 10–15 минут
+
+Статус: queued. Входы: V133.
+
+Описать maintenance и сохранение нового ledger при откате. Частный результат исходного V134: Maintenance + сохранённый ledger + предыдущий новый binary/schema compatible; старый daemon не включать без reverse proof. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V133.
+
+Приёмка: Получен проверяемый результат: Описать maintenance и сохранение нового ledger при откате. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/rollback.md.
+
+### V134B. Проверить совместимость предыдущего нового binary со schema — 10–15 минут
+
+Статус: queued. Входы: V134A.
+
+Проверить совместимость предыдущего нового binary со schema. Частный результат исходного V134: Maintenance + сохранённый ledger + предыдущий новый binary/schema compatible; старый daemon не включать без reverse proof. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V134A.
+
+Приёмка: Получен проверяемый результат: Проверить совместимость предыдущего нового binary со schema. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/rollback.md.
+
+### V135. Подтвердить HumanStop и UNKNOWN без replay — 10–15 минут
+
+Статус: queued. Входы: V135B.
+
+Подтвердить HumanStop и UNKNOWN без replay. Частный результат исходного V135: Изолированный candidate принимает тестовый intent, rollback читает его без replay. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V135B.
+
+Приёмка: Unknown/confirmed и HumanStop не потеряны; incompatible schema останавливает writes. Это точка объединения всей цепочки V135A, V135B, V135.
+
+Пути: acceptance/migration/rollback/.
+
+### V135A. Принять новый тестовый intent до отката — 10–15 минут
+
+Статус: queued. Входы: V134.
+
+Принять новый тестовый intent до отката. Частный результат исходного V135: Изолированный candidate принимает тестовый intent, rollback читает его без replay. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V134.
+
+Приёмка: Получен проверяемый результат: Принять новый тестовый intent до отката. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/migration/rollback/.
+
+### V135B. Выполнить откат совместимого нового binary на том же ledger — 10–15 минут
+
+Статус: queued. Входы: V135A.
+
+Выполнить откат совместимого нового binary на том же ledger. Частный результат исходного V135: Изолированный candidate принимает тестовый intent, rollback читает его без replay. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V135A.
+
+Приёмка: Получен проверяемый результат: Выполнить откат совместимого нового binary на том же ledger. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/migration/rollback/.
+
+## Артефакты и установщик четырёх платформ
+
+### E008. Опубликовать проверенные платформенные dev артефакты — 10–15 минут
+
+Статус: queued. Входы: V136, V137, V138, V139, V140.
+
+Сохранить четыре manifest и места загрузки проверенных артефактов; не считать cross compile доказательством native запуска.
+
+Приёмка: Сохранить четыре manifest и места загрузки проверенных артефактов; не считать cross compile доказательством native запуска.
+
+Пути: release/dev-artifacts/.
+
+### V136. linux/amd64: запустить артефакт на соответствующем native runner — 10–15 минут
+
+Статус: queued. Входы: V136B.
+
+linux/amd64: запустить артефакт на соответствующем native runner. Частный результат исходного V136: Reproducible locked build с embedded UI/Skills, digest и platform manifest. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V136B.
+
+Приёмка: Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен. Это точка объединения всей цепочки V136A, V136B, V136.
+
+Пути: release/build/linux-amd64/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V136A. linux/amd64: собрать locked binary с UI и Skills — 10–15 минут
+
+Статус: queued. Входы: V104, V106, V125.
+
+linux/amd64: собрать locked binary с UI и Skills. Частный результат исходного V136: Reproducible locked build с embedded UI/Skills, digest и platform manifest. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V104, V106, V125.
+
+Приёмка: Получен проверяемый результат: linux/amd64: собрать locked binary с UI и Skills. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/build/linux-amd64/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V136B. linux/amd64: записать digest и platform manifest — 10–15 минут
+
+Статус: queued. Входы: V136A.
+
+linux/amd64: записать digest и platform manifest. Частный результат исходного V136: Reproducible locked build с embedded UI/Skills, digest и platform manifest. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V136A.
+
+Приёмка: Получен проверяемый результат: linux/amd64: записать digest и platform manifest. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/build/linux-amd64/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V137. linux/arm64: запустить артефакт на соответствующем native runner — 10–15 минут
+
+Статус: queued. Входы: V137B.
+
+linux/arm64: запустить артефакт на соответствующем native runner. Частный результат исходного V137: Reproducible locked build с embedded UI/Skills, digest и platform manifest. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V137B.
+
+Приёмка: Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен. Это точка объединения всей цепочки V137A, V137B, V137.
+
+Пути: release/build/linux-arm64/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V137A. linux/arm64: собрать locked binary с UI и Skills — 10–15 минут
+
+Статус: queued. Входы: V104, V106, V125.
+
+linux/arm64: собрать locked binary с UI и Skills. Частный результат исходного V137: Reproducible locked build с embedded UI/Skills, digest и platform manifest. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V104, V106, V125.
+
+Приёмка: Получен проверяемый результат: linux/arm64: собрать locked binary с UI и Skills. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/build/linux-arm64/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V137B. linux/arm64: записать digest и platform manifest — 10–15 минут
+
+Статус: queued. Входы: V137A.
+
+linux/arm64: записать digest и platform manifest. Частный результат исходного V137: Reproducible locked build с embedded UI/Skills, digest и platform manifest. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V137A.
+
+Приёмка: Получен проверяемый результат: linux/arm64: записать digest и platform manifest. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/build/linux-arm64/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V138. macOS/arm64: запустить артефакт на соответствующем native runner — 10–15 минут
+
+Статус: queued. Входы: V138B.
+
+macOS/arm64: запустить артефакт на соответствующем native runner. Частный результат исходного V138: Reproducible locked build с embedded UI/Skills, digest и platform manifest. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V138B.
+
+Приёмка: Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен. Это точка объединения всей цепочки V138A, V138B, V138.
+
+Пути: release/build/macos-arm64/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V138A. macOS/arm64: собрать locked binary с UI и Skills — 10–15 минут
+
+Статус: queued. Входы: V104, V106, V125.
+
+macOS/arm64: собрать locked binary с UI и Skills. Частный результат исходного V138: Reproducible locked build с embedded UI/Skills, digest и platform manifest. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V104, V106, V125.
+
+Приёмка: Получен проверяемый результат: macOS/arm64: собрать locked binary с UI и Skills. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/build/macos-arm64/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V138B. macOS/arm64: записать digest и platform manifest — 10–15 минут
+
+Статус: queued. Входы: V138A.
+
+macOS/arm64: записать digest и platform manifest. Частный результат исходного V138: Reproducible locked build с embedded UI/Skills, digest и platform manifest. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V138A.
+
+Приёмка: Получен проверяемый результат: macOS/arm64: записать digest и platform manifest. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/build/macos-arm64/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V139. macOS/amd64: запустить артефакт на соответствующем native runner — 10–15 минут
+
+Статус: queued. Входы: V139B.
+
+macOS/amd64: запустить артефакт на соответствующем native runner. Частный результат исходного V139: Reproducible locked build с embedded UI/Skills, digest и platform manifest. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V139B.
+
+Приёмка: Binary запускается в целевой среде/соответствующем runner; cross-compile отдельно от native run; Node daemon не нужен. Это точка объединения всей цепочки V139A, V139B, V139.
+
+Пути: release/build/macos-amd64/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V139A. macOS/amd64: собрать locked binary с UI и Skills — 10–15 минут
+
+Статус: queued. Входы: V104, V106, V125.
+
+macOS/amd64: собрать locked binary с UI и Skills. Частный результат исходного V139: Reproducible locked build с embedded UI/Skills, digest и platform manifest. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V104, V106, V125.
+
+Приёмка: Получен проверяемый результат: macOS/amd64: собрать locked binary с UI и Skills. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/build/macos-amd64/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V139B. macOS/amd64: записать digest и platform manifest — 10–15 минут
+
+Статус: queued. Входы: V139A.
+
+macOS/amd64: записать digest и platform manifest. Частный результат исходного V139: Reproducible locked build с embedded UI/Skills, digest и platform manifest. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V139A.
+
+Приёмка: Получен проверяемый результат: macOS/amd64: записать digest и platform manifest. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/build/macos-amd64/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V140. Проверить offline CLI и повтор установки без чужих изменений — 10–15 минут
+
+Статус: queued. Входы: V140B.
+
+Проверить offline CLI и повтор установки без чужих изменений. Частный результат исходного V140: Install artifact/config/manifest/local instruction, preserve data; explicit paths и service launcher. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V140B.
+
+Приёмка: Нестандартный root работает; offline CLI доступен без daemon; чужой service/config не меняется. Это точка объединения всей цепочки V140A, V140B, V140.
+
+Пути: release/install/.
+
+### V140A. Установить binary и assets в параметризованный root — 10–15 минут
+
+Статус: queued. Входы: V136, V137, V138, V139.
+
+Установить binary и assets в параметризованный root. Частный результат исходного V140: Install artifact/config/manifest/local instruction, preserve data; explicit paths и service launcher. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V136, V137, V138, V139.
+
+Приёмка: Получен проверяемый результат: Установить binary и assets в параметризованный root. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/install/.
+
+### V140B. Установить manifest и launcher с сохранением данных — 10–15 минут
+
+Статус: queued. Входы: V140A.
+
+Установить manifest и launcher с сохранением данных. Частный результат исходного V140: Install artifact/config/manifest/local instruction, preserve data; explicit paths и service launcher. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V140A.
+
+Приёмка: Получен проверяемый результат: Установить manifest и launcher с сохранением данных. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/install/.
+
+## Удаление legacy и проверка финального кандидата
+
+### E009. Опубликовать финальный RC с единым manifest — 10–15 минут
+
+Статус: queued. Входы: V146, V147, V148, V149, V150, V151.
+
+Опубликовать именно проверенный неизменный RC и сопоставить digest с native и consumer доказательствами; production cutover отдельно.
+
+Приёмка: Опубликовать именно проверенный неизменный RC и сопоставить digest с native и consumer доказательствами; production cutover отдельно.
+
+Пути: release/rc-publication/.
+
+### V141. Записать latency и RSS и проверить ограниченность очередей — 10–15 минут
+
+Статус: queued. Входы: V141B.
+
+Записать latency и RSS и проверить ограниченность очередей. Частный результат исходного V141: Фиксированный corpus, concurrent read/send/index и slow subscriber; baseline metrics. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V141B.
+
+Приёмка: Нет busy loop/unbounded queue; latency/RSS и границы workload записаны, starvation не наблюдается. Это точка объединения всей цепочки V141A, V141B, V141.
+
+Пути: acceptance/performance/.
+
+### V141A. Подготовить фиксированный корпус и границы нагрузки — 10–15 минут
+
+Статус: queued. Входы: V097, V030, V018.
+
+Подготовить фиксированный корпус и границы нагрузки. Частный результат исходного V141: Фиксированный corpus, concurrent read/send/index и slow subscriber; baseline metrics. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V097, V030, V018.
+
+Приёмка: Получен проверяемый результат: Подготовить фиксированный корпус и границы нагрузки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/performance/.
+
+### V141B. Запустить чтение, индексирование и медленного подписчика — 10–15 минут
+
+Статус: queued. Входы: V141A.
+
+Запустить чтение, индексирование и медленного подписчика. Частный результат исходного V141: Фиксированный corpus, concurrent read/send/index и slow subscriber; baseline metrics. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V141A.
+
+Приёмка: Получен проверяемый результат: Запустить чтение, индексирование и медленного подписчика. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/performance/.
+
+### V142. Назначить конкретные исправления с доказательствами до RC — 10–15 минут
+
+Статус: queued. Входы: V142B.
+
+Назначить конкретные исправления с доказательствами до RC. Частный результат исходного V142: Один diff review по boundaries/errors/ownership/cutover; конкретный журнал дефектов. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V142B.
+
+Приёмка: Все найденные defects имеют owned fix/retest leaf до release; review не выдаёт будущий PASS. Это точка объединения всей цепочки V142A, V142B, V142.
+
+Пути: acceptance/review/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V142A. Проверить diff общих boundaries и ошибок — 10–15 минут
+
+Статус: queued. Входы: V060, V069, V078, V087, V096, V109, V112, V115, V118, V121, V124, V102, V098, V099, V100, V101, V103, V127, V128, V141, V135, V050, R004, R005, R006.
+
+Проверить diff общих boundaries и ошибок. Частный результат исходного V142: Один diff review по boundaries/errors/ownership/cutover; конкретный журнал дефектов. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V060, V069, V078, V087, V096, V109, V112, V115, V118, V121, V124, V102, V098, V099, V100, V101, V103, V127, V128, V141, V135, V050, R004, R005, R006.
+
+Приёмка: Получен проверяемый результат: Проверить diff общих boundaries и ошибок. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/review/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V142B. Проверить ownership, UNKNOWN и cutover в том же diff — 10–15 минут
+
+Статус: queued. Входы: V142A.
+
+Проверить ownership, UNKNOWN и cutover в том же diff. Частный результат исходного V142: Один diff review по boundaries/errors/ownership/cutover; конкретный журнал дефектов. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V142A.
+
+Приёмка: Получен проверяемый результат: Проверить ownership, UNKNOWN и cutover в том же diff. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/review/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V143. Проверить отсутствие старых вызовов с сохранением frontend и истории — 10–15 минут
+
+Статус: queued. Входы: V143B.
+
+Проверить отсутствие старых вызовов с сохранением frontend и истории. Частный результат исходного V143: Удалить заменённые TS daemon/job API/_async/aliases из source и package entrypoints. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V143B.
+
+Приёмка: Старые имена не вызываются напрямую; frontend TS сохранён как frontend; native histories не удалены. Это точка объединения всей цепочки V143A, V143B, V143.
+
+Пути: legacy-removal:runtime paths resolved in reviewed diff.
+
+### V143A. Выявить заменённые runtime entrypoints по reviewed diff — 10–15 минут
+
+Статус: queued. Входы: V142, V140.
+
+Выявить заменённые runtime entrypoints по reviewed diff. Частный результат исходного V143: Удалить заменённые TS daemon/job API/_async/aliases из source и package entrypoints. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V142, V140.
+
+Приёмка: Получен проверяемый результат: Выявить заменённые runtime entrypoints по reviewed diff. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: legacy-removal:runtime paths resolved in reviewed diff.
+
+### V143B. Удалить старый daemon, jobs и aliases из source и packaging — 10–15 минут
+
+Статус: queued. Входы: V143A.
+
+Удалить старый daemon, jobs и aliases из source и packaging. Частный результат исходного V143: Удалить заменённые TS daemon/job API/_async/aliases из source и package entrypoints. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V143A.
+
+Приёмка: Получен проверяемый результат: Удалить старый daemon, jobs и aliases из source и packaging. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: legacy-removal:runtime paths resolved in reviewed diff.
+
+### V144. Подтвердить новый runtime graph без старого daemon — 10–15 минут
+
+Статус: queued. Входы: V144B.
+
+Подтвердить новый runtime graph без старого daemon. Частный результат исходного V144: Пакеты/hooks/docs consumers используют новый API; прежние fallback writers disabled. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V144B.
+
+Приёмка: Legacy references только в историческом archive; runtime graph не запускает старый daemon. Это точка объединения всей цепочки V144A, V144B, V144.
+
+Пути: legacy-removal:active client paths from consumer targets.
+
+### V144A. Заменить старые launcher и hook ссылки подтверждённых consumers — 10–15 минут
+
+Статус: queued. Входы: V143.
+
+Заменить старые launcher и hook ссылки подтверждённых consumers. Частный результат исходного V144: Пакеты/hooks/docs consumers используют новый API; прежние fallback writers disabled. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V143.
+
+Приёмка: Получен проверяемый результат: Заменить старые launcher и hook ссылки подтверждённых consumers. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: legacy-removal:active client paths from consumer targets.
+
+### V144B. Удалить активные fallback writers и устаревшие инструкции — 10–15 минут
+
+Статус: queued. Входы: V144A.
+
+Удалить активные fallback writers и устаревшие инструкции. Частный результат исходного V144: Пакеты/hooks/docs consumers используют новый API; прежние fallback writers disabled. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V144A.
+
+Приёмка: Получен проверяемый результат: Удалить активные fallback writers и устаревшие инструкции. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: legacy-removal:active client paths from consumer targets.
+
+### V145. Проверить отсутствие чужого WIP в release candidate — 10–15 минут
+
+Статус: queued. Входы: V145B.
+
+Проверить отсутствие чужого WIP в release candidate. Частный результат исходного V145: Build exact reviewed source после удаления legacy, manifests всех платформ. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V145B.
+
+Приёмка: Каждая тестовая lane указывает один source revision/artifact family; чужой WIP не включён. Это точка объединения всей цепочки V145A, V145B, V145.
+
+Пути: release/candidate.json.
+
+### V145A. Закрепить reviewed source и состав platform artifacts — 10–15 минут
+
+Статус: queued. Входы: V144.
+
+Закрепить reviewed source и состав platform artifacts. Частный результат исходного V145: Build exact reviewed source после удаления legacy, manifests всех платформ. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V144.
+
+Приёмка: Получен проверяемый результат: Закрепить reviewed source и состав platform artifacts. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/candidate.json.
+
+### V145B. Собрать manifests с digest единого кандидата — 10–15 минут
+
+Статус: queued. Входы: V145A.
+
+Собрать manifests с digest единого кандидата. Частный результат исходного V145: Build exact reviewed source после удаления legacy, manifests всех платформ. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V145A.
+
+Приёмка: Получен проверяемый результат: Собрать manifests с digest единого кандидата. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/candidate.json.
+
+### V146. Codex: сверить native refs и digest именно финального RC — 10–15 минут
+
+Статус: queued. Входы: V146A.
+
+Codex: сверить native refs и digest именно финального RC. Частный результат исходного V146: Один обязательный adapter lane повторён на финальном artifact без иных изменений. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V146A.
+
+Приёмка: Точные native refs и digest; missing lane остаётся blocked, не fixture PASS. Это точка объединения всей цепочки V146A, V146.
+
+Пути: acceptance/candidate/codex/.
+
+### V146A. Codex: запустить готовый native сценарий на финальном RC — 10–15 минут
+
+Статус: queued. Входы: V145, V060.
+
+Codex: запустить готовый native сценарий на финальном RC. Частный результат исходного V146: Один обязательный adapter lane повторён на финальном artifact без иных изменений. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V145, V060.
+
+Приёмка: Получен проверяемый результат: Codex: запустить готовый native сценарий на финальном RC. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/candidate/codex/.
+
+### V147. OpenCode: сверить native refs и digest именно финального RC — 10–15 минут
+
+Статус: queued. Входы: V147A.
+
+OpenCode: сверить native refs и digest именно финального RC. Частный результат исходного V147: Один обязательный adapter lane повторён на финальном artifact без иных изменений. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V147A.
+
+Приёмка: Точные native refs и digest; missing lane остаётся blocked, не fixture PASS. Это точка объединения всей цепочки V147A, V147.
+
+Пути: acceptance/candidate/opencode/.
+
+### V147A. OpenCode: запустить готовый native сценарий на финальном RC — 10–15 минут
+
+Статус: queued. Входы: V145, V069.
+
+OpenCode: запустить готовый native сценарий на финальном RC. Частный результат исходного V147: Один обязательный adapter lane повторён на финальном artifact без иных изменений. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V145, V069.
+
+Приёмка: Получен проверяемый результат: OpenCode: запустить готовый native сценарий на финальном RC. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/candidate/opencode/.
+
+### V148. ZCode: сверить native refs и digest именно финального RC — 10–15 минут
+
+Статус: queued. Входы: V148A.
+
+ZCode: сверить native refs и digest именно финального RC. Частный результат исходного V148: Один обязательный adapter lane повторён на финальном artifact без иных изменений. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V148A.
+
+Приёмка: Точные native refs и digest; missing lane остаётся blocked, не fixture PASS. Это точка объединения всей цепочки V148A, V148.
+
+Пути: acceptance/candidate/zcode/.
+
+### V148A. ZCode: запустить готовый native сценарий на финальном RC — 10–15 минут
+
+Статус: queued. Входы: V145, V078.
+
+ZCode: запустить готовый native сценарий на финальном RC. Частный результат исходного V148: Один обязательный adapter lane повторён на финальном artifact без иных изменений. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V145, V078.
+
+Приёмка: Получен проверяемый результат: ZCode: запустить готовый native сценарий на финальном RC. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/candidate/zcode/.
+
+### V149. ChatGPT: сверить native refs и digest именно финального RC — 10–15 минут
+
+Статус: queued. Входы: V149A.
+
+ChatGPT: сверить native refs и digest именно финального RC. Частный результат исходного V149: Один обязательный adapter lane повторён на финальном artifact без иных изменений. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V149A.
+
+Приёмка: Точные native refs и digest; missing lane остаётся blocked, не fixture PASS. Это точка объединения всей цепочки V149A, V149.
+
+Пути: acceptance/candidate/chatgpt/.
+
+### V149A. ChatGPT: запустить готовый native сценарий на финальном RC — 10–15 минут
+
+Статус: queued. Входы: V145, V087.
+
+ChatGPT: запустить готовый native сценарий на финальном RC. Частный результат исходного V149: Один обязательный adapter lane повторён на финальном artifact без иных изменений. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V145, V087.
+
+Приёмка: Получен проверяемый результат: ChatGPT: запустить готовый native сценарий на финальном RC. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/candidate/chatgpt/.
+
+### V150. Z.ai: сверить native refs и digest именно финального RC — 10–15 минут
+
+Статус: queued. Входы: V150A.
+
+Z.ai: сверить native refs и digest именно финального RC. Частный результат исходного V150: Один обязательный adapter lane повторён на финальном artifact без иных изменений. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V150A.
+
+Приёмка: Точные native refs и digest; missing lane остаётся blocked, не fixture PASS. Это точка объединения всей цепочки V150A, V150.
+
+Пути: acceptance/candidate/z-ai/.
+
+### V150A. Z.ai: запустить готовый native сценарий на финальном RC — 10–15 минут
+
+Статус: queued. Входы: V145, V096.
+
+Z.ai: запустить готовый native сценарий на финальном RC. Частный результат исходного V150: Один обязательный adapter lane повторён на финальном artifact без иных изменений. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V145, V096.
+
+Приёмка: Получен проверяемый результат: Z.ai: запустить готовый native сценарий на финальном RC. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/candidate/z-ai/.
+
+### V151. Сверить адресные readback с тем же RC без устаревших доказательств — 10–15 минут
+
+Статус: queued. Входы: V151B.
+
+Сверить адресные readback с тем же RC без устаревших доказательств. Частный результат исходного V151: Сверить ранее полученные consumer proofs с API/schema digest RC; повторить затронутый основной путь. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V151B.
+
+Приёмка: Несовпадение digest требует отдельной адресной проверки; нельзя принять устаревший receipt. Это точка объединения всей цепочки V151A, V151B, V151.
+
+Пути: acceptance/candidate/consumers/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V151A. Сопоставить consumer receipts с API и schema digest кандидата — 10–15 минут
+
+Статус: queued. Входы: V145, V109, V112, V115, V118, V121, V124.
+
+Сопоставить consumer receipts с API и schema digest кандидата. Частный результат исходного V151: Сверить ранее полученные consumer proofs с API/schema digest RC; повторить затронутый основной путь. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V145, V109, V112, V115, V118, V121, V124.
+
+Приёмка: Получен проверяемый результат: Сопоставить consumer receipts с API и schema digest кандидата. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/candidate/consumers/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V151B. Отобрать только затронутые основные consumer сценарии — 10–15 минут
+
+Статус: queued. Входы: V151A.
+
+Отобрать только затронутые основные consumer сценарии. Частный результат исходного V151: Сверить ранее полученные consumer proofs с API/schema digest RC; повторить затронутый основной путь. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V151A.
+
+Приёмка: Получен проверяемый результат: Отобрать только затронутые основные consumer сценарии. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/candidate/consumers/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+## Установка, независимая приёмка и передача
+
+### V152. Подтвердить отсутствие неизвестного writer или незавершённого эффекта — 10–15 минут
+
+Статус: queued. Входы: V152B.
+
+Подтвердить отсутствие неизвестного writer или незавершённого эффекта. Частный результат исходного V152: Проверить точные target/config/version/права, snapshot и maintenance window выбранного выпуска. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V152B.
+
+Приёмка: Нет неизвестных active writers/release effects; backup восстановим; fail-fast до остановки. Это точка объединения всей цепочки V152A, V152B, V152.
+
+Пути: release/cutover/preflight.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V152A. Проверить конкретный target, конфигурацию и полномочия cutover — 10–15 минут
+
+Статус: queued. Входы: V140, V135, V146, V147, V148, V149, V150, V151, E009.
+
+Проверить конкретный target, конфигурацию и полномочия cutover. Частный результат исходного V152: Проверить точные target/config/version/права, snapshot и maintenance window выбранного выпуска. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V140, V135, V146, V147, V148, V149, V150, V151.
+
+Приёмка: Получен проверяемый результат: Проверить конкретный target, конфигурацию и полномочия cutover. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/cutover/preflight.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V152B. Создать и прочитать резервную копию сохраняемых данных — 10–15 минут
+
+Статус: queued. Входы: V152A.
+
+Создать и прочитать резервную копию сохраняемых данных. Частный результат исходного V152: Проверить точные target/config/version/права, snapshot и maintenance window выбранного выпуска. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V152A.
+
+Приёмка: Получен проверяемый результат: Создать и прочитать резервную копию сохраняемых данных. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/cutover/preflight.json.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V153. Подтвердить новый runtime и сохранение holds и receipts — 10–15 минут
+
+Статус: queued. Входы: V153B.
+
+Подтвердить новый runtime и сохранение holds и receipts. Частный результат исходного V153: Остановить старый entrypoint, выполнить проверенный импорт и установить Linux target candidate. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V153B.
+
+Приёмка: Новый runtime SHA/digest/schema; один owner writer; не возобновлены UNKNOWN или HumanStop. Это точка объединения всей цепочки V153A, V153B, V153.
+
+Пути: release/cutover/linux/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V153A. Включить maintenance и остановить прежних writers — 10–15 минут
+
+Статус: queued. Входы: V152.
+
+Включить maintenance и остановить прежних writers. Частный результат исходного V153: Остановить старый entrypoint, выполнить проверенный импорт и установить Linux target candidate. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V152.
+
+Приёмка: Получен проверяемый результат: Включить maintenance и остановить прежних writers. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/cutover/linux/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V153B. Импортировать state и запустить единственного нового writer — 10–15 минут
+
+Статус: queued. Входы: V153A.
+
+Импортировать state и запустить единственного нового writer. Частный результат исходного V153: Остановить старый entrypoint, выполнить проверенный импорт и установить Linux target candidate. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V153A.
+
+Приёмка: Получен проверяемый результат: Импортировать state и запустить единственного нового writer. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/cutover/linux/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V154. Подтвердить digest, версию и отсутствие старого runtime — 10–15 минут
+
+Статус: queued. Входы: V154B.
+
+Подтвердить digest, версию и отсутствие старого runtime. Частный результат исходного V154: Primary MCP consumer create/deliver/recent/export/context на тестовых сессиях, reload. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V154B.
+
+Приёмка: Runtime→receipt→native readback доказаны; приложение работает после штатного restart. Это точка объединения всей цепочки V154A, V154B, V154.
+
+Пути: acceptance/installed/linux/.
+
+### V154A. Подключить обычного Linux клиента к установленному артефакту — 10–15 минут
+
+Статус: queued. Входы: V153.
+
+Подключить обычного Linux клиента к установленному артефакту. Частный результат исходного V154: Primary MCP consumer create/deliver/recent/export/context на тестовых сессиях, reload. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V153.
+
+Приёмка: Получен проверяемый результат: Подключить обычного Linux клиента к установленному артефакту. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/installed/linux/.
+
+### V154B. Пройти сообщение и чтение результата через native adapter — 10–15 минут
+
+Статус: queued. Входы: V154A.
+
+Пройти сообщение и чтение результата через native adapter. Частный результат исходного V154: Primary MCP consumer create/deliver/recent/export/context на тестовых сессиях, reload. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V154A.
+
+Приёмка: Получен проверяемый результат: Пройти сообщение и чтение результата через native adapter. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/installed/linux/.
+
+### V155. Подтвердить фактически работающий новый процесс — 10–15 минут
+
+Статус: queued. Входы: V155B.
+
+Подтвердить фактически работающий новый процесс. Частный результат исходного V155: Target preflight, config/manifest, штатный launcher; без чужих profiles. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V155B.
+
+Приёмка: Artifact digest и version совпали, offline path установлен; rollback доступен. Это точка объединения всей цепочки V155A, V155B, V155.
+
+Пути: release/cutover/macos/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V155A. Выбрать точный macOS артефакт и root установки — 10–15 минут
+
+Статус: queued. Входы: V153, V140, V138, V139.
+
+Выбрать точный macOS артефакт и root установки. Частный результат исходного V155: Target preflight, config/manifest, штатный launcher; без чужих profiles. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V153, V140, V138, V139.
+
+Приёмка: Получен проверяемый результат: Выбрать точный macOS артефакт и root установки. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/cutover/macos/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V155B. Установить manifest и launcher с сохранением данных — 10–15 минут
+
+Статус: queued. Входы: V155A.
+
+Установить manifest и launcher с сохранением данных. Частный результат исходного V155: Target preflight, config/manifest, штатный launcher; без чужих profiles. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V155A.
+
+Приёмка: Получен проверяемый результат: Установить manifest и launcher с сохранением данных. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/cutover/macos/.
+
+Неопределённость: Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.
+
+### V156. Подтвердить сохранение результата после перезапуска клиента — 10–15 минут
+
+Статус: queued. Входы: V156B.
+
+Подтвердить сохранение результата после перезапуска клиента. Частный результат исходного V156: Create/read/deliver/stop и restart конкретного native instance. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V156B.
+
+Приёмка: Installed consumer readback, permissions и native filesystem semantics доказаны. Это точка объединения всей цепочки V156A, V156B, V156.
+
+Пути: acceptance/installed/macos/.
+
+### V156A. Подключить обычного macOS клиента к установленному серверу — 10–15 минут
+
+Статус: queued. Входы: V155.
+
+Подключить обычного macOS клиента к установленному серверу. Частный результат исходного V156: Create/read/deliver/stop и restart конкретного native instance. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V155.
+
+Приёмка: Получен проверяемый результат: Подключить обычного macOS клиента к установленному серверу. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/installed/macos/.
+
+### V156B. Пройти сообщение и чтение результата через native adapter — 10–15 минут
+
+Статус: queued. Входы: V156A.
+
+Пройти сообщение и чтение результата через native adapter. Частный результат исходного V156: Create/read/deliver/stop и restart конкретного native instance. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V156A.
+
+Приёмка: Получен проверяемый результат: Пройти сообщение и чтение результата через native adapter. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/installed/macos/.
+
+### V157. Принять один адресованный ответ по native доказательству — 10–15 минут
+
+Статус: queued. Входы: V157B.
+
+Принять один адресованный ответ по native доказательству. Частный результат исходного V157: Свежий tester без кода/авторского отчёта: discover→create→deliver→read→stop и compaction reply. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V157B.
+
+Приёмка: Правильный sender/creator и отсутствие duplicate; тестовый circuit, никаких звонков людям. Это точка объединения всей цепочки V157A, V157B, V157.
+
+Пути: acceptance/independent/communication/.
+
+### V157A. Дать независимому агенту сценарий общения двух harness — 10–15 минут
+
+Статус: queued. Входы: V154, V156, V102.
+
+Дать независимому агенту сценарий общения двух harness. Частный результат исходного V157: Свежий tester без кода/авторского отчёта: discover→create→deliver→read→stop и compaction reply. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V154, V156, V102.
+
+Приёмка: Получен проверяемый результат: Дать независимому агенту сценарий общения двух harness. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/independent/communication/.
+
+### V157B. Восстановить creator и sender после очистки context — 10–15 минут
+
+Статус: queued. Входы: V157A.
+
+Восстановить creator и sender после очистки context. Частный результат исходного V157: Свежий tester без кода/авторского отчёта: discover→create→deliver→read→stop и compaction reply. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V157A.
+
+Приёмка: Получен проверяемый результат: Восстановить creator и sender после очистки context. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/independent/communication/.
+
+### V158. Принять восстановление owner после возврата MCP без вопроса человеку — 10–15 минут
+
+Статус: queued. Входы: V158B.
+
+Принять восстановление owner после возврата MCP без вопроса человеку. Частный результат исходного V158: Свежий tester по локальному Skill при выключенном test MCP; checkout conflict и release receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V158B.
+
+Приёмка: Успешный claim без назначения человеком; UNKNOWN не повторён; wrong root не свободен. Это точка объединения всей цепочки V158A, V158B, V158.
+
+Пути: acceptance/independent/recovery/.
+
+### V158A. Дать независимому агенту offline инструкцию без исходников — 10–15 минут
+
+Статус: queued. Входы: V154, V156, V128.
+
+Дать независимому агенту offline инструкцию без исходников. Частный результат исходного V158: Свежий tester по локальному Skill при выключенном test MCP; checkout conflict и release receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V154, V156, V128.
+
+Приёмка: Получен проверяемый результат: Дать независимому агенту offline инструкцию без исходников. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/independent/recovery/.
+
+### V158B. Занять свободный ресурс при выключенном тестовом MCP — 10–15 минут
+
+Статус: queued. Входы: V158A.
+
+Занять свободный ресурс при выключенном тестовом MCP. Частный результат исходного V158: Свежий tester по локальному Skill при выключенном test MCP; checkout conflict и release receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V158A.
+
+Приёмка: Получен проверяемый результат: Занять свободный ресурс при выключенном тестовом MCP. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: acceptance/independent/recovery/.
+
+### V159. Закрыть план только по исполненным обязательным сценариям — 10–15 минут
+
+Статус: queued. Входы: V159B, E003, E004, E005, E006, E007, E008.
+
+Закрыть план только по исполненным обязательным сценариям. Частный результат исходного V159: Только owned commits; опубликованный main, artifacts и acceptance manifest; чистка только своих принятых временных сред. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V159B.
+
+Приёмка: Remote main включает результат; zero unresolved mandatory defects; scope exclusions названы и явно приняты, не молча вычеркнуты. Это точка объединения всей цепочки V159A, V159B, V159.
+
+Пути: release/handoff/.
+
+### V159A. Сверить включение своих изменений в опубликованный main — 10–15 минут
+
+Статус: queued. Входы: V157, V158, R005, R006.
+
+Сверить включение своих изменений в опубликованный main. Частный результат исходного V159: Только owned commits; опубликованный main, artifacts и acceptance manifest; чистка только своих принятых временных сред. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V157, V158, R005, R006.
+
+Приёмка: Получен проверяемый результат: Сверить включение своих изменений в опубликованный main. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/handoff/.
+
+### V159B. Передать runbook с версиями и точными установленными результатами — 10–15 минут
+
+Статус: queued. Входы: V159A.
+
+Передать runbook с версиями и точными установленными результатами. Частный результат исходного V159: Только owned commits; опубликованный main, artifacts и acceptance manifest; чистка только своих принятых временных сред. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V159A.
+
+Приёмка: Получен проверяемый результат: Передать runbook с версиями и точными установленными результатами. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.
+
+Пути: release/handoff/.

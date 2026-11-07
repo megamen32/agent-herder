@@ -1,29 +1,28 @@
 {
-  "label": "Typed automation rules",
-  "description": "Schedule/one-shot и autopilot в одном CRUD; timezone, missed/overlap, CAS.",
-  "acceptance": "Неверный cron объясняется; настройка не создаёт parallel job API.",
+  "label": "Проверить неверную цель, режим и права",
+  "description": "Проверить неверную цель, режим и права. Частный результат исходного V047: Schedule/one-shot и autopilot в одном CRUD; timezone, missed/overlap, CAS. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V047B.",
+  "acceptance": "Неверный cron объясняется; настройка не создаёт parallel job API. Это точка объединения всей цепочки V047A, V047B, V047.",
   "affected_files": [
     "crates/herder/src/automation/rules.rs"
   ],
   "depends_on": [
-    "V033",
-    "V026"
+    "V047B"
   ],
   "estimate_minutes": {
-    "minimum": 30,
-    "maximum": 60
+    "minimum": 10,
+    "maximum": 15
   },
   "kind": "task",
   "status": "queued",
   "owner": "unassigned",
   "wave": 4,
-  "note": "v1, нулевая ревизия. Дорожка core; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
-  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V047 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V047 обязателен в конце цепочки.",
+  "estimate_over_limit_reason": "",
   "id": "V047",
   "created_at": "2026-11-07T01:52:25+03:00",
   "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
   "harness": "codex",
-  "updated_at": "2026-11-07T01:52:25+03:00",
+  "updated_at": "2026-11-07T03:54:05+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:25+03:00",
@@ -52,6 +51,32 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:54:05+03:00",
+      "note": "",
+      "changes": {
+        "label": "Проверить неверную цель, режим и права",
+        "description": "Проверить неверную цель, режим и права. Частный результат исходного V047: Schedule/one-shot и autopilot в одном CRUD; timezone, missed/overlap, CAS. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V047B.",
+        "acceptance": "Неверный cron объясняется; настройка не создаёт parallel job API. Это точка объединения всей цепочки V047A, V047B, V047.",
+        "depends_on": [
+          "V047B"
+        ],
+        "parent": "S03",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V047 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V047 обязателен в конце цепочки.",
+        "estimate_over_limit_reason": "",
+        "wait_reason": ""
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
     }
-  ]
+  ],
+  "parent": "S03",
+  "model": "gpt-6.1-terra",
+  "wait_reason": ""
 }

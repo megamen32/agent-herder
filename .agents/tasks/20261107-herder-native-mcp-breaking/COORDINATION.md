@@ -12,13 +12,15 @@ Correspondence: message_ref, verified principal/sender_session_ref, recipient_re
 
 Проект задаётся project_ref + проверенной repository identity; basename и title не идентичность. Worktree имеет node/path, git common-dir identity, branch, scope, task summary, observed_at. На разных нодах одинаковые пути не означают один checkout; общий диск требует одного resource identity. Декларация намерения не доказательство текущих файлов и не lease.
 
+Ресурсы global/project/node, переносное подключение и единая authority определены в RESOURCES.md. Notes/worktree declarations сохраняются через resource(action="declare"); они не означают claim. Контекст показывает связанные ресурсы и владельцев с правами/freshness.
+
 ## Вызовы
 
 - `session(view="context")`: кто я; creator и native parent; дети; последние собеседники; проект/соседи/деревья/конфликты; курсоры, coverage/freshness и готовые допустимые следующие вызовы.
 - `session(view="messages", direction="inbound", cursor=...)`: журнал; `message_ref` позволяет прочитать конкретное сообщение. Read не означает понимание моделью.
 - `deliver(reply_to=message_ref, message=..., request_key=...)`: адресует ответ сервером по исходному отправителю; caller должен быть получателем исходного сообщения. target вместе с reply_to запрещён схемой. Unknown sender даёт отказ до эффекта.
 - `sessions(project_ref=...)`: фактический roster со временем наблюдения и недоступными источниками. Offline не значит «никого нет».
-- `workspace(action="claim", resource_ref=..., claim_id=...)`: один атомарный победитель; при конфликте адрес владельца по ACL и способ выбрать отдельное worktree.
+- `resource(action="claim", resource_ref=..., claim_id=...)`: один атомарный победитель; при конфликте адрес владельца по ACL и способ выбрать отдельное worktree.
 
 Обычный `session` возвращает последние user **и** assistant с turn ID/time, truncation и completeness. Не выдавать старый ответ за результат нового input. Context ограничен размером; omitted_count/cursors ведут к ресурсам, а не скрывают участников.
 
@@ -28,7 +30,7 @@ Correspondence: message_ref, verified principal/sender_session_ref, recipient_re
 
 Подписка доставляет изменения bridge, не напрямую «в память модели». Bridge сверяет актуальный turn, объединяет delta, не запускает новый ход ради heartbeat и не снимает STOP. Observed, injected, native readback и ответ модели — разные доказательства. После disconnect перечитывается snapshot/domain cursor, а не предполагаемый SSE replay.
 
-Workspace claim не создаёт Git worktree и не делает merge. Это задача workflow. В основном checkout работают только при разрешённой политике проекта и claim; при конфликте используют отдельное дерево, сохраняя WIP. Ошибка владельца при отказе MCP разрешается через тот же authority по локальной инструкции; недоступность authority не создаёт второй authority.
+Resource claim не создаёт Git worktree и не делает merge. Это задача workflow. В основном checkout работают только при разрешённой политике проекта и claim; при конфликте используют отдельное дерево, сохраняя WIP. Ошибка владельца при отказе MCP разрешается через тот же authority по локальной инструкции; недоступность authority не создаёт второй authority.
 
 ## Приёмка
 

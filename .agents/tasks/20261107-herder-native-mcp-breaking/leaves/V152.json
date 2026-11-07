@@ -1,35 +1,28 @@
 {
-  "label": "Preflight cutover и резервная копия",
-  "description": "Проверить точные target/config/version/права, snapshot и maintenance window выбранного выпуска.",
-  "acceptance": "Нет неизвестных active writers/release effects; backup восстановим; fail-fast до остановки.",
+  "label": "Подтвердить отсутствие неизвестного writer или незавершённого эффекта",
+  "description": "Подтвердить отсутствие неизвестного writer или незавершённого эффекта. Частный результат исходного V152: Проверить точные target/config/version/права, snapshot и maintenance window выбранного выпуска. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V152B.",
+  "acceptance": "Нет неизвестных active writers/release effects; backup восстановим; fail-fast до остановки. Это точка объединения всей цепочки V152A, V152B, V152.",
   "affected_files": [
     "release/cutover/preflight.json"
   ],
   "depends_on": [
-    "V140",
-    "V135",
-    "V146",
-    "V147",
-    "V148",
-    "V149",
-    "V150",
-    "V151"
+    "V152B"
   ],
   "estimate_minutes": {
-    "minimum": 30,
-    "maximum": 45
+    "minimum": 10,
+    "maximum": 15
   },
   "kind": "task",
   "status": "queued",
   "owner": "unassigned",
   "wave": 10,
-  "note": "v1, нулевая ревизия. Дорожка release; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
-  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V152 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V152 обязателен в конце цепочки.",
+  "estimate_over_limit_reason": "",
   "id": "V152",
   "created_at": "2026-11-07T01:52:46+03:00",
   "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
   "harness": "codex",
-  "updated_at": "2026-11-07T01:52:46+03:00",
+  "updated_at": "2026-11-07T03:54:20+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:46+03:00",
@@ -64,6 +57,34 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:54:20+03:00",
+      "note": "",
+      "changes": {
+        "label": "Подтвердить отсутствие неизвестного writer или незавершённого эффекта",
+        "description": "Подтвердить отсутствие неизвестного writer или незавершённого эффекта. Частный результат исходного V152: Проверить точные target/config/version/права, snapshot и maintenance window выбранного выпуска. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V152B.",
+        "acceptance": "Нет неизвестных active writers/release effects; backup восстановим; fail-fast до остановки. Это точка объединения всей цепочки V152A, V152B, V152.",
+        "depends_on": [
+          "V152B"
+        ],
+        "parent": "S13",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V152 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V152 обязателен в конце цепочки.",
+        "estimate_unknown_reason": "Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.",
+        "estimate_over_limit_reason": "",
+        "wait_reason": ""
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
     }
-  ]
+  ],
+  "parent": "S13",
+  "model": "gpt-6.1-terra",
+  "estimate_unknown_reason": "Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.",
+  "wait_reason": ""
 }

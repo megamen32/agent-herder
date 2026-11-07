@@ -1,29 +1,28 @@
 {
-  "label": "Независимая приёмка recovery",
-  "description": "Свежий tester по локальному Skill при выключенном test MCP; checkout conflict и release receipt.",
-  "acceptance": "Успешный claim без назначения человеком; UNKNOWN не повторён; wrong root не свободен.",
+  "label": "Принять восстановление owner после возврата MCP без вопроса человеку",
+  "description": "Принять восстановление owner после возврата MCP без вопроса человеку. Частный результат исходного V158: Свежий tester по локальному Skill при выключенном test MCP; checkout conflict и release receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V158B.",
+  "acceptance": "Успешный claim без назначения человеком; UNKNOWN не повторён; wrong root не свободен. Это точка объединения всей цепочки V158A, V158B, V158.",
   "affected_files": [
     "acceptance/independent/recovery/"
   ],
   "depends_on": [
-    "V157",
-    "V128"
+    "V158B"
   ],
   "estimate_minutes": {
-    "minimum": 30,
-    "maximum": 60
+    "minimum": 10,
+    "maximum": 15
   },
   "kind": "task",
   "status": "queued",
   "owner": "unassigned",
   "wave": 11,
-  "note": "v1, нулевая ревизия. Дорожка qa; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
-  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V158 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V158 обязателен в конце цепочки.",
+  "estimate_over_limit_reason": "",
   "id": "V158",
   "created_at": "2026-11-07T01:52:47+03:00",
   "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
   "harness": "codex",
-  "updated_at": "2026-11-07T01:52:47+03:00",
+  "updated_at": "2026-11-07T03:54:23+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:47+03:00",
@@ -52,6 +51,32 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:54:23+03:00",
+      "note": "",
+      "changes": {
+        "label": "Принять восстановление owner после возврата MCP без вопроса человеку",
+        "description": "Принять восстановление owner после возврата MCP без вопроса человеку. Частный результат исходного V158: Свежий tester по локальному Skill при выключенном test MCP; checkout conflict и release receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V158B.",
+        "acceptance": "Успешный claim без назначения человеком; UNKNOWN не повторён; wrong root не свободен. Это точка объединения всей цепочки V158A, V158B, V158.",
+        "depends_on": [
+          "V158B"
+        ],
+        "parent": "S13",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V158 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V158 обязателен в конце цепочки.",
+        "estimate_over_limit_reason": "",
+        "wait_reason": ""
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
     }
-  ]
+  ],
+  "parent": "S13",
+  "model": "gpt-6.1-terra",
+  "wait_reason": ""
 }

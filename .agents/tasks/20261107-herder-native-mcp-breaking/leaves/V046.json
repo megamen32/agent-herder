@@ -1,30 +1,28 @@
 {
-  "label": "Контекстные generation и native hook client",
-  "description": "Projector snapshot/delta, новый context generation не подавляется fingerprint.",
-  "acceptance": "Fake compact event вызывает snapshot без нового model turn и без снятия STOP.",
+  "label": "Подтвердить восстановление при неизменном fingerprint",
+  "description": "Подтвердить восстановление при неизменном fingerprint. Частный результат исходного V046: Projector snapshot/delta, новый context generation не подавляется fingerprint. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V046B.",
+  "acceptance": "Fake compact event вызывает snapshot без нового model turn и без снятия STOP. Это точка объединения всей цепочки V046A, V046B, V046.",
   "affected_files": [
     "integrations/hooks/context_client.rs"
   ],
   "depends_on": [
-    "V044",
-    "V018",
-    "V025"
+    "V046B"
   ],
   "estimate_minutes": {
-    "minimum": 30,
-    "maximum": 60
+    "minimum": 10,
+    "maximum": 15
   },
   "kind": "task",
   "status": "queued",
   "owner": "unassigned",
   "wave": 3,
-  "note": "v1, нулевая ревизия. Дорожка core; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
-  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V046 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V046 обязателен в конце цепочки.",
+  "estimate_over_limit_reason": "",
   "id": "V046",
   "created_at": "2026-11-07T01:52:25+03:00",
   "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
   "harness": "codex",
-  "updated_at": "2026-11-07T01:52:25+03:00",
+  "updated_at": "2026-11-07T03:54:04+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:25+03:00",
@@ -54,6 +52,32 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:54:04+03:00",
+      "note": "",
+      "changes": {
+        "label": "Подтвердить восстановление при неизменном fingerprint",
+        "description": "Подтвердить восстановление при неизменном fingerprint. Частный результат исходного V046: Projector snapshot/delta, новый context generation не подавляется fingerprint. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V046B.",
+        "acceptance": "Fake compact event вызывает snapshot без нового model turn и без снятия STOP. Это точка объединения всей цепочки V046A, V046B, V046.",
+        "depends_on": [
+          "V046B"
+        ],
+        "parent": "S02",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V046 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V046 обязателен в конце цепочки.",
+        "estimate_over_limit_reason": "",
+        "wait_reason": ""
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
     }
-  ]
+  ],
+  "parent": "S02",
+  "model": "gpt-6.1-terra",
+  "wait_reason": ""
 }

@@ -2,6 +2,8 @@
 
 Проектируемый контракт. Выбран простой вариант: один изменяемый owner JSON на ресурс и стабильный OS lock. Нет второй базы владельцев, prepared-транзакции между state.json и owner.json, собственного распределённого fencing framework или автоматического выбора нового authority.
 
+Контракт всех ресурсов: RESOURCES.md. Канонический путь не зависит от project scope или текущего подключения телефона; owner хранится в одном месте.
+
 ## Адрес и файлы
 
 При установке явные `storage_id`, `authority_node`, абсолютный `root`, схема и разрешённый local/SSH маршрут записываются в локальный manifest каждого клиента. Путь manifest известен из стартовой инструкции **до** обращения к MCP. Никаких секретов в manifest. Фактический host/root берётся из конфигурации установки, не зашивается в код; план не назначает инфраструктуру без её актуальной проверки.
@@ -9,15 +11,16 @@
 ```text
 <root>/storage.json
 <root>/projects/<id>/project.json
-<root>/projects/<id>/resources/<kind>/<id>/guard.lock
-<root>/projects/<id>/resources/<kind>/<id>/owner.json  # только при владельце
+<root>/resources/<resource_id>/resource.json           # scope, identity, attachment
+<root>/resources/<resource_id>/guard.lock
+<root>/resources/<resource_id>/owner.json  # только при владельце
 <root>/projects/<id>/snapshots/context.json           # необязательная проекция
 <root>/RECOVERY.md
 ```
 
-Инициализированный resource directory обязателен: его отсутствие не значит «свободно». Маркеры подтверждают storage/project/resource identity. Успешное чтение маркеров и ENOENT **owner.json** означает свободную роль. Timeout, EACCES, отсутствующий mount, неверный ID, повреждение JSON — отдельные ошибки. Чтение отсутствия не выдаёт владение: нужен выигравший атомарный claim.
+Инициализированный resource directory обязателен: его отсутствие не значит «свободно». Маркеры подтверждают storage/resource identity; project identity дополнительно для project scope. Успешное чтение маркеров и ENOENT **owner.json** означает свободную роль. Timeout, EACCES, отсутствующий mount, неверный ID, повреждение JSON — отдельные ошибки. Чтение отсутствия не выдаёт владение: нужен выигравший атомарный claim.
 
-Owner содержит schema, storage/project/resource, проверенного principal/session, случайный 128-bit claim_id, purpose и время. Claim ID — непрозрачная эпоха для сравнения на равенство, **не монотонный fencing counter** и не credential. Знание ID не даёт права. Guard inode никогда не заменяется; все MCP/CLI writers используют одну библиотеку на authority. Поддерживаются локальные файловые системы authority с проверенными flock/rename/fsync; NFS/SMB и копия root не объявляются authority без отдельного доказательства.
+Owner содержит schema, storage/resource и scope, проверенного principal/session, случайный 128-bit claim_id, purpose и время. Claim ID — непрозрачная эпоха для сравнения на равенство, **не монотонный fencing counter** и не credential. Знание ID не даёт права. Guard inode никогда не заменяется; все MCP/CLI writers используют одну библиотеку на authority. Поддерживаются локальные файловые системы authority с проверенными flock/rename/fsync; NFS/SMB и копия root не объявляются authority без отдельного доказательства.
 
 ## Переходы без двухфазного файлового журнала
 
@@ -37,9 +40,9 @@ Runner сначала берёт свой target lock, затем читает �
 
 ## Независимый доступ и инструкция
 
-Один поставляемый `herder` binary имеет offline `ownership status|claim|renew|release` и `release receipt` режимы, не стартующие daemon, MCP, SQLite сессий или LLM. Не нужен отдельный herder-recovery executable/пакет. CLI и MCP вызывают ту же файловую библиотеку. Binary и локальный RECOVERY.md уже установлены на authority; SSH запускает точный фиксированный executable с аргументами, не собирает shell из недоверенного текста. ACL проекта проверяется из manifest/policy и OS identity; общий SSH аккаунт не делает произвольный `--session` достоверным self. Где нет per-session attestation, записывается principal и unverified session, без impersonation.
+Один поставляемый `herder` binary имеет offline `resource list|get|register|update|claim|renew|release` и `release receipt` режимы, не стартующие daemon, MCP, SQLite сессий или LLM. Не нужен отдельный herder-recovery executable/пакет. CLI и MCP вызывают ту же файловую библиотеку. Binary и локальный RECOVERY.md уже установлены на authority; SSH запускает точный фиксированный executable с аргументами, не собирает shell из недоверенного текста. ACL области global/project/node проверяется из manifest/policy и OS identity; общий SSH аккаунт не делает произвольный `--session` достоверным self. Где нет per-session attestation, записывается principal и unverified session, без impersonation.
 
-Пример инструкции после установки: «Прочитайте локальный manifest по указанному пути. Подключитесь к authority и проверьте storage_id/project/resource. Если owner.json отсутствует, выполните ownership claim с новым nonce. Продолжайте после успешного claim без вопроса о назначении владельца. Для release используйте объявленный runner и постоянный request_key. UNKNOWN сверяйте по квитанции, не повторяйте изменение».
+Пример инструкции после установки: «Прочитайте локальный manifest по указанному пути. Подключитесь к authority и проверьте storage_id/resource и project для project scope. Если owner.json отсутствует, выполните resource claim с новым nonce. Продолжайте после успешного claim без вопроса о назначении владельца. Для release используйте объявленный runner и постоянный request_key. UNKNOWN сверяйте по квитанции, не повторяйте изменение».
 
 Тот же исходник инструкции публикуется через MCP Skills и локально с версией/хешем. Context snapshot содержит creator/peers/workspaces/routes, generated_at/coverage, без закрытых текстов/секретов. Это устаревающая проекция, не owner authority и не receipt. Очереди отправки сообщений через файлы нет.
 

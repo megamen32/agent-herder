@@ -1,29 +1,28 @@
 {
-  "label": "Общий deliver с явным режимом",
-  "description": "current/queue/start, expected turn; implicit create и delayed send отсутствуют.",
-  "acceptance": "Busy/unsupported не подменяют режим; persisted intent предшествует submit.",
+  "label": "Подтвердить busy и unsupported без неявного create",
+  "description": "Подтвердить busy и unsupported без неявного create. Частный результат исходного V024: current/queue/start, expected turn; implicit create и delayed send отсутствуют. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V024B.",
+  "acceptance": "Busy/unsupported не подменяют режим; persisted intent предшествует submit. Это точка объединения всей цепочки V024A, V024B, V024.",
   "affected_files": [
     "crates/herder/src/application/deliver.rs"
   ],
   "depends_on": [
-    "V023",
-    "V015"
+    "V024B"
   ],
   "estimate_minutes": {
-    "minimum": 30,
-    "maximum": 60
+    "minimum": 10,
+    "maximum": 15
   },
   "kind": "task",
   "status": "queued",
   "owner": "unassigned",
   "wave": 1,
-  "note": "v1, нулевая ревизия. Дорожка core; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
-  "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
+  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V024 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V024 обязателен в конце цепочки.",
+  "estimate_over_limit_reason": "",
   "id": "V024",
   "created_at": "2026-11-07T01:52:22+03:00",
   "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
   "harness": "codex",
-  "updated_at": "2026-11-07T01:52:22+03:00",
+  "updated_at": "2026-11-07T03:53:54+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:22+03:00",
@@ -52,6 +51,32 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:53:54+03:00",
+      "note": "",
+      "changes": {
+        "label": "Подтвердить busy и unsupported без неявного create",
+        "description": "Подтвердить busy и unsupported без неявного create. Частный результат исходного V024: current/queue/start, expected turn; implicit create и delayed send отсутствуют. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V024B.",
+        "acceptance": "Busy/unsupported не подменяют режим; persisted intent предшествует submit. Это точка объединения всей цепочки V024A, V024B, V024.",
+        "depends_on": [
+          "V024B"
+        ],
+        "parent": "S01",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V024 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V024 обязателен в конце цепочки.",
+        "estimate_over_limit_reason": "",
+        "wait_reason": ""
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
     }
-  ]
+  ],
+  "parent": "S01",
+  "model": "gpt-6.1-terra",
+  "wait_reason": ""
 }

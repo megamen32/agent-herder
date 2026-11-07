@@ -1,0 +1,68 @@
+{
+  "id": "D002",
+  "label": "Согласовать ресурсный контракт и документы с новым графом",
+  "description": "Обновить SPEC, RUST-DESIGN, COORDINATION, RECOVERY-STORAGE и HANDOFF; resource заменяет workspace, без второго owner store.",
+  "acceptance": "14 tools, независимые scope/attachment/authority/claim, offline layout и приёмка согласованы; прежнее исключение 60 минут убрано.",
+  "parent": "S00",
+  "depends_on": [
+    "D001"
+  ],
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "owner": "roomhacker",
+  "model": "gpt-6-astra",
+  "created_at": "2026-11-07T03:55:58+03:00",
+  "updated_at": "2026-11-07T03:58:51+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T03:55:58+03:00",
+      "note": "",
+      "changes": {
+        "id": "D002",
+        "label": "Согласовать ресурсный контракт и документы с новым графом",
+        "description": "Обновить SPEC, RUST-DESIGN, COORDINATION, RECOVERY-STORAGE и HANDOFF; resource заменяет workspace, без второго owner store.",
+        "acceptance": "14 tools, независимые scope/attachment/authority/claim, offline layout и приёмка согласованы; прежнее исключение 60 минут убрано.",
+        "parent": "S00",
+        "depends_on": [
+          "D001"
+        ],
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "owner": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "model": "gpt-6-astra"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T03:56:03+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running",
+        "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:58:51+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "RESOURCES.md определяет общий resource вместо workspace с 14 tools; SPEC/RUST-DESIGN/COORDINATION/RECOVERY-STORAGE/ACCEPTANCE/HANDOFF согласованы. Локальный cap=60 удалён из plan_cli.py. Контракт R001 передан Тере для немедленного старта; реализация ресурса ещё не доказана."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "status": "done",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "result": "RESOURCES.md определяет общий resource вместо workspace с 14 tools; SPEC/RUST-DESIGN/COORDINATION/RECOVERY-STORAGE/ACCEPTANCE/HANDOFF согласованы. Локальный cap=60 удалён из plan_cli.py. Контракт R001 передан Тере для немедленного старта; реализация ресурса ещё не доказана."
+}
