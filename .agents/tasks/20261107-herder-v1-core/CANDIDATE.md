@@ -6,6 +6,8 @@ Includes exact typed Codex prewrite quota refusal (b102a0b6+561951cc), browser o
 
 Source tsc+Rust build PASS. Package component hashes, duplicate-output refusal and five advertised initialize responses PASS; zero native/browser calls in that package check. Exact packaged core NEG5/5 PASS: `evidence/candidate-negative-5ea28f51.json`. Independent FIXQ source critique PASS. These results are NOT native5lane/installed proof.
 
+Full ChatGPT case is blocked PREMUTATION on the uniquely created page8: no working composer, account auth_timeout10s, no acquired QA claim. CI owns recovery of this same target; original create/send counters remain0. Receipt: CI/evidence/chatgpt-5ea-blank-scope-blocker.json.
+
 Actual ChatGPT public core readonly preflight PASS14tools/PREFLIGHT_READY, native_sends0: CI/evidence/chatgpt-5ea-receipt.json. This proves startup only. CI accepted next full ChatGPT lane assignment `astra-v1-chatgpt-native-next-20261107T2128`, exact owned blank target required.
 
 CI accepted handoff `astra-v1-candidate-5ea28f51-20261107T2125`. CI owns next exact ChatGPT readonly init, all native effects and sole V1 installation. Current native matrix remains INCOMPLETE; installation closed. Source fixture repairs do not resolve historical UNKNOWN. Deadline08.11 00:38MSK retained.

@@ -6,7 +6,7 @@
   ],
   "estimate_minutes": 15,
   "kind": "task",
-  "status": "queued",
+  "status": "blocked",
   "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
   "parent": "S2",
   "id": "NCHAT",
@@ -14,7 +14,7 @@
   "created_at": "2026-11-07T22:06:05+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-08T00:27:23+03:00",
+  "updated_at": "2026-11-08T00:32:53+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:06:05+03:00",
@@ -85,7 +85,25 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:32:53+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "CI-owned ChatGPT page8 exists, blank composer notready and account auth_timeout10s; no QA claim acquired. Continue only on this exact target after readyblank+matching verifiedaccount+fresh exactclaim. No newtab or oldpage7claim reuse.",
+        "result": "5ea actualpublic startup14toolsPASS on page3 remains valid. Fullcase blockedPREMUTATION on newlycreated page8, nativecreate0/send0; one new_page timeout reconciled by unique listdifference. CI/evidence/chatgpt-5ea-blank-scope-blocker.json. Native5lanes/installed notPASS."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
   ],
-  "result": "5ea28f51 actual browser public core preflightPASS14tools/PREFLIGHT_READY/native_sends0. CI/evidence/chatgpt-5ea-receipt.json. Startupfixed; fullnative lane notPASS. CI accepted next full ChatGPT slice astra-v1-chatgpt-native-next-20261107T2128, exact dedicatedblank/account only."
+  "result": "5ea actualpublic startup14toolsPASS on page3 remains valid. Fullcase blockedPREMUTATION on newlycreated page8, nativecreate0/send0; one new_page timeout reconciled by unique listdifference. CI/evidence/chatgpt-5ea-blank-scope-blocker.json. Native5lanes/installed notPASS.",
+  "blocker": "CI-owned ChatGPT page8 exists, blank composer notready and account auth_timeout10s; no QA claim acquired. Continue only on this exact target after readyblank+matching verifiedaccount+fresh exactclaim. No newtab or oldpage7claim reuse."
 }
