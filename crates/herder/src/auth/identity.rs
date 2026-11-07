@@ -32,6 +32,60 @@ pub struct VerifiedSelfBinding {
     pub session: SessionRef,
 }
 
+/// Connection-scoped evidence supplied exclusively by a trusted boundary.
+/// Neither constructor arguments may be derived from request fields or metadata.
+#[derive(Debug, Clone)]
+pub struct ConnectionIdentity {
+    caller: Caller,
+    self_binding: Option<VerifiedSelfBinding>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdentityError {
+    Unauthorized,
+    SelfBindingRequired,
+    SelfBindingMismatch,
+}
+
+impl ConnectionIdentity {
+    pub fn new(caller: Caller, self_binding: Option<VerifiedSelfBinding>) -> Self {
+        Self {
+            caller,
+            self_binding,
+        }
+    }
+
+    pub fn caller(&self) -> &Caller {
+        &self.caller
+    }
+
+    /// Exact target permissions do not require or imply a self binding.
+    pub fn authorize(
+        &self,
+        grants: &[Grant],
+        resource: &PrivateResource,
+        action: Action,
+    ) -> Result<(), IdentityError> {
+        if permits(&self.caller, grants, resource, action) {
+            Ok(())
+        } else {
+            Err(IdentityError::Unauthorized)
+        }
+    }
+
+    /// A claimed self is a consistency check only, never proof of identity.
+    pub fn require_self(&self, claimed: Option<&SessionRef>) -> Result<&SessionRef, IdentityError> {
+        if !matches!(self.caller, Caller::Principal(_)) {
+            return Err(IdentityError::Unauthorized);
+        }
+        let binding = self
+            .self_binding
+            .as_ref()
+            .ok_or(IdentityError::SelfBindingRequired)?;
+        resolve_self(&self.caller, binding, claimed).ok_or(IdentityError::SelfBindingMismatch)
+    }
+}
+
 /// Resolve self solely from trusted evidence. A claimed sender must match the
 /// binding; an absent claim does not create or change a binding.
 pub fn resolve_self<'a>(

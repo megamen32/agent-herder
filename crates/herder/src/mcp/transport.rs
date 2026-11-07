@@ -2,7 +2,7 @@
 use std::{borrow::Cow, future::Future, pin::Pin, sync::Arc};
 
 use crate::{
-    auth::identity::{self, Action, Caller, Grant, PrivateResource},
+    auth::identity::{Action, Caller, ConnectionIdentity, Grant, IdentityError, PrivateResource},
     config::Config,
     mcp::catalog,
 };
@@ -21,7 +21,11 @@ use serde_json::{Value, json};
 pub type ApplicationFuture<'a> = Pin<Box<dyn Future<Output = Option<CallToolResult>> + Send + 'a>>;
 pub trait ApplicationPort: Send + Sync + 'static {
     /// None means this operation has no handler and must have no effect.
-    fn call<'a>(&'a self, caller: &'a Caller, request: catalog::Request) -> ApplicationFuture<'a>;
+    fn call<'a>(
+        &'a self,
+        identity: &'a ConnectionIdentity,
+        request: catalog::Request,
+    ) -> ApplicationFuture<'a>;
 }
 
 /// Read-only configuration-backed operations; no native action is attached.
@@ -41,16 +45,22 @@ impl ConfigApplication {
 }
 
 impl ApplicationPort for ConfigApplication {
-    fn call<'a>(&'a self, caller: &'a Caller, request: catalog::Request) -> ApplicationFuture<'a> {
+    fn call<'a>(
+        &'a self,
+        identity: &'a ConnectionIdentity,
+        request: catalog::Request,
+    ) -> ApplicationFuture<'a> {
         Box::pin(async move {
             match request {
                 catalog::Request::Discover(catalog::Discover::Nodes {}) => {
-                    if !identity::permits(
-                        caller,
-                        &self.grants,
-                        &PrivateResource::Resource(NODE_DISCOVERY_RESOURCE.into()),
-                        Action::Read,
-                    ) {
+                    if identity
+                        .authorize(
+                            &self.grants,
+                            &PrivateResource::Resource(NODE_DISCOVERY_RESOURCE.into()),
+                            Action::Read,
+                        )
+                        .is_err()
+                    {
                         return Some(CallToolResult::structured_error(
                             json!({"code":"unauthorized", "effect":"none", "message":"node discovery requires a read grant"}),
                         ));
@@ -71,14 +81,14 @@ impl ApplicationPort for ConfigApplication {
 
 #[derive(Clone)]
 pub struct NativeServer {
-    caller: Caller,
+    identity: ConnectionIdentity,
     application: Option<Arc<dyn ApplicationPort>>,
 }
 
 impl Default for NativeServer {
     fn default() -> Self {
         Self {
-            caller: Caller::Unknown,
+            identity: ConnectionIdentity::new(Caller::Unknown, None),
             application: None,
         }
     }
@@ -87,8 +97,16 @@ impl Default for NativeServer {
 impl NativeServer {
     /// Caller must come from a trusted authentication boundary, never MCP metadata.
     pub fn with_application(caller: Caller, application: Arc<dyn ApplicationPort>) -> Self {
+        Self::with_connection_identity(ConnectionIdentity::new(caller, None), application)
+    }
+
+    /// The identity is verified externally and belongs only to this connection.
+    pub fn with_connection_identity(
+        identity: ConnectionIdentity,
+        application: Arc<dyn ApplicationPort>,
+    ) -> Self {
         Self {
-            caller,
+            identity,
             application: Some(application),
         }
     }
@@ -171,13 +189,35 @@ impl ServerHandler for NativeServer {
         let input = Value::Object(request.arguments.unwrap_or_default());
         let parsed = catalog::dispatch(&request.name, input)
             .map_err(|_| ErrorData::invalid_params("unknown tool or invalid arguments", None))?;
+        if matches!(
+            &parsed.request,
+            catalog::Request::Session(catalog::Session::Context {})
+        ) {
+            if let Err(error) = self.identity.require_self(None) {
+                let (code, message) = match error {
+                    IdentityError::Unauthorized => ("unauthorized", "verified caller required"),
+                    IdentityError::SelfBindingRequired => (
+                        "self_binding_required",
+                        "verified self-session binding required",
+                    ),
+                    IdentityError::SelfBindingMismatch => (
+                        "self_binding_mismatch",
+                        "self-session binding does not match caller",
+                    ),
+                };
+                return Ok(CallToolResult::structured_error(
+                    json!({"code":code, "effect":"none", "message":message}),
+                )
+                .into());
+            }
+        }
         if let Some(application) = &self.application {
             if parsed.access == catalog::Access::Mutate
-                && !matches!(self.caller, Caller::Principal(_))
+                && !matches!(self.identity.caller(), Caller::Principal(_))
             {
                 return Ok(CallToolResult::structured_error(json!({"code":"unsupported", "effect":"none", "message":"operation is not connected"})).into());
             }
-            if let Some(result) = application.call(&self.caller, parsed.request).await {
+            if let Some(result) = application.call(&self.identity, parsed.request).await {
                 return Ok(result.into());
             }
         }
@@ -229,7 +269,7 @@ mod wire_tests {
         for caller in [&Caller::Unknown, &Caller::NodeCredential, &bob] {
             let result = app
                 .call(
-                    caller,
+                    &ConnectionIdentity::new(caller.clone(), None),
                     catalog::Request::Discover(catalog::Discover::Nodes {}),
                 )
                 .await
@@ -244,7 +284,7 @@ mod wire_tests {
         let no_grant = ConfigApplication::new(config.clone(), vec![]);
         let denied = no_grant
             .call(
-                &alice,
+                &ConnectionIdentity::new(alice.clone(), None),
                 catalog::Request::Discover(catalog::Discover::Nodes {}),
             )
             .await
@@ -262,7 +302,7 @@ mod wire_tests {
         ] {
             let denied = ConfigApplication::new(config.clone(), vec![wrong])
                 .call(
-                    &alice,
+                    &ConnectionIdentity::new(alice.clone(), None),
                     catalog::Request::Discover(catalog::Discover::Nodes {}),
                 )
                 .await
@@ -297,11 +337,11 @@ mod wire_tests {
     impl ApplicationPort for FakeApp {
         fn call<'a>(
             &'a self,
-            caller: &'a Caller,
+            identity: &'a ConnectionIdentity,
             request: catalog::Request,
         ) -> ApplicationFuture<'a> {
             Box::pin(async move {
-                assert_eq!(*caller, Caller::Unknown);
+                assert_eq!(*identity.caller(), Caller::Unknown);
                 if matches!(
                     request,
                     catalog::Request::Discover(catalog::Discover::Instances { .. })
