@@ -58,6 +58,52 @@ def candidate_bundle_identity(release):
     return {'source_sha': source, 'bundle_fingerprint': actual, 'bundle_files': len(entries)}
 
 
+def candidate_store_identity(release):
+    """Fingerprint mounted shared dependency stores; link text is not target bytes."""
+    release = Path(release).resolve(strict=True)
+    modules = release / 'node_modules'
+    store_root = (release.parent.parent / 'shared-node-modules').resolve(strict=True)
+    if not modules.is_dir() or modules.is_symlink() or not store_root.is_dir():
+        raise ValueError('dependency store unavailable')
+    links = []
+    for item in modules.iterdir():
+        if item.is_symlink():
+            links.append(item)
+        elif item.name.startswith('@') and item.is_dir():
+            links.extend(child for child in item.iterdir() if child.is_symlink())
+    stores = set()
+    for link in links:
+        try:
+            target = link.resolve(strict=True)
+        except OSError as error:
+            raise ValueError('dependency link unavailable') from error
+        if target.is_relative_to(release):
+            continue
+        if not target.is_relative_to(store_root):
+            raise ValueError('dependency link outside isolated store')
+        parts = target.relative_to(store_root).parts
+        if len(parts) < 2:
+            raise ValueError('dependency store identity invalid')
+        stores.add(store_root / parts[0])
+    if not stores:
+        raise ValueError('dependency stores missing')
+    entries = {}
+    for store in sorted(stores):
+        for path in sorted(store.rglob('*')):
+            name = path.relative_to(store_root).as_posix()
+            if path.is_symlink():
+                entries[name] = 'symlink:' + os.readlink(path)
+            elif path.is_file():
+                digest = hashlib.sha256()
+                with path.open('rb') as stream:
+                    for block in iter(lambda: stream.read(1024 * 1024), b''):
+                        digest.update(block)
+                entries[name] = digest.hexdigest()
+    payload = ''.join(f'{name}\0{entries[name]}\n' for name in sorted(entries)).encode()
+    return {'fingerprint': hashlib.sha256(payload).hexdigest(), 'entries': len(entries),
+            'store_count': len(stores), 'nested_symlink_targets_hashed': False}
+
+
 def http_error_summary(status, body):
     try:
         value = json.loads(body)
@@ -99,9 +145,11 @@ def main():
     token = os.environ.get('HERDER_CI_TOKEN')
     if not token:
         raise ValueError('fixture MCP token missing')
+    started = time.monotonic()
     candidate = Path(dist) / 'index.js'
     before = hashlib.sha256(candidate.read_bytes()).hexdigest()
     bundle_before = candidate_bundle_identity(Path(dist).parent)
+    store_before = candidate_store_identity(Path(dist).parent)
     if Path(dist).parent.name != bundle_before['source_sha']:
         raise ValueError('bundle source does not match release directory')
     versions = {name: subprocess.check_output([binary, '--version'], text=True, timeout=10).strip()
@@ -120,7 +168,6 @@ def main():
         if len(raw) > 4_000_000:
             raise ValueError('response exceeds fixture limit')
         return json.loads(raw)
-    started = time.monotonic()
     journeys = []
     for harness, selected in (('codex', 'herder-test'), ('opencode', 'fixture/herder-test')):
         def transcript(h, sid, marker):
@@ -138,9 +185,10 @@ def main():
     verified = [attach_search_proof(j, [r for r in replies if r.get('harness') == j['harness']], socket.gethostname()) for j in journeys]
     after = hashlib.sha256(candidate.read_bytes()).hexdigest()
     bundle_after = candidate_bundle_identity(Path(dist).parent)
-    if before != after or bundle_before != bundle_after:
+    store_after = candidate_store_identity(Path(dist).parent)
+    if before != after or bundle_before != bundle_after or store_before != store_after:
         raise RuntimeError('candidate bundle changed during test')
-    print(json.dumps({'scope': 'isolated-candidate', 'status': 'INCOMPLETE', 'candidate_entry_sha256': before, 'candidate_bundle': bundle_before,
+    print(json.dumps({'scope': 'isolated-candidate', 'status': 'INCOMPLETE', 'candidate_entry_sha256': before, 'candidate_bundle': bundle_before, 'dependency_store': store_before,
                       'cli_versions': versions, 'seconds': round(time.monotonic()-started, 3),
                       'journeys': verified, 'missing': ['installed-process', 'other-required-environments']}), flush=True)
     return exit_code_for_status('INCOMPLETE')

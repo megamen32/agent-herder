@@ -44,7 +44,9 @@ and verify filesystem and network isolation before starting the stand. The
 result is always `INCOMPLETE`: it does not prove the installed process or the
 remaining required environments. The receipt verifies the source SHA and complete
 release file/link fingerprint against the bundle manifest before and after the
-journey; dependency symlink targets, not the shared store bytes, are hashed. To create the stand and run this driver:
+journey, and fingerprints the mounted dependency-store file bytes and link text
+both times. Nested symlink targets are not separately attested; the store digest
+is an observation and is not compared to a signed dependency manifest. To create the stand and run this driver:
 
 ```sh
 python3 tests/native/launch.py --candidate /absolute/fleet/releases/RELEASE -- /usr/bin/python3 "$PWD/tests/native/candidate_stand.py" /absolute/fleet/releases/RELEASE /absolute/path/to/codex /absolute/path/to/opencode

@@ -3,7 +3,7 @@ import hashlib
 import json
 import tempfile
 from pathlib import Path
-from candidate_driver import candidate_bundle_identity, exit_code_for_status, http_error_summary, timeout_summary, validate_isolation
+from candidate_driver import candidate_bundle_identity, candidate_store_identity, exit_code_for_status, http_error_summary, timeout_summary, validate_isolation
 
 
 class CandidateDriverTest(unittest.TestCase):
@@ -23,6 +23,28 @@ class CandidateDriverTest(unittest.TestCase):
             (release / 'dist' / 'adapter.js').write_text('tampered adapter')
             with self.assertRaisesRegex(ValueError, 'bundle'):
                 candidate_bundle_identity(release)
+
+    def test_dependency_store_identity_changes_when_linked_code_changes(self):
+        with tempfile.TemporaryDirectory() as root:
+            catalog = Path(root)
+            release = catalog / 'releases' / ('a' * 40)
+            modules = release / 'node_modules'
+            modules.mkdir(parents=True)
+            store = catalog / 'shared-node-modules' / ('b' * 64)
+            package = store / 'fixture-package'
+            package.mkdir(parents=True)
+            code = package / 'index.js'
+            code.write_text('original dependency')
+            (modules / 'fixture-package').symlink_to(package, target_is_directory=True)
+            before = candidate_store_identity(release)
+            code.write_text('changed dependency')
+            after = candidate_store_identity(release)
+            self.assertNotEqual(before['fingerprint'], after['fingerprint'])
+            outside = catalog / 'outside'
+            outside.mkdir()
+            (modules / 'foreign').symlink_to(outside, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, 'dependency'):
+                candidate_store_identity(release)
 
     def test_incomplete_is_not_a_successful_exit(self):
         self.assertNotEqual(exit_code_for_status('INCOMPLETE'), 0)
