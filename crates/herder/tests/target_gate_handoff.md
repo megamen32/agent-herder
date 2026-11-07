@@ -56,3 +56,54 @@ next denied; existing/unknown target denied; process-death and lost-response
 UNKNOWN with no second submission. Do not count the fake socket fixture as this
 native proof. Review the three reconcile success tests blocked by the temporary
 unconditional authority gate without hiding their failures.
+
+## Scoped v3 implementation and evidence
+
+The earlier fixture-only description above is historical. The scoped v3 path is
+implemented in `application/scoped_stop.rs`: an explicitly provisioned empty
+isolated SQLite v3 authority pins one OS gate inode, and immutable session
+binding, authority generation, scope generation, `global` and session scopes
+commit together after a bounded native root create while that gate is held.
+Unscoped legacy dispatch is refused. Imported or parented sessions have no
+verified handoff and do not obtain scoped authority. The v2-to-v3 migration is
+explicit and was executed only in disposable test databases; it is never applied
+by `Writer::open_file`.
+
+Claim and stop acquire the same pinned gate. Handoff acquires it again, checks
+the exact mapping, scoped generation, durable claim and all registered holds in
+a short SQLite transaction, durably marks `handing_off`, commits, and keeps the
+OS gate through the bounded native submit. A stop that wins before handoff is
+recorded as definitely not sent. A lost submit, crash during handoff, or lost
+interrupt remains UNKNOWN; a persistent fence blocks replay and another writer
+on that session. Interrupt attempts are bound to the exact session and native
+turn and persisted before the bounded call, preventing repeated interrupts.
+Acknowledgement alone is not native cancellation proof.
+
+`tests/scoped_stop_gate.rs` uses pipe and channel barriers, including a separate
+OS process for stop versus the real application handoff path, with no sleeps.
+The three previous positive receipt, restart and no-replay cases were moved from
+`reconcile.rs` into this suite under the same names and run with scoped
+provisioning. The ignored live test starts a real isolated Codex app-server with
+the shared loopback model and a barrier proxy: scoped create, unique send, exact
+native receipt lookup, native interrupt, independent reopened `thread/read`
+showing `interrupted`, and a denied next claim. The test-only Codex wrappers
+poll the current create/submit futures once and fail if they ever suspend; they
+are not a production adapter or an asserted general async cancellation contract.
+
+The default MCP launcher does not yet construct `ScopedAuthority` or supply a
+production bounded create/handoff implementation and issuer. The v3 route is
+therefore not claimed installed or available to ordinary clients. Completing
+that composition must preserve the synchronous bounded-handoff contract and
+must not route around the gate. No live migration was performed.
+
+### Isolated native readback, 2026-11-07
+
+On source base `c5946f40` with the scoped candidate, Codex `0.167.0`
+(binary SHA-256 `cdcb45aaa01d0f14e298985e09465aebccd47f64ecd298aea44814af7b62bbda`)
+ran against the local test-model through the barrier proxy. Its fresh native
+thread `01a1b4b9-e93b-7c11-b255-f6711c561ae0` and turn
+`01a1b4b9-ea4c-77a1-9cfb-f8f1ce931dee` were matched to the stored receipt.
+The exact `interrupt_exact` call was acknowledged, a separately reopened
+app-server read that turn as `interrupted`, and the subsequent claim was
+denied. The profile, authority database, gate and model process were disposable;
+this is an isolated test, not installation or evidence of legacy cutover.

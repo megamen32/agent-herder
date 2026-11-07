@@ -1448,6 +1448,7 @@ fn global_hold_stale_generation_and_imported_target_fail_closed() {
 struct FixtureReader {
     target: SessionAddress,
     reads: AtomicUsize,
+    db: PathBuf,
 }
 impl herder::domain::adapter::NativeSessionReader for FixtureReader {
     async fn snapshot(
@@ -1459,9 +1460,12 @@ impl herder::domain::adapter::NativeSessionReader for FixtureReader {
             address::{Authorization, Availability, Capability, CapabilityVersion, Support},
         };
         self.reads.fetch_add(1, Ordering::SeqCst);
+        let db = Connection::open(&self.db)
+            .map_err(|e| herder::domain::adapter::ReadError(e.to_string()))?;
+        let human_stop: bool = db.query_row("SELECT EXISTS(SELECT 1 FROM humanstop_scopes s JOIN humanstop_holds h ON h.scope_ref=s.scope_ref WHERE s.session_ref='issued' AND h.released_at IS NULL) OR EXISTS(SELECT 1 FROM holds WHERE released_at IS NULL AND session_ref IN ('global','issued','session:issued'))", [], |r| r.get(0)).map_err(|e| herder::domain::adapter::ReadError(e.to_string()))?;
         Ok(SessionSnapshot {
             address: self.target.clone(),
-            human_stop: false,
+            human_stop,
             activity: SessionActivity::Idle,
             capabilities: vec![Capability {
                 name: "deliver.start".into(),
@@ -1493,6 +1497,7 @@ async fn delivery_requires_authority_exact_instance_and_snapshot_before_fake_sub
     let reader = FixtureReader {
         target: target.clone(),
         reads: AtomicUsize::new(0),
+        db: f.db.clone(),
     };
     let calls = Arc::new(AtomicUsize::new(0));
     let control = Control {
@@ -1551,6 +1556,7 @@ async fn delivery_requires_authority_exact_instance_and_snapshot_before_fake_sub
             native_session_id: target.native_session_id.clone(),
         },
         reads: AtomicUsize::new(0),
+        db: f.db.clone(),
     };
     assert_eq!(
         deliver_scoped(
