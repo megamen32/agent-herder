@@ -1,12 +1,177 @@
 //! Readback of a dispatching intent never grants permission to submit again.
 use crate::domain::adapter::{NativeReceipt, NativeSessionReader, Observation};
+use crate::domain::address::SessionAddress;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use serde::{Deserialize, Serialize};
+
+/// The caller must resolve target_ref to address from an authoritative mapping;
+/// neither this type nor the opaque target column establishes that mapping.
+#[derive(Clone, Copy)]
+pub struct ReceiptBinding<'a> {
+    pub intent_id: &'a str,
+    pub principal: &'a str,
+    pub target_ref: &'a str,
+    pub request_key: &'a str,
+    pub address: &'a SessionAddress,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct ReceiptEnvelope {
+    version: u8,
+    intent_id: String,
+    principal: String,
+    target_ref: String,
+    request_key: String,
+    address: SessionAddress,
+    native_id: String,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum StoreReceipt {
+    Stored,
+    AlreadyStored,
+    Mismatch,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum StoredReceipt {
+    Found(NativeReceipt),
+    Unknown,
+}
+
+fn valid_binding(b: &ReceiptBinding<'_>) -> bool {
+    [
+        b.intent_id,
+        b.principal,
+        b.target_ref,
+        b.request_key,
+        &b.address.instance.node.0,
+        &b.address.instance.instance_id,
+        &b.address.native_session_id,
+    ]
+    .iter()
+    .all(|v| !v.is_empty() && v.len() <= 4096)
+}
+
+fn envelope(b: &ReceiptBinding<'_>, receipt: &NativeReceipt) -> Option<ReceiptEnvelope> {
+    if !valid_binding(b)
+        || receipt.target != *b.address
+        || receipt.native_id.is_empty()
+        || receipt.native_id.len() > 4096
+    {
+        return None;
+    }
+    Some(ReceiptEnvelope {
+        version: 1,
+        intent_id: b.intent_id.into(),
+        principal: b.principal.into(),
+        target_ref: b.target_ref.into(),
+        request_key: b.request_key.into(),
+        address: b.address.clone(),
+        native_id: receipt.native_id.clone(),
+    })
+}
+
+fn decode_receipt(raw: &str, b: &ReceiptBinding<'_>) -> Option<NativeReceipt> {
+    if raw.len() > 65536 || !valid_binding(b) {
+        return None;
+    }
+    let value: ReceiptEnvelope = serde_json::from_str(raw).ok()?;
+    if value.version != 1
+        || value.intent_id != b.intent_id
+        || value.principal != b.principal
+        || value.target_ref != b.target_ref
+        || value.request_key != b.request_key
+        || value.address != *b.address
+        || value.native_id.is_empty()
+        || value.native_id.len() > 4096
+    {
+        return None;
+    }
+    Some(NativeReceipt {
+        target: value.address,
+        native_id: value.native_id,
+    })
+}
+
+/// Save a receipt only for the exact durable intent; never replace existing evidence.
+/// The caller supplies a fenced writer connection, an authoritatively resolved
+/// binding and the actual receipt of this request. This format is not a signature
+/// and cannot establish native origin or bind an untrusted receipt to a request.
+pub fn store_native_receipt(
+    connection: &mut Connection,
+    b: &ReceiptBinding<'_>,
+    receipt: &NativeReceipt,
+    now: &str,
+) -> rusqlite::Result<StoreReceipt> {
+    let Some(expected) = envelope(b, receipt) else {
+        return Ok(StoreReceipt::Mismatch);
+    };
+    let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let row: Option<Option<String>> = tx.query_row(
+        "SELECT native_receipt FROM intents WHERE intent_id=?1 AND principal=?2 AND target=?3 AND request_key=?4 AND state IN ('dispatching','admitted','unknown')",
+        params![b.intent_id, b.principal, b.target_ref, b.request_key], |row| row.get(0)).optional()?;
+    let result = match row {
+        None => StoreReceipt::Mismatch,
+        Some(Some(raw)) => {
+            if decode_receipt(&raw, b).as_ref() == Some(receipt) {
+                StoreReceipt::AlreadyStored
+            } else {
+                StoreReceipt::Mismatch
+            }
+        }
+        Some(None) => {
+            let raw = serde_json::to_string(&expected)
+                .expect("receipt envelope contains only strings and an integer");
+            if raw.len() > 65536 {
+                StoreReceipt::Mismatch
+            } else {
+                tx.execute("UPDATE intents SET native_receipt=?2, updated_at=?3 WHERE intent_id=?1 AND native_receipt IS NULL", params![b.intent_id, raw, now])?;
+                StoreReceipt::Stored
+            }
+        }
+    };
+    tx.commit()?;
+    Ok(result)
+}
+
+/// A missing, invalid or differently bound receipt is UNKNOWN, never evidence to resend.
+pub fn load_native_receipt(
+    connection: &Connection,
+    b: &ReceiptBinding<'_>,
+) -> rusqlite::Result<StoredReceipt> {
+    if !valid_binding(b) {
+        return Ok(StoredReceipt::Unknown);
+    }
+    let raw: Option<Option<String>> = connection.query_row(
+        "SELECT native_receipt FROM intents WHERE intent_id=?1 AND principal=?2 AND target=?3 AND request_key=?4 AND state IN ('dispatching','admitted','unknown','confirmed','rejected')",
+        params![b.intent_id, b.principal, b.target_ref, b.request_key], |row| row.get(0)).optional()?;
+    Ok(
+        match raw.flatten().and_then(|raw| decode_receipt(&raw, b)) {
+            Some(receipt) => StoredReceipt::Found(receipt),
+            None => StoredReceipt::Unknown,
+        },
+    )
+}
+
+/// Read back only the exact stored receipt; this interface cannot submit.
+pub async fn reconcile_stored_receipt<R: NativeSessionReader>(
+    connection: &Connection,
+    b: &ReceiptBinding<'_>,
+    reader: &R,
+) -> rusqlite::Result<Reconciliation> {
+    Ok(match load_native_receipt(connection, b)? {
+        StoredReceipt::Found(receipt) => reconcile_dispatching(reader, Some(&receipt)).await,
+        StoredReceipt::Unknown => Reconciliation::Unknown,
+    })
+}
 
 /// A recovery result is never permission to dispatch again.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MissingReceiptRecovery {
     Unknown,
-    /// The store does not yet define a native_receipt encoding or reader.
+    /// A stored receipt requires the separately bound read-only reconciliation path.
     ReceiptNeedsDecoding,
     NotFound,
     NotRecoverable,
@@ -16,7 +181,7 @@ pub enum MissingReceiptRecovery {
 /// The caller must provide the store's fenced writer connection after ensuring
 /// that no dispatcher for this intent remains active. This is not a native
 /// lookup: the current reader port cannot query by request key. Stored receipt
-/// bytes are left untouched until their format and binding are defined.
+/// bytes are left untouched and require an authoritative binding to decode.
 pub fn recover_missing_receipt(
     connection: &mut Connection,
     intent_id: &str,
@@ -100,6 +265,119 @@ mod tests {
     use crate::domain::adapter::{ReadError, SessionSnapshot};
     use crate::domain::address::{InstanceRef, NodeRef, SessionAddress};
     use std::cell::Cell;
+
+    #[tokio::test]
+    async fn stored_receipt_is_bound_to_intent_address_and_corruption_is_unknown() {
+        use rusqlite::functions::FunctionFlags;
+        let mut c = Connection::open_in_memory().unwrap();
+        c.create_scalar_function(
+            "herder_writer_version",
+            0,
+            FunctionFlags::SQLITE_UTF8,
+            |_| Ok(1),
+        )
+        .unwrap();
+        c.execute_batch(include_str!("../store/schema.sql"))
+            .unwrap();
+        c.execute("INSERT INTO tasks(task_id,principal,status,created_at,updated_at) VALUES ('t','p','prepared','a','a')", []).unwrap();
+        c.execute("INSERT INTO intents(intent_id,task_id,principal,target,request_key,payload_hash,state,created_at,updated_at,retain_until) VALUES ('i','t','p','target','key','hash','dispatching','a','a','later')", []).unwrap();
+        let r = receipt();
+        let binding = ReceiptBinding {
+            intent_id: "i",
+            principal: "p",
+            target_ref: "target",
+            request_key: "key",
+            address: &r.target,
+        };
+        assert_eq!(
+            store_native_receipt(&mut c, &binding, &r, "now").unwrap(),
+            StoreReceipt::Stored
+        );
+        assert_eq!(
+            store_native_receipt(&mut c, &binding, &r, "later").unwrap(),
+            StoreReceipt::AlreadyStored
+        );
+        assert_eq!(
+            load_native_receipt(&c, &binding).unwrap(),
+            StoredReceipt::Found(r.clone())
+        );
+        let mut foreign = r.clone();
+        foreign.target.instance.node.0 = "other".into();
+        let wrong = ReceiptBinding {
+            address: &foreign.target,
+            ..binding
+        };
+        assert_eq!(
+            load_native_receipt(&c, &wrong).unwrap(),
+            StoredReceipt::Unknown
+        );
+        assert_eq!(
+            store_native_receipt(&mut c, &binding, &foreign, "later").unwrap(),
+            StoreReceipt::Mismatch
+        );
+        let reader = Fake {
+            calls: Cell::new(0),
+            result: Ok(Observation::Confirmed { receipt: r.clone() }),
+        };
+        assert_eq!(
+            reconcile_stored_receipt(&c, &wrong, &reader).await.unwrap(),
+            Reconciliation::Unknown
+        );
+        assert_eq!(reader.calls.get(), 0);
+        let wrong_key = ReceiptBinding {
+            request_key: "another",
+            ..binding
+        };
+        assert_eq!(
+            load_native_receipt(&c, &wrong_key).unwrap(),
+            StoredReceipt::Unknown
+        );
+        let encoded: String = c
+            .query_row(
+                "SELECT native_receipt FROM intents WHERE intent_id='i'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let mut future: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+        future["version"] = 2.into();
+        c.execute(
+            "UPDATE intents SET native_receipt=?1 WHERE intent_id='i'",
+            [future.to_string()],
+        )
+        .unwrap();
+        assert_eq!(
+            reconcile_stored_receipt(&c, &binding, &reader)
+                .await
+                .unwrap(),
+            Reconciliation::Unknown
+        );
+        assert_eq!(reader.calls.get(), 0);
+        c.execute(
+            "UPDATE intents SET native_receipt = '{bad' WHERE intent_id='i'",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            reconcile_stored_receipt(&c, &binding, &reader)
+                .await
+                .unwrap(),
+            Reconciliation::Unknown
+        );
+        assert_eq!(reader.calls.get(), 0);
+        assert_eq!(
+            store_native_receipt(&mut c, &binding, &r, "later").unwrap(),
+            StoreReceipt::Mismatch
+        );
+        let persisted: String = c
+            .query_row(
+                "SELECT native_receipt FROM intents WHERE intent_id='i'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(persisted, "{bad");
+    }
 
     fn receipt() -> NativeReceipt {
         NativeReceipt {
@@ -245,6 +523,29 @@ mod tests {
         c.execute("INSERT INTO intents(intent_id,task_id,principal,target,request_key,payload_hash,state,created_at,updated_at,retain_until) VALUES ('i','t','p','target','key','hash','dispatching','a','a','later')", []).unwrap();
         drop(c);
         c = open();
+        let r = receipt();
+        let binding = ReceiptBinding {
+            intent_id: "i",
+            principal: "p",
+            target_ref: "target",
+            request_key: "key",
+            address: &r.target,
+        };
+        assert_eq!(
+            store_native_receipt(&mut c, &binding, &r, "restart").unwrap(),
+            StoreReceipt::Stored
+        );
+        drop(c);
+        c = open();
+        assert_eq!(
+            load_native_receipt(&c, &binding).unwrap(),
+            StoredReceipt::Found(r.clone())
+        );
+        c.execute(
+            "UPDATE intents SET native_receipt=NULL WHERE intent_id='i'",
+            [],
+        )
+        .unwrap();
         assert_eq!(
             recover_missing_receipt(&mut c, "i", "restart").unwrap(),
             MissingReceiptRecovery::Unknown
