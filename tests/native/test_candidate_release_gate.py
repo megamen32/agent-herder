@@ -1,5 +1,8 @@
 import unittest
-from candidate_release_gate import validate_cli_candidate
+import json
+import tempfile
+from pathlib import Path
+from candidate_release_gate import invalidate_receipt, validate_cli_candidate
 
 
 def receipt():
@@ -18,6 +21,13 @@ def receipt():
 
 
 class CandidateReleaseGateTest(unittest.TestCase):
+    def test_stale_success_is_invalidated_before_a_new_attempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'receipt.json'
+            path.write_text(json.dumps({'cli_candidate': 'PASS'}))
+            invalidate_receipt(path)
+            self.assertEqual(json.loads(path.read_text())['cli_candidate'], 'INCOMPLETE')
+
     def test_cli_pass_preserves_full_release_incomplete(self):
         result = validate_cli_candidate(receipt(), 'a' * 40, 2)
         self.assertEqual(result['cli_candidate'], 'PASS')

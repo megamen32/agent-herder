@@ -9,6 +9,19 @@ import tempfile
 import time
 
 
+def write_receipt(path, value):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile('w', dir=path.parent, prefix='.ci-', delete=False) as stream:
+        temporary = Path(stream.name)
+        json.dump(value, stream)
+    os.replace(temporary, path)
+
+
+def invalidate_receipt(path):
+    write_receipt(path, {'cli_candidate': 'INCOMPLETE', 'release': 'INCOMPLETE'})
+
+
 def validate_cli_candidate(report, sha, returncode):
     if returncode != 2 or not isinstance(report, dict):
         raise ValueError('candidate runner failed or did not return INCOMPLETE')
@@ -41,6 +54,7 @@ def main():
     if len(sys.argv) != 6:
         raise ValueError('expected release, SHA, Codex binary, OpenCode binary and receipt')
     release, sha, codex, opencode, receipt = sys.argv[1:]
+    invalidate_receipt(receipt)
     base = Path(__file__).resolve().parent
     command = [sys.executable, str(base / 'launch.py'), '--candidate', release, '--',
                sys.executable, str(base / 'candidate_stand.py'), release, codex, opencode]
@@ -53,11 +67,7 @@ def main():
         raise ValueError(f'CLI candidate gate failed: {error}; {result.stderr[-1200:]}') from error
     output['elapsed_seconds'] = round(time.monotonic() - start, 3)
     path = Path(receipt)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile('w', dir=path.parent, prefix='.ci-', delete=False) as stream:
-        temporary = Path(stream.name)
-        json.dump(output, stream)
-    os.replace(temporary, path)
+    write_receipt(path, output)
     print(f"CLI candidate PASS; full release INCOMPLETE; receipt {path}")
     return 0
 
