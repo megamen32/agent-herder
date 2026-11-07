@@ -1,7 +1,7 @@
 {
   "label": "Durable стандартные Tasks get/create",
   "description": "SDK wire types и SQLite backend без in-memory authority.",
-  "acceptance": "Task сохранён до ответа, polling после рестарта читает тот же ID/result.",
+  "acceptance": "Task сохранён до ответа, polling после рестарта читает тот же ID/result. Клиент без Tasks capability отклоняется до создания исполнимой Task, постановки dispatch и native side effect; ошибка содержит effect=none и понятное исправление. Тест проверяет отсутствие submit и выполнения Task, не только код ответа.",
   "affected_files": [
     "crates/herder/src/mcp/tasks.rs"
   ],
@@ -23,7 +23,7 @@
   "created_at": "2026-11-07T01:52:20+03:00",
   "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
   "harness": "codex",
-  "updated_at": "2026-11-07T01:52:20+03:00",
+  "updated_at": "2026-11-07T03:04:56+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:20+03:00",
@@ -49,6 +49,15 @@
         "wave": 1,
         "note": "v1, нулевая ревизия. Дорожка storage; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
         "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:04:56+03:00",
+      "note": "Уточнение из подтверждённого V002: SDK проверяет capability после вызова обработчика.",
+      "changes": {
+        "acceptance": "Task сохранён до ответа, polling после рестарта читает тот же ID/result. Клиент без Tasks capability отклоняется до создания исполнимой Task, постановки dispatch и native side effect; ошибка содержит effect=none и понятное исправление. Тест проверяет отсутствие submit и выполнения Task, не только код ответа."
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"

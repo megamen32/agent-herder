@@ -14,16 +14,16 @@
     "maximum": 45
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "waiting",
+  "owner": "01a1b355-236b-7df2-a833-c8eec44f2a0e",
   "wave": 2,
-  "note": "v1, нулевая ревизия. Дорожка ownership; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+  "note": "Исполнитель остановлен до изменений при переключении приоритета на обновление Codex.",
   "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
   "id": "V036",
   "created_at": "2026-11-07T01:52:24+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
   "harness": "codex",
-  "updated_at": "2026-11-07T01:52:24+03:00",
+  "updated_at": "2026-11-07T03:17:19+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:24+03:00",
@@ -52,6 +52,45 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:07:56+03:00",
+      "note": "Независимый storage manifest, отдельное дерево и временные каталоги.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "owner": "01a1b355-236b-7df2-a833-c8eec44f2a0e"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:07:57+03:00",
+      "note": "Worker 01a1b355-236b-7df2-a833-c8eec44f2a0e registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b355-236b-7df2-a833-c8eec44f2a0e",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v036/agent-herder",
+          "registered_at": "2026-11-07T03:07:57+03:00",
+          "run_dir": "/home/roomhacker/.codex/worktrees/herder-v1-v036/agent-herder/.tmp/v036",
+          "run_host": "roomhacker-server-100"
+        }
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:17:19+03:00",
+      "note": "Исполнитель остановлен до изменений при переключении приоритета на обновление Codex.",
+      "changes": {
+        "status": "waiting",
+        "worker": null,
+        "note": "Исполнитель остановлен до изменений при переключении приоритета на обновление Codex."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
     }
-  ]
+  ],
+  "worker": null
 }

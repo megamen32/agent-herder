@@ -13,16 +13,16 @@
     "maximum": 60
   },
   "kind": "task",
-  "status": "blocked",
-  "owner": "01a1b349-340a-7563-92fa-c70c41f0b68e",
+  "status": "running",
+  "owner": "roomhacker",
   "wave": 1,
-  "note": "v1, нулевая ревизия. Дорожка clients; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+  "note": "Продолжается проверка extensions на app-server 0.167.0; фактический App/Hub остаётся непроверен.",
   "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
   "id": "V003",
   "created_at": "2026-11-07T01:52:19+03:00",
   "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:00:38+03:00",
+  "updated_at": "2026-11-07T03:23:55+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:19+03:00",
@@ -89,9 +89,40 @@
       },
       "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:22:21+03:00",
+      "note": "Без переобъявления старой версии: успешная проверка относится к изолированному процессу 0.167.0.",
+      "changes": {
+        "blocker": "Клиент 0.167.0 успешно прошёл новый базовый wire с двумя opt-in на изолированном app-server, но Tasks/Skills/subscriptions и фактический App/Hub путь не проверены; текущий общий daemon 0.162.1 продолжает активные чаты.",
+        "result": "Сохранены PID-specific trace и описание review-evidence/v003-app-0167: discover → list → call прошли на app-server 0.167.0. CLI 0.162.1 legacy; полноценный gate открыт."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:23:53+03:00",
+      "note": "",
+      "changes": {
+        "status": "queued",
+        "blocker": "",
+        "note": "Продолжается проверка extensions на app-server 0.167.0; фактический App/Hub остаётся непроверен."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:23:55+03:00",
+      "note": "Исполнитель 01a1b363-a7d3-7a62-a1b9-ced7bd6e883d проверяет extensions.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
     }
   ],
   "worker": null,
-  "blocker": "Codex CLI 0.162.1 начинает initialize 2025-06-18, не server/discover 2026-07-28; Tasks не объявлены. Проверить доступное поддерживаемое обновление клиента и согласовать архитектурное решение при необходимости.",
-  "result": "Wire trace реального codex exec опубликован в 1c1fbb57; новая revision, Tasks, Skills и session identity не подтверждены."
+  "blocker": "",
+  "result": "Сохранены PID-specific trace и описание review-evidence/v003-app-0167: discover → list → call прошли на app-server 0.167.0. CLI 0.162.1 legacy; полноценный gate открыт."
 }

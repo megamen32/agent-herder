@@ -13,16 +13,16 @@
     "maximum": 60
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "waiting",
+  "owner": "01a1b353-5464-7bd1-8587-c413444314fc",
   "wave": 1,
-  "note": "v1, нулевая ревизия. Дорожка storage; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
+  "note": "Работа в локальном коммите 5b244735; проверка на test connections, совместимость настоящего старого binary остаётся открытой; ожидает интеграции.",
   "estimate_over_limit_reason": "Прямое правило владельца для этого плана: <=60 минут; глобальный LHC не изменён.",
   "id": "V011",
   "created_at": "2026-11-07T01:52:20+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
   "harness": "codex",
-  "updated_at": "2026-11-07T01:52:20+03:00",
+  "updated_at": "2026-11-07T03:17:16+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:20+03:00",
@@ -50,6 +50,45 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:06:02+03:00",
+      "note": "Схема SQLite и транзакции; тестовая БД.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "owner": "01a1b353-5464-7bd1-8587-c413444314fc"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:06:03+03:00",
+      "note": "Worker 01a1b353-5464-7bd1-8587-c413444314fc registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b353-5464-7bd1-8587-c413444314fc",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-implementation/agent-herder",
+          "registered_at": "2026-11-07T03:06:03+03:00",
+          "run_dir": "/home/roomhacker/.codex/worktrees/herder-v1-implementation/agent-herder/.tmp/v011",
+          "run_host": "roomhacker-server-100"
+        }
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:17:16+03:00",
+      "note": "Работа в локальном коммите 5b244735; проверка на test connections, совместимость настоящего старого binary остаётся открытой; ожидает интеграции.",
+      "changes": {
+        "status": "waiting",
+        "worker": null,
+        "note": "Работа в локальном коммите 5b244735; проверка на test connections, совместимость настоящего старого binary остаётся открытой; ожидает интеграции."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
     }
-  ]
+  ],
+  "worker": null
 }

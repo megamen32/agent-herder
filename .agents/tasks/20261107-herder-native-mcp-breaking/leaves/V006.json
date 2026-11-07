@@ -13,7 +13,7 @@
     "maximum": 45
   },
   "kind": "task",
-  "status": "running",
+  "status": "done",
   "owner": "01a1b34f-17ca-7620-a906-6f46c3c879c8",
   "wave": 1,
   "note": "v1, нулевая ревизия. Дорожка core; диапазон условен при готовых входах, риски в ESTIMATES.md. При неизвестном объёме переразбить до исполнения; максимум 60 минут.",
@@ -22,7 +22,7 @@
   "created_at": "2026-11-07T01:52:19+03:00",
   "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:01:25+03:00",
+  "updated_at": "2026-11-07T03:04:57+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:19+03:00",
@@ -77,14 +77,19 @@
       },
       "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:04:57+03:00",
+      "note": "Проверено после объединения с V008.",
+      "changes": {
+        "status": "done",
+        "worker": null,
+        "result": "Pure decision и native port, различение отсутствия отправки и UNKNOWN опубликованы 8b7f8111; 11 тестов интегрированного кода прошли. Native adapters не проверены."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
     }
   ],
-  "worker": {
-    "id": "01a1b34f-17ca-7620-a906-6f46c3c879c8",
-    "branch": "HEAD",
-    "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder",
-    "registered_at": "2026-11-07T03:01:25+03:00",
-    "run_dir": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder/.tmp/v006",
-    "run_host": "roomhacker-server-100"
-  }
+  "worker": null,
+  "result": "Pure decision и native port, различение отсутствия отправки и UNKNOWN опубликованы 8b7f8111; 11 тестов интегрированного кода прошли. Native adapters не проверены."
 }

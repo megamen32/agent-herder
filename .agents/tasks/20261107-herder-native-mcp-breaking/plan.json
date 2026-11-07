@@ -2,7 +2,7 @@
   "title": "Agent Herder v1 — нулевая ревизия: Codex, OpenCode, ZCode, ChatGPT, Z.ai",
   "goal": "Поставить breaking Agent Herder v1 для пяти сред: Codex, OpenCode, ZCode, ChatGPT, Z.ai; durable MCP, coordination и offline ownership. Остальные адаптеры — следующее обновление.",
   "business_result": "14 общих инструментов, 5 прямых adapters, восстановление creator/sender и свободного владельца без MCP; installed consumer proof и удаление legacy.",
-  "current_progress": "V001, V002 и V004 опубликованы: main c92b1300. SDK probe подтверждает Tasks/Skills/listen на локальном процессе и выявил отсутствие durability; 4 теста конфигурации прошли. V003 проверяет реальный Codex-клиент, V005 реализует адреса и capabilities в другом worktree. Установленный сервис и потребитель не подтверждены.",
+  "current_progress": "V001, V002, V004, V005, V006, V008 включены в main 8b7f8111, 11 тестов проходят; installed service ещё отсутствует. V003: CLI 0.162.1 несовместим с выбранным wire, реальный Codex App/app-server и официальный изолированный кандидат проверяются. V007 и V011 выполняются в разных worktree. Консультация Astra 03:03 МСК.",
   "mode": "fullcycle",
   "slots": 4,
   "recon": [
@@ -12,7 +12,7 @@
     "История ревизий вынесена из активных leaves, сохранена с контрольными суммами :: history/astra-review-before-v1-zero/SHA256.json"
   ],
   "acceptance_scenario": "Один immutable v1 candidate: Codex/OpenCode/ZCode/ChatGPT/Z.ai native lanes; реальные consumers; два Codex/OpenCode/browser profiles и две ноды; creator/sender после compaction; UNKNOWN no replay и HumanStop; offline claim/release receipt при выключенном MCP; migration/legacy removal; Linux/macOS installed acceptance. Остальные adapters не входят в v1.",
-  "updated_at": "2026-11-07T03:02:23+03:00",
+  "updated_at": "2026-11-07T03:18:44+03:00",
   "journal": [
     {
       "at": "2026-11-06T23:49:13.993699+00:00",
@@ -31,6 +31,16 @@
       "at": "2026-11-07T03:02:23+03:00",
       "reason": "Консультация Astra 07.11.2026 около 03:00 МСК: отрицательный V003",
       "summary": "Не делать bridge и не понижать протокол. Установить обязательный consumer и проверить официальный release максимум одним изолированным кандидатом; оценка совместимости только по реальному wire trace. Независимое core продолжается, V010 остаётся заблокирован клиентским gate."
+    },
+    {
+      "at": "2026-11-07T03:03:36+03:00",
+      "reason": "Плановая консультация Astra 07.11.2026 03:03 МСК",
+      "summary": "Подтверждены опубликованные V001/V002/V004/V005 и отрицательный V003; V006 и V008 интегрируются, проверка реального consumer выполняется отдельно. Следующий совет не позднее 04:03 МСК, действующий cadence контролирует ранее."
+    },
+    {
+      "at": "2026-11-07T03:18:44+03:00",
+      "reason": "Плановая консультация Astra 07.11.2026 03:18 МСК",
+      "summary": "По поручению владельца обновляется Codex: новые CLI 0.167.0 на 100,44,88, Mac M1 и mini; старые активные процессы сохранены. После проверки остальных компьютеров продолжить V003 с настоящим app-server и доказательствами extensions. Следующий совет не позже 04:18 МСК."
     }
   ]
 }
