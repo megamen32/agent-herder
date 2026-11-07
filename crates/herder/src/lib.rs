@@ -19,6 +19,7 @@ pub mod application {
     pub mod models;
     pub mod recent;
     pub mod resource;
+    pub mod settings;
     pub mod target;
     pub mod reconcile;
 }
