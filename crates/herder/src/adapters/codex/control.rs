@@ -195,9 +195,9 @@ impl CodexControl {
         }
         let mut state = self
             .state
-            .lock()
+            .try_lock()
             .map_err(|_| SubmitError::DefinitelyNotSent {
-                reason: "Codex control connection lock is poisoned".into(),
+                reason: "Codex control connection is busy or unavailable".into(),
             })?;
         let result = state
             .connection
@@ -488,8 +488,8 @@ fn read_turn_status(
     })
 }
 
-impl NativeSessionControl for CodexControl {
-    async fn submit(
+impl CodexControl {
+    pub fn submit_bounded(
         &self,
         plan: DispatchPlan,
         message: &str,
@@ -547,8 +547,8 @@ impl NativeSessionControl for CodexControl {
 
         let (method, params) = method_and_params;
         let result = {
-            let mut state = self.state.lock().map_err(|_| SubmitError::DefinitelyNotSent {
-                reason: "Codex control connection lock is poisoned".into(),
+            let mut state = self.state.try_lock().map_err(|_| SubmitError::DefinitelyNotSent {
+                reason: "Codex control connection is busy or unavailable".into(),
             })?;
             if method == "turn/start" && !state.fresh_threads.remove(&plan.target.native_session_id) {
                 return Err(SubmitError::DefinitelyNotSent {
@@ -589,6 +589,28 @@ impl NativeSessionControl for CodexControl {
     }
 }
 
+impl NativeSessionControl for CodexControl {
+    async fn submit(
+        &self,
+        plan: DispatchPlan,
+        message: &str,
+        key: &RequestKey,
+    ) -> Result<Admission, SubmitError> {
+        self.submit_bounded(plan, message, key)
+    }
+}
+
+impl crate::application::scoped_stop::BoundedNativeHandoff for CodexControl {
+    fn submit_bounded(
+        &self,
+        plan: DispatchPlan,
+        message: &str,
+        key: &RequestKey,
+    ) -> Result<Admission, SubmitError> {
+        CodexControl::submit_bounded(self, plan, message, key)
+    }
+}
+
 fn map_rpc_error(error: RpcError) -> SubmitError {
     match error {
         RpcError::NotRunning
@@ -619,6 +641,35 @@ mod tests {
     use crate::domain::address::{NodeRef, SessionAddress};
 
     static FIXTURE_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn busy_control_does_not_wait_unbounded_for_create() {
+        let _fixture = fixture_lock();
+        let (control, root) = fake_control(
+            &fixture_server(
+                "with open(os.path.join(os.environ['CODEX_HOME'],'methods'),'a') as f: f.write(m+'\\n')",
+            ),
+            Duration::from_millis(100),
+        );
+        let control = std::sync::Arc::new(control);
+        let guard = control.state.lock().unwrap();
+        let child = control.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            tx.send(child.start_thread("/tmp")).unwrap();
+        });
+        let result = rx.recv_timeout(Duration::from_millis(500));
+        drop(guard);
+        worker.join().unwrap();
+        assert!(
+            matches!(result, Ok(Err(SubmitError::DefinitelyNotSent { .. }))),
+            "busy connection must reject without waiting or sending: {result:?}"
+        );
+        let methods = fs::read_to_string(root.join("home/methods")).unwrap();
+        assert!(!methods.lines().any(|method| method == "thread/start"));
+        drop(control);
+        let _ = fs::remove_dir_all(root);
+    }
 
     fn fixture_lock() -> std::sync::MutexGuard<'static, ()> {
         FIXTURE_LOCK.lock().unwrap()

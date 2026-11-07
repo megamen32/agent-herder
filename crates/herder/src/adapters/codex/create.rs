@@ -36,15 +36,11 @@ impl CodexCreateControl {
     }
 }
 
-impl NativeCreateControl for CodexCreateControl {
-    fn instance(&self) -> &InstanceRef {
-        self.control.instance()
-    }
-
+impl CodexCreateControl {
     /// Codex thread/start creates a blank session and has no specification
     /// field. The specification remains bound in the core intent; this port
     /// never guesses that it should become an initial user message.
-    async fn create_once(&self, request_key: &str, _specification: &str) -> NativeCreateOutcome {
+    fn create_sync(&self, request_key: &str) -> NativeCreateOutcome {
         if request_key.is_empty() || request_key.len() > 4096 {
             return NativeCreateOutcome::Unknown;
         }
@@ -69,6 +65,38 @@ impl NativeCreateControl for CodexCreateControl {
             instance: address.instance,
             native_session_id: address.native_session_id,
             parent_ref: None,
+        }
+    }
+}
+
+impl NativeCreateControl for CodexCreateControl {
+    fn instance(&self) -> &InstanceRef {
+        self.control.instance()
+    }
+    async fn create_once(&self, request_key: &str, _specification: &str) -> NativeCreateOutcome {
+        self.create_sync(request_key)
+    }
+}
+
+impl crate::application::scoped_stop::BoundedFreshRootCreate for CodexCreateControl {
+    fn instance(&self) -> &InstanceRef {
+        self.control.instance()
+    }
+    fn create_root_bounded(
+        &self,
+        request_key: &str,
+        _specification: &str,
+    ) -> Result<SessionAddress, ()> {
+        match self.create_sync(request_key) {
+            NativeCreateOutcome::Confirmed {
+                instance,
+                native_session_id,
+                ..
+            } => Ok(SessionAddress {
+                instance,
+                native_session_id,
+            }),
+            NativeCreateOutcome::Unknown => Err(()),
         }
     }
 }
