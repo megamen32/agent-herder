@@ -1,0 +1,18 @@
+{
+  "deleted": true,
+  "delivery": "queue",
+  "external_provider_calls": 0,
+  "instance": {
+    "instance_id": "v065live-1794042472394619835",
+    "node": "v065live-loopback"
+  },
+  "loopback_model_requests": 1,
+  "native_message_id": "msg_1b543b6f90013beh79vyUTXfUt",
+  "post_delete_read": "not found",
+  "readback": "same native user ID+marker and completed assistant HERDER_TEST_MODEL_OK",
+  "request_key_metadata": "v065-input-1794042472394619835",
+  "runtime": "official OpenCode 2.2.4 isolated loopback",
+  "session_id": "ses_e4abc4925ffenmzC7c0XF6PkOX",
+  "submit_count": 1,
+  "title": "herder-v065live-1794042472394619835"
+}

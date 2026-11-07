@@ -9,12 +9,8 @@ use reqwest::{Method, StatusCode};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::domain::{
-    adapter::{
-        Admission, DispatchPlan, NativeReceipt, NativeSessionControl, RequestKey, SendMode,
-        SubmitError,
-    },
-    address::SessionAddress,
+use crate::domain::adapter::{
+    Admission, DispatchPlan, NativeReceipt, NativeSessionControl, RequestKey, SendMode, SubmitError,
 };
 
 use super::connection::{OpenCodeConnection, OpenCodeRequestFailure};
@@ -195,7 +191,7 @@ mod tests {
     use super::*;
     use crate::{
         config::Profile,
-        domain::address::{InstanceRef, NodeRef},
+        domain::address::{InstanceRef, NodeRef, SessionAddress},
     };
     use serde_json::{Value, json};
     use std::{path::PathBuf, sync::Arc, time::Duration};
