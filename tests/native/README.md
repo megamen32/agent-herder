@@ -32,6 +32,18 @@ python3 tests/native/launch.py --scenario tool-call -- /usr/bin/python3 "$PWD/te
 
 This verifies the tool name, arguments, thread and turn IDs, the final native
 readback and exactly two fixture requests. It does not exercise Herder.
+
+`candidate_driver.py` combines the Herder HTTP journey, paginated transcript
+validation and MCP search for Codex and OpenCode. It requires an already
+running disposable stand in a private loopback-only network namespace, with
+an isolated project, fixture model and candidate process. Arguments are the
+absolute candidate dist, project, Herder origin, model origin, Codex binary and
+OpenCode binary; `HERDER_CI_TOKEN` supplies the stand's test-only MCP token.
+It checks the network's interfaces and routes, but the caller must also create
+and verify filesystem and network isolation before starting the stand. The
+result is always `INCOMPLETE`: it does not prove the installed process or the
+remaining required environments. A standalone stand launcher and release-gate
+integration remain separate work.
 Use an absolute executable path if it is outside the minimal PATH; explicitly
 configure each test client to use the provided endpoint. No credentials or
 existing profiles are inherited through the environment. Arbitrary project
