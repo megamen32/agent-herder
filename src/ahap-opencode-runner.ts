@@ -47,6 +47,10 @@ export async function serveOpenCodeAhap(
       error(null, -32700, "parse error");
       continue;
     }
+    if (!request || typeof request !== "object" || Array.isArray(request)) {
+      error(null, -32600, "invalid request");
+      continue;
+    }
     const id = typeof request.id === "string" || typeof request.id === "number" ? request.id : null;
     if (request.jsonrpc !== "2.0" || typeof request.method !== "string" || id === null) {
       if (id !== null) error(id, -32600, "invalid request");

@@ -17,6 +17,27 @@ async function run(adapter: Partial<OpenCodeAdapter>, requests: unknown[]) {
 
 const initialize = { jsonrpc: "2.0", id: 1, method: "initialize", params: { harness: "opencode", ahapVersion: "0.1" } };
 
+it("rejects JSON primitives and arrays as invalid requests, then keeps serving", async () => {
+  let adapterCalls = 0;
+  const adapter = {
+    async init() { adapterCalls += 1; },
+    async createSession() { adapterCalls += 1; return {} as never; },
+    async sendMessage() { adapterCalls += 1; return {} as never; },
+    async getSession() { adapterCalls += 1; return null; },
+    async getSessionMessages() { adapterCalls += 1; return null; },
+  };
+  const replies = await run(adapter, [null, "primitive", [], initialize, { jsonrpc: "2.0", id: 2, method: "init" }, { jsonrpc: "2.0", id: 3, method: "shutdown" }]);
+
+  expect(replies.slice(0, 3)).toEqual([
+    { jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request" } },
+    { jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request" } },
+    { jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request" } },
+  ]);
+  expect(replies[3].result.harness).toBe("opencode");
+  expect(replies[4].result).toBeNull();
+  expect(adapterCalls).toBe(1);
+});
+
 it("maps create, Queue delivery and exact read results without rewriting receipts", async () => {
   const calls: Array<{ method: string; args: unknown[] }> = [];
   const adapter = {
