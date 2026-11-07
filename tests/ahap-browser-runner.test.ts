@@ -6,6 +6,9 @@ import { makeConfiguredAdapter, serveBrowserChatAhap } from "../src/ahap-browser
 const scope = "a".repeat(64);
 const initialize = { jsonrpc: "2.0", id: 1, method: "initialize", params: { harness: "chatgpt", ahapVersion: "0.1" } };
 type TestAdapter = Partial<BrowserChatAdapter> & {
+  type?: string;
+  name?: string;
+  browserFeatures?: unknown;
   getAccountScope?: () => string | undefined;
   verifyPinnedAccountScope?: () => Promise<void>;
   close?: () => void;
@@ -35,6 +38,7 @@ describe("ChatGPT AHAP browser runner", () => {
       },
     };
     const adapter = makeConfiguredAdapter({
+      AHAP_HARNESS: "chatgpt",
       AHAP_CHATGPT_TRANSPORT: "mac-mini",
       AHAP_CHATGPT_PAGE_ID: "7",
       AHAP_CHATGPT_ACCOUNT_SCOPE: scope,
@@ -51,6 +55,7 @@ describe("ChatGPT AHAP browser runner", () => {
   it("fails closed instead of selecting another page when the configured page is absent", async () => {
     const calls: string[] = [];
     const adapter = makeConfiguredAdapter({
+      AHAP_HARNESS: "chatgpt",
       AHAP_CHATGPT_TRANSPORT: "mac-mini",
       AHAP_CHATGPT_PAGE_ID: "7",
       AHAP_CHATGPT_ACCOUNT_SCOPE: scope,
@@ -69,18 +74,21 @@ describe("ChatGPT AHAP browser runner", () => {
 
   it("requires an explicit transport and does not infer direct CDP from its variables", () => {
     expect(() => makeConfiguredAdapter({
+      AHAP_HARNESS: "chatgpt",
       AHAP_CHATGPT_CDP_WS_URL: "ws://unused",
       AHAP_CHATGPT_CDP_CONTEXT_ID: "unused",
       AHAP_CHATGPT_CDP_TARGET_ID: "unused",
       AHAP_CHATGPT_PAGE_ID: "7",
       AHAP_CHATGPT_ACCOUNT_SCOPE: scope,
-    })).toThrow("AHAP_CHATGPT_TRANSPORT must explicitly select");
+    })).toThrow("AHAP_BROWSER_TRANSPORT must explicitly select");
+    expect(() => makeConfiguredAdapter({ AHAP_HARNESS: "opencode" }))
+      .toThrow("AHAP_HARNESS must explicitly select chatgpt or zai");
   });
 
   it("fails closed when Mac Mini transport lacks exact page or account scope", () => {
-    expect(() => makeConfiguredAdapter({ AHAP_CHATGPT_TRANSPORT: "mac-mini", AHAP_CHATGPT_ACCOUNT_SCOPE: scope }))
+    expect(() => makeConfiguredAdapter({ AHAP_HARNESS: "chatgpt", AHAP_CHATGPT_TRANSPORT: "mac-mini", AHAP_CHATGPT_ACCOUNT_SCOPE: scope }))
       .toThrow(/exact page ID and account scope are required/i);
-    expect(() => makeConfiguredAdapter({ AHAP_CHATGPT_TRANSPORT: "mac-mini", AHAP_CHATGPT_PAGE_ID: "7" }))
+    expect(() => makeConfiguredAdapter({ AHAP_HARNESS: "chatgpt", AHAP_CHATGPT_TRANSPORT: "mac-mini", AHAP_CHATGPT_PAGE_ID: "7" }))
       .toThrow(/exact page ID and account scope are required/i);
   });
 
@@ -88,6 +96,7 @@ describe("ChatGPT AHAP browser runner", () => {
     const selected: unknown[] = [];
     const calls: Array<{ name: string; args?: Record<string, unknown> }> = [];
     const adapter = makeConfiguredAdapter({
+      AHAP_HARNESS: "chatgpt",
       AHAP_CHATGPT_TRANSPORT: "direct-cdp",
       AHAP_CHATGPT_CDP_WS_URL: "ws://127.0.0.1:9222/devtools",
       AHAP_CHATGPT_CDP_CONTEXT_ID: "context-exact",
@@ -111,11 +120,57 @@ describe("ChatGPT AHAP browser runner", () => {
     expect(calls[1]?.args?.pageId).toBe(9);
   });
 
+  it("selects the existing Z.ai driver on the explicit Mac Mini transport and proves the pinned page/account", async () => {
+    const calls: Array<{ name: string; args?: Record<string, unknown> }> = [];
+    const adapter = makeConfiguredAdapter({
+      AHAP_HARNESS: "zai", AHAP_BROWSER_TRANSPORT: "mac-mini",
+      AHAP_BROWSER_PAGE_ID: "17", AHAP_BROWSER_ACCOUNT_SCOPE: scope,
+    }, {
+      macMini: () => ({ async call(name, args = {}) {
+        calls.push({ name, args });
+        return name === "list_pages" ? "17: Z.ai (https://chat.z.ai/c/abc)\n18: ChatGPT (https://chatgpt.com/)"
+          : `Script ran on page and returned:\n\`\`\`json\n${JSON.stringify({ scope, chats: [{ user_id: scope }] })}\n\`\`\``;
+      } }),
+      directCdp() { throw new Error("unexpected direct CDP selection"); },
+    });
+    expect(adapter.type).toBe("zai");
+    expect(adapter.name).toBe("Z.ai browser");
+    await adapter.verifyPinnedAccountScope?.();
+    expect(calls.map(call => call.name)).toEqual(["list_pages", "evaluate_script"]);
+    expect(calls[1]?.args?.pageId).toBe(17);
+  });
+
+  it("fails closed for Z.ai when exact page or current account proof is unavailable", async () => {
+    const calls: string[] = [];
+    const missingPage = makeConfiguredAdapter({
+      AHAP_HARNESS: "zai", AHAP_BROWSER_TRANSPORT: "mac-mini",
+      AHAP_BROWSER_PAGE_ID: "17", AHAP_BROWSER_ACCOUNT_SCOPE: scope,
+    }, {
+      macMini: () => ({ async call(name) { calls.push(name); return "18: Z.ai (https://chat.z.ai/)"; } }),
+      directCdp() { throw new Error("unexpected direct CDP selection"); },
+    });
+    await expect(missingPage.verifyPinnedAccountScope?.()).rejects.toThrow("Configured Z.ai page unavailable");
+    expect(calls).toEqual(["list_pages"]);
+
+    const emptyAccount = makeConfiguredAdapter({
+      AHAP_HARNESS: "zai", AHAP_BROWSER_TRANSPORT: "mac-mini",
+      AHAP_BROWSER_PAGE_ID: "17", AHAP_BROWSER_ACCOUNT_SCOPE: scope,
+    }, {
+      macMini: () => ({ async call(name) {
+        return name === "list_pages" ? "17: Z.ai (https://chat.z.ai/)"
+          : "Script ran on page and returned:\n```json\n{\"chats\":[]}\n```";
+      } }),
+      directCdp() { throw new Error("unexpected direct CDP selection"); },
+    });
+    await expect(emptyAccount.verifyPinnedAccountScope?.()).rejects.toThrow(/account verification unavailable/);
+  });
+
   it("advertises only its bounded surface and routes init and exact reads", async () => {
     const calls: string[] = [];
     let closed = false;
     const session = { id: "chatgpt::native%2Fid", harness: "chatgpt", name: "one", cwd: "/tmp", status: "idle" } as never;
     const adapter = {
+      type: "chatgpt", name: "ChatGPT browser", browserFeatures: {},
       getAccountScope: () => scope,
       close() { closed = true; },
       async init() { calls.push("init"); },
@@ -145,9 +200,25 @@ describe("ChatGPT AHAP browser runner", () => {
     expect(closed).toBe(true);
   });
 
+  it("reports the selected Z.ai harness, provider name and factual browser features", async () => {
+    const replies = await run({
+      type: "zai", name: "Z.ai browser", browserFeatures: { nativeConversationIds: false, queueAfterGeneration: true, chatCreation: true, accountArchiveViaCdp: false, projects: true },
+      getAccountScope: () => scope,
+      async init() {},
+    }, [
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { harness: "zai", ahapVersion: "0.1" } },
+      { jsonrpc: "2.0", id: 2, method: "shutdown" },
+    ]);
+    expect(replies[0].result).toMatchObject({
+      harness: "zai", name: "Z.ai browser",
+      capabilities: { browserFeatures: { nativeConversationIds: false, queueAfterGeneration: true, projects: true } },
+    });
+  });
+
   it("requires the configured account scope before any operation", async () => {
     let called = false;
     const replies = await run({
+      type: "chatgpt", name: "ChatGPT browser", browserFeatures: {},
       getAccountScope: () => "b".repeat(64),
       async init() { called = true; },
     }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" }, { jsonrpc: "2.0", id: 3, method: "shutdown" }]);
@@ -159,6 +230,7 @@ describe("ChatGPT AHAP browser runner", () => {
     let currentScope = scope;
     const session = { id: "chatgpt::native%2Fid", harness: "chatgpt", name: "wrong account", cwd: "/tmp", status: "idle" } as never;
     const replies = await run({
+      type: "chatgpt", name: "ChatGPT browser", browserFeatures: {},
       getAccountScope: () => currentScope,
       async init() {},
       async listSessions() { currentScope = "b".repeat(64); return [session]; },
@@ -174,6 +246,7 @@ describe("ChatGPT AHAP browser runner", () => {
     let currentScope = scope;
     let listed = false;
     const replies = await run({
+      type: "chatgpt", name: "ChatGPT browser", browserFeatures: {},
       getAccountScope: () => currentScope,
       async init() {},
       async verifyPinnedAccountScope() { currentScope = "b".repeat(64); },
@@ -189,6 +262,7 @@ describe("ChatGPT AHAP browser runner", () => {
   it("preserves an ambiguous send as UNKNOWN and never retries", async () => {
     let sends = 0;
     const replies = await run({
+      type: "chatgpt", name: "ChatGPT browser", browserFeatures: {},
       getAccountScope: () => scope,
       async init() {},
       async sendMessage() { sends += 1; return { ok: false, admissionUnknown: true, nonRetryable: true, notSubmitted: true, error: "unknown" }; },
@@ -203,6 +277,7 @@ describe("ChatGPT AHAP browser runner", () => {
 
   it("treats legacy notSubmitted send failures as UNKNOWN unless typed pre-effect proof exists", async () => {
     const replies = await run({
+      type: "chatgpt", name: "ChatGPT browser", browserFeatures: {},
       getAccountScope: () => scope,
       async init() {},
       async sendMessage() { return { ok: false, notSubmitted: true, nonRetryable: true, error: "local draft admit failed after click" }; },
@@ -215,7 +290,7 @@ describe("ChatGPT AHAP browser runner", () => {
   });
 
   it("rejects malformed frames without preventing later valid requests", async () => {
-    const replies = await run({}, [null, [], initialize, { jsonrpc: "2.0", id: 2, method: "shutdown" }]);
+    const replies = await run({ type: "chatgpt", name: "ChatGPT browser", browserFeatures: {} }, [null, [], initialize, { jsonrpc: "2.0", id: 2, method: "shutdown" }]);
     expect(replies.slice(0, 2).map(reply => (reply.error as { code: number }).code)).toEqual([-32600, -32600]);
     expect((replies[2].result as { harness: string }).harness).toBe("chatgpt");
   });

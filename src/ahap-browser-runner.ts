@@ -3,6 +3,8 @@ import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
 import { BrowserChatAdapter } from "./adapters/browser-chat.js";
 import { ChatGptMacCdpDriver } from "./adapters/chatgpt-mac-cdp-driver.js";
+import { ZaiCdpDriver } from "./adapters/zai-cdp-driver.js";
+import { verifyNewChatAccountScope } from "./adapters/browser-chat-new-page.js";
 import { DirectCdpPageTools, type DirectCdpConfig } from "./adapters/direct-cdp-page-tools.js";
 import { MacMiniChromeTransport, type ChromePageTools } from "./adapters/mac-mini-chrome-transport.js";
 
@@ -10,7 +12,7 @@ type RpcId = string | number;
 type RpcRequest = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
 type BrowserAdapterPort = Pick<BrowserChatAdapter,
   "init" | "listSessions" | "getSession" | "getSessionMessages" | "sendMessage" | "createSession">
-  & { getAccountScope(): string | undefined; verifyPinnedAccountScope?(): Promise<void>; close?(): void };
+  & { readonly type: string; readonly name: string; readonly browserFeatures: unknown; getAccountScope(): string | undefined; verifyPinnedAccountScope?(): Promise<void>; close?(): void };
 
 const METHODS = ["init", "listSessions", "getSession", "getSessionMessages", "sendMessage", "createSession"];
 const CONTROL_CAPABILITIES = {
@@ -20,12 +22,12 @@ const CONTROL_CAPABILITIES = {
 };
 const ACCOUNT_SCOPE = /^[a-f0-9]{64}$/u;
 
-/** Run the bounded ChatGPT BrowserChatAdapter surface over AHAP v0.1 stdio. */
+/** Run the bounded browser BrowserChatAdapter surface over AHAP v0.1 stdio. */
 export async function serveBrowserChatAhap(
   adapter: BrowserAdapterPort,
   input: Readable = process.stdin,
   output: Writable = process.stdout,
-  expectedAccountScope = process.env.AHAP_CHATGPT_ACCOUNT_SCOPE,
+  expectedAccountScope = process.env.AHAP_BROWSER_ACCOUNT_SCOPE ?? process.env.AHAP_CHATGPT_ACCOUNT_SCOPE,
 ): Promise<void> {
   if (!expectedAccountScope || !ACCOUNT_SCOPE.test(expectedAccountScope)) {
     throw new Error("AHAP_CHATGPT_ACCOUNT_SCOPE must be a pinned SHA-256 account scope");
@@ -40,7 +42,7 @@ export async function serveBrowserChatAhap(
     write({ jsonrpc: "2.0", id, error: { code, message, ...(data === undefined ? {} : { data }) } });
   const assertAccount = () => {
     if (!accountVerified || adapter.getAccountScope() !== expectedAccountScope) {
-      throw new Error("pinned ChatGPT account scope mismatch");
+      throw new Error("pinned browser account scope mismatch");
     }
   };
   const assertCurrentAccount = async () => {
@@ -66,14 +68,14 @@ export async function serveBrowserChatAhap(
     const params = request.params && typeof request.params === "object" && !Array.isArray(request.params)
       ? request.params as Record<string, unknown> : {};
     if (request.method === "initialize") {
-      if (initialized || params.harness !== "chatgpt" || params.ahapVersion !== "0.1") {
-        error(id, -32602, "expected one AHAP 0.1 initialize for chatgpt");
+      if (initialized || params.harness !== adapter.type || params.ahapVersion !== "0.1") {
+        error(id, -32602, `expected one AHAP 0.1 initialize for ${adapter.type}`);
         continue;
       }
       initialized = true;
       write({ jsonrpc: "2.0", id, result: {
-        harness: "chatgpt", name: "ChatGPT BrowserChatAdapter",
-        capabilities: { methods: METHODS, controlCapabilities: CONTROL_CAPABILITIES },
+        harness: adapter.type, name: adapter.name,
+        capabilities: { methods: METHODS, controlCapabilities: CONTROL_CAPABILITIES, browserFeatures: adapter.browserFeatures },
       } });
       continue;
     }
@@ -91,7 +93,7 @@ export async function serveBrowserChatAhap(
         case "init":
           await adapter.init();
           if (adapter.getAccountScope() !== expectedAccountScope) {
-            throw new Error("pinned ChatGPT account scope mismatch");
+            throw new Error("pinned browser account scope mismatch");
           }
           accountVerified = true;
           result = null;
@@ -142,7 +144,7 @@ export async function serveBrowserChatAhap(
     } catch {
       const mutation = request.method === "sendMessage" || request.method === "createSession"
         || request.method === "stopTurn" || request.method === "changeModel";
-      error(id, -32000, "ChatGPT adapter call failed", mutation
+      error(id, -32000, "Browser adapter call failed", mutation
         ? { outcome: "unknown", retryable: false } : { outcome: "read_failed" });
     }
   }
@@ -174,13 +176,15 @@ export function makeConfiguredAdapter(
   env: NodeJS.ProcessEnv = process.env,
   factories: BrowserChatRunnerTransportFactories = DEFAULT_TRANSPORT_FACTORIES,
 ): BrowserAdapterPort {
-  const transport = env.AHAP_CHATGPT_TRANSPORT?.trim();
+  const harness = env.AHAP_HARNESS?.trim();
+  if (harness !== "chatgpt" && harness !== "zai") throw new Error("AHAP_HARNESS must explicitly select chatgpt or zai");
+  const transport = (env.AHAP_BROWSER_TRANSPORT ?? env.AHAP_CHATGPT_TRANSPORT)?.trim();
   if (transport !== "direct-cdp" && transport !== "mac-mini") {
-    throw new Error("AHAP_CHATGPT_TRANSPORT must explicitly select direct-cdp or mac-mini");
+    throw new Error("AHAP_BROWSER_TRANSPORT must explicitly select direct-cdp or mac-mini");
   }
-  const rawPageId = env.AHAP_CHATGPT_PAGE_ID?.trim();
+  const rawPageId = (env.AHAP_BROWSER_PAGE_ID ?? env.AHAP_CHATGPT_PAGE_ID ?? env.AGENT_HERDER_ZAI_PAGE_ID)?.trim();
   const pageId = rawPageId && /^[1-9][0-9]*$/u.test(rawPageId) ? Number(rawPageId) : Number.NaN;
-  const expectedScope = env.AHAP_CHATGPT_ACCOUNT_SCOPE?.trim();
+  const expectedScope = (env.AHAP_BROWSER_ACCOUNT_SCOPE ?? env.AHAP_CHATGPT_ACCOUNT_SCOPE)?.trim();
   if (!Number.isSafeInteger(pageId) || pageId < 1 || !expectedScope || !ACCOUNT_SCOPE.test(expectedScope)) {
     throw new Error("Exact page ID and account scope are required");
   }
@@ -189,32 +193,43 @@ export function makeConfiguredAdapter(
   if (transport === "mac-mini") {
     selectedTransport = factories.macMini();
   } else {
-    const endpoint = env.AHAP_CHATGPT_CDP_WS_URL?.trim();
-    const contextId = env.AHAP_CHATGPT_CDP_CONTEXT_ID?.trim();
-    const targetId = env.AHAP_CHATGPT_CDP_TARGET_ID?.trim();
+    const endpoint = (env.AHAP_BROWSER_CDP_WS_URL ?? env.AHAP_CHATGPT_CDP_WS_URL)?.trim();
+    const contextId = (env.AHAP_BROWSER_CDP_CONTEXT_ID ?? env.AHAP_CHATGPT_CDP_CONTEXT_ID)?.trim();
+    const targetId = (env.AHAP_BROWSER_CDP_TARGET_ID ?? env.AHAP_CHATGPT_CDP_TARGET_ID)?.trim();
     if (!endpoint || !contextId || !targetId) {
       throw new Error("Direct CDP requires endpoint, context and target IDs");
     }
     selectedTransport = factories.directCdp({ endpoint, contextId, targetId });
   }
-  // The existing ChatGPT driver can discover another tab when a pin is stale.
-  // AHAP supplies a strict list_pages view so that only the configured page
-  // can be used, and a missing page fails before any read or navigation.
+  // Restrict the existing provider driver to one exact page. A stale pin
+  // cannot trigger its ordinary tab discovery or tab-opening behavior.
   const pageTools: ChromePageTools = {
     async call(name, args = {}) {
       const result = await selectedTransport.call(name, args);
       if (name !== "list_pages") return result;
-      const exactPagePattern = new RegExp(`^\\s*${pageId}\\s*:.*?\\(https://chatgpt\\.com(?:/[^)]*)?\\)`);
+      const origin = harness === "chatgpt" ? "chatgpt\\.com" : "chat\\.z\\.ai";
+      const exactPagePattern = new RegExp(`^\\s*${pageId}\\s*:.*?\\(https://${origin}(?:/[^)]*)?\\)`);
       const exactPage = result.split("\n").find(line => exactPagePattern.test(line));
-      if (!exactPage) throw new Error("Configured ChatGPT page unavailable; no page fallback allowed");
+      if (!exactPage) throw new Error(`Configured ${harness === "zai" ? "Z.ai" : "ChatGPT"} page unavailable; no page fallback allowed`);
       return exactPage;
     },
   };
-  const driver = new ChatGptMacCdpDriver(pageTools, pageId, 0, expectedScope);
-  const adapter = new BrowserChatAdapter(driver, { id: "chatgpt", name: "ChatGPT browser", harness: "chatgpt", cwd: process.cwd() }, process.cwd(), true);
+  const driver = harness === "chatgpt"
+    ? new ChatGptMacCdpDriver(pageTools, pageId, 0, expectedScope)
+    : new ZaiCdpDriver(pageTools, pageId, 0);
+  const provider = { id: harness, name: harness === "chatgpt" ? "ChatGPT browser" : "Z.ai browser", harness, cwd: process.cwd() } as const;
+  const adapter = new BrowserChatAdapter(driver, provider, process.cwd(), true);
   return Object.assign(adapter, {
     getAccountScope: () => driver.getAccountScope?.(),
-    verifyPinnedAccountScope: () => driver.verifyPinnedAccountScope(),
+    verifyPinnedAccountScope: async () => {
+      if (harness === "chatgpt") await (driver as ChatGptMacCdpDriver).verifyPinnedAccountScope();
+      else {
+        await pageTools.call("list_pages");
+        if (await verifyNewChatAccountScope(pageTools, "zai", pageId) !== expectedScope) {
+          throw new Error("pinned browser account scope mismatch");
+        }
+      }
+    },
     close: () => {
       if ("close" in selectedTransport && typeof selectedTransport.close === "function") selectedTransport.close();
     },
@@ -222,15 +237,15 @@ export function makeConfiguredAdapter(
 }
 
 async function main(): Promise<void> {
-  if (process.env.AHAP_VERSION !== "0.1" || process.env.AHAP_HARNESS !== "chatgpt") {
-    throw new Error("AHAP_VERSION=0.1 and AHAP_HARNESS=chatgpt are required");
+  if (process.env.AHAP_VERSION !== "0.1" || !["chatgpt", "zai"].includes(process.env.AHAP_HARNESS || "")) {
+    throw new Error("AHAP_VERSION=0.1 and AHAP_HARNESS=chatgpt|zai are required");
   }
   const adapter = await makeConfiguredAdapter();
   await serveBrowserChatAhap(adapter);
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((cause: unknown) => {
-    process.stderr.write(`[ahap-chatgpt] ${cause instanceof Error ? cause.message : "startup failure"}\n`);
+    process.stderr.write(`[ahap-browser] ${cause instanceof Error ? cause.message : "startup failure"}\n`);
     process.exitCode = 1;
   });
 }
