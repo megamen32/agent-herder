@@ -154,7 +154,7 @@ impl BoundedNativeHandoff for AhapOpenCode {
                 reason: "invalid OpenCode initial start request".into(),
             });
         }
-        let result=self.client.call("sendMessage",json!({"id":plan.target.native_session_id,"options":{"message":message,"start":true,"inputId":key.0}})).map_err(transport_failure)?;
+        let result=self.client.call("sendMessage",json!({"id":plan.target.native_session_id,"options":{"message":message,"queue":false,"start":true,"activeTurnOnly":true,"inputId":key.0}})).map_err(transport_failure)?;
         let admitted = result.get("admitted").and_then(Value::as_bool) == Some(true)
             || matches!(
                 result.get("admission").and_then(Value::as_str),
@@ -289,7 +289,7 @@ for line in sys.stdin:
  elif m=='createSession':v={'id':'sesABC','harness':'opencode'}
  elif m=='getSession':v={'id':'sesABC','harness':'opencode','status':'idle'}
  elif m=='sendMessage':
-  assert p['id']=='sesABC' and p['options']['start'] and not p['options'].get('queue',False) and p['options']['inputId']=='key'
+  assert p['id']=='sesABC' and p['options']['start'] and p['options']['queue'] is False and p['options']['activeTurnOnly'] and p['options']['inputId']=='key'
   v={'ok':True,'admitted':True} if os.environ['MODE']=='missing' else {'ok':True,'admitted':True,'nativeInputMessageId':'msg_ABC'}
  elif m=='getSessionMessages':
   v=[{'id':'msg_ABC','role':'user','text':'hi','inputId':'key'}]

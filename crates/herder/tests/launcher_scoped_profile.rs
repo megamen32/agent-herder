@@ -738,7 +738,7 @@ for line in sys.stdin:
  elif m=='createSession':v={'id':'sesABC','harness':'opencode'}
  elif m=='getSession':v={'id':'sesABC','harness':'opencode','status':'idle'}
  elif m=='sendMessage':
-  assert p['id']=='sesABC' and p['options']['start'] and not p['options'].get('queue',False) and p['options']['inputId']
+  assert p['id']=='sesABC' and p['options']['start'] and p['options']['queue'] is False and p['options']['activeTurnOnly'] and p['options']['inputId']
   with open(os.path.join(os.environ['HOME'],'sent'),'a') as out:out.write('1')
   v={'ok':True,'admitted':True,'nativeInputMessageId':'msg_ABC'}
  elif m=='getSessionMessages':v=[{'id':'msg_ABC','role':'user','text':'ahap prompt'}]
