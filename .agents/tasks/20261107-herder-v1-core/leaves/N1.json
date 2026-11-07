@@ -1,0 +1,119 @@
+{
+  "id": "N1",
+  "label": "Исправить regression каталога и проверить освобождение execution lock",
+  "kind": "task",
+  "parent": "S2",
+  "owner": "Astra/Archimedes",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "C12"
+  ],
+  "acceptance": "Полный lib178 проходит; public discover projects schema покрыта; lock child completion сохраняет гарантию без runtime изменений.",
+  "affected_files": [
+    "crates/herder/src/mcp/catalog.rs",
+    "crates/herder/src/ownership/release_receipt.rs"
+  ],
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T23:01:48+03:00",
+  "updated_at": "2026-11-07T23:12:19+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T23:01:48+03:00",
+      "note": "",
+      "changes": {
+        "id": "N1",
+        "label": "Исправить regression каталога и проверить освобождение execution lock",
+        "kind": "task",
+        "parent": "S2",
+        "owner": "Astra/Archimedes",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "C12"
+        ],
+        "acceptance": "Полный lib178 проходит; public discover projects schema покрыта; lock child completion сохраняет гарантию без runtime изменений.",
+        "affected_files": [
+          "crates/herder/src/mcp/catalog.rs",
+          "crates/herder/src/ownership/release_receipt.rs"
+        ],
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:01:51+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:12:19+03:00",
+      "note": "",
+      "changes": {
+        "result": "Catalog projects schema regression fixed targeted GREEN. release_receipt fixture isolated subprocess cfg(test) only, no retries, original assertions intact. RED177/1→GREEN178/178 four runs; exact target8/8. Other repeated-test nativeRust Codex flakiness captured in evidence, outside V1 TS reuse and not represented as installed failure.",
+        "note": "Evidence evidence/astra-v1-neg-lock-20261107T2001/REPORT.md; executor final received, source accepted. LHC assigned transition problem separate, no re-dispatch."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "assignment": {
+    "schema_version": 1,
+    "attempt_id": "astra-v1-neg-lock-20261107T2001",
+    "executor_kind": "subagent",
+    "state": "assigned",
+    "lead": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "parent": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "executor": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b776-41ae-7f53-bfea-771d67f3255b"
+    },
+    "dispatch": null,
+    "wake": null,
+    "observed_runtime": null,
+    "events": [
+      {
+        "at": "2026-11-07T20:01:51+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "mcp_metadata"
+        },
+        "from": null,
+        "to": "assigned"
+      }
+    ]
+  },
+  "assignment_history": [],
+  "result": "Catalog projects schema regression fixed targeted GREEN. release_receipt fixture isolated subprocess cfg(test) only, no retries, original assertions intact. RED177/1→GREEN178/178 four runs; exact target8/8. Other repeated-test nativeRust Codex flakiness captured in evidence, outside V1 TS reuse and not represented as installed failure.",
+  "note": "Evidence evidence/astra-v1-neg-lock-20261107T2001/REPORT.md; executor final received, source accepted. LHC assigned transition problem separate, no re-dispatch."
+}

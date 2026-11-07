@@ -1,0 +1,73 @@
+{
+  "label": "Контракт Rust core → AHAP → TypeScript adapters",
+  "owner": "Astra",
+  "depends_on": [],
+  "estimate_minutes": 15,
+  "kind": "task",
+  "status": "done",
+  "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+  "parent": "S1",
+  "id": "C10",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:04:53+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T22:28:57+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:04:53+03:00",
+      "note": "",
+      "changes": {
+        "label": "Единый контракт AHAP и границы CI/ядро",
+        "owner": "Astra",
+        "depends_on": [],
+        "estimate_minutes": 15,
+        "kind": "task",
+        "status": "queued",
+        "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+        "parent": "S1",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:06:09+03:00",
+      "note": "",
+      "changes": {
+        "label": "Контракт Rust core → AHAP → TypeScript adapters"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:28:57+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "CONTRACT.md: owner clarification Rust core→existing AHAP→legacy TS adapters; exact writers/receipts/public scenarios/deadline. CI assignment accepted astra-v1-contract-boundary-20261107T1924. Quorum recheck separate P00."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "result": "CONTRACT.md: owner clarification Rust core→existing AHAP→legacy TS adapters; exact writers/receipts/public scenarios/deadline. CI assignment accepted astra-v1-contract-boundary-20261107T1924. Quorum recheck separate P00."
+}

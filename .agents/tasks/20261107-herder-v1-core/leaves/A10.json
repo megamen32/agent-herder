@@ -1,0 +1,122 @@
+{
+  "label": "Rust client: raw transcript и inventory через AHAP",
+  "owner": "Port worker",
+  "depends_on": [
+    "C10"
+  ],
+  "estimate_minutes": 15,
+  "kind": "task",
+  "status": "done",
+  "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+  "parent": "S1",
+  "id": "A10",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:06:03+03:00",
+  "session": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+  "harness": "codex",
+  "updated_at": "2026-11-07T22:40:42+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:06:03+03:00",
+      "note": "",
+      "changes": {
+        "label": "Rust client: raw transcript и inventory через AHAP",
+        "owner": "Port worker",
+        "depends_on": [],
+        "estimate_minutes": 15,
+        "kind": "task",
+        "status": "queued",
+        "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+        "parent": "S1",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:06:10+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "C10"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:24:12+03:00",
+      "note": "Port worker: только generic AHAP Rust client и tests/ahap_v1_reuse.rs; проверяю read-only contract и advertised methods, без runtime/TS.",
+      "changes": {
+        "status": "running"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:28:58+03:00",
+      "note": "",
+      "changes": {
+        "session": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+        "note": "Singer spawned for genericAHAPclient; exactscope inCONTRACT."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:34:21+03:00",
+      "note": "raw_call + inventory/raw passthrough реализованы; scope владельцем расширен на ahap.rs для сохранения initialize.capabilities. FakeAHAP tests запущены.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:40:42+03:00",
+      "note": "A10 source готов: raw_call advertised-method gate, read-only constructor, preserved capabilities/raw wire; targeted cargo --lib ahap: 24 passed. Installed/consumer не заявляю.",
+      "changes": {
+        "status": "done",
+        "actual_minutes": 15
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+      "harness": "codex"
+    }
+  ],
+  "note": "Singer spawned for genericAHAPclient; exactscope inCONTRACT.",
+  "actual_minutes": 15
+}

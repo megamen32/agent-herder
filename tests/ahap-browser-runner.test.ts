@@ -295,3 +295,15 @@ describe("ChatGPT AHAP browser runner", () => {
     expect((replies[2].result as { harness: string }).harness).toBe("chatgpt");
   });
 });
+
+for (const harness of ["chatgpt", "zai"]) {
+  it(`${harness} advertises exactly queue delivery without a steer claim`, async () => {
+    const replies = await run({ type: harness, name: harness, browserFeatures: {} }, [
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { harness, ahapVersion: "0.1" } },
+      { jsonrpc: "2.0", id: 2, method: "shutdown" },
+    ]);
+    const result = replies[0].result as { capabilities: { deliveryModes: string[]; controlCapabilities: { steer: boolean } } };
+    expect(result.capabilities.deliveryModes).toEqual(["queue"]);
+    expect(result.capabilities.controlCapabilities.steer).toBe(false);
+  });
+}

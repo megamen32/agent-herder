@@ -1,0 +1,22 @@
+{
+  "run_id": "astra-v1-negative-d66c9c07-20261107T2011",
+  "stage": "candidate",
+  "source_sha": "d66c9c0729fea2a18038fe6569625a14177a7adc",
+  "artifact_sha256": "2db3cc41b3411e1028ba641e1d3812369d054f01ab43cda135dd9c6ad5f454e4",
+  "binary_sha256": "480ba9df948e437868770609ebbbe0ade19176066da69c803438880dee2579c9",
+  "scope": "public MCP core negative gate against isolated fakeAHAP, not native harness lanes",
+  "negative_checks": {
+    "wrong_instance_or_principal": "PASS",
+    "same_key_no_replay": "PASS",
+    "same_key_payload_conflict": "PASS",
+    "unknown_after_restart_no_replay": "PASS",
+    "human_stop_before_send": "PASS"
+  },
+  "evidence": {
+    "log": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/candidate-negative-d66c9c07.log",
+    "sha256": "739fd06de287f95261883114f057937d5ba9a834364ae346737783b6292bb2d7"
+  },
+  "command": "HERDER_V1_CANDIDATE_BINARY=/home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/fixture/herder_native_stdio cargo test --locked --manifest-path crates/herder/Cargo.toml --test launcher_scoped_profile trusted_owner_ -- --nocapture",
+  "native_lanes": null,
+  "installed": null
+}

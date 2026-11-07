@@ -133,3 +133,16 @@ it("rejects unsupported delivery before calling the adapter and does not invent 
   expect(replies[4].error.code).toBe(-32602);
   expect(submits).toBe(1);
 });
+
+it("v2 forwards a second delivery to an existing session with exact mode and caller inputId", async () => {
+  const input=new PassThrough(),output=new PassThrough();let text="";output.on("data",c=>{text+=c;});
+  const calls:unknown[]=[];
+  const adapter={async sendMessage(id:string,options:any){calls.push([id,options]);return {ok:true,admitted:true,inputId:options.inputId,nativeInputMessageId:"msg_real17"};}};
+  const serving=serveOpenCodeAhap(adapter as OpenCodeAdapter,input,output,"v2");
+  const options={message:"second",queue:false,steer:true,inputId:"caller-second",activeTurnOnly:true};
+  input.end([initialize,{jsonrpc:"2.0",id:2,method:"sendMessage",params:{id:"existing-before-runner",options}}].map(x=>JSON.stringify(x)).join("\n")+"\n");
+  await serving;const replies=text.trim().split("\n").map(x=>JSON.parse(x));
+  expect(calls).toEqual([["existing-before-runner",options]]);
+  expect(replies[1].result).toMatchObject({inputId:"caller-second",nativeInputMessageId:"msg_real17"});
+  expect(replies[0].result.capabilities.deliveryModes).toEqual(["queue","steer","start"]);
+});

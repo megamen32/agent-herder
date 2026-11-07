@@ -1,0 +1,75 @@
+{
+  "label": "Исправление конкретных consumer регрессий",
+  "owner": "Astra",
+  "depends_on": [
+    "R2"
+  ],
+  "estimate_minutes": 15,
+  "kind": "task",
+  "status": "queued",
+  "acceptance": "Если sourcebytesизменены, новыйimmutablemanifest+affectedlanes/NEG re-gate. Если измененийнет сохраняетсяdigest. 5/5mandatoryPASSдоinstall.",
+  "parent": "S3",
+  "id": "FIX",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:06:07+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T22:43:28+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:06:07+03:00",
+      "note": "",
+      "changes": {
+        "label": "Исправление конкретных consumer регрессий",
+        "owner": "Astra",
+        "depends_on": [],
+        "estimate_minutes": 15,
+        "kind": "task",
+        "status": "queued",
+        "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+        "parent": "S3",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:06:14+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "R2"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:43:28+03:00",
+      "note": "",
+      "changes": {
+        "acceptance": "Если sourcebytesизменены, новыйimmutablemanifest+affectedlanes/NEG re-gate. Если измененийнет сохраняетсяdigest. 5/5mandatoryPASSдоinstall."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

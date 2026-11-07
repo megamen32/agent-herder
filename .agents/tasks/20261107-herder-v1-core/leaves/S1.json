@@ -1,0 +1,47 @@
+{
+  "label": "Подключить готовые адаптеры к единому ядру",
+  "owner": "Astra",
+  "depends_on": [],
+  "estimate_minutes": 45,
+  "kind": "milestone",
+  "status": "queued",
+  "acceptance": "Подтверждённый результат по единому CONTRACT.md; исходники/тесты/candidate/installed указаны отдельно. Неподдерживаемое обязательное действие не PASS.",
+  "affected_files": [
+    "crates/herder/src/bin/herder_native_stdio",
+    "crates/herder/src/mcp/catalog.rs"
+  ],
+  "id": "S1",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:03:38+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T22:03:38+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:03:38+03:00",
+      "note": "",
+      "changes": {
+        "label": "Подключить готовые адаптеры к единому ядру",
+        "owner": "Astra",
+        "depends_on": [],
+        "estimate_minutes": 45,
+        "kind": "milestone",
+        "status": "queued",
+        "acceptance": "Подтверждённый результат по единому CONTRACT.md; исходники/тесты/candidate/installed указаны отдельно. Неподдерживаемое обязательное действие не PASS.",
+        "affected_files": [
+          "crates/herder/src/bin/herder_native_stdio",
+          "crates/herder/src/mcp/catalog.rs"
+        ],
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "label": "OpenCode: deliver/reopen/export/search/projects",
+  "owner": "CI",
+  "depends_on": [
+    "R1"
+  ],
+  "estimate_minutes": 15,
+  "kind": "task",
+  "status": "queued",
+  "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+  "parent": "S2",
+  "id": "NOC",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:06:05+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T22:06:12+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:06:05+03:00",
+      "note": "",
+      "changes": {
+        "label": "OpenCode: deliver/reopen/export/search/projects",
+        "owner": "CI",
+        "depends_on": [],
+        "estimate_minutes": 15,
+        "kind": "task",
+        "status": "queued",
+        "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+        "parent": "S2",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:06:12+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "R1"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

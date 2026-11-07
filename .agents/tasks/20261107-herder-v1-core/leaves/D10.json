@@ -1,0 +1,128 @@
+{
+  "label": "Public core reads: sessions и полный export",
+  "owner": "Read worker",
+  "depends_on": [
+    "C10"
+  ],
+  "estimate_minutes": 15,
+  "kind": "task",
+  "status": "done",
+  "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+  "parent": "S1",
+  "id": "D10",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:06:04+03:00",
+  "session": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+  "harness": "codex",
+  "updated_at": "2026-11-07T22:49:22+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:06:04+03:00",
+      "note": "",
+      "changes": {
+        "label": "Public core reads: sessions и полный export",
+        "owner": "Read worker",
+        "depends_on": [],
+        "estimate_minutes": 15,
+        "kind": "task",
+        "status": "queued",
+        "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+        "parent": "S1",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:06:11+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "C10"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:24:54+03:00",
+      "note": "Начат exact-scope read facade. Зависимости: raw_call(&str,Value) у Bridge; Discover::Projects у Astra; parent mod wiring. Native LHC hook context в сессии отсутствует, progress через canonical CLI.",
+      "changes": {
+        "status": "running",
+        "affected_files": [
+          "crates/herder/src/bin/herder_native_stdio/owner_reads.rs"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:28:58+03:00",
+      "note": "",
+      "changes": {
+        "session": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+        "note": "Archimedes spawned for owner_reads.rs publicreadfacade."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:38:59+03:00",
+      "note": "owner_reads.rs написан, включая ACL-first sessions/export/recent/context и inline tests. raw_call и Discover::Projects появились. Запущен cargo build --lib для isolated inline test driver без правок parent. Native format lossless; Common явно unsupported_format.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:49:22+03:00",
+      "note": "Read worker finished own source contract; only owner_reads.rs source authored. Parent already wired public facade.",
+      "changes": {
+        "status": "done",
+        "result": "SOURCE+TESTS: owner_reads.rs public async call(identity,&Request,&Arc<AhapOpenCode>,&Arc<OwnerPolicy>,&InstanceRef)->Option<CallToolResult>. Sessions list filters principal+registered exact binding before AHAP fetch, no discovery grants. Native export preserves bytes_base64/complete/source/timestampCoverage/limitations; Common explicitly unsupported_format. Messages/recent bounded incomplete tail; Context verified self/root lineage. Errors message+expected+correction. cargo test --bin herder_native_stdio owner_reads::tests::: 15/15 PASS incl real AhapClient subprocess. No runtime/deploy/credentials changes; installed consumer proof belongs CI."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+      "harness": "codex"
+    }
+  ],
+  "affected_files": [
+    "crates/herder/src/bin/herder_native_stdio/owner_reads.rs"
+  ],
+  "note": "Archimedes spawned for owner_reads.rs publicreadfacade.",
+  "result": "SOURCE+TESTS: owner_reads.rs public async call(identity,&Request,&Arc<AhapOpenCode>,&Arc<OwnerPolicy>,&InstanceRef)->Option<CallToolResult>. Sessions list filters principal+registered exact binding before AHAP fetch, no discovery grants. Native export preserves bytes_base64/complete/source/timestampCoverage/limitations; Common explicitly unsupported_format. Messages/recent bounded incomplete tail; Context verified self/root lineage. Errors message+expected+correction. cargo test --bin herder_native_stdio owner_reads::tests::: 15/15 PASS incl real AhapClient subprocess. No runtime/deploy/credentials changes; installed consumer proof belongs CI."
+}

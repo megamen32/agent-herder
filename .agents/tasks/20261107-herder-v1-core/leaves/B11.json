@@ -1,0 +1,94 @@
+{
+  "label": "Thin TS runner: прежний CodexAppServerAdapter",
+  "owner": "roomhacker",
+  "depends_on": [
+    "B10"
+  ],
+  "estimate_minutes": 15,
+  "kind": "task",
+  "status": "done",
+  "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+  "parent": "S1",
+  "id": "B11",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:06:04+03:00",
+  "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+  "harness": "codex",
+  "updated_at": "2026-11-07T22:31:53+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:06:04+03:00",
+      "note": "",
+      "changes": {
+        "label": "Thin TS runner: прежний CodexAppServerAdapter",
+        "owner": "Bridge worker",
+        "depends_on": [],
+        "estimate_minutes": 15,
+        "kind": "task",
+        "status": "queued",
+        "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+        "parent": "S1",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:06:10+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "B10"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:29:36+03:00",
+      "note": "Thin CodexAppServerAdapter facade; explicit env profile; no native protocol implementation.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+        "owner": "roomhacker"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:31:53+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Added src/ahap-codex-runner.ts over existing CodexAppServerAdapter; explicit HOME/AHAP_CODEX_CWD and exactly one socket/bin, optional CODEX_HOME; inherited socket discovery disabled. 5 meaningful tests passed: actual legacy construction/no startup, config, existing session mode/input/native-turn receipt preservation, raw bytes, sanitized UNKNOWN. Native consumer/installation not claimed."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+      "harness": "codex"
+    }
+  ],
+  "result": "Added src/ahap-codex-runner.ts over existing CodexAppServerAdapter; explicit HOME/AHAP_CODEX_CWD and exactly one socket/bin, optional CODEX_HOME; inherited socket discovery disabled. 5 meaningful tests passed: actual legacy construction/no startup, config, existing session mode/input/native-turn receipt preservation, raw bytes, sanitized UNKNOWN. Native consumer/installation not claimed."
+}

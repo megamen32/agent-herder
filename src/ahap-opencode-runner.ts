@@ -1,3 +1,4 @@
+import { writeAhapFrame, AHAP_MAX_FRAME_BYTES, legacyReadMethods, legacyRead, AhapReadError, adapterFailureContext, type LegacyReadPort } from "./ahap-legacy-read.js";
 import { createInterface } from "node:readline";
 import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -8,11 +9,10 @@ import type {
   CreateSessionOptions,
   SendMessageOptions,
   SendMessageResult,
-  SessionMessageView,
 } from "./types/index.js";
 
 type OpenCodePort = Pick<OpenCodeAdapter,
-  "init" | "createSession" | "sendMessage" | "getSession" | "getSessionMessages">;
+  "init" | "createSession" | "sendMessage" | "getSession" | "getSessionMessages"> & LegacyReadPort;
 
 type RpcId = string | number;
 type RpcRequest = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
@@ -23,7 +23,6 @@ const CONTROL_CAPABILITIES = {
   recover: false, fork: false, modelSwitch: false, subagents: false,
   events: false, steer: false,
 };
-const DELIVERY_MODES = ["start"] as const;
 
 /** Run the narrow AHAP v0.1 surface used by the OpenCode create/deliver/read port. */
 export async function serveOpenCodeAhap(
@@ -39,12 +38,13 @@ export async function serveOpenCodeAhap(
   const createdSessionIds = new Set<string>();
   const attemptedStartSessionIds = new Set<string>();
 
-  const write = (value: unknown) => output.write(`${JSON.stringify(value)}\n`);
+  const write = (value: unknown) => writeAhapFrame(output, value);
   const error = (id: RpcId | null, code: number, message: string, data?: unknown) =>
     write({ jsonrpc: "2.0", id, error: { code, message, ...(data === undefined ? {} : { data }) } });
 
   for await (const line of lines) {
     if (!line.trim() || stopped) continue;
+    if (Buffer.byteLength(line, "utf8") + 1 > AHAP_MAX_FRAME_BYTES) { error(null, -32600, "Request exceeds 4 MiB AHAP frame limit; reduce input size"); continue; }
     let request: RpcRequest;
     try {
       request = JSON.parse(line) as RpcRequest;
@@ -74,7 +74,7 @@ export async function serveOpenCodeAhap(
       write({ jsonrpc: "2.0", id, result: {
         harness: "opencode",
         name: "OpenCode bounded adapter",
-        capabilities: { methods: METHODS, deliveryModes: DELIVERY_MODES, nativeProtocol: family, controlCapabilities: CONTROL_CAPABILITIES },
+        capabilities: { methods: [...new Set([...METHODS, ...legacyReadMethods(adapter)])], deliveryModes: family === "v22" ? ["start"] : ["queue", "steer", "start"], nativeProtocol: family, controlCapabilities: CONTROL_CAPABILITIES },
       } });
       continue;
     }
@@ -110,32 +110,41 @@ export async function serveOpenCodeAhap(
         }
         case "sendMessage": {
           const options = params.options;
-          if (typeof params.id !== "string" || !params.id.trim() || !isStartInput(options)
-            || !createdSessionIds.has(params.id) || attemptedStartSessionIds.has(params.id)) {
-            error(id, -32602, "sendMessage supports one initial Start with queue=false for a session created by this runner");
+          if (typeof params.id !== "string" || !params.id.trim() || !isDeliveryInput(options)) {
+            error(id, -32602, "sendMessage expects {id,options:{message,inputId,queue:boolean,steer?}}; select one delivery mode");
             continue;
           }
-          // OpenCode 2.2.4 exposes an initial synchronous Start, not a deferred
-          // queue. Reserve the fresh runner-created session before the one
-          // mutating call, so an ambiguous result cannot be replayed in-process.
-          attemptedStartSessionIds.add(params.id);
-          const start: SendMessageOptions = {
-            ...options,
-            queue: family === "v2",
-            start: family === "v22",
-            activeTurnOnly: true,
-          };
-          result = await adapter.sendMessage(params.id, start);
+          let delivery: SendMessageOptions = { ...options };
+          if (family === "v22") {
+            if (options.queue || options.steer || options.start === false
+              || !createdSessionIds.has(params.id) || attemptedStartSessionIds.has(params.id)) {
+              error(id, -32602, "OpenCode v22 native adapter supports one initial Start on a runner-created session only; use a v2 instance for existing-session queue/steer");
+              continue;
+            }
+            attemptedStartSessionIds.add(params.id);
+            delivery = { ...options, queue: false, start: true, activeTurnOnly: true };
+          } else if (options.start === true) {
+            // Preserve the existing fresh Start compatibility route on v2.
+            if (!createdSessionIds.has(params.id) || attemptedStartSessionIds.has(params.id)) {
+              error(id, -32602, "v2 Start requires a fresh runner-created session; use queue or steer for an existing session");
+              continue;
+            }
+            attemptedStartSessionIds.add(params.id);
+            delivery = { ...options, queue: true, start: false, activeTurnOnly: true };
+          }
+          result = await adapter.sendMessage(params.id, delivery);
           const receipt = result as SendMessageResult;
           if (receipt.admitted === true
             && (typeof receipt.nativeInputMessageId !== "string" || !/^msg_[A-Za-z0-9]+$/u.test(receipt.nativeInputMessageId))) {
             throw new Error("OpenCode Start admission has no exact native user receipt");
           }
-          if (receipt.inputId !== options.inputId) {
-            result = { ...receipt, inputId: options.inputId as string };
-          }
           break;
         }
+        case "listSessions":
+        case "getRawTranscript":
+        case "listProjects":
+          result = await legacyRead(adapter, request.method, params);
+          break;
         case "getSession":
           if (typeof params.id !== "string" || !params.id.trim()) {
             error(id, -32602, "getSession requires session id");
@@ -156,11 +165,13 @@ export async function serveOpenCodeAhap(
           continue;
       }
       write({ jsonrpc: "2.0", id, result: result ?? null });
-    } catch {
+    } catch (cause) {
+      if (cause instanceof AhapReadError) {
+        error(id, cause.code, cause.message, cause.code === -32001 ? adapterFailureContext(request.method, request.method === "sendMessage" || request.method === "createSession") : undefined);
+        continue;
+      }
       const mutation = request.method === "createSession" || request.method === "sendMessage";
-      error(id, -32000, "OpenCode adapter call failed", mutation
-        ? { outcome: "unknown", retryable: false }
-        : { outcome: "read_failed" });
+      error(id, -32000, "OpenCode adapter call failed", adapterFailureContext(request.method, mutation));
     }
   }
 }
@@ -172,10 +183,14 @@ function isCreateOptions(value: unknown): value is CreateSessionOptions {
     && typeof options.cwd === "string" && isAbsolute(options.cwd);
 }
 
-function isStartInput(value: unknown): value is SendMessageOptions & { queue: false; inputId: string } {
+function isDeliveryInput(value: unknown): value is SendMessageOptions & { inputId: string } {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const options = value as Record<string, unknown>;
-  return options.queue === false
+  return typeof options.queue === "boolean"
+    && (options.steer === undefined || typeof options.steer === "boolean")
+    && (options.start === undefined || typeof options.start === "boolean")
+    && !(options.queue === true && options.steer === true)
+    && !(options.start === true && options.steer === true)
     && typeof options.message === "string" && options.message.length > 0
     && options.message.length <= 4 * 1024 * 1024
     && typeof options.inputId === "string" && options.inputId.trim().length > 0

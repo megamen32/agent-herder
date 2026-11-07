@@ -1,0 +1,140 @@
+{
+  "id": "B13",
+  "label": "Проверить idle Codex send через прежний TS adapter",
+  "kind": "task",
+  "parent": "S1",
+  "owner": "roomhacker",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "B12"
+  ],
+  "acceptance": "Isolated native websocket получает turn/start при queue activeTurnOnly=false; duplicate inputId не повторяет эффект.",
+  "affected_files": [
+    "tests/ahap-codex-runner.test.ts"
+  ],
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:55:44+03:00",
+  "updated_at": "2026-11-07T22:58:52+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:55:44+03:00",
+      "note": "",
+      "changes": {
+        "id": "B13",
+        "label": "Проверить idle Codex send через прежний TS adapter",
+        "kind": "task",
+        "parent": "S1",
+        "owner": "Ampere",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "B12"
+        ],
+        "acceptance": "Isolated native websocket получает turn/start при queue activeTurnOnly=false; duplicate inputId не повторяет эффект.",
+        "affected_files": [
+          "tests/ahap-codex-runner.test.ts"
+        ],
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:56:37+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:56:59+03:00",
+      "note": "Ampere implements tests-only slice; attempt astra-v1-codex-idle-20261107T1957. Existing B13 appeared concurrently; reused without overwrite.",
+      "changes": {
+        "status": "queued",
+        "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:58:52+03:00",
+      "note": "",
+      "changes": {
+        "result": "SOURCE/ISOLATED-TRANSPORT PROOF: tests/ahap-codex-runner.test.ts adds idle queue regression using real CodexAppServerAdapter + Unix WebSocket + native receipt journal. activeTurnOnly:false: exactly one thread/resume and one turn/start with exact session/message, native turnId/inputId receipt; duplicate inputId returns same receipt and no second effect. Negative activeTurnOnly:true: skipped_inactive before resume/start, zero steer. Existing active-turn steer proof preserved. npx vitest run tests/ahap-codex-runner.test.ts --reporter=verbose: 8/8 pass, 1.77s; scoped git diff --check exit0. Evidence: /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/B13-codex-idle-tests.log. Only test source changed; no model/native Codex process, src/adapters/runtime/credentials/commits untouched. Attempt astra-v1-codex-idle-20261107T1957; ready for Astra integration, not installed consumer proof.",
+        "note": "B13 execution complete; ready for Lead acceptance. Real socket protocol and receipt journal, archive enrichment only stubbed; owned fixture server/socket/temp journal cleaned in finally.",
+        "actual_minutes": 4
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+      "harness": "codex"
+    }
+  ],
+  "assignment": {
+    "schema_version": 1,
+    "attempt_id": "astra-v1-codex-idle-20261107T1957",
+    "executor_kind": "subagent",
+    "state": "assigned",
+    "lead": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "parent": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "executor": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b776-3e9f-7ec1-b821-faa93a4f6935"
+    },
+    "dispatch": null,
+    "wake": null,
+    "observed_runtime": null,
+    "events": [
+      {
+        "at": "2026-11-07T19:56:37+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "mcp_metadata"
+        },
+        "from": null,
+        "to": "assigned"
+      }
+    ]
+  },
+  "assignment_history": [],
+  "status": "queued",
+  "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+  "harness": "codex",
+  "result": "SOURCE/ISOLATED-TRANSPORT PROOF: tests/ahap-codex-runner.test.ts adds idle queue regression using real CodexAppServerAdapter + Unix WebSocket + native receipt journal. activeTurnOnly:false: exactly one thread/resume and one turn/start with exact session/message, native turnId/inputId receipt; duplicate inputId returns same receipt and no second effect. Negative activeTurnOnly:true: skipped_inactive before resume/start, zero steer. Existing active-turn steer proof preserved. npx vitest run tests/ahap-codex-runner.test.ts --reporter=verbose: 8/8 pass, 1.77s; scoped git diff --check exit0. Evidence: /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/B13-codex-idle-tests.log. Only test source changed; no model/native Codex process, src/adapters/runtime/credentials/commits untouched. Attempt astra-v1-codex-idle-20261107T1957; ready for Astra integration, not installed consumer proof.",
+  "note": "B13 execution complete; ready for Lead acceptance. Real socket protocol and receipt journal, archive enrichment only stubbed; owned fixture server/socket/temp journal cleaned in finally.",
+  "actual_minutes": 4
+}

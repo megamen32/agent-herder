@@ -354,6 +354,30 @@ mod tests {
 
     #[test]
     fn admission_receipt_is_durable_idempotent_and_rejects_changed_payload() {
+        const ISOLATED: &str = "HERDER_RELEASE_RECEIPT_ISOLATED_TEST";
+        if std::env::var_os(ISOLATED).as_deref() != Some(std::ffi::OsStr::new("1")) {
+            // This fixture asserts immediate release of an inherited lock FD.
+            // Parallel tests can fork while it is open and briefly retain a
+            // copy until exec, even with CLOEXEC. Give the fixture its own
+            // descriptor table rather than retrying or weakening the assertion.
+            let output = Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "ownership::release_receipt::tests::admission_receipt_is_durable_idempotent_and_rejects_changed_payload",
+                    "--test-threads=1",
+                    "--nocapture",
+                ])
+                .env(ISOLATED, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "isolated receipt fixture failed:\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            );
+            return;
+        }
         let root = std::env::temp_dir().join(format!(
             "herder-release-receipt-{}-{}",
             std::process::id(),

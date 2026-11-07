@@ -1,0 +1,98 @@
+{
+  "label": "Общий launcher без новых native протоколов",
+  "owner": "Astra",
+  "depends_on": [
+    "C11",
+    "A11"
+  ],
+  "estimate_minutes": 15,
+  "kind": "task",
+  "status": "done",
+  "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+  "parent": "S1",
+  "id": "C12",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:06:03+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T22:59:26+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:06:03+03:00",
+      "note": "",
+      "changes": {
+        "label": "Общий launcher без новых native протоколов",
+        "owner": "Astra",
+        "depends_on": [],
+        "estimate_minutes": 15,
+        "kind": "task",
+        "status": "queued",
+        "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+        "parent": "S1",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:06:09+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "C11",
+          "A11"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:43:27+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "Generic AHAP launcher and readfacade wired, cargo check binarypassed. Existingpublic test found initialprompt outcome_unknown; investigatingexactreceipt/capability beforecandidate."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:59:26+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Generic owner launcher maps all5 types through AHAP to existing TS adapters. Full public fake-AHAP create→second deliver→duplicate key→native export→search→projects→restart passed; launcher suite17passed/1explicit native ignored. Independent P1 mapping fixed RED→28AHAPtestsGREEN (idle Start/Queue false, Current true). Built real core debug binary. Actual native candidate/installed lanes remain CI.",
+        "actual_minutes": 15
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "note": "Generic AHAP launcher and readfacade wired, cargo check binarypassed. Existingpublic test found initialprompt outcome_unknown; investigatingexactreceipt/capability beforecandidate.",
+  "result": "Generic owner launcher maps all5 types through AHAP to existing TS adapters. Full public fake-AHAP create→second deliver→duplicate key→native export→search→projects→restart passed; launcher suite17passed/1explicit native ignored. Independent P1 mapping fixed RED→28AHAPtestsGREEN (idle Start/Queue false, Current true). Built real core debug binary. Actual native candidate/installed lanes remain CI.",
+  "actual_minutes": 15
+}

@@ -1,0 +1,112 @@
+{
+  "label": "Request key/restart/UNKNOWN/HumanStop/чужой instance",
+  "owner": "Astra",
+  "depends_on": [
+    "R1"
+  ],
+  "estimate_minutes": 15,
+  "kind": "task",
+  "status": "done",
+  "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+  "parent": "S2",
+  "id": "NEG",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:06:06+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T23:17:46+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:06:06+03:00",
+      "note": "",
+      "changes": {
+        "label": "Request key/restart/UNKNOWN/HumanStop/чужой instance",
+        "owner": "Astra",
+        "depends_on": [],
+        "estimate_minutes": 15,
+        "kind": "task",
+        "status": "queued",
+        "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+        "parent": "S2",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:06:13+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "R1"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:04:14+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "Расширяю существующий public stdio consumer на immutable binary override: same-key changed-payload, wrong instance, UNKNOWN across restart and stop no extra send. Не запускает настоящие harness/CI lanes; внешний эффект только isolated fakeAHAP."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:08:36+03:00",
+      "note": "",
+      "changes": {
+        "result": "Source consumer expanded and all5 kind fixtures PASS: wrong instance no send, changed payload same key conflict, duplicate no resend, UNKNOWN receipt after core restart remains outcome_unknown/retry forbidden, repeated UNKNOWN key no resend, HumanStop blocks new send. Candidate-binary override added; exact packaged binary gate next.",
+        "note": "Completed task.status may legitimately carry outcome_unknown error; assert result/receipt, never confuse completed evaluation with native successful outcome."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:17:46+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Exact packaged core d66c9c07 tested through real public stdio, all5 fixture kinds. PASS wrong instance, same key no replay, changed payload conflict, UNKNOWN after restart retry forbidden/no resend, HumanStop blocks send. Receipt evidence/candidate-negative-d66c9c07.json + hashedlog, artifact manifest2db3cc41b3411e1028ba641e1d3812369d054f01ab43cda135dd9c6ad5f454e4. Isolated fakeAHAP for negative effects; five real native lanes and installed remain separate.",
+        "actual_minutes": 12
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "note": "Completed task.status may legitimately carry outcome_unknown error; assert result/receipt, never confuse completed evaluation with native successful outcome.",
+  "result": "Exact packaged core d66c9c07 tested through real public stdio, all5 fixture kinds. PASS wrong instance, same key no replay, changed payload conflict, UNKNOWN after restart retry forbidden/no resend, HumanStop blocks send. Receipt evidence/candidate-negative-d66c9c07.json + hashedlog, artifact manifest2db3cc41b3411e1028ba641e1d3812369d054f01ab43cda135dd9c6ad5f454e4. Isolated fakeAHAP for negative effects; five real native lanes and installed remain separate.",
+  "actual_minutes": 12
+}

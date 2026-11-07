@@ -56,7 +56,7 @@ it("exposes only the bounded ZCode AHAP methods", async () => {
   });
 });
 
-it("forces restricted create, Queue delivery and exact read routing", async () => {
+it("keeps restricted create, requested Queue delivery and exact read routing", async () => {
   const calls: Array<{ method: string; args: unknown[] }> = [];
   const adapter = {
     async init() { calls.push({ method: "init", args: [] }); },
@@ -78,13 +78,13 @@ it("forces restricted create, Queue delivery and exact read routing", async () =
   expect(replies[3].result).toMatchObject({ inputId: "input-17", nativeInputMessageId: "native-msg-17" });
   expect(replies[3].result.inputId).not.toBe(replies[3].result.nativeInputMessageId);
   expect(calls.find((call) => call.method === "createSession")?.args[0]).toMatchObject({ mode: "build", fullAccess: false });
-  expect(calls.find((call) => call.method === "sendMessage")?.args).toEqual(["zcode-session-exact", { message: "one input", queue: true, activeTurnOnly: true, inputId: "input-17", origin: "automation" }]);
+  expect(calls.find((call) => call.method === "sendMessage")?.args).toEqual(["zcode-session-exact", { message: "one input", queue: true, inputId: "input-17" }]);
   expect(calls.find((call) => call.method === "getSessionMessages")?.args).toEqual(["zcode-session-exact", 20]);
   expect(calls.filter((call) => call.method === "sendMessage")).toHaveLength(1);
   expect(calls.at(-1)?.method).toBe("dispose");
 });
 
-it("rejects implicit full access and steering before native calls", async () => {
+it("rejects implicit full access and conflicting delivery modes before native calls", async () => {
   let mutations = 0;
   const adapter = {
     async createSession() { mutations++; return {} as never; },
@@ -179,4 +179,14 @@ it("does not borrow a native receipt from another session or command correlation
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+it("preserves explicit steer and sync delivery for existing sessions", async () => {
+  const calls:unknown[]=[];
+  const adapter={async sendMessage(id:string,options:any){calls.push([id,options]);return {ok:true,inputId:options.inputId,turnId:"native-turn"};},async dispose(){}};
+  const options={message:"existing steer",queue:false,steer:true,inputId:"steer-exact",activeTurnOnly:true,origin:"human"};
+  const sync={message:"existing sync",queue:false,inputId:"sync-exact"};
+  const replies=await run(adapter,[initialize,{jsonrpc:"2.0",id:2,method:"sendMessage",params:{id:"existing",options}},{jsonrpc:"2.0",id:3,method:"sendMessage",params:{id:"existing",options:sync}}]);
+  expect(calls).toEqual([["existing",options],["existing",sync]]);
+  expect(replies[1].result.turnId).toBe("native-turn");expect(replies[2].result.inputId).toBe("sync-exact");
 });

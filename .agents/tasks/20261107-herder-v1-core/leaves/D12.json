@@ -1,0 +1,83 @@
+{
+  "label": "Public core reads: projects из native/registry",
+  "owner": "Read worker",
+  "depends_on": [
+    "D11"
+  ],
+  "estimate_minutes": 15,
+  "kind": "task",
+  "status": "done",
+  "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+  "parent": "S1",
+  "id": "D12",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:06:05+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T22:49:24+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:06:05+03:00",
+      "note": "",
+      "changes": {
+        "label": "Public core reads: projects из native/registry",
+        "owner": "Read worker",
+        "depends_on": [],
+        "estimate_minutes": 15,
+        "kind": "task",
+        "status": "queued",
+        "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+        "parent": "S1",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:06:11+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "D11"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:49:24+03:00",
+      "note": "D12 implementation and tests completed in same owned read module; no separate roadmap/session/runtime changes.",
+      "changes": {
+        "status": "done",
+        "affected_files": [
+          "crates/herder/src/bin/herder_native_stdio/owner_reads.rs"
+        ],
+        "result": "SOURCE+TESTS: discover/projects uses listProjects restricted to observed cwd of authorized registered native sessions from listSessions; fallback is observed authorized native session cwd, never configured projects. Empty authorized corpus makes no native call. Returned scope/provenance/partial completeness explicit; foreign/native-unregistered projects absent. Covered by isolated fake port and public call via real AhapClient subprocess in 15/15 passing tests. Contract documented in owner_reads module header; installed project discovery remains CI gate."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+      "harness": "codex"
+    }
+  ],
+  "affected_files": [
+    "crates/herder/src/bin/herder_native_stdio/owner_reads.rs"
+  ],
+  "result": "SOURCE+TESTS: discover/projects uses listProjects restricted to observed cwd of authorized registered native sessions from listSessions; fallback is observed authorized native session cwd, never configured projects. Empty authorized corpus makes no native call. Returned scope/provenance/partial completeness explicit; foreign/native-unregistered projects absent. Covered by isolated fake port and public call via real AhapClient subprocess in 15/15 passing tests. Contract documented in owner_reads module header; installed project discovery remains CI gate."
+}

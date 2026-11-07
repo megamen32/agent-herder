@@ -1,0 +1,133 @@
+{
+  "label": "Публикация согласованного candidate manifest",
+  "owner": "Astra",
+  "depends_on": [
+    "C12",
+    "A11",
+    "B12",
+    "D12",
+    "C13",
+    "C14"
+  ],
+  "estimate_minutes": 15,
+  "kind": "task",
+  "status": "done",
+  "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+  "parent": "S1",
+  "id": "R1",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:06:05+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T23:16:10+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:06:05+03:00",
+      "note": "",
+      "changes": {
+        "label": "Публикация согласованного candidate manifest",
+        "owner": "Astra",
+        "depends_on": [],
+        "estimate_minutes": 15,
+        "kind": "task",
+        "status": "queued",
+        "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+        "parent": "S1",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:06:11+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "C12",
+          "A11",
+          "B12",
+          "D12"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:49:04+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "C12",
+          "A11",
+          "B12",
+          "D12",
+          "C13"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:03:00+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "Все source components готовы и приняты: core+readfacade+TSbridge+bootstrap. C13 result accepted фактически; его assigned lifecycle не проходит существующий LHC accept API, не создаём повторный dispatch. C14 пакует immutable artifact. Включён browser dependency264eb01c. Source commits e80f98f4+merge, candidate receipt ещё не готов.",
+        "depends_on": [
+          "C12",
+          "A11",
+          "B12",
+          "D12",
+          "C13",
+          "C14"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:16:10+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Immutable source-built candidate d66c9c0729fea2a18038fe6569625a14177a7adc ready: /home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/manifest.json SHA2562db3cc41b3411e1028ba641e1d3812369d054f01ab43cda135dd9c6ad5f454e4. Seven pinned binaries/bundles, initialize5typesPASS, duplicate packaging refuses. Publishedsource includes264eb01c browserpinfix and76ec55f3 CIreport. CI handoff accepted astra-v1-candidate-d66c9c07-20261107T2011; native/installed not proven. CANDIDATE.md contains exact contract.",
+        "actual_minutes": 10
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "note": "Все source components готовы и приняты: core+readfacade+TSbridge+bootstrap. C13 result accepted фактически; его assigned lifecycle не проходит существующий LHC accept API, не создаём повторный dispatch. C14 пакует immutable artifact. Включён browser dependency264eb01c. Source commits e80f98f4+merge, candidate receipt ещё не готов.",
+  "result": "Immutable source-built candidate d66c9c0729fea2a18038fe6569625a14177a7adc ready: /home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/manifest.json SHA2562db3cc41b3411e1028ba641e1d3812369d054f01ab43cda135dd9c6ad5f454e4. Seven pinned binaries/bundles, initialize5typesPASS, duplicate packaging refuses. Publishedsource includes264eb01c browserpinfix and76ec55f3 CIreport. CI handoff accepted astra-v1-candidate-d66c9c07-20261107T2011; native/installed not proven. CANDIDATE.md contains exact contract.",
+  "actual_minutes": 10
+}

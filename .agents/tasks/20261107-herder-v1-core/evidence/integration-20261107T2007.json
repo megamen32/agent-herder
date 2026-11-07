@@ -1,0 +1,25 @@
+{
+  "source": "f4d8e1ba",
+  "source_scope": "Rust core/common AHAP/TS thin runners/v4 bootstrap",
+  "independent_review": "Kuhn two P1 fixes accepted source only",
+  "checks": {
+    "AHAP": 28,
+    "owner_reads": 16,
+    "launcher": {
+      "passed": 17,
+      "ignored_native_sdk": 1
+    },
+    "TS_read_browser_opencode_zcode": 39,
+    "TS_codex_real_socket": 8,
+    "bootstrap_CLI": 10
+  },
+  "full_lib_before_fix": {
+    "passed": 176,
+    "failed": [
+      "catalog missing projects test row: fixed, target test green",
+      "release_receipt WouldBlock after child exit: Archimedes investigating"
+    ]
+  },
+  "candidate": null,
+  "installed": null
+}

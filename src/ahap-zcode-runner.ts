@@ -1,3 +1,4 @@
+import { writeAhapFrame, AHAP_MAX_FRAME_BYTES, legacyReadMethods, legacyRead, AhapReadError, adapterFailureContext, type LegacyReadPort } from "./ahap-legacy-read.js";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
@@ -6,7 +7,7 @@ import { ZcodeAdapter } from "./adapters/zcode.js";
 
 type RpcId = string | number;
 interface RpcRequest { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown }
-type ZcodeAhapPort = Pick<ZcodeAdapter, "init" | "createSession" | "sendMessage" | "getSession" | "getSessionMessages" | "dispose">;
+type ZcodeAhapPort = Pick<ZcodeAdapter, "init" | "createSession" | "sendMessage" | "getSession" | "getSessionMessages" | "dispose"> & LegacyReadPort;
 
 const METHODS = ["init", "createSession", "sendMessage", "getSession", "getSessionMessages"];
 const CONTROL_CAPABILITIES = {
@@ -27,13 +28,13 @@ export async function serveZcodeAhap(
   const lines = createInterface({ input, crlfDelay: Infinity });
   let initialized = false;
   let stopped = false;
-  const write = (value: unknown) => output.write(`${JSON.stringify(value)}\n`);
+  const write = (value: unknown) => writeAhapFrame(output, value);
   const error = (id: RpcId | null, code: number, message: string, data?: unknown) =>
     write({ jsonrpc: "2.0", id, error: { code, message, ...(data === undefined ? {} : { data }) } });
 
   for await (const line of lines) {
     if (!line.trim() || stopped) continue;
-    if (Buffer.byteLength(line, "utf8") > MAX_FRAME_BYTES) {
+    if (Buffer.byteLength(line, "utf8") + 1 > AHAP_MAX_FRAME_BYTES) {
       error(null, -32600, "request exceeds AHAP frame limit");
       continue;
     }
@@ -59,7 +60,7 @@ export async function serveZcodeAhap(
       initialized = true;
       write({ jsonrpc: "2.0", id, result: {
         harness: "zcode", name: "ZCode legacy adapter via AHAP",
-        capabilities: { methods: METHODS, controlCapabilities: CONTROL_CAPABILITIES },
+        capabilities: { deliveryModes: ["queue", "sync", "steer"], methods: [...new Set([...METHODS, ...legacyReadMethods(adapter)])], controlCapabilities: CONTROL_CAPABILITIES },
       } });
       continue;
     }
@@ -87,17 +88,11 @@ export async function serveZcodeAhap(
           break;
         }
         case "sendMessage": {
-          if (typeof params.id !== "string" || !params.id.trim() || !isQueuedInput(params.options)) {
-            error(id, -32602, "sendMessage requires exact session id, Queue, message, and stable inputId");
+          if (typeof params.id !== "string" || !params.id.trim() || !isDeliveryInput(params.options)) {
+            error(id, -32602, "sendMessage expects exact session id, explicit queue boolean, message and stable inputId; queue and steer are mutually exclusive");
             continue;
           }
-          const options: SendMessageOptions = {
-            message: params.options.message,
-            queue: true,
-            activeTurnOnly: true,
-            inputId: params.options.inputId,
-            origin: "automation",
-          };
+          const options: SendMessageOptions = { ...params.options };
           const receipt: SendMessageResult = await adapter.sendMessage(params.id, options);
           // Keep the adapter's receipt fields verbatim. inputId remains the
           // caller correlation; nativeInputMessageId is present only when the
@@ -105,6 +100,11 @@ export async function serveZcodeAhap(
           result = receipt;
           break;
         }
+        case "listSessions":
+        case "getRawTranscript":
+        case "listProjects":
+          result = await legacyRead(adapter, request.method, params);
+          break;
         case "getSession":
           if (!validSessionId(params.id)) { error(id, -32602, "getSession requires a valid session id"); continue; }
           result = await adapter.getSession(params.id);
@@ -122,11 +122,13 @@ export async function serveZcodeAhap(
           continue;
       }
       write({ jsonrpc: "2.0", id, result: result ?? null });
-    } catch {
+    } catch (cause) {
+      if (cause instanceof AhapReadError) {
+        error(id, cause.code, cause.message, cause.code === -32001 ? adapterFailureContext(request.method, request.method === "sendMessage" || request.method === "createSession") : undefined);
+        continue;
+      }
       const mutation = request.method === "createSession" || request.method === "sendMessage";
-      error(id, -32000, "ZCode adapter call failed", mutation
-        ? { outcome: "unknown", retryable: false }
-        : { outcome: "read_failed" });
+      error(id, -32000, "ZCode adapter call failed", adapterFailureContext(request.method, mutation));
     }
   }
 }
@@ -141,11 +143,13 @@ function isCreateOptions(value: unknown): value is CreateSessionOptions {
     && (options.mode === undefined || options.mode === "build");
 }
 
-function isQueuedInput(value: unknown): value is SendMessageOptions & { inputId: string; queue: true } {
+function isDeliveryInput(value: unknown): value is SendMessageOptions & { inputId: string } {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const options = value as Record<string, unknown>;
-  return options.queue === true
-    && options.steer !== true
+  return typeof options.queue === "boolean"
+    && (options.steer === undefined || typeof options.steer === "boolean")
+    && !(options.queue === true && options.steer === true)
+    && options.start !== true
     && typeof options.message === "string" && options.message.length > 0
     && options.message.length <= MAX_FRAME_BYTES
     && typeof options.inputId === "string" && options.inputId.trim().length > 0

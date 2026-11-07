@@ -129,6 +129,7 @@ pub struct ScopedAuthority {
     gate: PathBuf,
     generation: String,
 }
+mod index_snapshot;
 impl ScopedAuthority {
     pub fn new(db: PathBuf, gate: PathBuf, generation: String) -> Result<Self, GateError> {
         if !db.is_absolute()

@@ -1,0 +1,136 @@
+{
+  "label": "Public core reads: существующий search index",
+  "owner": "Read worker",
+  "depends_on": [
+    "D10"
+  ],
+  "estimate_minutes": 15,
+  "kind": "task",
+  "status": "done",
+  "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+  "parent": "S1",
+  "id": "D11",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:06:04+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T22:53:49+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:06:04+03:00",
+      "note": "",
+      "changes": {
+        "label": "Public core reads: существующий search index",
+        "owner": "Read worker",
+        "depends_on": [],
+        "estimate_minutes": 15,
+        "kind": "task",
+        "status": "queued",
+        "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+        "parent": "S1",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:06:11+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "D10"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:38:59+03:00",
+      "note": "Подключен существующий search::index::search_page по exact authorized corpus; fresh index ingestion API в source отсутствует, coverage partial явно; без migration и scheduler. Проверка ACL-before-count в inline tests.",
+      "changes": {
+        "status": "running"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:44:34+03:00",
+      "note": "API confirmed: ScopedAuthority::index_transcript_snapshot(&self, identity: &ConnectionIdentity, grants: &[Grant], session: &SessionRef, instance: &InstanceRef, snapshot_id: &str, content: &str, content_truncated: bool) -> Result<index::IndexOutcome, GateError>. Return value not consumed except success/error. Parent owns guarded core method/base64 dep/v4 bootstrap. Owner_reads uses Read grant, exact authorized raw bytes, SHA256 hex, UTF8/canonical JSON content <=1MiB; incomplete/truncated preserved. No raw writer or SQL migration in facade. LowerHex fixed via digest.iter().map(format). Inline tests progressing.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:49:23+03:00",
+      "note": "Latest owner correction implemented; no stub-only search and no raw SQL fence bypass. API signature and integration dependencies in prior progress.",
+      "changes": {
+        "status": "done",
+        "result": "SOURCE+TESTS: authorized raw UTF8/canonicalJSON snapshots are ingested on native export and search refresh via parent ScopedAuthority::index_transcript_snapshot guarded writer, existing search::index::update_session; SHA256 raw-byte snapshot, <=1MiB searchable content, complete=false or local truncation persists content_truncated=true. Search refresh <=4 authorized sessions, registry <=256, hits <=50; explicit partial coverage/failures/no invented cursors. Fresh marker found without preseeded content; wrong principal/instance/adapter makes no fetch/index; v3 not migrated; partial export remains searchable during failed refresh. 15/15 inline tests PASS. Remaining external gate: CI explicit pinned v4 bootstrap + candidate/installed consumer."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:52:07+03:00",
+      "note": "Owner-authorized P1 followup: RED revoked create-intent membership during native raw refresh must not leak cached FTS excerpt/count. Fix only owner_reads.rs: membership and exact bindings rechecked in same read_store snapshot as search count/hits; no gate over native I/O.",
+      "changes": {
+        "status": "running"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:53:49+03:00",
+      "note": "P1 owner-authorized followup complete RED→GREEN within 15-minute bound. Command: cargo test --manifest-path crates/herder/Cargo.toml --bin herder_native_stdio owner_reads::tests:: -- --nocapture; 16 passed in 4.68s.",
+      "changes": {
+        "status": "done",
+        "result": "SOURCE+TESTS: authorized raw ingestion + guarded v4 indexing and ACL FTS retained. P1 revocation race fixed in owner_reads.rs only: after native refresh, final allowlist revalidates owner_policy::is_member and exact session binding in the SAME read_store transaction passed to search_page count/hits. No gate spans native I/O. RED revoked_during_refresh_cannot_leak_cached_excerpt_or_count reproduced unauthorized refresh plus leaked cached excerpt/total_hits=1. GREEN 16/16 owner_reads inline tests, including regression hits=[] total_hits=0 authorized_sessions=0 while secret remains cached. Public call API unchanged; formatting/whitespace checks clean. Final source SHA256 5511160f909cb39885710e12adb71946b8aeac279cdb9a65c758bd1e55c529b0. No other source/runtime/deploy edits; candidate/installed verification remains CI."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+      "harness": "codex"
+    }
+  ],
+  "result": "SOURCE+TESTS: authorized raw ingestion + guarded v4 indexing and ACL FTS retained. P1 revocation race fixed in owner_reads.rs only: after native refresh, final allowlist revalidates owner_policy::is_member and exact session binding in the SAME read_store transaction passed to search_page count/hits. No gate spans native I/O. RED revoked_during_refresh_cannot_leak_cached_excerpt_or_count reproduced unauthorized refresh plus leaked cached excerpt/total_hits=1. GREEN 16/16 owner_reads inline tests, including regression hits=[] total_hits=0 authorized_sessions=0 while secret remains cached. Public call API unchanged; formatting/whitespace checks clean. Final source SHA256 5511160f909cb39885710e12adb71946b8aeac279cdb9a65c758bd1e55c529b0. No other source/runtime/deploy edits; candidate/installed verification remains CI."
+}
