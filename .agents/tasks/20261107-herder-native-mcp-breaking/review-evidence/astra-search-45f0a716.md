@@ -17,3 +17,9 @@ EXCLUSIVE migration transaction охватывает exact-v3 validation, све
 wait_1c84ce639ceae5e8029b19b7e73204eb не доставлен в 10:18:49 UTC: delivery_blocked, codex_quota_guard quota_unknown, receipt notSubmitted=true, admitted=false, nonRetryable=true. Повтор этого запроса не выполнялся, политика enabled/reserve20/onUnknown=block не менялась.
 
 В 10:20:46 UTC штатный model_quotas получил официальный Codex reported/allowed=true/limit_reached=false, primary_used=76 (остаток24%). После повторной проверки отсутствия HumanStop и отсутствия waiting self-waits поставлен один следующий часовой контроль: wait_cfbc121fff04d9a86f4e1c89369fcabc, scheduledAt=2026-11-07T11:22:06.011Z (14:22 МСК). Отдельный status подтвердил waiting. Доставка этого будущего вызова пока не доказана.
+
+## Итог исправления, 10:27 UTC
+
+Финальный независимый verdict: SUPPORTED для f4a5bca0 + 783335cd. REVISE закрыт. DEFERRED read transaction в f4 удерживает coverage/count/hits; собственная transaction завершается после освобождения statement, caller-owned transaction не закрывается. Детерминированный WAL/channel test воспроизводит опасное расписание без sleeps и теперь возвращает B/count1/Complete. Nietzsche независимо выполнил offline locked search::index::tests: 10 passed, 0 failed.
+
+Rebase45f0a716→0f34c96d по всему store, scoped launcher и тестам дал пустой diff. 783335cd — прямой потомок f4 и меняет только assertions существующего migration test: old v3 updater после миграции Err, новый writer не находит запрещённый FTS документ. Эта добавка прошла bounded diff review; suite повторно не запускался. Новых blockers нет. Terra передан окончательный verdict для source publication. Гарантия snapshot действует в одном search_page, не между разными вызовами страниц. Live migration/production caller не проверялись.
