@@ -21,4 +21,5 @@ pub mod ownership {
 
 pub mod mcp {
     pub mod catalog;
+    pub mod transport;
 }
