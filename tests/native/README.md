@@ -9,13 +9,22 @@ is maintained with the native test fixture.
 
 Run `python3 tests/native/launch.py -- COMMAND [ARGS...]`. The command receives
 a fresh temporary HOME, XDG directories, TMPDIR, a minimal PATH and
-`HERDER_TEST_MODEL_BASE_URL=http://127.0.0.1:<ephemeral-port>/v1`. The model
+`HERDER_TEST_MODEL_BASE_URL=http://127.0.0.1:<ephemeral-port>/v1`. The launcher
+first creates a Linux user and network namespace, checks that it has no
+external interfaces or routes, and brings up its isolated loopback. Both the
+model and client run inside it; failure to establish isolation aborts the run.
+Each process also runs in a bubblewrap filesystem namespace: system runtime,
+this fixture directory, the exact installed Node package of a named executable,
+and its disposable scratch directory are visible; the user's home directory
+and unrelated `/tmp` files are not mounted. It requires `unshare`, `ip`,
+`bwrap`, and permitted unprivileged user namespaces. The model
 supports `/models`, `/responses` and `/chat/completions` including streaming;
 `/_stats` is at the server root. The server and profile are removed on exit.
 Use an absolute executable path if it is outside the minimal PATH; explicitly
 configure each test client to use the provided endpoint. No credentials or
-existing profiles are inherited. This launcher is not a network sandbox: only
-run test commands configured to avoid real services and messages.
+existing profiles are inherited through the environment. Arbitrary project
+sources and binaries outside the exposed locations are unavailable; add a
+reviewed narrowly scoped fixture rather than exposing a whole user profile.
 
 Run the fixture smoke with `python3 tests/native/smoke.py`. E001/E002 are not
 executed by this fixture.
@@ -33,4 +42,5 @@ turn ID to its input and fixture answer via `thread/read`. It checks the model
 request counter and reports the executable version and digest. A missing or
 uncertain receipt fails without resubmission. Input markers are test data,
 not native idempotency keys. This direct check does not exercise Herder MCP,
-its adapter, or E001/E002. The launcher is not a network sandbox.
+its adapter, or E001/E002. The smoke test checks a host-file sentinel as well
+as host loopback; this is a scoped fixture, not a general-purpose sandbox.
