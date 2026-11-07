@@ -22,6 +22,7 @@ pub mod auth {
     pub mod identity;
 }
 pub mod config;
+pub mod cli;
 pub mod domain {
     pub mod adapter;
     pub mod address;

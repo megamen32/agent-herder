@@ -33,6 +33,28 @@ pub fn claim(
     authorization: Authorization,
     requested: ResourceClaim,
 ) -> io::Result<ClaimOutcome> {
+    claim_inner(authority, resource_ref, authorization, requested, false)
+}
+
+/// Claim a resource while allowing a retry to recover the original acquisition
+/// timestamp from the owner record. All caller supplied intent fields must
+/// still match exactly; only acquired_at is recovered for the same claim ID.
+pub fn claim_recovering_intent(
+    authority: &StorageAuthority,
+    resource_ref: &ResourceRef,
+    authorization: Authorization,
+    requested: ResourceClaim,
+) -> io::Result<ClaimOutcome> {
+    claim_inner(authority, resource_ref, authorization, requested, true)
+}
+
+fn claim_inner(
+    authority: &StorageAuthority,
+    resource_ref: &ResourceRef,
+    authorization: Authorization,
+    requested: ResourceClaim,
+    recover_acquired_at: bool,
+) -> io::Result<ClaimOutcome> {
     validate_request(resource_ref, &requested)?;
     let (resource_dir, marker) =
         authority.read_local_resource_marker(resource_ref, authorization)?;
@@ -51,7 +73,9 @@ pub fn claim(
             let current: OwnerRecord = serde_json::from_slice(&bytes)
                 .map_err(|_| invalid_data("owner record JSON is invalid"))?;
             validate_owner(authority, resource_ref, &current)?;
-            if current.claim == requested {
+            if current.claim == requested
+                || (recover_acquired_at && same_intent_except_acquired_at(&current.claim, &requested))
+            {
                 return Ok(ClaimOutcome::AlreadyOwned);
             }
             if current.claim.claim_id == requested.claim_id {
@@ -80,6 +104,15 @@ pub fn claim(
             Ok(ClaimOutcome::Acquired)
         }
     }
+}
+
+fn same_intent_except_acquired_at(current: &ResourceClaim, requested: &ResourceClaim) -> bool {
+    current.resource_ref == requested.resource_ref
+        && current.principal_ref == requested.principal_ref
+        && current.session_ref == requested.session_ref
+        && current.claim_id == requested.claim_id
+        && current.purpose == requested.purpose
+        && current.expires_at == requested.expires_at
 }
 
 /// Extend the expiry of the current claim only when its claim ID still matches.
