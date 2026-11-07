@@ -36,7 +36,7 @@
   ],
   "external_waits": "V1 product candidate supplies core/profile/wrappers and public consumer launch. OpenCode actual fixture verified familyv2; wrapper initial-only restriction product-owned. ChatGPT existing42h burst cooldown preserved until supported installation/reconciliation; no UNKNOWN replays.",
   "slots": 3,
-  "updated_at": "2026-11-08T00:32:40+03:00",
+  "updated_at": "2026-11-08T00:42:05+03:00",
   "tasks": [
     {
       "id": "BUILD",
@@ -127,13 +127,13 @@
       "parent": "S1",
       "description": "Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.",
       "acceptance": "Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.",
-      "result": "5ea readonly publicstartup14tools PASS existingtestpage3. Fullcase preparation: created1newtab, authoritative listdifference onlypage8. Blank UI pending-home-input/Загрузка профиля, no workingcomposer. Explicitaccount verifier1attempt auth_timeout10s. Exactnewclaim not issued; oldpage7claim not reused; nativecreate/send0. Need readyblank+verifiedaccount+fresh exactclaim. Evidence chatgpt-5ea-blank-scope-blocker.json.",
+      "result": "Fresh readonly samepage8 2026-11-07T21:40:09Z, listidentity unchanged; DOMcomplete but profileloading/pending-home-input. One explicitauth check timedout10s. Existingnetwork44rows: document200,22 scripts HTTP2_PING_FAILED inclmanifest; auth2ERR_ABORTED records. Console sameerror26times. Underlyingnetworkcause not established; no reproducible Herder sourcebug, no sourcefix/login/profile/infra changes. Nativecreate/send0,newpage0,UNKNOWN untouched. evidence/chatgpt-page8-bootstrap-network-20261108.json. Next networkowner diagnostics then exactpage/account/claim revalidation; gate unchanged.",
       "owner": "Astra",
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex",
       "model": "gpt-6-astra",
       "note": "No fake running while candidate is built. Resume on candidate receipt; install updated hook through normal browser lifecycle; do not clear backoff or replay accepted sends.",
-      "blocker": "Dedicated new page8 profile loading; explicit auth_timeout10s, no exact account/claim",
+      "blocker": "Page8 bootstrap:22 CDN script requests ERR_HTTP2_PING_FAILED including manifest; auth_timeout, no verified blankscope",
       "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
       "origin": "",
       "supersedes": [],
@@ -323,6 +323,22 @@
           "changes": {
             "blocker": "Dedicated new page8 profile loading; explicit auth_timeout10s, no exact account/claim",
             "result": "5ea readonly publicstartup14tools PASS existingtestpage3. Fullcase preparation: created1newtab, authoritative listdifference onlypage8. Blank UI pending-home-input/Загрузка профиля, no workingcomposer. Explicitaccount verifier1attempt auth_timeout10s. Exactnewclaim not issued; oldpage7claim not reused; nativecreate/send0. Need readyblank+verifiedaccount+fresh exactclaim. Evidence chatgpt-5ea-blank-scope-blocker.json."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:42:05+03:00",
+          "note": "",
+          "changes": {
+            "blocker": "Page8 bootstrap:22 CDN script requests ERR_HTTP2_PING_FAILED including manifest; auth_timeout, no verified blankscope",
+            "result": "Fresh readonly samepage8 2026-11-07T21:40:09Z, listidentity unchanged; DOMcomplete but profileloading/pending-home-input. One explicitauth check timedout10s. Existingnetwork44rows: document200,22 scripts HTTP2_PING_FAILED inclmanifest; auth2ERR_ABORTED records. Console sameerror26times. Underlyingnetworkcause not established; no reproducible Herder sourcebug, no sourcefix/login/profile/infra changes. Nativecreate/send0,newpage0,UNKNOWN untouched. evidence/chatgpt-page8-bootstrap-network-20261108.json. Next networkowner diagnostics then exactpage/account/claim revalidation; gate unchanged."
           },
           "actor": {
             "host_id": null,
