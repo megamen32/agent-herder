@@ -43,6 +43,12 @@ harness=os.environ['AHAP_HARNESS']
 for line in sys.stdin:
  r=json.loads(line); m=r['method']; p=r.get('params',{})
  with open('trace','a') as f:f.write(json.dumps(r)+'\n')
+ if m==config.get('error_method','createSession') and 'rpc_error' in config:
+  if config.get('error_disconnect'):sys.exit(0)
+  frame={'jsonrpc':'2.0','id':r['id']+1 if config.get('wrong_rpc_id') else r['id'],'error':config['rpc_error']}
+  if config.get('ambiguous_error'):frame['result']=None
+  if config.get('extra_error_frame'):frame['nativeInputMessageId']='contradictory'
+  print(json.dumps(frame),flush=True);continue
  if m=='initialize':v={'harness':harness,'capabilities':config['capabilities']}
  elif m=='init':v=None
  elif m=='listSessions':v={'sessions':[{'id':'session:/β','harness':harness}],'exhaustive':False,'reason':'bounded'}
@@ -575,4 +581,142 @@ async fn stale_native_state_and_structured_stop_are_never_idle_send_permission()
         port.reconcile(&receipt).await.unwrap(),
         Observation::Unknown { .. }
     ));
+}
+
+fn quota_prewrite_error() -> Value {
+    json!({"code":-32000,"message":"untrusted diagnostic never forwarded", "data":{
+        "outcome":"not_submitted","admitted":false,"notSubmitted":true,"retryable":false,
+        "code":"codex_quota_guard","method":"createSession","operation":"thread/start","reason":"below_reserve"}})
+}
+
+#[test]
+fn fixq_exact_codex_create_prewrite_quota_is_definitely_not_sent() {
+    for reason in [
+        "provider_denied",
+        "below_reserve",
+        "quota_unknown",
+        "quota_snapshot_expired",
+        "quota_policy_unavailable",
+    ] {
+        let mut error = quota_prewrite_error();
+        error["data"]["reason"] = json!(reason);
+        let (f, port, _) = fixture("codex", json!({"rpc_error":error}));
+        match port.create_root_bounded("quota-prewrite-fixture", "not sent") {
+            Err(SubmitError::DefinitelyNotSent { reason }) => {
+                assert_eq!(
+                    reason,
+                    "Codex quota guard rejected thread/start before native submission"
+                );
+            }
+            other => panic!("expected proven prewrite refusal, got {other:?}"),
+        }
+        assert_eq!(
+            f.trace()
+                .iter()
+                .filter(|r| r["method"] == "createSession")
+                .count(),
+            1
+        );
+        assert!(f.sends().is_empty());
+    }
+}
+
+#[test]
+fn fixq_incomplete_forged_and_transport_failures_stay_unknown() {
+    let original = quota_prewrite_error();
+    let keys: Vec<_> = original["data"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+    let mut invalid = vec![];
+    for key in keys {
+        let mut missing = original.clone();
+        missing["data"].as_object_mut().unwrap().remove(&key);
+        invalid.push(missing);
+        let mut malformed = original.clone();
+        malformed["data"][&key] = Value::Null;
+        invalid.push(malformed);
+    }
+    for (key, value) in [
+        ("admitted", json!(true)),
+        ("notSubmitted", json!(false)),
+        ("retryable", json!(true)),
+        ("outcome", json!("unknown")),
+        ("code", json!("other_guard")),
+        ("method", json!("sendMessage")),
+        ("operation", json!("turn/start")),
+        ("reason", json!("arbitrary secret")),
+        ("nativeInputMessageId", json!("already-admitted")),
+    ] {
+        let mut forged = original.clone();
+        forged["data"][key] = value;
+        invalid.push(forged);
+    }
+    let mut wrong_code = original.clone();
+    wrong_code["code"] = json!(-32001);
+    invalid.push(wrong_code);
+    for error in invalid {
+        let (f, port, _) = fixture("codex", json!({"rpc_error":error}));
+        assert!(matches!(
+            port.create_root_bounded("fixture-key", "not sent"),
+            Err(SubmitError::OutcomeUnknown { .. })
+        ));
+        assert_eq!(
+            f.trace()
+                .iter()
+                .filter(|r| r["method"] == "createSession")
+                .count(),
+            1
+        );
+    }
+    for flag in [
+        "error_disconnect",
+        "wrong_rpc_id",
+        "ambiguous_error",
+        "extra_error_frame",
+    ] {
+        let mut config = json!({"rpc_error":original});
+        config[flag] = json!(true);
+        let (f, port, _) = fixture("codex", config);
+        assert!(matches!(
+            port.create_root_bounded("fixture-key", "not sent"),
+            Err(SubmitError::OutcomeUnknown { .. })
+        ));
+        assert_eq!(
+            f.trace()
+                .iter()
+                .filter(|r| r["method"] == "createSession")
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
+fn fixq_payload_cannot_override_actual_harness_or_called_method() {
+    for (harness, method) in [
+        ("opencode", "createSession"),
+        ("zcode", "createSession"),
+        ("codex", "sendMessage"),
+        ("codex", "getSession"),
+    ] {
+        let (f, port, _) = fixture(
+            harness,
+            json!({"rpc_error":quota_prewrite_error(),"error_method":method}),
+        );
+        let error = port
+            .client
+            .call(method, json!({"id":"session:/β"}))
+            .unwrap_err();
+        assert!(matches!(
+            transport_failure(error),
+            SubmitError::OutcomeUnknown { .. }
+        ));
+        assert_eq!(
+            f.trace().iter().filter(|r| r["method"] == method).count(),
+            1
+        );
+    }
 }

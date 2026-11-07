@@ -278,6 +278,9 @@ impl ReceiptReference {
 }
 fn transport_failure(e: AhapError) -> SubmitError {
     match e {
+        AhapError::CodexCreateQuotaNotSubmitted => SubmitError::DefinitelyNotSent {
+            reason: "Codex quota guard rejected thread/start before native submission".into(),
+        },
         AhapError::BeforeSend
         | AhapError::Unavailable
         | AhapError::Unsupported

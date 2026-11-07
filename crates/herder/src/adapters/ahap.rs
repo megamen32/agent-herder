@@ -24,8 +24,14 @@ pub enum AhapError {
     BeforeSend,
     OutcomeUnknown,
     Remote,
+    /// Exact Codex createSession quota guard receipt before native thread/start.
+    /// Carries no remote diagnostic text and grants no replay authority.
+    CodexCreateQuotaNotSubmitted,
     Protocol,
-    Initialization { phase: &'static str, cause: Box<AhapError> },
+    Initialization {
+        phase: &'static str,
+        cause: Box<AhapError>,
+    },
 }
 #[derive(Clone, Debug)]
 pub struct AhapConfig {
@@ -105,7 +111,48 @@ fn writes(mut input: ChildStdin, rx: Receiver<(Vec<u8>, mpsc::SyncSender<Result<
         }
     }
 }
-fn rpc(s: &mut State, method: &str, params: Value, timeout: Duration) -> Result<Value, AhapError> {
+fn codex_create_quota_not_submitted(harness: &str, method: &str, error: &Value) -> bool {
+    // The method/harness are local call context, never selected by error.data.
+    if harness != "codex" || method != "createSession" {
+        return false;
+    }
+    let Some(error) = error.as_object() else {
+        return false;
+    };
+    let Some(data) = error.get("data").and_then(Value::as_object) else {
+        return false;
+    };
+    // Unknown extensions may contradict non-admission: fail closed until reviewed.
+    error.len() == 3
+        && error.get("code").and_then(Value::as_i64) == Some(-32000)
+        && error.get("message").and_then(Value::as_str).is_some()
+        && data.len() == 8
+        && data.get("outcome").and_then(Value::as_str) == Some("not_submitted")
+        && data.get("admitted").and_then(Value::as_bool) == Some(false)
+        && data.get("notSubmitted").and_then(Value::as_bool) == Some(true)
+        && data.get("retryable").and_then(Value::as_bool) == Some(false)
+        && data.get("code").and_then(Value::as_str) == Some("codex_quota_guard")
+        && data.get("method").and_then(Value::as_str) == Some("createSession")
+        && data.get("operation").and_then(Value::as_str) == Some("thread/start")
+        && matches!(
+            data.get("reason").and_then(Value::as_str),
+            Some(
+                "provider_denied"
+                    | "below_reserve"
+                    | "quota_unknown"
+                    | "quota_snapshot_expired"
+                    | "quota_policy_unavailable"
+            )
+        )
+}
+
+fn rpc(
+    s: &mut State,
+    method: &str,
+    params: Value,
+    timeout: Duration,
+    harness: &str,
+) -> Result<Value, AhapError> {
     if !s.usable {
         return Err(AhapError::Unavailable);
     }
@@ -189,7 +236,15 @@ fn rpc(s: &mut State, method: &str, params: Value, timeout: Duration) -> Result<
                 s.poison();
                 return Err(AhapError::OutcomeUnknown);
             }
-            return Err(AhapError::Remote);
+            return Err(
+                if object.len() == 3
+                    && codex_create_quota_not_submitted(harness, method, &object["error"])
+                {
+                    AhapError::CodexCreateQuotaNotSubmitted
+                } else {
+                    AhapError::Remote
+                },
+            );
         }
         return Ok(object["result"].clone());
     }
@@ -237,7 +292,12 @@ impl AhapClient {
             "initialize",
             json!({"harness":config.harness,"ahapVersion":"0.1"}),
             config.timeout,
-        ).map_err(|cause| AhapError::Initialization { phase: "initialize", cause: Box::new(cause) })?;
+            &config.harness,
+        )
+        .map_err(|cause| AhapError::Initialization {
+            phase: "initialize",
+            cause: Box::new(cause),
+        })?;
         if init.get("harness").and_then(Value::as_str) != Some(config.harness.as_str()) {
             return Err(AhapError::Protocol);
         }
@@ -256,8 +316,17 @@ impl AhapClient {
             }
         }
         if methods.contains("init") {
-            rpc(&mut state, "init", json!({}), config.timeout)
-                .map_err(|cause| AhapError::Initialization { phase: "init", cause: Box::new(cause) })?;
+            rpc(
+                &mut state,
+                "init",
+                json!({}),
+                config.timeout,
+                &config.harness,
+            )
+            .map_err(|cause| AhapError::Initialization {
+                phase: "init",
+                cause: Box::new(cause),
+            })?;
         }
         Ok(Self {
             instance_id: config.instance_id,
@@ -287,7 +356,7 @@ impl AhapClient {
             return Err(AhapError::Unsupported);
         }
         let mut s = self.state.lock().map_err(|_| AhapError::Unavailable)?;
-        rpc(&mut s, method, params, self.timeout)
+        rpc(&mut s, method, params, self.timeout, &self.harness)
     }
 }
 
@@ -402,9 +471,17 @@ for line in sys.stdin:
     }
     #[test]
     fn startup_failure_identifies_init_phase_without_echoing_remote_secrets() {
-        let dir = std::env::temp_dir().join(format!("ahap-init-diagnostic-{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
-        fs::create_dir(&dir).unwrap(); let _fixture = Fixture(dir.clone());
-        let script=dir.join("adapter.py");
+        let dir = std::env::temp_dir().join(format!(
+            "ahap-init-diagnostic-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&dir).unwrap();
+        let _fixture = Fixture(dir.clone());
+        let script = dir.join("adapter.py");
         fs::write(&script, r#"import json,sys
 for line in sys.stdin:
  r=json.loads(line)
@@ -412,8 +489,18 @@ for line in sys.stdin:
  else: v={'error':{'code':-32000,'message':'SECRET remote credential','data':{'outcome':'read_failed'}}}
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],**v}),flush=True)
 "#).unwrap();
-        let error=AhapClient::open(AhapConfig { instance_id:"one".into(),harness:"codex".into(),executable:fs::canonicalize("/usr/bin/python3").unwrap(),args:vec![script.to_string_lossy().into_owned()],cwd:dir,env:vec![],timeout:Duration::from_secs(2) }).err().unwrap();
-        let text=format!("{error:?}");
+        let error = AhapClient::open(AhapConfig {
+            instance_id: "one".into(),
+            harness: "codex".into(),
+            executable: fs::canonicalize("/usr/bin/python3").unwrap(),
+            args: vec![script.to_string_lossy().into_owned()],
+            cwd: dir,
+            env: vec![],
+            timeout: Duration::from_secs(2),
+        })
+        .err()
+        .unwrap();
+        let text = format!("{error:?}");
         assert!(text.contains("init") && text.contains("Remote"), "{text}");
         assert!(!text.contains("SECRET"), "{text}");
     }
