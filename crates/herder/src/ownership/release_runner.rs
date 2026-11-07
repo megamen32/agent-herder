@@ -10,6 +10,7 @@ use std::io;
 use std::path::PathBuf;
 
 /// Holds the stable lock inode for one registered target until dropped.
+#[derive(Debug)]
 pub struct TargetExecutionLock {
     _file: File,
     resource_ref: ResourceRef,
@@ -217,6 +218,59 @@ mod tests {
         ));
         drop(lock);
         contender.try_lock().unwrap();
+        contender.unlock().unwrap();
+
+        claim::release(
+            &authority,
+            &resource_ref,
+            Authorization::Authorized,
+            &current_claim.claim_id,
+        )
+        .unwrap();
+        let replacement = ResourceClaim {
+            claim_id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".into(),
+            principal_ref: "principal-b".into(),
+            ..current_claim.clone()
+        };
+        claim::claim(
+            &authority,
+            &resource_ref,
+            Authorization::Authorized,
+            replacement,
+        )
+        .unwrap();
+        let stale_lock = TargetExecutionLock::acquire(
+            &authority,
+            &resource_ref,
+            Authorization::Authorized,
+        )
+        .unwrap();
+        assert_eq!(
+            stale_lock
+                .verify_current_claim(
+                    &authority,
+                    Authorization::Authorized,
+                    &current_claim.claim_id,
+                    1,
+                )
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        let mut ssh_authority = authority.clone();
+        ssh_authority.route = AuthorityRoute::Ssh {
+            route_ref: "remote-authority".into(),
+        };
+        assert_eq!(
+            TargetExecutionLock::acquire(
+                &ssh_authority,
+                &resource_ref,
+                Authorization::Authorized,
+            )
+            .unwrap_err()
+            .kind(),
+            io::ErrorKind::Unsupported
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }
