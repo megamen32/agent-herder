@@ -60,10 +60,21 @@ export function incidentLegacySourceKeys(message: string): string[] {
   return [...new Set(aliases.map(signal => createHash('sha256').update(JSON.stringify([facts.project, facts.sourceId, facts.hostId, signal])).digest('hex')))];
 }
 
-type Binding = {sessionId?: string; pending?: string};
+export type IncidentSessionPolicy = {enabled: boolean; ttlSeconds: number};
+export function incidentSessionPolicy(value?: unknown): IncidentSessionPolicy {
+  if (value === undefined) return {enabled: true, ttlSeconds: 86400};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid incident session policy');
+  const policy = value as Record<string, unknown>;
+  if (typeof policy.enabled !== 'boolean' || typeof policy.ttlSeconds !== 'number'
+    || !Number.isInteger(policy.ttlSeconds) || policy.ttlSeconds < 0 || policy.ttlSeconds > 2592000)
+    throw new Error('incident session TTL must be an integer between 0 and 2592000 seconds');
+  return {enabled: policy.enabled, ttlSeconds: policy.ttlSeconds};
+}
+type Binding = {sessionId?: string; pending?: string; lastUsedAt?: number};
 type Registry = {version: 1; groups: Record<string, Binding>};
-type Request = {harness: string; cwd: string; message: string; inputId: string; model?: string};
+type Request = {harness: string; cwd: string; message: string; inputId: string; model?: string; incidentSessionPolicy?: IncidentSessionPolicy};
 export type IncidentSessionRouterPorts = {
+  now?(): number;
   readSession(harness: string, sessionId: string): Promise<AgentSession | null>;
   unfinished(session: AgentSession): Promise<boolean>;
   held?(session: AgentSession): Promise<boolean>;
@@ -80,6 +91,8 @@ export class IncidentSessionRouter {
   constructor(private readonly path: string, private readonly ports: IncidentSessionRouterPorts) {}
 
   async run(request: Request, launch: (existingSessionId?: string) => Promise<NamedSessionResult>): Promise<NamedSessionResult> {
+    const policy = incidentSessionPolicy(request.incidentSessionPolicy);
+    const now = this.ports.now?.() ?? Date.now();
     const source = incidentSourceKey(request.message);
     if (!source) return launch(); // Incomplete telemetry never groups unrelated work.
     const key = createHash('sha256').update(JSON.stringify([request.harness, request.cwd, source])).digest('hex');
@@ -91,10 +104,10 @@ export class IncidentSessionRouter {
     try {
       const state = await this.read();
       let prior = state.groups[key];
+      const legacyKeys = incidentLegacySourceKeys(request.message)
+        .map(oldSource => createHash('sha256').update(JSON.stringify([request.harness, request.cwd, oldSource])).digest('hex'));
       {
-        const legacy = incidentLegacySourceKeys(request.message)
-          .map(oldSource => state.groups[createHash('sha256').update(JSON.stringify([request.harness, request.cwd, oldSource])).digest('hex')])
-          .filter((binding): binding is Binding => Boolean(binding));
+        const legacy = legacyKeys.map(old => state.groups[old]).filter((binding): binding is Binding => Boolean(binding));
         if (legacy.some(binding => binding.pending) || prior?.pending) return {
           ok: false, created: false, name: 'incident-source-pending', cwd: request.cwd, harness: request.harness,
           inputId: request.inputId, admissionUnknown: true, nonRetryable: true, delivery: 'admission_unknown',
@@ -137,10 +150,19 @@ export class IncidentSessionRouter {
         };
         if (!await this.ports.held?.(existing)) {
           const open = !this.ports.boundIncidentOpen || await this.ports.boundIncidentOpen(existing, request);
-          if (!open || !await this.ports.unfinished(existing)) {
+          const unfinished = await this.ports.unfinished(existing);
+          if (!unfinished) {
             const continuation = await this.ports.continuationReady?.(existing, request);
-            if (!open && (continuation === false || !this.ports.continuationReady)) existing = undefined; // Proven new episode retains normal new-generation policy.
-            else if (continuation !== true) return {
+            if (!open && (continuation === false || !this.ports.continuationReady)) {
+              // A fresh episode may reuse the completed session only inside
+              // the operator's window. Active repairs and unknown admissions
+              // remain fenced independently of this convenience setting.
+              const activity = Date.parse(existing.lastActivity);
+              const lastUsed = Math.max(prior.lastUsedAt ?? 0,
+                Number.isFinite(activity) && activity <= now ? activity : 0);
+              const sticky = policy.enabled && lastUsed > 0 && now - lastUsed < policy.ttlSeconds * 1000;
+              if (!sticky) existing = undefined;
+            } else if (continuation !== true) return {
               ok: false, created: false, name: 'incident-continuation-unconfirmed', cwd: request.cwd, harness: request.harness,
               inputId: request.inputId, delivery: 'not_attempted', nonRetryable: true, sessionId: existing.id,
               error: 'Исходная сессия завершила попытку, но актуальная квитанция продолжения не подтверждена; новая сессия не создана.',
@@ -152,8 +174,8 @@ export class IncidentSessionRouter {
       } else if (existing && !await this.ports.held?.(existing)
         && (existing.cwd !== request.cwd || existing.meta?.archived === true || !await this.ports.unfinished(existing))) existing = undefined;
       if (!prior && this.ports.findExisting) existing = await this.ports.findExisting(request, source);
-      const binding: Binding = {...(existing ? {sessionId: existing.id} : {}), pending: request.inputId};
-      await this.update(key, binding); // Crash/timeout cannot silently fall through to a new executor.
+      const binding: Binding = {...(existing ? {sessionId: existing.id, lastUsedAt: prior?.lastUsedAt} : {}), pending: request.inputId};
+      await this.update(key, binding, legacyKeys, prior?.sessionId); // Crash/timeout cannot silently fall through to a new executor.
       const result = await launch(existing?.id);
       if (existing && result.sessionId && result.sessionId !== existing.id) return {
         ...result, ok: false, created: false, sessionId: existing.id, delivery: 'not_attempted', nonRetryable: true,
@@ -162,6 +184,7 @@ export class IncidentSessionRouter {
       const unknown = result.admissionUnknown || result.pending || result.delivery === 'accepted_unconfirmed';
       await this.update(key, {
         ...(result.sessionId ? {sessionId: result.sessionId} : existing ? {sessionId: existing.id} : {}),
+        ...(result.ok && result.sessionId ? {lastUsedAt: now} : prior?.lastUsedAt ? {lastUsedAt: prior.lastUsedAt} : {}),
         // A known session ID does not resolve an unknown input admission.
         ...(unknown ? {pending: request.inputId} : {}),
       });
@@ -182,7 +205,7 @@ export class IncidentSessionRouter {
     }
   }
 
-  private async update(key: string, binding: Binding): Promise<void> {
+  private async update(key: string, binding: Binding, legacyKeys: string[] = [], priorSessionId?: string): Promise<void> {
     // Different source groups may launch concurrently; merge under the file's own lock.
     const target = `${this.path}.lock`;
     const handle = await open(target, 'a', 0o600); await handle.close();
@@ -190,6 +213,12 @@ export class IncidentSessionRouter {
     const temp = `${this.path}.${randomUUID()}.tmp`;
     try {
       const file = await this.read();
+      // Retire only aliases of the exact adopted binding. Otherwise a TTL
+      // rollover would rediscover its retired session as an ambiguous owner.
+      for (const old of legacyKeys) {
+        if (old !== key && priorSessionId && file.groups[old]?.sessionId === priorSessionId && !file.groups[old]?.pending)
+          delete file.groups[old];
+      }
       file.groups[key] = binding;
       const output = await open(temp, 'wx', 0o600);
       try {await output.writeFile(JSON.stringify(file)); await output.sync();} finally {await output.close();}

@@ -1,3 +1,4 @@
+import type {IncidentSessionPolicy} from './incident-session-router.js';
 import { randomUUID } from "node:crypto";
 import {projectLaunchTitle} from './project-launch-title.js';
 import type {IncidentSessionRouter} from './incident-session-router.js';
@@ -105,6 +106,7 @@ export interface ProjectLaunchSourceSession {
 /** The actual native call. It is the only place that may create an executor. */
 export type ProjectLaunchRunner = (request: {
   incidentRouting?: boolean;
+  incidentSessionPolicy?: IncidentSessionPolicy;
   harness: HarnessType;
   cwd: string;
   message: string;
@@ -137,6 +139,7 @@ export interface ProjectLaunchDispatcher {
 }
 
 export interface ProjectLaunchDispatchInput {
+  incidentSessionPolicy?: IncidentSessionPolicy;
   /** Set only after dedicated Notice Place bearer verification in HTTP. */
   [NOTICEPLACE_HEALTH_AUTHORIZED]?: true;
   policy: AutomationLaunchPolicy;
@@ -450,7 +453,7 @@ export async function dispatchProjectLaunch(
   }
 
   const nativeResult = await run({ harness, cwd, message: input.message, ...(model ? { model } : {}), mode, inputId,
-    ...(healthAnalysis ? {incidentRouting: true} : {}),
+    ...(healthAnalysis ? {incidentRouting: true, incidentSessionPolicy: input.incidentSessionPolicy} : {}),
     ...(!healthAnalysis && input.policy.fallbackModels?.[harness as "opencode" | "zcode"]
       ? { fallbackModels: input.policy.fallbackModels[harness as "opencode" | "zcode"] }
       : healthAnalysis ? { fallbackModels: [] } : {}),
