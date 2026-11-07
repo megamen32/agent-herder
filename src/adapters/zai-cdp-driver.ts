@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { zaiFullConversationScript } from "./zai-full-conversation.js";
+import { chatgptConversationChunkScript, chatgptConversationCleanupScript } from "./chatgpt-full-conversation.js";
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import { BrowserChatDraftStore } from "./browser-chat-drafts.js";
 import { submitFirstChatMessage, verifyNewChatAccountScope } from "./browser-chat-new-page.js";
@@ -494,6 +497,39 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       if (refined !== known) this.cache.set(id, refined);
       return { ...refined, working: this.busy(state), stopVisible: state.phase === "generating" };
     });
+  }
+
+  /** Full exact-session export for explicit transcript requests only. */
+  async getRawConversation(chatId: string): Promise<unknown | null> {
+    if (chatId.startsWith("draft:")) {
+      const draft = this.drafts.get(chatId);
+      if (!draft?.remoteId) return null;
+      chatId = draft.remoteId;
+    }
+    let nativeId = chatId.startsWith("route:") ? chatId.slice(6) : "";
+    if (!nativeId && chatId.startsWith("sidebar:")) {
+      const title = parseTitleId(chatId);
+      const candidates = [...this.cache.values()].filter(chat => chat.title === title && chat.id.startsWith("route:"));
+      if (candidates.length === 1) nativeId = candidates[0]!.id.slice(6);
+    }
+    if (!/^[a-f0-9-]{12,80}$/i.test(nativeId)) return null;
+    const page = await this.page();
+    const transferId = randomUUID();
+    try {
+      const result = parseChromeEvaluation<{ error?: string; transferId?: string; length?: number; chunkSize?: number }>(await this.tools.call("evaluate_script", { pageId: page.id, function: zaiFullConversationScript(nativeId, transferId) }));
+      if (result.error || result.transferId !== transferId || !Number.isInteger(result.length) || result.length! < 2 || result.length! > 16 * 1024 * 1024 || result.chunkSize !== 65536) throw new Error("Z.ai history unavailable: " + (result.error || "unexpected response"));
+      const chunks: string[] = [];
+      for (let offset = 0; offset < result.length!; offset += result.chunkSize!) {
+        const chunk = parseChromeEvaluation<{ error?: string; offset?: number; text?: string }>(await this.tools.call("evaluate_script", { pageId: page.id, function: chatgptConversationChunkScript(transferId, offset, result.chunkSize!) }));
+        if (chunk.error || chunk.offset !== offset || typeof chunk.text !== "string" || chunk.text.length !== Math.min(result.chunkSize!, result.length! - offset)) throw new Error("Z.ai history transfer incomplete: " + (chunk.error || "invalid chunk"));
+        chunks.push(chunk.text);
+      }
+      const data = JSON.parse(chunks.join("")) as { conversation_id?: unknown; messages?: unknown };
+      if (data.conversation_id !== nativeId || !data.messages || typeof data.messages !== "object" || Array.isArray(data.messages)) throw new Error("Z.ai history transfer identity mismatch");
+      return data;
+    } finally {
+      await this.tools.call("evaluate_script", { pageId: page.id, function: chatgptConversationCleanupScript(transferId) }).catch(() => undefined);
+    }
   }
 
   /** Read normalized history from Z.ai's own messages/batch API, without

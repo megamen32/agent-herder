@@ -379,10 +379,11 @@ export class BrowserChatAdapter implements HarnessAdapter {
     if (!data) return null;
     const resolved = (data as { conversation_id?: unknown }).conversation_id;
     if (native.startsWith("draft:") && (typeof resolved !== "string" || !/^[a-f0-9-]{28,80}$/i.test(resolved))) return null;
-    const locationId = native.startsWith("draft:") ? resolved as string : native;
+    const locationId = this.provider.id === "zai" ? resolved : native.startsWith("draft:") ? resolved as string : native;
+    if (typeof locationId !== "string" || !/^[a-f0-9-]{12,80}$/i.test(locationId)) return null;
     return {
       bytes: Buffer.from(JSON.stringify(data), "utf8"), complete: true,
-      source: { kind: "native-api", location: `https://chatgpt.com/c/${locationId}`, format: "json" },
+      source: { kind: "native-api", location: `https://${this.provider.id === "zai" ? "chat.z.ai" : "chatgpt.com"}/c/${locationId}`, format: "json" },
       timestampCoverage: "native", limitations: ["Attachment bytes are not included; the native conversation contains their references."],
     };
   }
