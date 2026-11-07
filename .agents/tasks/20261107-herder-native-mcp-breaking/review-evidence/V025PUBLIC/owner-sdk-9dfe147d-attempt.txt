@@ -1,0 +1,8 @@
+Distinct one-shot isolated regression; prior 496483e5 UNKNOWN is not replayed.
+source=9dfe147de91f2788c1a1d89f70433170d114ccf4
+launcher_test_sha256=68c0d27bb69895b2442c196dfcbbf82a4ddf679b42c99f6000ea3bf9534661f0
+herder_native_sha256=21c134676b10f819b780b9067a90b77d317a65cc8ac59c7c7a26ba1ae203574a
+sdk_probe_sha256=3efdd92c39fcb1856a0690b175e510cf2b1752285c3df74e2a85a7a7b0252b00
+retained_root=runs/owner-sdk-regression-9dfe147d
+state=prepared
+state=confirmed; task=create-operation:aeb0c2f0d0f6b04223104594dc8c9e96; session=session:5c1937cbd6f093410774c50984ed3593; model_requests=1; task_reopen=terminal; receipt=owner-sdk-9dfe147d-run.log; prior_496_unknown=unchanged

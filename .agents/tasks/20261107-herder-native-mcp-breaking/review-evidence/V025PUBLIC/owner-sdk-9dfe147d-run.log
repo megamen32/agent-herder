@@ -1,0 +1,16 @@
+ISOLATED_RETAINED_ROOT /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/runs/owner-sdk-regression-9dfe147d
+
+running 1 test
+OWNER_PROOF_PREPARED marker=HERDER_OWNER_INPUT_1794051486642975571 no-replay=true
+{"phase":"admitted","task_id":"create-operation:aeb0c2f0d0f6b04223104594dc8c9e96"}
+{"messages":{"page":{"backwards_cursor":"{\"requestedThreadId\":\"01a1b5cd-38d9-7343-8b03-26c464145173\",\"rolloutOrdinal\":9,\"includeAnchor\":true,\"scope\":{\"kind\":\"itemsByCreatedAtOrdinal\"}}","messages":[{"id":"msg_test_1","role":"assistant","text":"HERDER_TEST_MODEL_OK","turn_id":"01a1b5cd-39f3-73a1-bd07-28118442f94b"},{"id":"01a1b5cd-3aac-7633-acdc-ea7aa2dfc353","role":"user","text":"HERDER_OWNER_INPUT_1794051486642975571","turn_id":"01a1b5cd-39f3-73a1-bd07-28118442f94b"}],"next_cursor":null},"session_ref":"session:5c1937cbd6f093410774c50984ed3593"},"phase":"readback","task":{"content":[{"text":"{\"create\":{\"effect\":\"confirmed\",\"session_ref\":\"session:5c1937cbd6f093410774c50984ed3593\"},\"prompt\":{\"native_turn_id\":\"01a1b5cd-39f3-73a1-bd07-28118442f94b\",\"outcome\":\"confirmed\"}}","type":"text"}],"isError":false,"resultType":"complete","structuredContent":{"create":{"effect":"confirmed","session_ref":"session:5c1937cbd6f093410774c50984ed3593"},"prompt":{"native_turn_id":"01a1b5cd-39f3-73a1-bd07-28118442f94b","outcome":"confirmed"}}}}
+{"input_readback":"confirmed","scope":"rmcp SDK to native Herder owner stdio; isolated Codex","session_ref":"session:5c1937cbd6f093410774c50984ed3593","task_id":"create-operation:aeb0c2f0d0f6b04223104594dc8c9e96","task_reopen":"terminal"}
+OWNER_PROOF_RECEIPT {"marker":"HERDER_OWNER_INPUT_1794051486642975571","phase":"prepared_no_replay"}
+{"marker":"HERDER_OWNER_INPUT_1794051486642975571","phase":"admitted","task_id":"create-operation:aeb0c2f0d0f6b04223104594dc8c9e96"}
+
+OWNER_MODEL_STATS {"requests": 1}
+OWNER_FIXTURE_PRESERVED /herder-owner-home/herder-launch-3-1794051486466853908
+test real_sdk_owner_stdio_create_task_and_reopened_messages ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 3.05s
+
