@@ -45,6 +45,7 @@ struct State {
 }
 pub struct AhapClient {
     instance_id: String,
+    harness: String,
     methods: HashSet<String>,
     state: Mutex<State>,
     timeout: Duration,
@@ -257,6 +258,7 @@ impl AhapClient {
         }
         Ok(Self {
             instance_id: config.instance_id,
+            harness: config.harness,
             methods,
             state: Mutex::new(state),
             timeout: config.timeout,
@@ -264,6 +266,10 @@ impl AhapClient {
     }
     pub fn instance_id(&self) -> &str {
         &self.instance_id
+    }
+    /// Harness verified against the adapter's AHAP initialize response.
+    pub fn harness(&self) -> &str {
+        &self.harness
     }
     pub fn supports(&self, method: &str) -> bool {
         self.methods.contains(method)
@@ -337,6 +343,7 @@ for line in sys.stdin:
     fn capabilities_and_instance_are_explicit() {
         let (f, c) = fixture(SCRIPT, Duration::from_secs(2));
         assert_eq!(c.instance_id(), "node-a/profile-a");
+        assert_eq!(c.harness(), "opencode");
         assert!(c.supports("createSession"));
         assert!(matches!(
             c.call("deleteSession", json!({})),
@@ -354,6 +361,36 @@ for line in sys.stdin:
                 .collect::<Vec<_>>(),
             ["initialize", "init", "createSession"]
         );
+    }
+    #[test]
+    fn initialize_harness_must_match_the_trusted_configuration() {
+        let dir = std::env::temp_dir().join(format!(
+            "herder-ahap-harness-mismatch-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&dir).unwrap();
+        let _f = Fixture(dir.clone());
+        let script = dir.join("adapter");
+        fs::write(
+            &script,
+            "#!/usr/bin/python3\nimport json,sys\nr=json.loads(sys.stdin.readline())\nprint(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':{'harness':'opencode','capabilities':{'methods':[]}}}),flush=True)\n",
+        )
+        .unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+        let result = AhapClient::open(AhapConfig {
+            instance_id: "node-a/profile-a".into(),
+            harness: "zcode".into(),
+            executable: fs::canonicalize("/usr/bin/python3").unwrap(),
+            args: vec![script.to_string_lossy().into_owned()],
+            cwd: dir,
+            env: vec![],
+            timeout: Duration::from_secs(2),
+        });
+        assert!(matches!(result, Err(AhapError::Protocol)));
     }
     #[test]
     fn timeout_never_replays_a_possibly_sent_mutation() {
