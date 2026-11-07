@@ -20,6 +20,7 @@ pub enum ZcodeReadError {
     DuplicateSessionId,
     InvalidMessageLimit,
     InvalidSessionAddress,
+    InvalidSessionResponse,
     InvalidMessagesResponse,
     Connection(ZcodeConnectionError),
 }
@@ -154,8 +155,9 @@ impl ZcodeSessionReader {
         Ok(entries)
     }
 
-    /// Read the exact session through the native legacy `readSessionMessages`
-    /// contract. This method never resumes a session or sends model input.
+    /// Read the exact existing session through the legacy native `readSession`
+    /// contract. `existing-only` prevents this read from resuming or creating a
+    /// runtime; this method never sends model input.
     pub async fn read_messages(
         &self,
         session: &ZcodeSessionEntry,
@@ -190,17 +192,27 @@ impl ZcodeSessionReader {
             let response = connection
                 .request(
                     "zcode-agent",
-                    "readSessionMessages",
+                    "readSession",
                     json!([{
                         "workspacePath": workspace,
                         "workspaceIdentity": workspace,
                         "workspaceKey": workspace,
                         "sessionId": session.address.native_session_id,
-                        "limit": limit,
+                        "runtimePolicy": "existing-only",
+                        "messageLimit": limit,
                     }]),
                     REQUEST_TIMEOUT,
                 )
                 .await?;
+            if response
+                .payload
+                .get("session")
+                .and_then(|session| session.get("sessionId"))
+                .and_then(Value::as_str)
+                != Some(session.address.native_session_id.as_str())
+            {
+                return Err(ZcodeReadError::InvalidSessionResponse);
+            }
             normalize_messages(&response.payload)
         }
         .await;
