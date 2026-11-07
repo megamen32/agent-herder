@@ -189,7 +189,7 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
         env,
         timeout: Duration::from_secs(20),
     })
-    .map_err(|_| "AHAP initialization failed")?;
+    .map_err(|error| format!("AHAP {harness} startup failed: {error:?}. Verify the configured runner, native app-server arguments and provider configuration in owner.code_home/ahap_env; browser init requires the exact pinned account verifier. No create/send request was submitted by the core."))?;
     let delivery_mode = if harness == "opencode"
         && client.capabilities().get("nativeProtocol").and_then(serde_json::Value::as_str) != Some("v2") {
         SendMode::Start

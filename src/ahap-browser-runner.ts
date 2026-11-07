@@ -93,7 +93,10 @@ export async function serveBrowserChatAhap(
       let result: unknown;
       switch (request.method) {
         case "init":
+          accountVerified = false;
           await adapter.init();
+          // Passive inventory init need not populate account scope in a fresh profile.
+          await adapter.verifyPinnedAccountScope?.();
           if (adapter.getAccountScope() !== expectedAccountScope) {
             throw new Error("pinned browser account scope mismatch");
           }
@@ -226,15 +229,20 @@ export function makeConfiguredAdapter(
     : new ZaiCdpDriver(pageTools, pageId, 0);
   const provider = { id: harness, name: harness === "chatgpt" ? "ChatGPT browser" : "Z.ai browser", harness, cwd: process.cwd() } as const;
   const adapter = new BrowserChatAdapter(driver, provider, process.cwd(), true);
+  let verifiedAccountScope: string | undefined;
   return Object.assign(adapter, {
-    getAccountScope: () => driver.getAccountScope?.(),
+    getAccountScope: () => driver.getAccountScope?.() ?? verifiedAccountScope,
     verifyPinnedAccountScope: async () => {
+      verifiedAccountScope = undefined;
       if (harness === "chatgpt") await (driver as ChatGptMacCdpDriver).verifyPinnedAccountScope();
       else {
         await pageTools.call("list_pages");
-        if (await verifyNewChatAccountScope(pageTools, "zai", pageId) !== expectedScope) {
+        const observedScope = await verifyNewChatAccountScope(pageTools, "zai", pageId);
+        if (observedScope !== expectedScope) {
           throw new Error("pinned browser account scope mismatch");
         }
+        // Z.ai's explicit verifier returns evidence without filling the driver's cache.
+        verifiedAccountScope = observedScope;
       }
     },
     close: () => {

@@ -245,11 +245,12 @@ describe("ChatGPT AHAP browser runner", () => {
   it("checks the current provider scope before consulting cached session inventory", async () => {
     let currentScope = scope;
     let listed = false;
+    let verifiedOnce = false;
     const replies = await run({
       type: "chatgpt", name: "ChatGPT browser", browserFeatures: {},
       getAccountScope: () => currentScope,
       async init() {},
-      async verifyPinnedAccountScope() { currentScope = "b".repeat(64); },
+      async verifyPinnedAccountScope() { if (verifiedOnce) currentScope = "b".repeat(64); verifiedOnce = true; },
       async listSessions() { listed = true; return []; },
     }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" },
       { jsonrpc: "2.0", id: 3, method: "listSessions" },
@@ -307,3 +308,59 @@ for (const harness of ["chatgpt", "zai"]) {
     expect(result.capabilities.controlCapabilities.steer).toBe(false);
   });
 }
+
+for (const harness of ["chatgpt", "zai"] as const) {
+  for (const matches of [true, false]) {
+    it(`${harness} verifies an unpopulated fresh-profile scope after passive init (matches=${matches})`, async () => {
+      let currentScope: string | undefined;
+      const calls: string[] = [];
+      let sends = 0;
+      const requests = [
+        { jsonrpc: "2.0", id: 1, method: "initialize", params: { harness, ahapVersion: "0.1" } },
+        { jsonrpc: "2.0", id: 2, method: "init" },
+        ...(!matches ? [{ jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "fixture-chat", options: { message: "must not send", queue: true, inputId: "blocked" } } }] : []),
+        { jsonrpc: "2.0", id: 4, method: "shutdown" },
+      ];
+      const replies = await run({
+        type: harness, name: harness, browserFeatures: {},
+        getAccountScope: () => currentScope,
+        async init() { calls.push("passive-init"); },
+        async verifyPinnedAccountScope() {
+          calls.push("verify");
+          currentScope = matches ? scope : "b".repeat(64);
+        },
+        async sendMessage() { sends++; return { ok: true }; },
+      }, requests);
+      expect(calls).toEqual(["passive-init", "verify"]);
+      if (matches) {
+        expect(replies[1].error).toBeUndefined();
+        expect(replies[1].result).toBeNull();
+      } else {
+        expect(replies[1].error).toBeDefined();
+        expect(replies[2].error).toBeDefined();
+      }
+      expect(sends).toBe(0);
+    });
+  }
+}
+
+it("configured Z.ai verifier exposes its verified scope with an empty driver cache and fails closed on mismatch", async () => {
+  let observedScope = scope;
+  const adapter = makeConfiguredAdapter({
+    AHAP_HARNESS: "zai", AHAP_BROWSER_TRANSPORT: "mac-mini",
+    AHAP_BROWSER_PAGE_ID: "7", AHAP_BROWSER_ACCOUNT_SCOPE: scope,
+  }, {
+    macMini: () => ({ async call(name: string) {
+      if (name === "list_pages") return "7: Z.ai (https://chat.z.ai/)";
+      if (name === "evaluate_script") return `Script ran on page and returned:\n\`\`\`json\n${JSON.stringify({ scope: observedScope })}\n\`\`\``;
+      throw new Error("Unexpected fixture transport call");
+    } }),
+    directCdp: () => { throw new Error("Unexpected direct transport"); },
+  });
+  expect(adapter.getAccountScope()).toBeUndefined();
+  await adapter.verifyPinnedAccountScope?.();
+  expect(adapter.getAccountScope()).toBe(scope);
+  observedScope = "b".repeat(64);
+  await expect(adapter.verifyPinnedAccountScope?.()).rejects.toThrow("scope mismatch");
+  expect(adapter.getAccountScope()).toBeUndefined();
+});

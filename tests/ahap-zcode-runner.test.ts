@@ -1,11 +1,11 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { ZcodeAdapter } from "../src/adapters/zcode.js";
-import { serveZcodeAhap } from "../src/ahap-zcode-runner.js";
+import { makeConfiguredAdapter, serveZcodeAhap } from "../src/ahap-zcode-runner.js";
 
 async function run(adapter: Partial<ZcodeAdapter>, requests: unknown[]) {
   const input = new PassThrough();
@@ -189,4 +189,63 @@ it("preserves explicit steer and sync delivery for existing sessions", async () 
   const replies=await run(adapter,[initialize,{jsonrpc:"2.0",id:2,method:"sendMessage",params:{id:"existing",options}},{jsonrpc:"2.0",id:3,method:"sendMessage",params:{id:"existing",options:sync}}]);
   expect(calls).toEqual([["existing",options],["existing",sync]]);
   expect(replies[1].result.turnId).toBe("native-turn");expect(replies[2].result.inputId).toBe("sync-exact");
+});
+
+
+it("selects the existing official server route without a custom command or native launch", async () => {
+  const home = mkdtempSync(join(tmpdir(), "ahap-official-config-"));
+  const root = join(home, ".zcode/server/run");
+  mkdirSync(root, {recursive:true});
+  // Presence-only unit fixture: no supervisor, connection or native init.
+  writeFileSync(join(root,"control.sock"), "");
+  vi.stubEnv("HOME",home);
+  vi.stubEnv("AHAP_ZCODE_TRANSPORT","official-server");
+  vi.stubEnv("AHAP_ZCODE_CWD",home);
+  for (const key of ["AHAP_ZCODE_SERVER_NODE","AHAP_ZCODE_SERVER_ENTRY","ZCODE_SERVER_NODE"]) vi.stubEnv(key,undefined);
+  try {
+    const adapter = makeConfiguredAdapter();
+    expect(adapter.nativeReadWithoutActivation).toBe(true);
+    const client = (adapter as unknown as {client:{getOwnedProcessId():number|undefined}}).client;
+    expect(client.getOwnedProcessId()).toBeUndefined();
+    await adapter.dispose();
+  } finally { vi.unstubAllEnvs(); rmSync(home,{recursive:true,force:true}); }
+});
+
+
+it("fails closed when the official route lacks its socket or has custom overrides", () => {
+  const home=mkdtempSync(join(tmpdir(),"ahap-official-missing-"));
+  vi.stubEnv("HOME",home); vi.stubEnv("AHAP_ZCODE_CWD",home);
+  vi.stubEnv("AHAP_ZCODE_TRANSPORT","official-server");
+  for(const key of ["AHAP_ZCODE_SERVER_NODE","AHAP_ZCODE_SERVER_ENTRY","ZCODE_SERVER_NODE"]) vi.stubEnv(key,undefined);
+  try {
+    expect(()=>makeConfiguredAdapter()).toThrow("control.sock unavailable");
+    for (const key of ["AHAP_ZCODE_SERVER_NODE","AHAP_ZCODE_SERVER_ENTRY","ZCODE_SERVER_NODE"]) {
+      vi.stubEnv(key,"/fixture/custom");
+      expect(()=>makeConfiguredAdapter()).toThrow("forbids custom command overrides");
+      vi.stubEnv(key,undefined);
+    }
+    vi.stubEnv("HOME","relative");
+    expect(()=>makeConfiguredAdapter()).toThrow("absolute HOME");
+    vi.stubEnv("HOME",home);vi.stubEnv("AHAP_ZCODE_CWD","relative");
+    expect(()=>makeConfiguredAdapter()).toThrow("absolute HOME");
+  } finally { vi.unstubAllEnvs();rmSync(home,{recursive:true,force:true}); }
+});
+
+it("preserves explicitly configured custom stdio without pretending it is official CLI", async () => {
+  vi.stubEnv("AHAP_ZCODE_SERVER_NODE","/fixture/node");
+  vi.stubEnv("AHAP_ZCODE_SERVER_ENTRY","/fixture/custom-binary-server.cjs");
+  vi.stubEnv("AHAP_ZCODE_CWD","/fixture/work");
+  try {
+    for (const mode of [undefined,"custom-stdio"]) {
+      vi.stubEnv("AHAP_ZCODE_TRANSPORT",mode);
+      const adapter=makeConfiguredAdapter();
+      const client=(adapter as unknown as {client:{args:string[];getOwnedProcessId():number|undefined}}).client;
+      expect(client.args).toEqual(["/fixture/custom-binary-server.cjs"]);
+      expect(adapter.nativeReadWithoutActivation).toBe(false);
+      expect(client.getOwnedProcessId()).toBeUndefined();
+      await adapter.dispose();
+    }
+    vi.stubEnv("AHAP_ZCODE_TRANSPORT","guess");
+    expect(()=>makeConfiguredAdapter()).toThrow("must be official-server or custom-stdio");
+  } finally {vi.unstubAllEnvs();}
 });

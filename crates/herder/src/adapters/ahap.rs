@@ -25,6 +25,7 @@ pub enum AhapError {
     OutcomeUnknown,
     Remote,
     Protocol,
+    Initialization { phase: &'static str, cause: Box<AhapError> },
 }
 #[derive(Clone, Debug)]
 pub struct AhapConfig {
@@ -215,7 +216,7 @@ impl AhapClient {
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
         let mut child = cmd.spawn().map_err(|e| {
-            eprintln!("AHAP spawn fixture error: {e}");
+            eprintln!("AHAP runner process could not start: {e}");
             AhapError::BeforeSend
         })?;
         let input = child.stdin.take().ok_or(AhapError::BeforeSend)?;
@@ -236,7 +237,7 @@ impl AhapClient {
             "initialize",
             json!({"harness":config.harness,"ahapVersion":"0.1"}),
             config.timeout,
-        )?;
+        ).map_err(|cause| AhapError::Initialization { phase: "initialize", cause: Box::new(cause) })?;
         if init.get("harness").and_then(Value::as_str) != Some(config.harness.as_str()) {
             return Err(AhapError::Protocol);
         }
@@ -255,7 +256,8 @@ impl AhapClient {
             }
         }
         if methods.contains("init") {
-            rpc(&mut state, "init", json!({}), config.timeout)?;
+            rpc(&mut state, "init", json!({}), config.timeout)
+                .map_err(|cause| AhapError::Initialization { phase: "init", cause: Box::new(cause) })?;
         }
         Ok(Self {
             instance_id: config.instance_id,
@@ -397,6 +399,23 @@ for line in sys.stdin:
             timeout: Duration::from_secs(2),
         });
         assert!(matches!(result, Err(AhapError::Protocol)));
+    }
+    #[test]
+    fn startup_failure_identifies_init_phase_without_echoing_remote_secrets() {
+        let dir = std::env::temp_dir().join(format!("ahap-init-diagnostic-{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir(&dir).unwrap(); let _fixture = Fixture(dir.clone());
+        let script=dir.join("adapter.py");
+        fs::write(&script, r#"import json,sys
+for line in sys.stdin:
+ r=json.loads(line)
+ if r['method']=='initialize': v={'result':{'harness':'codex','capabilities':{'methods':['init']}}}
+ else: v={'error':{'code':-32000,'message':'SECRET remote credential','data':{'outcome':'read_failed'}}}
+ print(json.dumps({'jsonrpc':'2.0','id':r['id'],**v}),flush=True)
+"#).unwrap();
+        let error=AhapClient::open(AhapConfig { instance_id:"one".into(),harness:"codex".into(),executable:fs::canonicalize("/usr/bin/python3").unwrap(),args:vec![script.to_string_lossy().into_owned()],cwd:dir,env:vec![],timeout:Duration::from_secs(2) }).err().unwrap();
+        let text=format!("{error:?}");
+        assert!(text.contains("init") && text.contains("Remote"), "{text}");
+        assert!(!text.contains("SECRET"), "{text}");
     }
     #[test]
     fn timeout_never_replays_a_possibly_sent_mutation() {

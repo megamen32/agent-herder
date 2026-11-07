@@ -1,5 +1,7 @@
 import { writeAhapFrame, AHAP_MAX_FRAME_BYTES, legacyReadMethods, legacyRead, AhapReadError, adapterFailureContext, type LegacyReadPort } from "./ahap-legacy-read.js";
 import { createInterface } from "node:readline";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
 import type { CreateSessionOptions, SendMessageOptions, SendMessageResult } from "./types/common.js";
@@ -161,10 +163,34 @@ function validSessionId(value: unknown): value is string {
     && value.length <= 4096 && !/[\u0000-\u001f\u007f]/u.test(value);
 }
 
-function makeConfiguredAdapter(): ZcodeAdapter {
+export function makeConfiguredAdapter(): ZcodeAdapter {
   const command = process.env.AHAP_ZCODE_SERVER_NODE?.trim();
   const entry = process.env.AHAP_ZCODE_SERVER_ENTRY?.trim();
   const cwd = process.env.AHAP_ZCODE_CWD?.trim();
+  const transport = process.env.AHAP_ZCODE_TRANSPORT?.trim();
+  if (transport === "official-server") {
+    const home = process.env.HOME;
+    if (!home?.startsWith("/") || !cwd?.startsWith("/")) {
+      throw new Error("official-server requires absolute HOME and AHAP_ZCODE_CWD");
+    }
+    if (command || entry || process.env.ZCODE_SERVER_NODE) {
+      throw new Error("official-server forbids custom command overrides");
+    }
+    if (!existsSync(join(home, ".zcode/server/run/control.sock"))) {
+      throw new Error("official-server control.sock unavailable; no stdio fallback");
+    }
+    // Reuse the legacy authenticated supervisor route, never the unrelated
+    // JSON CLI app-server as a zcode-hello/binary stdio transport.
+    const adapter = new ZcodeAdapter({ cwd });
+    if (!adapter.nativeReadWithoutActivation) {
+      throw new Error("official-server route was not selected; no stdio fallback");
+    }
+    return adapter;
+  }
+  // Preserve the already explicitly configured custom binary contract.
+  if (transport !== undefined && transport !== "custom-stdio") {
+    throw new Error("AHAP_ZCODE_TRANSPORT must be official-server or custom-stdio");
+  }
   if (!command?.startsWith("/") || !entry?.startsWith("/") || !cwd?.startsWith("/")) {
     throw new Error("AHAP_ZCODE_SERVER_NODE, AHAP_ZCODE_SERVER_ENTRY and AHAP_ZCODE_CWD must be absolute paths");
   }
