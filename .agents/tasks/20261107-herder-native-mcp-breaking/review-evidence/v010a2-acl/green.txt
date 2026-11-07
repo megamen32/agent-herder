@@ -1,0 +1,2 @@
+configured stdio: unknown caller denied node discovery; unconnected operations unsupported
+PASS: exit 0; configured stdio rejected unknown caller

@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T02:13:13+00:00",
+  "details": "V010A2 candidate ConfigApplication игнорирует Caller и отдаёт идентификаторы и endpoints нод без ACL; trust boundary ещё не подключён.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "at": "2026-11-07T02:13:13+00:00",
+      "changes": {
+        "details": "V010A2 candidate ConfigApplication игнорирует Caller и отдаёт идентификаторы и endpoints нод без ACL; trust boundary ещё не подключён.",
+        "source": "review локального commit a74f3f44 до публикации",
+        "status": "open",
+        "title": "Неизвестный caller видит node endpoints"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "at": "2026-11-07T02:46:35+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "review-evidence/v010a2-acl/green.txt",
+            "red_proof_path": "review-evidence/v010a2-acl/red.txt",
+            "red_result": "AssertionError:",
+            "red_sha256": "9c249fbb8aff930f8903031795bde00ac4044a2065349f1ac2f2030f92feaa4a",
+            "result": "PASS: exit 0; configured stdio rejected unknown caller",
+            "sha256": "15017e5e8a67b26e41537086278298f14c380caba1b3a096cca75e284cc098af",
+            "test_command": "python3 crates/herder/tests/v010a2_stdio_wire.py <herder_native_stdio>"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B0f60b431bc8d4799802a",
+  "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "reporter": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "resolution": {
+    "evidence": {
+      "proof_path": "review-evidence/v010a2-acl/green.txt",
+      "red_proof_path": "review-evidence/v010a2-acl/red.txt",
+      "red_result": "AssertionError:",
+      "red_sha256": "9c249fbb8aff930f8903031795bde00ac4044a2065349f1ac2f2030f92feaa4a",
+      "result": "PASS: exit 0; configured stdio rejected unknown caller",
+      "sha256": "15017e5e8a67b26e41537086278298f14c380caba1b3a096cca75e284cc098af",
+      "test_command": "python3 crates/herder/tests/v010a2_stdio_wire.py <herder_native_stdio>"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "review локального commit a74f3f44 до публикации",
+  "status": "fixed",
+  "title": "Неизвестный caller видит node endpoints",
+  "updated_at": "2026-11-07T02:46:35+00:00"
+}

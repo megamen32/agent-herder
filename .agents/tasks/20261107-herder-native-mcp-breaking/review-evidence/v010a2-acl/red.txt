@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-v1-fixture/agent-herder/crates/herder/tests/v010a2_stdio_wire.py", line 28, in <module>
+    assert nodes["isError"] and nodes["structuredContent"]["code"] == "unauthorized", nodes
+AssertionError: {'resultType': 'complete', 'content': [{'type': 'text', 'text': '{"nodes":[{"endpoint":"https://one.invalid","id":"one"},{"endpoint":"https://two.invalid","id":"two"}]}'}], 'structuredContent': {'nodes': [{'endpoint': 'https://one.invalid', 'id': 'one'}, {'endpoint': 'https://two.invalid', 'id': 'two'}]}, 'isError': False}
